@@ -1,7 +1,5 @@
 import { Injectable, inject } from '@angular/core';
 
-import { UsageTrackingService } from '@core/services/usage-tracking.service';
-
 import { CancelRollInputs, CancelRollResult } from '../models/calculator.model';
 import { CalculatorReportService, ReportTable, reportMoneyAccounting } from './calculator-report.service';
 
@@ -12,7 +10,6 @@ import { CalculatorReportService, ReportTable, reportMoneyAccounting } from './c
 @Injectable({ providedIn: 'root' })
 export class CancelRollReportService {
   private readonly report = inject(CalculatorReportService);
-  private readonly usageTracking = inject(UsageTrackingService);
 
   async download(producer: string, input: CancelRollInputs, result: CancelRollResult): Promise<void> {
     const money = reportMoneyAccounting;
@@ -48,8 +45,5 @@ export class CancelRollReportService {
       columnHeaders: ['Value'],
       tables,
     });
-
-    // Only after the file is actually produced — a failed render shouldn't count as an export.
-    this.usageTracking.postClickEvent('interaction', 'calculators', 'cancel-roll-pdf');
   }
 }

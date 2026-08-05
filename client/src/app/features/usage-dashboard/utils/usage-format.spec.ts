@@ -116,8 +116,9 @@ describe('formatDayLabel', () => {
 describe('getStatusClasses', () => {
   it('gives each status its own colour', () => {
     expect(getStatusClasses('Active')).toContain('green');
-    expect(getStatusClasses('Inactive')).toContain('amber');
-    expect(getStatusClasses('Never Logged In')).toContain('red');
+    expect(getStatusClasses('At-risk')).toContain('amber');
+    expect(getStatusClasses('Dormant')).toContain('orange');
+    expect(getStatusClasses('Never')).toContain('red');
     expect(getStatusClasses('Something Else')).toContain('gray');
   });
 });
@@ -136,7 +137,6 @@ describe('getInitials', () => {
 describe('formatFeatureLabel', () => {
   it('maps known feature codes', () => {
     expect(formatFeatureLabel('customers')).toBe('Producer Page');
-    expect(formatFeatureLabel('calculators')).toBe('Calculators');
     expect(formatFeatureLabel('unshipped-bushels')).toBe('Unshipped Bushels');
   });
 

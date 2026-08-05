@@ -28,7 +28,6 @@ import {
   HarvestWindow,
   UsageDashboardSummary,
   UsageDashboardUser,
-  UsageDashboardInactiveUser,
   DailyActive,
   FeatureSessions,
   QueryLibraryUsage,
@@ -38,6 +37,7 @@ import {
   UnderusedFeature,
   UserUsageDetail,
   ExcludedUser,
+  AccessUsers,
   QueryLibraryItem,
   NoteMention,
   MentionCatalog
@@ -960,15 +960,6 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** "Days since last login" is measured as of now against all history, so this takes no window. */
-  getUsageDashboardInactive(tradeUnitKey?: string, daysThreshold?: number): Observable<UsageDashboardInactiveUser[]> {
-    const params: Record<string, string> = {};
-    if (tradeUnitKey) params['tradeUnitKey'] = tradeUnitKey;
-    if (daysThreshold) params['daysThreshold'] = daysThreshold.toString();
-    return this.http.get<UsageDashboardInactiveUser[]>(`${this.baseUrl}/usage-dashboard/inactive`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
   getUsageQueryLibraryUsage(from: string, to: string, tradeUnitKey?: string): Observable<QueryLibraryUsage[]> {
     return this.http.get<QueryLibraryUsage[]>(`${this.baseUrl}/usage-dashboard/query-library-usage`, { params: this.usageParams(from, to, tradeUnitKey) })
       .pipe(catchError(e => this.handleError(e)));
@@ -996,6 +987,12 @@ export class ApiService {
 
   getUsageExcludedUsers(): Observable<ExcludedUser[]> {
     return this.http.get<ExcludedUser[]>(`${this.baseUrl}/usage-dashboard/excluded-users`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** People with app access (Entra access-group members), for the exclusion picker. */
+  getUsageAccessUsers(): Observable<AccessUsers> {
+    return this.http.get<AccessUsers>(`${this.baseUrl}/usage-dashboard/access-users`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

@@ -21,7 +21,7 @@ import {
   localIsoDateDaysAgo, toLocalIsoDate, titleCaseCode
 } from '../../utils/usage-format';
 
-type TabId = 'producer-page' | 'build-a-list' | 'insights' | 'bidsheet' | 'dashboard' | 'calculators' | 'daily-recap';
+type TabId = 'producer-page' | 'build-a-list' | 'insights' | 'bidsheet' | 'dashboard' | 'daily-recap';
 
 @Component({
   selector: 'app-user-usage-detail',
@@ -61,7 +61,6 @@ export class UserUsageDetailComponent {
     { id: 'insights',      label: 'Actionable Insights', featureCode: 'insights' },
     { id: 'bidsheet',      label: 'Bid Sheet',           featureCode: 'bidsheet' },
     { id: 'dashboard',     label: 'Planting Dashboard',  featureCode: 'dashboard' },
-    { id: 'calculators',   label: 'Calculators',         featureCode: 'calculators' },
     { id: 'daily-recap',   label: 'Daily Recap',         featureCode: 'daily-recap' },
   ];
 

@@ -1,7 +1,5 @@
 import { Injectable, inject } from '@angular/core';
 
-import { UsageTrackingService } from '@core/services/usage-tracking.service';
-
 import { CheckInputs, CheckResult } from '../models/calculator.model';
 import { CalculatorReportService, ReportTable, reportMoneyAccounting } from './calculator-report.service';
 
@@ -18,7 +16,6 @@ export interface CheckReportCommodity {
 @Injectable({ providedIn: 'root' })
 export class CheckReportService {
   private readonly report = inject(CalculatorReportService);
-  private readonly usageTracking = inject(UsageTrackingService);
 
   async download(producer: string, items: CheckReportCommodity[]): Promise<void> {
     const columnHeaders = items.map((c, idx) => c.input.commodity || `Commodity ${idx + 1}`);
@@ -61,8 +58,5 @@ export class CheckReportService {
       columnHeaders,
       tables,
     });
-
-    // Only after the file is actually produced — a failed render shouldn't count as an export.
-    this.usageTracking.postClickEvent('interaction', 'calculators', 'check-pdf');
   }
 }

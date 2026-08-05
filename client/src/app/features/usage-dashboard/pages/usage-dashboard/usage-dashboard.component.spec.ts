@@ -32,7 +32,6 @@ function makeApiStub() {
     getUsageFeatureSessions: function () { count('featureSessions'); return of([]); },
     getUsageWeeklyTrend: function () { count('weeklyTrend'); return of([]); },
     getUsageActivityBreakdown: function () { count('activityBreakdown'); return of([]); },
-    getUsageDashboardInactive: function () { count('inactive'); return of([]); },
     getUsageQueryLibraryUsage: function () { count('queryLibrary'); return of([]); },
     getUsageQuerySearchGaps: function () { count('querySearchGaps'); return of([]); },
     getUsageUnderusedFeatures: function (this: { underusedSubject: Subject<never[]> }) {
@@ -74,11 +73,6 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
     expect(api.calls['featureSessions']).toBe(1);
   });
 
-  it('requests inactive users exactly once on mount', () => {
-    component = build();
-    expect(api.calls['inactive']).toBe(1);
-  });
-
   it('requests the weekly trend exactly once on mount', () => {
     component = build();
     expect(api.calls['weeklyTrend']).toBe(1);
@@ -116,17 +110,6 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
 
     expect(api.calls['featureSessions']).toBe(2);
     expect(api.calls['users']).toBe(usersBefore); // unrelated panels are left alone
-  });
-
-  it('refetches only the inactive list when its threshold changes', () => {
-    component = build();
-    const featureSessionsBefore = api.calls['featureSessions'];
-
-    component.setInactiveDays(7);
-    TestBed.tick();
-
-    expect(api.calls['inactive']).toBe(2);
-    expect(api.calls['featureSessions']).toBe(featureSessionsBefore);
   });
 
   it('leaves the weekly trend alone when the date range changes', () => {
@@ -180,7 +163,8 @@ describe('UsageDashboardComponent — derived values', () => {
   function user(over: Partial<UsageDashboardUser>): UsageDashboardUser {
     return {
       userId: 'u', displayName: 'U', loginCount: 0, lastActive: null,
-      avgSessionMinutes: 0, status: 'Active', customersContacted: 0, notesCreated: 0, ...over,
+      avgSessionMinutes: 0, status: 'Active', activeDaysPerWeek: 0, isLightUsage: false,
+      customersContacted: 0, notesCreated: 0, ...over,
     };
   }
 
@@ -202,59 +186,40 @@ describe('UsageDashboardComponent — derived values', () => {
     component = fixture.componentInstance;
   });
 
-  it('counts each status separately for the donut', () => {
+  it('counts each recency tier separately for the donut', () => {
     component.users.set([
       user({ userId: 'a', status: 'Active' }),
-      user({ userId: 'b', status: 'Inactive' }),
-      user({ userId: 'c', status: 'Inactive' }),
-      user({ userId: 'd', status: 'Never Logged In' }),
+      user({ userId: 'b', status: 'At-risk' }),
+      user({ userId: 'c', status: 'At-risk' }),
+      user({ userId: 'd', status: 'Dormant' }),
+      user({ userId: 'e', status: 'Never' }),
     ]);
 
     expect(component.activeCount()).toBe(1);
-    expect(component.inactiveStatusCount()).toBe(2);
-    expect(component.neverLoggedInCount()).toBe(1);
+    expect(component.atRiskCount()).toBe(2);
+    expect(component.dormantCount()).toBe(1);
+    expect(component.neverCount()).toBe(1);
   });
 
-  it('scales the low-usage threshold to the selected window', () => {
-    component.setRange('30d');
-    expect(component.lowUsageThreshold()).toBe(15);
-
-    component.setRange('7d');
-    // The label used to claim "fewer than 15 logins in the last 30 days" no matter the range.
-    expect(component.lowUsageThreshold()).toBe(4);
-  });
-
-  it('excludes never-logged-in users from the low-usage list', () => {
-    component.setRange('30d');
+  it('lists the backend-flagged light-usage accounts as low usage, fewest active-days/week first', () => {
     component.users.set([
-      user({ userId: 'a', status: 'Active', loginCount: 3 }),
-      user({ userId: 'b', status: 'Never Logged In', loginCount: 0 }),
-      user({ userId: 'c', status: 'Active', loginCount: 40 }),
+      user({ userId: 'a', status: 'Active', isLightUsage: true, activeDaysPerWeek: 1.5 }),
+      user({ userId: 'b', status: 'Active', isLightUsage: false, activeDaysPerWeek: 5 }),
+      user({ userId: 'c', status: 'Active', isLightUsage: true, activeDaysPerWeek: 0.5 }),
+      user({ userId: 'd', status: 'Dormant', isLightUsage: false, activeDaysPerWeek: 0 }),
     ]);
 
-    expect(component.lowUsageOriginators().map(u => u.userId)).toEqual(['a']);
+    expect(component.lowUsageOriginators().map(u => u.userId)).toEqual(['c', 'a']);
   });
 
-  it('rejects a non-numeric or out-of-range custom inactivity threshold', () => {
-    component.inactiveCustomDays.set('abc');
-    component.applyCustomInactiveDays();
-    expect(component.inactiveDaysThreshold()).toBe(30);
+  it('lists At-risk, Dormant and Never accounts as inactive, most-stale first', () => {
+    component.users.set([
+      user({ userId: 'a', status: 'Active', lastActive: '2026-08-01T00:00:00' }),
+      user({ userId: 'b', status: 'At-risk', lastActive: '2026-07-20T00:00:00' }),
+      user({ userId: 'c', status: 'Dormant', lastActive: '2026-07-01T00:00:00' }),
+      user({ userId: 'd', status: 'Never', lastActive: null }),
+    ]);
 
-    component.inactiveCustomDays.set('0');
-    component.applyCustomInactiveDays();
-    expect(component.inactiveDaysThreshold()).toBe(30);
-
-    component.inactiveCustomDays.set('9999');
-    component.applyCustomInactiveDays();
-    expect(component.inactiveDaysThreshold()).toBe(30);
-
-    expect(toasts.length).toBe(3);
-  });
-
-  it('accepts a valid custom inactivity threshold', () => {
-    component.inactiveCustomDays.set('45');
-    component.applyCustomInactiveDays();
-    expect(component.inactiveDaysThreshold()).toBe(45);
-    expect(component.inactiveCustomOpen()).toBe(false);
+    expect(component.inactiveOriginators().map(u => u.userId)).toEqual(['d', 'c', 'b']);
   });
 });

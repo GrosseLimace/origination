@@ -14,8 +14,7 @@ import {
   TableRowComponent, TableHeadComponent, TableCellComponent
 } from '@shared/components/table/table.component';
 import {
-  UsageDashboardSummary, UsageDashboardUser,
-  UsageDashboardInactiveUser, DailyActive,
+  UsageDashboardSummary, UsageDashboardUser, DailyActive,
   FeatureSessions, WeeklyTrend, ActivityBreakdown, UnderusedFeature,
   QueryLibraryUsage, QuerySearchGap
 } from '@models';
@@ -30,9 +29,6 @@ import {
 } from '../../utils/usage-format';
 
 type DashboardTabId = 'whos-using-it' | 'whats-doing' | 'whos-not';
-
-/** Baseline "low usage" threshold, expressed over 30 days and scaled to the selected window. */
-const LOW_USAGE_LOGINS_PER_30_DAYS = 15;
 
 @Component({
   selector: 'app-usage-dashboard',
@@ -79,7 +75,6 @@ export class UsageDashboardComponent {
   readonly featureSessionsLoading = signal(false);
   readonly weeklyTrend = signal<WeeklyTrend[]>([]);
   readonly activityBreakdown = signal<ActivityBreakdown[]>([]);
-  readonly inactiveUsers = signal<UsageDashboardInactiveUser[]>([]);
   readonly underusedFeatures = signal<UnderusedFeature[]>([]);
   readonly queryLibraryUsage = signal<QueryLibraryUsage[]>([]);
   readonly queryLibraryOpen = signal(false);
@@ -113,7 +108,10 @@ export class UsageDashboardComponent {
     let result = this.users();
 
     if (filter && filter !== 'all') {
-      result = result.filter(u => u.status === filter);
+      // 'light' isolates recency-active-but-low-usage accounts; any other value is a status tier.
+      result = filter === 'light'
+        ? result.filter(u => u.isLightUsage)
+        : result.filter(u => u.status === filter);
     }
     if (search) {
       result = result.filter(u =>
@@ -136,14 +134,16 @@ export class UsageDashboardComponent {
   });
 
   // ── Status breakdown ──
-  // These three labels match the status values the API returns and the status filter offers, so the
-  // donut, the pills and the dropdown can't tell different stories.
+  // Tier labels match the status values the API returns and the status filter offers, so the donut,
+  // the pills and the dropdown can't tell different stories.
   readonly activeCount = computed(() => this.users().filter(u => u.status === 'Active').length);
-  readonly inactiveStatusCount = computed(() => this.users().filter(u => u.status === 'Inactive').length);
-  readonly neverLoggedInCount = computed(() => this.users().filter(u => u.status === 'Never Logged In').length);
+  readonly atRiskCount = computed(() => this.users().filter(u => u.status === 'At-risk').length);
+  readonly dormantCount = computed(() => this.users().filter(u => u.status === 'Dormant').length);
+  readonly neverCount = computed(() => this.users().filter(u => u.status === 'Never').length);
+  readonly lightUsageCount = computed(() => this.users().filter(u => u.isLightUsage).length);
 
-  /** Mirrors the union of the two "Who Isn't Using It" panels so the badge matches what's visible
-   *  there. Deduped by userId because a user can qualify for both. */
+  /** Everyone who isn't a healthy Active user — the union of the "Who Isn't Using It" panels
+   *  (At-risk/Dormant/Never + light-usage Actives), deduped since a user can appear in both. */
   readonly needsAttentionCount = computed(() => {
     const ids = new Set<string>();
     for (const u of this.inactiveOriginators()) ids.add(u.userId);
@@ -154,15 +154,17 @@ export class UsageDashboardComponent {
   readonly circumference = 2 * Math.PI * 40;
   readonly donutSegments = computed(() => {
     const total = this.users().length;
-    if (total === 0) return { activeLen: 0, activeOffset: 0, lowLen: 0, lowOffset: 0, inactiveLen: 0, inactiveOffset: 0 };
     const c = this.circumference;
+    if (total === 0) return { activeLen: 0, activeOffset: 0, atRiskLen: 0, atRiskOffset: 0, dormantLen: 0, dormantOffset: 0, neverLen: 0, neverOffset: 0 };
     const activeLen = (this.activeCount() / total) * c;
-    const lowLen = (this.inactiveStatusCount() / total) * c;
-    const inactiveLen = (this.neverLoggedInCount() / total) * c;
+    const atRiskLen = (this.atRiskCount() / total) * c;
+    const dormantLen = (this.dormantCount() / total) * c;
+    const neverLen = (this.neverCount() / total) * c;
     return {
       activeLen, activeOffset: 0,
-      lowLen, lowOffset: -(activeLen),
-      inactiveLen, inactiveOffset: -(activeLen + lowLen)
+      atRiskLen, atRiskOffset: -(activeLen),
+      dormantLen, dormantOffset: -(activeLen + atRiskLen),
+      neverLen, neverOffset: -(activeLen + atRiskLen + dormantLen)
     };
   });
 
@@ -200,7 +202,6 @@ export class UsageDashboardComponent {
     { id: 'insights', label: 'Actionable Insights' },
     { id: 'unshipped-bushels', label: 'Unshipped Bushels' },
     { id: 'bidsheet', label: 'Bid Sheet' },
-    { id: 'calculators', label: 'Calculators' },
     { id: 'daily-recap', label: 'Daily Recap' },
   ];
 
@@ -287,22 +288,18 @@ export class UsageDashboardComponent {
   });
 
   // ── Who Isn't Using It ──
-  readonly inactiveDaysThreshold = signal<number>(30);
-  readonly inactiveCustomOpen = signal(false);
-  readonly inactiveCustomDays = signal<string>('30');
-
+  // Inactive = everyone off the healthy-Active tier (At-risk → Dormant → Never), most-stale first.
   readonly inactiveOriginators = computed(() =>
-    this.inactiveUsers().filter(u => u.status === 'Inactive' || u.status === 'Never Logged In'));
+    this.users()
+      .filter(u => u.status === 'At-risk' || u.status === 'Dormant' || u.status === 'Never')
+      .sort((a, b) => (a.lastActive ?? '').localeCompare(b.lastActive ?? '')));
 
-  /** Scales with the selected window so the panel's own copy stays truthful when the range changes. */
-  readonly lowUsageThreshold = computed(() =>
-    Math.max(1, Math.round(LOW_USAGE_LOGINS_PER_30_DAYS * this.windowDays() / 30)));
-
-  readonly lowUsageOriginators = computed(() => {
-    const threshold = this.lowUsageThreshold();
-    return this.users().filter(u =>
-      u.status !== 'Never Logged In' && u.loginCount > 0 && u.loginCount < threshold);
-  });
+  // Low usage = recency-active accounts the backend flagged as barely engaging (low active-days/week),
+  // fewest active-days/week first.
+  readonly lowUsageOriginators = computed(() =>
+    this.users()
+      .filter(u => u.isLightUsage)
+      .sort((a, b) => a.activeDaysPerWeek - b.activeDaysPerWeek));
 
   readonly maxUnderusedUsers = computed(() => {
     const max = Math.max(0, ...this.underusedFeatures().map(f => f.uniqueUsers));
@@ -336,14 +333,6 @@ export class UsageDashboardComponent {
       const tuKey = this.tradeUnitKey();
       this.refreshTick();
       if (from && to) this.loadFeatureSessions(from, to, tuKey, screen);
-    });
-
-    // Inactivity is measured as of now against all history — only the threshold and TU apply.
-    effect(() => {
-      const threshold = this.inactiveDaysThreshold();
-      const tuKey = this.tradeUnitKey();
-      this.refreshTick();
-      this.loadInactive(tuKey, threshold);
     });
 
     // The weekly trend covers whole calendar weeks, so the date filter is not a dependency.
@@ -430,12 +419,6 @@ export class UsageDashboardComponent {
       });
   }
 
-  loadInactive(tradeUnitKey?: string, daysThreshold?: number): void {
-    this.track(this.apiService.getUsageDashboardInactive(tradeUnitKey, daysThreshold))
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ next: data => this.inactiveUsers.set(data), error: () => {} });
-  }
-
   loadWeeklyTrend(tradeUnitKey?: string): void {
     this.track(this.apiService.getUsageWeeklyTrend(tradeUnitKey))
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -464,22 +447,6 @@ export class UsageDashboardComponent {
 
   onTabChange(tabId: DashboardTabId): void {
     this.activeTab.set(tabId);
-  }
-
-  setInactiveDays(days: number): void {
-    this.inactiveDaysThreshold.set(days);
-    this.inactiveCustomOpen.set(false);
-  }
-
-  applyCustomInactiveDays(): void {
-    const days = Number.parseInt(this.inactiveCustomDays(), 10);
-    if (Number.isFinite(days) && days >= 1 && days <= 365) {
-      this.inactiveDaysThreshold.set(days);
-    } else {
-      this.toastService.show('Enter a number of days between 1 and 365', 'error');
-      return;
-    }
-    this.inactiveCustomOpen.set(false);
   }
 
   /** Navigate to the per-user drill-down page, propagating the active date range

@@ -36,11 +36,17 @@ public interface IUsageRepository
     // ── Activities ──
     Task<List<string>> GetActiveUserIdsAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<DailyCount>> GetDailyActiveCountsAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
-    Task<List<UserLastActivity>> GetLastActivityByUserAsync(DateTime? fromUtc, DateTime? toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
+
+    /// <summary>Each user's most-recent activity across the full retained history — raw rows (recent,
+    /// precise) unioned with the long-retention daily rollup — so status can tell a long-dormant user
+    /// (logged in months ago) apart from one who never logged in. Window-independent.</summary>
+    Task<List<UserLastActivity>> GetLastActiveByUserAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
+
+    /// <summary>Per user, the count of DISTINCT days with activity in the raw window (for active-days/week).</summary>
+    Task<List<UserCount>> GetActiveDayCountsByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<UserCount>> GetNotesCreatedCountsByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<FeatureCount>> GetNotesCreatedCountsByFeatureAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<UserActivityBreakdown>> GetActivityBreakdownByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
-    Task<DateTime?> GetLastActivityForUserAsync(string userId, CancellationToken cancellationToken);
     Task<List<UserActivityRow>> GetActivitiesForUserAsync(string userId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken);
 
     // ── Sessions ──
@@ -63,6 +69,10 @@ public interface IUsageRepository
 
     // ── Rollup reads (closed days) ──
     Task<List<string>> GetActiveUserIdsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
+
+    /// <summary>Per user, the count of active days (one rollup row = one active day) in the closed-day
+    /// range — the rollup half of active-days/week.</summary>
+    Task<List<UserCount>> GetActiveDayCountsByUserFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<DailyCount>> GetDailyActiveCountsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<UserSessionStats>> GetSessionStatsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<FeatureScreenTime>> GetFeatureScreenTimeFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);

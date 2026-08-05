@@ -33,9 +33,12 @@
       } @else if (excluded().length === 0) {
         <p class="text-sm text-gray-500 dark:text-gray-400 py-3">No one is excluded — every user with app access is reported on.</p>
       } @else {
-        <ul class="divide-y divide-gray-100 dark:divide-gray-700 max-h-56 overflow-auto -mx-1 px-1">
+        <!-- Bordered container: grows with the list, then scrolls once it passes ~5 rows so a long
+             exclusion list never stretches the panel. -->
+        <div class="max-h-64 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700">
+          <ul class="divide-y divide-gray-100 dark:divide-gray-700">
           @for (row of excluded(); track row.id) {
-            <li class="py-2 flex items-start justify-between gap-2">
+            <li class="py-2 px-3 flex items-start justify-between gap-2">
               <div class="min-w-0">
                 <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
                   {{ row.displayName || row.userId }}
@@ -54,18 +57,54 @@
               </button>
             </li>
           }
-        </ul>
+          </ul>
+        </div>
       }
 
       <!-- Add a new exclusion -->
       <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
-        <input type="text" [ngModel]="newUserId()" (ngModelChange)="newUserId.set($event)"
-          name="excludedUserId" placeholder="User (e.g. jsmith)" autocomplete="off"
-          class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+        @if (accessAvailable()) {
+          <!-- Search + select from the people who actually have app access (no typing / no typos). -->
+          @if (selectedUser(); as sel) {
+            <div class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-scoular-green/10 dark:bg-scoular-green/20">
+              <span class="text-sm text-gray-900 dark:text-white truncate">
+                {{ sel.displayName }}<span class="text-gray-500 dark:text-gray-400"> · {{ sel.userId }}</span>
+              </span>
+              <button type="button" (click)="clearSelection()" aria-label="Clear selection"
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+          } @else {
+            <input type="text" [ngModel]="search()" (ngModelChange)="search.set($event)"
+              name="excludedSearch" placeholder="Search who has access…" autocomplete="off"
+              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+            @if (search().trim()) {
+              <ul class="max-h-40 overflow-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700">
+                @for (u of candidates(); track u.userId) {
+                  <li>
+                    <button type="button" (click)="select(u)"
+                      class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <span class="font-medium text-gray-900 dark:text-white">{{ u.displayName }}</span>
+                      <span class="text-gray-500 dark:text-gray-400"> · {{ u.userId }}</span>
+                    </button>
+                  </li>
+                } @empty {
+                  <li class="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">No matches with app access</li>
+                }
+              </ul>
+            }
+          }
+        } @else {
+          <!-- Access roster unavailable (Graph not configured/blocked) — type the short name. -->
+          <input type="text" [ngModel]="newUserId()" (ngModelChange)="newUserId.set($event)"
+            name="excludedUserId" placeholder="User (e.g. jsmith)" autocomplete="off"
+            class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+        }
         <input type="text" [ngModel]="newReason()" (ngModelChange)="newReason.set($event)"
           name="excludedReason" placeholder="Reason (optional)" autocomplete="off"
           class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
-        <button type="button" (click)="add()" [disabled]="!newUserId().trim() || saving()"
+        <button type="button" (click)="add()" [disabled]="!canAdd() || saving()"
           class="w-full px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green disabled:opacity-50 disabled:cursor-not-allowed">
           {{ saving() ? 'Adding…' : 'Add Exclusion' }}
         </button>

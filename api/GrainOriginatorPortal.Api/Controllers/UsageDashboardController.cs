@@ -75,14 +75,6 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetActivityBreakdownAsync(from, to, tradeUnitKey, cancellationToken));
 
-    // "Days since last login" is measured as of now against all history, so this takes no window.
-    [HttpGet("inactive")]
-    [Authorize(Policy = "AdminOnly")]
-    public async Task<ActionResult<List<UsageDashboardInactiveUserDto>>> GetInactiveUsers(
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] int daysThreshold = 30,
-        CancellationToken cancellationToken = default)
-        => Ok(await _service.GetInactiveUsersAsync(tradeUnitKey, daysThreshold, cancellationToken));
-
     [HttpGet("underused-features")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
@@ -121,6 +113,13 @@ public class UsageDashboardController : ControllerBase
     // ── Excluded users ──
     // Accounts kept out of every dashboard view (IT/dev/admin accounts whose activity would skew
     // adoption). Excluding someone changes nothing about their access to the app.
+
+    // People who can sign in to the app (Entra access-group members), for the exclusion picker so an
+    // admin can search + select instead of typing a user id. Available=false ⇒ client falls to free text.
+    [HttpGet("access-users")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<ActionResult<AccessUsersDto>> GetAccessUsers(CancellationToken cancellationToken = default)
+        => Ok(await _service.GetAccessUsersAsync(cancellationToken));
 
     [HttpGet("excluded-users")]
     [Authorize(Policy = "AdminOnly")]

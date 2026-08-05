@@ -171,20 +171,28 @@
                 [attr.stroke-dashoffset]="donutSegments().activeOffset"
                 transform="rotate(-90 50 50)" />
             }
-            <!-- Inactive segment (amber) -->
-            @if (inactiveStatusCount() > 0) {
+            <!-- At-risk segment (amber) -->
+            @if (atRiskCount() > 0) {
               <circle cx="50" cy="50" r="40" fill="none"
                 class="text-amber-500 dark:text-amber-400" stroke="currentColor" stroke-width="10"
-                [attr.stroke-dasharray]="donutSegments().lowLen + ' ' + (circumference - donutSegments().lowLen)"
-                [attr.stroke-dashoffset]="donutSegments().lowOffset"
+                [attr.stroke-dasharray]="donutSegments().atRiskLen + ' ' + (circumference - donutSegments().atRiskLen)"
+                [attr.stroke-dashoffset]="donutSegments().atRiskOffset"
                 transform="rotate(-90 50 50)" />
             }
-            <!-- Never Logged In segment (red) -->
-            @if (neverLoggedInCount() > 0) {
+            <!-- Dormant segment (orange) -->
+            @if (dormantCount() > 0) {
+              <circle cx="50" cy="50" r="40" fill="none"
+                class="text-orange-500 dark:text-orange-400" stroke="currentColor" stroke-width="10"
+                [attr.stroke-dasharray]="donutSegments().dormantLen + ' ' + (circumference - donutSegments().dormantLen)"
+                [attr.stroke-dashoffset]="donutSegments().dormantOffset"
+                transform="rotate(-90 50 50)" />
+            }
+            <!-- Never segment (red) -->
+            @if (neverCount() > 0) {
               <circle cx="50" cy="50" r="40" fill="none"
                 class="text-red-500 dark:text-red-400" stroke="currentColor" stroke-width="10"
-                [attr.stroke-dasharray]="donutSegments().inactiveLen + ' ' + (circumference - donutSegments().inactiveLen)"
-                [attr.stroke-dashoffset]="donutSegments().inactiveOffset"
+                [attr.stroke-dasharray]="donutSegments().neverLen + ' ' + (circumference - donutSegments().neverLen)"
+                [attr.stroke-dashoffset]="donutSegments().neverOffset"
                 transform="rotate(-90 50 50)" />
             }
             <!-- Total in center -->
@@ -210,16 +218,23 @@
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div class="w-3 h-3 rounded-full bg-amber-500 dark:bg-amber-400"></div>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Inactive</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400">At-risk <span class="text-gray-400 dark:text-gray-500">· 8–21d</span></span>
             </div>
-            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ inactiveStatusCount() }}</span>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ atRiskCount() }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-orange-500 dark:bg-orange-400"></div>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Dormant <span class="text-gray-400 dark:text-gray-500">· &gt;21d</span></span>
+            </div>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ dormantCount() }}</span>
           </div>
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div class="w-3 h-3 rounded-full bg-red-500 dark:bg-red-400"></div>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Never Logged In</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Never</span>
             </div>
-            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ neverLoggedInCount() }}</span>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ neverCount() }}</span>
           </div>
         </div>
       </div>
@@ -272,8 +287,10 @@
           class="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
           <option value="all">All Statuses</option>
           <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-          <option value="Never Logged In">Never Logged In</option>
+          <option value="At-risk">At-risk</option>
+          <option value="Dormant">Dormant</option>
+          <option value="Never">Never</option>
+          <option value="light">Light usage</option>
         </select>
       </div>
 
@@ -356,9 +373,17 @@
                       </div>
                     </app-table-cell>
                     <app-table-cell tdClass="text-center">
-                      <span class="px-2 py-1 text-xs font-medium rounded-full" [class]="getStatusClasses(user.status)">
-                        {{ user.status }}
-                      </span>
+                      <div class="flex flex-col items-center gap-1">
+                        <span class="px-2 py-1 text-xs font-medium rounded-full" [class]="getStatusClasses(user.status)">
+                          {{ user.status }}
+                        </span>
+                        @if (user.isLightUsage) {
+                          <span class="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                            [title]="'Recently active but light usage — ' + (user.activeDaysPerWeek | number:'1.0-1') + ' active days/week'">
+                            Light usage
+                          </span>
+                        }
+                      </div>
                     </app-table-cell>
                     <app-table-cell tdClass="text-center">{{ formatLastActive(user.lastActive) }}</app-table-cell>
                     <app-table-cell tdClass="text-center">{{ user.loginCount }}</app-table-cell>
@@ -722,40 +747,7 @@
         <div class="flex items-center justify-between mb-4">
           <div>
             <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Inactive Originators</h3>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">No login in the last {{ inactiveDaysThreshold() }} days</p>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <button type="button" (click)="setInactiveDays(7)"
-              [class]="inactiveDaysThreshold() === 7
-                ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
-                : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
-              7d
-            </button>
-            <button type="button" (click)="setInactiveDays(30)"
-              [class]="inactiveDaysThreshold() === 30 && !inactiveCustomOpen()
-                ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
-                : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
-              30d
-            </button>
-            <div class="relative">
-              <button type="button" (click)="inactiveCustomOpen.set(!inactiveCustomOpen())"
-                [class]="inactiveDaysThreshold() !== 7 && inactiveDaysThreshold() !== 30
-                  ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
-                  : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
-                Custom
-              </button>
-              @if (inactiveCustomOpen()) {
-                <div class="absolute right-0 mt-2 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 flex items-center gap-2">
-                  <input type="number" min="1" [ngModel]="inactiveCustomDays()" (ngModelChange)="inactiveCustomDays.set($event)"
-                    class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" placeholder="Days" />
-                  <span class="text-xs text-gray-500 dark:text-gray-400">days</span>
-                  <button type="button" (click)="applyCustomInactiveDays()"
-                    class="px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green">
-                    Apply
-                  </button>
-                </div>
-              }
-            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">At-risk (8–21d) · dormant (&gt;21d) · never logged in</p>
           </div>
         </div>
 
@@ -776,7 +768,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ user.displayName }}</div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">
-                    Last login: {{ user.daysSinceLastLogin !== null ? user.daysSinceLastLogin + ' days ago' : 'Never' }}
+                    Last active: {{ user.lastActive ? formatLastActive(user.lastActive) : 'Never' }}
                   </div>
                 </div>
                 <div class="text-right flex-shrink-0">
@@ -804,7 +796,7 @@
         <div class="mb-4">
           <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Low Usage Originators</h3>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Fewer than {{ lowUsageThreshold() }} logins in the selected {{ windowDays() }}-day range
+            Recently active but barely engaging — fewer than 2 active days/week
           </p>
         </div>
 
@@ -830,8 +822,8 @@
                 </div>
                 <div class="flex flex-col items-end gap-0.5 flex-shrink-0">
                   <div class="flex items-baseline gap-1">
-                    <span class="text-sm font-bold text-amber-600 dark:text-amber-400">{{ user.loginCount }}</span>
-                    <span class="text-[10px] text-gray-400 dark:text-gray-500">logins</span>
+                    <span class="text-sm font-bold text-amber-600 dark:text-amber-400">{{ user.activeDaysPerWeek | number:'1.0-1' }}</span>
+                    <span class="text-[10px] text-gray-400 dark:text-gray-500">days/wk</span>
                   </div>
                   @if (user.avgSessionMinutes > 0) {
                     <div class="text-[10px] text-gray-400 dark:text-gray-500">Avg {{ formatSessionDuration(user.avgSessionMinutes) }}</div>

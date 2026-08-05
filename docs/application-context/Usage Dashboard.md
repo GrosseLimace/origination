@@ -34,10 +34,17 @@ working after ~18:00 US Central.
 
 Both range buttons are inclusive of today, so "30 Days" spans `today-29 … today`.
 
-Two endpoints deliberately ignore the window:
+One endpoint deliberately ignores the window:
 
 - **`/weekly-trend`** is a whole-calendar-week trend (`?weeks=8`), not a window view.
-- **`/inactive`** measures "days since last login" as of *now* against all recorded history.
+
+User **status** also ignores the window: it is a current snapshot off each user's *all-time* last
+activity (raw tables unioned with the long-retention daily rollup), so changing the date range never
+moves anyone between tiers. Tiers: `Active` (≤7 days) · `At-risk` (8–21) · `Dormant` (>21) ·
+`Never` (no recorded activity, ever). **Active-days/week** *is* window-scoped; an `Active` user
+averaging fewer than 2 active days/week is flagged `isLightUsage` ("Light usage"). All of this comes
+from one shared classifier (`ClassifyUsersAsync`), so the summary KPIs, the donut, the user list and
+the per-user drill-down cannot disagree.
 
 ## What it shows
 
@@ -52,8 +59,9 @@ total session count. `Avg Session Duration` is weighted by login count.
 
 ### `Who's Using It` tab
 
-- User status donut — `Active` / `Inactive` / `Never Logged In`. These are the same three values the
-  API returns and the status filter offers, so the donut, the pills and the dropdown agree.
+- User status donut — `Active` / `At-risk` / `Dormant` / `Never`. These are the same values the
+  API returns and the status filter offers (plus a special `light` filter value), so the donut, the
+  pills and the dropdown agree.
 - Daily Active bar chart (last 15 days of the window).
 - Originator table (sortable, searchable, filterable by status — all client-side).
 
@@ -67,9 +75,10 @@ total session count. `Avg Session Duration` is weighted by login count.
 
 ### `Who Isn't Using It` tab
 
-- Inactive Originators list (threshold-configurable; default 30 days since last login).
-- Low Usage Originators — the threshold **scales with the selected window** (15 logins per 30 days,
-  so a 7-day range asks for 4).
+- Inactive Originators list — everyone off the healthy `Active` tier (`At-risk` + `Dormant` +
+  `Never`), most-stale first. No tunable threshold; it reads the same statuses as the donut.
+- Low Usage Originators — the backend's `isLightUsage` flag (recency-active but < 2 active
+  days/week over the window), fewest active-days/week first.
 - Underused Features, ranked by **distinct users**, honoring the trade-unit filter and exclusions.
 
 ## Data flow
@@ -146,11 +155,11 @@ All read endpoints require `[Authorize(Policy = "AdminOnly")]`.
 | `GET /feature-sessions` | screen minutes per feature; with `?screen=` also that screen's sub-feature interaction counts |
 | `GET /weekly-trend?weeks=8` | active users + sessions per calendar week |
 | `GET /activity-breakdown` | per-user counts: profiles, contracts, notes, calls/emails, lists, planting intentions, producer details |
-| `GET /inactive?daysThreshold=30` | users whose last activity is ≥ threshold days ago (no date window) |
 | `GET /underused-features` | features ranked ascending by distinct users |
 | `GET /query-library-usage` | most-clicked library prompts, names resolved |
 | `GET /query-search-gaps` | top 20 library searches that matched nothing |
 | `GET /users/{userId}/detail` | full per-user profile — drives the drill-down page |
+| `GET /access-users` | app-access roster (Entra group) for the exclusion picker; `available=false` ⇒ client falls back to free text |
 | `GET /excluded-users` | current exclusion list with reason / who added it / when |
 | `POST /excluded-users` | add an exclusion (409 if already excluded) |
 | `DELETE /excluded-users/{id}` | remove an exclusion |

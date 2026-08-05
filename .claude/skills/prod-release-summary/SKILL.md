@@ -216,7 +216,9 @@ gh api graphql --hostname scoular.ghe.com \
   -f projectId=<project.id>
 ```
 
-(pass `-f cursor=<endCursor>` on subsequent pages)
+(pass `-f endCursor=<endCursor>` on subsequent pages, or add `--paginate` to
+fetch all pages in one call — the query's cursor variable is named `$endCursor`
+specifically because `--paginate` only feeds that exact variable name)
 
 **Flag note:** the query file uses capital `-F` (reads `@file`); string
 variables use lowercase `-f` (raw string — avoids `-F`'s type coercion).

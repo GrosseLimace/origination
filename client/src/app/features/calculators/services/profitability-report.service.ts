@@ -1,7 +1,5 @@
 import { Injectable, inject } from '@angular/core';
 
-import { UsageTrackingService } from '@core/services/usage-tracking.service';
-
 import { GRAIN_COMMODITIES, ProfitabilityInputs, ProfitabilityResult } from '../models/calculator.model';
 import { CalculatorReportService, ReportTable, reportMoneyAccounting } from './calculator-report.service';
 
@@ -18,7 +16,6 @@ export interface ProfitabilityReportCrop {
 @Injectable({ providedIn: 'root' })
 export class ProfitabilityReportService {
   private readonly report = inject(CalculatorReportService);
-  private readonly usageTracking = inject(UsageTrackingService);
 
   async download(crops: ProfitabilityReportCrop[]): Promise<void> {
     const columnHeaders = crops.map(c => this.commodityLabel(c.input.commodity));
@@ -68,9 +65,6 @@ export class ProfitabilityReportService {
       columnHeaders,
       tables,
     });
-
-    // Only after the file is actually produced — a failed render shouldn't count as an export.
-    this.usageTracking.postClickEvent('interaction', 'calculators', 'profitability-pdf');
   }
 
   private commodityLabel(value: string): string {

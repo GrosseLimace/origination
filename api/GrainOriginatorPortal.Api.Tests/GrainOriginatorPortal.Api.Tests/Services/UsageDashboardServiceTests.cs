@@ -28,11 +28,9 @@ public class UsageDashboardServiceTests
 
     public UsageDashboardServiceTests()
     {
-        // Loose defaults: no activity/session/click/note data — every user shows "Never Logged In".
+        // Loose defaults: no activity/session/click/note data — every user classifies as "Never".
         _repoMock.Setup(r => r.GetDisplayNamesAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new UserDisplayName("CEgr", "Caden Egr")]);
-        _repoMock.Setup(r => r.GetLastActivityByUserAsync(It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([]);
         _repoMock.Setup(r => r.GetSessionStatsByUserAsync(It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         _repoMock.Setup(r => r.GetSessionStatsFromRollupAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
@@ -52,6 +50,12 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.GetContactCountsByUserAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         _repoMock.Setup(r => r.GetNotesCreatedCountsByUserAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        _repoMock.Setup(r => r.GetLastActiveByUserAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        _repoMock.Setup(r => r.GetActiveDayCountsByUserAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        _repoMock.Setup(r => r.GetActiveDayCountsByUserFromRollupAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         _sut = CreateSut();
     }
@@ -247,15 +251,15 @@ public class UsageDashboardServiceTests
     public async Task Summary_WithAccessSet_CountsTheAccessUniverse()
     {
         SetupAccess(true, "CEgr", "admin-CEgr", "KHague");
-        // From..To is entirely in the past, so the window is served by the rollups.
-        _repoMock.Setup(r => r.GetActiveUserIdsFromRollupAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["CEgr"]);
+        // CEgr was active today → Active tier; the other two have no recorded activity → need attention.
+        _repoMock.Setup(r => r.GetLastActiveByUserAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new UserLastActivity("CEgr", DateTime.UtcNow)]);
 
         var summary = await _sut.GetSummaryAsync(From, To, tradeUnitKey: null, CancellationToken.None);
 
         Assert.Equal(3, summary.TotalUsers);   // the access group, not the whole directory
         Assert.Equal(1, summary.ActiveUsers);
-        Assert.Equal(2, summary.NeedsAttentionCount);
+        Assert.Equal(2, summary.NeedsAttentionCount);   // At-risk + Dormant + Never
     }
 
     [Fact]
@@ -308,8 +312,8 @@ public class UsageDashboardServiceTests
         SetupAccess(true, "CEgr");
         var day = new DateOnly(2026, 7, 15);
         DateTime? capturedFrom = null, capturedTo = null;
-        _repoMock.Setup(r => r.GetLastActivityByUserAsync(It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
-            .Callback<DateTime?, DateTime?, IReadOnlyCollection<string>, CancellationToken>((f, t, _, _) => { capturedFrom = f; capturedTo = t; })
+        _repoMock.Setup(r => r.GetContactCountsByUserAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .Callback<DateTime, DateTime, IReadOnlyCollection<string>, CancellationToken>((f, t, _, _) => { capturedFrom = f; capturedTo = t; })
             .ReturnsAsync([]);
 
         await _sut.GetUsersAsync(day, day, tradeUnitKey: null, status: null, CancellationToken.None);
@@ -323,8 +327,8 @@ public class UsageDashboardServiceTests
     {
         SetupAccess(true, "CEgr");
         DateTime? capturedFrom = null, capturedTo = null;
-        _repoMock.Setup(r => r.GetLastActivityByUserAsync(It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
-            .Callback<DateTime?, DateTime?, IReadOnlyCollection<string>, CancellationToken>((f, t, _, _) => { capturedFrom = f; capturedTo = t; })
+        _repoMock.Setup(r => r.GetContactCountsByUserAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .Callback<DateTime, DateTime, IReadOnlyCollection<string>, CancellationToken>((f, t, _, _) => { capturedFrom = f; capturedTo = t; })
             .ReturnsAsync([]);
 
         await _sut.GetUsersAsync(new DateOnly(2026, 7, 15), new DateOnly(2026, 7, 10), null, null, CancellationToken.None);

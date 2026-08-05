@@ -13,7 +13,25 @@ public class UsageDashboardService : IUsageDashboardService
     private static readonly TimeSpan UniverseCacheTtl = TimeSpan.FromSeconds(60);
 
     private const string TotalSubFeature = "__total__";
+    // Recency tiers for user status, measured in days since the user's last activity (all-time):
+    // ≤7 → Active, 8–21 → At-risk, >21 → Dormant, none ever → Never.
     private const int ActiveWithinDays = 7;
+    private const int AtRiskWithinDays = 21;
+    // An Active user averaging fewer active days/week than this over the window is flagged "Light usage"
+    // — recency-active but barely engaging. Weekends count as normal days here.
+    private const double LightUsageActiveDaysPerWeek = 2.0;
+
+    private static class UsageStatus
+    {
+        public const string Active = "Active";
+        public const string AtRisk = "At-risk";
+        public const string Dormant = "Dormant";
+        public const string Never = "Never";
+    }
+
+    /// <summary>Per-user classification shared by the summary and the user list so their counts agree.</summary>
+    private sealed record UserActivityClassification(
+        string Status, DateTime? LastActive, double ActiveDaysPerWeek, bool IsLightUsage);
 
     private readonly IUsageRepository _repo;
     private readonly IAppAccessService _appAccess;
@@ -46,7 +64,6 @@ public class UsageDashboardService : IUsageDashboardService
         ["insights"] = "Actionable Insights",
         ["unshipped-bushels"] = "Unshipped Bushels",
         ["bidsheet"] = "Bid Sheet",
-        ["calculators"] = "Calculators",
         ["daily-recap"] = "Daily Recap",
     };
 
@@ -210,6 +227,64 @@ public class UsageDashboardService : IUsageDashboardService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // User status classification (shared by summary + list)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Classifies each user by recency and intensity. STATUS is a current snapshot off the user's
+    /// all-time last activity (window-independent, so changing the date range doesn't move it): Active
+    /// (≤7 days), At-risk (8–21), Dormant (&gt;21), Never (no recorded activity). ACTIVE-DAYS/WEEK is
+    /// measured over the selected window (all 7 days count — a weekend login is real usage); an Active
+    /// user below <see cref="LightUsageActiveDaysPerWeek"/> is flagged low-usage. Both the summary KPI
+    /// and the user list read this, so they can't disagree.
+    /// </summary>
+    private async Task<Dictionary<string, UserActivityClassification>> ClassifyUsersAsync(
+        HashSet<string> userIds, UsageWindow window, CancellationToken cancellationToken)
+    {
+        var lastActive = (await _repo.GetLastActiveByUserAsync(userIds, cancellationToken))
+            .ToDictionary(a => a.UserId, a => a.LastActive, StringComparer.OrdinalIgnoreCase);
+
+        // Active days in the window = rollup (closed days) + raw (current day); the two ranges are
+        // disjoint by construction, so the counts sum cleanly.
+        var activeDays = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (window.HasRollup)
+            foreach (var c in await _repo.GetActiveDayCountsByUserFromRollupAsync(window.RollupFrom, window.RollupToExclusive, userIds, cancellationToken))
+                activeDays[c.UserId] = activeDays.GetValueOrDefault(c.UserId) + c.Count;
+        if (window.HasRaw)
+            foreach (var c in await _repo.GetActiveDayCountsByUserAsync(window.RawFromUtc, window.RawToUtc, userIds, cancellationToken))
+                activeDays[c.UserId] = activeDays.GetValueOrDefault(c.UserId) + c.Count;
+
+        var weeks = Math.Max(1, window.TotalDays / 7.0);
+        var today = DateTime.UtcNow.Date;
+
+        var result = new Dictionary<string, UserActivityClassification>(StringComparer.OrdinalIgnoreCase);
+        foreach (var userId in userIds)
+        {
+            var hasLast = lastActive.TryGetValue(userId, out var last);
+            var perWeek = Math.Round(activeDays.GetValueOrDefault(userId) / weeks, 1);
+
+            string status;
+            if (!hasLast)
+            {
+                status = UsageStatus.Never;
+            }
+            else
+            {
+                // Whole-day recency avoids time-of-day / timezone noise, and users span time zones so
+                // there's no single business timezone to anchor to — absolute UTC days are the fair basis.
+                var daysSince = (today - last.Date).Days;
+                status = daysSince <= ActiveWithinDays ? UsageStatus.Active
+                    : daysSince <= AtRiskWithinDays ? UsageStatus.AtRisk
+                    : UsageStatus.Dormant;
+            }
+
+            var isLight = status == UsageStatus.Active && perWeek < LightUsageActiveDaysPerWeek;
+            result[userId] = new UserActivityClassification(status, hasLast ? last : null, perWeek, isLight);
+        }
+        return result;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Summary
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -220,8 +295,13 @@ public class UsageDashboardService : IUsageDashboardService
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
         var totalUsers = userIds.Count;
 
-        var activeUserIds = await GetActiveUserIdsAsync(window, userIds, cancellationToken);
-        var activeUsers = activeUserIds.Count;
+        // Same classifier the user list uses, so "Active Users" here == the count of Active rows there.
+        var classification = await ClassifyUsersAsync(userIds, window, cancellationToken);
+        var activeUsers = classification.Values.Count(c => c.Status == UsageStatus.Active);
+        var atRiskUsers = classification.Values.Count(c => c.Status == UsageStatus.AtRisk);
+        var dormantUsers = classification.Values.Count(c => c.Status == UsageStatus.Dormant);
+        var neverUsers = classification.Values.Count(c => c.Status == UsageStatus.Never);
+        var lightUsers = classification.Values.Count(c => c.IsLightUsage);
         var adoptionRate = totalUsers > 0 ? Math.Round((double)activeUsers / totalUsers * 100, 1) : 0;
 
         var sessionStats = await GetWindowSessionStatsAsync(window, userIds, cancellationToken);
@@ -245,27 +325,12 @@ public class UsageDashboardService : IUsageDashboardService
             AvgSessionMinutes = avgSessionMinutes,
             TotalUsers = totalUsers,
             ActiveUsers = activeUsers,
+            AtRiskUsers = atRiskUsers,
+            DormantUsers = dormantUsers,
+            NeverUsers = neverUsers,
+            LightUsageUsers = lightUsers,
             NeedsAttentionCount = totalUsers - activeUsers
         };
-    }
-
-    private async Task<HashSet<string>> GetActiveUserIdsAsync(
-        UsageWindow window, HashSet<string> userIds, CancellationToken cancellationToken)
-    {
-        // "Active" means the user made a request in the window — the same basis as the
-        // daily-active series, so the KPI and the chart can't disagree.
-        var active = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (window.HasRollup)
-        {
-            active.UnionWith(await _repo.GetActiveUserIdsFromRollupAsync(
-                window.RollupFrom, window.RollupToExclusive, userIds, cancellationToken));
-        }
-        if (window.HasRaw)
-        {
-            active.UnionWith(await _repo.GetActiveUserIdsAsync(
-                window.RawFromUtc, window.RawToUtc, userIds, cancellationToken));
-        }
-        return active;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -282,8 +347,8 @@ public class UsageDashboardService : IUsageDashboardService
         // (e.g. admin accounts) — cached, so this is a dictionary lookup, not a Graph call.
         var accessNames = (await _appAccess.GetAccessSetAsync(cancellationToken)).DisplayNames;
 
-        var activityLookup = (await _repo.GetLastActivityByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
-            .ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
+        // Status + active-days/week come from the shared classifier (same basis as the summary KPIs).
+        var classification = await ClassifyUsersAsync(userIds, window, cancellationToken);
         var sessionLookup = (await GetWindowSessionStatsAsync(window, userIds, cancellationToken))
             .ToDictionary(s => s.UserId, StringComparer.OrdinalIgnoreCase);
         var contactLookup = (await _repo.GetContactCountsByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
@@ -291,22 +356,26 @@ public class UsageDashboardService : IUsageDashboardService
         var notesLookup = (await _repo.GetNotesCreatedCountsByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
             .ToDictionary(n => n.UserId, n => n.Count, StringComparer.OrdinalIgnoreCase);
 
-        var activeCutoff = DateTime.UtcNow.AddDays(-ActiveWithinDays);
+        // Status filter accepts a status value (Active / At-risk / Dormant / Never) or the special
+        // "light" value to isolate recency-active-but-low-usage accounts.
+        var filter = status?.Trim();
+        var filterAll = string.IsNullOrEmpty(filter) || string.Equals(filter, "all", StringComparison.OrdinalIgnoreCase);
+        var filterLight = !filterAll && string.Equals(filter, "light", StringComparison.OrdinalIgnoreCase);
+
         var result = new List<UsageDashboardUserDto>();
 
         foreach (var userId in userIds)
         {
-            var hasActivity = activityLookup.TryGetValue(userId, out var activity);
+            var cls = classification[userId];
             var hasSession = sessionLookup.TryGetValue(userId, out var session);
             contactLookup.TryGetValue(userId, out var contactCount);
             notesLookup.TryGetValue(userId, out var noteCount);
 
-            var userStatus = !hasActivity ? "Never Logged In"
-                : activity!.LastActive >= activeCutoff ? "Active" : "Inactive";
-
-            if (!string.IsNullOrEmpty(status) && !string.Equals(status, "all", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(status, userStatus, StringComparison.OrdinalIgnoreCase))
-                continue;
+            if (!filterAll)
+            {
+                if (filterLight) { if (!cls.IsLightUsage) continue; }
+                else if (!string.Equals(filter, cls.Status, StringComparison.OrdinalIgnoreCase)) continue;
+            }
 
             result.Add(new UsageDashboardUserDto
             {
@@ -315,9 +384,11 @@ public class UsageDashboardService : IUsageDashboardService
                     ?? accessNames.GetValueOrDefault(userId)
                     ?? userId,
                 LoginCount = hasSession ? session!.LoginCount : 0,
-                LastActive = hasActivity ? activity!.LastActive : null,
+                LastActive = cls.LastActive,
                 AvgSessionMinutes = hasSession ? Math.Round(session!.AvgDuration, 1) : 0,
-                Status = userStatus,
+                Status = cls.Status,
+                ActiveDaysPerWeek = cls.ActiveDaysPerWeek,
+                IsLightUsage = cls.IsLightUsage,
                 CustomersContacted = contactCount,
                 NotesCreated = noteCount
             });
@@ -576,50 +647,6 @@ public class UsageDashboardService : IUsageDashboardService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Inactivity
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <inheritdoc />
-    public async Task<List<UsageDashboardInactiveUserDto>> GetInactiveUsersAsync(string? tradeUnitKey, int daysThreshold, CancellationToken cancellationToken)
-    {
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
-        var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
-
-        // Deliberately unbounded by date: "days since last login" is an as-of-now measure, so it
-        // considers all recorded history rather than the dashboard's selected window.
-        var lastActivityLookup = (await _repo.GetLastActivityByUserAsync(null, null, userIds, cancellationToken))
-            .ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
-        var sessionLookup = (await _repo.GetSessionStatsByUserAsync(null, null, userIds, cancellationToken))
-            .ToDictionary(s => s.UserId, StringComparer.OrdinalIgnoreCase);
-
-        var now = DateTime.UtcNow;
-        var result = new List<UsageDashboardInactiveUserDto>();
-
-        foreach (var userId in userIds)
-        {
-            var hasActivity = lastActivityLookup.TryGetValue(userId, out var activity);
-            var daysSince = hasActivity ? (int)(now - activity!.LastActive).TotalDays : (int?)null;
-
-            if (hasActivity && daysSince < daysThreshold)
-                continue;
-
-            sessionLookup.TryGetValue(userId, out var sessions);
-
-            result.Add(new UsageDashboardInactiveUserDto
-            {
-                UserId = userId,
-                DisplayName = displayNames.GetValueOrDefault(userId, userId),
-                DaysSinceLastLogin = daysSince,
-                Status = hasActivity ? "Inactive" : "Never Logged In",
-                AvgSessionMinutes = sessions is not null ? Math.Round(sessions.AvgDuration, 1) : 0,
-                LoginCount = sessions?.LoginCount ?? 0
-            });
-        }
-
-        return result.OrderByDescending(u => u.DaysSinceLastLogin ?? int.MaxValue).ToList();
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
     // Underused features
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -717,10 +744,14 @@ public class UsageDashboardService : IUsageDashboardService
         var totalMinutes = sessionDurations.Sum(d => (double)d);
         var avgMinutes = loginCount > 0 ? totalMinutes / loginCount : 0;
 
-        var lastActive = await _repo.GetLastActivityForUserAsync(userId, cancellationToken);
-        var activeCutoff = DateTime.UtcNow.AddDays(-ActiveWithinDays);
-        var status = lastActive is null ? "Never Logged In"
-            : lastActive >= activeCutoff ? "Active" : "Inactive";
+        // Same classifier as the summary and the user list, so the badge here can't disagree with
+        // the tier the admin clicked through from (and last-active spans rollup history, not just
+        // the raw-retention window).
+        var classification = await ClassifyUsersAsync(
+            new HashSet<string>([userId], StringComparer.OrdinalIgnoreCase), window, cancellationToken);
+        var cls = classification[userId];
+        var lastActive = cls.LastActive;
+        var status = cls.Status;
 
         var clicks = await _repo.GetClicksForUserAsync(userId, window.FullFromUtc, window.FullToUtc, cancellationToken);
         var activities = await _repo.GetActivitiesForUserAsync(userId, window.FullFromUtc, window.FullToUtc, cancellationToken);
@@ -860,16 +891,6 @@ public class UsageDashboardService : IUsageDashboardService
             SeasonTargetsSaved = clickTally.Count("dashboard", "set-season-targets"),
         };
 
-        var calculators = new CalculatorsEngagementDto
-        {
-            ProfitabilityOpened = clickTally.Count("calculators", "profitability-opened"),
-            CheckOpened = clickTally.Count("calculators", "check-opened"),
-            CancelRollOpened = clickTally.Count("calculators", "cancel-roll-opened"),
-            ProfitabilityPdfDownloads = clickTally.Count("calculators", "profitability-pdf"),
-            CheckPdfDownloads = clickTally.Count("calculators", "check-pdf"),
-            CancelRollPdfDownloads = clickTally.Count("calculators", "cancel-roll-pdf"),
-        };
-
         // Recap-group edits all go through the API, so the middleware sees them; only the page visit
         // itself needs a client-side event.
         var dailyRecap = new DailyRecapEngagementDto
@@ -924,7 +945,6 @@ public class UsageDashboardService : IUsageDashboardService
             Insights = insights,
             BidSheet = bidSheet,
             PlantingDashboard = plantingDash,
-            Calculators = calculators,
             DailyRecap = dailyRecap,
             TimePerScreen = timePerScreen,
             RecentActivity = recentActivity
@@ -1067,6 +1087,22 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
     // Excluded-users administration
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<AccessUsersDto> GetAccessUsersAsync(CancellationToken cancellationToken)
+    {
+        // Same universe the dashboard filters on: enabled members of the Entra access group, keyed by
+        // short name. When Graph can't be read the set is Unavailable → the picker falls back to free text.
+        var set = await _appAccess.GetAccessSetAsync(cancellationToken);
+        if (!set.Available)
+            return new AccessUsersDto { Available = false, Users = [] };
+
+        var users = set.DisplayNames
+            .Select(kv => new AccessUserDto { UserId = kv.Key, DisplayName = kv.Value })
+            .OrderBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new AccessUsersDto { Available = true, Users = users };
+    }
 
     /// <inheritdoc />
     public async Task<List<ExcludedUserDto>> GetExcludedUsersAsync(CancellationToken cancellationToken)

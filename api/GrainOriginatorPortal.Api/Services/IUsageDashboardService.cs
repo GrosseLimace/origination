@@ -3,7 +3,7 @@ using GrainOriginatorPortal.Api.Models;
 namespace GrainOriginatorPortal.Api.Services;
 
 /// <summary>Admin usage-dashboard read models — adoption summary, per-user tables, daily/weekly
-/// trends, feature/activity breakdowns, inactivity, query-library usage, and the per-user drill-down.
+/// trends, feature/activity breakdowns, query-library usage, and the per-user drill-down.
 /// All aggregation lives here; the controller is a thin pass-through.
 /// <para>
 /// Date windows are calendar dates in UTC: a request for <c>from</c>..<c>to</c> covers
@@ -24,10 +24,6 @@ public interface IUsageDashboardService
 
     Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken);
 
-    /// <summary>Users whose most recent activity is at least <paramref name="daysThreshold"/> days ago.
-    /// Evaluated as of now against all recorded history, so it takes no date window.</summary>
-    Task<List<UsageDashboardInactiveUserDto>> GetInactiveUsersAsync(string? tradeUnitKey, int daysThreshold, CancellationToken cancellationToken);
-
     Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken);
     Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken);
     Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken);
@@ -36,6 +32,10 @@ public interface IUsageDashboardService
     Task<UserUsageDetailDto?> GetUserDetailAsync(string userId, DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken);
 
     // ── Excluded-users administration ──
+
+    /// <summary>The people who can sign in to the app (Entra access-group members) for the exclusion
+    /// picker. Available=false when the group can't be read, so the client falls back to free-text.</summary>
+    Task<AccessUsersDto> GetAccessUsersAsync(CancellationToken cancellationToken);
 
     Task<List<ExcludedUserDto>> GetExcludedUsersAsync(CancellationToken cancellationToken);
 

@@ -1,9 +1,17 @@
+/** Recency tiers (current snapshot): Active ≤7 days · At-risk 8–21 · Dormant >21 · Never logged in. */
+export type UsageStatus = 'Active' | 'At-risk' | 'Dormant' | 'Never';
+
 export interface UsageDashboardSummary {
   adoptionRate: number;
   avgLoginsPerWeek: number;
   avgSessionMinutes: number;
   totalUsers: number;
   activeUsers: number;
+  atRiskUsers: number;
+  dormantUsers: number;
+  neverUsers: number;
+  /** Recency-active accounts that barely engage (low active-days/week) — the "low usage" count. */
+  lightUsageUsers: number;
   needsAttentionCount: number;
 }
 
@@ -13,7 +21,10 @@ export interface UsageDashboardUser {
   loginCount: number;
   lastActive: string | null;
   avgSessionMinutes: number;
-  status: 'Active' | 'Inactive' | 'Never Logged In';
+  status: UsageStatus;
+  /** Avg distinct active days per week over the window; low value on an Active user ⇒ isLightUsage. */
+  activeDaysPerWeek: number;
+  isLightUsage: boolean;
   customersContacted: number;
   notesCreated: number;
 }
@@ -57,15 +68,6 @@ export interface ActivityBreakdown {
   producerDetails: number;
 }
 
-export interface UsageDashboardInactiveUser {
-  userId: string;
-  displayName: string;
-  daysSinceLastLogin: number | null;
-  status: 'Inactive' | 'Never Logged In';
-  avgSessionMinutes: number;
-  loginCount: number;
-}
-
 export interface UnderusedFeature {
   featureCode: string;
   featureName: string;
@@ -81,6 +83,19 @@ export interface ExcludedUser {
   reason: string | null;
   createdBy: string;
   createdAt: string;
+}
+
+/** A person with app access (Entra access-group member), for the exclusion picker. */
+export interface AccessUser {
+  userId: string;      // short name (UPN before '@') — the exclusion key
+  displayName: string;
+}
+
+/** The access-group roster for the exclusion picker. `available` is false when the group can't be
+ *  read (Graph not configured/blocked) — the panel then falls back to free-text entry. */
+export interface AccessUsers {
+  available: boolean;
+  users: AccessUser[];
 }
 
 export interface QueryLibraryUsage {
@@ -107,7 +122,8 @@ export interface ClickEventRequest {
 export interface UserUsageDetail {
   userId: string;
   displayName: string;
-  status: 'Active' | 'Inactive' | 'Never Logged In';
+  /** Same recency tier the dashboard list shows — both come from the shared backend classifier. */
+  status: UsageStatus;
   lastActive: string | null;
   loginCount: number;
   avgSessionMinutes: number;
@@ -120,7 +136,6 @@ export interface UserUsageDetail {
   insights: InsightsEngagement;
   bidSheet: BidSheetEngagement;
   plantingDashboard: PlantingDashEngagement;
-  calculators: CalculatorsEngagement;
   dailyRecap: DailyRecapEngagement;
   timePerScreen: ScreenTime[];
   recentActivity: RecentActivity[];
@@ -210,17 +225,6 @@ export interface PlantingDashEngagement {
   harvestContractsTabClicks: number;
   producerRowClicks: number;
   seasonTargetsSaved: number;
-}
-
-/** Calculator usage. These run entirely in the browser and hit no API, so click events are the
- *  only trace they leave. */
-export interface CalculatorsEngagement {
-  profitabilityOpened: number;
-  checkOpened: number;
-  cancelRollOpened: number;
-  profitabilityPdfDownloads: number;
-  checkPdfDownloads: number;
-  cancelRollPdfDownloads: number;
 }
 
 export interface DailyRecapEngagement {

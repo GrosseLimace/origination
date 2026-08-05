@@ -129,17 +129,45 @@ public class UsageRepository : IUsageRepository
             .ToList();
     }
 
-    public async Task<List<UserLastActivity>> GetLastActivityByUserAsync(DateTime? fromUtc, DateTime? toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
+    public async Task<List<UserLastActivity>> GetLastActiveByUserAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
     {
-        var query = _appDb.UserActivities.Where(a => userIds.Contains(a.UserId));
-        if (fromUtc.HasValue) query = query.Where(a => a.Timestamp >= fromUtc.Value);
-        if (toUtc.HasValue) query = query.Where(a => a.Timestamp < toUtc.Value);
-
-        var rows = await query
+        // Raw: recent activity (incl. today), precise timestamps, but only within the short raw-retention window.
+        var raw = await _appDb.UserActivities
+            .Where(a => userIds.Contains(a.UserId))
             .GroupBy(a => a.UserId)
-            .Select(g => new { UserId = g.Key, LastActive = g.Max(a => a.Timestamp) })
+            .Select(g => new { UserId = g.Key, Last = g.Max(a => a.Timestamp) })
             .ToListAsync(cancellationToken);
-        return rows.Select(r => new UserLastActivity(r.UserId, r.LastActive)).ToList();
+
+        // Rollup: one row per (user, active day), retained far longer than raw — this is what lets a
+        // months-ago-dormant user be told apart from a never-logged-in one.
+        var rollup = await _appDb.UserActivityDailies
+            .Where(d => d.RequestCount > 0 && userIds.Contains(d.UserId))
+            .GroupBy(d => d.UserId)
+            .Select(g => new { UserId = g.Key, LastDay = g.Max(d => d.ActivityDate) })
+            .ToListAsync(cancellationToken);
+
+        var map = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in raw) map[r.UserId] = r.Last;
+        foreach (var r in rollup)
+        {
+            var asDt = r.LastDay.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            if (!map.TryGetValue(r.UserId, out var cur) || asDt > cur) map[r.UserId] = asDt;
+        }
+        return map.Select(kv => new UserLastActivity(kv.Key, kv.Value)).ToList();
+    }
+
+    public async Task<List<UserCount>> GetActiveDayCountsByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
+    {
+        // Distinct (user, calendar-day) pairs in the raw window, then count days per user.
+        var pairs = await _appDb.UserActivities
+            .Where(a => a.Timestamp >= fromUtc && a.Timestamp < toUtc && userIds.Contains(a.UserId))
+            .Select(a => new { a.UserId, Date = a.Timestamp.Date })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        return pairs
+            .GroupBy(p => p.UserId, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new UserCount(g.Key, g.Count()))
+            .ToList();
     }
 
     public async Task<List<UserCount>> GetNotesCreatedCountsByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
@@ -179,15 +207,6 @@ public class UsageRepository : IUsageRepository
             })
             .ToListAsync(cancellationToken);
         return rows.Select(r => new UserActivityBreakdown(r.UserId, r.NotesTaken, r.PlantingIntentionsAdded)).ToList();
-    }
-
-    public async Task<DateTime?> GetLastActivityForUserAsync(string userId, CancellationToken cancellationToken)
-    {
-        return await _appDb.UserActivities
-            .Where(a => a.UserId == userId)
-            .OrderByDescending(a => a.Timestamp)
-            .Select(a => (DateTime?)a.Timestamp)
-            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<List<UserActivityRow>> GetActivitiesForUserAsync(string userId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken)
@@ -391,6 +410,19 @@ public class UsageRepository : IUsageRepository
             .Select(d => d.UserId)
             .Distinct()
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<UserCount>> GetActiveDayCountsByUserFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
+    {
+        // UserActivityDaily is unique per (user, date), so a plain row count per user is that user's
+        // count of active days in the range.
+        var rows = await _appDb.UserActivityDailies
+            .Where(d => d.ActivityDate >= fromDate && d.ActivityDate < toDateExclusive
+                && d.RequestCount > 0 && userIds.Contains(d.UserId))
+            .GroupBy(d => d.UserId)
+            .Select(g => new { UserId = g.Key, Days = g.Count() })
+            .ToListAsync(cancellationToken);
+        return rows.Select(r => new UserCount(r.UserId, r.Days)).ToList();
     }
 
     public async Task<List<DailyCount>> GetDailyActiveCountsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)

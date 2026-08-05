@@ -6,7 +6,13 @@ public record UsageDashboardSummaryDto
     public double AvgLoginsPerWeek { get; set; }
     public double AvgSessionMinutes { get; set; }
     public int TotalUsers { get; set; }
+    // Recency tiers (current snapshot): Active ≤7 days · At-risk 8–21 · Dormant >21 · Never logged in.
     public int ActiveUsers { get; set; }
+    public int AtRiskUsers { get; set; }
+    public int DormantUsers { get; set; }
+    public int NeverUsers { get; set; }
+    // Recency-active accounts that barely engage (low active-days/week) — the "low usage" count.
+    public int LightUsageUsers { get; set; }
     public int NeedsAttentionCount { get; set; }
 }
 
@@ -17,7 +23,11 @@ public record UsageDashboardUserDto
     public int LoginCount { get; set; }
     public DateTime? LastActive { get; set; }
     public double AvgSessionMinutes { get; set; }
+    // Active / At-risk / Dormant / Never (recency snapshot).
     public string Status { get; set; } = string.Empty;
+    // Avg distinct active days per week over the window; low value on an Active user ⇒ IsLightUsage.
+    public double ActiveDaysPerWeek { get; set; }
+    public bool IsLightUsage { get; set; }
     public int CustomersContacted { get; set; }
     public int NotesCreated { get; set; }
 }
@@ -66,16 +76,6 @@ public record ActivityBreakdownDto
     public int ProducerDetails { get; set; }
 }
 
-public record UsageDashboardInactiveUserDto
-{
-    public string UserId { get; set; } = string.Empty;
-    public string DisplayName { get; set; } = string.Empty;
-    public int? DaysSinceLastLogin { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public double AvgSessionMinutes { get; set; }
-    public int LoginCount { get; set; }
-}
-
 public record UnderusedFeatureDto
 {
     public string FeatureCode { get; set; } = string.Empty;
@@ -94,6 +94,23 @@ public record ExcludedUserDto
     public string? Reason { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>A person who can sign in to the app (member of the Entra access group), for the
+/// exclusion picker. <see cref="UserId"/> is the short name (UPN before '@') — the exclusion key.</summary>
+public record AccessUserDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+}
+
+/// <summary>The access-group roster for the exclusion picker. <see cref="Available"/> is false when
+/// the group can't be read (Graph not configured/blocked) — the client then falls back to free-text
+/// entry so exclusions can still be managed.</summary>
+public record AccessUsersDto
+{
+    public bool Available { get; set; }
+    public List<AccessUserDto> Users { get; set; } = [];
 }
 
 public record QueryLibraryUsageDto
@@ -129,7 +146,6 @@ public record UserUsageDetailDto
     public InsightsEngagementDto Insights { get; set; } = new();
     public BidSheetEngagementDto BidSheet { get; set; } = new();
     public PlantingDashEngagementDto PlantingDashboard { get; set; } = new();
-    public CalculatorsEngagementDto Calculators { get; set; } = new();
     public DailyRecapEngagementDto DailyRecap { get; set; } = new();
     public List<ScreenTimeDto> TimePerScreen { get; set; } = [];
     public List<RecentActivityDto> RecentActivity { get; set; } = [];
@@ -231,18 +247,6 @@ public record PlantingDashEngagementDto
     public int HarvestContractsTabClicks { get; set; }
     public int ProducerRowClicks { get; set; }
     public int SeasonTargetsSaved { get; set; }
-}
-
-/// <summary>Calculator usage. These run entirely in the browser and hit no API, so click events are
-/// the only trace they leave.</summary>
-public record CalculatorsEngagementDto
-{
-    public int ProfitabilityOpened { get; set; }
-    public int CheckOpened { get; set; }
-    public int CancelRollOpened { get; set; }
-    public int ProfitabilityPdfDownloads { get; set; }
-    public int CheckPdfDownloads { get; set; }
-    public int CancelRollPdfDownloads { get; set; }
 }
 
 public record DailyRecapEngagementDto

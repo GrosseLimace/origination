@@ -4,7 +4,7 @@ import { Observable, of, throwError } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { ExcludedUser } from '@models';
+import { AccessUsers, ExcludedUser } from '@models';
 
 import { ExcludedUsersPanelComponent } from './excluded-users-panel.component';
 
@@ -18,9 +18,11 @@ function row(over: Partial<ExcludedUser> = {}): ExcludedUser {
 describe('ExcludedUsersPanelComponent', () => {
   let api: {
     getUsageExcludedUsers: () => Observable<ExcludedUser[]>;
+    getUsageAccessUsers: () => Observable<AccessUsers>;
     addUsageExcludedUser: (userId: string, reason?: string) => Observable<ExcludedUser>;
     removeUsageExcludedUser: (id: number) => Observable<void>;
     listCalls: number;
+    accessResp: AccessUsers;
     addedWith: { userId: string; reason?: string }[];
     removedIds: number[];
   };
@@ -37,9 +39,18 @@ describe('ExcludedUsersPanelComponent', () => {
     toasts = [];
     api = {
       listCalls: 0,
+      // Default: a readable roster → the search-and-select picker is active.
+      accessResp: {
+        available: true,
+        users: [
+          { userId: 'SFletcher', displayName: 'Sam Fletcher' },
+          { userId: 'BCozart', displayName: 'Bob Cozart' },
+        ],
+      },
       addedWith: [],
       removedIds: [],
       getUsageExcludedUsers() { this.listCalls++; return of([row()]); },
+      getUsageAccessUsers() { return of(this.accessResp); },
       addUsageExcludedUser(userId: string, reason?: string) {
         this.addedWith.push({ userId, reason });
         return of(row({ id: 2, userId, displayName: null, reason: reason ?? null }));
@@ -75,36 +86,52 @@ describe('ExcludedUsersPanelComponent', () => {
     expect(api.listCalls).toBe(1);
   });
 
-  it('adds an exclusion, clears the form, and reports the change', () => {
+  it('adds the selected access user, clears the picker, and reports the change', () => {
     let changes = 0;
     component.changed.subscribe(() => changes++);
+    component.toggle();
 
-    component.newUserId.set('SFletcher');
+    // Pick from the roster rather than typing — no room for a typo.
+    component.select({ userId: 'SFletcher', displayName: 'Sam Fletcher' });
     component.newReason.set('QA account');
     component.add();
 
     expect(api.addedWith).toEqual([{ userId: 'SFletcher', reason: 'QA account' }]);
     expect(component.excluded().some(r => r.userId === 'SFletcher')).toBe(true);
-    expect(component.newUserId()).toBe('');
+    expect(component.selectedUser()).toBeNull();
     expect(component.newReason()).toBe('');
     // Every panel's numbers depend on this list, so the parent has to reload.
     expect(changes).toBe(1);
   });
 
-  it('ignores an add with a blank user id', () => {
-    component.newUserId.set('   ');
+  it('does nothing when Add is pressed with no user selected', () => {
+    component.toggle();
     component.add();
 
     expect(api.addedWith).toEqual([]);
   });
 
   it('explains a duplicate rather than showing a generic failure', () => {
+    component.toggle();
+    component.select({ userId: 'CEgr', displayName: 'Caden Egr' });
     api.addUsageExcludedUser = () => throwError(() => ({ status: 409 }));
-    component.newUserId.set('CEgr');
     component.add();
 
     expect(toasts.some(t => t.includes('already excluded'))).toBe(true);
     expect(component.saving()).toBe(false);
+  });
+
+  it('falls back to free-text entry when the access roster is unavailable', () => {
+    api.accessResp = { available: false, users: [] };
+    component.toggle();
+    expect(component.accessAvailable()).toBe(false);
+
+    component.newUserId.set('SFletcher');
+    component.newReason.set('QA account');
+    component.add();
+
+    expect(api.addedWith).toEqual([{ userId: 'SFletcher', reason: 'QA account' }]);
+    expect(component.newUserId()).toBe('');
   });
 
   it('removes an exclusion and reports the change', () => {
