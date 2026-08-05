@@ -17,9 +17,11 @@ export interface DpContract {
    */
   ticketKey: string;
   ticketNumber: string;
-  contractNumber: string;  // Contract_Number + suffix, e.g. "PL84649-A" (prefix chars NOT prepended)
+  /** prefixType + prefixCommodity + number, no separator — e.g. "PCPL84649". Suffix excluded. */
+  contractNumber: string;
   contractPrefixType: string;      // 'P' = Purchase
   contractPrefixCommodity: string; // Commodity letter of the contract series
+  contractSuffix: string;          // e.g. 'A' — deliberately not part of contractNumber
   ticketStatus: string;            // e.g. "U/L" (unload)
   customerId: number;      // Numeric CustomerId from dbo.Customer
   customerCode: string;    // CTRM Customer_Id (same as Customer.scoularId)

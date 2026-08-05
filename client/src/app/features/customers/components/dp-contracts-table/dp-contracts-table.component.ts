@@ -10,11 +10,9 @@ import { dpDeliveryCount, dpTotalBushels, dpUnconvertedCount, dpTotalCharges } f
 
 export type DpGroupMode = 'both' | 'crop' | 'location';
 
-export interface DpContractGroup {
-  key: string;       // unique group key (drives expand/collapse); depends on the group mode
-  crop: string;      // commodity label (shown in crop / both modes)
-  location: string;  // location label (shown in location / both modes), e.g. "Adrian, MO" or "No location"
-  /** Every charge-type row in this group — one delivery can contribute several. */
+/** Totals shared by both accordion levels. Bushels are per-delivery; charges are per-row. */
+interface DpTotals {
+  /** Every charge-type row at this level — one delivery contributes several. */
   positions: DpContract[];
   /** Distinct physical deliveries. NOT positions.length, which counts charge rows. */
   deliveryCount: number;
@@ -27,16 +25,37 @@ export interface DpContractGroup {
   earliestDate: Date;
 }
 
+/** Second accordion level: one DP contract, holding the tickets applied to it. */
+export interface DpContractSubgroup extends DpTotals {
+  key: string;            // unique across the whole table: group key + contract number
+  contractNumber: string; // e.g. "PL84649-A"; "No contract" when the row carries none
+}
+
+/** First accordion level: a commodity, a location, or both, depending on the group mode. */
+export interface DpContractGroup extends DpTotals {
+  key: string;       // unique group key (drives expand/collapse); depends on the group mode
+  crop: string;      // commodity label (shown in crop / both modes)
+  location: string;  // location label (shown in location / both modes), e.g. "Adrian, MO" or "No location"
+  /** The contracts inside this group — the tickets hang off these, not off the group. */
+  contracts: DpContractSubgroup[];
+  contractCount: number;
+}
+
 /**
- * DP (delayed-pricing) contract positions for one producer, presented as the Storage tab is: an
- * accordion of commodity/location groups over a sortable per-ticket table.
+ * DP (delayed-pricing) contract positions for one producer. Structured as a two-level accordion:
+ *
+ *   commodity (or location, or both)  →  DP contract  →  tickets  →  charge rows
+ *
+ * The contract level exists because several tickets are typically applied to one DP contract, and
+ * originators think in terms of the contract. Where a group holds only ONE contract that contract is
+ * auto-expanded, so the extra level never costs a click it doesn't earn.
  *
  * Presentational only — the producer page fetches and passes the rows in.
  *
  * The one behavioural rule that differs from Storage: `bushels` is nullable, and a null must render
- * as a dash and be excluded from group totals. It means "we could not convert the source quantity to
+ * as a dash and be excluded from totals. It means "we could not convert the source quantity to
  * bushels", so falling back to the raw `quantity` would silently show a figure in the wrong unit.
- * Groups holding such rows disclose the count so a total is never read as complete when it isn't.
+ * Levels holding such rows disclose the count so a total is never read as complete when it isn't.
  */
 @Component({
   selector: 'app-dp-contracts-table',
@@ -53,6 +72,8 @@ export class DpContractsTableComponent {
 
   searchQuery = signal('');
   expandedGroups = signal(new Set<string>());
+  /** Expanded contract keys (second accordion level), independent of the group level. */
+  expandedContracts = signal(new Set<string>());
 
   /** Collapsible "Filter" bar + group-by mode, mirroring the Storage table.
    *  Default 'crop' matches how originators think about DP positions. */
@@ -65,10 +86,17 @@ export class DpContractsTableComponent {
   constructor() {
     // Auto-expand the single group so the user doesn't have to click to open it. With multiple
     // groups, start collapsed so the summary is visible.
+    //
+    // Contracts follow the same principle one level down: a group holding exactly ONE contract has
+    // that contract opened automatically, so the contract level never costs a click to reveal a
+    // single child. Groups with several contracts start collapsed so the comparison is visible.
     effect(() => {
       const groups = this.allGroups();
       this.expandedGroups.set(
         groups.length === 1 ? new Set([groups[0].key]) : new Set()
+      );
+      this.expandedContracts.set(
+        new Set(groups.filter(g => g.contracts.length === 1).map(g => g.contracts[0].key))
       );
       this.searchQuery.set('');
     });
@@ -87,46 +115,64 @@ export class DpContractsTableComponent {
 
   private readonly allGroups = computed<DpContractGroup[]>(() => {
     const mode = this.groupMode();
-    const groupMap = new Map<string, DpContractGroup>();
+    const rowsByGroup = new Map<string, { crop: string; location: string; rows: DpContract[] }>();
 
     for (const dp of this.dpContracts()) {
       const crop = dp.crop || 'Unknown';
       const location = this._location(dp);
       const key = mode === 'crop' ? crop : mode === 'location' ? location : `${crop}|${location}`;
-      if (!groupMap.has(key)) {
-        groupMap.set(key, {
-          key,
-          crop,
-          location,
-          positions: [],
-          deliveryCount: 0,
-          totalBushels: 0,
-          unconvertedCount: 0,
-          totalCost: 0,
-          earliestDate: this._startDate(dp) ?? new Date()
-        });
-      }
-      const group = groupMap.get(key)!;
-      group.positions.push(dp);
-      const rowDate = this._startDate(dp);
-      if (rowDate && rowDate < group.earliestDate) group.earliestDate = rowDate;
+      const bucket = rowsByGroup.get(key);
+      if (bucket) bucket.rows.push(dp);
+      else rowsByGroup.set(key, { crop, location, rows: [dp] });
     }
 
-    // Totals are computed AFTER grouping, not accumulated per row: bushels must be counted once per
-    // physical delivery (a delivery contributes one row per charge type, each repeating the same
-    // quantity), while charges are additive across those rows.
-    for (const group of groupMap.values()) this._applyTotals(group);
-
-    return Array.from(groupMap.values())
+    return [...rowsByGroup.entries()]
+      .map(([key, b]) => this._buildGroup(key, b.crop, b.location, b.rows))
       .sort((a, b) => a.crop.localeCompare(b.crop) || a.location.localeCompare(b.location));
   });
 
-  /** Recomputes a group's totals from its current `positions`. */
-  private _applyTotals(group: DpContractGroup): void {
-    group.deliveryCount = dpDeliveryCount(group.positions);
-    group.totalBushels = dpTotalBushels(group.positions);
-    group.unconvertedCount = dpUnconvertedCount(group.positions);
-    group.totalCost = dpTotalCharges(group.positions);
+  /**
+   * Builds one group and its nested contracts from a set of rows. Used for both the unfiltered
+   * grouping and the search-narrowed rebuild, so the two can't compute totals differently.
+   *
+   * Totals are derived from the row set rather than accumulated during grouping: bushels must be
+   * counted once per physical delivery (a delivery contributes one row per charge type, each
+   * repeating the same quantity), while charges are additive across those rows.
+   */
+  private _buildGroup(key: string, crop: string, location: string, rows: DpContract[]): DpContractGroup {
+    const rowsByContract = new Map<string, DpContract[]>();
+    for (const dp of rows) {
+      const contract = dp.contractNumber?.trim() || 'No contract';
+      const list = rowsByContract.get(contract);
+      if (list) list.push(dp); else rowsByContract.set(contract, [dp]);
+    }
+
+    // Oldest contract first, by the same "Since" date shown on the row, so the longest-standing DP
+    // position leads. Contract number only breaks ties on identical dates.
+    const contracts: DpContractSubgroup[] = [...rowsByContract.entries()]
+      .map(([contractNumber, contractRows]) => ({
+        key: `${key}||${contractNumber}`,
+        contractNumber,
+        ...this._totals(contractRows),
+      }))
+      .sort((a, b) =>
+        (a.earliestDate.getTime() - b.earliestDate.getTime()) ||
+        compareNumericStrings(a.contractNumber, b.contractNumber));
+
+    return { key, crop, location, contracts, contractCount: contracts.length, ...this._totals(rows) };
+  }
+
+  /** Totals for one row set — shared by the group and contract levels. */
+  private _totals(rows: DpContract[]): DpTotals {
+    const dates = rows.map(r => this._startDate(r)).filter((d): d is Date => d !== null);
+    return {
+      positions: rows,
+      deliveryCount: dpDeliveryCount(rows),
+      totalBushels: dpTotalBushels(rows),
+      unconvertedCount: dpUnconvertedCount(rows),
+      totalCost: dpTotalCharges(rows),
+      earliestDate: dates.length ? new Date(Math.min(...dates.map(d => d.getTime()))) : new Date(),
+    };
   }
 
   readonly groups = computed<DpContractGroup[]>(() => {
@@ -148,9 +194,9 @@ export class DpContractsTableComponent {
         (d.locationName?.toLowerCase().includes(term) ?? false)
       );
       if (matched.length > 0) {
-        const narrowed: DpContractGroup = { ...group, positions: matched };
-        this._applyTotals(narrowed);
-        result.push(narrowed);
+        // Rebuild through the same path as the unfiltered grouping so contracts and totals narrow
+        // together — a contract whose every ticket was filtered out disappears with them.
+        result.push(this._buildGroup(group.key, group.crop, group.location, matched));
       }
     }
     return result;
@@ -189,7 +235,37 @@ export class DpContractsTableComponent {
   }
 
   isExpanded(key: string): boolean {
+    // An active search reveals its matches. Without this, searching a producer whose groups are
+    // collapsed returns the right rows but leaves them hidden behind a closed header, so the search
+    // looks broken. Only groups that actually matched are in `groups()` by this point.
+    if (this.searchQuery().trim()) return true;
     return this.expandedGroups().has(key);
+  }
+
+  /** Opens/closes one contract inside a group, scrolling it into view on open. */
+  toggleContract(key: string, event: MouseEvent): void {
+    event.stopPropagation(); // don't collapse the parent group
+    const isOpening = !this.expandedContracts().has(key);
+    this.expandedContracts.update(set => {
+      const next = new Set(set);
+      isOpening ? next.add(key) : next.delete(key);
+      return next;
+    });
+    if (isOpening) {
+      // Capture currentTarget synchronously — it becomes null after event dispatch completes.
+      const header = event.currentTarget as HTMLElement;
+      setTimeout(() => {
+        // The contract's wrapper, so the header stays visible above its newly revealed tickets.
+        const row = header.parentElement;
+        row?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
+  }
+
+  isContractExpanded(key: string): boolean {
+    // Same reasoning as isExpanded — a search shouldn't leave its matches behind a collapsed row.
+    if (this.searchQuery().trim()) return true;
+    return this.expandedContracts().has(key);
   }
 
   handleSort(column: string): void {
@@ -214,28 +290,57 @@ export class DpContractsTableComponent {
     return raw ? new Date(raw).getTime() : 0;
   }
 
+  /**
+   * Orders rows so a ticket's charge lines always sit together, initial charge first.
+   *
+   * Sorting the flat row list can't do this: the initial charge is dated Aug–Dec while the accruing
+   * storage rate is dated Jan–now, so ordering by charged-from date lists EVERY initial charge and
+   * then every storage charge, splitting each ticket in half. Instead we sort at the TICKET level and
+   * keep each ticket's rows as an adjacent block.
+   *
+   * Within a ticket, rows are ordered by charged-from date, which puts the initial charge before the
+   * accrued one without hard-coding CTRM status codes.
+   */
   sortedPositions(positions: DpContract[]): DpContract[] {
-    if (!this.currentSortColumn || this.currentSortDirection === 'none') {
-      // Default: Charged From date ascending, then smallest → largest ticket # within a date.
-      return [...positions].sort((a, b) =>
-        (this._chargedDateValue(a) - this._chargedDateValue(b)) ||
-        compareNumericStrings(a.ticketNumber, b.ticketNumber));
+    // Group rows into their physical deliveries (a ticket), preserving encounter order.
+    const byDelivery = new Map<string, DpContract[]>();
+    for (const p of positions) {
+      const key = p.ticketKey || p.id;
+      const rows = byDelivery.get(key);
+      if (rows) rows.push(p); else byDelivery.set(key, [p]);
     }
-    const sorted = [...positions].sort((a, b) => {
-      let cmp = 0;
-      switch (this.currentSortColumn) {
-        case 'ticket': cmp = compareNumericStrings(a.ticketNumber, b.ticketNumber); break;
-        case 'commodity': cmp = (a.crop || '').localeCompare(b.crop || ''); break;
-        // Unconvertible rows have no bushel figure — sort them below every real number rather than
-        // treating them as zero, which would mix them in with genuinely small positions.
-        case 'netBu': cmp = (a.bushels ?? -1) - (b.bushels ?? -1); break;
-        case 'charged': cmp = (this._chargedDateValue(a) - this._chargedDateValue(b)) || compareNumericStrings(a.ticketNumber, b.ticketNumber); break;
-        case 'storageDays': cmp = (a.storageDays || 0) - (b.storageDays || 0); break;
-        case 'rate': cmp = (a.storageRate || 0) - (b.storageRate || 0); break;
-        case 'amount': cmp = (a.receivableAmount || 0) - (b.receivableAmount || 0); break;
+
+    // Initial charge (earlier window) above the accrued charge, always — including in desc, where
+    // only the ticket ORDER flips, never the lines within a ticket.
+    const deliveries = [...byDelivery.values()].map(rows =>
+      [...rows].sort((a, b) => this._chargedDateValue(a) - this._chargedDateValue(b)));
+
+    const ticketNumber = (d: DpContract[]) => d[0].ticketNumber;
+    const earliestCharged = (d: DpContract[]) => Math.min(...d.map(r => this._chargedDateValue(r)));
+
+    deliveries.sort((a, b) => {
+      if (!this.currentSortColumn || this.currentSortDirection === 'none') {
+        // Default: earliest charge date, then smallest → largest ticket # within a date.
+        return (earliestCharged(a) - earliestCharged(b)) || compareNumericStrings(ticketNumber(a), ticketNumber(b));
       }
-      return cmp;
+      switch (this.currentSortColumn) {
+        case 'ticket': return compareNumericStrings(ticketNumber(a), ticketNumber(b));
+        case 'commodity': return (a[0].crop || '').localeCompare(b[0].crop || '');
+        // Bushels are per-delivery (every charge row repeats the same quantity). Unconvertible
+        // deliveries have no figure — sort them below every real number rather than treating them as
+        // zero, which would mix them in with genuinely small positions.
+        case 'netBu': return (a[0].bushels ?? -1) - (b[0].bushels ?? -1);
+        case 'charged': return (earliestCharged(a) - earliestCharged(b)) || compareNumericStrings(ticketNumber(a), ticketNumber(b));
+        case 'storageDays': return Math.max(...a.map(r => r.storageDays || 0)) - Math.max(...b.map(r => r.storageDays || 0));
+        case 'rate': return Math.max(...a.map(r => r.storageRate || 0)) - Math.max(...b.map(r => r.storageRate || 0));
+        // Amount sorts on the delivery's TOTAL across charge types — what the producer actually owes
+        // on that ticket — rather than on whichever single line happened to be largest.
+        case 'amount': return dpTotalCharges(a) - dpTotalCharges(b);
+        default: return 0;
+      }
     });
-    return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
+
+    if (this.currentSortDirection === 'desc') deliveries.reverse();
+    return deliveries.flat();
   }
 }

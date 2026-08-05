@@ -664,6 +664,7 @@ export class HomeComponent {
       noteLastContacts: this.appState.noteLastContacts(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
+      dpContracts: this.dpContracts(),
       commodities: this.appState.commodities(),
       // Thread identity through so saved-list "by me" filters work even when notes' CreatedBy
       // wasn't resolved to a display name on the API side.
@@ -691,6 +692,7 @@ export class HomeComponent {
         ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.contracts(), this.appState.notes(), {
             tickets: this.tickets(),
             storedGrain: this.storedGrain(),
+            dpContracts: this.dpContracts(),
             plantingIntentions: this.plantingIntentions(),
             commodityConversions: this.appState.commodityConversions(),
             noteLastContacts: this.appState.noteLastContacts()

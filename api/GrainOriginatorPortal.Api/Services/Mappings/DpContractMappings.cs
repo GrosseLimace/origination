@@ -15,6 +15,7 @@ public static class DpContractMappings
         ContractNumber = d.ContractNumber,
         ContractPrefixType = d.ContractPrefixType,
         ContractPrefixCommodity = d.ContractPrefixCommodity,
+        ContractSuffix = d.ContractSuffix,
         TicketStatus = d.TicketStatus,
         CustomerId = d.CustomerId,
         CustomerCode = d.CustomerCode,

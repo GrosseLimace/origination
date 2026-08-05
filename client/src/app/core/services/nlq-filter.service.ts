@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
-import { Customer, Contract, Ticket, Note, NoteLastContact, PlantingIntention, StoredGrain, RefinementFilters, Commodity, CommodityConversion } from '@models';
+import { Customer, Contract, Ticket, Note, NoteLastContact, PlantingIntention, StoredGrain, DpContract, RefinementFilters, Commodity, CommodityConversion } from '@models';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
+import { dpTotalBushels, dpTotalCharges, dpContractCount } from '@shared/utils/dp-aggregate';
 
 export interface NlqFilterContext {
   customers: Customer[];
@@ -17,6 +18,8 @@ export interface NlqFilterContext {
   noteLastContacts?: NoteLastContact[];
   plantingIntentions: PlantingIntention[];
   storedGrain: StoredGrain[];
+  /** DP (delayed-pricing) contract rows. Optional — only loaded for prompts that involve DP. */
+  dpContracts?: DpContract[];
   commodities?: Commodity[];
   /** Current user's MSAL display name (e.g. "Caden Egr"). Optional — used by author-scoped
    *  contact / note filters to recognize "by me" notes regardless of whether the API resolved
@@ -115,6 +118,18 @@ export class NlqFilterService {
     const q = query.toLowerCase();
     return q.includes('storage') || q.includes('stored') || q.includes('storing')
       || q.includes('grain on hand') || q.includes('in storage');
+  }
+
+  /**
+   * Returns true if the query involves DP (delayed-pricing) contracts, which require dpContracts data.
+   *
+   * The bare "dp" token is word-boundary guarded so it doesn't fire inside unrelated words, and
+   * "deferred" is included because that's how DP contracts are labelled on the Contracts tab.
+   */
+  queryInvolvesDpContracts(query: string): boolean {
+    const q = query.toLowerCase();
+    return /\bdp\b/.test(q) || q.includes('delayed pricing') || q.includes('delayed price')
+      || q.includes('deferred pricing') || q.includes('deferred price');
   }
 
   /** Returns true if the query involves contact-related patterns that require notes data. */
@@ -501,6 +516,7 @@ export class NlqFilterService {
     dimensionContext?: {
       tickets?: Ticket[];
       storedGrain?: StoredGrain[];
+      dpContracts?: DpContract[];
       plantingIntentions?: PlantingIntention[];
       commodityConversions?: CommodityConversion[];
       /** Lightweight last-contact aggregate — source for the recency refines so they don't need
@@ -725,8 +741,19 @@ export class NlqFilterService {
         || filters.grainOnFarmBushelsOver != null || filters.hasGrainTarget || filters.noGrainTarget
         || filters.grainTargetOver != null || filters.grainTargetUnder != null || filters.hasGrade
         || filters.gradeOver != null || filters.gradeUnder != null;
+      const isDp = cat === 'DP Contracts' || filters.hasDpContracts
+        || filters.dpBushelsOver != null || filters.dpDaysOver != null
+        || filters.dpChargesOver != null;
 
-      if (isStorage && dimensionContext?.storedGrain) {
+      if (isDp && dimensionContext?.dpContracts) {
+        // Crop-scope a DP prompt against DP positions, not generic customer.commodities.
+        const byCust = new Map<number, DpContract[]>();
+        for (const d of dimensionContext.dpContracts) {
+          if (!byCust.has(d.customerId)) byCust.set(d.customerId, []);
+          byCust.get(d.customerId)!.push(d);
+        }
+        list = list.filter(c => (byCust.get(c.id) ?? []).some(d => matchesCrop(d.crop)));
+      } else if (isStorage && dimensionContext?.storedGrain) {
         const byCust = new Map<number, StoredGrain[]>();
         for (const s of dimensionContext.storedGrain) {
           if (!byCust.has(s.customerId)) byCust.set(s.customerId, []);
@@ -885,6 +912,15 @@ export class NlqFilterService {
         lowerQuery.includes('not storing')) matched.push('no_storage');
     if (/(?:stored|storage|in storage)\s*(?:for\s+)?(?:over|more than|longer than)\s*\d+\s*days/.test(lowerQuery)) matched.push('storage_duration');
     if (/storage\s*cost\s*(?:over|above|more than|exceeding)\s*\$?[\d,]+/.test(lowerQuery)) matched.push('storage_cost');
+
+    // --- DP (delayed pricing) contracts ---
+    if (/\bon dp\b/.test(lowerQuery) || /\bdp contract/.test(lowerQuery) || /\bhas dp\b/.test(lowerQuery) ||
+        /\bwith dp\b/.test(lowerQuery) || /\bin dp\b/.test(lowerQuery) ||
+        lowerQuery.includes('delayed pricing') || lowerQuery.includes('deferred pricing')) matched.push('dp');
+    if (/\bno dp\b/.test(lowerQuery) || /\bwithout dp\b/.test(lowerQuery) ||
+        /\bnot on dp\b/.test(lowerQuery)) matched.push('no_dp');
+    if (/dp\s*(?:for\s+)?(?:over|more than|longer than)\s*\d+\s*days/.test(lowerQuery)) matched.push('dp_duration');
+    if (/dp\s*(?:charges?|cost)\s*(?:over|above|more than|exceeding)\s*\$?[\d,]+/.test(lowerQuery)) matched.push('dp_charges');
 
     // --- Planting (existing + enhanced) ---
     if ((lowerQuery.includes('planting') || lowerQuery.includes('growing') || lowerQuery.includes('plant ') ||
@@ -1117,6 +1153,7 @@ export class NlqFilterService {
     if (lowerQuery.includes('by open balance') || (lowerQuery.includes('open balance') && /top\s*\d+/.test(lowerQuery))) matched.push('top_n_open_balance');
     if (lowerQuery.includes('by planting') || (lowerQuery.includes('planting') && /top\s*\d+/.test(lowerQuery))) matched.push('top_n_planting');
     if (lowerQuery.includes('by storage') || (lowerQuery.includes('storage') && /top\s*\d+/.test(lowerQuery))) matched.push('top_n_storage');
+    if (/\bby dp\b/.test(lowerQuery) || (/\bdp\b/.test(lowerQuery) && /top\s*\d+/.test(lowerQuery))) matched.push('top_n_dp');
     if (lowerQuery.includes('most notes') || lowerQuery.includes('most engaged') || lowerQuery.includes('by notes')) matched.push('top_n_notes');
 
     // --- Customer name/ID search ---
@@ -1258,6 +1295,7 @@ export class NlqFilterService {
     result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes, context.notes, context.customers, context.currentUserDisplayName, context.currentUserUsername);
     result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers, customerIdsWithNotes, context.currentUserDisplayName, context.currentUserUsername);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
+    result = this.applyDpContractFilters(lowerQuery, result, context.dpContracts ?? []);
     result = this.applyPlantingFilters(lowerQuery, result, context.plantingIntentions);
     result = this.applyContractFilters(lowerQuery, result, context.contracts);
     result = this.applyMultiCommodityContractFilter(lowerQuery, result, context.contracts);
@@ -1265,7 +1303,7 @@ export class NlqFilterService {
     result = this.applyQuarterDateFilter(lowerQuery, result, context.tickets);
     result = this.applyContractStatusOrFilter(lowerQuery, result, context.contracts);
     result = this.applyCrossEntityFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions);
-    result = this.applyRankingFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions, context.storedGrain, context.notes);
+    result = this.applyRankingFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions, context.storedGrain, context.notes, context.dpContracts);
 
     // NOTE: the former "supplementary note-keyword merge" (which unioned in any producer whose notes
     // mentioned a query keyword, for every non-ranking/planting/ticket/grain prompt) was removed.
@@ -2334,6 +2372,93 @@ export class NlqFilterService {
   }
 
   // ============================================================
+  // DP (DELAYED PRICING) CONTRACT FILTER
+  // ============================================================
+
+  /**
+   * Narrows to producers by their DP-contract positions.
+   *
+   * Every quantity/charge total here goes through the shared dp-aggregate helpers rather than
+   * reducing rows directly: the DP view emits one row per CHARGE TYPE per delivery, each repeating
+   * the same quantity, so summing `bushels` across rows would double-count the grain. Charges ARE
+   * additive across those rows.
+   */
+  private applyDpContractFilters(lowerQuery: string, result: Customer[], dpContracts: DpContract[]): Customer[] {
+    const rowsByCustomer = new Map<number, DpContract[]>();
+    for (const d of dpContracts) {
+      const list = rowsByCustomer.get(d.customerId);
+      if (list) list.push(d); else rowsByCustomer.set(d.customerId, [d]);
+    }
+    const customersWithDp = new Set<number>(rowsByCustomer.keys());
+
+    // Has DP (general)
+    if (/\bon dp\b/.test(lowerQuery) || /\bdp contract/.test(lowerQuery) || /\bhas dp\b/.test(lowerQuery)
+      || /\bwith dp\b/.test(lowerQuery) || /\bin dp\b/.test(lowerQuery)
+      || lowerQuery.includes('delayed pricing') || lowerQuery.includes('deferred pricing')) {
+      result = result.filter(c => customersWithDp.has(c.id));
+    }
+
+    // Specific commodity on DP — "corn on dp", "dp corn"
+    for (const grain of this.grainCrops) {
+      if (lowerQuery.includes(`${grain} on dp`) || lowerQuery.includes(`dp ${grain}`)
+        || lowerQuery.includes(`${grain} in dp`)) {
+        const ids = new Set<number>(
+          dpContracts.filter(d => this.matchesCommodity(d.crop, grain)).map(d => d.customerId)
+        );
+        result = result.filter(c => ids.has(c.id));
+        break;
+      }
+    }
+
+    // No DP
+    if (/\bno dp\b/.test(lowerQuery) || /\bwithout dp\b/.test(lowerQuery) || /\bnot on dp\b/.test(lowerQuery)) {
+      result = result.filter(c => !customersWithDp.has(c.id));
+    }
+
+    // Bushels on DP — "dp over 5000 bushels"
+    const dpQuantityMatch = lowerQuery.match(/dp\s*(?:over|more than|above|exceeding)?\s*(\d+(?:,\d+)?)\s*(?:bushels?|bu)/);
+    if (dpQuantityMatch) {
+      const minQuantity = this.parseQuantity(dpQuantityMatch[1]);
+      const ids = new Set<number>(
+        [...rowsByCustomer.entries()].filter(([, rows]) => dpTotalBushels(rows) >= minQuantity).map(([id]) => id)
+      );
+      result = result.filter(c => ids.has(c.id));
+    }
+
+    // Days on DP — "dp over 90 days", "on dp for more than 120 days"
+    const dpDaysMatch = lowerQuery.match(/dp\s*(?:for\s+)?(?:over|more than|longer than)\s*(\d+)\s*days/);
+    if (dpDaysMatch) {
+      const minDays = parseInt(dpDaysMatch[1]);
+      const ids = new Set<number>(
+        dpContracts.filter(d => (d.storageDays ?? 0) >= minDays).map(d => d.customerId)
+      );
+      result = result.filter(c => ids.has(c.id));
+    }
+
+    // Accrued charges — "dp charges over $500"
+    const dpChargeMatch = lowerQuery.match(/dp\s*(?:charges?|cost)\s*(?:over|above|more than|exceeding)\s*\$?([\d,]+(?:k)?)/);
+    if (dpChargeMatch) {
+      const minCost = this.parseQuantity(dpChargeMatch[1]);
+      const ids = new Set<number>(
+        [...rowsByCustomer.entries()].filter(([, rows]) => dpTotalCharges(rows) >= minCost).map(([id]) => id)
+      );
+      result = result.filter(c => ids.has(c.id));
+    }
+
+    // Number of DP contracts — "more than 3 dp contracts"
+    const dpCountMatch = lowerQuery.match(/(?:over|more than)\s*(\d+)\s*dp\s*contracts?/);
+    if (dpCountMatch) {
+      const minCount = parseInt(dpCountMatch[1]);
+      const ids = new Set<number>(
+        [...rowsByCustomer.entries()].filter(([, rows]) => dpContractCount(rows) >= minCount).map(([id]) => id)
+      );
+      result = result.filter(c => ids.has(c.id));
+    }
+
+    return result;
+  }
+
+  // ============================================================
   // PLANTING INTENTIONS FILTER (existing + year, type)
   // ============================================================
 
@@ -3025,7 +3150,8 @@ export class NlqFilterService {
     tickets?: Ticket[],
     plantingIntentions?: PlantingIntention[],
     storedGrain?: StoredGrain[],
-    notes?: Note[]
+    notes?: Note[],
+    dpContracts?: DpContract[]
   ): Customer[] {
     const topMatch = lowerQuery.match(/top\s*(\d+)/);
     const bottomMatch = lowerQuery.match(/(?:bottom|smallest)\s*(\d+)/);
@@ -3076,6 +3202,24 @@ export class NlqFilterService {
       result = [...result].sort((a, b) => {
         const aVal = storageTotals.get(a.id) || 0;
         const bVal = storageTotals.get(b.id) || 0;
+        return isTop ? bVal - aVal : aVal - bVal;
+      });
+    } else if (/\bby dp\b/.test(lowerQuery) || (/\bdp\b/.test(lowerQuery) && lowerQuery.includes('top'))) {
+      // Sort by total bushels on DP. Bushels come from dpTotalBushels (once per delivery) rather
+      // than a raw sum — the view repeats the quantity on every charge-type row.
+      const rowsByCustomer = new Map<number, DpContract[]>();
+      for (const d of (dpContracts || [])) {
+        const list = rowsByCustomer.get(d.customerId);
+        if (list) list.push(d); else rowsByCustomer.set(d.customerId, [d]);
+      }
+      const dpTotals = new Map<number, number>();
+      for (const [id, rows] of rowsByCustomer) dpTotals.set(id, dpTotalBushels(rows));
+      // Restrict to producers who actually hold DP before ranking. Without this, a "top 25 by DP"
+      // list on a trade unit with fewer than 25 DP holders pads itself out with zero-DP producers.
+      result = result.filter(c => rowsByCustomer.has(c.id));
+      result = [...result].sort((a, b) => {
+        const aVal = dpTotals.get(a.id) || 0;
+        const bVal = dpTotals.get(b.id) || 0;
         return isTop ? bVal - aVal : aVal - bVal;
       });
     } else if (lowerQuery.includes('most notes') || lowerQuery.includes('most engaged') || lowerQuery.includes('by notes')) {

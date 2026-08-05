@@ -22,6 +22,7 @@ public record DpContractResponse
     public string ContractNumber { get; init; } = string.Empty;
     public string ContractPrefixType { get; init; } = string.Empty;
     public string ContractPrefixCommodity { get; init; } = string.Empty;
+    public string ContractSuffix { get; init; } = string.Empty;
     public string TicketStatus { get; init; } = string.Empty;
     public long CustomerId { get; init; }
     public string CustomerCode { get; init; } = string.Empty;

@@ -39,6 +39,16 @@ export function dpDeliveryCount(rows: readonly DpContract[]): number {
   return dpDistinctDeliveries(rows).length;
 }
 
+/**
+ * Number of distinct DP contracts — what the producer tab badge shows. Deliberately NOT a commodity
+ * count: a producer with 8 contracts across 2 commodities has 8 DP contracts, and showing "2" badly
+ * understated the workload. Uses the same "No contract" fallback as the table so the badge and the
+ * rows can't disagree.
+ */
+export function dpContractCount(rows: readonly DpContract[]): number {
+  return new Set(rows.map(r => r.contractNumber?.trim() || 'No contract')).size;
+}
+
 /** Total bushels, counted once per delivery. Rows with no bushel figure contribute nothing. */
 export function dpTotalBushels(rows: readonly DpContract[]): number {
   return dpDistinctDeliveries(rows).reduce((sum, r) => sum + (r.bushels ?? 0), 0);

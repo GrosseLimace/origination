@@ -102,13 +102,15 @@ public class DpContractRepository : IDpContractRepository
               + LTRIM(RTRIM(dp.Ticket_Suffix)) + '|' + CAST(dp.Sequence_Number AS varchar(20)) + '|'
               + LTRIM(RTRIM(dp.Trade_Unit_Code)) + '|' + LTRIM(RTRIM(dp.Status))  AS Id,
             LTRIM(RTRIM(dp.Ticket_Number))                                    AS TicketNumber,
-            -- Contract_Number already carries its own letters (real sample: "PL84649"), so the
-            -- Contract_Prefix_Type / _Cmdy chars are NOT prepended — doing so produced a
-            -- double-prefixed "PC PL84649". They're surfaced separately below instead.
-            LTRIM(RTRIM(dp.Contract_Number))
-              + ISNULL('-' + NULLIF(LTRIM(RTRIM(dp.Contract_Suffix)), ''), '') AS ContractNumber,
+            -- Business-facing contract identifier: prefix type + prefix commodity + number, run
+            -- together with no separator (P + C + PL84649 = "PCPL84649"). Confirmed with the business
+            -- 2026-08-05. The suffix is deliberately NOT part of the displayed id — it's carried
+            -- separately in ContractSuffix for anyone who needs it.
+            LTRIM(RTRIM(dp.Contract_Prefix_Type)) + LTRIM(RTRIM(dp.Contract_Prefix_Cmdy))
+              + LTRIM(RTRIM(dp.Contract_Number))                              AS ContractNumber,
             LTRIM(RTRIM(dp.Contract_Prefix_Type))                             AS ContractPrefixType,
             LTRIM(RTRIM(dp.Contract_Prefix_Cmdy))                             AS ContractPrefixCommodity,
+            LTRIM(RTRIM(dp.Contract_Suffix))                                  AS ContractSuffix,
             LTRIM(RTRIM(dp.Ticket_Status))                                    AS TicketStatus,
             CAST(0 AS bigint)                                                 AS CustomerId,
             LTRIM(RTRIM(dp.Customer_Id))                                      AS CustomerCode,

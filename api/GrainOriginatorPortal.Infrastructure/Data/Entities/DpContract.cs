@@ -38,9 +38,9 @@ public class DpContract
     public string TicketNumber { get; set; } = string.Empty;
 
     /// <summary>
-    /// Contract identifier: <c>Contract_Number</c> plus <c>Contract_Suffix</c> when present, e.g.
-    /// "PL84649-A". The prefix chars are deliberately NOT prepended — Contract_Number already carries
-    /// its own letters, so prepending them yielded a double-prefixed "PC PL84649".
+    /// Business-facing contract identifier: <c>Contract_Prefix_Type</c> + <c>Contract_Prefix_Cmdy</c>
+    /// + <c>Contract_Number</c>, run together with no separator — e.g. P + C + PL84649 =
+    /// <c>"PCPL84649"</c>. The suffix is intentionally excluded (see <see cref="ContractSuffix"/>).
     /// </summary>
     public string ContractNumber { get; set; } = string.Empty;
 
@@ -49,6 +49,13 @@ public class DpContract
 
     /// <summary>Contract_Prefix_Cmdy — commodity letter of the contract series (e.g. 'C' for corn).</summary>
     public string ContractPrefixCommodity { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Contract_Suffix (e.g. 'A'). Excluded from <see cref="ContractNumber"/> per the business, so
+    /// suffixes of the same contract number group together in the UI. Carried here in case a caller
+    /// needs to tell them apart.
+    /// </summary>
+    public string ContractSuffix { get; set; } = string.Empty;
 
     /// <summary>Ticket_Status — CTRM ticket state, e.g. "U/L" (unload).</summary>
     public string TicketStatus { get; set; } = string.Empty;

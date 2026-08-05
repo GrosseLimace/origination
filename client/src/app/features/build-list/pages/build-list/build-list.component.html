@@ -416,7 +416,7 @@
       }
 
       <!-- Loading indicator while query is processing (e.g. waiting for ticket or note data) -->
-      @if (isProcessing() || waitingForTickets() || waitingForNotes()) {
+      @if (isProcessing() || waitingForTickets() || waitingForNotes() || waitingForDp()) {
         <div class="flex flex-col items-center justify-center py-16">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
           <p class="text-gray-500 dark:text-gray-400 font-medium mt-4">
@@ -424,6 +424,8 @@
               Loading ticket data...
             } @else if (waitingForNotes()) {
               Loading note data...
+            } @else if (waitingForDp()) {
+              Loading DP contract data...
             } @else {
               Processing query...
             }
@@ -444,7 +446,7 @@
       <!-- Contract data failed to load — the query needs contracts but the fetch errored/timed out.
            Shown INSTEAD of "no matches" so an empty result from a failed load isn't mistaken for
            a genuine zero-match. -->
-      @if (contractsUnavailableForQuery() && hasGenerated() && queryText().trim() && !isProcessing() && !waitingForTickets() && !waitingForNotes()) {
+      @if (contractsUnavailableForQuery() && hasGenerated() && queryText().trim() && !isProcessing() && !waitingForTickets() && !waitingForNotes() && !waitingForDp()) {
         <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500 dark:text-amber-400 flex-shrink-0 mt-0.5">
             <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12" y1="17" y2="17.01"/>
@@ -473,7 +475,7 @@
       <!-- Results Section (only shown after generating and when query has text).
            Suppressed while ticket data is still loading so a stale 0-result card doesn't
            flash before the _appStateTicketsEffect re-runs the filter with real data. -->
-      @if (hasGenerated() && queryText().trim() && !waitingForTickets() && !waitingForNotes() && !isProcessing()) {
+      @if (hasGenerated() && queryText().trim() && !waitingForTickets() && !waitingForNotes() && !waitingForDp() && !isProcessing()) {
         @let displayed = displayedCustomers();
         @let rendered = renderedCustomers();
         @let filtered = filteredCustomers();
@@ -969,6 +971,58 @@
                           class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
                     </div>
+                  </div>
+                }
+
+                <!-- DP contract filters -->
+                @if (showDpFilters()) {
+                  @let hd = hiddenFilters();
+                  <div class="flex flex-wrap gap-x-4 sm:gap-x-10 gap-y-4 sm:gap-y-5">
+                    <!-- Days on DP -->
+                    @if (!hd.has('dpDaysOver')) {
+                      <div class="space-y-2.5">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Days on DP</p>
+                        <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                          <span class="shrink-0">On DP over</span>
+                          <input type="number" min="1"
+                            [ngModel]="pendingRefinements().dpDaysOver || ''"
+                            (ngModelChange)="pendingRefinements.update(r => ({...r, dpDaysOver: $event ? +$event : null}))"
+                            placeholder="90"
+                            class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                          <span>days</span>
+                        </div>
+                      </div>
+                    }
+
+                    <!-- DP Volume -->
+                    <div class="space-y-2.5">
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">DP Volume</p>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Bushels over</span>
+                        <input type="number" min="1"
+                          [ngModel]="pendingRefinements().dpBushelsOver || ''"
+                          (ngModelChange)="pendingRefinements.update(r => ({...r, dpBushelsOver: $event ? +$event : null}))"
+                          placeholder="bushels"
+                          class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                        <span>bu</span>
+                      </div>
+                    </div>
+
+                    <!-- Accumulated Charges -->
+                    @if (!hd.has('dpChargesOver')) {
+                      <div class="space-y-2.5">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Accumulated Charges</p>
+                        <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                          <span class="shrink-0">Charges over</span>
+                          <span>$</span>
+                          <input type="number" min="1"
+                            [ngModel]="pendingRefinements().dpChargesOver || ''"
+                            (ngModelChange)="pendingRefinements.update(r => ({...r, dpChargesOver: $event ? +$event : null}))"
+                            placeholder="500"
+                            class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                        </div>
+                      </div>
+                    }
                   </div>
                 }
 

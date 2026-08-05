@@ -119,6 +119,12 @@ export class AppStateService {
   noteLastContacts = signal<NoteLastContact[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
   dpContracts = signal<DpContract[]>([]);
+  /** True once a DP fetch has COMPLETED for the current trade units, regardless of row count.
+   *  Callers must gate on this rather than `dpContracts().length > 0`: a trade unit with genuinely
+   *  zero DP positions is indistinguishable from "not fetched yet" by length alone, which makes a
+   *  query flash "no producers found" while the fetch is still in flight. Same reason
+   *  `ticketsLoaded` exists. Reset on trade-unit change. */
+  dpContractsLoaded = signal(false);
   savedLists = signal<SavedList[]>([]);
   commodities = signal<Commodity[]>([]);
   commodityConversions = signal<CommodityConversion[]>([]);
@@ -196,6 +202,7 @@ export class AppStateService {
 
   setDpContracts(dpContracts: DpContract[]): void {
     this.dpContracts.set(dpContracts);
+    this.dpContractsLoaded.set(true);
   }
 
   setPricingLines(lines: ContractPricingLine[]): void {
@@ -337,6 +344,7 @@ export class AppStateService {
     this.noteLastContacts.set([]);
     this.storedGrain.set([]);
     this.dpContracts.set([]);
+    this.dpContractsLoaded.set(false);
     this.savedLists.set([]);
     this.commodities.set([]);
     this.producerDetails.set([]);

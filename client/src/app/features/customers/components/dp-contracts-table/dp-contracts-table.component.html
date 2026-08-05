@@ -104,8 +104,10 @@
                   }
                 </p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
-                  <!-- Distinct deliveries, not row count: one delivery has a row per charge type. -->
-                  {{ group.deliveryCount }} ticket{{ group.deliveryCount !== 1 ? 's' : '' }}
+                  <!-- Contracts first (the level below), then distinct deliveries -- NOT row count,
+                       since one delivery has a row per charge type. -->
+                  {{ group.contractCount }} contract{{ group.contractCount !== 1 ? 's' : '' }}
+                  &middot; {{ group.deliveryCount }} ticket{{ group.deliveryCount !== 1 ? 's' : '' }}
                   &middot; Since {{ group.earliestDate | date:'M/d/yyyy' }}
                   <!-- Disclose rows missing from the bushel total so it's never read as complete. -->
                   @if (group.unconvertedCount > 0) {
@@ -136,11 +138,68 @@
             </div>
           </div>
 
-          <!-- Expanded: Individual Tickets -->
+          <!-- Expanded: the DP contracts in this group. Tickets hang off a contract, not off the
+               group, because several tickets are typically applied to one contract. A group with
+               only ONE contract has it auto-expanded, so this level costs no extra click there. -->
           @if (isExpanded(group.key)) {
-            <div class="overflow-auto" style="max-height: min(50vh, 400px);">
-              <app-table [stickyHeader]="true">
-                <app-table-header>
+            <div class="border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+              @for (contract of group.contracts; track contract.key) {
+                <div>
+
+                  <!-- Contract header (second level). Flush left (px-4) so the chevron lines up under
+                       the commodity chevron above rather than sitting indented. -->
+                  <div
+                    class="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none transition-colors hover:bg-gray-100 dark:hover:bg-gray-700/60"
+                    [ngClass]="isContractExpanded(contract.key) ? 'bg-gray-100 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700' : ''"
+                    (click)="toggleContract(contract.key, $event)"
+                  >
+                    <div class="flex items-center gap-3 min-w-0">
+                      <svg class="h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200" [class.rotate-90]="isContractExpanded(contract.key)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+                      </svg>
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ contract.contractNumber }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ contract.deliveryCount }} ticket{{ contract.deliveryCount !== 1 ? 's' : '' }}
+                          &middot; Since {{ contract.earliestDate | date:'M/d/yyyy' }}
+                          @if (contract.unconvertedCount > 0) {
+                            &middot; {{ contract.unconvertedCount }} without bushel conversion
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    <!-- With a single contract these totals are identical to the group header above,
+                         so they're suppressed rather than repeated. They only earn their space when
+                         there are several contracts to compare. -->
+                    @if (group.contractCount > 1) {
+                      <div class="flex items-center gap-4 flex-shrink-0">
+                        <div class="w-24 text-center">
+                          <p class="text-xs text-gray-500 dark:text-gray-400">Bushels</p>
+                          <p class="text-sm font-medium text-gray-900 dark:text-white">
+                            @if (contract.deliveryCount > contract.unconvertedCount) {
+                              {{ contract.totalBushels | number:'1.0-0' }} bu
+                            } @else {
+                              —
+                            }
+                          </p>
+                        </div>
+                        <div class="w-32 text-center">
+                          <p class="text-xs text-gray-500 dark:text-gray-400">Accumulated Cost</p>
+                          <p class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">{{ contract.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
+                        </div>
+                        <div class="w-24 text-center">
+                          <p class="text-xs text-gray-500 dark:text-gray-400">Cents/Bu</p>
+                          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ contract.totalBushels > 0 ? ((contract.totalCost / contract.totalBushels) * 100 | number:'1.2-2') + '¢' : '—' }}</p>
+                        </div>
+                      </div>
+                    }
+                  </div>
+
+                  <!-- Expanded: the tickets applied to this contract -->
+                  @if (isContractExpanded(contract.key)) {
+                    <div class="overflow-auto" style="max-height: min(50vh, 400px);">
+                      <app-table [stickyHeader]="true">
+                        <app-table-header>
                   <app-table-row>
                     <app-table-head [sortable]="true" (click)="handleSort('ticket')">
                       <span class="flex items-center justify-center gap-1">Ticket #
@@ -202,7 +261,7 @@
                   </app-table-row>
                 </app-table-header>
                 <app-table-body>
-                  @for (dp of sortedPositions(group.positions); track dp.id) {
+                          @for (dp of sortedPositions(contract.positions); track dp.id) {
                     <app-table-row>
                       <app-table-cell class="text-center">{{ dp.ticketNumber }}</app-table-cell>
                       <app-table-cell class="text-center">
@@ -232,8 +291,13 @@
                       <app-table-cell class="text-center text-scoular-red-accessible dark:text-scoular-red font-medium" >{{ dp.receivableAmount | currency:'USD':'symbol':'1.2-2' }}</app-table-cell>
                     </app-table-row>
                   }
-                </app-table-body>
-              </app-table>
+                        </app-table-body>
+                      </app-table>
+                    </div>
+                  }
+
+                </div>
+              }
             </div>
           }
 

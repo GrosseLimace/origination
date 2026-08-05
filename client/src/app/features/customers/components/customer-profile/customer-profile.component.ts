@@ -18,6 +18,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList } from '@models';
 import { commodityChipClass } from '@shared/utils/commodity-color';
+import { dpContractCount } from '@shared/utils/dp-aggregate';
 
 @Component({
   selector: 'app-customer-profile',
@@ -338,8 +339,9 @@ export class CustomerProfileComponent {
         { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this._unappliedTicketCount },
         { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions().length },
         { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size },
-        // Badge is distinct commodities, matching Storage — not the ticket-line count.
-        { id: 'dpContracts', label: 'DP Contracts', shortLabel: 'DP', count: new Set(this.dpContracts().map(d => d.crop || 'Unknown')).size }
+        // Badge is distinct CONTRACTS, not commodities (which Storage uses) and not charge rows.
+        // A producer with 8 contracts across 2 commodities reads as 8.
+        { id: 'dpContracts', label: 'DP Contracts', shortLabel: 'DP', count: dpContractCount(this.dpContracts()) }
       ];
     });
 

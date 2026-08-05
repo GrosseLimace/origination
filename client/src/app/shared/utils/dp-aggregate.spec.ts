@@ -7,6 +7,7 @@ import {
   dpUnconvertedCount,
   dpTotalCharges,
   dpBreakdownByCrop,
+  dpContractCount,
 } from './dp-aggregate';
 
 function makeDp(over: Partial<DpContract> = {}): DpContract {
@@ -14,9 +15,10 @@ function makeDp(over: Partial<DpContract> = {}): DpContract {
     id: 'H|370145||316657104|1340|2',
     ticketKey: 'H|370145||316657104|1340',
     ticketNumber: '370145',
-    contractNumber: 'PL84649-A',
+    contractNumber: 'PCPL84649',
     contractPrefixType: 'P',
     contractPrefixCommodity: 'C',
+    contractSuffix: 'A',
     ticketStatus: 'U/L',
     customerId: 1,
     customerCode: 'ABCFARM',
@@ -118,6 +120,32 @@ describe('dp-aggregate', () => {
     expect(breakdown.map(b => b.crop)).toEqual(['SOY', 'YC']);
     expect(breakdown.find(b => b.crop === 'YC')!.bushels).toBe(812.5);
     expect(breakdown.find(b => b.crop === 'YC')!.charges).toBeCloseTo(414.41, 2);
+  });
+
+  it('counts contracts, not commodities — 8 contracts over 2 crops reads as 8', () => {
+    const rows = [
+      ...Array.from({ length: 4 }, (_, i) =>
+        makeDp({ id: `c${i}`, ticketKey: `c${i}`, crop: 'YC', contractNumber: `PCPL${i}` })),
+      ...Array.from({ length: 4 }, (_, i) =>
+        makeDp({ id: `s${i}`, ticketKey: `s${i}`, crop: 'YSB', contractNumber: `PCPS${i}` })),
+    ];
+
+    expect(dpContractCount(rows)).toBe(8);
+  });
+
+  it('counts a contract once no matter how many tickets or charge rows it carries', () => {
+    // The reference ticket is 2 charge rows on 1 contract.
+    expect(dpContractCount(REFERENCE_TICKET)).toBe(1);
+  });
+
+  it('buckets rows with no contract number together', () => {
+    const rows = [
+      makeDp({ id: 'a', ticketKey: 'a', contractNumber: '' }),
+      makeDp({ id: 'b', ticketKey: 'b', contractNumber: '   ' }),
+      makeDp({ id: 'c', ticketKey: 'c', contractNumber: 'PCPL1' }),
+    ];
+
+    expect(dpContractCount(rows)).toBe(2);
   });
 
   it('returns zeroes for an empty set', () => {
