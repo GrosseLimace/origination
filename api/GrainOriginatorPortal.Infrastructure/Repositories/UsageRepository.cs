@@ -156,20 +156,6 @@ public class UsageRepository : IUsageRepository
         return map.Select(kv => new UserLastActivity(kv.Key, kv.Value)).ToList();
     }
 
-    public async Task<List<UserCount>> GetActiveDayCountsByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
-    {
-        // Distinct (user, calendar-day) pairs in the raw window, then count days per user.
-        var pairs = await _appDb.UserActivities
-            .Where(a => a.Timestamp >= fromUtc && a.Timestamp < toUtc && userIds.Contains(a.UserId))
-            .Select(a => new { a.UserId, Date = a.Timestamp.Date })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        return pairs
-            .GroupBy(p => p.UserId, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new UserCount(g.Key, g.Count()))
-            .ToList();
-    }
-
     public async Task<List<UserCount>> GetNotesCreatedCountsByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
     {
         var rows = await _appDb.UserActivities
@@ -410,19 +396,6 @@ public class UsageRepository : IUsageRepository
             .Select(d => d.UserId)
             .Distinct()
             .ToListAsync(cancellationToken);
-    }
-
-    public async Task<List<UserCount>> GetActiveDayCountsByUserFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
-    {
-        // UserActivityDaily is unique per (user, date), so a plain row count per user is that user's
-        // count of active days in the range.
-        var rows = await _appDb.UserActivityDailies
-            .Where(d => d.ActivityDate >= fromDate && d.ActivityDate < toDateExclusive
-                && d.RequestCount > 0 && userIds.Contains(d.UserId))
-            .GroupBy(d => d.UserId)
-            .Select(g => new { UserId = g.Key, Days = g.Count() })
-            .ToListAsync(cancellationToken);
-        return rows.Select(r => new UserCount(r.UserId, r.Days)).ToList();
     }
 
     public async Task<List<DailyCount>> GetDailyActiveCountsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)

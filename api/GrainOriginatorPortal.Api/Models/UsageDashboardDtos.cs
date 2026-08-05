@@ -6,13 +6,11 @@ public record UsageDashboardSummaryDto
     public double AvgLoginsPerWeek { get; set; }
     public double AvgSessionMinutes { get; set; }
     public int TotalUsers { get; set; }
-    // Recency tiers (current snapshot): Active ≤7 days · At-risk 8–21 · Dormant >21 · Never logged in.
+    // Recency tiers (current snapshot): Active used today · Light Usage within 7 days · Dormant longer · Never logged in.
     public int ActiveUsers { get; set; }
-    public int AtRiskUsers { get; set; }
+    public int LightUsageUsers { get; set; }
     public int DormantUsers { get; set; }
     public int NeverUsers { get; set; }
-    // Recency-active accounts that barely engage (low active-days/week) — the "low usage" count.
-    public int LightUsageUsers { get; set; }
     public int NeedsAttentionCount { get; set; }
 }
 
@@ -23,11 +21,8 @@ public record UsageDashboardUserDto
     public int LoginCount { get; set; }
     public DateTime? LastActive { get; set; }
     public double AvgSessionMinutes { get; set; }
-    // Active / At-risk / Dormant / Never (recency snapshot).
+    // Active / Light Usage / Dormant / Never (recency snapshot).
     public string Status { get; set; } = string.Empty;
-    // Avg distinct active days per week over the window; low value on an Active user ⇒ IsLightUsage.
-    public double ActiveDaysPerWeek { get; set; }
-    public bool IsLightUsage { get; set; }
     public int CustomersContacted { get; set; }
     public int NotesCreated { get; set; }
 }

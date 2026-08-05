@@ -116,7 +116,7 @@ describe('formatDayLabel', () => {
 describe('getStatusClasses', () => {
   it('gives each status its own colour', () => {
     expect(getStatusClasses('Active')).toContain('green');
-    expect(getStatusClasses('At-risk')).toContain('amber');
+    expect(getStatusClasses('Light Usage')).toContain('amber');
     expect(getStatusClasses('Dormant')).toContain('orange');
     expect(getStatusClasses('Never')).toContain('red');
     expect(getStatusClasses('Something Else')).toContain('gray');

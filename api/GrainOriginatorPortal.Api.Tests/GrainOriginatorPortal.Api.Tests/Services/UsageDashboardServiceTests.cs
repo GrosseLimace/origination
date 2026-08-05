@@ -53,10 +53,6 @@ public class UsageDashboardServiceTests
             .ReturnsAsync([]);
         _repoMock.Setup(r => r.GetLastActiveByUserAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
-        _repoMock.Setup(r => r.GetActiveDayCountsByUserAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([]);
-        _repoMock.Setup(r => r.GetActiveDayCountsByUserFromRollupAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([]);
         _sut = CreateSut();
     }
 
@@ -259,7 +255,28 @@ public class UsageDashboardServiceTests
 
         Assert.Equal(3, summary.TotalUsers);   // the access group, not the whole directory
         Assert.Equal(1, summary.ActiveUsers);
-        Assert.Equal(2, summary.NeedsAttentionCount);   // At-risk + Dormant + Never
+        Assert.Equal(2, summary.NeedsAttentionCount);   // Dormant + Never
+    }
+
+    [Fact]
+    public async Task Users_StatusTiers_AreRecencyBased_TodayWeekAndBeyond()
+    {
+        SetupAccess(true, "Today", "ThisWeek", "LastMonth", "NoActivity");
+        var now = DateTime.UtcNow;
+        _repoMock.Setup(r => r.GetLastActiveByUserAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new UserLastActivity("Today", now),
+                new UserLastActivity("ThisWeek", now.AddDays(-3)),
+                new UserLastActivity("LastMonth", now.AddDays(-30)),
+            ]);
+
+        var users = await _sut.GetUsersAsync(From, To, null, null, CancellationToken.None);
+        var byId = users.ToDictionary(u => u.UserId);
+
+        Assert.Equal("Active", byId["Today"].Status);        // used today
+        Assert.Equal("Light Usage", byId["ThisWeek"].Status); // within the last week
+        Assert.Equal("Dormant", byId["LastMonth"].Status);    // longer than a week
+        Assert.Equal("Never", byId["NoActivity"].Status);     // no recorded activity, ever
     }
 
     [Fact]

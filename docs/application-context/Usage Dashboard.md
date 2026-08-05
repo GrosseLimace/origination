@@ -40,11 +40,12 @@ One endpoint deliberately ignores the window:
 
 User **status** also ignores the window: it is a current snapshot off each user's *all-time* last
 activity (raw tables unioned with the long-retention daily rollup), so changing the date range never
-moves anyone between tiers. Tiers: `Active` (≤7 days) · `At-risk` (8–21) · `Dormant` (>21) ·
-`Never` (no recorded activity, ever). **Active-days/week** *is* window-scoped; an `Active` user
-averaging fewer than 2 active days/week is flagged `isLightUsage` ("Light usage"). All of this comes
-from one shared classifier (`ClassifyUsersAsync`), so the summary KPIs, the donut, the user list and
-the per-user drill-down cannot disagree.
+moves anyone between tiers. Tiers: `Active` (used today, UTC) · `Light Usage` (within the last
+7 days) · `Dormant` (longer than a week) · `Never` (no recorded activity, ever). Adoption Rate =
+(Active + Light Usage) / total — "used within the last week" — because today-only Active would be
+too twitchy for an adoption measure. All of this comes from one shared classifier
+(`ClassifyUsersAsync`), so the summary KPIs, the donut, the user list and the per-user drill-down
+cannot disagree.
 
 ## What it shows
 
@@ -59,9 +60,8 @@ total session count. `Avg Session Duration` is weighted by login count.
 
 ### `Who's Using It` tab
 
-- User status donut — `Active` / `At-risk` / `Dormant` / `Never`. These are the same values the
-  API returns and the status filter offers (plus a special `light` filter value), so the donut, the
-  pills and the dropdown agree.
+- User status donut — `Active` / `Light Usage` / `Dormant` / `Never`. These are the same values the
+  API returns and the status filter offers, so the donut, the pills and the dropdown agree.
 - Daily Active bar chart (last 15 days of the window).
 - Originator table (sortable, searchable, filterable by status — all client-side).
 
@@ -75,10 +75,10 @@ total session count. `Avg Session Duration` is weighted by login count.
 
 ### `Who Isn't Using It` tab
 
-- Inactive Originators list — everyone off the healthy `Active` tier (`At-risk` + `Dormant` +
-  `Never`), most-stale first. No tunable threshold; it reads the same statuses as the donut.
-- Low Usage Originators — the backend's `isLightUsage` flag (recency-active but < 2 active
-  days/week over the window), fewest active-days/week first.
+- Inactive Originators list — `Dormant` + `Never`, most-stale first. No tunable threshold; it reads
+  the same statuses as the donut.
+- Low Usage Originators — the `Light Usage` tier (used within the last week, but not today),
+  most-stale first.
 - Underused Features, ranked by **distinct users**, honoring the trade-unit filter and exclusions.
 
 ## Data flow

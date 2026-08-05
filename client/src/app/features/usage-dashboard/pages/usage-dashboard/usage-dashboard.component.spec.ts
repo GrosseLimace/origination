@@ -163,7 +163,7 @@ describe('UsageDashboardComponent — derived values', () => {
   function user(over: Partial<UsageDashboardUser>): UsageDashboardUser {
     return {
       userId: 'u', displayName: 'U', loginCount: 0, lastActive: null,
-      avgSessionMinutes: 0, status: 'Active', activeDaysPerWeek: 0, isLightUsage: false,
+      avgSessionMinutes: 0, status: 'Active',
       customersContacted: 0, notesCreated: 0, ...over,
     };
   }
@@ -189,37 +189,37 @@ describe('UsageDashboardComponent — derived values', () => {
   it('counts each recency tier separately for the donut', () => {
     component.users.set([
       user({ userId: 'a', status: 'Active' }),
-      user({ userId: 'b', status: 'At-risk' }),
-      user({ userId: 'c', status: 'At-risk' }),
+      user({ userId: 'b', status: 'Light Usage' }),
+      user({ userId: 'c', status: 'Light Usage' }),
       user({ userId: 'd', status: 'Dormant' }),
       user({ userId: 'e', status: 'Never' }),
     ]);
 
     expect(component.activeCount()).toBe(1);
-    expect(component.atRiskCount()).toBe(2);
+    expect(component.lightUsageCount()).toBe(2);
     expect(component.dormantCount()).toBe(1);
     expect(component.neverCount()).toBe(1);
   });
 
-  it('lists the backend-flagged light-usage accounts as low usage, fewest active-days/week first', () => {
+  it('lists the Light Usage tier as low usage, most-stale first', () => {
     component.users.set([
-      user({ userId: 'a', status: 'Active', isLightUsage: true, activeDaysPerWeek: 1.5 }),
-      user({ userId: 'b', status: 'Active', isLightUsage: false, activeDaysPerWeek: 5 }),
-      user({ userId: 'c', status: 'Active', isLightUsage: true, activeDaysPerWeek: 0.5 }),
-      user({ userId: 'd', status: 'Dormant', isLightUsage: false, activeDaysPerWeek: 0 }),
+      user({ userId: 'a', status: 'Light Usage', lastActive: '2026-08-03T00:00:00' }),
+      user({ userId: 'b', status: 'Active', lastActive: '2026-08-05T00:00:00' }),
+      user({ userId: 'c', status: 'Light Usage', lastActive: '2026-07-30T00:00:00' }),
+      user({ userId: 'd', status: 'Dormant', lastActive: '2026-07-01T00:00:00' }),
     ]);
 
     expect(component.lowUsageOriginators().map(u => u.userId)).toEqual(['c', 'a']);
   });
 
-  it('lists At-risk, Dormant and Never accounts as inactive, most-stale first', () => {
+  it('lists Dormant and Never accounts as inactive, most-stale first', () => {
     component.users.set([
-      user({ userId: 'a', status: 'Active', lastActive: '2026-08-01T00:00:00' }),
-      user({ userId: 'b', status: 'At-risk', lastActive: '2026-07-20T00:00:00' }),
+      user({ userId: 'a', status: 'Active', lastActive: '2026-08-05T00:00:00' }),
+      user({ userId: 'b', status: 'Light Usage', lastActive: '2026-08-01T00:00:00' }),
       user({ userId: 'c', status: 'Dormant', lastActive: '2026-07-01T00:00:00' }),
       user({ userId: 'd', status: 'Never', lastActive: null }),
     ]);
 
-    expect(component.inactiveOriginators().map(u => u.userId)).toEqual(['d', 'c', 'b']);
+    expect(component.inactiveOriginators().map(u => u.userId)).toEqual(['d', 'c']);
   });
 });

@@ -1,5 +1,5 @@
-/** Recency tiers (current snapshot): Active ≤7 days · At-risk 8–21 · Dormant >21 · Never logged in. */
-export type UsageStatus = 'Active' | 'At-risk' | 'Dormant' | 'Never';
+/** Recency tiers (current snapshot): Active used today · Light Usage within 7 days · Dormant longer · Never logged in. */
+export type UsageStatus = 'Active' | 'Light Usage' | 'Dormant' | 'Never';
 
 export interface UsageDashboardSummary {
   adoptionRate: number;
@@ -7,11 +7,9 @@ export interface UsageDashboardSummary {
   avgSessionMinutes: number;
   totalUsers: number;
   activeUsers: number;
-  atRiskUsers: number;
+  lightUsageUsers: number;
   dormantUsers: number;
   neverUsers: number;
-  /** Recency-active accounts that barely engage (low active-days/week) — the "low usage" count. */
-  lightUsageUsers: number;
   needsAttentionCount: number;
 }
 
@@ -22,9 +20,6 @@ export interface UsageDashboardUser {
   lastActive: string | null;
   avgSessionMinutes: number;
   status: UsageStatus;
-  /** Avg distinct active days per week over the window; low value on an Active user ⇒ isLightUsage. */
-  activeDaysPerWeek: number;
-  isLightUsage: boolean;
   customersContacted: number;
   notesCreated: number;
 }

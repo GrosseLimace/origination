@@ -108,10 +108,7 @@ export class UsageDashboardComponent {
     let result = this.users();
 
     if (filter && filter !== 'all') {
-      // 'light' isolates recency-active-but-low-usage accounts; any other value is a status tier.
-      result = filter === 'light'
-        ? result.filter(u => u.isLightUsage)
-        : result.filter(u => u.status === filter);
+      result = result.filter(u => u.status === filter);
     }
     if (search) {
       result = result.filter(u =>
@@ -137,34 +134,33 @@ export class UsageDashboardComponent {
   // Tier labels match the status values the API returns and the status filter offers, so the donut,
   // the pills and the dropdown can't tell different stories.
   readonly activeCount = computed(() => this.users().filter(u => u.status === 'Active').length);
-  readonly atRiskCount = computed(() => this.users().filter(u => u.status === 'At-risk').length);
+  readonly lightUsageCount = computed(() => this.users().filter(u => u.status === 'Light Usage').length);
   readonly dormantCount = computed(() => this.users().filter(u => u.status === 'Dormant').length);
   readonly neverCount = computed(() => this.users().filter(u => u.status === 'Never').length);
-  readonly lightUsageCount = computed(() => this.users().filter(u => u.isLightUsage).length);
 
-  /** Everyone who isn't a healthy Active user — the union of the "Who Isn't Using It" panels
-   *  (At-risk/Dormant/Never + light-usage Actives), deduped since a user can appear in both. */
-  readonly needsAttentionCount = computed(() => {
-    const ids = new Set<string>();
-    for (const u of this.inactiveOriginators()) ids.add(u.userId);
-    for (const u of this.lowUsageOriginators()) ids.add(u.userId);
-    return ids.size;
+  /** Used within the last week (Active + Light Usage) — the population behind the adoption KPI. */
+  readonly engagedThisWeekCount = computed(() => {
+    const s = this.summary();
+    return s ? s.activeUsers + s.lightUsageUsers : 0;
   });
+
+  /** Dormant + Never — the "Who Isn't Using It" Inactive panel's population. */
+  readonly needsAttentionCount = computed(() => this.inactiveOriginators().length);
 
   readonly circumference = 2 * Math.PI * 40;
   readonly donutSegments = computed(() => {
     const total = this.users().length;
     const c = this.circumference;
-    if (total === 0) return { activeLen: 0, activeOffset: 0, atRiskLen: 0, atRiskOffset: 0, dormantLen: 0, dormantOffset: 0, neverLen: 0, neverOffset: 0 };
+    if (total === 0) return { activeLen: 0, activeOffset: 0, lightLen: 0, lightOffset: 0, dormantLen: 0, dormantOffset: 0, neverLen: 0, neverOffset: 0 };
     const activeLen = (this.activeCount() / total) * c;
-    const atRiskLen = (this.atRiskCount() / total) * c;
+    const lightLen = (this.lightUsageCount() / total) * c;
     const dormantLen = (this.dormantCount() / total) * c;
     const neverLen = (this.neverCount() / total) * c;
     return {
       activeLen, activeOffset: 0,
-      atRiskLen, atRiskOffset: -(activeLen),
-      dormantLen, dormantOffset: -(activeLen + atRiskLen),
-      neverLen, neverOffset: -(activeLen + atRiskLen + dormantLen)
+      lightLen, lightOffset: -(activeLen),
+      dormantLen, dormantOffset: -(activeLen + lightLen),
+      neverLen, neverOffset: -(activeLen + lightLen + dormantLen)
     };
   });
 
@@ -288,18 +284,17 @@ export class UsageDashboardComponent {
   });
 
   // ── Who Isn't Using It ──
-  // Inactive = everyone off the healthy-Active tier (At-risk → Dormant → Never), most-stale first.
+  // Inactive = not seen for over a week (Dormant) or never seen at all (Never), most-stale first.
   readonly inactiveOriginators = computed(() =>
     this.users()
-      .filter(u => u.status === 'At-risk' || u.status === 'Dormant' || u.status === 'Never')
+      .filter(u => u.status === 'Dormant' || u.status === 'Never')
       .sort((a, b) => (a.lastActive ?? '').localeCompare(b.lastActive ?? '')));
 
-  // Low usage = recency-active accounts the backend flagged as barely engaging (low active-days/week),
-  // fewest active-days/week first.
+  // Low usage = the Light Usage tier (used within the last week, but not today), most-stale first.
   readonly lowUsageOriginators = computed(() =>
     this.users()
-      .filter(u => u.isLightUsage)
-      .sort((a, b) => a.activeDaysPerWeek - b.activeDaysPerWeek));
+      .filter(u => u.status === 'Light Usage')
+      .sort((a, b) => (a.lastActive ?? '').localeCompare(b.lastActive ?? '')));
 
   readonly maxUnderusedUsers = computed(() => {
     const max = Math.max(0, ...this.underusedFeatures().map(f => f.uniqueUsers));

@@ -42,8 +42,6 @@ public interface IUsageRepository
     /// (logged in months ago) apart from one who never logged in. Window-independent.</summary>
     Task<List<UserLastActivity>> GetLastActiveByUserAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
 
-    /// <summary>Per user, the count of DISTINCT days with activity in the raw window (for active-days/week).</summary>
-    Task<List<UserCount>> GetActiveDayCountsByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<UserCount>> GetNotesCreatedCountsByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<FeatureCount>> GetNotesCreatedCountsByFeatureAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<UserActivityBreakdown>> GetActivityBreakdownByUserAsync(DateTime fromUtc, DateTime toUtc, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
@@ -70,9 +68,6 @@ public interface IUsageRepository
     // ── Rollup reads (closed days) ──
     Task<List<string>> GetActiveUserIdsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
 
-    /// <summary>Per user, the count of active days (one rollup row = one active day) in the closed-day
-    /// range — the rollup half of active-days/week.</summary>
-    Task<List<UserCount>> GetActiveDayCountsByUserFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<DailyCount>> GetDailyActiveCountsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<UserSessionStats>> GetSessionStatsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<FeatureScreenTime>> GetFeatureScreenTimeFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
