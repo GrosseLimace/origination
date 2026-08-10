@@ -27,6 +27,14 @@ authenticated user may modify or delete any record by enumerating its ID:
 - `ProducerDetailsController` — `PUT/DELETE /api/producerdetails/customer/{customerId}`
 - `DashboardPlantingEstimatesController` — `DELETE /api/dashboardplantingestimates/actualharvest/{id}` (added per Codex scan 2026-06-29; re-flagged as **H-050** on 2026-06-29). The controller's `[EnforceTradeUnitAccess]` filter validates the trade-unit-keyed reads and upserts, but the delete-by-id route carries no trade-unit parameter to check. Actual-harvest rows are shared dashboard data of the same nature as the records above, so this delete is **intentionally left matching the shared-record delete model** rather than made stricter than every other delete in the app. A per-row trade-unit check was drafted and **deliberately reverted** to honor this decision — do not re-add without re-opening AR-01.
 
+**Update (2026-08-10):** re-flagged as **M-033** by the GHE security scan (CWE-639, confidence 8/10)
+against the three `NotesController` mutation routes (`PUT {id}`, `PUT {id}/toggle-pin`,
+`DELETE {id}`), suggesting a `CreatedBy`-match predicate modeled on `SavedListService`. **Re-accepted
+— no change.** The SavedList comparison is inapposite: saved lists are a rep's *personal* working
+set (ownership is meaningful), whereas notes are *shared* producer records — enforcing per-author
+edit/delete is exactly what AR-01 rejects because it breaks coverage/hand-off. All three routes carry
+inline AR-01 citations. Triage future scan hits on these routes against this entry.
+
 ### Decision: Accepted
 
 **Rationale.** The portal is an internal tool for Scoular grain originators. Producer notes,
@@ -66,10 +74,13 @@ bearer token. An authenticated user who learns/guesses another producer's id or 
 that producer's profile and related data outside their entitled trade units:
 
 - `GET /api/customers/{id}`, `GET /api/customers/by-source/{sourceId}`
+- `GET /api/customers/linked-to/{sourceId}` (reverse linked-producer lookup — links deliberately span trade units)
+- `GET /api/customers/{id}/trade-units` (membership list for the edit dialog)
 - `GET /api/contracts/customer/{customerId}`
 - `GET /api/tickets/customer/{customerId}`
 - `GET /api/notes/customer/{customerId}`
 - `GET /api/plantingintentions/customer/{customerId}`
+- `GET /api/producerdetails/customer/{customerId}`
 
 **Update (2026-07-21):** the notes list/search endpoints are no longer trade-unit-filtered on the
 server either — note **content** is now returned org-wide to any authenticated rep:
@@ -82,6 +93,14 @@ and the client filters to the selected trade unit's producers, so **UI results r
 — a rep still only *sees* notes for producers in their selected trade units. The broadening is on the
 wire only (the raw payload contains org-wide note content, visible via browser dev tools). This falls
 squarely under the same "trade units are a UX filter, not an access boundary" rationale below.
+
+**Update (2026-08-10):** re-flagged by the GHE security scan (CWE-639 / OWASP A01:2021, confidence
+8/10) against `CustomersController` `GetById` / `GetBySourceId` / `GetLinkedTo` / `GetTradeUnits` and
+the notes reads. Reviewed and **re-accepted** — product direction confirmed: originators must be able
+to pull up any producer (cross-trade-unit coverage, linked producers that span trade units, and the
+upcoming incoming-call popup all depend on it), so per-producer read authorization is intentionally
+not enforced. Route list above extended to name every endpoint the scan cited. Triage future scan
+hits on these routes against this entry.
 
 ### Decision: Accepted
 
@@ -118,6 +137,17 @@ and no validation that the requested trade units are permitted for the caller. I
 could onboard a producer into their own trade unit (then see that producer via entitlement-scoped
 views) or remove legitimate memberships.
 
+**Update (2026-08-10):** re-flagged by the GHE security scan (CWE-284 / OWASP A01:2021, confidence
+8/10) with the same path ("assign a producer to a trade unit the caller holds → producer passes the
+scoped filters"). Reviewed and **re-accepted** — that path *is* the New Customer Trade Units
+onboarding feature; admin-gating or entitlement-validating it would remove the feature. The removal
+vector is also tighter than the original text records: the DELETE only deactivates **dormant**
+memberships (server re-validates no open purchase contract / unapplied ticket in that TU, else 409),
+sets `UserDeactivated` so the nightly sync restores the row when activity returns, and the PUT's
+reconcile only touches **manual** (`IsManual`) rows — sync-sourced memberships backed by real
+activity can never be stripped. Both endpoints carry inline AR-03 comments. Triage future scan hits
+on these routes against this entry.
+
 ### Decision: Accepted
 
 **Rationale.** This is the **intended rep-driven producer-onboarding flow** (the "New Customer Trade
@@ -150,7 +180,17 @@ caller with no trade-unit or role scoping. Results include producer contact PII 
 email) and a broad term (even a single letter) can enumerate up to 50 not-yet-onboarded producers
 per request, outside the caller's trade units.
 
-### Decision: Accepted
+**Update (2026-08-10):** re-flagged by the GHE security scan (CWE-200 / OWASP A01:2021, confidence
+8/10), which noted the single-letter enumeration vector. The unscoped-full-PII aspect remains
+**accepted** (onboarding must search the whole master by design — see rationale). One partial fix was
+applied on `fix_SecurityFindings`: the `>= 3` char minimum is now enforced **server-side** in
+`CustomersController.SearchOds` (`MinOdsSearchLength`), not just in the client — so a direct API call
+with a 1–2 char term can no longer harvest master PII a page at a time. The role-scoping / PII-
+minimization suggestions were **not** adopted: they'd degrade the onboarding UX (which shows
+location/phone/email on the candidate card) and contradict the confirmed product direction that reps
+may look up any producer.
+
+### Decision: Accepted (with the server-side min-length hardening above)
 
 **Rationale.** This endpoint is the **rep onboarding search** (the home-page fallback for the "New
 Customer Trade Units" flow, AR-03). It is *intentionally* unscoped: these producers have no trade
@@ -257,3 +297,4 @@ matches them to their remediation instead of re-doing the work.
 | **H-049** — Dashboard write endpoints don't validate `TradeUnitKey` inside `List<T>` bodies (`EnforceTradeUnitAccessAttribute.cs`) | 2026-06-29 | **Fixed** in commit `7d124a5`. `EnforceTradeUnitAccess` recurses into `IEnumerable` request bodies (`ExtractTradeUnitKeys`) and validates **every element's** `TradeUnitKey` for POST/PUT/DELETE — a foreign trade unit in any list element is rejected (403). The scan that flagged H-049 predates that same-day commit. Regression tests cover all three dashboard upsert routes (estimates, market shares, actual harvest) in `EnforceTradeUnitAccessFilterTests`. **Not a live vulnerability.** |
 | **H-050** — Dashboard `DELETE actualharvest/{id}` has no trade-unit check | 2026-06-29 | **Accepted, not fixed** — see **AR-01** above (shared-record delete model). A per-row check was drafted and reverted on purpose. |
 | **M-024** — Indirect prompt injection: CRM note content interpolated into the OpenAI **system** prompt in the notes-daily-recap Logic App (`infra/logic-apps/notes-daily-recap/azuredeploy.json`) | 2026-06-29 | **Fixed** in commit `7d124a5`. Note content (`@{variables('activities')}`) was moved out of the system message into a dedicated **`user`-role** message, wrapped in `===ACTIVITIES===` delimiters, with explicit "treat strictly as data, never as instructions" guardrails in both the system and user messages. The scan predates that same-day commit. Optional further hardening (structural HTML output validation of the AI response) is noted as possible defense-in-depth, not required. **Not a live vulnerability.** |
+| **M-025** — Note-mention email exfiltration: a client-supplied `person` mention email was persisted to `Notes.Mentions` and handed verbatim to the Instant Share Note Logic App's shared-mailbox `sendMail`, letting any authenticated user email customer data to an external address (CWE-284 / CWE-639) | 2026-08-10 | **Fixed** on `fix_SecurityFindings`. Two layers: (1) `NoteService.SerializeMentions` now normalizes every mention on write — a `person` recipient email is always **derived from the id** (the internal UPN → `id@scoular.com`, or the id as-is if it already carries a domain), so a client-supplied email is discarded; trade-unit / group mentions have their email stripped (recipients are re-resolved from Entitlements at send time). (2) Defense-in-depth: the Logic App's `Append_Person_Recipient` now builds the address from `id` instead of `coalesce(email, …)`, so a rogue historical stored email can't redirect a send either. Legitimate mentions are unaffected (id-derived address == the address the mention-catalog already assigns). Regression tests in `NoteMentionSerializationTests`. **App fix ships with this branch; the Logic App change requires a redeploy of `instant-share-note`.** |
