@@ -15,10 +15,16 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
 4. **`Get_Customer`** / **`Get_Author`** — look up the customer name ("Regarding") from
    `[dbo].[Customer]` and the author's display name from `[dbo].[Users]` (Entitlements DB).
 5. **`For_each_Mention` → `Switch_Member_Type`** — resolves each mention to email address(es):
-   - `person` → the mention's `email`, or `<id>@scoular.com`;
+   - `person` → **derived from `id`**: `<id>@scoular.com` (or `id` as-is when it already carries a domain);
    - `trade-unit` → members of `[dbo].[UserTradeUnitAssignments]` (Entitlements), each `<UserId>@scoular.com`;
    - `trade-unit-group` → members of `[dbo].[UserGroupAssignments]` (Entitlements), each `<UserId>@scoular.com`.
    Addresses are de-duplicated with `union()`.
+
+   > **Security (2026-08-10):** the person branch deliberately **ignores the stored `email` field** and
+   > derives the recipient from `id`. Trusting the persisted email let a client-supplied external
+   > address receive customer data from the privileged shared mailbox (see
+   > `SECURITY-REVIEWS/ACCEPTED-RISKS.md`, **M-025**). The API also normalizes person emails to
+   > `id@scoular.com` on write, so both layers independently guarantee an internal recipient.
 6. **`HTTP_Send_Share_Email`** — sends the note (Regarding / Note / From / Created) via **Microsoft Graph
    `sendMail`** as the shared mailbox, to the resolved recipients. No AI summary — the raw note is shared.
 
@@ -52,7 +58,7 @@ daily-recap `RecapMember` / `DailyRecapGroupMembers` model):
 |-------|----------|-------|
 | `id` | yes | Entitlements identifier: UPN prefix (`person`), `TradeUnitCode` (`trade-unit`), or `GroupId` (`trade-unit-group`). |
 | `type` | yes | `person` \| `trade-unit` \| `trade-unit-group`. |
-| `email` | no | Used directly for `person`; falls back to `<id>@scoular.com`. |
+| `email` | no | **Not used for routing** (since 2026-08-10, M-025). Person recipients are derived from `id`; the API writes this field as `id@scoular.com` for `person` and null for TU/group. Retained for display/back-compat only. |
 | `name` | no | Display only; not used for routing. |
 
 ## Security model — no secrets
