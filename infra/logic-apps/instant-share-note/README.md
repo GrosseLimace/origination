@@ -15,16 +15,20 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
 4. **`Get_Customer`** / **`Get_Author`** — look up the customer name ("Regarding") from
    `[dbo].[Customer]` and the author's display name from `[dbo].[Users]` (Entitlements DB).
 5. **`For_each_Mention` → `Switch_Member_Type`** — resolves each mention to email address(es):
-   - `person` → **derived from `id`**: `<id>@scoular.com` (or `id` as-is when it already carries a domain);
+   - `person` → **always `<local part of id>@scoular.com`** — the id's domain, if any, is discarded;
    - `trade-unit` → members of `[dbo].[UserTradeUnitAssignments]` (Entitlements), each `<UserId>@scoular.com`;
    - `trade-unit-group` → members of `[dbo].[UserGroupAssignments]` (Entitlements), each `<UserId>@scoular.com`.
    Addresses are de-duplicated with `union()`.
 
-   > **Security (2026-08-10):** the person branch deliberately **ignores the stored `email` field** and
-   > derives the recipient from `id`. Trusting the persisted email let a client-supplied external
-   > address receive customer data from the privileged shared mailbox (see
-   > `SECURITY-REVIEWS/ACCEPTED-RISKS.md`, **M-025**). The API also normalizes person emails to
-   > `id@scoular.com` on write, so both layers independently guarantee an internal recipient.
+   > **Security (2026-08-10) — do not "simplify" the person branch.** Both the stored `email` **and
+   > `id`** are client-authored, so neither may reach `sendMail` unmodified: trusting `email` (M-025),
+   > then trusting any `id` that merely *contained* an `@` (M-025a), each let a chosen external
+   > address receive customer data from the privileged shared mailbox. The recipient is therefore
+   > **constructed** — `concat(split(id,'@')[0], '@scoular.com')` — so the domain holds by
+   > construction and a forged `id` like `attacker@evil.com` degrades to the harmless internal
+   > `attacker@scoular.com`. The API independently **rejects** person ids carrying a foreign domain on
+   > write (`NoteService.NormalizeMention`); the two layers use different mechanisms on purpose, so
+   > one bad assumption can't defeat both. See `SECURITY-REVIEWS/ACCEPTED-RISKS.md` (**M-025**, **M-025a**).
 6. **`HTTP_Send_Share_Email`** — sends the note (Regarding / Note / From / Created) via **Microsoft Graph
    `sendMail`** as the shared mailbox, to the resolved recipients. No AI summary — the raw note is shared.
 
@@ -41,10 +45,9 @@ strictly read-only (`db_datareader`).
 
 ## Mentions JSON contract
 
-The Logic App reads `dbo.Notes.Mentions` (`nvarchar(max)`). The column exists today but is **not yet
-written by the application** — capturing @mentions in the UI and persisting this JSON is separate,
-API/frontend work. That write path **must** produce a JSON array of the following shape (modeled on the
-daily-recap `RecapMember` / `DailyRecapGroupMembers` model):
+The Logic App reads `dbo.Notes.Mentions` (`nvarchar(max)`), which the API writes on note create/update
+(`NoteService.SerializeMentions`). The JSON array has the following shape (modeled on the daily-recap
+`RecapMember` / `DailyRecapGroupMembers` model):
 
 ```json
 [
@@ -56,7 +59,7 @@ daily-recap `RecapMember` / `DailyRecapGroupMembers` model):
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `id` | yes | Entitlements identifier: UPN prefix (`person`), `TradeUnitCode` (`trade-unit`), or `GroupId` (`trade-unit-group`). |
+| `id` | yes | Entitlements identifier: UPN prefix (`person`), `TradeUnitCode` (`trade-unit`), or `GroupId` (`trade-unit-group`). **Client-authored — treat as untrusted.** For `person` the API accepts only a bare short name or a `@scoular.com` UPN (rejects anything else); the Logic App additionally keeps only the local part. |
 | `type` | yes | `person` \| `trade-unit` \| `trade-unit-group`. |
 | `email` | no | **Not used for routing** (since 2026-08-10, M-025). Person recipients are derived from `id`; the API writes this field as `id@scoular.com` for `person` and null for TU/group. Retained for display/back-compat only. |
 | `name` | no | Display only; not used for routing. |
