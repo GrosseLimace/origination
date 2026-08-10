@@ -21,13 +21,16 @@ GrainOriginatorPortal/
         ├── core/
         │   ├── guards/                     # auth.guard.ts (functional CanActivateFn)
         │   ├── handlers/                   # global-error.handler.ts
-        │   └── services/                   # api, app-state, toast, nlq-filter, position, theme
+        │   └── services/                   # api, app-state, toast, nlq-filter, usage-tracking, theme
         ├── features/
         │   ├── customers/                  # components + home/insights pages
         │   ├── dashboard/
         │   ├── build-list/
-        │   ├── position-report/
-        │   └── bid-sheet/
+        │   ├── bid-sheet/
+        │   ├── calculators/
+        │   ├── unshipped-bushels/
+        │   ├── daily-digest/
+        │   └── usage-dashboard/
         ├── shared/
         │   └── components/                 # button, badge, card, table, dialog, input, select, etc.
         └── models/                         # TypeScript interfaces

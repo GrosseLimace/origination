@@ -11,7 +11,7 @@ import { CalculatorReportService, ReportTable, reportMoneyAccounting } from './c
 export class CancelRollReportService {
   private readonly report = inject(CalculatorReportService);
 
-  download(producer: string, input: CancelRollInputs, result: CancelRollResult): Promise<void> {
+  async download(producer: string, input: CancelRollInputs, result: CancelRollResult): Promise<void> {
     const money = reportMoneyAccounting;
     const num = (n: number) => n.toLocaleString('en-US');
 
@@ -38,7 +38,7 @@ export class CancelRollReportService {
       { firstColumnHeader: 'Option 2 — Roll (Risky)', rows: rollRows },
     ];
 
-    return this.report.download({
+    await this.report.download({
       title: 'Cancel vs. Roll Analysis',
       subtitle: producer.trim() ? `Producer: ${producer.trim()}` : undefined,
       filename: 'Cancel_vs_Roll_Analysis.pdf',

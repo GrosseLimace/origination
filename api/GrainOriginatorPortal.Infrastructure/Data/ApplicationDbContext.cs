@@ -41,6 +41,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<UserActivityDaily> UserActivityDailies => Set<UserActivityDaily>();
     public DbSet<FeatureUsageDaily> FeatureUsageDailies => Set<FeatureUsageDaily>();
+    public DbSet<UserFeatureUsageDaily> UserFeatureUsageDailies => Set<UserFeatureUsageDaily>();
     public DbSet<WeeklyLoginAggregate> WeeklyLoginAggregates => Set<WeeklyLoginAggregate>();
     public DbSet<UserTradeUnitSnapshot> UserTradeUnitSnapshots => Set<UserTradeUnitSnapshot>();
     public DbSet<QueryLibraryItem> QueryLibrary => Set<QueryLibraryItem>();
@@ -667,6 +668,23 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => new { e.ActivityDate, e.FeatureCode, e.SubFeatureCode }).IsUnique()
                 .HasDatabaseName("UQ_FeatureUsageDaily");
             entity.HasIndex(e => new { e.FeatureCode, e.ActivityDate }).HasDatabaseName("IX_FeatureUsageDaily_FeatureCode");
+        });
+
+        modelBuilder.Entity<UserFeatureUsageDaily>(entity =>
+        {
+            entity.ToTable("UserFeatureUsageDaily", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.ActivityDate).IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.FeatureCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SubFeatureCode).HasMaxLength(50).HasDefaultValue("__total__").IsRequired();
+            entity.Property(e => e.RequestCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.InteractionCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.ScreenMinutes).HasDefaultValue(0d).IsRequired();
+            entity.HasIndex(e => new { e.ActivityDate, e.UserId, e.FeatureCode, e.SubFeatureCode }).IsUnique()
+                .HasDatabaseName("UQ_UserFeatureUsageDaily");
+            entity.HasIndex(e => new { e.FeatureCode, e.ActivityDate }).HasDatabaseName("IX_UserFeatureUsageDaily_FeatureCode");
         });
 
         modelBuilder.Entity<WeeklyLoginAggregate>(entity =>

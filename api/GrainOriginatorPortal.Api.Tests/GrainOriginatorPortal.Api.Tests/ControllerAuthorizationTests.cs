@@ -1,3 +1,6 @@
+// System namespaces
+using System.Reflection;
+
 // Microsoft namespaces
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -53,5 +56,36 @@ public class ControllerAuthorizationTests
     {
         Assert.True(typeof(ControllerBase).IsAssignableFrom(controllerType),
             $"{controllerType.Name} must inherit from ControllerBase.");
+    }
+
+    /// <summary>
+    /// Every usage-dashboard action reads or edits other people's activity data, so all of them must
+    /// carry the AdminOnly policy — the class-level [Authorize] alone would only require a sign-in.
+    /// The single exception is the telemetry endpoint, which every signed-in user posts to.
+    /// </summary>
+    [Fact]
+    public void UsageDashboardController_EveryActionExceptClickEvent_RequiresAdminOnly()
+    {
+        var actions = typeof(UsageDashboardController)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => !m.IsSpecialName)
+            .ToList();
+
+        Assert.NotEmpty(actions);
+
+        var missing = actions
+            .Where(m => m.Name != nameof(UsageDashboardController.TrackClickEvent))
+            .Where(m => !m.GetCustomAttributes<AuthorizeAttribute>(inherit: true)
+                .Any(a => a.Policy == "AdminOnly"))
+            .Select(m => m.Name)
+            .ToList();
+
+        Assert.True(missing.Count == 0,
+            $"These usage-dashboard actions are missing [Authorize(Policy = \"AdminOnly\")]: {string.Join(", ", missing)}");
+
+        // And the telemetry endpoint must NOT be admin-gated, or the UI stops reporting usage.
+        var clickEvent = actions.Single(m => m.Name == nameof(UsageDashboardController.TrackClickEvent));
+        Assert.DoesNotContain(clickEvent.GetCustomAttributes<AuthorizeAttribute>(inherit: true),
+            a => a.Policy == "AdminOnly");
     }
 }

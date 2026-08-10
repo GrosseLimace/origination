@@ -1,9 +1,15 @@
+/** Recency tiers (current snapshot): Active used today · Light Usage within 7 days · Dormant longer · Never logged in. */
+export type UsageStatus = 'Active' | 'Light Usage' | 'Dormant' | 'Never';
+
 export interface UsageDashboardSummary {
   adoptionRate: number;
   avgLoginsPerWeek: number;
   avgSessionMinutes: number;
   totalUsers: number;
   activeUsers: number;
+  lightUsageUsers: number;
+  dormantUsers: number;
+  neverUsers: number;
   needsAttentionCount: number;
 }
 
@@ -13,7 +19,7 @@ export interface UsageDashboardUser {
   loginCount: number;
   lastActive: string | null;
   avgSessionMinutes: number;
-  status: 'Active' | 'Inactive' | 'Never Logged In';
+  status: UsageStatus;
   customersContacted: number;
   notesCreated: number;
 }
@@ -26,19 +32,22 @@ export interface DailyActive {
 export interface FeatureSessions {
   featureCode: string;
   featureLabel: string;
-  sessionCount: number;
+  /** Time spent on this screen, in minutes. */
+  screenMinutes: number;
   subFeatures: SubFeatureSessions[];
 }
 
 export interface SubFeatureSessions {
   subFeatureCode: string;
   label: string;
-  sessionCount: number;
+  /** Number of times the sub-feature was used — a count of events, not a duration. */
+  interactionCount: number;
 }
 
 export interface WeeklyTrend {
   weekStart: string;
-  totalLogins: number;
+  /** Distinct users with at least one session that week. */
+  activeUsers: number;
   totalSessions: number;
 }
 
@@ -54,18 +63,39 @@ export interface ActivityBreakdown {
   producerDetails: number;
 }
 
-export interface UsageDashboardInactiveUser {
-  userId: string;
-  displayName: string;
-  daysSinceLastLogin: number | null;
-  status: 'Inactive' | 'Never Logged In';
-  avgSessionMinutes: number;
-  loginCount: number;
+export interface UnderusedFeature {
+  featureCode: string;
+  featureName: string;
+  /** Distinct users who touched the feature in the window. */
+  uniqueUsers: number;
 }
 
-export interface UnderusedFeature {
-  featureName: string;
-  sessionCount: number;
+/** A row of the usage-dashboard exclusion list (accounts hidden from every view). */
+export interface ExcludedUser {
+  id: number;
+  userId: string;
+  displayName: string | null;
+  reason: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** A person with app access (Entra access-group member), for the exclusion picker. */
+export interface AccessUser {
+  userId: string;      // short name (UPN before '@') — the exclusion key
+  displayName: string;
+}
+
+/** The access-group roster for the exclusion picker. `available` is false when the group can't be
+ *  read (Graph not configured/blocked) — the panel then falls back to free-text entry. */
+export interface AccessUsers {
+  available: boolean;
+  users: AccessUser[];
+}
+
+/** Whether the signed-in user may manage the exclusion list (server-enforced allowlist). */
+export interface ExclusionPermissions {
+  canManage: boolean;
 }
 
 export interface QueryLibraryUsage {
@@ -92,7 +122,8 @@ export interface ClickEventRequest {
 export interface UserUsageDetail {
   userId: string;
   displayName: string;
-  status: 'Active' | 'Inactive' | 'Never Logged In';
+  /** Same recency tier the dashboard list shows — both come from the shared backend classifier. */
+  status: UsageStatus;
   lastActive: string | null;
   loginCount: number;
   avgSessionMinutes: number;
@@ -105,6 +136,7 @@ export interface UserUsageDetail {
   insights: InsightsEngagement;
   bidSheet: BidSheetEngagement;
   plantingDashboard: PlantingDashEngagement;
+  dailyRecap: DailyRecapEngagement;
   timePerScreen: ScreenTime[];
   recentActivity: RecentActivity[];
 }
@@ -121,6 +153,11 @@ export interface CustomerEngagement {
   callsClicked: number;
   emailsClicked: number;
   notesCreated: number;
+  notesEdited: number;
+  notesDeleted: number;
+  /** Pin and unpin combined. */
+  notesPinned: number;
+  mentionsUsed: number;
   plantingIntentionsAdded: number;
   producerDetailsEdited: number;
   ticketDropdownOpens: number;
@@ -160,6 +197,9 @@ export interface InsightsEngagement {
   spotLoadsClicks: number;
   unshippedBushelsClicks: number;
   otherCategoryClicks: number;
+  /** Searches run on the Unshipped Bushels page (any of its three search boxes). */
+  unshippedSearches: number;
+  unshippedGroupsExpanded: number;
 }
 
 export interface BidSheetEngagement {
@@ -185,6 +225,15 @@ export interface PlantingDashEngagement {
   harvestContractsTabClicks: number;
   producerRowClicks: number;
   seasonTargetsSaved: number;
+}
+
+export interface DailyRecapEngagement {
+  groupsCreated: number;
+  groupsUpdated: number;
+  groupsDeleted: number;
+  /** Enable and disable combined. */
+  enableToggles: number;
+  screenVisits: number;
 }
 
 export interface ScreenTime {

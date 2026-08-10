@@ -12,6 +12,7 @@ using Microsoft.Data.SqlClient;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Responses;
@@ -214,6 +215,47 @@ public class DiagnosticsController : ControllerBase
     {
         var result = await _customerSync.SyncAsync(cancellationToken);
         return Ok(result);
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Rebuilds the usage-dashboard daily rollups for the last <paramref name="days"/> days from the
+    /// raw UserActivity / UserClickEvent tables. The hourly aggregation job only ever processes the
+    /// previous day, so this is how the rollups get populated for history that predates them —
+    /// run it once after deploying, otherwise the dashboard's historical charts read empty tables.
+    /// Also useful after a feature-code mapping change, since aggregation is a full recompute.
+    /// <para>Admin-gated by the controller policy; capped at the raw-table retention window since
+    /// there is nothing older to aggregate from.</para>
+    /// </summary>
+    [HttpPost("usage-rollups/backfill")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> BackfillUsageRollups(
+        [FromServices] IUsageRepository usageRepository,
+        [FromQuery] int days = 90,
+        CancellationToken cancellationToken = default)
+    {
+        days = Math.Clamp(days, 1, 90);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var weekStarts = new HashSet<DateOnly>();
+
+        for (var offset = days; offset >= 1; offset--)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var date = today.AddDays(-offset);
+
+            await usageRepository.AggregateUserActivityDailyAsync(date, cancellationToken);
+            await usageRepository.AggregateFeatureUsageDailyAsync(date, cancellationToken);
+            await usageRepository.AggregateUserFeatureUsageDailyAsync(date, cancellationToken);
+
+            weekStarts.Add(date.AddDays(-(((int)date.DayOfWeek + 6) % 7))); // Monday-start
+        }
+
+        // Weekly rollups read UserActivityDaily, so they can only run once the days above exist.
+        foreach (var weekStart in weekStarts.OrderBy(w => w))
+            await usageRepository.AggregateWeeklyLoginsAsync(weekStart, cancellationToken);
+
+        _logger.LogInformation("Backfilled usage rollups for {Days} days ({Weeks} weeks)", days, weekStarts.Count);
+        return Ok(new { daysAggregated = days, weeksAggregated = weekStarts.Count });
     }
 
     // -------------------------------------------------------------------------

@@ -1,11 +1,13 @@
 import { Component, DestroyRef, inject, signal, computed, OnInit } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { debounceTime, distinctUntilChanged, filter, map } from 'rxjs';
 import { AppStateService } from '@core/services/app-state.service';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Contract, Customer } from '@models';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -32,6 +34,7 @@ export class UnshippedBushelsComponent implements OnInit {
   private readonly toastService = inject(ToastService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   loading = signal(false);
   private _groups = signal<CustomerContractGroup[]>([]);
@@ -106,6 +109,26 @@ export class UnshippedBushelsComponent implements OnInit {
   totalBushels = computed(() => this.filteredGroups().reduce((sum, g) => sum + g.totalOpenBushels, 0));
   totalCustomers = computed(() => this.filteredGroups().length);
   totalContracts = computed(() => this.filteredGroups().reduce((sum, g) => sum + g.contracts.length, 0));
+
+  constructor() {
+    // Nothing on this page hits an API, so searching and expanding are invisible to the
+    // request-logging middleware. Debounced so a typed word is one event, not one per keystroke.
+    this._trackSearch(this.searchCustomer, 'search-customer');
+    this._trackSearch(this.searchCommodity, 'search-commodity');
+    this._trackSearch(this.searchContract, 'search-contract');
+  }
+
+  private _trackSearch(source: typeof this.searchCustomer, subFeature: string): void {
+    toObservable(source)
+      .pipe(
+        debounceTime(800),
+        map(v => v.trim()),
+        distinctUntilChanged(),
+        filter(v => v.length > 0),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(term => this.usageTracking.postClickEvent('interaction', 'unshipped-bushels', subFeature, term));
+  }
 
   ngOnInit(): void {
     this._buildGroups();
@@ -189,6 +212,10 @@ export class UnshippedBushelsComponent implements OnInit {
 
   toggleExpand(group: CustomerContractGroup): void {
     group.expanded = !group.expanded;
+    // Only the open counts — a collapse isn't a sign of interest in the producer.
+    if (group.expanded) {
+      this.usageTracking.postClickEvent('interaction', 'unshipped-bushels', 'group-expanded', group.customerCode);
+    }
     // Trigger signal update
     this._groups.update(groups => [...groups]);
   }

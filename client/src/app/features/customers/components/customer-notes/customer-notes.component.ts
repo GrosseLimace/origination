@@ -6,6 +6,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { ToastService } from '@core/services/toast.service';
 import { ApiService } from '@core/services/api.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Note, NoteMention, MentionCatalog } from '@models';
 
 /** A single selectable row in the "@" mention dropdown. */
@@ -54,6 +55,7 @@ export class CustomerNotesComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly toastService = inject(ToastService);
   private readonly apiService = inject(ApiService);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   newNote = signal('');
 
@@ -468,6 +470,9 @@ export class CustomerNotesComponent {
         ? list
         : [...list, { type: opt.type, id: opt.id, name: opt.name, email: opt.email }]);
     this.closeMentionDropdown();
+    // Note create/edit/delete/pin are all visible from their API calls; picking a mention is not,
+    // so it's the one part of the notes flow that needs an explicit event.
+    this.usageTracking.postClickEvent('interaction', 'customers', 'notes-mention', `${opt.type}:${opt.id}`);
     const caretPos = (before + insert).length;
     setTimeout(() => {
       const ta = this.noteTextarea()?.nativeElement;
