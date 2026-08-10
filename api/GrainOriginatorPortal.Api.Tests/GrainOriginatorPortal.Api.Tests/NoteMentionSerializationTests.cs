@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
@@ -162,7 +163,7 @@ public class NoteMentionSerializationTests
     }
 
     [Fact]
-    public async Task CreateAsync_KeepsUpnIdAsIs_WhenItAlreadyCarriesADomain()
+    public async Task CreateAsync_KeepsUpnIdAsIs_WhenItAlreadyCarriesTheInternalDomain()
     {
         var (svc, captured) = BuildServiceCapturingMentions();
         var mentions = new[]
@@ -174,6 +175,37 @@ public class NoteMentionSerializationTests
 
         var stored = JsonSerializer.Deserialize<List<NoteMention>>(Assert.Single(captured)!)!;
         Assert.Equal("SFletcher@scoular.com", stored[0].Email);
+    }
+
+    // The id is client-authored too, so sanitizing only the email field left the boundary open:
+    // a person mention with Id="attacker@evil.com" previously passed through untouched and the
+    // Logic App would have mailed the note there. These pin the id-side domain validation.
+
+    [Theory]
+    [InlineData("attacker@evil.com")]              // foreign domain
+    [InlineData("attacker@EVIL.com")]              // foreign domain, mixed case
+    [InlineData("attacker@evil.com@scoular.com")]  // extra '@' — trailing internal domain must not launder it
+    [InlineData("attacker@scoular.com.evil.com")]  // lookalike domain
+    [InlineData("@scoular.com")]                   // empty local part
+    public async Task CreateAsync_RejectsPersonMentionWhoseIdIsNotAnInternalIdentity(string forgedId)
+    {
+        var (svc, captured) = BuildServiceCapturingMentions();
+        var mentions = new[] { new NoteMention { Type = "person", Id = forgedId, Name = "Mallory" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "note body", mentions, CancellationToken.None));
+        Assert.Empty(captured);   // nothing persisted
+    }
+
+    [Fact]
+    public async Task UpdateAsync_AlsoRejectsForgedPersonMentionIds()
+    {
+        // The edit path serializes mentions through the same helper — guard it too.
+        var (svc, _) = BuildServiceCapturingMentions();
+        var mentions = new[] { new NoteMention { Type = "person", Id = "attacker@evil.com", Name = "Mallory" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.UpdateAsync(1, "edited", mentions, CancellationToken.None));
     }
 
     [Fact]
