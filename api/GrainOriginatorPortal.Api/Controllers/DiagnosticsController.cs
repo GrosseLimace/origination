@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 
 // Project namespaces
+using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -36,6 +37,9 @@ public class DiagnosticsController : ControllerBase
     private readonly IHttpClientFactory _httpFactory;
     private readonly CustomerSyncService _customerSync;
     private readonly IGraphDirectoryClient _graphDirectory;
+    private readonly ICtrmGraphQlClient _ctrm;
+    private readonly CtrmContractSnapshot _snapshot;
+    private readonly IContractRepository _contracts;
     private readonly IConfiguration _config;
     private static int _isGeocoding;
 
@@ -48,8 +52,14 @@ public class DiagnosticsController : ControllerBase
         IHttpClientFactory httpFactory,
         CustomerSyncService customerSync,
         IGraphDirectoryClient graphDirectory,
+        ICtrmGraphQlClient ctrm,
+        CtrmContractSnapshot snapshot,
+        IContractRepository contracts,
         IConfiguration config)
     {
+        _ctrm = ctrm;
+        _snapshot = snapshot;
+        _contracts = contracts;
         _context = context;
         _appContext = appContext;
         _entContext = entContext;
@@ -111,6 +121,207 @@ public class DiagnosticsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>
+    /// CTRM GraphQL connectivity probe. Answers auth, egress and build-version in one request, so
+    /// the spike can fail fast before any mapping code is exercised.
+    /// </summary>
+    /// <remarks>
+    /// Uses a one-row <c>contracts</c> query rather than a schema introspection. Introspection was
+    /// available when the API was first validated but the QA gateway now rejects it with
+    /// <c>HC0046</c> ("Introspection is not allowed for the current request"), so a probe built on
+    /// it would report a failure that says nothing about whether the integration works.
+    ///
+    /// A single-row data query proves more anyway: a valid token (auth), a reachable gateway
+    /// (egress), AND that the configured date window actually contains rows. Read the
+    /// Status/Detail pair rather than the HTTP code — the client categorizes NotConfigured /
+    /// TokenFailure / EgressBlocked / Unauthorized / Throttled separately because each has a
+    /// different remediation.
+    /// </remarks>
+    [HttpGet("ctrm")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCtrmConnectivity(CancellationToken cancellationToken = default)
+    {
+        if (DenyIfProduction() is { } deny) return deny;
+
+        // Probe the configured window so a misconfigured or empty window is visible here rather
+        // than showing up later as an empty producer screen.
+        var from = _config.GetValue<string>("Ctrm:ContractDateFrom")?.Trim();
+        var to = _config.GetValue<string>("Ctrm:ContractDateTo")?.Trim();
+        if (string.IsNullOrEmpty(from)) from = DateTime.Today.AddDays(-30).ToString("yyyy-MM-dd");
+        if (string.IsNullOrEmpty(to)) to = DateTime.Today.ToString("yyyy-MM-dd");
+
+        const string document = """
+            query ($from: Date!, $to: Date!) {
+              contracts(skip: 0, take: 1, contractDateFrom: $from, contractDateTo: $to) {
+                totalCount
+                items { contractId contractPrefixType customerId contractDate priceTypeCode }
+              }
+            }
+            """;
+
+        var result = await _ctrm.QueryAsync<JsonElement>(document, new { from, to }, cancellationToken);
+
+        int? totalCount = null;
+        string? sampleContractId = null;
+        if (result.Ok
+            && result.Value is { ValueKind: JsonValueKind.Object } data
+            && data.TryGetProperty("contracts", out var contracts)
+            && contracts.ValueKind == JsonValueKind.Object)
+        {
+            if (contracts.TryGetProperty("totalCount", out var tc) && tc.TryGetInt32(out var tcVal))
+                totalCount = tcVal;
+            if (contracts.TryGetProperty("items", out var items)
+                && items.ValueKind == JsonValueKind.Array
+                && items.GetArrayLength() > 0
+                && items[0].TryGetProperty("contractId", out var cid))
+                sampleContractId = cid.GetString();
+        }
+
+        return Ok(new
+        {
+            Configured = _ctrm.IsConfigured,
+            Source = _config.GetValue<string>("Ctrm:Source"),
+            Endpoint = _config.GetValue<string>("Ctrm:GraphQlUri"),
+            Window = new { From = from, To = to },
+            Status = result.Status.ToString(),
+            result.HttpStatus,
+            result.ErrorCode,
+            result.Detail,
+            TotalCountInWindow = totalCount,
+            SampleContractId = sampleContractId,
+            Healthy = result.Ok && totalCount is > 0
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Runs one producer's contracts through the real repository path and reports what came back,
+    /// including which source served it. Dev/QA only.
+    /// </summary>
+    /// <remarks>
+    /// This exercises the whole chain the producer screen uses — switch, snapshot, mapping, status
+    /// calculation — rather than a raw query, so it catches the failures a connectivity probe cannot:
+    /// a window that loads but contains no rows for this producer, a truncated snapshot, or a
+    /// customer-code mismatch.
+    ///
+    /// It also makes the ODS-vs-CTRM comparison cheap: call it, flip <c>Ctrm:Source</c>, call it
+    /// again, and diff. No restart is needed because the switch re-reads config per call.
+    /// </remarks>
+    [HttpGet("ctrm/contracts")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCtrmContractsForProducer(
+        [FromQuery] string scoularId,
+        CancellationToken cancellationToken = default)
+    {
+        if (DenyIfProduction() is { } deny) return deny;
+
+        if (string.IsNullOrWhiteSpace(scoularId))
+            return BadRequest(new { Error = "scoularId is required (the Scoular customer code, e.g. TATOBIN)." });
+
+        var snapshot = await _snapshot.GetAsync(cancellationToken);
+        var contracts = await _contracts.GetByCustomerAsync(0, scoularId.Trim(), cancellationToken);
+        var pricingLines = await _contracts.GetPricingLinesByCustomerAsync(scoularId.Trim(), cancellationToken);
+
+        return Ok(new
+        {
+            ScoularId = scoularId.Trim(),
+            ServedBy = _contracts is ContractRepositorySwitch { UsingCtrm: true } ? "ctrm" : "ods",
+            Snapshot = new
+            {
+                Status = snapshot.Status.ToString(),
+                snapshot.Detail,
+                snapshot.Window,
+                FetchedInWindow = snapshot.Contracts.Count,
+                snapshot.TotalCountInWindow,
+                snapshot.Truncated,
+                snapshot.LoadedAtUtc
+            },
+            ContractCount = contracts.Count,
+            PricingLineCount = pricingLines.Count,
+            // Enough per contract to eyeball parity against the screen without dumping everything.
+            Contracts = contracts.Select(c => new
+            {
+                c.Id,
+                Synthetic = CtrmSyntheticId.IsSynthetic(c.Id),
+                c.SourceContractId,
+                c.CtrmCustomerId,
+                c.CommodityCode,
+                c.Quantity,
+                c.OpenBalanceQuantity,
+                c.SettledQuantity,
+                c.PriceTypeCode,
+                Status = c.Status.ToString(),
+                c.ContractDate,
+                c.DeliveryStart,
+                c.DeliveryEnd,
+                c.ClosedDate,
+                c.CropYear,
+                c.CustomerConfirmStatus,
+                c.HedgeMarketMonthDescription,
+                PricingLines = pricingLines.Count(p => p.ContractId == c.SourceContractId)
+            })
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Probes whether the API accepts multiple aliased root fields in one document.
+    /// </summary>
+    /// <remarks>
+    /// This decides the whole ticket strategy. The API has no customer filter, so a producer's
+    /// tickets have to be read individually by composite key. If aliasing works, N key lookups
+    /// collapse into ONE request; if it doesn't, they stay N sequential round trips at ~350ms
+    /// each and the per-producer count has to be capped.
+    ///
+    /// Both aliases deliberately request the SAME known-good ticket — we are testing whether the
+    /// server accepts the document shape, not whether the tickets exist.
+    /// </remarks>
+    [HttpGet("ctrm/alias-batch")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCtrmAliasBatchSupport(CancellationToken cancellationToken = default)
+    {
+        if (DenyIfProduction() is { } deny) return deny;
+
+        const string document = """
+            query ($prefix: String!, $number: String!, $suffix: String!, $bl: Date!, $product: String!) {
+              t1: ticket(ticketPrefix: $prefix, ticketNumber: $number, ticketSuffix: $suffix, ticketBLDate: $bl, productCode: $product) { ticketNumber }
+              t2: ticket(ticketPrefix: $prefix, ticketNumber: $number, ticketSuffix: $suffix, ticketBLDate: $bl, productCode: $product) { ticketNumber }
+            }
+            """;
+
+        var variables = new
+        {
+            prefix = "YMMU",
+            number = "408279",
+            suffix = "2",
+            bl = "2024-12-31",
+            product = "YSB"
+        };
+
+        var result = await _ctrm.QueryAsync<JsonElement>(document, variables, cancellationToken);
+
+        var aliasesReturned = new List<string>();
+        if (result.Ok && result.Value is { ValueKind: JsonValueKind.Object } data)
+        {
+            foreach (var property in data.EnumerateObject())
+                aliasesReturned.Add(property.Name);
+        }
+
+        return Ok(new
+        {
+            Status = result.Status.ToString(),
+            result.HttpStatus,
+            result.ErrorCode,
+            result.Detail,
+            AliasesReturned = aliasesReturned,
+            Supported = aliasesReturned.Contains("t1") && aliasesReturned.Contains("t2"),
+            Meaning = aliasesReturned.Contains("t1") && aliasesReturned.Contains("t2")
+                ? "Aliased batching works — a producer's tickets can be fetched in one request."
+                : "Aliased batching did NOT work — ticket lookups stay one request each; cap the per-producer count."
+        });
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Returns 404 unless running in Development or QA.</summary>
     /// <remarks>
     /// These endpoints expose internal DB schema structure and must never be
@@ -118,6 +329,21 @@ public class DiagnosticsController : ControllerBase
     /// </remarks>
     private IActionResult? DenyIfNotDevelopment()
         => _env.IsDevelopment() || _env.IsEnvironment("QA") ? null : NotFound();
+
+    // -------------------------------------------------------------------------
+    /// <summary>Returns 404 in production only — allows local Development plus the deployed
+    /// Dev and QA environments.</summary>
+    /// <remarks>
+    /// Deployed non-prod App Services run with ASPNETCORE_ENVIRONMENT set to "Dev" or "QA", so
+    /// <see cref="DenyIfNotDevelopment"/> (which tests IsDevelopment, i.e. "Development") 404s on
+    /// deployed Dev. The CTRM probes need to be reachable there specifically, because running them
+    /// from the App Service is the only way to test egress from inside the VNet rather than from a
+    /// workstation on VPN. These endpoints report connectivity status only — no schema, no data.
+    /// </remarks>
+    private IActionResult? DenyIfProduction()
+        => _env.IsDevelopment() || _env.IsEnvironment("Dev") || _env.IsEnvironment("QA")
+            ? null
+            : NotFound();
 
     // -------------------------------------------------------------------------
     /// <summary>

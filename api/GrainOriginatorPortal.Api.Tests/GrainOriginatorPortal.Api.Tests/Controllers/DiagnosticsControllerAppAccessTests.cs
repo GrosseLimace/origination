@@ -13,7 +13,9 @@ using Moq;
 using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
@@ -50,6 +52,12 @@ public class DiagnosticsControllerAppAccessTests
             new Mock<IHttpClientFactory>().Object,
             new CustomerSyncService(new Mock<IServiceScopeFactory>().Object, new Mock<ILogger<CustomerSyncService>>().Object),
             _graphMock.Object,
+            new Mock<ICtrmGraphQlClient>().Object,
+            new CtrmContractSnapshot(
+                new Mock<ICtrmGraphQlClient>().Object,
+                config,
+                new Mock<ILogger<CtrmContractSnapshot>>().Object),
+            new Mock<IContractRepository>().Object,
             config);
     }
 

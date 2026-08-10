@@ -114,6 +114,12 @@ builder.Services.AddHostedService<UsageAggregationBackgroundService>();
 builder.Services.AddSingleton<CustomerSyncService>();
 builder.Services.AddHostedService<CustomerSyncBackgroundService>();
 
+// Pre-builds the CTRM contract snapshot at startup when Ctrm:Source is 'ctrm'. Matching the ODS
+// contract population needs a date window holding 110k+ rows — hundreds of sequential pages — so
+// building it lazily would make the first producer selection after a deploy look like a hang.
+// No-ops when the CTRM path is off.
+builder.Services.AddHostedService<GrainOriginatorPortal.Api.Services.Ctrm.CtrmSnapshotWarmupService>();
+
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
 // OnAuthenticationFailed fires when the token is present but invalid (bad signature,
 // expired, wrong audience, etc.). This is more specific than SecurityAuditMiddleware's
@@ -253,6 +259,33 @@ builder.Services.AddSingleton<IGraphDirectoryClient>(sp =>
 // user universe and the daily-digest People picker. Singleton so all requests share the cache.
 builder.Services.AddSingleton<IAppAccessService, AppAccessService>();
 
+// CTRM GraphQL client (DB2Connector.GraphQL spike) — singleton so the cached token is shared.
+// Unlike Graph, this API is not an Azure first-party resource: it needs client credentials
+// against its own app registration, so this is the one place in the app using a
+// ClientSecretCredential. The secret comes from Key Vault as 'Ctrm--ClientSecret' (Key Vault
+// maps '--' to ':'); when any piece is missing the credential stays null and the client reports
+// NotConfigured so callers fall back to ODS rather than failing.
+// Longer term the cleaner shape is an app-role grant to the App Service managed identity, which
+// would remove the secret entirely and match how Graph is done above.
+builder.Services.AddSingleton<GrainOriginatorPortal.Infrastructure.Ctrm.ICtrmGraphQlClient>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var tenantId = config.GetValue<string>("Ctrm:TenantId")?.Trim();
+    var clientId = config.GetValue<string>("Ctrm:ClientId")?.Trim();
+    var clientSecret = config.GetValue<string>("Ctrm:ClientSecret")?.Trim();
+
+    Azure.Core.TokenCredential? ctrmCredential =
+        !string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret)
+            ? new ClientSecretCredential(tenantId, clientId, clientSecret)
+            : null;
+
+    return new GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient(
+        ctrmCredential,
+        sp.GetRequiredService<IHttpClientFactory>(),
+        config,
+        sp.GetRequiredService<ILogger<GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient>>());
+});
+
 // Configure CORS — allowed origins come from configuration so they can be overridden
 // per environment via Azure App Service settings without code changes.
 builder.Services.AddCors(options =>
@@ -331,6 +364,45 @@ builder.Services.AddHttpClient("graph", client =>
         MaxDelay = TimeSpan.FromSeconds(10),
         // Only retry on transient network/timeout failures — never 4xx (a 403 must
         // reach GraphDirectoryClient unretried so it reports PermissionMissing).
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is HttpRequestException ||
+            args.Outcome.Exception is TaskCanceledException)
+    });
+
+    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        FailureRatio = 0.5,
+        SamplingDuration = TimeSpan.FromSeconds(30),
+        MinimumThroughput = 5,
+        BreakDuration = TimeSpan.FromSeconds(30)
+    });
+});
+
+// CTRM GraphQL: BaseAddress is the FULL endpoint URL (single POST target, no relative paths), so
+// it comes from config rather than being hard-coded — each environment points at its own gateway.
+// Timeout is 30s rather than 10s because a cold contract-snapshot page has been measured at ~3.4s
+// and the API is an on-prem node behind APIM, not an Azure-local service.
+builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient.HttpClientName, client =>
+{
+    var uri = builder.Configuration.GetValue<string>("Ctrm:GraphQlUri")?.Trim();
+    if (!string.IsNullOrEmpty(uri))
+        client.BaseAddress = new Uri(uri);
+    client.Timeout = TimeSpan.FromSeconds(30);
+})
+.AddHttpMessageHandler<CorrelationIdOutboundHandler>()
+.AddResilienceHandler("ctrm", pipeline =>
+{
+    pipeline.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.FromMilliseconds(500),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromSeconds(10),
+        // Exceptions only — never status codes. This API answers HTTP 500 for caller-input
+        // validation failures, so retrying on status would triple the cost of a bad query and
+        // still fail. A 401 likewise has to reach CtrmGraphQlClient unretried to be reported
+        // as Unauthorized.
         ShouldHandle = args => ValueTask.FromResult(
             args.Outcome.Exception is HttpRequestException ||
             args.Outcome.Exception is TaskCanceledException)
@@ -476,6 +548,13 @@ app.UseMiddleware<SecurityAuditMiddleware>();
 // Usage tracking — records every authenticated API request for the usage dashboard.
 // Runs after auth so UserId is resolved. Non-blocking: writes to a bounded channel.
 app.UseMiddleware<UsageTrackingMiddleware>();
+
+// Reports which source (ODS or CTRM) actually served each response's contract and ticket data, as
+// X-Data-Source* headers visible in the browser's Network tab. The two sources are mapped to look
+// identical in the response body, so without this there is no way to confirm from the client which
+// one you are looking at. Non-production only — diagnostic detail with no place in a prod response.
+if (!app.Environment.IsProduction())
+    app.UseMiddleware<CtrmProvenanceMiddleware>();
 
 // Map controller routes and require a valid Azure AD bearer token on every endpoint.
 // Health check and OpenAPI endpoints are mapped separately and are not covered here.

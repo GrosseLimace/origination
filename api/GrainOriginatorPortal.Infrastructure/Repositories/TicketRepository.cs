@@ -585,7 +585,10 @@ public class TicketRepository : ITicketRepository
     // vw_GNP026 / vw_GNP003 elevator lookup. DisplayName is already the full "City, ST" string the UI
     // shows, so it goes in ElevatorCity (ElevatorState left null) and renders verbatim on the unapplied /
     // applied / storage ticket views with no client change.
-    private async Task PopulateElevatorLocations(List<Ticket> tickets, CancellationToken cancellationToken)
+    // internal rather than private so CtrmTicketRepository can reuse it. Location display comes from
+    // the MbpLocationSynonym table, which CTRM has no equivalent for, and reusing this is what keeps
+    // the location column identical whichever source supplied the ticket.
+    internal async Task PopulateElevatorLocations(List<Ticket> tickets, CancellationToken cancellationToken)
     {
         // Only org+elevator tickets resolve; their key is "{Org}-{Elevator}", matched to LocationId.
         var keyed = tickets
