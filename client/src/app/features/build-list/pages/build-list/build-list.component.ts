@@ -1578,6 +1578,10 @@ export class BuildListComponent {
     const hidden = new Set<string>();
     // Contract filters
     if (q.includes('active contract'))      { hidden.add('noActiveContracts'); hidden.add('hasActiveContracts'); }
+    // "no contracts" prompts already mean "nothing live", so the status checkboxes are redundant.
+    // 'noContractsAtAll' stays visible on purpose — it's a STRICTER narrowing (zero contracts of any
+    // kind vs. none currently open), so it's still a useful refinement on top of the prompt.
+    if (q.includes('no contract'))          { hidden.add('noActiveContracts'); hidden.add('hasActiveContracts'); }
     if (q.includes('unsigned') || q.includes('unconfirmed')) hidden.add('hasUnsignedContracts');
     if (q.includes('unpriced'))             hidden.add('hasUnpricedContracts');
     if (q.includes('pacing') || q.includes('contract pace')) hidden.add('downHarvestPace');
