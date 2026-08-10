@@ -593,8 +593,9 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Creates or updates producer details for a customer */
-  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityGroup: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[] }): Observable<ProducerDetails> {
+  /** Creates or updates producer details for a customer. `contacts` array order is the display
+   *  order; omitting the property entirely preserves the customer's existing contact rows. */
+  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityGroup: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[] }): Observable<ProducerDetails> {
     return this.http.put<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`, data)
       .pipe(catchError(e => this.handleError(e)));
   }

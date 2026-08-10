@@ -491,6 +491,7 @@ export class HomeComponent {
           grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
+          contacts: pd.contacts ?? customer.contacts,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
@@ -909,6 +910,7 @@ export class HomeComponent {
         totalAcres: pd.totalAcres ?? customer.totalAcres,
         binCapacity: pd.binCapacity ?? customer.binCapacity,
         primaryContact: pd.primaryContact ?? customer.primaryContact,
+        contacts: pd.contacts ?? customer.contacts,
         commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
         linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
       };
@@ -927,6 +929,7 @@ export class HomeComponent {
               grainOnFarm: details.grainOnFarm ?? sel.grainOnFarm,
               primaryContact: details.primaryContact ?? sel.primaryContact,
               primaryPhone: details.primaryPhone ?? sel.primaryPhone,
+              contacts: details.contacts ?? sel.contacts,
               commodities: details.commodities ? details.commodities.split(',').map(c => c.trim()) : sel.commodities,
               linkedProducerIds: details.linkedProducerIds ? details.linkedProducerIds.split(',').filter(Boolean) : sel.linkedProducerIds
             };
@@ -996,6 +999,7 @@ export class HomeComponent {
       grainOnFarm: pd.grainOnFarm ?? fetched.grainOnFarm,
       primaryContact: pd.primaryContact ?? fetched.primaryContact,
       primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
+      contacts: pd.contacts ?? fetched.contacts,
       commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
       linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
     };
@@ -1080,7 +1084,7 @@ export class HomeComponent {
     });
   }
 
-  private _propagatePrimaryContact(linkedCustomer: Customer, primaryContact: string): void {
+  private _propagatePrimaryContact(linkedCustomer: Customer, primary: { name: string; phone?: string; email?: string }): void {
     const existingPd = this.producerDetailsMap().get(linkedCustomer.id);
     // Skip if the linked producer already has a primary contact
     if (existingPd?.primaryContact || linkedCustomer.primaryContact) return;
@@ -1090,18 +1094,23 @@ export class HomeComponent {
       customerName: linkedCustomer.name,
       totalAcres: existingPd?.totalAcres ?? null,
       binCapacity: existingPd?.binCapacity ?? null,
-      primaryContact: primaryContact,
-      primaryPhone: existingPd?.primaryPhone ?? null,  // preserve — this save only propagates the contact
+      primaryContact: primary.name,
+      primaryPhone: primary.phone ?? null,
       commodities: existingPd?.commodities ?? null,
       linkedProducerIds: existingPd?.linkedProducerIds ?? ((linkedCustomer.linkedProducerIds || []).join(',') || null),
-      grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
+      grainOnFarm: existingPd?.grainOnFarm ?? [],  // preserve — this save isn't editing grain on farm
+      // Preserve any existing contact rows; otherwise seed the full primary row (name + phone +
+      // email) so the linked producer gets the same contact card (never wipes rows).
+      contacts: existingPd?.contacts && existingPd.contacts.length > 0
+        ? existingPd.contacts.map(c => ({ name: c.name, phone: c.phone, email: c.email, isPrimary: c.isPrimary }))
+        : [{ name: primary.name, phone: primary.phone, email: primary.email, isPrimary: true }]
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (pd) => {
         const map = new Map(this.producerDetailsMap());
         map.set(pd.customerId, pd);
         this.producerDetailsMap.set(map);
-        // Update the customer object in local state
-        const updated = { ...linkedCustomer, primaryContact };
+        // Update the customer object in local state (server response already updated the pd map).
+        const updated = { ...linkedCustomer, primaryContact: primary.name, primaryPhone: primary.phone, contacts: pd.contacts };
         const idx = this.customers().findIndex(c => c.id === linkedCustomer.id);
         if (idx >= 0) {
           const arr = [...this.customers()];
@@ -1359,7 +1368,7 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
@@ -1382,7 +1391,7 @@ export class HomeComponent {
     }
   }
 
-  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     const customers = this.customers();
     const sel = this.selectedCustomer();
     const customer = customers.find(c => c.id === data.customerId)
@@ -1393,6 +1402,7 @@ export class HomeComponent {
     const contractCommodities = [...new Set(this.allCustomerContracts().map(c => c.commodityCode || '').filter(Boolean))];
     const allCommodities = [...new Set([...ticketCommodities, ...contractCommodities, ...data.commodities])].sort();
 
+    const optimisticContacts = data.contacts.map((c, i) => ({ ...c, sortOrder: i }));
     const updated: Customer = {
       ...customer,
       totalAcres: data.acres,
@@ -1401,6 +1411,7 @@ export class HomeComponent {
       commodities: allCommodities,
       primaryContact: data.primaryContact,
       primaryPhone: data.primaryPhone,
+      contacts: optimisticContacts,
       linkedProducerIds: data.linkedProducerIds,
       eSignEnabled: data.eSignEnabled
     };
@@ -1416,13 +1427,14 @@ export class HomeComponent {
       primaryPhone: data.primaryPhone || null,
       commodities: savedCommodities,
       linkedProducerIds: savedLinkedIds,
-      grainOnFarm: data.grainOnFarm
+      grainOnFarm: data.grainOnFarm,
+      contacts: data.contacts
     };
 
     const existingPd = this.producerDetailsMap().get(data.customerId);
     if (existingPd) {
       const map = new Map(this.producerDetailsMap());
-      map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, primaryPhone: data.primaryPhone || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: data.grainOnFarm });
+      map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, primaryPhone: data.primaryPhone || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: data.grainOnFarm, contacts: optimisticContacts });
       this.producerDetailsMap.set(map);
     }
 
@@ -1463,6 +1475,7 @@ export class HomeComponent {
         commodities: existingPd?.commodities ?? null,
         linkedProducerIds: updatedLinkedIds.length > 0 ? updatedLinkedIds.join(',') : null,
         grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
+        // `contacts` intentionally omitted — the server preserves existing rows when absent.
       }).subscribe({
         next: (pd) => {
           const map = new Map(this.producerDetailsMap());
@@ -1491,12 +1504,15 @@ export class HomeComponent {
     }
 
     if (data.primaryContact) {
-      // Propagate primary contact to ALL linked producers that don't have one yet
+      // Propagate the FULL primary contact row (name + phone + email) to ALL linked producers
+      // that don't have one yet.
+      const primaryRow = data.contacts.find(c => c.isPrimary)
+        ?? { name: data.primaryContact, phone: data.primaryPhone || undefined, isPrimary: true };
       const allKnown = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
       for (const linkedIdStr of data.linkedProducerIds) {
         const linkedCustomer = allKnown.find(c => c.scoularId === linkedIdStr);
         if (linkedCustomer) {
-          this._propagatePrimaryContact(linkedCustomer, data.primaryContact);
+          this._propagatePrimaryContact(linkedCustomer, primaryRow);
         } else {
           // Linked producer not loaded locally — fetch by sourceId then propagate
           this.apiService.getCustomerBySourceId(linkedIdStr).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1504,7 +1520,7 @@ export class HomeComponent {
               const cache = new Map(this._crossTradeUnitCustomers());
               cache.set(fetched.id, fetched);
               this._crossTradeUnitCustomers.set(cache);
-              this._propagatePrimaryContact(fetched, data.primaryContact);
+              this._propagatePrimaryContact(fetched, primaryRow);
             },
             error: () => {}
           });
@@ -1644,7 +1660,8 @@ export class HomeComponent {
               binCapacity: pd.binCapacity ?? fetched.binCapacity,
               grainOnFarm: pd.grainOnFarm ?? fetched.grainOnFarm,
               primaryContact: pd.primaryContact ?? fetched.primaryContact,
-      primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
+              primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
+              contacts: pd.contacts ?? fetched.contacts,
               commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
               linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
             };

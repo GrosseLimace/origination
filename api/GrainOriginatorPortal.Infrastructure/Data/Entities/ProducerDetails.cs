@@ -23,6 +23,11 @@ public class ProducerDetails
     // Per-commodity grain-on-farm breakdown. NOT a stored column — composed by the repository from
     // dbo.ProducerGrainOnFarm on read, and rebuilt from the request on upsert (EF .Ignore()s it).
     public List<GrainOnFarmEntry> GrainOnFarm { get; set; } = new();
+
+    // User-entered contacts (name/label/phone/email, one flagged primary). NOT a stored column —
+    // composed from dbo.ProducerContact on read, rebuilt on upsert (EF .Ignore()s it). The primary
+    // row is dual-written into PrimaryContact/PrimaryPhone above for search/lookup compatibility.
+    public List<ProducerContactEntry> Contacts { get; set; } = new();
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }

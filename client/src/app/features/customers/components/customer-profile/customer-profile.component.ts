@@ -15,8 +15,9 @@ import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-custom
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
 import { commodityChipClass } from '@shared/utils/commodity-color';
+import { formatPhoneDisplay } from '@shared/utils/phone';
 
 @Component({
   selector: 'app-customer-profile',
@@ -113,7 +114,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -488,7 +489,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
@@ -807,6 +808,20 @@ export class CustomerProfileComponent {
     return [c.addressLine1, c.location, c.stateProvince].filter(v => !!v).join(', ');
   }
 
+  /** User-entered contacts, primary first then saved order. Older cached customers without a
+   *  contacts array fall back to a synthesized row from the legacy primary fields. */
+  getContacts(): ProducerContactItem[] {
+    const c = this.customer();
+    if (c.contacts && c.contacts.length > 0) {
+      return [...c.contacts].sort((a, b) =>
+        (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    }
+    if (c.primaryContact || c.primaryPhone) {
+      return [{ name: c.primaryContact || 'Primary Contact', phone: c.primaryPhone, isPrimary: true }];
+    }
+    return [];
+  }
+
   getFormattedLocation(): string {
     const c = this.customer();
     if (!c.location && !c.stateProvince) {
@@ -831,15 +846,6 @@ export class CustomerProfileComponent {
   }
 
   getFormattedPhone(): string {
-    const phone = this.getCustomerPhone();
-    if (!phone) return '';
-    // Remove all non-digit characters
-    const cleaned = phone.replace(/\D/g, '');
-    // Format as (XXX) XXX-XXXX
-    if (cleaned.length === 10) {
-      return `(${cleaned.substring(0, 3)}) ${cleaned.substring(3, 6)}-${cleaned.substring(6)}`;
-    }
-    // Return original if not 10 digits
-    return phone;
+    return formatPhoneDisplay(this.getCustomerPhone());
   }
 }
