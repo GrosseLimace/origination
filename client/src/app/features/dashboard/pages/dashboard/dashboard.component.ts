@@ -11,13 +11,12 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
-import { BadgeComponent } from '@shared/components/badge/badge.component';
-import { commodityColor } from '@shared/utils/commodity-color';
+import { commodityColor, commodityChipClass } from '@shared/utils/commodity-color';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
   templateUrl: './dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -127,6 +126,10 @@ export class DashboardComponent {
     this.producerCropFilter.set('');
   }
 
+  /** Shared per-crop chip classes (pastel bg+text), same palette as Build-A-List planting chips. */
+  readonly commodityChipClass = commodityChipClass;
+
+  /** Last-contact display for a customer — shown only on the "without intentions" producer view. */
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
     return this._lastContactByCustomer().get(customerId)
       ?? { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity };
@@ -468,7 +471,9 @@ export class DashboardComponent {
       acres: number;
       production: number;
       // Per-crop breakdown so we can recompute the displayed acres/production when a chip is active.
-      byKey: Map<string, { display: string; category: string; acres: number; production: number }>;
+      // colorKey = the PLAIN crop category (e.g. "Corn"/"Wheat") so the chip color matches the app-wide
+      // palette; category = the type-prefixed key (e.g. "Dryland Corn") kept for the chip-filter logic.
+      byKey: Map<string, { display: string; category: string; colorKey: string; acres: number; production: number }>;
     }>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = commodityByCode.get(p.crop);
@@ -495,12 +500,21 @@ export class DashboardComponent {
         existingDetail.acres += p.acres;
         existingDetail.production += production;
       } else {
-        entry.byKey.set(displayKey, { display: displayKey, category: categoryKey, acres: p.acres, production });
+        entry.byKey.set(displayKey, { display: displayKey, category: categoryKey, colorKey: category, acres: p.acres, production });
       }
     }
     return [...map.entries()].map(([customerId, v]) => {
       const customer = customerMap.get(customerId);
       const cropEntries = [...v.byKey.values()].sort((a, b) => a.display.localeCompare(b.display));
+      // Build-A-List-style planting chips: "<Type> <Crop> · <acres> ac", grouped by crop (same crops
+      // adjacent) then acres desc, colored by the plain crop category.
+      const plantingChips = [...cropEntries]
+        .sort((a, b) => a.colorKey.localeCompare(b.colorKey) || b.acres - a.acres)
+        .map(e => ({
+          display: e.display,
+          colorKey: e.colorKey,
+          text: `${e.display} · ${e.acres.toLocaleString('en-US')} ac`,
+        }));
       return {
         customerId,
         customerName: v.customerName,
@@ -512,6 +526,7 @@ export class DashboardComponent {
         crops: cropEntries.map(e => e.display),
         cropCategoryKeys: [...new Set(cropEntries.map(e => e.category))].sort(),
         cropEntries,
+        plantingChips,
         highlightedCrops: null as Set<string> | null,
       };
     });
@@ -592,13 +607,26 @@ export class DashboardComponent {
           return (commodity?.category || '').toLowerCase() === cropFilterLower;
         });
       })
-      .map(c => ({
-        customerId: c.id,
-        customerName: c.name,
-        scoularId: c.scoularId ?? null,
-        customer: c,
-        crops: [...(cropsMap.get(c.id) ?? [])].sort(),
-      }));
+      .map(c => {
+        const crops = [...(cropsMap.get(c.id) ?? [])].sort();
+        // These producers have no planting intentions, so no acres/type — chips are just the crop
+        // code, colored + grouped by crop category (resolved via the commodities lookup).
+        const plantingChips = crops
+          .map(code => {
+            const commodity = commodityByCode.get(code) || commodityByCode.get(code.toUpperCase());
+            const colorKey = commodity?.category || code;
+            return { display: code, colorKey, text: code };
+          })
+          .sort((a, b) => a.colorKey.localeCompare(b.colorKey) || a.display.localeCompare(b.display));
+        return {
+          customerId: c.id,
+          customerName: c.name,
+          scoularId: c.scoularId ?? null,
+          customer: c,
+          crops,
+          plantingChips,
+        };
+      });
   });
 
   // Apply search + (optional) chip filter. Chip filter is view-specific, so the inactive
@@ -646,6 +674,7 @@ export class DashboardComponent {
       { applyChipFilter: this.producerView() === 'without' }
     ).length
   );
+
 
   // Last-contacted info per customer — mirrors build-list's lastContactByCustomer.
   // Walks the last-contact aggregate (incl. linked producers, forward + reverse edges) to

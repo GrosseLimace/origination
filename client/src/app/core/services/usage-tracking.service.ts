@@ -18,14 +18,16 @@ export class UsageTrackingService {
   private readonly destroyRef = inject(DestroyRef);
   private readonly baseUrl = environment.apiBaseUrl;
 
-  // Route path → feature code mapping
+  // Route path → feature code mapping. Codes must match the backend's FeatureNameMapper so
+  // middleware-derived activity and these click events describe the same features.
   private readonly routeToFeature: Record<string, string> = {
     '/': 'customers',
     '/build-list': 'build-a-list',
     '/insights': 'insights',
     '/dashboard': 'dashboard',
     '/bid-sheet': 'bidsheet',
-    '/unshipped-bushels': 'insights',
+    '/unshipped-bushels': 'unshipped-bushels',
+    '/daily-digest': 'daily-recap',
     '/usage-dashboard': 'usage-dashboard',
   };
 
@@ -80,21 +82,9 @@ export class UsageTrackingService {
     this.postClickEvent('interaction', 'customers', 'producer-details', customerId);
   }
 
-  trackNoteCreated(customerId?: string): void {
-    this.postClickEvent('interaction', 'customers', 'notes-create', customerId);
-  }
-
   // Dashboard interactions
   trackDashboardTabClick(tabId: string): void {
     this.postClickEvent('interaction', 'dashboard', tabId);
-  }
-
-  trackSeasonTargetsSaved(): void {
-    this.postClickEvent('interaction', 'dashboard', 'set-season-targets');
-  }
-
-  trackFeatureNav(featureCode: string, subFeatureCode?: string): void {
-    this.postClickEvent('feature_nav', featureCode, subFeatureCode);
   }
 
   postClickEvent(eventType: string, featureCode: string, subFeatureCode?: string, targetId?: string): void {

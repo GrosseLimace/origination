@@ -51,11 +51,19 @@ public class CustomersController : ControllerBase
     /// search fallback so a user can find and onboard them by assigning trade units.
     /// No trade-unit scoping — these producers have no TU yet, which is the whole point.
     /// </summary>
+    /// <summary>Minimum onboarding-search term length, enforced server-side. A 1–2 char term is a
+    /// broad LIKE scan over the whole producer master and never a useful onboarding lookup; requiring
+    /// 3 chars caps how much master-data PII a single query can surface (the client already enforces
+    /// this, but the guard must live at the boundary — see AR-04).</summary>
+    private const int MinOdsSearchLength = 3;
+
     [HttpGet("search-ods")]
     [ProducesResponseType(typeof(List<CustomerResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<CustomerResponse>>> SearchOds([FromQuery] string searchTerm, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(searchTerm))
+        // Require a specific-enough term at the boundary, not just in the UI, so a direct API call
+        // with a 1-char term can't harvest broad producer-master PII a page at a time.
+        if (string.IsNullOrWhiteSpace(searchTerm) || searchTerm.Trim().Length < MinOdsSearchLength)
             return Ok(new List<CustomerResponse>());
         // Unscoped by design — these producers have no trade unit yet (the point of onboarding).
         // Returns producer-master contact PII to authenticated reps; accepted risk, see
@@ -99,6 +107,8 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(typeof(List<CustomerResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<CustomerResponse>>> GetLinkedTo(string sourceId, CancellationToken cancellationToken = default)
     {
+        // No per-producer object-level authz is intentional — linked producers deliberately span
+        // trade units; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetLinkedToAsync(sourceId, cancellationToken));
     }
 
@@ -130,6 +140,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(typeof(List<CustomerTradeUnitInfo>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<CustomerTradeUnitInfo>>> GetTradeUnits(long id, CancellationToken cancellationToken = default)
     {
+        // No per-producer object-level authz is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetTradeUnitsAsync(id, cancellationToken));
     }
 

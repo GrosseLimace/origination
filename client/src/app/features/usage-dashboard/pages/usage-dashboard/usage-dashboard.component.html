@@ -9,6 +9,9 @@
     </div>
     <div class="flex flex-wrap items-center gap-3">
       <app-trade-unit-selector />
+      @if (canManageExclusions()) {
+        <app-excluded-users-panel (changed)="onExclusionsChanged()" />
+      }
       <div class="flex items-center gap-1.5">
         <button type="button" (click)="setRange('7d')"
           [class]="activeRange() === '7d'
@@ -72,7 +75,7 @@
         <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Adoption Rate</p>
         <div class="flex items-baseline gap-2 mt-1">
           <span class="text-2xl font-bold text-gray-900 dark:text-white">{{ summary()?.adoptionRate ?? 0 }}%</span>
-          <span class="text-xs text-gray-500 dark:text-gray-400">{{ summary()?.activeUsers ?? 0 }} of {{ summary()?.totalUsers ?? 0 }}</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400">{{ engagedThisWeekCount() }} of {{ summary()?.totalUsers ?? 0 }} this week</span>
         </div>
         <div class="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
           <div class="bg-scoular-green h-1.5 rounded-full transition-all" [style.width.%]="summary()?.adoptionRate ?? 0"></div>
@@ -125,7 +128,7 @@
           <span class="text-2xl font-bold" [class]="needsAttentionCount() > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'">{{ needsAttentionCount() }}</span>
           <span class="text-xs text-gray-500 dark:text-gray-400">users</span>
         </div>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">inactive or low usage</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">not seen in over a week</p>
       </div>
     </div>
   </div>
@@ -170,20 +173,28 @@
                 [attr.stroke-dashoffset]="donutSegments().activeOffset"
                 transform="rotate(-90 50 50)" />
             }
-            <!-- Low Usage segment (amber) -->
-            @if (lowUsageCount() > 0) {
+            <!-- Light Usage segment (amber) -->
+            @if (lightUsageCount() > 0) {
               <circle cx="50" cy="50" r="40" fill="none"
                 class="text-amber-500 dark:text-amber-400" stroke="currentColor" stroke-width="10"
-                [attr.stroke-dasharray]="donutSegments().lowLen + ' ' + (circumference - donutSegments().lowLen)"
-                [attr.stroke-dashoffset]="donutSegments().lowOffset"
+                [attr.stroke-dasharray]="donutSegments().lightLen + ' ' + (circumference - donutSegments().lightLen)"
+                [attr.stroke-dashoffset]="donutSegments().lightOffset"
                 transform="rotate(-90 50 50)" />
             }
-            <!-- Inactive segment (red) -->
-            @if (inactiveCount() > 0) {
+            <!-- Dormant segment (orange) -->
+            @if (dormantCount() > 0) {
+              <circle cx="50" cy="50" r="40" fill="none"
+                class="text-orange-500 dark:text-orange-400" stroke="currentColor" stroke-width="10"
+                [attr.stroke-dasharray]="donutSegments().dormantLen + ' ' + (circumference - donutSegments().dormantLen)"
+                [attr.stroke-dashoffset]="donutSegments().dormantOffset"
+                transform="rotate(-90 50 50)" />
+            }
+            <!-- Never segment (red) -->
+            @if (neverCount() > 0) {
               <circle cx="50" cy="50" r="40" fill="none"
                 class="text-red-500 dark:text-red-400" stroke="currentColor" stroke-width="10"
-                [attr.stroke-dasharray]="donutSegments().inactiveLen + ' ' + (circumference - donutSegments().inactiveLen)"
-                [attr.stroke-dashoffset]="donutSegments().inactiveOffset"
+                [attr.stroke-dasharray]="donutSegments().neverLen + ' ' + (circumference - donutSegments().neverLen)"
+                [attr.stroke-dashoffset]="donutSegments().neverOffset"
                 transform="rotate(-90 50 50)" />
             }
             <!-- Total in center -->
@@ -202,23 +213,30 @@
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div class="w-3 h-3 rounded-full bg-green-500 dark:bg-green-400"></div>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Active</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Active <span class="text-gray-400 dark:text-gray-500">· today</span></span>
             </div>
             <span class="text-sm font-bold text-gray-900 dark:text-white">{{ activeCount() }}</span>
           </div>
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div class="w-3 h-3 rounded-full bg-amber-500 dark:bg-amber-400"></div>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Low Usage</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Light Usage <span class="text-gray-400 dark:text-gray-500">· last 7d</span></span>
             </div>
-            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ lowUsageCount() }}</span>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ lightUsageCount() }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-orange-500 dark:bg-orange-400"></div>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Dormant <span class="text-gray-400 dark:text-gray-500">· &gt;7d</span></span>
+            </div>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ dormantCount() }}</span>
           </div>
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div class="w-3 h-3 rounded-full bg-red-500 dark:bg-red-400"></div>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Inactive</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Never</span>
             </div>
-            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ inactiveCount() }}</span>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ neverCount() }}</span>
           </div>
         </div>
       </div>
@@ -271,8 +289,9 @@
           class="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
           <option value="all">All Statuses</option>
           <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-          <option value="Never Logged In">Never Logged In</option>
+          <option value="Light Usage">Light Usage</option>
+          <option value="Dormant">Dormant</option>
+          <option value="Never">Never</option>
         </select>
       </div>
 
@@ -296,102 +315,46 @@
           <app-table [stickyHeader]="true">
             <app-table-header>
                 <app-table-row>
-                  <app-table-head [sortable]="true" (click)="handleSort('name')">
+                  <app-table-head [sortable]="true" (click)="sort.handle('name')">
                     <span class="flex items-center gap-1">
                       Originator
-                      <span [class]="getSortIconClass('name')">
-                        @if (sortColumn() === 'name' && sortDirection() === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                        } @else if (sortColumn() === 'name' && sortDirection() === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                        }
-                      </span>
+                      <app-sort-icon column="name" [activeColumn]="sort.column()" [direction]="sort.direction()" />
                     </span>
                   </app-table-head>
-                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('status')">
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="sort.handle('status')">
                     <span class="flex items-center justify-center gap-1">
                       Status
-                      <span [class]="getSortIconClass('status')">
-                        @if (sortColumn() === 'status' && sortDirection() === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                        } @else if (sortColumn() === 'status' && sortDirection() === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                        }
-                      </span>
+                      <app-sort-icon column="status" [activeColumn]="sort.column()" [direction]="sort.direction()" />
                     </span>
                   </app-table-head>
-                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('lastLogin')">
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="sort.handle('lastLogin')">
                     <span class="flex items-center justify-center gap-1">
                       Last Login
-                      <span [class]="getSortIconClass('lastLogin')">
-                        @if (sortColumn() === 'lastLogin' && sortDirection() === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                        } @else if (sortColumn() === 'lastLogin' && sortDirection() === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                        }
-                      </span>
+                      <app-sort-icon column="lastLogin" [activeColumn]="sort.column()" [direction]="sort.direction()" />
                     </span>
                   </app-table-head>
-                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('logins')">
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="sort.handle('logins')">
                     <span class="flex items-center justify-center gap-1">
-                      Logins (30d)
-                      <span [class]="getSortIconClass('logins')">
-                        @if (sortColumn() === 'logins' && sortDirection() === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                        } @else if (sortColumn() === 'logins' && sortDirection() === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                        }
-                      </span>
+                      {{ loginsColumnLabel() }}
+                      <app-sort-icon column="logins" [activeColumn]="sort.column()" [direction]="sort.direction()" />
                     </span>
                   </app-table-head>
-                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('avgSession')">
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="sort.handle('avgSession')">
                     <span class="flex items-center justify-center gap-1">
                       Avg Session
-                      <span [class]="getSortIconClass('avgSession')">
-                        @if (sortColumn() === 'avgSession' && sortDirection() === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                        } @else if (sortColumn() === 'avgSession' && sortDirection() === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                        }
-                      </span>
+                      <app-sort-icon column="avgSession" [activeColumn]="sort.column()" [direction]="sort.direction()" />
                     </span>
                   </app-table-head>
-                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('contacted')">
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="sort.handle('contacted')">
                     <span class="flex items-center justify-center gap-1">
                       Producers Contacted
-                      <span [class]="getSortIconClass('contacted')">
-                        @if (sortColumn() === 'contacted' && sortDirection() === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                        } @else if (sortColumn() === 'contacted' && sortDirection() === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                        }
-                      </span>
+                      <app-sort-icon column="contacted" [activeColumn]="sort.column()" [direction]="sort.direction()" />
                     </span>
                   </app-table-head>
-                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('notes')">
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="sort.handle('notes')">
                     <span class="flex items-center justify-center gap-1">
                       Notes Placed
-                      <span [class]="getSortIconClass('notes')">
-                        @if (sortColumn() === 'notes' && sortDirection() === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                        } @else if (sortColumn() === 'notes' && sortDirection() === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                        }
-                      </span>
+                      <app-sort-icon column="notes" [activeColumn]="sort.column()" [direction]="sort.direction()" />
                     </span>
                   </app-table-head>
                 </app-table-row>
@@ -463,7 +426,7 @@
         @if (selectedScreen() !== 'all' && selectedScreenFeatures().length > 0) {
           <div class="mb-4 flex items-baseline gap-2">
             <span class="text-2xl font-bold text-gray-900 dark:text-white">
-              {{ formatTimeSpent(featureSessions()[0]?.sessionCount ?? 0) }}
+              {{ formatTimeSpent(selectedScreenTotalMinutes()) }}
             </span>
             <span class="text-sm text-gray-500 dark:text-gray-400">total time</span>
           </div>
@@ -482,12 +445,12 @@
                 <div class="flex justify-between items-center mb-1">
                   <span class="text-sm text-gray-700 dark:text-gray-300">{{ feat.name }}</span>
                   <span class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ selectedScreen() === 'all' ? formatTimeSpent(feat.sessions) : feat.sessions + ' times' }}
+                    {{ featureBarsAreMinutes() ? formatTimeSpent(feat.value) : feat.value + ' times' }}
                   </span>
                 </div>
                 <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                   <div class="bg-scoular-green h-3 rounded-full transition-all"
-                    [style.width.%]="maxScreenFeatureSessions() > 0 ? (feat.sessions / maxScreenFeatureSessions()) * 100 : 0">
+                    [style.width.%]="(feat.value / maxScreenFeatureValue()) * 100">
                   </div>
                 </div>
               </div>
@@ -585,14 +548,14 @@
             <div class="flex-1 flex flex-col items-center h-full justify-end relative z-10 group">
               <!-- Tooltip -->
               <div class="absolute bottom-full mb-1 px-2 py-1 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-[10px] font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
-                {{ week.totalLogins }} users &middot; {{ week.totalSessions }} sessions
+                {{ week.activeUsers }} users &middot; {{ week.totalSessions }} sessions
               </div>
               <!-- Bar pair -->
               <div class="flex items-end gap-[2px] w-full max-w-[40px] mx-auto h-full">
                 <!-- Users bar -->
                 <div class="flex-1 rounded-t-sm transition-all bg-scoular-green hover:opacity-80"
-                  [style.height.%]="week.totalLogins > 0 ? Math.max((week.totalLogins / maxWeeklyTrend()) * 100, 4) : 2"
-                  [class]="week.totalLogins > 0 ? 'bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'">
+                  [style.height.%]="week.activeUsers > 0 ? Math.max((week.activeUsers / maxWeeklyTrend()) * 100, 4) : 2"
+                  [class]="week.activeUsers > 0 ? 'bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'">
                 </div>
                 <!-- Sessions bar -->
                 <div class="flex-1 rounded-t-sm transition-all bg-blue-500 hover:opacity-80"
@@ -609,7 +572,7 @@
         <!-- Summary -->
         <div class="flex items-center justify-between mt-2 pt-3 border-t border-gray-200 dark:border-gray-700">
           <span class="text-xs text-gray-500 dark:text-gray-400">Last 8 weeks</span>
-          <span class="text-xs text-gray-500 dark:text-gray-400">Data populates once tracking is active</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400">Not affected by the date filter above</span>
         </div>
       </div>
     </div>
@@ -644,116 +607,52 @@
           <app-table [stickyHeader]="true">
             <app-table-header>
               <app-table-row>
-                <app-table-head [sortable]="true" (click)="handleActivitySort('name')">
+                <app-table-head [sortable]="true" (click)="activitySort.handle('name')">
                   <span class="flex items-center gap-1">
                     Originator
-                    <span [class]="getActivitySortIconClass('name')">
-                      @if (activitySortColumn() === 'name' && activitySortDirection() === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                      } @else if (activitySortColumn() === 'name' && activitySortDirection() === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      }
-                    </span>
+                    <app-sort-icon column="name" [activeColumn]="activitySort.column()" [direction]="activitySort.direction()" />
                   </span>
                 </app-table-head>
-                <app-table-head thClass="text-center" [sortable]="true" (click)="handleActivitySort('profiles')">
+                <app-table-head thClass="text-center" [sortable]="true" (click)="activitySort.handle('profiles')">
                   <span class="flex items-center justify-center gap-1">
                     Profiles Looked At
-                    <span [class]="getActivitySortIconClass('profiles')">
-                      @if (activitySortColumn() === 'profiles' && activitySortDirection() === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                      } @else if (activitySortColumn() === 'profiles' && activitySortDirection() === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      }
-                    </span>
+                    <app-sort-icon column="profiles" [activeColumn]="activitySort.column()" [direction]="activitySort.direction()" />
                   </span>
                 </app-table-head>
-                <app-table-head thClass="text-center" [sortable]="true" (click)="handleActivitySort('contracts')">
+                <app-table-head thClass="text-center" [sortable]="true" (click)="activitySort.handle('contracts')">
                   <span class="flex items-center justify-center gap-1">
                     Contracts Looked At
-                    <span [class]="getActivitySortIconClass('contracts')">
-                      @if (activitySortColumn() === 'contracts' && activitySortDirection() === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                      } @else if (activitySortColumn() === 'contracts' && activitySortDirection() === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      }
-                    </span>
+                    <app-sort-icon column="contracts" [activeColumn]="activitySort.column()" [direction]="activitySort.direction()" />
                   </span>
                 </app-table-head>
-                <app-table-head thClass="text-center" [sortable]="true" (click)="handleActivitySort('notes')">
+                <app-table-head thClass="text-center" [sortable]="true" (click)="activitySort.handle('notes')">
                   <span class="flex items-center justify-center gap-1">
                     Notes Placed
-                    <span [class]="getActivitySortIconClass('notes')">
-                      @if (activitySortColumn() === 'notes' && activitySortDirection() === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                      } @else if (activitySortColumn() === 'notes' && activitySortDirection() === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      }
-                    </span>
+                    <app-sort-icon column="notes" [activeColumn]="activitySort.column()" [direction]="activitySort.direction()" />
                   </span>
                 </app-table-head>
-                <app-table-head thClass="text-center" [sortable]="true" (click)="handleActivitySort('calls')">
+                <app-table-head thClass="text-center" [sortable]="true" (click)="activitySort.handle('calls')">
                   <span class="flex items-center justify-center gap-1">
                     Calls / Emails
-                    <span [class]="getActivitySortIconClass('calls')">
-                      @if (activitySortColumn() === 'calls' && activitySortDirection() === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                      } @else if (activitySortColumn() === 'calls' && activitySortDirection() === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      }
-                    </span>
+                    <app-sort-icon column="calls" [activeColumn]="activitySort.column()" [direction]="activitySort.direction()" />
                   </span>
                 </app-table-head>
-                <app-table-head thClass="text-center" [sortable]="true" (click)="handleActivitySort('lists')">
+                <app-table-head thClass="text-center" [sortable]="true" (click)="activitySort.handle('lists')">
                   <span class="flex items-center justify-center gap-1">
                     Lists Built
-                    <span [class]="getActivitySortIconClass('lists')">
-                      @if (activitySortColumn() === 'lists' && activitySortDirection() === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                      } @else if (activitySortColumn() === 'lists' && activitySortDirection() === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      }
-                    </span>
+                    <app-sort-icon column="lists" [activeColumn]="activitySort.column()" [direction]="activitySort.direction()" />
                   </span>
                 </app-table-head>
-                <app-table-head thClass="text-center" [sortable]="true" (click)="handleActivitySort('planting')">
+                <app-table-head thClass="text-center" [sortable]="true" (click)="activitySort.handle('planting')">
                   <span class="flex items-center justify-center gap-1">
                     Planting Intentions Added
-                    <span [class]="getActivitySortIconClass('planting')">
-                      @if (activitySortColumn() === 'planting' && activitySortDirection() === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                      } @else if (activitySortColumn() === 'planting' && activitySortDirection() === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      }
-                    </span>
+                    <app-sort-icon column="planting" [activeColumn]="activitySort.column()" [direction]="activitySort.direction()" />
                   </span>
                 </app-table-head>
-                <app-table-head thClass="text-center" [sortable]="true" (click)="handleActivitySort('producer')">
+                <app-table-head thClass="text-center" [sortable]="true" (click)="activitySort.handle('producer')">
                   <span class="flex items-center justify-center gap-1">
                     Producer Details
-                    <span [class]="getActivitySortIconClass('producer')">
-                      @if (activitySortColumn() === 'producer' && activitySortDirection() === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                      } @else if (activitySortColumn() === 'producer' && activitySortDirection() === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      }
-                    </span>
+                    <app-sort-icon column="producer" [activeColumn]="activitySort.column()" [direction]="activitySort.direction()" />
                   </span>
                 </app-table-head>
               </app-table-row>
@@ -841,40 +740,7 @@
         <div class="flex items-center justify-between mb-4">
           <div>
             <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Inactive Originators</h3>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">No login in the last {{ inactiveDaysThreshold() }} days</p>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <button type="button" (click)="setInactiveDays(7)"
-              [class]="inactiveDaysThreshold() === 7
-                ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
-                : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
-              7d
-            </button>
-            <button type="button" (click)="setInactiveDays(30)"
-              [class]="inactiveDaysThreshold() === 30 && !inactiveCustomOpen()
-                ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
-                : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
-              30d
-            </button>
-            <div class="relative">
-              <button type="button" (click)="inactiveCustomOpen.set(!inactiveCustomOpen())"
-                [class]="inactiveDaysThreshold() !== 7 && inactiveDaysThreshold() !== 30
-                  ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
-                  : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
-                Custom
-              </button>
-              @if (inactiveCustomOpen()) {
-                <div class="absolute right-0 mt-2 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 flex items-center gap-2">
-                  <input type="number" min="1" [ngModel]="inactiveCustomDays()" (ngModelChange)="inactiveCustomDays.set($event)"
-                    class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" placeholder="Days" />
-                  <span class="text-xs text-gray-500 dark:text-gray-400">days</span>
-                  <button type="button" (click)="applyCustomInactiveDays()"
-                    class="px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green">
-                    Apply
-                  </button>
-                </div>
-              }
-            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Dormant (&gt;7 days since last use) · never logged in</p>
           </div>
         </div>
 
@@ -895,7 +761,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ user.displayName }}</div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">
-                    Last login: {{ user.daysSinceLastLogin !== null ? user.daysSinceLastLogin + ' days ago' : 'Never' }}
+                    Last active: {{ user.lastActive ? formatLastActive(user.lastActive) : 'Never' }}
                   </div>
                 </div>
                 <div class="text-right flex-shrink-0">
@@ -922,7 +788,9 @@
       <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
         <div class="mb-4">
           <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Low Usage Originators</h3>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Fewer than 15 logins in the last 30 days</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Used within the last week, but not today
+          </p>
         </div>
 
         <div class="space-y-3 max-h-[320px] overflow-auto">
@@ -945,13 +813,12 @@
                     Last login: {{ formatLastActive(user.lastActive) }}
                   </div>
                 </div>
-                <div class="flex flex-col items-end gap-0.5 flex-shrink-0">
-                  <div class="flex items-baseline gap-1">
-                    <span class="text-sm font-bold text-amber-600 dark:text-amber-400">{{ user.loginCount }}</span>
-                    <span class="text-[10px] text-gray-400 dark:text-gray-500">logins</span>
-                  </div>
+                <div class="text-right flex-shrink-0">
+                  <span class="px-2 py-0.5 text-[10px] font-medium rounded-full" [class]="getStatusClasses(user.status)">
+                    {{ user.status }}
+                  </span>
                   @if (user.avgSessionMinutes > 0) {
-                    <div class="text-[10px] text-gray-400 dark:text-gray-500">Avg {{ formatSessionDuration(user.avgSessionMinutes) }}</div>
+                    <div class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">Avg {{ formatSessionDuration(user.avgSessionMinutes) }}</div>
                   }
                 </div>
               </div>
@@ -971,10 +838,10 @@
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 mt-6">
       <div class="mb-4">
         <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Underused Features</h3>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Features with the lowest usage — opportunities for training or adoption</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Features the fewest originators touched — opportunities for training or adoption</p>
       </div>
       <div class="space-y-3">
-        @for (feat of underusedFeatures(); track feat.featureName) {
+        @for (feat of underusedFeatures(); track feat.featureCode) {
           <div class="flex items-center gap-4">
             <div class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500 dark:text-gray-400">
@@ -984,11 +851,13 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between mb-1">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ feat.featureName }}</span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{ feat.sessionCount }} sessions</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400">
+                  {{ feat.uniqueUsers }} {{ feat.uniqueUsers === 1 ? 'user' : 'users' }}
+                </span>
               </div>
               <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div class="bg-gray-400 dark:bg-gray-500 h-2 rounded-full transition-all"
-                  [style.width.%]="feat.sessionCount > 0 ? Math.max((feat.sessionCount / maxUnderusedSessions()) * 100, 4) : 2"></div>
+                  [style.width.%]="feat.uniqueUsers > 0 ? Math.max((feat.uniqueUsers / maxUnderusedUsers()) * 100, 4) : 2"></div>
               </div>
             </div>
           </div>

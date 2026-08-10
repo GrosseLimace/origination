@@ -5,10 +5,13 @@
 # NOTE: `closedByPullRequestsReferences` (the "Development" links) is
 # schema-version-dependent on GHE. If the API rejects that field, remove that
 # block and rely on the timelineItems fallback below.
-query ($projectId: ID!, $cursor: String) {
+# NOTE: the cursor variable MUST be named $endCursor — `gh api graphql --paginate`
+# only feeds the endCursor value into a variable with that exact name; any other
+# name silently refetches page 1 forever.
+query ($projectId: ID!, $endCursor: String) {
   node(id: $projectId) {
     ... on ProjectV2 {
-      items(first: 50, after: $cursor) {
+      items(first: 50, after: $endCursor) {
         pageInfo {
           hasNextPage
           endCursor

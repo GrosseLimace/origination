@@ -28,7 +28,6 @@ import {
   HarvestWindow,
   UsageDashboardSummary,
   UsageDashboardUser,
-  UsageDashboardInactiveUser,
   DailyActive,
   FeatureSessions,
   QueryLibraryUsage,
@@ -37,6 +36,9 @@ import {
   ActivityBreakdown,
   UnderusedFeature,
   UserUsageDetail,
+  ExcludedUser,
+  AccessUsers,
+  ExclusionPermissions,
   QueryLibraryItem,
   NoteMention,
   MentionCatalog,
@@ -947,10 +949,11 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageDashboardUsers(from: string, to: string, tradeUnitKey?: string, status?: string): Observable<UsageDashboardUser[]> {
-    const extra: Record<string, string> = {};
-    if (status && status !== 'all') extra['status'] = status;
-    return this.http.get<UsageDashboardUser[]>(`${this.baseUrl}/usage-dashboard/users`, { params: this.usageParams(from, to, tradeUnitKey, extra) })
+  /** Returns the full user universe. Status filtering stays client-side: the same list also feeds
+   *  the status donut, the activity-breakdown table and the low-usage panel, so a server-filtered
+   *  response could not replace it. */
+  getUsageDashboardUsers(from: string, to: string, tradeUnitKey?: string): Observable<UsageDashboardUser[]> {
+    return this.http.get<UsageDashboardUser[]>(`${this.baseUrl}/usage-dashboard/users`, { params: this.usageParams(from, to, tradeUnitKey) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -966,8 +969,10 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageWeeklyTrend(tradeUnitKey?: string): Observable<WeeklyTrend[]> {
-    const params: Record<string, string> = {};
+  /** Trend over whole calendar weeks. Deliberately takes no date range — it is a trend view, so it
+   *  does not re-fetch when the dashboard's window changes. */
+  getUsageWeeklyTrend(tradeUnitKey?: string, weeks = 8): Observable<WeeklyTrend[]> {
+    const params: Record<string, string> = { weeks: weeks.toString() };
     if (tradeUnitKey) params['tradeUnitKey'] = tradeUnitKey;
     return this.http.get<WeeklyTrend[]>(`${this.baseUrl}/usage-dashboard/weekly-trend`, { params })
       .pipe(catchError(e => this.handleError(e)));
@@ -975,13 +980,6 @@ export class ApiService {
 
   getUsageActivityBreakdown(from: string, to: string, tradeUnitKey?: string): Observable<ActivityBreakdown[]> {
     return this.http.get<ActivityBreakdown[]>(`${this.baseUrl}/usage-dashboard/activity-breakdown`, { params: this.usageParams(from, to, tradeUnitKey) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageDashboardInactive(from: string, to: string, tradeUnitKey?: string, daysThreshold?: number): Observable<UsageDashboardInactiveUser[]> {
-    const extra: Record<string, string> = {};
-    if (daysThreshold) extra['daysThreshold'] = daysThreshold.toString();
-    return this.http.get<UsageDashboardInactiveUser[]>(`${this.baseUrl}/usage-dashboard/inactive`, { params: this.usageParams(from, to, tradeUnitKey, extra) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -1005,5 +1003,38 @@ export class ApiService {
       `${this.baseUrl}/usage-dashboard/users/${encodeURIComponent(userId)}/detail`,
       { params: this.usageParams(from, to, tradeUnitKey) }
     ).pipe(catchError(e => this.handleError(e)));
+  }
+
+  // Accounts hidden from every usage-dashboard view. Excluding someone changes nothing about their
+  // access to the app.
+
+  /** Whether the signed-in user is on the exclusion-manager allowlist — gates the gear icon.
+   *  The server enforces the same allowlist on every exclusion endpoint regardless. */
+  getUsageExclusionsCanManage(): Observable<ExclusionPermissions> {
+    return this.http.get<ExclusionPermissions>(`${this.baseUrl}/usage-dashboard/excluded-users/can-manage`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageExcludedUsers(): Observable<ExcludedUser[]> {
+    return this.http.get<ExcludedUser[]>(`${this.baseUrl}/usage-dashboard/excluded-users`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** People with app access (Entra access-group members), for the exclusion picker. */
+  getUsageAccessUsers(): Observable<AccessUsers> {
+    return this.http.get<AccessUsers>(`${this.baseUrl}/usage-dashboard/access-users`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  addUsageExcludedUser(userId: string, reason?: string): Observable<ExcludedUser> {
+    return this.http.post<ExcludedUser>(`${this.baseUrl}/usage-dashboard/excluded-users`, {
+      userId,
+      reason: reason?.trim() || null
+    }).pipe(catchError(e => this.handleError(e)));
+  }
+
+  removeUsageExcludedUser(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/usage-dashboard/excluded-users/${id}`)
+      .pipe(catchError(e => this.handleError(e)));
   }
 }

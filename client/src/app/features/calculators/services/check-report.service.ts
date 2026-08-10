@@ -17,7 +17,7 @@ export interface CheckReportCommodity {
 export class CheckReportService {
   private readonly report = inject(CalculatorReportService);
 
-  download(producer: string, items: CheckReportCommodity[]): Promise<void> {
+  async download(producer: string, items: CheckReportCommodity[]): Promise<void> {
     const columnHeaders = items.map((c, idx) => c.input.commodity || `Commodity ${idx + 1}`);
     const money = reportMoneyAccounting;
     const num = (n: number) => n.toLocaleString('en-US');
@@ -51,7 +51,7 @@ export class CheckReportService {
       { firstColumnHeader: 'Settlement', rows: resultRows.map(([label, fn]) => [label, ...items.map(c => fn(c.result))]) },
     ];
 
-    return this.report.download({
+    await this.report.download({
       title: 'Check Calculator',
       subtitle: producer.trim() ? `Producer: ${producer.trim()}` : undefined,
       filename: 'Check_Calculator_Report.pdf',

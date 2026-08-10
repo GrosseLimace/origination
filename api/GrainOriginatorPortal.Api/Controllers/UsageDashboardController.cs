@@ -20,23 +20,40 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class UsageDashboardController : ControllerBase
 {
     private readonly IUsageDashboardService _service;
+    private readonly HashSet<string> _exclusionManagers;
 
-    public UsageDashboardController(IUsageDashboardService service)
+    public UsageDashboardController(IUsageDashboardService service, IConfiguration configuration)
     {
         _service = service;
+        // The short list of IT users allowed to manage the exclusion list — a tighter circle than
+        // the Admin role that gates the rest of the dashboard.
+        _exclusionManagers = new HashSet<string>(
+            configuration.GetSection("UsageDashboard:ExclusionManagers").Get<string[]>() ?? [],
+            StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>Whether the signed-in user is on the configured exclusion-manager allowlist.</summary>
+    private bool IsExclusionManager()
+    {
+        var shortName = GetCurrentUserShortName();
+        return !string.IsNullOrEmpty(shortName) && _exclusionManagers.Contains(shortName);
+    }
+
+    // `from`/`to` are calendar dates (yyyy-MM-dd) interpreted in UTC; the window is
+    // [from 00:00Z, to+1day 00:00Z), so from == to is one full day. Binding DateOnly rather than
+    // DateTime keeps the boundary from shifting with the server's local timezone.
 
     [HttpGet("summary")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<UsageDashboardSummaryDto>> GetSummary(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetSummaryAsync(from, to, tradeUnitKey, cancellationToken));
 
     [HttpGet("users")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<UsageDashboardUserDto>>> GetUsers(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null, [FromQuery] string? status = null,
         CancellationToken cancellationToken = default)
         => Ok(await _service.GetUsersAsync(from, to, tradeUnitKey, status, cancellationToken));
@@ -44,57 +61,51 @@ public class UsageDashboardController : ControllerBase
     [HttpGet("daily-active")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<DailyActiveDto>>> GetDailyActive(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetDailyActiveAsync(from, to, tradeUnitKey, cancellationToken));
 
     [HttpGet("feature-sessions")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<FeatureSessionsDto>>> GetFeatureSessions(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null, [FromQuery] string? screen = null,
         CancellationToken cancellationToken = default)
         => Ok(await _service.GetFeatureSessionsAsync(from, to, tradeUnitKey, screen, cancellationToken));
 
+    // Trend view over whole calendar weeks — deliberately not bound to the dashboard's date filter.
     [HttpGet("weekly-trend")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<WeeklyTrendDto>>> GetWeeklyTrend(
-        [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
-        => Ok(await _service.GetWeeklyTrendAsync(tradeUnitKey, cancellationToken));
+        [FromQuery] string? tradeUnitKey = null, [FromQuery] int weeks = 8,
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.GetWeeklyTrendAsync(tradeUnitKey, weeks, cancellationToken));
 
     [HttpGet("activity-breakdown")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<ActivityBreakdownDto>>> GetActivityBreakdown(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetActivityBreakdownAsync(from, to, tradeUnitKey, cancellationToken));
-
-    [HttpGet("inactive")]
-    [Authorize(Policy = "AdminOnly")]
-    public async Task<ActionResult<List<UsageDashboardInactiveUserDto>>> GetInactiveUsers(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] int daysThreshold = 30,
-        CancellationToken cancellationToken = default)
-        => Ok(await _service.GetInactiveUsersAsync(from, to, tradeUnitKey, daysThreshold, cancellationToken));
 
     [HttpGet("underused-features")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetUnderusedFeaturesAsync(from, to, tradeUnitKey, cancellationToken));
 
     [HttpGet("query-library-usage")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetQueryLibraryUsageAsync(from, to, tradeUnitKey, cancellationToken));
 
     [HttpGet("query-search-gaps")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetQuerySearchGapsAsync(from, to, tradeUnitKey, cancellationToken));
 
@@ -103,13 +114,70 @@ public class UsageDashboardController : ControllerBase
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<UserUsageDetailDto>> GetUserDetail(
         string userId,
-        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? tradeUnitKey = null,
         CancellationToken cancellationToken = default)
     {
         var detail = await _service.GetUserDetailAsync(userId, from, to, tradeUnitKey, cancellationToken);
         if (detail is null) return NotFound();
         return Ok(detail);
+    }
+
+    // ── Excluded users ──
+    // Accounts kept out of every dashboard view (IT/dev/admin accounts whose activity would skew
+    // adoption). Excluding someone changes nothing about their access to the app.
+    //
+    // These endpoints are gated TWICE: AdminOnly (like the rest of the dashboard) AND the
+    // UsageDashboard:ExclusionManagers allowlist — only the named IT users may see or change the
+    // exclusion list. The client asks /excluded-users/can-manage and hides the gear for everyone else.
+
+    /// <summary>Whether the caller may manage exclusions — drives the gear icon's visibility.</summary>
+    [HttpGet("excluded-users/can-manage")]
+    [Authorize(Policy = "AdminOnly")]
+    public ActionResult<ExclusionPermissionsDto> GetCanManageExclusions()
+        => Ok(new ExclusionPermissionsDto { CanManage = IsExclusionManager() });
+
+    // People who can sign in to the app (Entra access-group members), for the exclusion picker so an
+    // admin can search + select instead of typing a user id. Available=false ⇒ client falls to free text.
+    [HttpGet("access-users")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<ActionResult<AccessUsersDto>> GetAccessUsers(CancellationToken cancellationToken = default)
+    {
+        if (!IsExclusionManager()) return Forbid();
+        return Ok(await _service.GetAccessUsersAsync(cancellationToken));
+    }
+
+    [HttpGet("excluded-users")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<ActionResult<List<ExcludedUserDto>>> GetExcludedUsers(CancellationToken cancellationToken = default)
+    {
+        if (!IsExclusionManager()) return Forbid();
+        return Ok(await _service.GetExcludedUsersAsync(cancellationToken));
+    }
+
+    [HttpPost("excluded-users")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<ActionResult<ExcludedUserDto>> AddExcludedUser(
+        [FromBody] AddExcludedUserRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!IsExclusionManager()) return Forbid();
+        if (string.IsNullOrWhiteSpace(request.UserId))
+            return BadRequest("A user id is required.");
+
+        var createdBy = GetCurrentUserShortName() ?? "unknown";
+        var added = await _service.AddExcludedUserAsync(request.UserId, request.Reason, createdBy, cancellationToken);
+        if (added is null)
+            return Conflict("That user is already excluded.");
+
+        return CreatedAtAction(nameof(GetExcludedUsers), new { }, added);
+    }
+
+    [HttpDelete("excluded-users/{id:int}")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<ActionResult> RemoveExcludedUser(int id, CancellationToken cancellationToken = default)
+    {
+        if (!IsExclusionManager()) return Forbid();
+        return await _service.RemoveExcludedUserAsync(id, cancellationToken) ? NoContent() : NotFound();
     }
 
     // Telemetry endpoint — every signed-in user posts click events from the UI,
@@ -121,15 +189,9 @@ public class UsageDashboardController : ControllerBase
         [FromBody] ClickEventRequest request,
         [FromServices] Channel<UserClickEventRecord> clickChannel)
     {
-        var rawUserId = User.FindFirst("preferred_username")?.Value
-            ?? User.FindFirst("oid")?.Value
-            ?? User.Identity?.Name;
-
-        if (string.IsNullOrEmpty(rawUserId))
+        var userId = GetCurrentUserShortName();
+        if (string.IsNullOrEmpty(userId))
             return Unauthorized();
-
-        // Normalize: strip @domain to match Entitlements view
-        var userId = rawUserId.Contains('@') ? rawUserId.Split('@')[0] : rawUserId;
 
         clickChannel.Writer.TryWrite(new UserClickEventRecord
         {
@@ -144,5 +206,17 @@ public class UsageDashboardController : ControllerBase
         });
 
         return Accepted();
+    }
+
+    /// <summary>The signed-in user's short name (UPN before the '@'), matching how activity rows
+    /// and the entitlements view key users. Null when no identity is present.</summary>
+    private string? GetCurrentUserShortName()
+    {
+        var raw = User.FindFirst("preferred_username")?.Value
+            ?? User.FindFirst("oid")?.Value
+            ?? User.Identity?.Name;
+
+        if (string.IsNullOrEmpty(raw)) return null;
+        return raw.Contains('@') ? raw.Split('@')[0] : raw;
     }
 }

@@ -125,10 +125,52 @@ public class NoteService : INoteService
         return note is null ? null : note.ToResponse(await ResolveAsync(note, cancellationToken));
     }
 
-    /// <summary>Serializes the structured mentions to the JSON stored on the note. Null/empty → null
-    /// so the column stays NULL rather than an empty "[]".</summary>
-    private static string? SerializeMentions(IReadOnlyList<NoteMention>? mentions) =>
-        mentions is { Count: > 0 } ? JsonSerializer.Serialize(mentions) : null;
+    /// <summary>The only domain a note mention may resolve to. Person recipients are rebuilt as
+    /// <c>localPart@{InternalEmailDomain}</c>, so no persisted mention can address an outside domain.</summary>
+    private const string InternalEmailDomain = "scoular.com";
+
+    /// <summary>Normalizes then serializes the structured mentions to the JSON stored on the note.
+    /// Null/empty → null so the column stays NULL rather than an empty "[]".
+    /// <para>
+    /// SECURITY (M-025 / CWE-284): the persisted Mentions feed the Instant Share Note Logic App,
+    /// which emails the note from the privileged shared mailbox to each person mention's address.
+    /// Both the client-supplied <c>email</c> AND <c>id</c> are therefore untrusted input — the
+    /// recipient is rebuilt from the id's local part plus the internal domain, and any id carrying a
+    /// foreign domain is rejected outright. Trade-unit / group mentions never carry an email
+    /// (recipients are re-resolved from the Entitlements DB at send time), so we strip it.
+    /// </para></summary>
+    private static string? SerializeMentions(IReadOnlyList<NoteMention>? mentions)
+    {
+        if (mentions is not { Count: > 0 }) return null;
+        var normalized = mentions.Select(NormalizeMention).ToList();
+        return JsonSerializer.Serialize(normalized);
+    }
+
+    /// <summary>Rebuilds a person mention's email as an internal address derived from its id, and
+    /// drops emails from non-person mentions. Throws when the id is not an internal identity —
+    /// the mention catalog only ever emits internal short names/UPNs, so anything else is forged.</summary>
+    private static NoteMention NormalizeMention(NoteMention mention)
+    {
+        if (!string.Equals(mention.Type, "person", StringComparison.OrdinalIgnoreCase))
+            return mention with { Email = null };
+
+        // Accept exactly two shapes: a bare short name ("CEgr") or a full internal UPN
+        // ("CEgr@scoular.com"). A foreign domain, extra '@', or empty local part is rejected rather
+        // than silently coerced, so a forged id can never become a mail recipient. The stored
+        // address is CONSTRUCTED (never passed through), so the domain is guaranteed by build.
+        var id = mention.Id.Trim();
+        var segments = id.Split('@');
+        var localPart = segments[0];
+        var isBareName = segments.Length == 1;
+        var isInternalUpn = segments.Length == 2
+            && string.Equals(segments[1], InternalEmailDomain, StringComparison.OrdinalIgnoreCase);
+
+        if (localPart.Length == 0 || (!isBareName && !isInternalUpn))
+            throw new ValidationException("mentions",
+                $"Person mention '{mention.Id}' is not an internal {InternalEmailDomain} identity.");
+
+        return mention with { Email = $"{localPart}@{InternalEmailDomain}" };
+    }
 
     /// <inheritdoc />
     public Task DeleteAsync(long noteId, CancellationToken cancellationToken) =>

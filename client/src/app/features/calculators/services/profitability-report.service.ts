@@ -17,7 +17,7 @@ export interface ProfitabilityReportCrop {
 export class ProfitabilityReportService {
   private readonly report = inject(CalculatorReportService);
 
-  download(crops: ProfitabilityReportCrop[]): Promise<void> {
+  async download(crops: ProfitabilityReportCrop[]): Promise<void> {
     const columnHeaders = crops.map(c => this.commodityLabel(c.input.commodity));
     const money = reportMoneyAccounting;
     const num = (n: number) => n.toLocaleString('en-US');
@@ -59,7 +59,7 @@ export class ProfitabilityReportService {
       { firstColumnHeader: 'Category', rows: summaryRows.map(([label, fn]) => [label, ...crops.map(c => fn(c.result))]) },
     ];
 
-    return this.report.download({
+    await this.report.download({
       title: 'Farm Profitability Report',
       filename: 'Farm_Profitability_Report.pdf',
       columnHeaders,

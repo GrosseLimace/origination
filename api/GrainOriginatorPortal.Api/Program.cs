@@ -230,6 +230,9 @@ builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
 // Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
+// Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
+// cached user universes process-wide. Singleton by necessity — see the type's remarks.
+builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
