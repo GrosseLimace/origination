@@ -83,6 +83,7 @@
       }
     },
     {
+      "comments": "SECURITY (M-025 / M-025a, CWE-284) — Append_Person_Recipient in the Case_person branch: both the persisted 'email' AND 'id' on a mention are client-authored, so neither may reach sendMail unmodified. The recipient is CONSTRUCTED as concat(<local part of id>, '@scoular.com'), which keeps the domain correct by construction — a forged id like 'attacker@evil.com' degrades to the harmless internal 'attacker@scoular.com' rather than leaving the tenant. Trusting 'email' (M-025) and then trusting any id containing '@' (M-025a) were both exploitable; do not 'simplify' that expression back. The API independently REJECTS non-internal person ids on write (NoteService.NormalizeMention) — the two layers use different mechanisms on purpose. NOTE: annotations must live here at the ARM resource level; a 'comment' property inside a workflow action is rejected by the Logic Apps schema (FlowTemplateAction).",
       "type": "Microsoft.Logic/workflows",
       "apiVersion": "2019-05-01",
       "name": "[parameters('logicAppName')]",
@@ -196,7 +197,6 @@
                         "Case_person": {
                           "actions": {
                             "Append_Person_Recipient": {
-                              "comment": "Defense-in-depth (M-025 / CWE-284): both the persisted 'email' AND 'id' are untrusted (client-authored). The recipient domain is therefore STRUCTURAL — take only the local part of the id (everything before the first '@') and append the internal domain, so the address is always @scoular.com by construction and a forged id like 'attacker@evil.com' degrades to the harmless internal 'attacker@scoular.com' instead of leaving the tenant. The API additionally rejects non-internal ids on write; this expression keeps the Logic App safe for any pre-existing row.",
                               "inputs": {
                                 "name": "recipient",
                                 "value": {
