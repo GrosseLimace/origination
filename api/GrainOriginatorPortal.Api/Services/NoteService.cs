@@ -125,10 +125,36 @@ public class NoteService : INoteService
         return note is null ? null : note.ToResponse(await ResolveAsync(note, cancellationToken));
     }
 
-    /// <summary>Serializes the structured mentions to the JSON stored on the note. Null/empty → null
-    /// so the column stays NULL rather than an empty "[]".</summary>
-    private static string? SerializeMentions(IReadOnlyList<NoteMention>? mentions) =>
-        mentions is { Count: > 0 } ? JsonSerializer.Serialize(mentions) : null;
+    /// <summary>Normalizes then serializes the structured mentions to the JSON stored on the note.
+    /// Null/empty → null so the column stays NULL rather than an empty "[]".
+    /// <para>
+    /// SECURITY (M-xxx / CWE-284): the persisted Mentions feed the Instant Share Note Logic App,
+    /// which emails the note from the privileged shared mailbox to each person mention's address.
+    /// A client-supplied person email is therefore an external-exfiltration vector, so we never
+    /// trust it — a person's recipient address is ALWAYS derived from their id (the internal UPN),
+    /// forcing an @scoular.com address. Trade-unit / group mentions never carry an email (recipients
+    /// are re-resolved from the Entitlements DB at send time), so we strip it.
+    /// </para></summary>
+    private static string? SerializeMentions(IReadOnlyList<NoteMention>? mentions)
+    {
+        if (mentions is not { Count: > 0 }) return null;
+        var normalized = mentions.Select(NormalizeMention).ToList();
+        return JsonSerializer.Serialize(normalized);
+    }
+
+    /// <summary>Forces a person mention's email to the id-derived internal address (rejecting any
+    /// client-supplied value) and drops emails from non-person mentions.</summary>
+    private static NoteMention NormalizeMention(NoteMention mention)
+    {
+        if (!string.Equals(mention.Type, "person", StringComparison.OrdinalIgnoreCase))
+            return mention with { Email = null };
+
+        // The id is the person's UPN. If it already carries a domain use it as-is; otherwise it's a
+        // short name → append the internal domain. Either way the address is provably @scoular.com,
+        // never a client-controlled external address.
+        var derived = mention.Id.Contains('@') ? mention.Id : $"{mention.Id}@scoular.com";
+        return mention with { Email = derived };
+    }
 
     /// <inheritdoc />
     public Task DeleteAsync(long noteId, CancellationToken cancellationToken) =>

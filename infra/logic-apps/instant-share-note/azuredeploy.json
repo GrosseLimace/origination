@@ -196,11 +196,12 @@
                         "Case_person": {
                           "actions": {
                             "Append_Person_Recipient": {
+                              "comment": "Defense-in-depth (CWE-284): derive the recipient from the mention id (the internal UPN) rather than trusting the persisted 'email' field, so a rogue stored email can never redirect a shared-note send to an external address. The app already normalizes person emails to id@scoular.com on write; this makes the Logic App independently safe. If the id already carries a domain use it as-is, else append @scoular.com.",
                               "inputs": {
                                 "name": "recipient",
                                 "value": {
                                   "emailAddress": {
-                                    "address": "@{coalesce(item()?['email'], concat(item()?['id'], '@scoular.com'))}"
+                                    "address": "@{if(contains(item()?['id'], '@'), item()?['id'], concat(item()?['id'], '@scoular.com'))}"
                                   }
                                 }
                               },

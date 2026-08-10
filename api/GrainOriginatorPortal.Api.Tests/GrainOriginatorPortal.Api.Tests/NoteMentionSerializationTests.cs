@@ -1,8 +1,13 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
+using Moq;
 using Xunit;
 
 namespace GrainOriginatorPortal.Api.Tests;
@@ -111,5 +116,80 @@ public class NoteMentionSerializationTests
     {
         var resp = NoteWith(null).ToResponse(new Dictionary<string, string>());
         Assert.Empty(resp.Mentions);
+    }
+
+    // ── Mention normalization on write (M-xxx / CWE-284 external-exfiltration guard) ───────────
+    // The persisted person email drives the Instant Share Note Logic App's sendMail recipient, so
+    // NoteService must never persist a client-supplied email — it derives the address from the id
+    // (internal UPN), forcing @scoular.com. These go through CreateAsync and capture what actually
+    // lands in the Notes.Mentions column.
+
+    private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions()
+    {
+        var captured = new List<string?>();
+        var repo = new Mock<INoteRepository>();
+        repo.Setup(r => r.AddAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<long, string, string?, string?, string, CancellationToken>((_, _, _, mentionsJson, _, _) => captured.Add(mentionsJson))
+            .ReturnsAsync(new Note { Id = 1, CustomerId = 100, CustomerName = "Acme", CreatedBy = "CEgr", Description = "body" });
+
+        var customerRepo = new Mock<ICustomerRepository>();
+        customerRepo.Setup(c => c.GetFirstActiveTradeUnitAsync(It.IsAny<long>(), It.IsAny<CancellationToken>())).ReturnsAsync("OMAHA");
+        var names = new Mock<IDisplayNameLookupRepository>();
+        names.Setup(n => n.ResolveAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, string>());
+        var ctx = new Mock<IRequestContextService>();
+        ctx.Setup(c => c.GetCurrentUser()).Returns("CEgr");
+
+        return (new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object), captured);
+    }
+
+    [Fact]
+    public async Task CreateAsync_OverwritesClientSuppliedPersonEmail_WithIdDerivedInternalAddress()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions();
+        var mentions = new[]
+        {
+            new NoteMention { Type = "person", Id = "SFletcher", Name = "S Fletcher", Email = "attacker@evil.com" }
+        };
+
+        await svc.CreateAsync(100, "note body", mentions, CancellationToken.None);
+
+        var json = Assert.Single(captured);
+        var stored = JsonSerializer.Deserialize<List<NoteMention>>(json!)!;
+        Assert.Equal("SFletcher@scoular.com", stored[0].Email);   // external address rejected
+        Assert.DoesNotContain("evil.com", json);
+    }
+
+    [Fact]
+    public async Task CreateAsync_KeepsUpnIdAsIs_WhenItAlreadyCarriesADomain()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions();
+        var mentions = new[]
+        {
+            new NoteMention { Type = "person", Id = "SFletcher@scoular.com", Name = "S Fletcher", Email = "spoof@evil.com" }
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = JsonSerializer.Deserialize<List<NoteMention>>(Assert.Single(captured)!)!;
+        Assert.Equal("SFletcher@scoular.com", stored[0].Email);
+    }
+
+    [Fact]
+    public async Task CreateAsync_StripsEmailFromTradeUnitAndGroupMentions()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions();
+        var mentions = new[]
+        {
+            new NoteMention { Type = "trade-unit", Id = "OMAHA", Name = "Omaha TU", Email = "attacker@evil.com" },
+            new NoteMention { Type = "trade-unit-group", Id = "5", Name = "West Group", Email = "attacker@evil.com" }
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = JsonSerializer.Deserialize<List<NoteMention>>(Assert.Single(captured)!)!;
+        Assert.All(stored, m => Assert.Null(m.Email));
+        Assert.DoesNotContain("evil.com", captured[0]);
     }
 }
