@@ -26,6 +26,7 @@ function makeApiStub() {
     // Held open so `loading` can be asserted mid-flight.
     underusedSubject: new Subject<never[]>(),
 
+    getUsageExclusionsCanManage: function () { count('canManage'); return of({ canManage: false }); },
     getUsageDashboardSummary: function () { count('summary'); return of(null as never); },
     getUsageDashboardUsers: function () { count('users'); return of([] as UsageDashboardUser[]); },
     getUsageDailyActive: function () { count('dailyActive'); return of([]); },
@@ -66,6 +67,13 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
       set: { template: '', templateUrl: undefined, imports: [] },
     });
     TestBed.inject(AppStateService);
+  });
+
+  it('hides the exclusion gear unless the backend says the caller is an exclusion manager', () => {
+    component = build();
+    // The stub answers canManage: false — the gear must stay hidden for ordinary admins.
+    expect(api.calls['canManage']).toBe(1);
+    expect(component.canManageExclusions()).toBe(false);
   });
 
   it('requests feature sessions exactly once on mount', () => {

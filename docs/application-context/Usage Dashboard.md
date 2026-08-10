@@ -145,7 +145,10 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 
 ### Controller endpoints
 
-All read endpoints require `[Authorize(Policy = "AdminOnly")]`.
+All read endpoints require `[Authorize(Policy = "AdminOnly")]`. The exclusion endpoints
+(`access-users`, `excluded-users` CRUD) are additionally restricted to the
+`UsageDashboard:ExclusionManagers` allowlist in appsettings (the named IT users) — other admins get
+403 and never see the gear.
 
 | Verb / route | Returns |
 | --- | --- |
@@ -159,6 +162,7 @@ All read endpoints require `[Authorize(Policy = "AdminOnly")]`.
 | `GET /query-library-usage` | most-clicked library prompts, names resolved |
 | `GET /query-search-gaps` | top 20 library searches that matched nothing |
 | `GET /users/{userId}/detail` | full per-user profile — drives the drill-down page |
+| `GET /excluded-users/can-manage` | whether the caller is on the `UsageDashboard:ExclusionManagers` allowlist — the client hides the exclusion gear when false |
 | `GET /access-users` | app-access roster (Entra group) for the exclusion picker; `available=false` ⇒ client falls back to free text |
 | `GET /excluded-users` | current exclusion list with reason / who added it / when |
 | `POST /excluded-users` | add an exclusion (409 if already excluded) |

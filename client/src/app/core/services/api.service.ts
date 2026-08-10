@@ -38,6 +38,7 @@ import {
   UserUsageDetail,
   ExcludedUser,
   AccessUsers,
+  ExclusionPermissions,
   QueryLibraryItem,
   NoteMention,
   MentionCatalog
@@ -984,6 +985,13 @@ export class ApiService {
 
   // Accounts hidden from every usage-dashboard view. Excluding someone changes nothing about their
   // access to the app.
+
+  /** Whether the signed-in user is on the exclusion-manager allowlist — gates the gear icon.
+   *  The server enforces the same allowlist on every exclusion endpoint regardless. */
+  getUsageExclusionsCanManage(): Observable<ExclusionPermissions> {
+    return this.http.get<ExclusionPermissions>(`${this.baseUrl}/usage-dashboard/excluded-users/can-manage`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
 
   getUsageExcludedUsers(): Observable<ExcludedUser[]> {
     return this.http.get<ExcludedUser[]>(`${this.baseUrl}/usage-dashboard/excluded-users`)

@@ -20,10 +20,23 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class UsageDashboardController : ControllerBase
 {
     private readonly IUsageDashboardService _service;
+    private readonly HashSet<string> _exclusionManagers;
 
-    public UsageDashboardController(IUsageDashboardService service)
+    public UsageDashboardController(IUsageDashboardService service, IConfiguration configuration)
     {
         _service = service;
+        // The short list of IT users allowed to manage the exclusion list — a tighter circle than
+        // the Admin role that gates the rest of the dashboard.
+        _exclusionManagers = new HashSet<string>(
+            configuration.GetSection("UsageDashboard:ExclusionManagers").Get<string[]>() ?? [],
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Whether the signed-in user is on the configured exclusion-manager allowlist.</summary>
+    private bool IsExclusionManager()
+    {
+        var shortName = GetCurrentUserShortName();
+        return !string.IsNullOrEmpty(shortName) && _exclusionManagers.Contains(shortName);
     }
 
     // `from`/`to` are calendar dates (yyyy-MM-dd) interpreted in UTC; the window is
@@ -113,24 +126,41 @@ public class UsageDashboardController : ControllerBase
     // ── Excluded users ──
     // Accounts kept out of every dashboard view (IT/dev/admin accounts whose activity would skew
     // adoption). Excluding someone changes nothing about their access to the app.
+    //
+    // These endpoints are gated TWICE: AdminOnly (like the rest of the dashboard) AND the
+    // UsageDashboard:ExclusionManagers allowlist — only the named IT users may see or change the
+    // exclusion list. The client asks /excluded-users/can-manage and hides the gear for everyone else.
+
+    /// <summary>Whether the caller may manage exclusions — drives the gear icon's visibility.</summary>
+    [HttpGet("excluded-users/can-manage")]
+    [Authorize(Policy = "AdminOnly")]
+    public ActionResult<ExclusionPermissionsDto> GetCanManageExclusions()
+        => Ok(new ExclusionPermissionsDto { CanManage = IsExclusionManager() });
 
     // People who can sign in to the app (Entra access-group members), for the exclusion picker so an
     // admin can search + select instead of typing a user id. Available=false ⇒ client falls to free text.
     [HttpGet("access-users")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<AccessUsersDto>> GetAccessUsers(CancellationToken cancellationToken = default)
-        => Ok(await _service.GetAccessUsersAsync(cancellationToken));
+    {
+        if (!IsExclusionManager()) return Forbid();
+        return Ok(await _service.GetAccessUsersAsync(cancellationToken));
+    }
 
     [HttpGet("excluded-users")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<ExcludedUserDto>>> GetExcludedUsers(CancellationToken cancellationToken = default)
-        => Ok(await _service.GetExcludedUsersAsync(cancellationToken));
+    {
+        if (!IsExclusionManager()) return Forbid();
+        return Ok(await _service.GetExcludedUsersAsync(cancellationToken));
+    }
 
     [HttpPost("excluded-users")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ExcludedUserDto>> AddExcludedUser(
         [FromBody] AddExcludedUserRequest request, CancellationToken cancellationToken = default)
     {
+        if (!IsExclusionManager()) return Forbid();
         if (string.IsNullOrWhiteSpace(request.UserId))
             return BadRequest("A user id is required.");
 
@@ -145,7 +175,10 @@ public class UsageDashboardController : ControllerBase
     [HttpDelete("excluded-users/{id:int}")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult> RemoveExcludedUser(int id, CancellationToken cancellationToken = default)
-        => await _service.RemoveExcludedUserAsync(id, cancellationToken) ? NoContent() : NotFound();
+    {
+        if (!IsExclusionManager()) return Forbid();
+        return await _service.RemoveExcludedUserAsync(id, cancellationToken) ? NoContent() : NotFound();
+    }
 
     // Telemetry endpoint — every signed-in user posts click events from the UI,
     // not just Admin. Intentionally left without the per-method AdminOnly policy

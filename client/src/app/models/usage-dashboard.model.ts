@@ -93,6 +93,11 @@ export interface AccessUsers {
   users: AccessUser[];
 }
 
+/** Whether the signed-in user may manage the exclusion list (server-enforced allowlist). */
+export interface ExclusionPermissions {
+  canManage: boolean;
+}
+
 export interface QueryLibraryUsage {
   queryText: string;
   timesUsed: number;

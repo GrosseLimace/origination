@@ -108,6 +108,13 @@ public record AccessUsersDto
     public List<AccessUserDto> Users { get; set; } = [];
 }
 
+/// <summary>Whether the caller is on the exclusion-manager allowlist — the client uses this to show
+/// or hide the exclusion gear. The endpoints enforce the same check server-side regardless.</summary>
+public record ExclusionPermissionsDto
+{
+    public bool CanManage { get; set; }
+}
+
 public record QueryLibraryUsageDto
 {
     public string QueryText { get; set; } = string.Empty;

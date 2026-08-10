@@ -9,7 +9,9 @@
     </div>
     <div class="flex flex-wrap items-center gap-3">
       <app-trade-unit-selector />
-      <app-excluded-users-panel (changed)="onExclusionsChanged()" />
+      @if (canManageExclusions()) {
+        <app-excluded-users-panel (changed)="onExclusionsChanged()" />
+      }
       <div class="flex items-center gap-1.5">
         <button type="button" (click)="setRange('7d')"
           [class]="activeRange() === '7d'

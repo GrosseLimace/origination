@@ -67,6 +67,10 @@ export class UsageDashboardComponent {
   /** Bumped to force a reload — e.g. after the exclusion list changes, which moves every number. */
   private readonly refreshTick = signal(0);
 
+  /** True only for the configured exclusion managers (IT) — hides the exclusion gear for everyone
+   *  else. Display-only convenience: the server enforces the same allowlist on the endpoints. */
+  readonly canManageExclusions = signal(false);
+
   // ── Data ──
   readonly summary = signal<UsageDashboardSummary | null>(null);
   readonly users = signal<UsageDashboardUser[]>([]);
@@ -308,6 +312,14 @@ export class UsageDashboardComponent {
   ];
 
   constructor() {
+    // One-time capability check — not filter-dependent, so it lives outside the effects below.
+    this.apiService.getUsageExclusionsCanManage()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: p => this.canManageExclusions.set(p.canManage),
+        error: () => this.canManageExclusions.set(false)
+      });
+
     // Four effects with disjoint dependencies. Previously the last three loaders were *also* called
     // from loadData, so every date or trade-unit change fetched them twice.
 
