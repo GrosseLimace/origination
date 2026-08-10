@@ -196,12 +196,12 @@
                         "Case_person": {
                           "actions": {
                             "Append_Person_Recipient": {
-                              "comment": "Defense-in-depth (CWE-284): derive the recipient from the mention id (the internal UPN) rather than trusting the persisted 'email' field, so a rogue stored email can never redirect a shared-note send to an external address. The app already normalizes person emails to id@scoular.com on write; this makes the Logic App independently safe. If the id already carries a domain use it as-is, else append @scoular.com.",
+                              "comment": "Defense-in-depth (M-025 / CWE-284): both the persisted 'email' AND 'id' are untrusted (client-authored). The recipient domain is therefore STRUCTURAL — take only the local part of the id (everything before the first '@') and append the internal domain, so the address is always @scoular.com by construction and a forged id like 'attacker@evil.com' degrades to the harmless internal 'attacker@scoular.com' instead of leaving the tenant. The API additionally rejects non-internal ids on write; this expression keeps the Logic App safe for any pre-existing row.",
                               "inputs": {
                                 "name": "recipient",
                                 "value": {
                                   "emailAddress": {
-                                    "address": "@{if(contains(item()?['id'], '@'), item()?['id'], concat(item()?['id'], '@scoular.com'))}"
+                                    "address": "@{concat(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']), '@scoular.com')}"
                                   }
                                 }
                               },
