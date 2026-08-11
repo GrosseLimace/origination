@@ -170,12 +170,57 @@ public sealed class CtrmContractRepository : IContractRepository
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Delegated. Pacing compares against *closed historical* contracts going back at least a full
-    /// crop year, and the snapshot is a narrow contract-date window — it would answer this with a
-    /// near-empty list and quietly understate a producer's history.
+    /// Served from CTRM, which in practice means near-empty — and that is the intended answer.
     /// </summary>
-    public Task<List<Contract>> GetHistoricalForPacingAsync(long customerId, CancellationToken cancellationToken)
-        => DelegateAsync("HistoricalForPacing", _ods.GetHistoricalForPacingAsync(customerId, cancellationToken));
+    /// <remarks>
+    /// The Contract Pacing card sits on the producer profile, so it must not read ODS while the rest of
+    /// that screen is on CTRM. It wants *closed* contracts for crop year ≥ last year, and the snapshot is
+    /// a contract-DATE window: a crop-2025 contract is frequently written months before the window opens,
+    /// so most of the pacing baseline is simply not in the window.
+    ///
+    /// Reporting that honestly as a thin card is the point. Filling it from ODS would make the screen look
+    /// complete while hiding a real limitation, and nothing else on the page would agree with it.
+    /// </remarks>
+    public async Task<List<Contract>> GetHistoricalForPacingAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var scoularId = await _appContext.Customers.AsNoTracking()
+            .Where(c => c.Id == customerId)
+            .Select(c => c.ScoularId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(scoularId))
+        {
+            _provenance.RecordContracts("ctrm", "NoScoularId", 0);
+            return [];
+        }
+
+        var snapshot = await _snapshot.GetAsync(cancellationToken);
+        if (!snapshot.Ok)
+        {
+            _provenance.RecordContracts("ctrm", snapshot.Status.ToString(), 0);
+            return [];
+        }
+
+        var pacingCutoffYear = DateTime.Today.Year - 1;
+
+        // Mirrors the ODS predicate: CLOSED (a real closed date, not the sentinel) and recent by crop year.
+        var contracts = CtrmMappings.ToContracts(
+            snapshot.Contracts.Where(d =>
+                Matches(d.CustomerId, scoularId.Trim())
+                && CtrmMappings.NullIfSentinel(d.ClosedDate) is not null
+                && d.CropYear >= pacingCutoffYear),
+            DateTime.Today);
+
+        var ordered = contracts.OrderByDescending(c => c.ContractDate ?? DateTime.MinValue).ToList();
+        _provenance.RecordContracts("ctrm", "Ok", ordered.Count);
+
+        _logger.LogInformation(
+            "CTRM pacing: {Count} closed contracts (crop year >= {Cutoff}) for producer {ScoularId} in window {Window}. " +
+            "Expect this to understate history — the window filters on contract date, not crop year.",
+            ordered.Count, pacingCutoffYear, scoularId, snapshot.Window);
+
+        return ordered;
+    }
 
     /// <summary>
     /// Delegated. Crop year is a different axis from contract date — a 2026 window contains

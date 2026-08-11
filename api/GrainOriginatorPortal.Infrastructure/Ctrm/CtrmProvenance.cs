@@ -36,6 +36,18 @@ public sealed class CtrmProvenance
     /// <summary>Outcome of the ticket read, in the same shape.</summary>
     public string? Tickets { get; private set; }
 
+    /// <summary>
+    /// Label for reads where ODS supplies the index and CTRM supplies the values.
+    /// </summary>
+    /// <remarks>
+    /// Used only by the per-contract applied-ticket lookup. That read cannot come from the ticket window
+    /// snapshot — a contract can be older than the window, and the window is capped at 366 days — so ODS
+    /// is asked which tickets exist on the contract and CTRM is asked what each one currently says.
+    /// Reporting it as plain <c>ctrm</c> would overstate what has moved off ODS: a ticket CTRM knows about
+    /// and ODS has not yet ingested would not appear.
+    /// </remarks>
+    public const string OdsIndexedSource = "ctrm+ods-index";
+
     public void RecordSource(string source) => Source = source;
 
     public void RecordContracts(string source, string outcome, int rows) => Contracts = Format(source, outcome, rows);
