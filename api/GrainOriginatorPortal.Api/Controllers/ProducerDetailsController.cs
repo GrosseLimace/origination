@@ -46,19 +46,7 @@ public class ProducerDetailsController : ControllerBase
     {
         // Trade units are a UX filter, not an access boundary — any rep may save producer details for any customer.
         // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
-        var details = await _service.UpsertAsync(
-            customerId,
-            request.ScoularId,
-            request.CustomerName,
-            request.TotalAcres,
-            request.BinCapacity,
-            request.PrimaryContact,
-            request.PrimaryPhone,
-            request.Commodities,
-            request.LinkedProducerIds,
-            request.GrainOnFarm,
-            cancellationToken
-        );
+        var details = await _service.UpsertAsync(customerId, request, cancellationToken);
         return Ok(details);
     }
 

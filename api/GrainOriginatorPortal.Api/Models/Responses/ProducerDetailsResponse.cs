@@ -21,6 +21,19 @@ public record ProducerDetailsResponse
 
     /// <summary>Per-commodity grain-on-farm breakdown (bushels on hand + target).</summary>
     public IReadOnlyList<GrainOnFarmItemResponse> GrainOnFarm { get; init; } = [];
+
+    /// <summary>User-entered contacts, primary first. PrimaryContact/PrimaryPhone above are
+    /// derived from the primary row (kept for backward compatibility).</summary>
+    public IReadOnlyList<ContactItemResponse> Contacts { get; init; } = [];
+}
+
+public record ContactItemResponse
+{
+    public string Name { get; init; } = string.Empty;
+    public string? Phone { get; init; }
+    public string? Email { get; init; }
+    public bool IsPrimary { get; init; }
+    public int SortOrder { get; init; }
 }
 
 public record GrainOnFarmItemResponse

@@ -12,9 +12,7 @@ public interface IProducerDetailsService
     /// <summary>Producer details for a customer, or an empty record (CustomerId only) when none is saved.</summary>
     Task<ProducerDetailsResponse> GetByCustomerAsync(long customerId, CancellationToken cancellationToken);
 
-    Task<ProducerDetailsResponse> UpsertAsync(long customerId, string? scoularId, string customerName,
-        decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? primaryPhone, string? commodities,
-        string? linkedProducerIds, IReadOnlyList<GrainOnFarmItemRequest>? grainOnFarm, CancellationToken cancellationToken);
+    Task<ProducerDetailsResponse> UpsertAsync(long customerId, UpsertProducerDetailsRequest request, CancellationToken cancellationToken);
 
     Task DeleteAsync(long customerId, CancellationToken cancellationToken);
 }

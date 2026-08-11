@@ -577,11 +577,15 @@ export class BuildListComponent {
     if (r.noPrimaryContact) {
       list = list.filter(c => !c.primaryContact?.trim());
     }
+    // User-entered contact rows count too — otherwise a producer whose only email/phone was typed
+    // into Edit Producer Details (e.g. an insurance contact) reads as having none.
     if (r.hasEmail) {
-      list = list.filter(c => !!c.email?.trim() || !!c.supplementalEmail?.trim());
+      list = list.filter(c => !!c.email?.trim() || !!c.supplementalEmail?.trim()
+        || !!c.contacts?.some(ct => ct.email?.trim()));
     }
     if (r.hasPhone) {
-      list = list.filter(c => !!c.phone?.trim() || !!c.extendedPrimaryPhone?.trim());
+      list = list.filter(c => !!c.phone?.trim() || !!c.extendedPrimaryPhone?.trim()
+        || !!c.contacts?.some(ct => ct.phone?.trim()));
     }
     if (r.hasLinkedProducers) {
       list = list.filter(c => (c.linkedProducerIds?.length ?? 0) > 0);
