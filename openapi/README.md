@@ -62,6 +62,56 @@ need the role on the QA app registration.
 | UAT | QA | `scoiaanp-uami-integration-uat-ipaas` | `9376dcd5-d17c-4d8a-b2aa-3a96f160eb77` |
 | PROD | Prod | `scoiaap-uami-integration-ipaas` | `7f374a39-cfb3-43a8-8c68-5c5f47cfedd5` |
 
+### Granting the role
+
+Confirmed with the integration team 2026-08-11: **the assignment is made on the Origination side**, not
+theirs. It is a config change in `app-config.json` in the infrastructure-as-code repo — per
+`developer-docs/APP-REGISTRATIONS.md`, the `Sync-AppRoles` function resolves role GUIDs and preserves
+them across deployments.
+
+Note the UAT identity is assigned to the **qa** environment, because their UAT targets our QA.
+
+```json
+"appRoleAssignments": [
+  {
+    "principalDisplayName": "scoiaanp-uami-integration-dev-ipaas",
+    "principalId": "1b97e5c0-ae4c-49d8-8aed-4c7df5bb744c",
+    "appRoleValue": "Origination.Application",
+    "environments": ["dev"]
+  },
+  {
+    "principalDisplayName": "scoiaanp-uami-integration-qa-ipaas",
+    "principalId": "cfce5a3c-a43d-4d49-9dee-a3a9eab956e9",
+    "appRoleValue": "Origination.Application",
+    "environments": ["qa"]
+  },
+  {
+    "principalDisplayName": "scoiaanp-uami-integration-uat-ipaas",
+    "principalId": "9376dcd5-d17c-4d8a-b2aa-3a96f160eb77",
+    "appRoleValue": "Origination.Application",
+    "environments": ["qa"]
+  },
+  {
+    "principalDisplayName": "scoiaap-uami-integration-ipaas",
+    "principalId": "7f374a39-cfb3-43a8-8c68-5c5f47cfedd5",
+    "appRoleValue": "Origination.Application",
+    "environments": ["prod"]
+  }
+]
+```
+
+No new app roles are needed — `Origination.Application` already exists in every environment as a
+convention-based default. This is assignment only, which also avoids the trap where declaring a custom
+`appRoles` array drops the roles that aren't re-listed.
+
+**Assign through this config, not by hand in the portal.** A manual Enterprise Application assignment
+works until the next app-registration sync reconciles it away, which would break the integration at an
+unpredictable moment.
+
+**To verify** after it deploys: the caller's token should carry `"roles": ["Origination.Application"]`,
+and a call should return anything other than `401`. Every attempt — success or failure — lands a row in
+`dbo.BarchartApiCallAudit`, so that table answers "did they reach us and what happened".
+
 ## Connectivity requirement
 
 **The Origination App Service has no public inbound access** — traffic arrives via private endpoints
