@@ -30,6 +30,14 @@ public class UsageTrackingMiddleware
             return;
         }
 
+        // Skip machine-to-machine ingestion. Those callers are application identities, not people —
+        // tracking them would add a service principal's object id to the usage dashboard's user list.
+        if (path.StartsWith("/api/barchart-ingest", StringComparison.OrdinalIgnoreCase))
+        {
+            await _next(context);
+            return;
+        }
+
         var stopwatch = Stopwatch.StartNew();
         await _next(context);
         stopwatch.Stop();
