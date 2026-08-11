@@ -1571,24 +1571,31 @@ export class NlqFilterService {
   // ============================================================
 
   private applyCustomerInfoFilters(lowerQuery: string, result: Customer[], tickets: Ticket[], contracts: Contract[] = []): Customer[] {
+    // An email/phone counts whether it came from the source system OR was typed into Edit Producer
+    // Details as a contact row — otherwise a producer whose only email is a user-entered contact
+    // (e.g. their insurance agent) is reported as having no email, and worse, shows up under
+    // "producers with no email".
+    const anyContactEmail = (c: Customer) => !!c.contacts?.some(ct => ct.email?.trim());
+    const anyContactPhone = (c: Customer) => !!c.contacts?.some(ct => ct.phone?.trim());
+
     // Email — "has email", "with an email", "have email addresses", etc.
     const hasEmail = /(?:has|have|with)\s+(?:an?\s+)?email|email\s*address/i.test(lowerQuery);
     const noEmail = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:an?\s+)?email|no\s+email/i.test(lowerQuery);
     if (hasEmail && !noEmail) {
-      result = result.filter(c => c.email?.trim() || c.supplementalEmail?.trim());
+      result = result.filter(c => c.email?.trim() || c.supplementalEmail?.trim() || anyContactEmail(c));
     }
     if (noEmail) {
-      result = result.filter(c => !c.email?.trim() && !c.supplementalEmail?.trim());
+      result = result.filter(c => !c.email?.trim() && !c.supplementalEmail?.trim() && !anyContactEmail(c));
     }
 
     // Phone — "has phone", "with a phone number", "who have phone numbers", etc.
     const hasPhone = /(?:has|have|with)\s+(?:a\s+)?phone|phone\s*(?:number|#)/i.test(lowerQuery);
     const noPhone = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?phone|no\s+phone\s*(?:number|#)?/i.test(lowerQuery);
     if (hasPhone && !noPhone) {
-      result = result.filter(c => c.phone?.trim() || c.extendedPrimaryPhone?.trim());
+      result = result.filter(c => c.phone?.trim() || c.extendedPrimaryPhone?.trim() || anyContactPhone(c));
     }
     if (noPhone) {
-      result = result.filter(c => !c.phone?.trim() && !c.extendedPrimaryPhone?.trim());
+      result = result.filter(c => !c.phone?.trim() && !c.extendedPrimaryPhone?.trim() && !anyContactPhone(c));
     }
 
     // Primary contact — "has a contact", "with primary contact", "contact person", "contact info", etc.
