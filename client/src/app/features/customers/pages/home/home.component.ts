@@ -1821,8 +1821,10 @@ export class HomeComponent {
         this.noteSaveSucceededCounter.update(n => n + 1);
         this.isSavingNote.set(false);
       },
-      error: () => {
-        this.toastService.error('Failed to add note');
+      error: (err: Error) => {
+        // Surface the server's reason (e.g. a mentioned group that's no longer available) —
+        // the generic message gives the user nothing to act on.
+        this.toastService.error(err?.message || 'Failed to add note');
         // Leave the success counter alone — the child keeps the text so the user
         // can retry. Just clear the in-flight flag so the button re-enables.
         this.isSavingNote.set(false);
@@ -1908,8 +1910,8 @@ export class HomeComponent {
     });
   }
 
-  editNote(data: { noteId: number; content: string }): void {
-    this.apiService.updateNote(data.noteId, data.content).subscribe({
+  editNote(data: { noteId: number; content: string; mentions: NoteMention[] }): void {
+    this.apiService.updateNote(data.noteId, data.content, data.mentions).subscribe({
       next: (updated) => {
         // Content edits don't change createdAt, so the last-contact aggregate is untouched.
         this._applyNoteToCache(updated);
@@ -1918,7 +1920,9 @@ export class HomeComponent {
         );
         this.toastService.success('Note updated');
       },
-      error: () => this.toastService.error('Failed to update note')
+      // Surface the server's reason (e.g. a group that's no longer available) instead of a
+      // generic failure — the message is actionable and the generic one isn't.
+      error: (err: Error) => this.toastService.error(err?.message || 'Failed to update note')
     });
   }
 

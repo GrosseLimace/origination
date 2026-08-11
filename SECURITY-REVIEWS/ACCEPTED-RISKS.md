@@ -287,6 +287,49 @@ Vault via the existing provider). This matches the TODO already present in
 
 ---
 
+## AR-07 — Mentioning a group addresses that group's members, not the mentioner's entitlements
+
+**Finding** (self-raised 2026-08-11; MEDIUM; CWE-284). A user can `@`-mention any group they can
+**see** — the ones they created plus the ones they are a member of. The API flattens that group into
+its member references and the Instant Share Note Logic App emails the note to all of them. Those
+members were validated against the **creator's** entitlement overlap when the group was saved
+(`DailyRecapGroupService.BuildValidatedMembersAsync`, fail-closed), so mentioning someone else's
+group can reach people the direct person picker would not have offered the mentioner — that picker is
+scoped to users sharing a trade unit with the caller.
+
+### Decision: Accepted
+
+**Rationale.** Every recipient is an **internal address constructed server-side** from a UPN local
+part — twice, independently: the API rebuilds person addresses in `NoteService.NormalizeMention`, and
+the Logic App re-derives them from `UserId` columns rather than trusting anything stored
+(**M-025 / M-025a**). The boundary in question is therefore *which internal colleague receives an
+internal note*, never whether data can leave the tenant. That is consistent with **AR-02**: notes are
+already open per producer, and trade-unit entitlement is a relevance default rather than an access
+boundary. The group is also not an arbitrary set — someone entitled to assemble it did so
+deliberately, and if its daily recap is on, that same set already receives those notes every evening.
+
+Re-validating each member against the *mentioner's* entitlements was considered and rejected: it
+would make cross-trade-unit groups — the main reason to build one — unusable, and it would put a
+fail-closed entitlements call in the note-save path, which is high-frequency and user-blocking.
+
+**Scope / compensating controls.** A group the caller can neither see nor own is **rejected** at save
+(`ValidationException`, nothing persisted) — visibility is enforced server-side against the same query
+that builds the picker, so a forged group id in a crafted request does not resolve. Expansion is
+capped at 250 mention rows per note. Group membership is still entitlement-validated fail-closed at
+group-save time, and only the creator can modify a group. All recipients are `@scoular.com` by
+construction.
+
+**Residual risk.** An employee can cause an internal note to be emailed to the members of a group they
+belong to but did not create, including people outside their own trade units. Accepted.
+
+**Re-evaluate if:** groups become shareable beyond their membership (e.g. an org-wide directory of
+groups), or note content becomes restricted per producer — at which point AR-02 changes too and the
+mention path should be re-scoped alongside it.
+
+**Accepted by:** Origination engineering — recorded 2026-08-11.
+
+---
+
 ## Resolved findings — already remediated (not accepted risks; do not re-open)
 
 Findings a scanner may re-surface that are **already fixed in code**. Listed here so triage

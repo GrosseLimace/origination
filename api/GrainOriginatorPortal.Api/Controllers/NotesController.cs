@@ -17,12 +17,18 @@ public class NotesController : ControllerBase
 {
     private readonly INoteService _service;
     private readonly EntitlementsDbContext _entitlementsDb;
+    private readonly IDailyRecapGroupService _recapGroups;
     private readonly ILogger<NotesController> _logger;
 
-    public NotesController(INoteService service, EntitlementsDbContext entitlementsDb, ILogger<NotesController> logger)
+    public NotesController(
+        INoteService service,
+        EntitlementsDbContext entitlementsDb,
+        IDailyRecapGroupService recapGroups,
+        ILogger<NotesController> logger)
     {
         _service = service;
         _entitlementsDb = entitlementsDb;
+        _recapGroups = recapGroups;
         _logger = logger;
     }
 
@@ -72,9 +78,11 @@ public class NotesController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>
-    /// Lookup data for the "@" mention picker — people, trade units, and groups the caller
-    /// can mention, scoped to the caller's trade-unit access (vw_UserTradeUnitAccess). Returns
-    /// empty lists if the Entitlements DB is unavailable so the picker degrades gracefully.
+    /// Lookup data for the "@" mention picker — people, trade units and trade-unit groups from the
+    /// caller's entitlements (vw_UserTradeUnitAccess), plus the caller's own groups from the
+    /// Origination DB. The two sources are gathered independently and each degrades to an empty
+    /// list on failure, so the picker never 500s and one database being down can't hide the other's
+    /// results.
     /// </summary>
     [HttpGet("mention-catalog")]
     [ProducesResponseType(typeof(MentionCatalogResponse), StatusCodes.Status200OK)]
@@ -90,64 +98,92 @@ public class NotesController : ControllerBase
         var userId = upn.Contains('@') ? upn.Split('@')[0] : upn;
 
         var response = new MentionCatalogResponse();
-        if (string.IsNullOrWhiteSpace(userId))
-            return Ok(response);
 
+        // ── Source 1: Entitlements DB — people / trade units / trade-unit groups ──────────────
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            try
+            {
+                // The caller's own trade-unit assignments (gives their TU codes + group memberships).
+                var callerRows = await _entitlementsDb.UserTradeUnitAccess
+                    .Where(u => u.UserId == userId)
+                    .Select(u => new { u.TradeUnitCode, u.Description, u.GroupId, u.GroupName })
+                    .ToListAsync(cancellationToken);
+
+                var callerTuCodes = callerRows.Select(r => r.TradeUnitCode).Distinct().ToList();
+                // No trade units → nothing to offer from this source. Falls through rather than
+                // returning: the caller can still own groups, which Source 2 supplies.
+                if (callerTuCodes.Count > 0)
+                {
+                    // People who share at least one of the caller's trade units. The caller is
+                    // INCLUDED so they can @-mention themselves (they're in their own trade units).
+                    var peopleRows = await _entitlementsDb.UserTradeUnitAccess
+                        .Where(u => callerTuCodes.Contains(u.TradeUnitCode))
+                        .Select(u => new { u.UserId, u.DisplayName })
+                        .Distinct()
+                        .ToListAsync(cancellationToken);
+
+                    response.People = peopleRows
+                        .GroupBy(p => p.UserId)
+                        .Select(g => new MentionCatalogPerson
+                        {
+                            UserId = g.Key,
+                            DisplayName = g.Select(x => x.DisplayName).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)) ?? g.Key,
+                            Email = g.Key.Contains('@') ? g.Key : $"{g.Key}@scoular.com"
+                        })
+                        .OrderBy(p => p.DisplayName)
+                        .ToList();
+
+                    response.TradeUnits = callerRows
+                        .GroupBy(r => r.TradeUnitCode)
+                        .Select(g => new MentionCatalogTradeUnit
+                        {
+                            Code = g.Key,
+                            Description = g.Select(x => x.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))
+                        })
+                        .OrderBy(t => t.Code)
+                        .ToList();
+
+                    response.TradeUnitGroups = callerRows
+                        .Where(r => r.GroupId != null && !string.IsNullOrWhiteSpace(r.GroupName))
+                        .GroupBy(r => r.GroupId!.Value)
+                        .Select(g => new MentionCatalogGroup { GroupId = g.Key, Name = g.Select(x => x.GroupName!).First() })
+                        .OrderBy(g => g.Name)
+                        .ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Mention catalog: Entitlements DB unavailable for user {UserId} — omitting people and trade units", userId);
+            }
+        }
+
+        // ── Source 2: Origination DB — the caller's own groups ────────────────────────────────
+        // Separate try/catch on purpose: a different database, an independent failure domain.
+        // Same visibility query NoteService expands with, so the picker can never offer a group the
+        // save would reject. NOT filtered on Enabled — that flag means "send the daily recap",
+        // which is orthogonal to being mentionable. Empty groups are omitted: mentioning one would
+        // notify nobody.
         try
         {
-            // The caller's own trade-unit assignments (gives their TU codes + group memberships).
-            var callerRows = await _entitlementsDb.UserTradeUnitAccess
-                .Where(u => u.UserId == userId)
-                .Select(u => new { u.TradeUnitCode, u.Description, u.GroupId, u.GroupName })
-                .ToListAsync(cancellationToken);
-
-            var callerTuCodes = callerRows.Select(r => r.TradeUnitCode).Distinct().ToList();
-            if (callerTuCodes.Count == 0)
-                return Ok(response);
-
-            // People who share at least one of the caller's trade units. The caller is INCLUDED so
-            // they can @-mention themselves in a note (they're in their own trade units).
-            var peopleRows = await _entitlementsDb.UserTradeUnitAccess
-                .Where(u => callerTuCodes.Contains(u.TradeUnitCode))
-                .Select(u => new { u.UserId, u.DisplayName })
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            response.People = peopleRows
-                .GroupBy(p => p.UserId)
-                .Select(g => new MentionCatalogPerson
+            response.AppGroups = (await _recapGroups.GetAllAsync(cancellationToken))
+                .Where(g => g.Members.Count > 0)
+                .Select(g => new MentionCatalogAppGroup
                 {
-                    UserId = g.Key,
-                    DisplayName = g.Select(x => x.DisplayName).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)) ?? g.Key,
-                    Email = g.Key.Contains('@') ? g.Key : $"{g.Key}@scoular.com"
+                    GroupId = g.Id,
+                    Name = g.Name,
+                    MemberCount = g.Members.Count,
+                    IsOwner = g.IsOwner,
                 })
-                .OrderBy(p => p.DisplayName)
-                .ToList();
-
-            response.TradeUnits = callerRows
-                .GroupBy(r => r.TradeUnitCode)
-                .Select(g => new MentionCatalogTradeUnit
-                {
-                    Code = g.Key,
-                    Description = g.Select(x => x.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))
-                })
-                .OrderBy(t => t.Code)
-                .ToList();
-
-            response.Groups = callerRows
-                .Where(r => r.GroupId != null && !string.IsNullOrWhiteSpace(r.GroupName))
-                .GroupBy(r => r.GroupId!.Value)
-                .Select(g => new MentionCatalogGroup { GroupId = g.Key, Name = g.Select(x => x.GroupName!).First() })
                 .OrderBy(g => g.Name)
                 .ToList();
-
-            return Ok(response);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Mention catalog: Entitlements DB unavailable for user {UserId} — returning empty catalog", userId);
-            return Ok(response);
+            _logger.LogWarning(ex, "Mention catalog: groups unavailable for user {UserId} — omitting them", userId);
         }
+
+        return Ok(response);
     }
 
     // -------------------------------------------------------------------------

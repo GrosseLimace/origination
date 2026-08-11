@@ -160,14 +160,21 @@ export class ApiService {
     };
   }
 
-  /** Builds the API request body from a save request (members -> {type,id,name,email}, ccList -> ccEmails). */
-  private toRecapGroupBody(req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest) {
+  /** Builds the API request body from a save request (members -> {type,id,name,email}, ccList -> ccEmails).
+   *  `enabled` is sent on CREATE only — after that the card's toggle endpoint owns it. The update
+   *  endpoint ignores the field today; omitting it means a future change that starts honouring it
+   *  can't silently switch off an existing group's recap. */
+  private toRecapGroupBody(
+    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
+    isCreate: boolean,
+  ) {
     return {
       name: req.name,
       deliveryMethod: req.deliveryMethod,
       teamsChannelEmail: req.deliveryMethod === 'teams' ? req.teamsChannelEmail : undefined,
       members: req.members.map(m => ({ type: m.type, id: m.id, name: m.name, email: m.email })),
       ccEmails: req.ccList,
+      enabled: isCreate ? (req.enabled ?? false) : undefined,
     };
   }
 
@@ -184,7 +191,7 @@ export class ApiService {
   createRecapGroup(
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req))
+    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -193,7 +200,7 @@ export class ApiService {
     id: string,
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req))
+    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -553,7 +560,7 @@ export class ApiService {
   getMentionCatalog(): Observable<MentionCatalog> {
     return this._dedupe('mention-catalog',
       this.http.get<MentionCatalog>(`${this.baseUrl}/notes/mention-catalog`)
-        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], groups: [] })))
+        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [] })))
     );
   }
 
@@ -563,9 +570,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Updates the content of a note */
-  updateNote(id: number, content: string): Observable<Note> {
-    return this.http.put<Note>(`${this.baseUrl}/notes/${id}`, { content })
+  /** Updates the content of a note. `mentions` MUST be supplied whenever the caller knows them:
+   *  omitting it leaves the note's existing mentions untouched, while passing [] clears them.
+   *  (Sending nothing used to wipe them outright — every edit silently destroyed a note's
+   *  mentions and their highlighting.) */
+  updateNote(id: number, content: string, mentions?: NoteMention[]): Observable<Note> {
+    return this.http.put<Note>(`${this.baseUrl}/notes/${id}`, { content, mentions })
       .pipe(catchError(e => this.handleError(e)));
   }
 

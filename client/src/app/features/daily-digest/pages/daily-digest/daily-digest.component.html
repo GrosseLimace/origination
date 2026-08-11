@@ -3,9 +3,10 @@
   <!-- Page header -->
   <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
     <div class="min-w-0">
-      <h1 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">Daily Recap Configuration</h1>
+      <h1 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">Manage Groups</h1>
       <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-        Configure automated daily recaps of producer notes.
+        Build reusable groups of people. &#64;-mention a group in a producer note to share it with
+        everyone in it, and optionally send the group a daily recap of notes.
       </p>
     </div>
     <button type="button" (click)="openCreateDialog()"
@@ -13,14 +14,14 @@
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 5v14"/><path d="M5 12h14"/>
       </svg>
-      New Recap Group
+      New Group
     </button>
   </div>
 
   <!-- Loading state -->
   @if (groupsLoading()) {
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-14 text-center text-sm text-gray-500 dark:text-gray-400">
-      Loading recap groups…
+      Loading groups…
     </div>
   } @else if (groupsError()) {
     <!-- Error state -->
@@ -31,20 +32,22 @@
     <!-- Empty state -->
     <div class="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 px-6 py-14 text-center">
       <div class="mx-auto w-12 h-12 rounded-full bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center mb-4">
+        <!-- People, not an envelope: a group is a list of people first; the recap is one option on it. -->
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green">
-          <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
         </svg>
       </div>
-      <h3 class="text-base font-semibold text-gray-900 dark:text-white">No recap groups yet</h3>
+      <h3 class="text-base font-semibold text-gray-900 dark:text-white">No groups yet</h3>
       <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
-        Create your first group to choose who receives the daily recap and which trade units feed its content.
+        Create your first group to choose who's in it. You can &#64;-mention it in a note, send it a
+        daily recap, or both.
       </p>
       <button type="button" (click)="openCreateDialog()"
         class="inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-lg bg-scoular-green-accessible text-white text-sm font-medium hover:bg-scoular-green transition-colors">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 5v14"/><path d="M5 12h14"/>
         </svg>
-        Create Recap Group
+        Create Group
       </button>
     </div>
   } @else {
@@ -61,7 +64,7 @@
               <div class="flex items-center gap-2 flex-wrap">
                 <h3 class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ group.name }}</h3>
                 @if (!group.enabled) {
-                  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">Disabled</span>
+                  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">No daily recap</span>
                 }
                 @if (!group.isOwner) {
                   <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
@@ -193,10 +196,10 @@
 <app-dialog [isOpen]="dialogOpen()" size="lg" [closeOnBackdrop]="false" (close)="closeDialog()">
   <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
     <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-      {{ isEditing() ? 'Edit Recap Group' : 'Create Recap Group' }}
+      {{ isEditing() ? 'Edit Group' : 'Create Group' }}
     </h3>
     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-      Configure a group to receive daily recaps of producer notes.
+      Choose who's in the group. You can &#64;-mention it in a producer note, send it a daily recap, or both.
     </p>
   </div>
 
@@ -210,12 +213,15 @@
           type="text"
           [ngModel]="formName()"
           (ngModelChange)="formName.set($event)"
-          placeholder="e.g., Iowa Territory Daily Recap"
+          placeholder="e.g., Iowa Territory"
           class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
         />
       </div>
       <div class="space-y-1.5">
-        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Delivery Method</label>
+        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+          Delivery Method
+          <span class="font-normal text-gray-400 dark:text-gray-500">(daily recap only)</span>
+        </label>
         <!-- Custom dropdown — native <select> can't render icons inside <option>. -->
         <div class="relative" (click)="$event.stopPropagation()">
           <button type="button" (click)="toggleDeliveryDropdown()"
@@ -268,6 +274,33 @@
       </div>
     </div>
 
+    <!-- Daily recap opt-in. CREATE ONLY: once the group exists, the card's own toggle owns this
+         (the update endpoint deliberately leaves it alone). Unchecked by default — a group is a
+         reusable list of people first, and the recap is one behavior you can switch on. -->
+    @if (!isEditing()) {
+      <div class="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/20 px-4 py-3">
+        <!-- Same switch as the card footer's "Send daily recap", so the control that turns the recap
+             on at creation looks like the one that turns it off later. -->
+        <label for="recap-enabled" class="flex items-center gap-2 cursor-pointer select-none group/toggle">
+          <span class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0"
+            [class.bg-scoular-green-accessible]="formEnabled()"
+            [class.bg-gray-300]="!formEnabled()"
+            [class.dark:bg-gray-600]="!formEnabled()">
+            <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+              [class.translate-x-5]="formEnabled()"
+              [class.translate-x-1]="!formEnabled()"></span>
+          </span>
+          <input type="checkbox" id="recap-enabled" [checked]="formEnabled()"
+            (change)="formEnabled.set(!formEnabled())" class="sr-only" />
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Send daily recap</span>
+        </label>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 ml-11">
+          Emails everyone in the group a daily roll-up of producer notes. Leave this off if you only
+          want to &#64;-mention the group in notes.
+        </p>
+      </div>
+    }
+
     <!-- Microsoft Teams channel email — only when Teams is the delivery method. Required to save. -->
     @if (formDeliveryMethod() === 'teams') {
       <div class="space-y-1.5">
@@ -282,7 +315,10 @@
           placeholder="channel@scoular.teams.ms"
           class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
         />
-        <p class="text-xs text-gray-400 dark:text-gray-500">The recap will be posted to this Teams channel's email address.</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500">
+          The daily recap will be posted to this Teams channel's email address. &#64;-mentions are
+          separate — they always email the group's members directly, never the channel.
+        </p>
       </div>
     }
 
@@ -547,7 +583,7 @@
      Anchored to the upper third so the small dialog doesn't read as "low" when centered. -->
 <app-dialog [isOpen]="deleteDialogOpen()" (close)="cancelDeleteGroup()" size="sm" align="top">
   <app-dialog-header>
-    <app-dialog-title>Delete Recap Group</app-dialog-title>
+    <app-dialog-title>Delete Group</app-dialog-title>
     <app-dialog-description>
       Are you sure you want to delete <span class="font-medium text-gray-700 dark:text-gray-200">{{ pendingDeleteName() }}</span>? This action cannot be undone.
     </app-dialog-description>
