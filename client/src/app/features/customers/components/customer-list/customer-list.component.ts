@@ -406,6 +406,17 @@ export class CustomerListComponent {
       // shared object reference is visible everywhere that holds it.
       const savedList = this.savedLists().find(l => String(l.id) === id);
       if (savedList) savedList.customerIds = undefined as any;
+      // Clear any active producer-search term so applyFilters() resolves the saved list through
+      // the fast LOCAL NLQ path. With a term present, applyFilters() diverts to the search
+      // pipeline (and the slow ODS fallback in All-Producers mode) and that path never clears
+      // savedListLoading — leaving "Running saved list..." up for the whole search. Mirrors the
+      // clear-on-trade-unit-change behavior. Set the value directly (not clearSearch(), which would
+      // call applyFilters() a second time) so the applyFilters() below runs once with no term.
+      if (this.searchInputValue) {
+        this.searchInputValue = '';
+        this.searchLoading.set(false);
+        this.appStateService.setSearchQuery('');
+      }
     } else {
       this.savedListLoading.set(false);
     }
@@ -452,13 +463,14 @@ export class CustomerListComponent {
     if (this.nlqFilterService.queryInvolvesContracts(query) && this.appStateService.contracts().length === 0) {
       missing['contracts'] = this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[])));
     }
-    // Notes: the full set is now lazily loaded (badges use the last-contact aggregate).
-    // Fetch it for ANY saved-list run while missing — not just contact-phrased queries —
-    // because the NLQ's supplementary keyword matching can consult note content for
-    // generic keyword queries too. Gate on notesLoaded, not length (a TU can genuinely
-    // have zero notes). Usually a no-op: home's saved-list enrichment warms this cache
-    // and the ApiService dedupes a concurrent request.
-    if (!this.appStateService.notesLoaded()) {
+    // Notes (full set with bodies/authors): fetch ONLY for prompts that actually read note
+    // content/authors/pinned/counts, or whose refine filters do. Recency ("not contacted",
+    // "never contacted", "notes in last N days") and every non-note prompt resolve from the
+    // last-contact aggregate (always loaded on TU change), so they never download the full set.
+    // Gate on notesLoaded, not length (a TU can genuinely have zero notes).
+    const needsFullNotes = this.nlqFilterService.queryNeedsFullNotes(query)
+      || this.nlqFilterService.refineFiltersNeedFullNotes(savedList.filters);
+    if (needsFullNotes && !this.appStateService.notesLoaded()) {
       missing['notes'] = this.apiService.getNotes().pipe(catchError(() => of([] as Note[])));
     }
     // Also fetch the query library when the saved list lacks the _promptCategory hint —
@@ -507,6 +519,7 @@ export class CustomerListComponent {
       contracts,
       tickets: this.appStateService.tickets(),
       notes,
+      noteLastContacts: this.appStateService.noteLastContacts(),
       plantingIntentions: this.appStateService.plantingIntentions(),
       storedGrain: this.appStateService.storedGrain(),
       commodities: this.appStateService.commodities()
@@ -533,7 +546,8 @@ export class CustomerListComponent {
           tickets: this.appStateService.tickets(),
           storedGrain: this.appStateService.storedGrain(),
           plantingIntentions: this.appStateService.plantingIntentions(),
-          commodityConversions: this.appStateService.commodityConversions()
+          commodityConversions: this.appStateService.commodityConversions(),
+          noteLastContacts: this.appStateService.noteLastContacts()
         })
       : result.customers;
     savedList.customerIds = this.nlqFilterService.applyCustomerOverrides(

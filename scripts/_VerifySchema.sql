@@ -101,6 +101,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'UserActivity'),
 ('dbo', 'UserActivityDaily'),
 ('dbo', 'UserClickEvent'),
+('dbo', 'UserFeatureUsageDaily'),
 ('dbo', 'UserPreferences'),
 ('dbo', 'UserSession'),
 ('dbo', 'UserTradeUnitSnapshot'),
@@ -384,6 +385,16 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserClickEvent', 'TargetId',       'nvarchar(200)', 1),
 ('dbo', 'UserClickEvent', 'Timestamp',      'datetime2',     0),
 ('dbo', 'UserClickEvent', 'UserId',         'nvarchar(256)', 0),
+-- UserFeatureUsageDaily (per-user-per-feature daily rollup; backs the dashboard's
+--   feature panels for closed days and is the only usage history past raw retention)
+('dbo', 'UserFeatureUsageDaily', 'Id',               'bigint',        0),
+('dbo', 'UserFeatureUsageDaily', 'ActivityDate',     'date',          0),
+('dbo', 'UserFeatureUsageDaily', 'FeatureCode',      'nvarchar(50)',  0),
+('dbo', 'UserFeatureUsageDaily', 'InteractionCount', 'int',           0),
+('dbo', 'UserFeatureUsageDaily', 'RequestCount',     'int',           0),
+('dbo', 'UserFeatureUsageDaily', 'ScreenMinutes',    'float',         0),
+('dbo', 'UserFeatureUsageDaily', 'SubFeatureCode',   'nvarchar(50)',  0),
+('dbo', 'UserFeatureUsageDaily', 'UserId',           'nvarchar(256)', 0),
 -- UserPreferences
 ('dbo', 'UserPreferences', 'Id',                 'int',            0),
 ('dbo', 'UserPreferences', 'SelectedGroupNames', 'nvarchar(2000)', 0),
@@ -438,6 +449,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'FeatureUsageDaily',           'UQ_FeatureUsageDaily'),
 ('dbo', 'ProducerDetails',             'IX_ProducerDetails_CustomerId'),
 ('dbo', 'UserActivityDaily',           'UQ_UserActivityDaily_UserId_Date'),
+('dbo', 'UserFeatureUsageDaily',       'UQ_UserFeatureUsageDaily'),
 ('dbo', 'UserPreferences',             'UQ_UserPreferences_UserId'),
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 

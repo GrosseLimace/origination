@@ -1,36 +1,185 @@
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace GrainOriginatorPortal.Api.Services;
 
 /// <inheritdoc />
 public class UsageDashboardService : IUsageDashboardService
 {
-    private readonly IUsageRepository _repo;
+    /// <summary>How long a resolved user universe stays cached. Short enough that an entitlements or
+    /// group-membership change shows up promptly, long enough to cover one dashboard page load.</summary>
+    private static readonly TimeSpan UniverseCacheTtl = TimeSpan.FromSeconds(60);
 
-    public UsageDashboardService(IUsageRepository repo)
+    private const string TotalSubFeature = "__total__";
+    // Recency tiers for user status, measured in whole UTC days since the user's last activity
+    // (all-time): 0 → Active (used today), 1–7 → Light Usage, >7 → Dormant, none ever → Never.
+    private const int LightUsageWithinDays = 7;
+
+    private static class UsageStatus
     {
-        _repo = repo;
+        public const string Active = "Active";
+        public const string LightUsage = "Light Usage";
+        public const string Dormant = "Dormant";
+        public const string Never = "Never";
     }
 
+    /// <summary>Per-user classification shared by the summary and the user list so their counts agree.</summary>
+    private sealed record UserActivityClassification(string Status, DateTime? LastActive);
+
+    private readonly IUsageRepository _repo;
+    private readonly IAppAccessService _appAccess;
+    private readonly IMemoryCache _cache;
+    private readonly UsageUniverseCacheState _cacheState;
+
+    public UsageDashboardService(
+        IUsageRepository repo,
+        IAppAccessService appAccess,
+        IMemoryCache cache,
+        UsageUniverseCacheState cacheState)
+    {
+        _repo = repo;
+        _appAccess = appAccess;
+        _cache = cache;
+        _cacheState = cacheState;
+    }
+
+    /// <summary>
+    /// Display labels for the features the dashboard reports on. Iterated to build the
+    /// feature-sessions and underused-features lists, so a feature listed here shows up even with
+    /// zero usage — which is the point for "underused", but also means a retired feature left in
+    /// this map would render forever as a permanent zero.
+    /// </summary>
     private static readonly Dictionary<string, string> FeatureLabels = new()
     {
         ["customers"] = "Customer Page",
         ["dashboard"] = "Planting Intention Dashboard",
         ["build-a-list"] = "Build a List",
         ["insights"] = "Actionable Insights",
+        ["unshipped-bushels"] = "Unshipped Bushels",
         ["bidsheet"] = "Bid Sheet",
-        ["position-report"] = "Position Report",
+        ["daily-recap"] = "Daily Recap",
     };
 
-    /// <summary>Resolves the allowed user-id set: all snapshot users, or those in the given TU codes.</summary>
+    // ─────────────────────────────────────────────────────────────────────────
+    // Window handling
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A requested date window, split into the part served by the daily rollups (closed days) and
+    /// the part that must come from the raw tables (today, which no rollup has processed yet).
+    /// </summary>
+    private readonly record struct UsageWindow(
+        DateTime FullFromUtc,
+        DateTime FullToUtc,
+        DateOnly RollupFrom,
+        DateOnly RollupToExclusive,
+        bool HasRollup,
+        DateTime RawFromUtc,
+        DateTime RawToUtc,
+        bool HasRaw)
+    {
+        /// <summary>Whole days in the window; at least 1.</summary>
+        public double TotalDays => Math.Max(1, (FullToUtc - FullFromUtc).TotalDays);
+    }
+
+    private static UsageWindow BuildWindow(DateOnly from, DateOnly to)
+    {
+        if (to < from) to = from;
+        var toExclusive = to.AddDays(1);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // Rollups cover closed days only.
+        var rollupToExclusive = toExclusive < today ? toExclusive : today;
+        // Raw tables cover today onward.
+        var rawFrom = from > today ? from : today;
+
+        return new UsageWindow(
+            FullFromUtc: from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            FullToUtc: toExclusive.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            RollupFrom: from,
+            RollupToExclusive: rollupToExclusive,
+            HasRollup: rollupToExclusive > from,
+            RawFromUtc: rawFrom.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            RawToUtc: toExclusive.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            HasRaw: toExclusive > rawFrom);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // User universe
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the dashboard's user universe. When the Entra app-access set is available:
+    /// "all users" (no trade-unit filter) = everyone who can actually sign in to the app, and a
+    /// trade-unit filter narrows to that unit's entitled users who also have access. When the
+    /// access set is unavailable (Graph blocked/misconfigured) this falls open to the full
+    /// entitlements snapshot, so the dashboard never breaks on a Graph outage.
+    /// <para>
+    /// Cached for <see cref="UniverseCacheTtl"/> because one page load resolves this once per
+    /// endpoint. See <see cref="UsageUniverseCacheState"/> for how exclusion edits invalidate it.
+    /// </para>
+    /// </summary>
     private async Task<HashSet<string>> GetUserIdSetAsync(string? tradeUnitKey, CancellationToken cancellationToken)
+    {
+        var cacheKey = $"usage-dash:universe:{_cacheState.Generation}:{NormalizeTradeUnitKey(tradeUnitKey)}";
+        if (_cache.TryGetValue(cacheKey, out HashSet<string>? cached) && cached is not null)
+            return cached;
+
+        var set = await ResolveUserIdSetAsync(tradeUnitKey, cancellationToken);
+
+        // The shared IMemoryCache is registered with a SizeLimit, so every entry must declare a size.
+        _cache.Set(cacheKey, set, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = UniverseCacheTtl,
+            Size = 1
+        });
+        return set;
+    }
+
+    private async Task<HashSet<string>> ResolveUserIdSetAsync(string? tradeUnitKey, CancellationToken cancellationToken)
     {
         var codes = string.IsNullOrWhiteSpace(tradeUnitKey)
             ? null
             : tradeUnitKey.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var ids = await _repo.GetSnapshotUserIdsAsync(codes, cancellationToken);
-        return new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+        var access = await _appAccess.GetAccessSetAsync(cancellationToken);
+
+        HashSet<string> set;
+        if (codes is null && access.Available)
+        {
+            // "All users" = the access group itself — includes people with access but no
+            // entitlements row (they'd be invisible to the snapshot), excludes entitled
+            // people who can't sign in.
+            set = new HashSet<string>(access.ShortNames, StringComparer.OrdinalIgnoreCase);
+        }
+        else
+        {
+            var ids = await _repo.GetSnapshotUserIdsAsync(codes, cancellationToken);
+            set = new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+            if (access.Available)
+                set.IntersectWith(access.ShortNames);
+        }
+
+        // Drop the DB-managed excluded accounts (dbo.UsageDashboardExcludedUsers — IT/dev/admin
+        // accounts whose activity would skew adoption) from every dashboard view. set uses
+        // OrdinalIgnoreCase, so ExceptWith drops matches case-insensitively.
+        var excluded = await _repo.GetExcludedUserIdsAsync(cancellationToken);
+        if (excluded.Count > 0)
+            set.ExceptWith(excluded);
+        return set;
+    }
+
+    /// <summary>Canonicalizes the comma-separated trade-unit key so "A,B" and "b, a" share a cache entry.</summary>
+    private static string NormalizeTradeUnitKey(string? tradeUnitKey)
+    {
+        if (string.IsNullOrWhiteSpace(tradeUnitKey)) return "__all__";
+        var codes = tradeUnitKey
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(c => c.ToUpperInvariant())
+            .Distinct()
+            .OrderBy(c => c, StringComparer.Ordinal);
+        return string.Join(',', codes);
     }
 
     private async Task<Dictionary<string, string>> GetDisplayNameDictAsync(HashSet<string> userIds, CancellationToken cancellationToken)
@@ -41,23 +190,114 @@ public class UsageDashboardService : IUsageDashboardService
             .ToDictionary(g => g.Key, g => g.First().DisplayName ?? string.Empty, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <inheritdoc />
-    public async Task<UsageDashboardSummaryDto> GetSummaryAsync(DateTime from, DateTime to, string? tradeUnitKey, CancellationToken cancellationToken)
+    /// <summary>
+    /// Combines rollup-derived and raw-derived per-user session stats. Login counts add; the average
+    /// duration is re-weighted by login count so a 1-session day can't outweigh a 20-session week.
+    /// </summary>
+    private static List<UserSessionStats> MergeSessionStats(
+        IEnumerable<UserSessionStats> first, IEnumerable<UserSessionStats> second)
     {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        return first.Concat(second)
+            .GroupBy(s => s.UserId, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var logins = g.Sum(s => s.LoginCount);
+                var minutes = g.Sum(s => s.AvgDuration * s.LoginCount);
+                return new UserSessionStats(g.Key, logins, logins > 0 ? minutes / logins : 0);
+            })
+            .ToList();
+    }
+
+    /// <summary>Reads per-user session stats across the whole window, rollup for closed days + raw for today.</summary>
+    private async Task<List<UserSessionStats>> GetWindowSessionStatsAsync(
+        UsageWindow window, HashSet<string> userIds, CancellationToken cancellationToken)
+    {
+        var rollup = window.HasRollup
+            ? await _repo.GetSessionStatsFromRollupAsync(window.RollupFrom, window.RollupToExclusive, userIds, cancellationToken)
+            : [];
+        var raw = window.HasRaw
+            ? await _repo.GetSessionStatsByUserAsync(window.RawFromUtc, window.RawToUtc, userIds, cancellationToken)
+            : [];
+        return MergeSessionStats(rollup, raw);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // User status classification (shared by summary + list)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Classifies each user by recency. Status is a current snapshot off the user's all-time last
+    /// activity (window-independent, so changing the date range doesn't move it): Active (used
+    /// today), Light Usage (within the last <see cref="LightUsageWithinDays"/> days), Dormant
+    /// (longer than that), Never (no recorded activity, ever). Both the summary KPI and the user
+    /// list read this, so they can't disagree.
+    /// </summary>
+    private async Task<Dictionary<string, UserActivityClassification>> ClassifyUsersAsync(
+        HashSet<string> userIds, CancellationToken cancellationToken)
+    {
+        var lastActive = (await _repo.GetLastActiveByUserAsync(userIds, cancellationToken))
+            .ToDictionary(a => a.UserId, a => a.LastActive, StringComparer.OrdinalIgnoreCase);
+
+        var today = DateTime.UtcNow.Date;
+
+        var result = new Dictionary<string, UserActivityClassification>(StringComparer.OrdinalIgnoreCase);
+        foreach (var userId in userIds)
+        {
+            var hasLast = lastActive.TryGetValue(userId, out var last);
+
+            string status;
+            if (!hasLast)
+            {
+                status = UsageStatus.Never;
+            }
+            else
+            {
+                // Whole-day recency avoids time-of-day / timezone noise, and users span time zones so
+                // there's no single business timezone to anchor to — absolute UTC days are the fair basis.
+                var daysSince = (today - last.Date).Days;
+                status = daysSince <= 0 ? UsageStatus.Active
+                    : daysSince <= LightUsageWithinDays ? UsageStatus.LightUsage
+                    : UsageStatus.Dormant;
+            }
+
+            result[userId] = new UserActivityClassification(status, hasLast ? last : null);
+        }
+        return result;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Summary
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
+    {
+        var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
         var totalUsers = userIds.Count;
 
-        var activeUserIds = await _repo.GetActiveUserIdsAsync(fromUtc, toUtc, userIds, cancellationToken);
-        var activeUsers = activeUserIds.Count;
+        // Same classifier the user list uses, so "Active Users" here == the count of Active rows there.
+        var classification = await ClassifyUsersAsync(userIds, cancellationToken);
+        var activeUsers = classification.Values.Count(c => c.Status == UsageStatus.Active);
+        var lightUsers = classification.Values.Count(c => c.Status == UsageStatus.LightUsage);
+        var dormantUsers = classification.Values.Count(c => c.Status == UsageStatus.Dormant);
+        var neverUsers = classification.Values.Count(c => c.Status == UsageStatus.Never);
+        // Adoption = used within the last week (Active is today-only, too twitchy for an adoption measure).
+        var adoptionRate = totalUsers > 0 ? Math.Round((double)(activeUsers + lightUsers) / totalUsers * 100, 1) : 0;
 
-        var adoptionRate = totalUsers > 0 ? Math.Round((double)activeUsers / totalUsers * 100, 1) : 0;
+        var sessionStats = await GetWindowSessionStatsAsync(window, userIds, cancellationToken);
+        var withSessions = sessionStats.Where(s => s.LoginCount > 0).ToList();
 
-        var durations = await _repo.GetSessionDurationsAsync(fromUtc, toUtc, userIds, cancellationToken);
-        var totalWeeks = Math.Max(1, (toUtc - fromUtc).TotalDays / 7.0);
-        var avgLoginsPerWeek = durations.Count > 0 ? Math.Round(durations.Count / totalWeeks, 1) : 0;
-        var avgSessionMinutes = durations.Count > 0 ? Math.Round(durations.Average(), 1) : 0;
+        // Per *user* logins per week — the label says "Avg Logins / Week" for an originator, so it
+        // has to be averaged over the people who logged in, not the whole org's session count.
+        var weeks = Math.Max(1, window.TotalDays / 7.0);
+        var avgLoginsPerWeek = withSessions.Count > 0
+            ? Math.Round(withSessions.Average(s => s.LoginCount / weeks), 1)
+            : 0;
+
+        var totalLogins = withSessions.Sum(s => s.LoginCount);
+        var totalMinutes = withSessions.Sum(s => s.AvgDuration * s.LoginCount);
+        var avgSessionMinutes = totalLogins > 0 ? Math.Round(totalMinutes / totalLogins, 1) : 0;
 
         return new UsageDashboardSummaryDto
         {
@@ -66,54 +306,63 @@ public class UsageDashboardService : IUsageDashboardService
             AvgSessionMinutes = avgSessionMinutes,
             TotalUsers = totalUsers,
             ActiveUsers = activeUsers,
-            NeedsAttentionCount = totalUsers - activeUsers
+            LightUsageUsers = lightUsers,
+            DormantUsers = dormantUsers,
+            NeverUsers = neverUsers,
+            NeedsAttentionCount = dormantUsers + neverUsers
         };
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Users table
+    // ─────────────────────────────────────────────────────────────────────────
+
     /// <inheritdoc />
-    public async Task<List<UsageDashboardUserDto>> GetUsersAsync(DateTime from, DateTime to, string? tradeUnitKey, string? status, CancellationToken cancellationToken)
+    public async Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? status, CancellationToken cancellationToken)
     {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
         var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
+        // Entra display names fill in for access-group members with no entitlements snapshot row
+        // (e.g. admin accounts) — cached, so this is a dictionary lookup, not a Graph call.
+        var accessNames = (await _appAccess.GetAccessSetAsync(cancellationToken)).DisplayNames;
 
-        var activityLookup = (await _repo.GetLastActivityByUserAsync(fromUtc, toUtc, userIds, cancellationToken))
-            .ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
-        var sessionLookup = (await _repo.GetSessionStatsByUserAsync(fromUtc, toUtc, userIds, cancellationToken))
+        // Status comes from the shared classifier (same basis as the summary KPIs).
+        var classification = await ClassifyUsersAsync(userIds, cancellationToken);
+        var sessionLookup = (await GetWindowSessionStatsAsync(window, userIds, cancellationToken))
             .ToDictionary(s => s.UserId, StringComparer.OrdinalIgnoreCase);
-        // Customers contacted + notes created: date-filtered, NOT trade-unit filtered (matches prior behavior).
-        var clicksLookup = (await _repo.GetContactCountsByUserAsync(fromUtc, toUtc, cancellationToken))
-            .ToDictionary(c => c.UserId, StringComparer.OrdinalIgnoreCase);
-        var notesLookup = (await _repo.GetNotesCreatedCountsByUserAsync(fromUtc, toUtc, cancellationToken))
+        var contactLookup = (await _repo.GetContactCountsByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
+            .ToDictionary(c => c.UserId, c => c.Count, StringComparer.OrdinalIgnoreCase);
+        var notesLookup = (await _repo.GetNotesCreatedCountsByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
             .ToDictionary(n => n.UserId, n => n.Count, StringComparer.OrdinalIgnoreCase);
 
-        var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
+        // Status filter accepts a tier value (Active / Light Usage / Dormant / Never) or "all".
+        var filter = status?.Trim();
+        var filterAll = string.IsNullOrEmpty(filter) || string.Equals(filter, "all", StringComparison.OrdinalIgnoreCase);
+
         var result = new List<UsageDashboardUserDto>();
 
         foreach (var userId in userIds)
         {
-            var hasActivity = activityLookup.TryGetValue(userId, out var activity);
+            var cls = classification[userId];
             var hasSession = sessionLookup.TryGetValue(userId, out var session);
-            clicksLookup.TryGetValue(userId, out var clicks);
+            contactLookup.TryGetValue(userId, out var contactCount);
             notesLookup.TryGetValue(userId, out var noteCount);
 
-            string userStatus = !hasActivity ? "Never Logged In"
-                : activity!.LastActive >= sevenDaysAgo ? "Active" : "Inactive";
-
-            if (!string.IsNullOrEmpty(status) && !string.Equals(status, "all", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(status, userStatus, StringComparison.OrdinalIgnoreCase))
+            if (!filterAll && !string.Equals(filter, cls.Status, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             result.Add(new UsageDashboardUserDto
             {
                 UserId = userId,
-                DisplayName = displayNames.GetValueOrDefault(userId, userId),
+                DisplayName = displayNames.GetValueOrDefault(userId)
+                    ?? accessNames.GetValueOrDefault(userId)
+                    ?? userId,
                 LoginCount = hasSession ? session!.LoginCount : 0,
-                LastActive = hasActivity ? activity!.LastActive : null,
+                LastActive = cls.LastActive,
                 AvgSessionMinutes = hasSession ? Math.Round(session!.AvgDuration, 1) : 0,
-                Status = userStatus,
-                CustomersContacted = clicks?.Count ?? 0,
+                Status = cls.Status,
+                CustomersContacted = contactCount,
                 NotesCreated = noteCount
             });
         }
@@ -121,164 +370,230 @@ public class UsageDashboardService : IUsageDashboardService
         return result.OrderByDescending(u => u.LastActive ?? DateTime.MinValue).ToList();
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Daily active
+    // ─────────────────────────────────────────────────────────────────────────
+
     /// <inheritdoc />
-    public async Task<List<DailyActiveDto>> GetDailyActiveAsync(DateTime from, DateTime to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
     {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
 
-        var activities = await _repo.GetActivityDayUserPairsAsync(fromUtc, toUtc, userIds, cancellationToken);
-
-        var dailyCounts = activities
-            .GroupBy(a => a.Date)
-            .ToDictionary(g => DateOnly.FromDateTime(g.Key), g => g.Select(a => a.UserId).Distinct().Count());
-
-        var fromDate = DateOnly.FromDateTime(fromUtc);
-        var toDate = DateOnly.FromDateTime(toUtc);
-        var result = new List<DailyActiveDto>();
-        for (var d = fromDate; d < toDate; d = d.AddDays(1))
+        var counts = new Dictionary<DateOnly, int>();
+        if (window.HasRollup)
         {
-            dailyCounts.TryGetValue(d, out var count);
-            result.Add(new DailyActiveDto { Date = d.ToString("yyyy-MM-dd"), UniqueUserCount = count });
+            foreach (var day in await _repo.GetDailyActiveCountsFromRollupAsync(
+                window.RollupFrom, window.RollupToExclusive, userIds, cancellationToken))
+                counts[day.Date] = day.Count;
+        }
+        if (window.HasRaw)
+        {
+            foreach (var day in await _repo.GetDailyActiveCountsAsync(
+                window.RawFromUtc, window.RawToUtc, userIds, cancellationToken))
+                counts[day.Date] = day.Count;
         }
 
+        // Gap-fill so the chart has a bar per day, including days nobody signed in.
+        var result = new List<DailyActiveDto>();
+        for (var d = DateOnly.FromDateTime(window.FullFromUtc); d < DateOnly.FromDateTime(window.FullToUtc); d = d.AddDays(1))
+        {
+            counts.TryGetValue(d, out var count);
+            result.Add(new DailyActiveDto { Date = d.ToString("yyyy-MM-dd"), UniqueUserCount = count });
+        }
         return result;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Feature usage
+    // ─────────────────────────────────────────────────────────────────────────
+
     /// <inheritdoc />
-    public async Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateTime from, DateTime to, string? tradeUnitKey, string? screen, CancellationToken cancellationToken)
+    public async Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? screen, CancellationToken cancellationToken)
     {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
 
-        // TIME SPENT per screen — from explicit screen_enter events (time on screen N = enter N+1 − enter N, capped 30 min).
-        var screenEnterEvents = await _repo.GetScreenEnterEventsAsync(fromUtc, toUtc, userIds, cancellationToken);
-
-        var timePerFeature = new Dictionary<string, double>();
-        foreach (var userGroup in screenEnterEvents.GroupBy(e => e.UserId))
-        {
-            var events = userGroup.OrderBy(e => e.Timestamp).ToList();
-            for (int i = 0; i < events.Count - 1; i++)
-            {
-                var timeOnScreen = (events[i + 1].Timestamp - events[i].Timestamp).TotalMinutes;
-                if (timeOnScreen > 0 && timeOnScreen <= 30)
-                {
-                    timePerFeature[events[i].FeatureCode] = timePerFeature.GetValueOrDefault(events[i].FeatureCode) + timeOnScreen;
-                }
-            }
-            if (events.Count > 0)
-            {
-                timePerFeature[events[^1].FeatureCode] = timePerFeature.GetValueOrDefault(events[^1].FeatureCode) + 1;
-            }
-        }
-
-        // SUB-FEATURE COUNTS from explicit interaction click events.
-        var clickCounts = (await _repo.GetInteractionCountsAsync(fromUtc, toUtc, userIds, screen, cancellationToken))
-            .Select(c => new { c.FeatureCode, SubFeatureCode = c.SubFeatureCode ?? "__total__", c.Count })
-            .ToList();
-
-        // Also count notes-create from UserActivity (POST /api/notes) — tracked via middleware.
-        var notesCreateCounts = await _repo.GetNotesCreatedCountsByFeatureAsync(fromUtc, toUtc, userIds, cancellationToken);
+        var screenMinutes = await GetScreenMinutesByFeatureAsync(window, userIds, cancellationToken);
+        var interactionCounts = await GetInteractionCountsAsync(window, userIds, screen, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(screen) || screen == "all")
         {
-            return FeatureLabels.Select(fl => new FeatureSessionsDto
-            {
-                FeatureCode = fl.Key,
-                FeatureLabel = fl.Value,
-                SessionCount = (int)Math.Round(timePerFeature.GetValueOrDefault(fl.Key)),
-                SubFeatures = []
-            })
-            .Where(f => f.SessionCount > 0)
-            .OrderByDescending(f => f.SessionCount)
-            .ToList();
-        }
-        else
-        {
-            var subFeatures = clickCounts
-                .Where(c => c.FeatureCode == screen && c.SubFeatureCode != "__total__")
-                .Select(c => new SubFeatureSessionDto
+            // Screen-time view. Features with no screen_enter events of their own — the calculators
+            // are an overlay, Daily Recap is config — never appear here; they surface in the
+            // per-screen interaction drill-down and in underused-features instead.
+            return FeatureLabels
+                .Select(fl => new FeatureSessionsDto
                 {
-                    SubFeatureCode = c.SubFeatureCode,
-                    Label = FormatSubFeatureLabel(c.SubFeatureCode),
-                    SessionCount = c.Count
+                    FeatureCode = fl.Key,
+                    FeatureLabel = fl.Value,
+                    ScreenMinutes = (int)Math.Round(screenMinutes.GetValueOrDefault(fl.Key)),
+                    SubFeatures = []
                 })
+                .Where(f => f.ScreenMinutes > 0)
+                .OrderByDescending(f => f.ScreenMinutes)
                 .ToList();
+        }
 
-            var notesCount = notesCreateCounts.FirstOrDefault(n => n.FeatureCode == screen)?.Count ?? 0;
-            if (notesCount > 0)
+        var subFeatures = interactionCounts
+            .Where(c => string.Equals(c.FeatureCode, screen, StringComparison.OrdinalIgnoreCase)
+                && c.SubFeatureCode is not null and not TotalSubFeature)
+            .Select(c => new SubFeatureSessionDto
             {
-                var existing = subFeatures.FirstOrDefault(sf => sf.SubFeatureCode == "notes-create");
-                if (existing != null) existing.SessionCount += notesCount;
-                else subFeatures.Add(new SubFeatureSessionDto { SubFeatureCode = "notes-create", Label = "Notes Created", SessionCount = notesCount });
+                SubFeatureCode = c.SubFeatureCode!,
+                Label = FormatSubFeatureLabel(c.SubFeatureCode!),
+                InteractionCount = c.Count
+            })
+            .ToList();
+
+        // Note creation is only visible through the middleware-tracked API call, not a click event.
+        var notesCreateCounts = await _repo.GetNotesCreatedCountsByFeatureAsync(
+            window.FullFromUtc, window.FullToUtc, userIds, cancellationToken);
+        var notesCount = notesCreateCounts
+            .FirstOrDefault(n => string.Equals(n.FeatureCode, screen, StringComparison.OrdinalIgnoreCase))?.Count ?? 0;
+        if (notesCount > 0)
+        {
+            var existing = subFeatures.FirstOrDefault(sf => sf.SubFeatureCode == "notes-create");
+            if (existing is not null) existing.InteractionCount += notesCount;
+            else subFeatures.Add(new SubFeatureSessionDto
+            {
+                SubFeatureCode = "notes-create",
+                Label = "Notes Created",
+                InteractionCount = notesCount
+            });
+        }
+
+        return
+        [
+            new FeatureSessionsDto
+            {
+                FeatureCode = screen,
+                FeatureLabel = FeatureLabels.GetValueOrDefault(screen, screen),
+                ScreenMinutes = (int)Math.Round(screenMinutes.GetValueOrDefault(screen)),
+                SubFeatures = subFeatures.OrderByDescending(sf => sf.InteractionCount).ToList()
             }
+        ];
+    }
 
-            var totalTime = (int)Math.Round(timePerFeature.GetValueOrDefault(screen));
+    /// <summary>
+    /// Minutes per feature across the window: rollup for closed days, live derivation for today.
+    /// <para>
+    /// Note the rollup necessarily computes each day independently, so a day boundary ends a screen
+    /// visit — the same way any other gap over the cap does. Historical numbers therefore include
+    /// one trailing minute per user per active day, where a single live pass over a multi-day window
+    /// would only credit the final event. The rollup's reading is the more defensible one.
+    /// </para>
+    /// </summary>
+    private async Task<Dictionary<string, double>> GetScreenMinutesByFeatureAsync(
+        UsageWindow window, HashSet<string> userIds, CancellationToken cancellationToken)
+    {
+        var totals = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
-            return new List<FeatureSessionsDto>
+        if (window.HasRollup)
+        {
+            foreach (var row in await _repo.GetFeatureScreenTimeFromRollupAsync(
+                window.RollupFrom, window.RollupToExclusive, userIds, cancellationToken))
+                totals[row.FeatureCode] = totals.GetValueOrDefault(row.FeatureCode) + row.Minutes;
+        }
+
+        if (window.HasRaw)
+        {
+            var events = await _repo.GetScreenEnterEventsAsync(window.RawFromUtc, window.RawToUtc, userIds, cancellationToken);
+            foreach (var (featureCode, minutes) in ScreenTimeCalculator.MinutesByFeature(events))
+                totals[featureCode] = totals.GetValueOrDefault(featureCode) + minutes;
+        }
+
+        return totals;
+    }
+
+    private async Task<List<FeatureSubFeatureCount>> GetInteractionCountsAsync(
+        UsageWindow window, HashSet<string> userIds, string? screen, CancellationToken cancellationToken)
+    {
+        var rollup = window.HasRollup
+            ? await _repo.GetInteractionCountsFromRollupAsync(window.RollupFrom, window.RollupToExclusive, userIds, screen, cancellationToken)
+            : [];
+        var raw = window.HasRaw
+            ? await _repo.GetInteractionCountsAsync(window.RawFromUtc, window.RawToUtc, userIds, screen, cancellationToken)
+            : [];
+
+        return rollup.Concat(raw)
+            .GroupBy(c => (c.FeatureCode, c.SubFeatureCode))
+            .Select(g => new FeatureSubFeatureCount(g.Key.FeatureCode, g.Key.SubFeatureCode, g.Sum(c => c.Count)))
+            .ToList();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Weekly trend
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? tradeUnitKey, int weeks, CancellationToken cancellationToken)
+    {
+        weeks = Math.Clamp(weeks, 1, 52);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var currentWeekStart = StartOfWeek(today);
+        var firstWeekStart = currentWeekStart.AddDays(-7 * (weeks - 1));
+
+        var byWeek = new Dictionary<DateOnly, WeeklyTrendDto>();
+
+        // Closed weeks come from the weekly rollup.
+        foreach (var row in await _repo.GetWeeklyLoginRollupAsync(firstWeekStart, userIds, cancellationToken))
+        {
+            if (row.WeekStart >= currentWeekStart) continue; // recomputed live below
+            byWeek[row.WeekStart] = new WeeklyTrendDto
             {
-                new()
-                {
-                    FeatureCode = screen,
-                    FeatureLabel = FeatureLabels.GetValueOrDefault(screen, screen),
-                    SessionCount = totalTime,
-                    SubFeatures = subFeatures.OrderByDescending(sf => sf.SessionCount).ToList()
-                }
+                WeekStart = row.WeekStart.ToString("yyyy-MM-dd"),
+                ActiveUsers = row.ActiveUsers,
+                TotalSessions = row.SessionCount
             };
         }
+
+        // The in-progress week has no rollup row yet.
+        var currentWindow = BuildWindow(currentWeekStart, today);
+        var currentStats = await GetWindowSessionStatsAsync(currentWindow, userIds, cancellationToken);
+        byWeek[currentWeekStart] = new WeeklyTrendDto
+        {
+            WeekStart = currentWeekStart.ToString("yyyy-MM-dd"),
+            ActiveUsers = currentStats.Count(s => s.LoginCount > 0),
+            TotalSessions = currentStats.Sum(s => s.LoginCount)
+        };
+
+        // Gap-fill so a quiet week renders as an empty bar rather than disappearing.
+        var result = new List<WeeklyTrendDto>();
+        for (var w = firstWeekStart; w <= currentWeekStart; w = w.AddDays(7))
+        {
+            result.Add(byWeek.TryGetValue(w, out var dto)
+                ? dto
+                : new WeeklyTrendDto { WeekStart = w.ToString("yyyy-MM-dd"), ActiveUsers = 0, TotalSessions = 0 });
+        }
+        return result;
     }
 
-    /// <inheritdoc />
-    public async Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? tradeUnitKey, CancellationToken cancellationToken)
+    private static DateOnly StartOfWeek(DateOnly date)
     {
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
-        var eightWeeksAgo = DateTime.UtcNow.AddDays(-56);
-
-        var sessions = await _repo.GetSessionLoginTimesAsync(eightWeeksAgo, userIds, cancellationToken);
-
-        return sessions
-            .GroupBy(s =>
-            {
-                var d = s.LoginTime.Date;
-                var diff = ((int)d.DayOfWeek + 6) % 7; // Monday = 0
-                return d.AddDays(-diff);
-            })
-            .Select(g => new WeeklyTrendDto
-            {
-                WeekStart = DateOnly.FromDateTime(g.Key).ToString("yyyy-MM-dd"),
-                TotalLogins = g.Select(s => s.UserId).Distinct().Count(),
-                TotalSessions = g.Count()
-            })
-            .OrderBy(w => w.WeekStart)
-            .ToList();
+        var offset = ((int)date.DayOfWeek + 6) % 7; // Monday = 0
+        return date.AddDays(-offset);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Activity breakdown
+    // ─────────────────────────────────────────────────────────────────────────
+
     /// <inheritdoc />
-    public async Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateTime from, DateTime to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
     {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        // Reads the raw tables for the whole window: the profiles/contracts columns are
+        // distinct-by-producer across the entire range, which per-day rollups cannot reconstruct.
+        var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
         var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
 
-        var activityMap = (await _repo.GetActivityBreakdownByUserAsync(fromUtc, toUtc, userIds, cancellationToken))
+        var activityMap = (await _repo.GetActivityBreakdownByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
             .ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
-
-        // Interaction-style counts come from the explicit click events. Distinct-by-TargetId for
-        // profiles/contracts (clicking the same customer 5 times = 1 viewed, not 5).
-        var rawClicks = await _repo.GetClickBreakdownRowsAsync(fromUtc, toUtc, userIds, cancellationToken);
-
-        var clicksMap = rawClicks.GroupBy(c => c.UserId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => new
-            {
-                ProfilesViewed = g.Where(c => c.FeatureCode == "customers" && c.SubFeatureCode == "profile-opened" && c.EventType == "interaction").Select(c => c.TargetId).Distinct().Count(),
-                ContractsViewed = g.Where(c => c.FeatureCode == "customers" && c.SubFeatureCode == "contracts" && c.EventType == "interaction").Select(c => c.TargetId).Distinct().Count(),
-                CallsEmails = g.Count(c => c.EventType == "call_click" || c.EventType == "email_click"),
-                ListsBuilt = g.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "save-list"),
-                ProducerDetails = g.Count(c => c.FeatureCode == "customers" && c.SubFeatureCode == "producer-details" && c.EventType == "interaction")
-            }, StringComparer.OrdinalIgnoreCase);
+        var clicksMap = (await _repo.GetClickBreakdownByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
+            .ToDictionary(c => c.UserId, StringComparer.OrdinalIgnoreCase);
 
         var allUserIds = activityMap.Keys.Union(clicksMap.Keys, StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -298,71 +613,64 @@ public class UsageDashboardService : IUsageDashboardService
                 PlantingIntentionsAdded = a?.PlantingIntentionsAdded ?? 0,
                 ProducerDetails = c?.ProducerDetails ?? 0
             };
-        }).OrderByDescending(d => d.ProfilesViewed + d.ContractsViewed + d.NotesTaken + d.CallsEmails + d.ListsBuilt + d.PlantingIntentionsAdded + d.ProducerDetails).ToList();
+        })
+        .OrderByDescending(d => d.ProfilesViewed + d.ContractsViewed + d.NotesTaken + d.CallsEmails
+            + d.ListsBuilt + d.PlantingIntentionsAdded + d.ProducerDetails)
+        .ToList();
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Underused features
+    // ─────────────────────────────────────────────────────────────────────────
+
     /// <inheritdoc />
-    public async Task<List<UsageDashboardInactiveUserDto>> GetInactiveUsersAsync(DateTime from, DateTime to, string? tradeUnitKey, int daysThreshold, CancellationToken cancellationToken)
+    public async Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
     {
+        // Measured in distinct users, and now honors the trade-unit filter and the excluded-users
+        // list — the old per-feature-only rollup had no user dimension, so it could do neither.
+        var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
-        var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
 
-        var lastActivityLookup = (await _repo.GetLastActivityByUserAsync(null, null, userIds, cancellationToken))
-            .ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
-        var sessionLookup = (await _repo.GetSessionStatsByUserAsync(null, null, userIds, cancellationToken))
-            .ToDictionary(s => s.UserId, StringComparer.OrdinalIgnoreCase);
-
-        var now = DateTime.UtcNow;
-        var result = new List<UsageDashboardInactiveUserDto>();
-
-        foreach (var userId in userIds)
+        // Union the (feature, user) pairs from both sources rather than adding their counts, so a
+        // user who was active both earlier in the window and today is still one user.
+        var usersByFeature = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        void Record(IEnumerable<FeatureUser> pairs)
         {
-            var hasActivity = lastActivityLookup.TryGetValue(userId, out var activity);
-            var daysSince = hasActivity ? (int)(now - activity!.LastActive).TotalDays : (int?)null;
-
-            if (hasActivity && daysSince < daysThreshold)
-                continue;
-
-            sessionLookup.TryGetValue(userId, out var sessions);
-
-            result.Add(new UsageDashboardInactiveUserDto
+            foreach (var pair in pairs)
             {
-                UserId = userId,
-                DisplayName = displayNames.GetValueOrDefault(userId, userId),
-                DaysSinceLastLogin = daysSince,
-                Status = hasActivity ? "Inactive" : "Never Logged In",
-                AvgSessionMinutes = sessions != null ? Math.Round(sessions.AvgDuration, 1) : 0,
-                LoginCount = sessions?.LoginCount ?? 0
-            });
+                if (!usersByFeature.TryGetValue(pair.FeatureCode, out var users))
+                    usersByFeature[pair.FeatureCode] = users = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                users.Add(pair.UserId);
+            }
         }
 
-        return result.OrderByDescending(u => u.DaysSinceLastLogin ?? int.MaxValue).ToList();
+        if (window.HasRollup)
+            Record(await _repo.GetFeatureUsersFromRollupAsync(window.RollupFrom, window.RollupToExclusive, userIds, cancellationToken));
+        if (window.HasRaw)
+            Record(await _repo.GetFeatureUsersAsync(window.RawFromUtc, window.RawToUtc, userIds, cancellationToken));
+
+        return FeatureLabels
+            .Select(fl => new UnderusedFeatureDto
+            {
+                FeatureCode = fl.Key,
+                FeatureName = fl.Value,
+                UniqueUsers = usersByFeature.TryGetValue(fl.Key, out var users) ? users.Count : 0
+            })
+            .OrderBy(f => f.UniqueUsers)
+            .ToList();
     }
 
-    /// <inheritdoc />
-    public async Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateTime from, DateTime to, string? tradeUnitKey, CancellationToken cancellationToken)
-    {
-        var fromDate = DateOnly.FromDateTime(from.ToUniversalTime());
-        var toDate = DateOnly.FromDateTime(to.ToUniversalTime().Date.AddDays(1));
-
-        var featureLookup = (await _repo.GetFeatureSessionTotalsAsync(fromDate, toDate, cancellationToken))
-            .ToDictionary(f => f.FeatureCode, f => f.Count, StringComparer.OrdinalIgnoreCase);
-
-        return FeatureLabels.Select(fl => new UnderusedFeatureDto
-        {
-            FeatureName = fl.Value,
-            SessionCount = featureLookup.GetValueOrDefault(fl.Key)
-        }).OrderBy(f => f.SessionCount).ToList();
-    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // Query library
+    // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateTime from, DateTime to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
     {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
 
-        var rawUsage = await _repo.GetLibraryQueryUsageAsync(fromUtc, toUtc, userIds, cancellationToken);
+        var rawUsage = await _repo.GetLibraryQueryUsageAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken);
 
         var ids = rawUsage
             .Select(r => int.TryParse(r.TargetId, out var id) ? id : 0)
@@ -378,77 +686,72 @@ public class UsageDashboardService : IUsageDashboardService
     }
 
     /// <inheritdoc />
-    public async Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateTime from, DateTime to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
     {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
 
-        var gaps = await _repo.GetQuerySearchGapsAsync(fromUtc, toUtc, userIds, cancellationToken);
+        var gaps = await _repo.GetQuerySearchGapsAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken);
         return gaps.Select(g => new QuerySearchGapDto { SearchText = g.SearchText, TimesSearched = g.TimesSearched }).ToList();
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Per-user drill-down
+    // ─────────────────────────────────────────────────────────────────────────
+
     /// <inheritdoc />
-    public async Task<UserUsageDetailDto?> GetUserDetailAsync(string userId, DateTime from, DateTime to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<UserUsageDetailDto?> GetUserDetailAsync(string userId, DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
     {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        var window = BuildWindow(from, to);
 
         var allowedIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
         if (!allowedIds.Contains(userId))
             return null;
 
-        var displayNames = await GetDisplayNameDictAsync(new HashSet<string>(new[] { userId }, StringComparer.OrdinalIgnoreCase), cancellationToken);
+        var displayNames = await GetDisplayNameDictAsync(
+            new HashSet<string>([userId], StringComparer.OrdinalIgnoreCase), cancellationToken);
         var displayName = displayNames.GetValueOrDefault(userId, userId);
 
-        var sessionDurations = await _repo.GetSessionDurationsForUserAsync(userId, fromUtc, toUtc, cancellationToken);
+        var sessionDurations = await _repo.GetSessionDurationsForUserAsync(userId, window.FullFromUtc, window.FullToUtc, cancellationToken);
         var loginCount = sessionDurations.Count;
         var totalMinutes = sessionDurations.Sum(d => (double)d);
         var avgMinutes = loginCount > 0 ? totalMinutes / loginCount : 0;
 
-        var lastActive = await _repo.GetLastActivityForUserAsync(userId, cancellationToken);
+        // Same classifier as the summary and the user list, so the badge here can't disagree with
+        // the tier the admin clicked through from (and last-active spans rollup history, not just
+        // the raw-retention window).
+        var classification = await ClassifyUsersAsync(
+            new HashSet<string>([userId], StringComparer.OrdinalIgnoreCase), cancellationToken);
+        var cls = classification[userId];
+        var lastActive = cls.LastActive;
+        var status = cls.Status;
 
-        var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
-        var status = lastActive == null ? "Never Logged In"
-            : lastActive >= sevenDaysAgo ? "Active" : "Inactive";
+        var clicks = await _repo.GetClicksForUserAsync(userId, window.FullFromUtc, window.FullToUtc, cancellationToken);
+        var activities = await _repo.GetActivitiesForUserAsync(userId, window.FullFromUtc, window.FullToUtc, cancellationToken);
 
-        var clicks = await _repo.GetClicksForUserAsync(userId, fromUtc, toUtc, cancellationToken);
-        var activities = await _repo.GetActivitiesForUserAsync(userId, fromUtc, toUtc, cancellationToken);
+        // One pass to bucket clicks, so the ~40 engagement numbers below are dictionary lookups
+        // rather than 40 more scans of the same list.
+        var clickTally = new ClickTally(clicks);
 
-        // Build daily series (event count + screen minutes)
         var screenEnters = clicks
             .Where(c => c.EventType == "screen_enter")
-            .OrderBy(c => c.Timestamp)
+            .Select(c => new ScreenEnterEvent(userId, c.FeatureCode, c.Timestamp))
             .ToList();
+        var minutesByDayAndFeature = ScreenTimeCalculator.MinutesByDayAndFeature(screenEnters);
 
-        var screenMinutesPerDay = new Dictionary<DateTime, double>();
-        var timePerFeature = new Dictionary<string, double>();
-        for (int i = 0; i < screenEnters.Count - 1; i++)
-        {
-            var time = (screenEnters[i + 1].Timestamp - screenEnters[i].Timestamp).TotalMinutes;
-            if (time > 0 && time <= 30)
-            {
-                var date = screenEnters[i].Timestamp.Date;
-                screenMinutesPerDay[date] = screenMinutesPerDay.GetValueOrDefault(date) + time;
-                timePerFeature[screenEnters[i].FeatureCode] = timePerFeature.GetValueOrDefault(screenEnters[i].FeatureCode) + time;
-            }
-        }
-        if (screenEnters.Count > 0)
-        {
-            var last = screenEnters[^1];
-            var date = last.Timestamp.Date;
-            screenMinutesPerDay[date] = screenMinutesPerDay.GetValueOrDefault(date) + 1;
-            timePerFeature[last.FeatureCode] = timePerFeature.GetValueOrDefault(last.FeatureCode) + 1;
-        }
+        var screenMinutesPerDay = minutesByDayAndFeature
+            .GroupBy(kv => kv.Key.Date)
+            .ToDictionary(g => g.Key, g => g.Sum(kv => kv.Value));
+        var timePerFeature = minutesByDayAndFeature
+            .GroupBy(kv => kv.Key.FeatureCode, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Sum(kv => kv.Value), StringComparer.OrdinalIgnoreCase);
 
         var dailyEventCounts = clicks
             .GroupBy(c => c.Timestamp.Date)
             .ToDictionary(g => g.Key, g => g.Count());
 
         var dailyActivity = new List<UserDailyActivityDto>();
-        var fromDate = DateOnly.FromDateTime(fromUtc);
-        var toDate = DateOnly.FromDateTime(toUtc);
-        for (var d = fromDate; d < toDate; d = d.AddDays(1))
+        for (var d = DateOnly.FromDateTime(window.FullFromUtc); d < DateOnly.FromDateTime(window.FullToUtc); d = d.AddDays(1))
         {
             var dt = d.ToDateTime(TimeOnly.MinValue);
             dailyEventCounts.TryGetValue(dt, out var count);
@@ -461,52 +764,27 @@ public class UsageDashboardService : IUsageDashboardService
             });
         }
 
-        // Most-interacted producer
-        var customerInteractionSubFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "profile-opened", "customer-details", "producer-details", "tickets", "storage"
-        };
-        var topProducerGroup = clicks
-            .Where(c => c.TargetId != null && long.TryParse(c.TargetId, out _) &&
-                ((c.FeatureCode == "customers" && c.SubFeatureCode != null && customerInteractionSubFeatures.Contains(c.SubFeatureCode))
-                 || c.EventType == "call_click" || c.EventType == "email_click"))
-            .GroupBy(c => c.TargetId!)
-            .Select(g => new { CustomerId = long.Parse(g.Key), Count = g.Count() })
-            .OrderByDescending(g => g.Count)
-            .FirstOrDefault();
-
-        TopProducerDto? topProducer = null;
-        if (topProducerGroup != null)
-        {
-            var snap = await _repo.GetCustomerNameAsync(topProducerGroup.CustomerId, cancellationToken);
-            if (snap != null)
-            {
-                topProducer = new TopProducerDto
-                {
-                    CustomerId = topProducerGroup.CustomerId,
-                    CustomerName = snap.Name,
-                    ScoularId = snap.ScoularId,
-                    InteractionCount = topProducerGroup.Count,
-                };
-            }
-        }
+        var topProducer = await ResolveTopProducerAsync(clicks, cancellationToken);
 
         var customers = new CustomerEngagementDto
         {
-            ProfilesViewed = clicks
-                .Where(c => c.FeatureCode == "customers" && c.SubFeatureCode == "profile-opened" && c.EventType == "interaction")
-                .Select(c => c.TargetId).Distinct().Count(),
-            ContractsExpanded = clicks
-                .Where(c => c.FeatureCode == "customers" && c.SubFeatureCode == "contracts" && c.EventType == "interaction")
-                .Select(c => c.TargetId).Distinct().Count(),
-            CallsClicked = clicks.Count(c => c.EventType == "call_click"),
-            EmailsClicked = clicks.Count(c => c.EventType == "email_click"),
+            ProfilesViewed = clickTally.DistinctTargets("customers", "profile-opened", "interaction"),
+            ContractsExpanded = clickTally.DistinctTargets("customers", "contracts", "interaction"),
+            CallsClicked = clickTally.CountByEventType("call_click"),
+            EmailsClicked = clickTally.CountByEventType("email_click"),
+            // The note lifecycle is visible through the API calls the middleware records, so these
+            // come from activity rows rather than duplicating the same events as client-side clicks.
             NotesCreated = activities.Count(a => a.SubFeatureCode == "notes-create" && a.HttpMethod == "POST"),
+            NotesEdited = activities.Count(a => a.SubFeatureCode == "notes-edit"),
+            NotesDeleted = activities.Count(a => a.SubFeatureCode == "notes-delete"),
+            NotesPinned = activities.Count(a => a.SubFeatureCode == "notes-pin"),
+            // Choosing an @mention is a pure client action with no request behind it.
+            MentionsUsed = clickTally.Count("customers", "notes-mention"),
             PlantingIntentionsAdded = activities.Count(a => a.SubFeatureCode == "planting-intentions" && a.HttpMethod == "POST"),
-            ProducerDetailsEdited = clicks.Count(c => c.FeatureCode == "customers" && c.SubFeatureCode == "producer-details" && c.EventType == "interaction"),
-            TicketDropdownOpens = clicks.Count(c => c.FeatureCode == "customers" && c.SubFeatureCode == "tickets" && c.EventType == "interaction"),
-            StorageDropdownOpens = clicks.Count(c => c.FeatureCode == "customers" && c.SubFeatureCode == "storage" && c.EventType == "interaction"),
-            PlantingTabClicks = clicks.Count(c => c.FeatureCode == "customers" && c.SubFeatureCode == "planting-intentions" && c.EventType == "interaction"),
+            ProducerDetailsEdited = clickTally.Count("customers", "producer-details"),
+            TicketDropdownOpens = clickTally.Count("customers", "tickets"),
+            StorageDropdownOpens = clickTally.Count("customers", "storage"),
+            PlantingTabClicks = clickTally.Count("customers", "planting-intentions"),
             TopProducer = topProducer,
         };
 
@@ -526,16 +804,16 @@ public class UsageDashboardService : IUsageDashboardService
 
         var buildList = new BuildListEngagementDto
         {
-            ListsSaved = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "save-list"),
-            ListsLoaded = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "saved-list-loaded"),
-            ListsDeleted = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "saved-list-deleted"),
-            LibraryPromptsClicked = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "library-query-selected"),
-            LibrarySearchNoMatch = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "library-search-no-match"),
-            QueryRequestsSubmitted = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "query-request-submitted"),
-            MembersAdded = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "member-added"),
-            MembersExcluded = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "member-excluded"),
-            RefineFiltersOpens = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "refine-filters"),
-            ManageMembersOpens = clicks.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "manage-members"),
+            ListsSaved = clickTally.Count("build-a-list", "save-list"),
+            ListsLoaded = clickTally.Count("build-a-list", "saved-list-loaded"),
+            ListsDeleted = clickTally.Count("build-a-list", "saved-list-deleted"),
+            LibraryPromptsClicked = clickTally.Count("build-a-list", "library-query-selected"),
+            LibrarySearchNoMatch = clickTally.Count("build-a-list", "library-search-no-match"),
+            QueryRequestsSubmitted = clickTally.Count("build-a-list", "query-request-submitted"),
+            MembersAdded = clickTally.Count("build-a-list", "member-added"),
+            MembersExcluded = clickTally.Count("build-a-list", "member-excluded"),
+            RefineFiltersOpens = clickTally.Count("build-a-list", "refine-filters"),
+            ManageMembersOpens = clickTally.Count("build-a-list", "manage-members"),
             TopLibraryQueries = topQueryCounts.Select(q => new TopLibraryQueryDto
             {
                 QueryName = topQueryNames.TryGetValue(q.QueryId, out var name) ? name : $"Query #{q.QueryId}",
@@ -543,15 +821,18 @@ public class UsageDashboardService : IUsageDashboardService
             }).ToList()
         };
 
-        var knownInsightCats = new[] { "unconfirmed-contracts", "spot-loads", "unshipped-bushels" };
+        var knownInsightCats = new HashSet<string>(
+            ["unconfirmed-contracts", "spot-loads", "unshipped-bushels"], StringComparer.OrdinalIgnoreCase);
         var insights = new InsightsEngagementDto
         {
-            UnconfirmedContractsClicks = clicks.Count(c => c.FeatureCode == "insights" && c.SubFeatureCode == "unconfirmed-contracts"),
-            SpotLoadsClicks = clicks.Count(c => c.FeatureCode == "insights" && c.SubFeatureCode == "spot-loads"),
-            UnshippedBushelsClicks = clicks.Count(c => c.FeatureCode == "insights" && c.SubFeatureCode == "unshipped-bushels"),
+            UnconfirmedContractsClicks = clickTally.Count("insights", "unconfirmed-contracts"),
+            SpotLoadsClicks = clickTally.Count("insights", "spot-loads"),
+            UnshippedBushelsClicks = clickTally.Count("insights", "unshipped-bushels"),
             OtherCategoryClicks = clicks.Count(c => c.FeatureCode == "insights"
-                && c.SubFeatureCode != null
+                && c.SubFeatureCode is not null
                 && !knownInsightCats.Contains(c.SubFeatureCode)),
+            UnshippedSearches = clickTally.CountByFeaturePrefix("unshipped-bushels", "search-"),
+            UnshippedGroupsExpanded = clickTally.Count("unshipped-bushels", "group-expanded"),
         };
 
         var locationEditGroups = clicks
@@ -563,24 +844,35 @@ public class UsageDashboardService : IUsageDashboardService
 
         var bidSheet = new BidSheetEngagementDto
         {
-            LocationsAdded = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "locations-added"),
-            LocationsDeleted = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "location-deleted"),
-            LocationsSelected = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "location-selected"),
-            CommoditiesAdded = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "commodities-added"),
-            BidsChanged = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "bids-changed"),
-            EditBidsOpens = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "edit-bids-opened"),
-            ReferenceSet = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "reference-set"),
+            LocationsAdded = clickTally.Count("bidsheet", "locations-added"),
+            LocationsDeleted = clickTally.Count("bidsheet", "location-deleted"),
+            LocationsSelected = clickTally.Count("bidsheet", "location-selected"),
+            CommoditiesAdded = clickTally.Count("bidsheet", "commodities-added"),
+            BidsChanged = clickTally.Count("bidsheet", "bids-changed"),
+            EditBidsOpens = clickTally.Count("bidsheet", "edit-bids-opened"),
+            ReferenceSet = clickTally.Count("bidsheet", "reference-set"),
             MostEditedLocation = locationEditGroups.FirstOrDefault(),
             TopEditedLocations = locationEditGroups.Take(5).ToList(),
         };
 
         var plantingDash = new PlantingDashEngagementDto
         {
-            ByCropTabClicks = clicks.Count(c => c.FeatureCode == "dashboard" && c.SubFeatureCode == "by-crop"),
-            ProducersTabClicks = clicks.Count(c => c.FeatureCode == "dashboard" && c.SubFeatureCode == "producers-and-intentions"),
-            HarvestContractsTabClicks = clicks.Count(c => c.FeatureCode == "dashboard" && c.SubFeatureCode == "harvest-contracts"),
-            ProducerRowClicks = clicks.Count(c => c.FeatureCode == "dashboard" && c.SubFeatureCode == "producer-row-click"),
-            SeasonTargetsSaved = clicks.Count(c => c.FeatureCode == "dashboard" && c.SubFeatureCode == "set-season-targets"),
+            ByCropTabClicks = clickTally.Count("dashboard", "by-crop"),
+            ProducersTabClicks = clickTally.Count("dashboard", "producers-and-intentions"),
+            HarvestContractsTabClicks = clickTally.Count("dashboard", "harvest-contracts"),
+            ProducerRowClicks = clickTally.Count("dashboard", "producer-row-click"),
+            SeasonTargetsSaved = clickTally.Count("dashboard", "set-season-targets"),
+        };
+
+        // Recap-group edits all go through the API, so the middleware sees them; only the page visit
+        // itself needs a client-side event.
+        var dailyRecap = new DailyRecapEngagementDto
+        {
+            GroupsCreated = activities.Count(a => a.SubFeatureCode == "group-created"),
+            GroupsUpdated = activities.Count(a => a.SubFeatureCode == "group-edited"),
+            GroupsDeleted = activities.Count(a => a.SubFeatureCode == "group-deleted"),
+            EnableToggles = activities.Count(a => a.SubFeatureCode == "group-toggled"),
+            ScreenVisits = clicks.Count(c => c.FeatureCode == "daily-recap" && c.EventType == "screen_enter"),
         };
 
         var timePerScreen = FeatureLabels
@@ -608,57 +900,7 @@ public class UsageDashboardService : IUsageDashboardService
             })
             .ToList();
 
-        var customerSubFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "profile-opened", "customer-details", "producer-details",
-            "tickets", "storage", "planting-intentions", "contracts",
-            "member-added", "member-excluded", "producer-row-click",
-            "unconfirmed-contracts", "spot-loads", "unshipped-bushels",
-        };
-
-        var customerTargetIds = recentActivity
-            .Where(r => r.TargetId != null
-                && long.TryParse(r.TargetId, out _)
-                && (
-                    (r.FeatureCode == "customers" && (r.SubFeatureCode == null || customerSubFeatures.Contains(r.SubFeatureCode)))
-                    || (r.FeatureCode == "insights" && r.SubFeatureCode != null && customerSubFeatures.Contains(r.SubFeatureCode))
-                    || (r.FeatureCode == "dashboard" && r.SubFeatureCode == "producer-row-click")
-                    || (r.FeatureCode == "build-a-list" && (r.SubFeatureCode == "member-added" || r.SubFeatureCode == "member-excluded"))
-                ))
-            .Select(r => long.Parse(r.TargetId!))
-            .Distinct()
-            .ToList();
-        var customerNames = await _repo.GetCustomerDisplayNamesAsync(customerTargetIds, cancellationToken);
-
-        var libraryTargetIds = recentActivity
-            .Where(r => r.TargetId != null
-                && r.FeatureCode == "build-a-list"
-                && r.SubFeatureCode == "library-query-selected"
-                && int.TryParse(r.TargetId, out _))
-            .Select(r => int.Parse(r.TargetId!))
-            .Distinct()
-            .ToList();
-        var libraryNames = await _repo.GetQueryLibraryNamesAsync(libraryTargetIds, cancellationToken);
-
-        var contractTargetIds = recentActivity
-            .Where(r => r.TargetId != null
-                && r.FeatureCode == "customers"
-                && r.SubFeatureCode == "contracts"
-                && long.TryParse(r.TargetId, out _))
-            .Select(r => long.Parse(r.TargetId!))
-            .Distinct()
-            .ToList();
-        var contractNames = await _repo.GetContractDisplayNamesAsync(contractTargetIds, cancellationToken);
-
-        foreach (var row in recentActivity)
-        {
-            if (row.TargetId == null) continue;
-            if (customerNames.TryGetValue(row.TargetId, out var custName)) { row.TargetName = custName; continue; }
-            if (libraryNames.TryGetValue(row.TargetId, out var libName)) { row.TargetName = libName; continue; }
-            if (contractNames.TryGetValue(row.TargetId, out var ctName)) { row.TargetName = ctName; continue; }
-        }
-
-        var customersContacted = clicks.Count(c => c.EventType == "call_click" || c.EventType == "email_click");
+        await ResolveTargetNamesAsync(recentActivity, cancellationToken);
 
         return new UserUsageDetailDto
         {
@@ -669,23 +911,235 @@ public class UsageDashboardService : IUsageDashboardService
             LoginCount = loginCount,
             AvgSessionMinutes = Math.Round(avgMinutes, 1),
             TotalAppMinutes = Math.Round(totalMinutes, 1),
-            CustomersContactedCount = customersContacted,
+            CustomersContactedCount = clickTally.CountByEventType("call_click") + clickTally.CountByEventType("email_click"),
             DailyActivity = dailyActivity,
             Customers = customers,
             BuildList = buildList,
             Insights = insights,
             BidSheet = bidSheet,
             PlantingDashboard = plantingDash,
+            DailyRecap = dailyRecap,
             TimePerScreen = timePerScreen,
             RecentActivity = recentActivity
         };
     }
 
+    private async Task<TopProducerDto?> ResolveTopProducerAsync(List<UserClickRow> clicks, CancellationToken cancellationToken)
+    {
+        var customerInteractionSubFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "profile-opened", "customer-details", "producer-details", "tickets", "storage"
+        };
+
+        var top = clicks
+            .Where(c => c.TargetId != null && long.TryParse(c.TargetId, out _) &&
+                ((c.FeatureCode == "customers" && c.SubFeatureCode != null && customerInteractionSubFeatures.Contains(c.SubFeatureCode))
+                 || c.EventType == "call_click" || c.EventType == "email_click"))
+            .GroupBy(c => c.TargetId!)
+            .Select(g => new { CustomerId = long.Parse(g.Key), Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .FirstOrDefault();
+
+        if (top is null) return null;
+
+        var snap = await _repo.GetCustomerNameAsync(top.CustomerId, cancellationToken);
+        return snap is null ? null : new TopProducerDto
+        {
+            CustomerId = top.CustomerId,
+            CustomerName = snap.Name,
+            ScoularId = snap.ScoularId,
+            InteractionCount = top.Count,
+        };
+    }
+
+    /// <summary>
+    /// Fills in <see cref="RecentActivityDto.TargetName"/>. Resolution is keyed on the row's own
+    /// feature/sub-feature, not on "whichever lookup happens to contain this id" — a customer id and
+    /// a query-library id can be the same number, and a first-match-wins pass mislabels one of them.
+    /// </summary>
+    private async Task ResolveTargetNamesAsync(List<RecentActivityDto> rows, CancellationToken cancellationToken)
+    {
+        static bool IsCustomerTarget(RecentActivityDto r)
+        {
+            var customerSubFeatures = CustomerTargetSubFeatures;
+            return (r.FeatureCode == "customers"
+                    && (r.SubFeatureCode is null || customerSubFeatures.Contains(r.SubFeatureCode))
+                    && r.SubFeatureCode != "contracts")
+                || (r.FeatureCode == "insights" && r.SubFeatureCode is not null && customerSubFeatures.Contains(r.SubFeatureCode))
+                || (r.FeatureCode == "unshipped-bushels" && r.SubFeatureCode == "group-expanded")
+                || (r.FeatureCode == "dashboard" && r.SubFeatureCode == "producer-row-click")
+                || (r.FeatureCode == "build-a-list" && r.SubFeatureCode is "member-added" or "member-excluded");
+        }
+
+        static bool IsContractTarget(RecentActivityDto r) =>
+            r.FeatureCode == "customers" && r.SubFeatureCode == "contracts";
+
+        static bool IsLibraryTarget(RecentActivityDto r) =>
+            r.FeatureCode == "build-a-list" && r.SubFeatureCode == "library-query-selected";
+
+        var customerIds = rows.Where(r => IsCustomerTarget(r) && long.TryParse(r.TargetId, out _))
+            .Select(r => long.Parse(r.TargetId!)).Distinct().ToList();
+        var contractIds = rows.Where(r => IsContractTarget(r) && long.TryParse(r.TargetId, out _))
+            .Select(r => long.Parse(r.TargetId!)).Distinct().ToList();
+        var libraryIds = rows.Where(r => IsLibraryTarget(r) && int.TryParse(r.TargetId, out _))
+            .Select(r => int.Parse(r.TargetId!)).Distinct().ToList();
+
+        var customerNames = await _repo.GetCustomerDisplayNamesAsync(customerIds, cancellationToken);
+        var contractNames = await _repo.GetContractDisplayNamesAsync(contractIds, cancellationToken);
+        var libraryNames = await _repo.GetQueryLibraryNamesAsync(libraryIds, cancellationToken);
+
+        foreach (var row in rows)
+        {
+            if (row.TargetId is null) continue;
+
+            if (IsCustomerTarget(row) && customerNames.TryGetValue(row.TargetId, out var custName))
+                row.TargetName = custName;
+            else if (IsContractTarget(row) && contractNames.TryGetValue(row.TargetId, out var ctName))
+                row.TargetName = ctName;
+            else if (IsLibraryTarget(row) && libraryNames.TryGetValue(row.TargetId, out var libName))
+                row.TargetName = libName;
+        }
+    }
+
+    private static readonly HashSet<string> CustomerTargetSubFeatures = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "profile-opened", "customer-details", "producer-details",
+        "tickets", "storage", "planting-intentions", "contracts",
+        "trade-unit-assignment", "notes-edit", "notes-delete", "notes-pin", "notes-unpin",
+        "member-added", "member-excluded", "producer-row-click",
+        "unconfirmed-contracts", "spot-loads", "unshipped-bushels",
+    };
+
+    /// <summary>
+    /// Buckets one user's click events once so the drill-down's engagement numbers are lookups.
+    /// </summary>
+    private sealed class ClickTally
+    {
+        private readonly Dictionary<(string Feature, string SubFeature), int> _byFeatureSub = new();
+        private readonly Dictionary<(string Feature, string SubFeature), HashSet<string?>> _targetsByFeatureSub = new();
+        private readonly Dictionary<string, int> _byEventType = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<(string Feature, string SubFeature)> _keys = [];
+
+        public ClickTally(IEnumerable<UserClickRow> clicks)
+        {
+            foreach (var c in clicks)
+            {
+                _byEventType[c.EventType] = _byEventType.GetValueOrDefault(c.EventType) + 1;
+
+                if (c.SubFeatureCode is null) continue;
+                var key = (c.FeatureCode, c.SubFeatureCode);
+                if (!_byFeatureSub.ContainsKey(key)) _keys.Add(key);
+                _byFeatureSub[key] = _byFeatureSub.GetValueOrDefault(key) + 1;
+
+                if (c.EventType == "interaction")
+                {
+                    if (!_targetsByFeatureSub.TryGetValue(key, out var targets))
+                        _targetsByFeatureSub[key] = targets = [];
+                    targets.Add(c.TargetId);
+                }
+            }
+        }
+
+        public int Count(string feature, string subFeature) => _byFeatureSub.GetValueOrDefault((feature, subFeature));
+
+        public int CountByEventType(string eventType) => _byEventType.GetValueOrDefault(eventType);
+
+        public int DistinctTargets(string feature, string subFeature, string eventType) =>
+            eventType == "interaction" && _targetsByFeatureSub.TryGetValue((feature, subFeature), out var targets)
+                ? targets.Count
+                : 0;
+
+        /// <summary>Sums every sub-feature of <paramref name="feature"/> whose code starts with the prefix.</summary>
+        public int CountByFeaturePrefix(string feature, string subFeaturePrefix) =>
+            _keys
+                .Where(k => string.Equals(k.Feature, feature, StringComparison.OrdinalIgnoreCase)
+                    && k.SubFeature.StartsWith(subFeaturePrefix, StringComparison.OrdinalIgnoreCase))
+                .Sum(k => _byFeatureSub[k]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Excluded-users administration
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<AccessUsersDto> GetAccessUsersAsync(CancellationToken cancellationToken)
+    {
+        // Same universe the dashboard filters on: enabled members of the Entra access group, keyed by
+        // short name. When Graph can't be read the set is Unavailable → the picker falls back to free text.
+        var set = await _appAccess.GetAccessSetAsync(cancellationToken);
+        if (!set.Available)
+            return new AccessUsersDto { Available = false, Users = [] };
+
+        var users = set.DisplayNames
+            .Select(kv => new AccessUserDto { UserId = kv.Key, DisplayName = kv.Value })
+            .OrderBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new AccessUsersDto { Available = true, Users = users };
+    }
+
+    /// <inheritdoc />
+    public async Task<List<ExcludedUserDto>> GetExcludedUsersAsync(CancellationToken cancellationToken)
+    {
+        var rows = await _repo.GetExcludedUsersAsync(cancellationToken);
+        if (rows.Count == 0) return [];
+
+        var names = await GetDisplayNameDictAsync(
+            new HashSet<string>(rows.Select(r => r.UserId), StringComparer.OrdinalIgnoreCase), cancellationToken);
+
+        return rows.Select(r => new ExcludedUserDto
+        {
+            Id = r.Id,
+            UserId = r.UserId,
+            DisplayName = names.GetValueOrDefault(r.UserId),
+            Reason = r.Reason,
+            CreatedBy = r.CreatedBy,
+            CreatedAt = r.CreatedAt
+        }).ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<ExcludedUserDto?> AddExcludedUserAsync(string userId, string? reason, string createdBy, CancellationToken cancellationToken)
+    {
+        var normalized = NormalizeUserId(userId);
+        var row = await _repo.AddExcludedUserAsync(normalized, reason, createdBy, cancellationToken);
+        if (row is null) return null;
+
+        // Every dashboard view filters on this list, so drop the cached universes immediately
+        // instead of showing unchanged numbers until the TTL lapses.
+        _cacheState.Invalidate();
+
+        return new ExcludedUserDto
+        {
+            Id = row.Id,
+            UserId = row.UserId,
+            Reason = row.Reason,
+            CreatedBy = row.CreatedBy,
+            CreatedAt = row.CreatedAt
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RemoveExcludedUserAsync(int id, CancellationToken cancellationToken)
+    {
+        var removed = await _repo.RemoveExcludedUserAsync(id, cancellationToken);
+        if (removed) _cacheState.Invalidate();
+        return removed;
+    }
+
+    /// <summary>Activity is recorded under the short name (UPN before the '@'), so exclusions have
+    /// to be stored the same way for the case-insensitive set subtraction to match.</summary>
+    private static string NormalizeUserId(string userId)
+    {
+        var trimmed = (userId ?? string.Empty).Trim();
+        var at = trimmed.IndexOf('@');
+        return at > 0 ? trimmed[..at] : trimmed;
+    }
+
     private static string FormatSubFeatureLabel(string subFeatureCode)
     {
-        return subFeatureCode.Replace('-', ' ')
-            .Split(' ')
-            .Select(w => w.Length > 0 ? char.ToUpper(w[0]) + w[1..] : w)
-            .Aggregate((a, b) => $"{a} {b}");
+        return string.Join(' ', subFeatureCode
+            .Replace('-', ' ')
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
     }
 }

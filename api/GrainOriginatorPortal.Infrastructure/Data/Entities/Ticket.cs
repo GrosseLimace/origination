@@ -77,5 +77,9 @@ public class Ticket
 
     // Status
     public string? TicketStatusDescription { get; set; } // e.g. "Unload", "Final Settled", "P/A"
-    public bool IsActive { get; set; }
+    // The ODS removed IsActive from base.vw_CurrentTickets — the view itself already excludes
+    // cancelled/deleted tickets, so every row it returns is active. Kept on the model (defaulted
+    // true, and Ignored by EF in OriginationDbContext) so the API/client contract is unchanged; it
+    // is no longer read from a DB column. If the ODS later re-exposes a delete flag, re-map it here.
+    public bool IsActive { get; set; } = true;
 }

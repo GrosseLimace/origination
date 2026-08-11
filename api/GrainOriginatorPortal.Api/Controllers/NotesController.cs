@@ -27,12 +27,23 @@ public class NotesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all notes.</summary>
+    /// <summary>Gets all notes. Optional server-side filters keep note-scoped prompts from pulling
+    /// the entire set: <c>sinceDays</c> (recency window), <c>contentAny</c> (comma-separated
+    /// keywords — returns notes whose text contains ANY), <c>authorAny</c> (comma-separated author
+    /// candidates — matches CreatedBy/ModifiedBy), and <c>pinnedOnly</c>. Each returns a SUPERSET
+    /// the client then matches exactly, so results are unchanged.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<NoteResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<NoteResponse>>> GetAll([FromQuery] string? tradeUnits = null, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<NoteResponse>>> GetAll(
+        [FromQuery] string? tradeUnits = null,
+        [FromQuery] int? sinceDays = null,
+        [FromQuery] string? contentAny = null,
+        [FromQuery] string? authorAny = null,
+        [FromQuery] bool pinnedOnly = false,
+        [FromQuery] string? customerIds = null,
+        CancellationToken cancellationToken = default)
     {
-        return Ok(await _service.GetAllAsync(tradeUnits, cancellationToken));
+        return Ok(await _service.GetAllAsync(tradeUnits, sinceDays, contentAny, authorAny, pinnedOnly, customerIds, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -166,6 +177,7 @@ public class NotesController : ControllerBase
     public async Task<ActionResult<NoteResponse>> TogglePin(long id, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may pin any note.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
         _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         var note = await _service.TogglePinAsync(id, cancellationToken)
@@ -204,6 +216,7 @@ public class NotesController : ControllerBase
     public async Task<ActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may delete any note.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
         _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         await _service.DeleteAsync(id, cancellationToken);

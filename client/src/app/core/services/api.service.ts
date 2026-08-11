@@ -28,7 +28,6 @@ import {
   HarvestWindow,
   UsageDashboardSummary,
   UsageDashboardUser,
-  UsageDashboardInactiveUser,
   DailyActive,
   FeatureSessions,
   QueryLibraryUsage,
@@ -37,6 +36,9 @@ import {
   ActivityBreakdown,
   UnderusedFeature,
   UserUsageDetail,
+  ExcludedUser,
+  AccessUsers,
+  ExclusionPermissions,
   QueryLibraryItem,
   NoteMention,
   MentionCatalog
@@ -123,8 +125,8 @@ export class ApiService {
   }
 
   /** Fetches trade unit groups assigned to the currently authenticated user from the Entitlements database */
-  getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[] }[]> {
-    return this.http.get<{ groupName: string; tradeUnitCodes: string[] }[]>(`${this.baseUrl}/usertradeunits`)
+  getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[]; tradeUnits: { code: string; description?: string }[] }[]> {
+    return this.http.get<{ groupName: string; tradeUnitCodes: string[]; tradeUnits: { code: string; description?: string }[] }[]>(`${this.baseUrl}/usertradeunits`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -501,12 +503,26 @@ export class ApiService {
   // Note Operations (Customer contact notes)
   // ==========================================================================
 
-  /** Fetches notes, optionally filtered by trade units */
-  getNotes(tradeUnits?: string[]): Observable<Note[]> {
-    const url = tradeUnits?.length
-      ? `${this.baseUrl}/notes?tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`
-      : `${this.baseUrl}/notes`;
-    const key = `notes:${[...(tradeUnits ?? [])].sort().join(',')}`;
+  /** Fetches notes. With no options this is the full set; the options narrow the read SERVER-SIDE
+   *  so note-scoped prompts don't pull all ~28.8k notes:
+   *   - `sinceDays`   — only notes created within the last N days (date-recency prompts).
+   *   - `contentAny`  — only notes whose text contains ANY of these keywords (content search).
+   *   - `authorAny`   — only notes whose author (CreatedBy/ModifiedBy) contains ANY of these.
+   *   - `pinnedOnly`  — only pinned notes.
+   *  Each is a SUPERSET the caller then matches exactly, so results are unchanged — just fewer
+   *  rows over the wire. Every distinct option set gets its own dedupe key so a partial slice never
+   *  collides with (or masquerades as) the full-set cache. */
+  getNotes(tradeUnits?: string[], opts?: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean; customerIds?: number[] }): Observable<Note[]> {
+    const params: string[] = [];
+    if (tradeUnits?.length) params.push(`tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`);
+    if (opts?.sinceDays != null && opts.sinceDays > 0) params.push(`sinceDays=${opts.sinceDays}`);
+    if (opts?.contentAny?.length) params.push(`contentAny=${encodeURIComponent(opts.contentAny.join(','))}`);
+    if (opts?.authorAny?.length) params.push(`authorAny=${encodeURIComponent(opts.authorAny.join(','))}`);
+    if (opts?.pinnedOnly) params.push('pinnedOnly=true');
+    if (opts?.customerIds?.length) params.push(`customerIds=${encodeURIComponent(opts.customerIds.join(','))}`);
+    const url = params.length ? `${this.baseUrl}/notes?${params.join('&')}` : `${this.baseUrl}/notes`;
+    const scopeParams = params.filter(p => !p.startsWith('tradeUnits=')).sort().join('&');
+    const key = `notes:${[...(tradeUnits ?? [])].sort().join(',')}:${scopeParams}`;
     return this._dedupe(key,
       this.http.get<Note[]>(url).pipe(catchError(e => this.handleError(e)))
     );
@@ -911,10 +927,11 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageDashboardUsers(from: string, to: string, tradeUnitKey?: string, status?: string): Observable<UsageDashboardUser[]> {
-    const extra: Record<string, string> = {};
-    if (status && status !== 'all') extra['status'] = status;
-    return this.http.get<UsageDashboardUser[]>(`${this.baseUrl}/usage-dashboard/users`, { params: this.usageParams(from, to, tradeUnitKey, extra) })
+  /** Returns the full user universe. Status filtering stays client-side: the same list also feeds
+   *  the status donut, the activity-breakdown table and the low-usage panel, so a server-filtered
+   *  response could not replace it. */
+  getUsageDashboardUsers(from: string, to: string, tradeUnitKey?: string): Observable<UsageDashboardUser[]> {
+    return this.http.get<UsageDashboardUser[]>(`${this.baseUrl}/usage-dashboard/users`, { params: this.usageParams(from, to, tradeUnitKey) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -930,8 +947,10 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageWeeklyTrend(tradeUnitKey?: string): Observable<WeeklyTrend[]> {
-    const params: Record<string, string> = {};
+  /** Trend over whole calendar weeks. Deliberately takes no date range — it is a trend view, so it
+   *  does not re-fetch when the dashboard's window changes. */
+  getUsageWeeklyTrend(tradeUnitKey?: string, weeks = 8): Observable<WeeklyTrend[]> {
+    const params: Record<string, string> = { weeks: weeks.toString() };
     if (tradeUnitKey) params['tradeUnitKey'] = tradeUnitKey;
     return this.http.get<WeeklyTrend[]>(`${this.baseUrl}/usage-dashboard/weekly-trend`, { params })
       .pipe(catchError(e => this.handleError(e)));
@@ -939,13 +958,6 @@ export class ApiService {
 
   getUsageActivityBreakdown(from: string, to: string, tradeUnitKey?: string): Observable<ActivityBreakdown[]> {
     return this.http.get<ActivityBreakdown[]>(`${this.baseUrl}/usage-dashboard/activity-breakdown`, { params: this.usageParams(from, to, tradeUnitKey) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageDashboardInactive(from: string, to: string, tradeUnitKey?: string, daysThreshold?: number): Observable<UsageDashboardInactiveUser[]> {
-    const extra: Record<string, string> = {};
-    if (daysThreshold) extra['daysThreshold'] = daysThreshold.toString();
-    return this.http.get<UsageDashboardInactiveUser[]>(`${this.baseUrl}/usage-dashboard/inactive`, { params: this.usageParams(from, to, tradeUnitKey, extra) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -969,5 +981,38 @@ export class ApiService {
       `${this.baseUrl}/usage-dashboard/users/${encodeURIComponent(userId)}/detail`,
       { params: this.usageParams(from, to, tradeUnitKey) }
     ).pipe(catchError(e => this.handleError(e)));
+  }
+
+  // Accounts hidden from every usage-dashboard view. Excluding someone changes nothing about their
+  // access to the app.
+
+  /** Whether the signed-in user is on the exclusion-manager allowlist — gates the gear icon.
+   *  The server enforces the same allowlist on every exclusion endpoint regardless. */
+  getUsageExclusionsCanManage(): Observable<ExclusionPermissions> {
+    return this.http.get<ExclusionPermissions>(`${this.baseUrl}/usage-dashboard/excluded-users/can-manage`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageExcludedUsers(): Observable<ExcludedUser[]> {
+    return this.http.get<ExcludedUser[]>(`${this.baseUrl}/usage-dashboard/excluded-users`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** People with app access (Entra access-group members), for the exclusion picker. */
+  getUsageAccessUsers(): Observable<AccessUsers> {
+    return this.http.get<AccessUsers>(`${this.baseUrl}/usage-dashboard/access-users`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  addUsageExcludedUser(userId: string, reason?: string): Observable<ExcludedUser> {
+    return this.http.post<ExcludedUser>(`${this.baseUrl}/usage-dashboard/excluded-users`, {
+      userId,
+      reason: reason?.trim() || null
+    }).pipe(catchError(e => this.handleError(e)));
+  }
+
+  removeUsageExcludedUser(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/usage-dashboard/excluded-users/${id}`)
+      .pipe(catchError(e => this.handleError(e)));
   }
 }

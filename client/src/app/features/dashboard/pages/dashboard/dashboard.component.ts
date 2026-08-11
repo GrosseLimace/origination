@@ -11,12 +11,12 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
-import { BadgeComponent } from '@shared/components/badge/badge.component';
+import { commodityColor, commodityChipClass } from '@shared/utils/commodity-color';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
   templateUrl: './dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -126,6 +126,10 @@ export class DashboardComponent {
     this.producerCropFilter.set('');
   }
 
+  /** Shared per-crop chip classes (pastel bg+text), same palette as Build-A-List planting chips. */
+  readonly commodityChipClass = commodityChipClass;
+
+  /** Last-contact display for a customer — shown only on the "without intentions" producer view. */
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
     return this._lastContactByCustomer().get(customerId)
       ?? { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity };
@@ -381,26 +385,30 @@ export class DashboardComponent {
   }
 
   readonly cropBreakdown = computed(() => {
-    const cropAcresMap = new Map<string, number>();
+    // Track the underlying crop CATEGORY per row so color is by crop, not sort position —
+    // e.g. "Irrigated Corn" and "Dryland Corn" stay as separate rows but both color as Corn.
+    const cropMap = new Map<string, { acres: number; category: string }>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = this._commodityByCode().get(p.crop);
       const category = p.category || commodity?.category || p.crop;
       const key = this.selectedCropFilter()
         ? this._dashboardCropKey(p.type, category)
         : category;
-      cropAcresMap.set(key, (cropAcresMap.get(key) || 0) + p.acres);
+      const entry = cropMap.get(key);
+      if (entry) entry.acres += p.acres;
+      else cropMap.set(key, { acres: p.acres, category });
     }
-    const total = [...cropAcresMap.values()].reduce((a, b) => a + b, 0);
-    return [...cropAcresMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, acres], i) => {
-        const color = this.CHART_COLORS[i % this.CHART_COLORS.length];
+    const total = [...cropMap.values()].reduce((a, b) => a + b.acres, 0);
+    return [...cropMap.entries()]
+      .sort((a, b) => b[1].acres - a[1].acres)
+      .map(([name, { acres, category }]) => {
+        const color = commodityColor(category); // shared per-crop color (same everywhere)
         return {
           name,
           acres,
           pct: total > 0 ? Math.round((acres / total) * 100) : 0,
           barColor: color.bar,
-          dotColor: color.dot,
+          dotColor: color.bar,
           hex: color.hex
         };
       });
@@ -463,7 +471,9 @@ export class DashboardComponent {
       acres: number;
       production: number;
       // Per-crop breakdown so we can recompute the displayed acres/production when a chip is active.
-      byKey: Map<string, { display: string; category: string; acres: number; production: number }>;
+      // colorKey = the PLAIN crop category (e.g. "Corn"/"Wheat") so the chip color matches the app-wide
+      // palette; category = the type-prefixed key (e.g. "Dryland Corn") kept for the chip-filter logic.
+      byKey: Map<string, { display: string; category: string; colorKey: string; acres: number; production: number }>;
     }>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = commodityByCode.get(p.crop);
@@ -490,12 +500,21 @@ export class DashboardComponent {
         existingDetail.acres += p.acres;
         existingDetail.production += production;
       } else {
-        entry.byKey.set(displayKey, { display: displayKey, category: categoryKey, acres: p.acres, production });
+        entry.byKey.set(displayKey, { display: displayKey, category: categoryKey, colorKey: category, acres: p.acres, production });
       }
     }
     return [...map.entries()].map(([customerId, v]) => {
       const customer = customerMap.get(customerId);
       const cropEntries = [...v.byKey.values()].sort((a, b) => a.display.localeCompare(b.display));
+      // Build-A-List-style planting chips: "<Type> <Crop> · <acres> ac", grouped by crop (same crops
+      // adjacent) then acres desc, colored by the plain crop category.
+      const plantingChips = [...cropEntries]
+        .sort((a, b) => a.colorKey.localeCompare(b.colorKey) || b.acres - a.acres)
+        .map(e => ({
+          display: e.display,
+          colorKey: e.colorKey,
+          text: `${e.display} · ${e.acres.toLocaleString('en-US')} ac`,
+        }));
       return {
         customerId,
         customerName: v.customerName,
@@ -507,6 +526,7 @@ export class DashboardComponent {
         crops: cropEntries.map(e => e.display),
         cropCategoryKeys: [...new Set(cropEntries.map(e => e.category))].sort(),
         cropEntries,
+        plantingChips,
         highlightedCrops: null as Set<string> | null,
       };
     });
@@ -587,13 +607,26 @@ export class DashboardComponent {
           return (commodity?.category || '').toLowerCase() === cropFilterLower;
         });
       })
-      .map(c => ({
-        customerId: c.id,
-        customerName: c.name,
-        scoularId: c.scoularId ?? null,
-        customer: c,
-        crops: [...(cropsMap.get(c.id) ?? [])].sort(),
-      }));
+      .map(c => {
+        const crops = [...(cropsMap.get(c.id) ?? [])].sort();
+        // These producers have no planting intentions, so no acres/type — chips are just the crop
+        // code, colored + grouped by crop category (resolved via the commodities lookup).
+        const plantingChips = crops
+          .map(code => {
+            const commodity = commodityByCode.get(code) || commodityByCode.get(code.toUpperCase());
+            const colorKey = commodity?.category || code;
+            return { display: code, colorKey, text: code };
+          })
+          .sort((a, b) => a.colorKey.localeCompare(b.colorKey) || a.display.localeCompare(b.display));
+        return {
+          customerId: c.id,
+          customerName: c.name,
+          scoularId: c.scoularId ?? null,
+          customer: c,
+          crops,
+          plantingChips,
+        };
+      });
   });
 
   // Apply search + (optional) chip filter. Chip filter is view-specific, so the inactive
@@ -641,6 +674,7 @@ export class DashboardComponent {
       { applyChipFilter: this.producerView() === 'without' }
     ).length
   );
+
 
   // Last-contacted info per customer — mirrors build-list's lastContactByCustomer.
   // Walks the last-contact aggregate (incl. linked producers, forward + reverse edges) to
@@ -1288,13 +1322,18 @@ export class DashboardComponent {
     const yieldMap = this._yieldEstimateMap();
 
     this.yieldRows.set(
-      [...allCropCodes].sort().map(cropCode => ({
-        cropCode,
-        cropName: cropCode,
-        category: cropCategoryMap.get(cropCode) || 'Unknown',
-        totalAcres: cropAcresMap.get(cropCode) || 0,
-        yieldEstimate: yieldMap.get(cropCode) ?? null
-      }))
+      [...allCropCodes]
+        .map(cropCode => ({
+          cropCode,
+          cropName: cropCode,
+          category: cropCategoryMap.get(cropCode) || 'Unknown',
+          totalAcres: cropAcresMap.get(cropCode) || 0,
+          yieldEstimate: yieldMap.get(cropCode) ?? null
+        }))
+        // Group rows by commodity (all Corn variants together, then Soybeans, etc.), then by the
+        // crop label within a commodity — instead of a flat alphabetical sort that splits e.g.
+        // "Dryland Corn" and "Irrigated Corn" apart.
+        .sort((a, b) => a.category.localeCompare(b.category) || a.cropName.localeCompare(b.cropName))
     );
 
     this._calculateCategoryRows();
@@ -1504,22 +1543,13 @@ export class DashboardComponent {
   // Row color coding (consistent category colors across all 6 tables)
   // =========================================================================
 
-  private static readonly _CATEGORY_ROW_COLORS = [
-    'bg-emerald-100 dark:bg-emerald-800/35',
-    'bg-sky-100 dark:bg-sky-800/35',
-    'bg-amber-100 dark:bg-amber-800/35',
-    'bg-violet-100 dark:bg-violet-800/35',
-    'bg-rose-100 dark:bg-rose-800/35',
-    'bg-teal-100 dark:bg-teal-800/35',
-    'bg-orange-100 dark:bg-orange-800/35',
-    'bg-indigo-100 dark:bg-indigo-800/35',
-  ];
 
   readonly categoryColorMap = computed(() => {
     const map = new Map<string, string>();
-    this.categoryRows().forEach((r, i) => {
-      map.set(r.category, `${DashboardComponent._CATEGORY_ROW_COLORS[i % DashboardComponent._CATEGORY_ROW_COLORS.length]} transition-colors`);
-    });
+    for (const r of this.categoryRows()) {
+      // Shared per-crop tint so Season Targets rows match the crop's color everywhere else.
+      map.set(r.category, `${commodityColor(r.category).row} transition-colors`);
+    }
     return map;
   });
 

@@ -195,7 +195,10 @@ public class OriginationDbContext : DbContext
 
             // Status
             entity.Property(e => e.TicketStatusDescription).HasColumnName("TicketStatusDescription").HasMaxLength(100);
-            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true);
+            // IsActive was removed from base.vw_CurrentTickets by the ODS team (the view already
+            // excludes cancellations, so it was redundant). Ignore it so EF never selects/filters a
+            // now-missing column; Ticket.IsActive stays true in code for the unchanged response.
+            entity.Ignore(e => e.IsActive);
 
             // Quality measures - check if available in base.Ticket table
             entity.Property(e => e.GradeCode).HasColumnName("GradeCode").HasMaxLength(100);

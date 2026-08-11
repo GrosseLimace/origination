@@ -12,8 +12,10 @@ using Microsoft.Data.SqlClient;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -33,6 +35,8 @@ public class DiagnosticsController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpFactory;
     private readonly CustomerSyncService _customerSync;
+    private readonly IGraphDirectoryClient _graphDirectory;
+    private readonly IConfiguration _config;
     private static int _isGeocoding;
 
     public DiagnosticsController(
@@ -42,7 +46,9 @@ public class DiagnosticsController : ControllerBase
         ILogger<DiagnosticsController> logger,
         IWebHostEnvironment env,
         IHttpClientFactory httpFactory,
-        CustomerSyncService customerSync)
+        CustomerSyncService customerSync,
+        IGraphDirectoryClient graphDirectory,
+        IConfiguration config)
     {
         _context = context;
         _appContext = appContext;
@@ -51,6 +57,8 @@ public class DiagnosticsController : ControllerBase
         _env = env;
         _httpFactory = httpFactory;
         _customerSync = customerSync;
+        _graphDirectory = graphDirectory;
+        _config = config;
     }
 
     // -------------------------------------------------------------------------
@@ -207,6 +215,147 @@ public class DiagnosticsController : ControllerBase
     {
         var result = await _customerSync.SyncAsync(cancellationToken);
         return Ok(result);
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Rebuilds the usage-dashboard daily rollups for the last <paramref name="days"/> days from the
+    /// raw UserActivity / UserClickEvent tables. The hourly aggregation job only ever processes the
+    /// previous day, so this is how the rollups get populated for history that predates them —
+    /// run it once after deploying, otherwise the dashboard's historical charts read empty tables.
+    /// Also useful after a feature-code mapping change, since aggregation is a full recompute.
+    /// <para>Admin-gated by the controller policy; capped at the raw-table retention window since
+    /// there is nothing older to aggregate from.</para>
+    /// </summary>
+    [HttpPost("usage-rollups/backfill")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> BackfillUsageRollups(
+        [FromServices] IUsageRepository usageRepository,
+        [FromQuery] int days = 90,
+        CancellationToken cancellationToken = default)
+    {
+        days = Math.Clamp(days, 1, 90);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var weekStarts = new HashSet<DateOnly>();
+
+        for (var offset = days; offset >= 1; offset--)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var date = today.AddDays(-offset);
+
+            await usageRepository.AggregateUserActivityDailyAsync(date, cancellationToken);
+            await usageRepository.AggregateFeatureUsageDailyAsync(date, cancellationToken);
+            await usageRepository.AggregateUserFeatureUsageDailyAsync(date, cancellationToken);
+
+            weekStarts.Add(date.AddDays(-(((int)date.DayOfWeek + 6) % 7))); // Monday-start
+        }
+
+        // Weekly rollups read UserActivityDaily, so they can only run once the days above exist.
+        foreach (var weekStart in weekStarts.OrderBy(w => w))
+            await usageRepository.AggregateWeeklyLoginsAsync(weekStart, cancellationToken);
+
+        _logger.LogInformation("Backfilled usage rollups for {Days} days ({Weeks} weeks)", days, weekStarts.Count);
+        return Ok(new { daysAggregated = days, weeksAggregated = weekStarts.Count });
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// App-access spike: reads the transitive member list of the Entra group configured at
+    /// <c>AppAccess:GroupName</c> via Microsoft Graph, using the App Service managed identity
+    /// (or the developer's own credential locally). Always 200 — the <c>Outcome</c> field is the
+    /// verdict: Ok, or a categorized reason (EgressBlocked = NSG outbound rule needed,
+    /// PermissionMissing = GroupMember.Read.All grant needed, TokenFailure, NotFound, NotConfigured).
+    ///
+    /// Deliberately NOT gated by <see cref="DenyIfNotDevelopment"/> (like customer-sync/run):
+    /// the deployed dev environment runs ASPNETCORE_ENVIRONMENT=Dev, which that gate would 404 —
+    /// and deployed Dev is exactly where the managed identity's Graph access must be proven.
+    /// Read-only; admin-gated by the controller-level policy.
+    /// </summary>
+    [HttpGet("app-access-group-members")]
+    [ProducesResponseType(typeof(AppAccessGroupMembersResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAppAccessGroupMembers(CancellationToken cancellationToken = default)
+    {
+        var groupId = _config.GetValue<string>("AppAccess:GroupId")?.Trim();
+        var groupName = _config.GetValue<string>("AppAccess:GroupName")?.Trim();
+        if (string.IsNullOrEmpty(groupId) && string.IsNullOrEmpty(groupName))
+        {
+            return Ok(new AppAccessGroupMembersResponse
+            {
+                GroupName = string.Empty,
+                Outcome = "NotConfigured",
+                Detail = "Neither AppAccess:GroupId nor AppAccess:GroupName is set for this environment."
+            });
+        }
+
+        // Prefer the direct object read — the scoped managed identity can read its specific
+        // group(s) but cannot list/search, so the name-search path only works locally.
+        var groupResult = !string.IsNullOrEmpty(groupId)
+            ? await _graphDirectory.GetGroupByIdAsync(groupId, cancellationToken)
+            : await _graphDirectory.FindGroupByNameAsync(groupName!, cancellationToken);
+        var label = groupResult.Value?.DisplayName ?? groupName ?? groupId!;
+        if (!groupResult.Ok)
+        {
+            return Ok(new AppAccessGroupMembersResponse
+            {
+                GroupName = label,
+                Outcome = groupResult.Status.ToString(),
+                HttpStatus = groupResult.HttpStatus,
+                Detail = groupResult.Detail
+            });
+        }
+
+        var membersResult = await _graphDirectory.GetGroupTransitiveUserMembersAsync(groupResult.Value!.Id, cancellationToken);
+        if (!membersResult.Ok)
+        {
+            return Ok(new AppAccessGroupMembersResponse
+            {
+                GroupName = label,
+                Outcome = membersResult.Status.ToString(),
+                HttpStatus = membersResult.HttpStatus,
+                Detail = membersResult.Detail
+            });
+        }
+
+        var members = membersResult.Value!
+            .OrderBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(u => new AppAccessGroupMemberResponse
+            {
+                DisplayName = u.DisplayName,
+                UserPrincipalName = u.UserPrincipalName,
+                AccountEnabled = u.AccountEnabled
+            })
+            .ToList();
+
+        // Group-scoped grant without User.ReadBasic.All: Graph returns members but strips user
+        // properties. Call that out as its own outcome — it's the last step of the grant progression.
+        var idOnlyCount = members.Count(m => string.IsNullOrEmpty(m.UserPrincipalName));
+        if (members.Count > 0 && idOnlyCount == members.Count)
+        {
+            return Ok(new AppAccessGroupMembersResponse
+            {
+                GroupName = label,
+                Outcome = "MembersIdOnly",
+                HttpStatus = 200,
+                Detail = $"{members.Count} members returned, but with ids only (no names/UPNs) — the identity " +
+                         "also needs the User.ReadBasic.All application permission. The app matches people by " +
+                         "UPN, so filtering stays OFF (fail-open) until that grant lands.",
+                MemberCount = members.Count,
+                Members = members
+            });
+        }
+
+        _logger.LogInformation("App-access group read OK: {MemberCount} members", members.Count);
+        return Ok(new AppAccessGroupMembersResponse
+        {
+            GroupName = label,
+            Outcome = "Ok",
+            HttpStatus = 200,
+            Detail = idOnlyCount > 0
+                ? $"{idOnlyCount} of {members.Count} members returned id-only (no UPN) and are excluded from matching."
+                : null,
+            MemberCount = members.Count,
+            Members = members
+        });
     }
 
     // -------------------------------------------------------------------------

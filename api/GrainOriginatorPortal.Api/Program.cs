@@ -229,7 +229,29 @@ builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
 // Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
+// Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
+// cached user universes process-wide. Singleton by necessity — see the type's remarks.
+builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
+
+// Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
+// Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity
+// on App Service, the developer's own credential locally (skip the IMDS probe).
+builder.Services.AddSingleton<IGraphDirectoryClient>(sp =>
+{
+    var isAppService = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
+    Azure.Core.TokenCredential graphCredential = isAppService
+        ? new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)
+        : new DefaultAzureCredential(new DefaultAzureCredentialOptions
+            { ExcludeManagedIdentityCredential = true });
+    return new GraphDirectoryClient(
+        graphCredential,
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<ILogger<GraphDirectoryClient>>());
+});
+// Cached "who can sign in to the app" set (fail-open) — consumed by the usage dashboard
+// user universe and the daily-digest People picker. Singleton so all requests share the cache.
+builder.Services.AddSingleton<IAppAccessService, AppAccessService>();
 
 // Configure CORS — allowed origins come from configuration so they can be overridden
 // per environment via Azure App Service settings without code changes.
@@ -279,6 +301,41 @@ builder.Services.AddHttpClient("nominatim", client =>
     });
 
     // Circuit breaker: opens after 50% failure rate over 5+ requests in 30s window (§6.3)
+    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        FailureRatio = 0.5,
+        SamplingDuration = TimeSpan.FromSeconds(30),
+        MinimumThroughput = 5,
+        BreakDuration = TimeSpan.FromSeconds(30)
+    });
+});
+
+// Microsoft Graph (app-access spike): same resilience shape as nominatim, but only 2 retries —
+// when the NSG blocks graph.microsoft.com egress every attempt fails by timeout, and the
+// diagnostic should answer quickly. Auth is per-request bearer from GraphDirectoryClient
+// (token failures must surface as TokenFailure, not be retried by this pipeline).
+builder.Services.AddHttpClient("graph", client =>
+{
+    client.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddHttpMessageHandler<CorrelationIdOutboundHandler>()
+.AddResilienceHandler("graph", pipeline =>
+{
+    pipeline.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.FromMilliseconds(500),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromSeconds(10),
+        // Only retry on transient network/timeout failures — never 4xx (a 403 must
+        // reach GraphDirectoryClient unretried so it reports PermissionMissing).
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is HttpRequestException ||
+            args.Outcome.Exception is TaskCanceledException)
+    });
+
     pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
     {
         FailureRatio = 0.5,

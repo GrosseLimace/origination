@@ -113,6 +113,36 @@
         "definition": {
           "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
           "actions": {
+            "Fail_Run_If_Any_Group_Failed": {
+              "actions": {
+                "Terminate_Failed": {
+                  "inputs": {
+                    "runError": {
+                      "code": "RecapSendFailed",
+                      "message": "Daily recap send failed for: @{join(variables('failedGroups'), ', ')}"
+                    },
+                    "runStatus": "Failed"
+                  },
+                  "type": "Terminate"
+                }
+              },
+              "expression": {
+                "and": [
+                  {
+                    "greater": [
+                      "@length(variables('failedGroups'))",
+                      0
+                    ]
+                  }
+                ]
+              },
+              "runAfter": {
+                "For_each_Recap_Group": [
+                  "Succeeded"
+                ]
+              },
+              "type": "If"
+            },
             "For_each_Recap_Group": {
               "actions": {
                 "Condition": {
@@ -416,14 +446,25 @@
                                   "saveToSentItems": true
                                 },
                                 "method": "POST",
+                                "retryPolicy": {
+                                  "type": "none"
+                                },
                                 "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
                               },
-                              "runtimeConfiguration": {
-                                "contentTransfer": {
-                                  "transferMode": "Chunked"
-                                }
-                              },
                               "type": "Http"
+                            },
+                            "Record_Email_Send_Failure": {
+                              "inputs": {
+                                "name": "failedGroups",
+                                "value": "@{variables('groupName')} (email)"
+                              },
+                              "runAfter": {
+                                "HTTP_Send_Recap_Email": [
+                                  "Failed",
+                                  "TimedOut"
+                                ]
+                              },
+                              "type": "AppendToArrayVariable"
                             }
                           },
                           "case": "email"
@@ -457,14 +498,25 @@
                                       "saveToSentItems": true
                                     },
                                     "method": "POST",
+                                    "retryPolicy": {
+                                      "type": "none"
+                                    },
                                     "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
                                   },
-                                  "runtimeConfiguration": {
-                                    "contentTransfer": {
-                                      "transferMode": "Chunked"
-                                    }
-                                  },
                                   "type": "Http"
+                                },
+                                "Record_Teams_Send_Failure": {
+                                  "inputs": {
+                                    "name": "failedGroups",
+                                    "value": "@{variables('groupName')} (teams)"
+                                  },
+                                  "runAfter": {
+                                    "HTTP_Send_to_Teams": [
+                                      "Failed",
+                                      "TimedOut"
+                                    ]
+                                  },
+                                  "type": "AppendToArrayVariable"
                                 }
                               },
                               "else": {
@@ -1007,6 +1059,10 @@
                   {
                     "name": "groupName",
                     "type": "string"
+                  },
+                  {
+                    "name": "failedGroups",
+                    "type": "array"
                   }
                 ]
               },

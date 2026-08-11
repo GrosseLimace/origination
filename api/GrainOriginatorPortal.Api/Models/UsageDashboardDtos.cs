@@ -6,7 +6,11 @@ public record UsageDashboardSummaryDto
     public double AvgLoginsPerWeek { get; set; }
     public double AvgSessionMinutes { get; set; }
     public int TotalUsers { get; set; }
+    // Recency tiers (current snapshot): Active used today · Light Usage within 7 days · Dormant longer · Never logged in.
     public int ActiveUsers { get; set; }
+    public int LightUsageUsers { get; set; }
+    public int DormantUsers { get; set; }
+    public int NeverUsers { get; set; }
     public int NeedsAttentionCount { get; set; }
 }
 
@@ -17,6 +21,7 @@ public record UsageDashboardUserDto
     public int LoginCount { get; set; }
     public DateTime? LastActive { get; set; }
     public double AvgSessionMinutes { get; set; }
+    // Active / Light Usage / Dormant / Never (recency snapshot).
     public string Status { get; set; } = string.Empty;
     public int CustomersContacted { get; set; }
     public int NotesCreated { get; set; }
@@ -32,7 +37,8 @@ public record FeatureSessionsDto
 {
     public string FeatureCode { get; set; } = string.Empty;
     public string FeatureLabel { get; set; } = string.Empty;
-    public int SessionCount { get; set; }
+    /// <summary>Time spent on this screen, in minutes.</summary>
+    public int ScreenMinutes { get; set; }
     public List<SubFeatureSessionDto> SubFeatures { get; set; } = [];
 }
 
@@ -40,13 +46,15 @@ public record SubFeatureSessionDto
 {
     public string SubFeatureCode { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
-    public int SessionCount { get; set; }
+    /// <summary>Number of times this sub-feature was used — a count of events, not a duration.</summary>
+    public int InteractionCount { get; set; }
 }
 
 public record WeeklyTrendDto
 {
     public string WeekStart { get; set; } = string.Empty;
-    public int TotalLogins { get; set; }
+    /// <summary>Distinct users with at least one session that week.</summary>
+    public int ActiveUsers { get; set; }
     public int TotalSessions { get; set; }
 }
 
@@ -63,20 +71,48 @@ public record ActivityBreakdownDto
     public int ProducerDetails { get; set; }
 }
 
-public record UsageDashboardInactiveUserDto
+public record UnderusedFeatureDto
+{
+    public string FeatureCode { get; set; } = string.Empty;
+    public string FeatureName { get; set; } = string.Empty;
+    /// <summary>Distinct users who touched the feature in the window — the adoption measure the
+    /// panel is actually ranking on.</summary>
+    public int UniqueUsers { get; set; }
+}
+
+/// <summary>A row of dbo.UsageDashboardExcludedUsers, for the admin management panel.</summary>
+public record ExcludedUserDto
+{
+    public int Id { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? Reason { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>A person who can sign in to the app (member of the Entra access group), for the
+/// exclusion picker. <see cref="UserId"/> is the short name (UPN before '@') — the exclusion key.</summary>
+public record AccessUserDto
 {
     public string UserId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
-    public int? DaysSinceLastLogin { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public double AvgSessionMinutes { get; set; }
-    public int LoginCount { get; set; }
 }
 
-public record UnderusedFeatureDto
+/// <summary>The access-group roster for the exclusion picker. <see cref="Available"/> is false when
+/// the group can't be read (Graph not configured/blocked) — the client then falls back to free-text
+/// entry so exclusions can still be managed.</summary>
+public record AccessUsersDto
 {
-    public string FeatureName { get; set; } = string.Empty;
-    public int SessionCount { get; set; }
+    public bool Available { get; set; }
+    public List<AccessUserDto> Users { get; set; } = [];
+}
+
+/// <summary>Whether the caller is on the exclusion-manager allowlist — the client uses this to show
+/// or hide the exclusion gear. The endpoints enforce the same check server-side regardless.</summary>
+public record ExclusionPermissionsDto
+{
+    public bool CanManage { get; set; }
 }
 
 public record QueryLibraryUsageDto
@@ -112,6 +148,7 @@ public record UserUsageDetailDto
     public InsightsEngagementDto Insights { get; set; } = new();
     public BidSheetEngagementDto BidSheet { get; set; } = new();
     public PlantingDashEngagementDto PlantingDashboard { get; set; } = new();
+    public DailyRecapEngagementDto DailyRecap { get; set; } = new();
     public List<ScreenTimeDto> TimePerScreen { get; set; } = [];
     public List<RecentActivityDto> RecentActivity { get; set; } = [];
 }
@@ -130,6 +167,11 @@ public record CustomerEngagementDto
     public int CallsClicked { get; set; }
     public int EmailsClicked { get; set; }
     public int NotesCreated { get; set; }
+    public int NotesEdited { get; set; }
+    public int NotesDeleted { get; set; }
+    /// <summary>Pin and unpin combined — the interesting signal is that pinning is used at all.</summary>
+    public int NotesPinned { get; set; }
+    public int MentionsUsed { get; set; }
     public int PlantingIntentionsAdded { get; set; }
     public int ProducerDetailsEdited { get; set; }
     public int TicketDropdownOpens { get; set; }
@@ -174,6 +216,9 @@ public record InsightsEngagementDto
     public int SpotLoadsClicks { get; set; }
     public int UnshippedBushelsClicks { get; set; }
     public int OtherCategoryClicks { get; set; }
+    /// <summary>Searches run on the Unshipped Bushels page (any of its three search boxes).</summary>
+    public int UnshippedSearches { get; set; }
+    public int UnshippedGroupsExpanded { get; set; }
 }
 
 public record BidSheetEngagementDto
@@ -204,6 +249,16 @@ public record PlantingDashEngagementDto
     public int HarvestContractsTabClicks { get; set; }
     public int ProducerRowClicks { get; set; }
     public int SeasonTargetsSaved { get; set; }
+}
+
+public record DailyRecapEngagementDto
+{
+    public int GroupsCreated { get; set; }
+    public int GroupsUpdated { get; set; }
+    public int GroupsDeleted { get; set; }
+    /// <summary>Enable and disable combined.</summary>
+    public int EnableToggles { get; set; }
+    public int ScreenVisits { get; set; }
 }
 
 public record ScreenTimeDto

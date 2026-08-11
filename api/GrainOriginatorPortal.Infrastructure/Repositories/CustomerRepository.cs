@@ -734,8 +734,7 @@ public class CustomerRepository : ICustomerRepository
         var cutoff = DateTime.UtcNow.AddYears(-3).ToString("yyyy-MM-dd");
         var unappliedTickets = await _context.Tickets
             .AsNoTracking()
-            .Where(t => t.IsActive
-                && (t.TicketType == "U" || t.TicketType == "P")
+            .Where(t => (t.TicketType == "U" || t.TicketType == "P")
                 && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
                 && t.CustomerCode == scoularId
                 && t.CtrmContractNumber != null

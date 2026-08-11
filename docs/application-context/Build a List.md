@@ -109,6 +109,13 @@ Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/ap
 ### Filter behavior notes (worth knowing before changing)
 
 - **`hasActiveContracts`** is strict: a contract must have `status === 'Active'` (case-sensitive) to count. `Pending`, `Overdue`, `Fulfilled`, `Cancelled` are all excluded. NLQ prompts like "producers with active contracts" parse to this filter, so the result set matches what users see when they sort the Contracts tab by status = Active.
+- **Three different "not contracted" notions exist — don't mix them up:**
+  | Where | Predicate | Means |
+  |---|---|---|
+  | NLQ `"no contracts"` (the **No contracts** prompt card) | no contract with `closedDate == null` | nothing currently **open** — a producer whose contracts all closed IS returned |
+  | Refine `noActiveContracts` | no contract with status `Active`/`Pending`/`Overdue` | nothing live by **status** |
+  | Refine `noContractsAtAll` | `getContracts(c).length === 0` | **zero** contracts of any status — the strictest |
+  None of them see ancient history: `ContractRepository` only loads contracts that are open or from `CropYear >= Today.Year - 1`, so "never contracted" is not directly answerable from this screen.
 - **"Contracted but no deliveries"** (NLQ-derived) checks delivery progress via `contract.openBalanceQuantity` from `vw_CurrentContracts` — not by walking applied tickets. A customer matches when at least one open contract has `openBalanceQuantity === quantity` (nothing shipped yet). This is the same data source the shared delivery util uses (`client/src/app/shared/utils/contract-delivery.ts`), so the filter is consistent with the Contracts table, Actionable Insights, and the Unshipped Bushels view.
 
 ## Library / Prompts
@@ -118,6 +125,26 @@ Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/ap
 - Component fetches once on init into `queryLibrary` signal; renders cards grouped by `Category`.
 - Click → `selectLibraryQuery(item)` → sets `queryText.set(item.queryText)` and runs `processQuery()`.
 - Search miss → `apiService.logQuerySearch({ searchText, matchedQueryId: null })` writes to `dbo.QuerySearchLog`. The Usage Dashboard reads this to surface "Query search gaps" — searches users tried that didn't match a library entry. Use this to decide which prompts to add.
+
+### Adding a prompt card
+
+Cards are **data**, so a new one is a seed migration — no client change is needed when the NLQ engine
+already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQueryLibraryItem`):
+
+- Insert guarded by `WHERE NOT EXISTS` keyed on **`QueryText`**, plus an `UPDATE` so re-wording the
+  card later self-heals without a second migration. Note the guard means a QueryText collision is
+  **silently skipped** — check the target DB if the card doesn't appear.
+- `Category` must match an existing value **exactly** (`Contracts`, `Notes`, `Tickets`, `Storage`,
+  `Planting`, `Grain on Farm`, `General`) — it's compared case-sensitively and drives which refine
+  panel renders (`showContractFilters` etc.). A new value creates a new tab.
+- Derive `SortOrder` from `MAX(SortOrder) + 10` within the category rather than hardcoding: the
+  original cards were inserted straight into each database, so numbering differs per environment.
+- **Check the QueryText against the parser before choosing it.** Words like `planting` or `deliver`
+  route to cross-entity rules and will hijack the query; conversely the text must contain the
+  keyword that trips the matching `queryInvolves*` gate (e.g. `contract`), or the relevant data may
+  not be loaded and an absence filter will match every producer.
+- Add a case to the matching `nlq-filter.*.spec.ts` pinning the **literal** card text — that's what
+  catches a future parser change silently turning the card into "select all".
 
 ## Saved-list lifecycle
 

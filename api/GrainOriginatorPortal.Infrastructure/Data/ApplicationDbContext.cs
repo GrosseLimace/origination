@@ -41,6 +41,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<UserActivityDaily> UserActivityDailies => Set<UserActivityDaily>();
     public DbSet<FeatureUsageDaily> FeatureUsageDailies => Set<FeatureUsageDaily>();
+    public DbSet<UserFeatureUsageDaily> UserFeatureUsageDailies => Set<UserFeatureUsageDaily>();
     public DbSet<WeeklyLoginAggregate> WeeklyLoginAggregates => Set<WeeklyLoginAggregate>();
     public DbSet<UserTradeUnitSnapshot> UserTradeUnitSnapshots => Set<UserTradeUnitSnapshot>();
     public DbSet<QueryLibraryItem> QueryLibrary => Set<QueryLibraryItem>();
@@ -48,6 +49,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<DailyRecapGroup> DailyRecapGroups => Set<DailyRecapGroup>();
     public DbSet<DailyRecapGroupMember> DailyRecapGroupMembers => Set<DailyRecapGroupMember>();
     public DbSet<DailyRecapGroupCcEmail> DailyRecapGroupCcEmails => Set<DailyRecapGroupCcEmail>();
+    public DbSet<UsageDashboardExcludedUser> UsageDashboardExcludedUsers => Set<UsageDashboardExcludedUser>();
+    public DbSet<MbpLocationSynonym> MbpLocationSynonyms => Set<MbpLocationSynonym>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -675,6 +678,23 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => new { e.FeatureCode, e.ActivityDate }).HasDatabaseName("IX_FeatureUsageDaily_FeatureCode");
         });
 
+        modelBuilder.Entity<UserFeatureUsageDaily>(entity =>
+        {
+            entity.ToTable("UserFeatureUsageDaily", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.ActivityDate).IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.FeatureCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SubFeatureCode).HasMaxLength(50).HasDefaultValue("__total__").IsRequired();
+            entity.Property(e => e.RequestCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.InteractionCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.ScreenMinutes).HasDefaultValue(0d).IsRequired();
+            entity.HasIndex(e => new { e.ActivityDate, e.UserId, e.FeatureCode, e.SubFeatureCode }).IsUnique()
+                .HasDatabaseName("UQ_UserFeatureUsageDaily");
+            entity.HasIndex(e => new { e.FeatureCode, e.ActivityDate }).HasDatabaseName("IX_UserFeatureUsageDaily_FeatureCode");
+        });
+
         modelBuilder.Entity<WeeklyLoginAggregate>(entity =>
         {
             entity.ToTable("WeeklyLoginAggregate", schema: "dbo");
@@ -766,6 +786,51 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.RecapGroupId).IsRequired();
             entity.Property(e => e.Email).HasMaxLength(256).IsRequired();
             entity.HasIndex(e => e.RecapGroupId).HasDatabaseName("IX_DailyRecapGroupCcEmails_RecapGroupId");
+        });
+
+        modelBuilder.Entity<UsageDashboardExcludedUser>(entity =>
+        {
+            entity.ToTable("UsageDashboardExcludedUsers", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Reason).HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired().HasDefaultValue("system");
+            // Unique so the same account can't be excluded twice; SQL Server's default CI collation
+            // makes it case-insensitive, matching how the dashboard keys users.
+            entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardExcludedUsers_UserId");
+        });
+
+        modelBuilder.Entity<MbpLocationSynonym>(entity =>
+        {
+            entity.ToTable("MbpLocationSynonym", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.LocationId).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Location).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.Elevator).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.DisplayName).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.AddressLine1).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.AddressLine2).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.City).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.State).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Country).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.ZipCode).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.Phone).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Fax).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Email).HasMaxLength(256).IsRequired(false);
+            entity.Property(e => e.Website).HasMaxLength(256).IsRequired(false);
+            entity.Property(e => e.PushNotificationsHidden).HasMaxLength(1).IsFixedLength().IsRequired(false);
+            entity.Property(e => e.CashBidsHidden).HasMaxLength(1).IsFixedLength().IsRequired(false);
+            entity.Property(e => e.Status).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.DeletedByUser).HasMaxLength(128).IsRequired(false);
+            entity.Property(e => e.DeletedAtSvStamp).IsRequired(false);
+            entity.Property(e => e.CreatedByUser).HasMaxLength(128).IsRequired(false);
+            entity.Property(e => e.CreatedStamp).IsRequired(false);
+            entity.Property(e => e.ChangedByUser).HasMaxLength(128).IsRequired(false);
+            entity.Property(e => e.ChangeStamp).IsRequired(false);
+            entity.HasIndex(e => e.LocationId).IsUnique().HasDatabaseName("IX_MbpLocationSynonym_LocationId");
         });
     }
 }

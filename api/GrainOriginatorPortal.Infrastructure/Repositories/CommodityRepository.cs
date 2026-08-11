@@ -72,7 +72,7 @@ public class CommodityRepository : ICommodityRepository
         // Pull all distinct product codes from tickets
         var ticketProductCodes = await _context.Tickets
             .AsNoTracking()
-            .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && !string.IsNullOrEmpty(t.ProductCode))
+            .Where(t => (t.TicketType == "U" || t.TicketType == "P") && !string.IsNullOrEmpty(t.ProductCode))
             .Select(t => t.ProductCode!)
             .Distinct()
             .ToListAsync(cancellationToken);
