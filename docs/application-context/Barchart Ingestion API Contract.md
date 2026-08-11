@@ -58,6 +58,7 @@ regardless of a valid token.
 | `POST` | `/apply-bids?instrumentType=bidCash` | Publish current prices onto the Bid Sheet. Call after a quote load. |
 | `POST` | `/deactivate-instruments?lastSeenBefore=<utc>` | Retire catalog entries the vendor stopped publishing. **Only after a complete catalog sweep.** |
 | `GET` | `/budget?monthlyCap=250000` | Month-to-date call usage on our side, as a cross-check against your own monitoring. |
+| `POST` | `/purge-history?auditRetentionDays=400&snapshotRetentionDays=730` | Optional housekeeping — trims the audit and price-history tables. Call it on a schedule or leave it to us. |
 
 ### Response shapes
 

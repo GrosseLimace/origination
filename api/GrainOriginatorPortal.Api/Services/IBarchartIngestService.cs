@@ -27,4 +27,8 @@ public interface IBarchartIngestService
 
     /// <summary>Month-to-date ingest usage against the vendor cap.</summary>
     Task<BarchartBudgetResponse> GetBudgetAsync(int monthlyCap, CancellationToken cancellationToken = default);
+
+    /// <summary>Trims the audit and price-history tables to their retention windows.</summary>
+    Task<BarchartPurgeResponse> PurgeHistoryAsync(
+        int auditRetentionDays, int snapshotRetentionDays, CancellationToken cancellationToken = default);
 }

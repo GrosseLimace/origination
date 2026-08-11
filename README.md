@@ -175,6 +175,7 @@ pipeline's managed identity holding the `Origination.Application` app role, or a
 | POST | `/barchart-ingest/apply-bids?locationId=&instrumentType=` | Publish feed prices onto the Bid Sheet |
 | POST | `/barchart-ingest/deactivate-instruments?lastSeenBefore=` | Retire catalog entries after a complete sweep |
 | GET | `/barchart-ingest/budget?monthlyCap=` | Month-to-date ingest usage vs the vendor cap |
+| POST | `/barchart-ingest/purge-history?auditRetentionDays=&snapshotRetentionDays=` | Trim the audit and price-history tables to their retention windows |
 
 ### Utilities
 | Method | Endpoint | Description |

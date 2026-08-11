@@ -53,6 +53,16 @@ public interface IBarchartIngestRepository
     /// <summary>Records one ingest call for monthly usage tracking.</summary>
     Task LogApiCallAsync(BarchartApiCallAudit audit, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Trims the two tables that would otherwise grow without bound: the call audit and the daily price
+    /// history. Deletes in batches so a long-overdue purge can't hold a single enormous transaction.
+    /// </summary>
+    /// <param name="auditRetentionDays">Keep audit rows newer than this.</param>
+    /// <param name="snapshotRetentionDays">Keep price history newer than this.</param>
+    /// <returns>Rows removed across both tables.</returns>
+    Task<int> PurgeHistoryAsync(
+        int auditRetentionDays, int snapshotRetentionDays, CancellationToken cancellationToken = default);
+
     /// <summary>Month-to-date ingest-call usage against <paramref name="monthlyCap"/>.</summary>
     Task<BarchartApiBudget> GetApiBudgetAsync(int monthlyCap, CancellationToken cancellationToken = default);
 }

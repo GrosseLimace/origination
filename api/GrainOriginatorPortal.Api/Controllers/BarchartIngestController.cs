@@ -132,6 +132,24 @@ public class BarchartIngestController : ControllerBase
         => Ok(await _service.GetBudgetAsync(monthlyCap, cancellationToken));
 
     /// <summary>
+    /// Trims the call audit and daily price history to their retention windows. Optional housekeeping —
+    /// safe to call at the end of a run, or on any schedule. Deletes in batches, so a long-deferred
+    /// purge trims steadily rather than locking the tables.
+    /// </summary>
+    /// <param name="auditRetentionDays">Keep audit rows newer than this (minimum 30).</param>
+    /// <param name="snapshotRetentionDays">Keep price history newer than this (minimum 90).</param>
+    [HttpPost("purge-history")]
+    [ProducesResponseType(typeof(BarchartPurgeResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<BarchartPurgeResponse>> PurgeHistory(
+        [FromQuery] int auditRetentionDays = 400,
+        [FromQuery] int snapshotRetentionDays = 730,
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.PurgeHistoryAsync(auditRetentionDays, snapshotRetentionDays, cancellationToken));
+
+    /// <summary>
     /// Reads the request body as text. Deliberately not model-bound: vendor payloads carry fields we
     /// don't model and the application rejects unknown JSON members globally, so binding to a typed
     /// DTO would fail on any field BarChart adds. Field selection happens in the load SQL instead.

@@ -44,6 +44,13 @@ public record BarchartDeactivateResponse
     public int RowsDeactivated { get; init; }
 }
 
+/// <summary>Result of trimming the audit and price-history tables to their retention windows.</summary>
+public record BarchartPurgeResponse
+{
+    /// <summary>Rows removed across the audit and price-history tables.</summary>
+    public int RowsRemoved { get; init; }
+}
+
 /// <summary>Month-to-date ingest usage against the vendor's monthly call cap.</summary>
 public record BarchartBudgetResponse
 {

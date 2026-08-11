@@ -203,6 +203,28 @@ public class BarchartIngestService : IBarchartIngestService
         };
     }
 
+    /// <inheritdoc />
+    public async Task<BarchartPurgeResponse> PurgeHistoryAsync(
+        int auditRetentionDays, int snapshotRetentionDays, CancellationToken cancellationToken = default)
+    {
+        // Guard rails rather than free choice: a tiny retention window would silently destroy price
+        // history that the vendor API cannot rebuild.
+        if (auditRetentionDays < 30)
+            throw new ValidationException(nameof(auditRetentionDays), "auditRetentionDays must be at least 30.");
+        if (snapshotRetentionDays < 90)
+            throw new ValidationException(nameof(snapshotRetentionDays), "snapshotRetentionDays must be at least 90 — price history cannot be rebuilt from the vendor API.");
+
+        var sw = Stopwatch.StartNew();
+        var removed = await _repository.PurgeHistoryAsync(auditRetentionDays, snapshotRetentionDays, cancellationToken);
+        sw.Stop();
+
+        _logger.LogInformation(
+            "BarChart history purge removed {RowsRemoved} rows (audit kept {AuditRetentionDays}d, price history kept {SnapshotRetentionDays}d) in {Ms} ms [AUDIT_INGEST_PURGE] [DataMutation]",
+            removed, auditRetentionDays, snapshotRetentionDays, sw.ElapsedMilliseconds);
+
+        return new BarchartPurgeResponse { RowsRemoved = removed };
+    }
+
     /// <summary>
     /// Rejects payloads that can't possibly be a vendor response before any database work. The body is
     /// read raw rather than model-bound (vendor JSON carries fields we don't model, and the app rejects

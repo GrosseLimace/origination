@@ -569,6 +569,44 @@ SELECT CAST(@written + @pruned AS int);";
     }
 
     /// <inheritdoc />
+    public async Task<int> PurgeHistoryAsync(
+        int auditRetentionDays, int snapshotRetentionDays, CancellationToken cancellationToken = default)
+    {
+        // Deliberately not wrapped in a transaction: each batch commits on its own so a purge that has
+        // been deferred for months trims steadily instead of building one huge, lock-heavy transaction.
+        const string sql = @"
+SET NOCOUNT ON;
+
+DECLARE @auditCutoff datetime2(3) = DATEADD(DAY, -@AuditRetentionDays, SYSUTCDATETIME());
+DECLARE @snapshotCutoff date     = DATEADD(DAY, -@SnapshotRetentionDays, CONVERT(date, SYSUTCDATETIME()));
+DECLARE @removed int = 0;
+DECLARE @batch   int = 1;
+
+WHILE @batch > 0
+BEGIN
+    DELETE TOP (5000) FROM dbo.BarchartApiCallAudit WHERE CalledAtUtc < @auditCutoff;
+    SET @batch = @@ROWCOUNT;
+    SET @removed = @removed + @batch;
+END
+
+SET @batch = 1;
+WHILE @batch > 0
+BEGIN
+    DELETE TOP (5000) FROM dbo.BarchartQuoteSnapshot WHERE SnapshotDate < @snapshotCutoff;
+    SET @batch = @@ROWCOUNT;
+    SET @removed = @removed + @batch;
+END
+
+SELECT CAST(@removed AS int);";
+
+        return await ExecuteScalarIntAsync(
+            sql,
+            cancellationToken,
+            ("@AuditRetentionDays", auditRetentionDays),
+            ("@SnapshotRetentionDays", snapshotRetentionDays));
+    }
+
+    /// <inheritdoc />
     public async Task<BarchartApiBudget> GetApiBudgetAsync(
         int monthlyCap, CancellationToken cancellationToken = default)
     {

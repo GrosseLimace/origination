@@ -207,6 +207,40 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/ServerError" }
 
+  /api/barchart-ingest/purge-history:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Trim the audit and price-history tables to their retention windows
+      description: |
+        Optional housekeeping. Removes call-audit rows and daily price-history rows older than the
+        given windows, deleting in batches so a long-deferred purge trims steadily instead of locking
+        the tables.
+
+        Safe to call at the end of a run or on any schedule; skipping it entirely only means the two
+        tables keep growing. Minimums are enforced (30 days audit, 90 days history) because the price
+        history cannot be rebuilt from the vendor API.
+      operationId: purgeHistory
+      parameters:
+        - name: auditRetentionDays
+          in: query
+          required: false
+          schema: { type: integer, default: 400, minimum: 30 }
+        - name: snapshotRetentionDays
+          in: query
+          required: false
+          schema: { type: integer, default: 730, minimum: 90 }
+      responses:
+        "200":
+          description: Purge complete.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurgeResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
   /api/barchart-ingest/budget:
     get:
       tags: [BarChart Ingestion]
@@ -328,6 +362,15 @@ components:
       required: [rowsDeactivated]
       properties:
         rowsDeactivated: { type: integer, example: 12 }
+
+    PurgeResult:
+      type: object
+      required: [rowsRemoved]
+      properties:
+        rowsRemoved:
+          type: integer
+          description: Rows removed across the audit and price-history tables.
+          example: 1500
 
     BudgetResult:
       type: object

@@ -188,4 +188,29 @@ public class BarchartIngestServiceTests
 
         await _repository.DidNotReceive().GetApiBudgetAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
+
+    [Theory]
+    [InlineData(29, 730)]   // audit window too short
+    [InlineData(400, 89)]   // history window too short
+    [InlineData(0, 0)]
+    public async Task PurgeHistoryAsync_RetentionWindowTooShort_ThrowsAndDeletesNothing(
+        int auditDays, int snapshotDays)
+    {
+        // Price history cannot be rebuilt from the vendor API, so an over-eager purge is refused
+        // rather than quietly destroying it.
+        await Assert.ThrowsAsync<ValidationException>(() => _sut.PurgeHistoryAsync(auditDays, snapshotDays));
+
+        await _repository.DidNotReceive().PurgeHistoryAsync(
+            Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PurgeHistoryAsync_ValidWindows_TrimsAndReportsRowsRemoved()
+    {
+        _repository.PurgeHistoryAsync(400, 730, Arg.Any<CancellationToken>()).Returns(1_500);
+
+        var result = await _sut.PurgeHistoryAsync(400, 730);
+
+        Assert.Equal(1_500, result.RowsRemoved);
+    }
 }
