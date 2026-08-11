@@ -162,6 +162,20 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 
 > Trade unit and trade-unit-group catalog lookups are sourced from the Entitlements database (see `/usertradeunits`). The app DB no longer maintains a local TU catalog.
 
+### BarChart Bid Feed Ingestion (application DB — machine-to-machine)
+Routed at `/api/barchart-ingest` (no `/v1` segment). Requires the `BarchartIngest` policy — the data
+pipeline's managed identity holding the `Origination.Application` app role, or an Admin. See
+[Barchart Ingestion API Contract](docs/application-context/Barchart%20Ingestion%20API%20Contract.md).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/barchart-ingest/quote-batches?batchSize=` | Active symbols, pre-grouped into request batches |
+| POST | `/barchart-ingest/instruments` | Load a vendor instrument (catalog) payload |
+| POST | `/barchart-ingest/quotes?snapshotDate=` | Load a vendor quote payload + the day's history |
+| POST | `/barchart-ingest/apply-bids?locationId=&instrumentType=` | Publish feed prices onto the Bid Sheet |
+| POST | `/barchart-ingest/deactivate-instruments?lastSeenBefore=` | Retire catalog entries after a complete sweep |
+| GET | `/barchart-ingest/budget?monthlyCap=` | Month-to-date ingest usage vs the vendor cap |
+
 ### Utilities
 | Method | Endpoint | Description |
 |--------|----------|-------------|

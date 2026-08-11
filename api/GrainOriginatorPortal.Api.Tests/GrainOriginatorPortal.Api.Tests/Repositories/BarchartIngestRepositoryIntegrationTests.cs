@@ -1,0 +1,326 @@
+using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Repositories;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace GrainOriginatorPortal.Api.Tests.Repositories;
+
+/// <summary>
+/// Exercises the BarChart feed SQL against a real Azure SQL database, because that SQL is where the
+/// feature's logic actually lives — symbol parsing, upsert semantics, and the bid-sheet ownership
+/// rules can't be verified against an in-memory provider (which style-guides/automated-testing.md §8
+/// forbids for data tests anyway).
+///
+/// Excluded from CI by the <c>Category=Integration</c> filter. To run locally, point at a database
+/// that has the migrations applied:
+///   <c>$env:ConnectionStrings__DefaultConnection = 'Server=tcp:azrscosqld01.database.windows.net,1433;Database=Origination;Authentication=Active Directory Default;Encrypt=true;'</c>
+///   <c>dotnet test --filter "Category=Integration"</c>
+/// Without that variable the tests no-op, so a normal test run never reaches out to a database.
+///
+/// Every test runs inside a transaction that is rolled back, so nothing is left behind.
+/// </summary>
+[Trait("Category", "Integration")]
+public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
+{
+    private ApplicationDbContext _context = null!;
+    private IDbContextTransaction _transaction = null!;
+    private BarchartIngestRepository _sut = null!;
+
+    private static string? ConnectionString =>
+        Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+
+    private static bool Enabled => !string.IsNullOrWhiteSpace(ConnectionString);
+
+    // Real rows from the vendor proof-of-concept extracts. GPC Muscatine publishes three instruments
+    // that must collapse to location 82259: two half-month corn windows and a NonGMO variant.
+    private const string InstrumentsJson = """
+        { "status": { "code": 200 }, "results": [
+          { "symbol": "ZCPQ26F-82259-15194.CM", "symbolDescription": "Grain Processing Corporation Muscatine, IA Corn (#2 Yellow) 1/2 Aug 26 Cash",
+            "elevator": "Grain Processing Corporation", "commodity": "Corn (#2 Yellow)", "underlyingFuture": "ZCU26",
+            "deliveryStart": "2026-08-08T00:00:00-05:00", "deliveryEnd": "2026-08-14T00:00:00-05:00",
+            "location": "GPC-MUSCATINE", "facilityType": "River Terminal", "address": "1600 Dick Drake Hwy",
+            "city": "Muscatine", "state": "IA", "zipCode": "52761", "longitude": "-91.0579", "latitude": "41.39298",
+            "county": "Muscatine County", "countyFipsCode": "139", "stateFipsCode": "19" },
+          { "symbol": "ZCPQ26L-82259-15194.CM", "symbolDescription": "Grain Processing Corporation Muscatine, IA Corn (#2 Yellow) 2/2 Aug 26 Cash",
+            "elevator": "Grain Processing Corporation", "commodity": "Corn (#2 Yellow)", "underlyingFuture": "ZCU26",
+            "deliveryStart": "2026-08-22T00:00:00-05:00", "deliveryEnd": "2026-08-31T00:00:00-05:00",
+            "location": "GPC-MUSCATINE", "facilityType": "River Terminal", "address": "1600 Dick Drake Hwy",
+            "city": "Muscatine", "state": "IA", "zipCode": "52761", "longitude": "-91.0579", "latitude": "41.39298",
+            "county": "Muscatine County", "countyFipsCode": "139", "stateFipsCode": "19" },
+          { "symbol": "ZCPQ26-82259-15195.CM", "symbolDescription": "Grain Processing Corporation Muscatine, IA Corn (NonGMO) Aug 26 Cash",
+            "elevator": "Grain Processing Corporation", "commodity": "Corn (NonGMO)", "underlyingFuture": "ZCU26",
+            "deliveryStart": "2026-06-01T00:00:00-05:00", "deliveryEnd": "2026-08-31T00:00:00-05:00",
+            "location": "GPC-MUSCATINE", "facilityType": "River Terminal", "address": "1600 Dick Drake Hwy",
+            "city": "Muscatine", "state": "IA", "zipCode": "52761", "longitude": "-91.0579", "latitude": "41.39298",
+            "county": "Muscatine County", "countyFipsCode": "139", "stateFipsCode": "19" },
+          { "symbol": "ZCPQ26-27300-6916.CM", "symbolDescription": "Little Sioux Corn Processors Marcus, IA Corn (#2 Yellow) Aug 26 Cash",
+            "elevator": "Little Sioux Corn Processors", "commodity": "Corn (#2 Yellow)", "underlyingFuture": "ZCU26",
+            "deliveryStart": "2026-08-01T00:00:00-05:00", "deliveryEnd": "2026-08-31T00:00:00-05:00",
+            "location": "LSCP", "facilityType": "Ethanol/Bio-Fuel", "address": "4808 F Avenue",
+            "city": "Marcus", "state": "IA", "zipCode": "51035", "longitude": "-95.764286", "latitude": "42.821595",
+            "county": "Cherokee County", "countyFipsCode": "035", "stateFipsCode": "19" },
+          { "symbol": "ZCPQ26-87495-17523.CM", "symbolDescription": "AgVance Bid Sync Test Allendorf, IA Corn (#2 Yellow) Aug 26 Cash",
+            "elevator": "AgVance Bid Sync Test", "commodity": "Corn (#2 Yellow)", "underlyingFuture": "ZCU26",
+            "deliveryStart": "2026-08-01T00:00:00-05:00", "deliveryEnd": "2026-08-31T23:59:59-05:00",
+            "location": "CFE Allendorf", "facilityType": "Country Elevator", "address": "1631 Highway 59",
+            "city": "Allendorf", "state": "IA", "zipCode": "51354", "longitude": "-95.64386", "latitude": "43.413668",
+            "county": "Osceola County", "countyFipsCode": "143", "stateFipsCode": "19" }
+        ] }
+        """;
+
+    // The two GPC windows quote independently (4.47 first half, 4.53 second half) — a real spread.
+    // The last entry is a symbol that isn't in the catalog and must be skipped, not inserted.
+    private const string QuotesJson = """
+        { "status": { "code": 200 }, "results": [
+          { "symbol": "ZCPQ26F-82259-15194.CM", "lastPrice": "4.47", "netChange": "0.0625",
+            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "serverTimestamp": "2026-07-22T12:12:42-05:00",
+            "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
+          { "symbol": "ZCPQ26L-82259-15194.CM", "lastPrice": "4.53", "netChange": "0.0825",
+            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "serverTimestamp": "2026-07-22T12:12:42-05:00",
+            "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
+          { "symbol": "ZCPQ26-82259-15195.CM", "lastPrice": "4.47", "netChange": "0.0825",
+            "tradeTimestamp": "2026-07-22T12:12:37-05:00", "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
+          { "symbol": "ZCPQ26-27300-6916.CM", "lastPrice": "4.41", "netChange": "0.0825",
+            "tradeTimestamp": "2026-07-22T12:13:57-05:00", "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
+          { "symbol": "ZCPQ26-87495-17523.CM", "lastPrice": "4.13", "netChange": "0.0325",
+            "tradeTimestamp": "2026-07-21T21:32:32-05:00", "dayCode": "K", "mode": "i", "unitCode": "4", "code": 200 },
+          { "symbol": "ZZ-NOT-IN-CATALOG.CM", "lastPrice": "1.23", "code": 200 }
+        ] }
+        """;
+
+    private static readonly DateOnly BusinessDate = new(2026, 7, 22);
+
+    public async Task InitializeAsync()
+    {
+        if (!Enabled) return;
+
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlServer(ConnectionString!)
+            .Options;
+
+        _context = new ApplicationDbContext(options);
+        _transaction = await _context.Database.BeginTransactionAsync();
+        _sut = new BarchartIngestRepository(_context);
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (!Enabled) return;
+
+        await _transaction.RollbackAsync();
+        await _transaction.DisposeAsync();
+        await _context.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task LoadInstruments_ParsesSymbolAnatomyGroupsByLocationAndFlagsVendorTestRows()
+    {
+        if (!Enabled) return;
+
+        var loaded = await _sut.LoadInstrumentsAsync(InstrumentsJson);
+        Assert.Equal(5, loaded);
+
+        // The middle symbol segment is the elevator listing id, so GPC's three instruments share it.
+        var gpc = await _context.BarchartInstruments.AsNoTracking()
+            .Where(i => i.LocationKey == "82259")
+            .ToListAsync();
+        Assert.Equal(3, gpc.Count);
+
+        var firstHalf = gpc.Single(i => i.Symbol == "ZCPQ26F-82259-15194.CM");
+        Assert.Equal("ZC", firstHalf.Root);
+        Assert.Equal("bidCash", firstHalf.InstrumentType);
+        Assert.Equal("F", firstHalf.DeliveryWindowFlag);
+        Assert.False(firstHalf.IsTest);
+        // Vendor sends -05:00; storage is UTC, so 00:00 Central on 8 Aug is 05:00 UTC.
+        Assert.Equal(new DateTime(2026, 8, 8, 5, 0, 0, DateTimeKind.Unspecified), firstHalf.DeliveryStart);
+
+        var wholeMonth = gpc.Single(i => i.Symbol == "ZCPQ26-82259-15195.CM");
+        Assert.Null(wholeMonth.DeliveryWindowFlag);
+
+        // Vendor test data must be flagged so it can never surface in the application.
+        var agVance = await _context.BarchartInstruments.AsNoTracking()
+            .SingleAsync(i => i.Symbol == "ZCPQ26-87495-17523.CM");
+        Assert.True(agVance.IsTest);
+
+        // Re-loading the same payload updates rather than duplicates.
+        var reloaded = await _sut.LoadInstrumentsAsync(InstrumentsJson);
+        Assert.Equal(5, reloaded);
+        Assert.Equal(5, await _context.BarchartInstruments.CountAsync(i => i.Symbol.StartsWith("ZCPQ26")));
+    }
+
+    [Fact]
+    public async Task LoadQuotes_WritesCurrentPriceAndDailyHistory_SkipsUnknownSymbols_AndIsIdempotentPerDate()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+
+        var first = await _sut.LoadQuotesAsync(QuotesJson, BusinessDate);
+
+        Assert.Equal(5, first.QuotesUpserted);
+        Assert.Equal(1, first.UnknownSymbolCount);
+        Assert.False(await _context.BarchartCurrentQuotes.AnyAsync(q => q.Symbol == "ZZ-NOT-IN-CATALOG.CM"));
+
+        var secondHalf = await _context.BarchartCurrentQuotes.AsNoTracking()
+            .SingleAsync(q => q.Symbol == "ZCPQ26L-82259-15194.CM");
+        Assert.Equal(4.53m, secondHalf.LastPrice);
+        Assert.Equal(new DateTime(2026, 7, 22, 17, 12, 36, DateTimeKind.Unspecified), secondHalf.TradeTimestamp);
+
+        var historyAfterFirst = await _context.BarchartQuoteSnapshots
+            .CountAsync(s => s.SnapshotDate == BusinessDate);
+        Assert.Equal(5, historyAfterFirst);
+
+        // Re-running the same business date replaces the day's rows — this is what makes the ingest
+        // endpoints safe for the pipeline to retry.
+        await _sut.LoadQuotesAsync(QuotesJson, BusinessDate);
+        Assert.Equal(historyAfterFirst,
+            await _context.BarchartQuoteSnapshots.CountAsync(s => s.SnapshotDate == BusinessDate));
+    }
+
+    [Fact]
+    public async Task GetQuoteBatches_ExcludesVendorTestInstruments()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+
+        var batches = await _sut.GetQuoteBatchesAsync(batchSize: 1000);
+        var allSymbols = string.Join(",", batches.Select(b => b.SymbolsCsv));
+
+        Assert.Contains("ZCPQ26-27300-6916.CM", allSymbols);
+        Assert.DoesNotContain("87495", allSymbols);
+    }
+
+    [Fact]
+    public async Task ApplyBids_PicksTheWiderWindow_SkipsUnmappedCommodities_AndNeverOverwritesManualBids()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+        await _sut.LoadQuotesAsync(QuotesJson, BusinessDate);
+
+        // "Corn (NonGMO)" is deliberately left unmapped, so it must not reach the Bid Sheet.
+        _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (#2 Yellow)",
+            CommodityCode = "CORN",
+            CommodityName = "Corn",
+            CommodityCategory = "Grains",
+            CreatedBy = "integration-test"
+        });
+
+        var gpcLocation = NewLinkedLocation("__IT GPC Muscatine", "82259");
+        var siouxLocation = NewLinkedLocation("__IT Little Sioux", "27300");
+        _context.BidSheetLocations.AddRange(gpcLocation, siouxLocation);
+        await _context.SaveChangesAsync();
+
+        // A hand-typed bid in the exact cell the feed would target.
+        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
+        {
+            LocationId = siouxLocation.Id,
+            CommodityCode = "CORN",
+            CropYear = 2026,
+            Month = 8,
+            Bid = "9.99",
+            Source = BidSources.Manual,
+            CreatedBy = "integration-test",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(locationId: null, instrumentType: "bidCash", appliedBy: "barchart-feed");
+
+        // GPC's August cell has no whole-month corn bid, so the wider half-month window wins (4.53,
+        // Aug 22-31 spans 9 days versus 6 for the first half).
+        var gpcBids = await _context.BidSheetLocationBids.AsNoTracking()
+            .Where(b => b.LocationId == gpcLocation.Id)
+            .ToListAsync();
+        var gpcAugust = Assert.Single(gpcBids);
+        Assert.Equal("4.53", gpcAugust.Bid);
+        Assert.Equal(BidSources.Barchart, gpcAugust.Source);
+        Assert.Equal("ZCPQ26L-82259-15194.CM", gpcAugust.BarchartSymbol);
+        Assert.NotNull(gpcAugust.QuoteAsOf);
+        Assert.Equal(2026, gpcAugust.CropYear);
+        Assert.Equal(8, gpcAugust.Month);
+
+        // The manual bid is untouched — the feed owns its own cells only.
+        var manual = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == siouxLocation.Id);
+        Assert.Equal("9.99", manual.Bid);
+        Assert.Equal(BidSources.Manual, manual.Source);
+        Assert.Null(manual.QuoteAsOf);
+
+        // Re-running changes nothing: no duplicate rows, no ModifiedAt churn.
+        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
+        Assert.Equal(2, await _context.BidSheetLocationBids
+            .CountAsync(b => b.LocationId == gpcLocation.Id || b.LocationId == siouxLocation.Id));
+    }
+
+    [Fact]
+    public async Task ApplyBids_PrunesItsOwnRowsWhenAMappingIsSwitchedOff_ButLeavesManualBidsStanding()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+        await _sut.LoadQuotesAsync(QuotesJson, BusinessDate);
+
+        var map = new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (#2 Yellow)",
+            CommodityCode = "CORN",
+            CommodityName = "Corn",
+            CreatedBy = "integration-test"
+        };
+        _context.BarchartCommodityMaps.Add(map);
+
+        var gpcLocation = NewLinkedLocation("__IT GPC Prune", "82259");
+        _context.BidSheetLocations.Add(gpcLocation);
+        await _context.SaveChangesAsync();
+
+        // A manual bid for a month the feed doesn't cover — it must survive the prune.
+        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
+        {
+            LocationId = gpcLocation.Id,
+            CommodityCode = "CORN",
+            CropYear = 2026,
+            Month = 12,
+            Bid = "5.55",
+            Source = BidSources.Manual,
+            CreatedBy = "integration-test",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
+        Assert.True(await _context.BidSheetLocationBids
+            .AnyAsync(b => b.LocationId == gpcLocation.Id && b.Source == BidSources.Barchart));
+
+        // Turning the mapping off removes the feed's cells on the next run.
+        map.IsActive = false;
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
+
+        Assert.False(await _context.BidSheetLocationBids
+            .AnyAsync(b => b.LocationId == gpcLocation.Id && b.Source == BidSources.Barchart));
+        var survivor = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == gpcLocation.Id);
+        Assert.Equal("5.55", survivor.Bid);
+    }
+
+    /// <summary>
+    /// A Bid Sheet location linked to a BarChart listing. Names are suffixed so repeated local runs
+    /// can't collide on the (Name, TradeUnitCode) unique index even though each run rolls back.
+    /// </summary>
+    private static BidSheetLocation NewLinkedLocation(string name, string locationKey) => new()
+    {
+        Name = $"{name} {Guid.NewGuid():N}"[..Math.Min(200, name.Length + 33)],
+        City = "Muscatine",
+        State = "IA",
+        BarchartLocationKey = locationKey,
+        TradeUnitCode = "__IT_TU",
+        CreatedBy = "integration-test",
+        CreatedAt = DateTime.UtcNow
+    };
+}

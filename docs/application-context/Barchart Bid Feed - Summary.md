@@ -1,6 +1,11 @@
 # BarChart Bid Feed — Plan Summary
 
-**Date:** 2026-07-23 · **Owner:** Caden Egr · Full detail: `docs/application-context/Barchart Bid Feed - Database Plan.md`
+**Status:** BUILT and applied to Dev (2026-08-11) · **Date:** 2026-07-23 · **Owner:** Caden Egr
+Full detail: `Barchart Bid Feed - Database Plan.md` · Pipeline contract: `Barchart Ingestion API Contract.md`
+
+> As built: the five tables live in `dbo` with a `Barchart` prefix, the load logic is parameterized SQL
+> in the repository rather than stored procedures, and the data pipeline sends payloads to an
+> authenticated API instead of connecting to the database.
 
 We're building the database side of the BarChart bid feed — **where the data lands and how it gets onto the Bid Sheet**. The API calls/loads themselves are handled on the integration side; each response just gets handed to our stored procedures.
 

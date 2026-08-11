@@ -1,6 +1,20 @@
 # BarChart Bid Feed — Database Plan
 
-**Status:** Proposed — for review/approval · **Date:** 2026-07-23 · **Owner:** Caden Egr
+**Status:** BUILT — landing tables and ingestion API implemented; applied to Dev 2026-08-11
+**Date:** 2026-07-23 (built 2026-08-11) · **Owner:** Caden Egr
+
+> **As-built notes.** Three things changed between approval and implementation:
+> 1. **Tables live in `dbo` with a `Barchart` prefix** (e.g. `dbo.BarchartInstrument`), not a separate
+>    schema — it matches every other app table and avoided a schema-ownership permission step.
+> 2. **No stored procedures.** The App Service identity holds read/write on this database but not
+>    EXECUTE, so the same SQL ships as parameterized statements inside `BarchartIngestRepository`.
+>    (The nightly producer sync works the same way: raw SQL reads plus Entity Framework writes.)
+> 3. **The vendor data arrives through an authenticated API**, not a direct database connection — see
+>    [BarChart Ingestion API Contract](./Barchart%20Ingestion%20API%20Contract.md). The pipeline has no
+>    database access at all.
+>
+> Everything below still describes the design accurately; substitute `dbo.Barchart*` for the table
+> names and "load SQL in the repository" for "stored procedures".
 
 ## What this is
 
