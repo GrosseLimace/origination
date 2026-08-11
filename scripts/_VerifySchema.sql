@@ -21,6 +21,14 @@
 --        @UniqueIndexes for any new objects.
 --   The four sections to update are clearly marked
 --   "### UPDATE WHEN SCHEMA CHANGES ###".
+--
+-- KNOWN PRE-EXISTING GAPS (not introduced by the BarChart work, 2026-08-11):
+--   The expected lists below have not been maintained for several migrations that
+--   landed on main between 20260609 and 20260810 — e.g. dbo.MbpLocationSynonym,
+--   dbo.UsageDashboardExcludedUsers, the DailyRecapGroup* tables, and their
+--   migration ids. Until someone backfills them, expect WARN findings for those
+--   objects ("exists in DB, not expected here"). Any finding naming a Barchart*
+--   object or a BidSheet* Source/BarchartSymbol/QuoteAsOf column IS real.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -73,9 +81,14 @@ DECLARE @Findings TABLE (
 );
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (29)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (35)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Tables (SchemaName, TableName) VALUES
+('dbo', 'BarchartApiCallAudit'),
+('dbo', 'BarchartCommodityMap'),
+('dbo', 'BarchartCurrentQuote'),
+('dbo', 'BarchartInstrument'),
+('dbo', 'BarchartQuoteSnapshot'),
 ('dbo', 'BidSheetLocationBids'),
 ('dbo', 'BidSheetLocationOrders'),
 ('dbo', 'BidSheetLocations'),
@@ -118,8 +131,81 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 --   the Customer / ESignEnrollment tables differs from the CLR property name.
 -- -----------------------------------------------------------------------------
 INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VALUES
+-- BarchartInstrument (BarChart bid feed — vendor catalog)
+('dbo', 'BarchartInstrument', 'Symbol',             'nvarchar(100)', 0),
+('dbo', 'BarchartInstrument', 'LocationKey',        'nvarchar(50)',  1),
+('dbo', 'BarchartInstrument', 'Root',               'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'InstrumentType',     'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryWindowFlag', 'char(1)',       1),
+('dbo', 'BarchartInstrument', 'SymbolDescription',  'nvarchar(500)', 1),
+('dbo', 'BarchartInstrument', 'Elevator',           'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'LocationName',       'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'FacilityType',       'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'Commodity',          'nvarchar(200)', 1),
+('dbo', 'BarchartInstrument', 'UnderlyingFuture',   'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryStart',      'datetime2(3)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryEnd',        'datetime2(3)',  1),
+('dbo', 'BarchartInstrument', 'Address',            'nvarchar(500)', 1),
+('dbo', 'BarchartInstrument', 'City',               'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'State',              'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'ZipCode',            'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'Latitude',           'float',         1),
+('dbo', 'BarchartInstrument', 'Longitude',          'float',         1),
+('dbo', 'BarchartInstrument', 'County',             'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'StateFips',          'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'CountyFips',         'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'Phone',              'nvarchar(50)',  1),
+('dbo', 'BarchartInstrument', 'Website',            'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'IsTest',             'bit',           0),
+('dbo', 'BarchartInstrument', 'IsActive',           'bit',           0),
+('dbo', 'BarchartInstrument', 'FirstSeenUtc',       'datetime2(3)',  0),
+('dbo', 'BarchartInstrument', 'LastSeenUtc',        'datetime2(3)',  0),
+-- BarchartCurrentQuote (latest price per instrument)
+('dbo', 'BarchartCurrentQuote', 'Symbol',          'nvarchar(100)', 0),
+('dbo', 'BarchartCurrentQuote', 'LastPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'NetChange',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'PercentChange',   'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'OpenPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'HighPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'LowPrice',        'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'ClosePrice',      'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'UnitCode',        'nvarchar(10)',  1),
+('dbo', 'BarchartCurrentQuote', 'DayCode',         'nvarchar(5)',   1),
+('dbo', 'BarchartCurrentQuote', 'QuoteMode',       'nvarchar(10)',  1),
+('dbo', 'BarchartCurrentQuote', 'QuoteFlag',       'nvarchar(5)',   1),
+('dbo', 'BarchartCurrentQuote', 'TradeTimestamp',  'datetime2(3)',  1),
+('dbo', 'BarchartCurrentQuote', 'ServerTimestamp', 'datetime2(3)',  1),
+('dbo', 'BarchartCurrentQuote', 'UpdatedAtUtc',    'datetime2(3)',  0),
+-- BarchartQuoteSnapshot (daily price history)
+('dbo', 'BarchartQuoteSnapshot', 'SnapshotDate',   'date',          0),
+('dbo', 'BarchartQuoteSnapshot', 'Symbol',         'nvarchar(100)', 0),
+('dbo', 'BarchartQuoteSnapshot', 'LastPrice',      'decimal(19,4)', 1),
+('dbo', 'BarchartQuoteSnapshot', 'NetChange',      'decimal(19,4)', 1),
+('dbo', 'BarchartQuoteSnapshot', 'TradeTimestamp', 'datetime2(3)',  1),
+('dbo', 'BarchartQuoteSnapshot', 'CreatedAtUtc',   'datetime2(3)',  0),
+-- BarchartCommodityMap (vendor commodity name -> Scoular code; human-maintained)
+('dbo', 'BarchartCommodityMap', 'BarchartCommodity', 'nvarchar(200)', 0),
+('dbo', 'BarchartCommodityMap', 'CommodityCode',     'nvarchar(50)',  0),
+('dbo', 'BarchartCommodityMap', 'CommodityName',     'nvarchar(200)', 1),
+('dbo', 'BarchartCommodityMap', 'CommodityCategory', 'nvarchar(100)', 1),
+('dbo', 'BarchartCommodityMap', 'IsActive',          'bit',           0),
+('dbo', 'BarchartCommodityMap', 'CreatedAt',         'datetime2(3)',  0),
+('dbo', 'BarchartCommodityMap', 'CreatedBy',         'nvarchar(255)', 0),
+('dbo', 'BarchartCommodityMap', 'ModifiedAt',        'datetime2(3)',  1),
+('dbo', 'BarchartCommodityMap', 'ModifiedBy',        'nvarchar(255)', 1),
+-- BarchartApiCallAudit (one row per ingest call; backs the monthly usage view)
+('dbo', 'BarchartApiCallAudit', 'ApiCallId',    'bigint',         0),
+('dbo', 'BarchartApiCallAudit', 'CalledAtUtc',  'datetime2(3)',   0),
+('dbo', 'BarchartApiCallAudit', 'Endpoint',     'nvarchar(100)',  0),
+('dbo', 'BarchartApiCallAudit', 'QueryParams',  'nvarchar(2000)', 1),
+('dbo', 'BarchartApiCallAudit', 'HttpStatus',   'int',            1),
+('dbo', 'BarchartApiCallAudit', 'Success',      'bit',            0),
+('dbo', 'BarchartApiCallAudit', 'RowsAffected', 'int',            1),
+('dbo', 'BarchartApiCallAudit', 'DurationMs',   'int',            1),
+('dbo', 'BarchartApiCallAudit', 'ErrorMessage', 'nvarchar(2000)', 1),
 -- BidSheetLocations
 ('dbo', 'BidSheetLocations', 'Id',                'int',           0),
+('dbo', 'BidSheetLocations', 'BarchartLocationKey', 'nvarchar(50)', 1),
 ('dbo', 'BidSheetLocations', 'Address',           'nvarchar(300)', 1),
 ('dbo', 'BidSheetLocations', 'City',              'nvarchar(100)', 1),
 ('dbo', 'BidSheetLocations', 'CreatedAt',         'datetime2',     0),
@@ -145,6 +231,9 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocationBids', 'CropYear',          'int',           0),
 ('dbo', 'BidSheetLocationBids', 'LocationId',        'int',           0),
 ('dbo', 'BidSheetLocationBids', 'ModifiedAt',        'datetime2',     1),
+('dbo', 'BidSheetLocationBids', 'Source',            'nvarchar(20)',  0),
+('dbo', 'BidSheetLocationBids', 'BarchartSymbol',    'nvarchar(100)', 1),
+('dbo', 'BidSheetLocationBids', 'QuoteAsOf',         'datetime2',     1),
 ('dbo', 'BidSheetLocationBids', 'ModifiedBy',        'nvarchar(255)', 1),
 ('dbo', 'BidSheetLocationBids', 'Month',             'int',           0),
 -- BidSheetLocationOrders
@@ -454,7 +543,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (19)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (20; see KNOWN PRE-EXISTING GAPS in the header)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Migrations (MigrationId) VALUES
 ('20260310202402_AddESignEnrollment'),
@@ -475,7 +564,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260602201243_AddCanolaMilletPlantingDropWhiteMilo'),
 ('20260603200941_RemoveCasmFromPlantingIntentions'),
 ('20260604150610_AddUserDeactivatedToCustomerTradeUnit'),
-('20260609161126_AddPrintLayoutToBidSheetPreference');
+('20260609161126_AddPrintLayoutToBidSheetPreference'),
+('20260811142608_AddBarchartFeed');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
