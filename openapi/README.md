@@ -65,9 +65,11 @@ need the role on the QA app registration.
 ### Granting the role
 
 Confirmed with the integration team 2026-08-11: **the assignment is made on the Origination side**, not
-theirs. It is a config change in `app-config.json` in the infrastructure-as-code repo — per
+theirs. It is a config change to Origination's `app-config.json` in the **`IT/infrastructure-as-code`**
+repo (the same repo that syncs `developer-docs/` into this one — see its sync commits) — per
 `developer-docs/APP-REGISTRATIONS.md`, the `Sync-AppRoles` function resolves role GUIDs and preserves
-them across deployments.
+them across deployments. That file also holds the outbound network rules and external endpoint list, so
+a connectivity change would go in the same request.
 
 Note the UAT identity is assigned to the **qa** environment, because their UAT targets our QA.
 
