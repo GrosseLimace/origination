@@ -58,9 +58,26 @@ a pure function, so it can be unit-tested and reused. Three things worth knowing
   window delivery-date overlap is only a fallback for contracts with no crop year. (Overlap used to
   be primary, which let a contract spanning a year boundary count in two seasons and made this screen
   disagree with the dashboard.)
-- **Units are never summed together.** Contract quantities are stored in their native `QuantityUom`
-  (bu / CWT / tons / lbs) and nothing normalises them, so each commodity reports its own unit and a
-  combined total is suppressed when they differ.
+- **Everything is expressed in bushels.** Contract quantities are stored in their native
+  `QuantityUom` (bu / ST / MT / LB / CW / GL …), so `sumInBushels` converts the mass units via
+  pounds-per-bushel from `ctrm.vw_GNP024` before totalling.
+
+  The load-bearing part is the **plausibility guard**: `Pounds_To_Commodity_Unit` is pounds per the
+  commodity's *own* standard unit (verified against its `Commodity_Std_Unit_Measure` column), so a
+  bushel crop carries a real lb/bu figure — canola 50, millet 50, corn 56, sorghum 56, wheat 60,
+  soybeans 60 — while a ton-based commodity carries 2000 and a tonne 2204.62. Factors outside
+  25–80 lb/bu are refused and the contract is excluded and reported instead.
+
+  That matters because a grain commodity *group* contains products that aren't the grain: soybean
+  meal (`480M`, `SBMO`, `SBMB`) and oil (`BOIL`) in short tons, popcorn (`POP`) by the pound, cracked
+  corn (`CKYC`). Before this, 318 short tons of meal were summed into a producer's soybean coverage
+  as if they were bushels. On current data no conversion actually fires — every non-bushel grain
+  contract is one of those products and is excluded — but the path is kept and tested for the
+  legitimate case of a bushel crop contracted by weight.
+
+  **Every screen that totals contracted volume uses this same helper** — the Growth Opportunity
+  panel, the Producer Insights "bushels contracted" card, the print report KPI, the dashboard's
+  Contract Coverage card, and Build a List's coverage prompts — so they agree on one number.
 
 ## Data flow
 

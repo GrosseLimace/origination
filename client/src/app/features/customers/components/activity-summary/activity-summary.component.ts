@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
+import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
 
 @Component({
   selector: 'app-activity-summary',
@@ -149,17 +150,22 @@ export class ActivitySummaryComponent {
     // bushel-context wording), so we don't recompute or report them here.
 
     const parts: string[] = [];
-    const totalVolume = openContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
+    // Bushels, not a raw quantity sum — this sentence says "bushels" out loud, and a commodity group
+    // carries products priced by weight (soybean meal in short tons, popcorn by the pound).
+    const lbsPerBushelByCode = buildLbsPerBushelMap(this.appState.commodityConversions());
+    const totalVolume = sumInBushels(openContracts, lbsPerBushelByCode).contracted;
     // Contract totalValue from CTRM doesn't reflect discounts/adjustments — intentionally
     // omitted to avoid showing the producer a misleading "contracts worth $X" number.
 
     // Sum Remaining via the shared delivery util — same numbers + same sub-0.1%
     // completion rule the contracts table shows.
+    // The unshipped balance is in the contract's own unit too, so it needs the same conversion
+    // before being reported as bushels.
     let totalRemaining = 0;
     for (const c of openContracts) {
       const stats = getContractDeliveryStats(c);
       if (stats.isEffectivelyComplete) continue;
-      totalRemaining += stats.remaining;
+      totalRemaining += quantityInBushels(c, stats.remaining, lbsPerBushelByCode) ?? 0;
     }
 
     parts.push(`On the contract side, they currently have ${openContracts.length} contract${openContracts.length !== 1 ? 's' : ''} totaling ${this._formatQuantity(totalVolume, 'bushels')}.`);

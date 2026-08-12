@@ -126,8 +126,12 @@
                         <p class="text-gray-400">{{ crop.contracted | number:'1.2-2' }} {{ crop.unit }} contracted.</p>
                         <p class="text-amber-300">No yield estimate for {{ crop.commodity }} in {{ plantingYear() }}. Add one under Set Season Targets on the Planting Intentions dashboard — estimates are never carried over from another year.</p>
                       }
-                      @if (crop.hasMixedUnits) {
-                        <p class="text-amber-300">This commodity has contracts in more than one unit; only {{ crop.unit }} is totalled here.</p>
+                      @if (crop.excludedContracts > 0) {
+                        <p class="text-amber-300">
+                          {{ crop.excludedContracts }} contract{{ crop.excludedContracts === 1 ? '' : 's' }}
+                          not counted — priced by weight in a product that isn't bushels of this crop
+                          (meal, oil and similar are grouped under the same commodity).
+                        </p>
                       }
                     </div>
                     <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 ml-16 -mt-1"></div>
@@ -136,33 +140,34 @@
               }
             </div>
 
-            <!-- Total, only when every commodity shares one unit — bushels plus hundredweight is
-                 not a number worth showing. -->
+            <!-- Total across commodities. Everything comparable is expressed in bushels — tonnage
+                 and pound contracts are converted — so this is a real sum. -->
             @if (coverage().byCommodity.length > 1) {
               <div class="border-t border-gray-300 dark:border-gray-600 mt-3 pt-3">
-                @if (coverage().hasMixedUnits) {
-                  <p class="text-xs" [style]="mutedTextStyle">
-                    No combined total — this producer's contracts use more than one unit of measure.
-                  </p>
-                } @else {
-                  <div class="flex items-center gap-4">
-                    <div class="w-24 text-sm font-medium" [style]="itemTextStyle">Total</div>
-                    <div class="flex-1">
-                      <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        @if (coverage().marketSharePercentage !== null) {
-                          <div class="h-full bg-scoular-green-accessible rounded-full transition-all"
-                               [style.width.%]="coverage().marketSharePercentage! > 100 ? 100 : coverage().marketSharePercentage"></div>
-                        }
-                      </div>
-                    </div>
-                    <div class="w-14 text-right text-sm font-bold"
-                         [class]="coverage().marketSharePercentage ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">
-                      {{ coverage().marketSharePercentage !== null ? (coverage().marketSharePercentage | number:'1.0-0') + '%' : '—' }}
-                    </div>
-                    <div class="w-56 text-xs text-right" [style]="mutedTextStyle">
-                      {{ coverage().totalContracted | number:'1.2-2' }} / {{ coverage().totalProjectedYield | number:'1.2-2' }} {{ coverage().totalUnit }}
+                <div class="flex items-center gap-4">
+                  <div class="w-24 text-sm font-medium" [style]="itemTextStyle">Total</div>
+                  <div class="flex-1">
+                    <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      @if (coverage().marketSharePercentage !== null) {
+                        <div class="h-full bg-scoular-green-accessible rounded-full transition-all"
+                             [style.width.%]="coverage().marketSharePercentage! > 100 ? 100 : coverage().marketSharePercentage"></div>
+                      }
                     </div>
                   </div>
+                  <div class="w-14 text-right text-sm font-bold"
+                       [class]="coverage().marketSharePercentage ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">
+                    {{ coverage().marketSharePercentage !== null ? (coverage().marketSharePercentage | number:'1.0-0') + '%' : '—' }}
+                  </div>
+                  <div class="w-56 text-xs text-right" [style]="mutedTextStyle">
+                    {{ coverage().totalContracted | number:'1.2-2' }} / {{ coverage().totalProjectedYield | number:'1.2-2' }} {{ coverage().totalUnit }}
+                  </div>
+                </div>
+                @if (coverage().excludedContracts > 0) {
+                  <p class="text-xs mt-2 text-amber-600 dark:text-amber-400">
+                    {{ coverage().excludedContracts }} contract{{ coverage().excludedContracts === 1 ? '' : 's' }}
+                    excluded — priced by weight in a product that isn't bushels of the crop
+                    (meal, oil and similar share the same commodity group).
+                  </p>
                 }
               </div>
             }

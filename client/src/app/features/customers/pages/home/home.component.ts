@@ -629,6 +629,7 @@ export class HomeComponent {
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       commodities: this.appState.commodities(),
+      commodityConversions: this.appState.commodityConversions(),
       // Thread identity through so saved-list "by me" filters work even when notes' CreatedBy
       // wasn't resolved to a display name on the API side.
       currentUserDisplayName: account?.name ?? '',

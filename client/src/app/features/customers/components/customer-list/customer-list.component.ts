@@ -522,7 +522,8 @@ export class CustomerListComponent {
       noteLastContacts: this.appStateService.noteLastContacts(),
       plantingIntentions: this.appStateService.plantingIntentions(),
       storedGrain: this.appStateService.storedGrain(),
-      commodities: this.appStateService.commodities()
+      commodities: this.appStateService.commodities(),
+      commodityConversions: this.appStateService.commodityConversions()
     };
     // Resolve "I"/"me"/"my" to the user's name so author-based queries work
     const account = this.msalService.instance.getActiveAccount()

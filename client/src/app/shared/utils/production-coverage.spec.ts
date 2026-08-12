@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildProductionCoverage, findYieldEstimate } from './production-coverage';
-import { Commodity, Contract, DashboardPlantingEstimate, HarvestWindow, PlantingIntention } from '@models';
+import { Commodity, CommodityConversion, Contract, DashboardPlantingEstimate, HarvestWindow, PlantingIntention } from '@models';
 
 /**
  * Pins the four corrections made when this calculation moved out of CustomerProfileComponent:
@@ -159,48 +159,137 @@ describe('buildProductionCoverage', () => {
     expect(outOfWindow.byCommodity[0].contracted).toBe(0);
   });
 
-  // ── Units are never added together ────────────────────────────────────────────────────────
-  it('carries the contract unit through instead of assuming bushels', () => {
+  // ── Mass units are converted to bushels ───────────────────────────────────────────────────
+  // ~3% of soybean contracts are written in short tons, so tonnage has to count toward coverage
+  // rather than being dropped or added into a figure mislabelled "bu".
+  const soyConversion = [{ commodityCode: 'YSB', lbsPerUnit: 60 }] as CommodityConversion[];
+
+  it('converts short tons to bushels using lb-per-bushel', () => {
     const result = build({
-      intentions: [intention({ crop: 'CANP' })],
-      contracts: [contract({ commodityCode: 'CANP', unit: 'CWT', quantity: 2_000 })],
-      yieldEstimates: [yieldFor('Canola', 40)],
+      contracts: [contract({ commodityCode: 'YSB', unit: 'ST', quantity: 300 })],
+      conversions: [{ commodityCode: 'YSB', lbsPerUnit: 60 }] as CommodityConversion[],
+      intentions: [intention({ crop: 'YSB' })],
+      commodities: [...commodities, { id: 4, code: 'YSB', name: 'Soybeans', category: 'Soybeans', isActive: true } as Commodity],
+      yieldEstimates: [yieldFor('Soybeans', 55)],
     });
 
-    expect(result.byCommodity[0].unit).toBe('CWT');
-    expect(result.byCommodity[0].contracted).toBe(2_000);
+    // 300 ST x 2000 lb ÷ 60 lb/bu = 10,000 bu
+    expect(result.byCommodity[0].contracted).toBeCloseTo(10_000, 4);
+    expect(result.byCommodity[0].unit).toBe('bu');
+    expect(result.byCommodity[0].excludedContracts).toBe(0);
   });
 
-  it('does not sum across units within one commodity, and flags the mix', () => {
+  it('adds converted and native-bushel contracts together', () => {
     const result = build({
+      intentions: [intention({ crop: 'YSB' })],
+      commodities: [...commodities, { id: 4, code: 'YSB', name: 'Soybeans', category: 'Soybeans', isActive: true } as Commodity],
+      yieldEstimates: [yieldFor('Soybeans', 55)],
+      conversions: soyConversion,
       contracts: [
-        contract({ id: 1, unit: 'bu', quantity: 50_000 }),
-        contract({ id: 2, unit: 'CWT', quantity: 900 }),
+        contract({ id: 1, commodityCode: 'YSB', unit: 'BU', quantity: 40_000 }),
+        contract({ id: 2, commodityCode: 'YSB', unit: 'ST', quantity: 150 }),   // = 5,000 bu
       ],
     });
-    const corn = result.byCommodity[0];
 
-    expect(corn.hasMixedUnits).toBe(true);
-    expect(corn.contracted).toBe(50_000);          // the dominant unit's total, NOT 50,900
-    expect(corn.unit).toBe('bu');
+    expect(result.byCommodity[0].contracted).toBeCloseTo(45_000, 4);
+    expect(result.byCommodity[0].excludedContracts).toBe(0);
   });
 
-  it('suppresses the overall percentage when commodities use different units', () => {
+  it.each([
+    ['LB', 60_000, 1_000],      // 60,000 lb ÷ 60
+    ['CW', 600, 1_000],         // 600 cwt x 100 lb ÷ 60
+    ['MT', 100, 3_674.371],     // 100 t x 2204.6226 ÷ 60
+    ['KG', 60_000, 2_204.6226], // 60,000 kg x 2.2046226 ÷ 60
+  ])('converts %s to bushels', (unit, quantity, expected) => {
     const result = build({
-      intentions: [intention({ id: 1, crop: 'YC' }), intention({ id: 2, crop: 'CANP', acres: 500 })],
-      contracts: [
-        contract({ id: 1, commodityCode: 'YC', unit: 'bu', quantity: 50_000 }),
-        contract({ id: 2, commodityCode: 'CANP', unit: 'CWT', quantity: 2_000 }),
-      ],
-      yieldEstimates: [yieldFor('Corn', 180), yieldFor('Canola', 40)],
+      intentions: [intention({ crop: 'YSB' })],
+      commodities: [...commodities, { id: 4, code: 'YSB', name: 'Soybeans', category: 'Soybeans', isActive: true } as Commodity],
+      yieldEstimates: [yieldFor('Soybeans', 55)],
+      conversions: soyConversion,
+      contracts: [contract({ commodityCode: 'YSB', unit, quantity })],
     });
 
-    expect(result.hasMixedUnits).toBe(true);
-    expect(result.totalUnit).toBeNull();
-    expect(result.marketSharePercentage).toBeNull();  // bushels + hundredweight is not a number
+    expect(result.byCommodity[0].contracted).toBeCloseTo(expected, 2);
   });
 
-  it('reports a single shared unit and a real total when everything is bushels', () => {
+  it('excludes units with no bushel equivalent rather than guessing', () => {
+    // Gallons / each / railcars only ever appear on Feed & Fert, Currency and Transportation
+    // contracts, which can't match a planting crop — but if one ever did, it must not be invented.
+    const result = build({
+      conversions: [{ commodityCode: 'YC', lbsPerUnit: 56 }] as CommodityConversion[],
+      contracts: [
+        contract({ id: 1, unit: 'BU', quantity: 50_000 }),
+        contract({ id: 2, unit: 'GL', quantity: 900 }),
+      ],
+    });
+
+    expect(result.byCommodity[0].contracted).toBe(50_000);
+    expect(result.byCommodity[0].excludedContracts).toBe(1);
+    expect(result.excludedContracts).toBe(1);
+  });
+
+  it('does not count soybean MEAL tonnage as soybean bushels', () => {
+    // The real shape of production data: 480M (soybean meal) sits in the SOYBEANS commodity group
+    // and is contracted in short tons, with a GNP024 factor of 2000 — pounds per its OWN standard
+    // unit (ST), not per bushel. Converting with it would pass 318 tons of meal through as 318
+    // bushels of beans. Before this branch that volume was summed in as bushels outright.
+    const result = build({
+      intentions: [intention({ crop: 'YSB' })],
+      commodities: [
+        ...commodities,
+        { id: 4, code: 'YSB', name: 'Soybeans', category: 'Soybeans', isActive: true } as Commodity,
+        { id: 5, code: '480M', name: 'Soybean Meal', category: 'Soybeans', isActive: true } as Commodity,
+      ],
+      yieldEstimates: [yieldFor('Soybeans', 55)],
+      conversions: [
+        { commodityCode: 'YSB', lbsPerUnit: 60 },      // real bushels
+        { commodityCode: '480M', lbsPerUnit: 2000 },   // lbs per SHORT TON, its own std unit
+      ] as CommodityConversion[],
+      contracts: [
+        contract({ id: 1, commodityCode: 'YSB', unit: 'BU', quantity: 40_000 }),
+        contract({ id: 2, commodityCode: '480M', unit: 'ST', quantity: 318 }),
+      ],
+    });
+
+    expect(result.byCommodity[0].contracted).toBe(40_000);   // beans only
+    expect(result.byCommodity[0].excludedContracts).toBe(1); // the meal, reported not hidden
+  });
+
+  it('refuses a lb-per-bushel factor outside the plausible grain range', () => {
+    // GNP024's column is documented as "lbs-per-bushel (OR per-unit)". A value of 2000 means it is
+    // not lbs-per-bushel here, and converting with it would understate by ~33x.
+    const result = build({
+      conversions: [{ commodityCode: 'YC', lbsPerUnit: 2000 }] as CommodityConversion[],
+      contracts: [contract({ unit: 'ST', quantity: 300 })],
+    });
+
+    expect(result.byCommodity[0].contracted).toBe(0);
+    expect(result.byCommodity[0].excludedContracts).toBe(1);
+  });
+
+  it('excludes a mass contract when no conversion factor is available at all', () => {
+    const result = build({
+      conversions: [],
+      contracts: [contract({ unit: 'ST', quantity: 300 })],
+    });
+
+    expect(result.byCommodity[0].excludedContracts).toBe(1);
+  });
+
+  it('treats a missing unit as bushels', () => {
+    const result = build({ contracts: [contract({ unit: '' as unknown as string, quantity: 1_000 })] });
+    expect(result.byCommodity[0].contracted).toBe(1_000);
+  });
+
+  it.each(['BU', 'bu', 'Bushels', 'BUS'])('recognises %s as bushels', (unit) => {
+    // A bushel spelling we failed to recognise would be treated as unconvertible and its volume
+    // would silently drop out of the total — the expensive direction to get wrong.
+    const result = build({ contracts: [contract({ unit, quantity: 1_000 })] });
+    expect(result.byCommodity[0].contracted).toBe(1_000);
+    expect(result.byCommodity[0].excludedContracts).toBe(0);
+  });
+
+  it('reports totals in bushels across commodities', () => {
     const result = build({
       intentions: [intention({ id: 1, crop: 'YC' }), intention({ id: 2, crop: 'HRWW', acres: 500 })],
       contracts: [
@@ -210,7 +299,7 @@ describe('buildProductionCoverage', () => {
       yieldEstimates: [yieldFor('Corn', 180), yieldFor('Wheat', 60)],
     });
 
-    expect(result.hasMixedUnits).toBe(false);
+    expect(result.excludedContracts).toBe(0);
     expect(result.totalUnit).toBe('bu');
     expect(result.totalContracted).toBe(60_000);
     expect(result.totalProjectedYield).toBe(210_000);       // 180,000 + 30,000

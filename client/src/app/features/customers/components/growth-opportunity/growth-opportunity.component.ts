@@ -52,6 +52,9 @@ export class GrowthOpportunityComponent {
     yieldEstimates: this.yieldEstimates(),
     harvestWindows: this.appState.harvestWindows(),
     year: this.plantingYear(),
+    // Lets tonnage contracts (soybeans by the ton, mostly) count toward bushels instead of being
+    // dropped. Already loaded app-wide for the contracts table's ticket conversion.
+    conversions: this.appState.commodityConversions(),
   }));
 
   /** True when there are intentions but no yield estimate has been entered for any of them — the
@@ -88,14 +91,11 @@ export class GrowthOpportunityComponent {
       items.push(`Last contact was ${days} days ago — schedule a follow-up to keep the relationship warm.`);
     }
 
-    // Uncontracted bushels are only meaningful when the commodities share a unit; otherwise the
-    // per-commodity rows above already tell the story without a bogus combined total.
-    if (!cov.hasMixedUnits && cov.bushelsAvailable > 0 && cov.totalProjectedYield > 0) {
-      const unit = cov.totalUnit ?? 'bu';
+    if (cov.bushelsAvailable > 0 && cov.totalProjectedYield > 0) {
       const bushels = cov.bushelsAvailable.toLocaleString(undefined, {
         minimumFractionDigits: 2, maximumFractionDigits: 2,
       });
-      items.push(`${bushels} ${unit} of projected production are still uncontracted.`);
+      items.push(`${bushels} ${cov.totalUnit} of projected production are still uncontracted.`);
     }
 
     if (this.hasNoYieldEstimates()) {

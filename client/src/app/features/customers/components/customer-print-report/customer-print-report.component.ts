@@ -8,7 +8,7 @@ import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDes
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate, Ticket } from '@models';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
-import { findYieldEstimate } from '@shared/utils/production-coverage';
+import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
 
@@ -276,8 +276,12 @@ export class CustomerPrintReportComponent {
     }));
   });
 
+  /** Contracted volume in BUSHELS. Not a raw quantity sum — a producer's commodity groups carry
+   *  processed products priced by weight (soybean meal in short tons, popcorn by the pound), and
+   *  adding those in produced a "bushels" KPI that disagreed with the Growth Opportunity panel for
+   *  the same producer. Same helper, same answer. */
   readonly totalContracted = computed(() =>
-    this.openContracts().reduce((sum, c) => sum + (c.quantity ?? 0), 0)
+    sumInBushels(this.openContracts(), buildLbsPerBushelMap(this.appState.commodityConversions())).contracted
   );
 
   readonly totalStored = computed(() =>

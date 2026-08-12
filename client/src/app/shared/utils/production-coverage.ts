@@ -1,4 +1,4 @@
-import { Commodity, Contract, DashboardPlantingEstimate, HarvestWindow, PlantingIntention } from '@models';
+import { Commodity, CommodityConversion, Contract, DashboardPlantingEstimate, HarvestWindow, PlantingIntention } from '@models';
 
 /**
  * Projected production vs. bushels contracted, per commodity, for one producer and one season.
@@ -14,13 +14,55 @@ import { Commodity, Contract, DashboardPlantingEstimate, HarvestWindow, Planting
  * currently use divergent yield lookups and can disagree about the same producer.
  */
 
-/** Fallback when a contract carries no unit. The overwhelming majority of contracts are bushels. */
-const DEFAULT_UNIT = 'bu';
+/** Fallback when a contract carries no unit. 85% of contracts are bushels, and the rows that carry
+ *  no unit also carry no commodity group, so they can't match a planting category anyway. */
+const DEFAULT_UNIT = 'BU';
+
+/**
+ * Every spelling that means bushels. ODS `QuantityUom` holds the two-letter code `BU`, but the
+ * column is 16 chars and the Contract model's own comment says 'Usually "bushels"' — so accept the
+ * long forms too. Getting this wrong is the expensive direction: an unrecognised bushel spelling
+ * would be treated as a unit we can't convert and its volume would drop out of the total.
+ */
+const BUSHEL_UNITS = new Set(['BU', 'BUS', 'BSH', 'BUSHEL', 'BUSHELS']);
+
+/**
+ * Pounds in one of each MASS unit contracts are written in, so a tonnage contract can be expressed
+ * in bushels: bushels = quantity × lbsPerUnit ÷ lbsPerBushel.
+ *
+ * Only mass units are here, deliberately. GL (gallons), EA (each) and RC have no bushel equivalent —
+ * they appear exclusively on Feed & Fert Ingredients, Currency and Transportation contracts, which
+ * can never match a planting-intention crop, so within this calculation they don't arise.
+ */
+const LBS_PER_MASS_UNIT: Record<string, number> = {
+  LB: 1,
+  CW: 100,          // hundredweight
+  ST: 2000,         // short ton
+  MT: 2204.6226,    // metric tonne
+  KG: 2.2046226,
+};
+
+/**
+ * Plausible range for a lb-per-bushel factor, and the load-bearing guard in this file.
+ *
+ * GNP024's `Pounds_To_Commodity_Unit` is pounds per the commodity's OWN standard unit, not per
+ * bushel — verified against its `Commodity_Std_Unit_Measure` column. Bushel commodities carry a real
+ * lb/bu figure (canola 50, millet 50, corn 56, sorghum 56, wheat 60, soybeans 60), but a ton-based
+ * commodity carries 2000, a tonne 2204.62, a pound 1.
+ *
+ * That matters because the non-bushel contracts sitting inside grain commodity GROUPS are not grain:
+ * they're soybean meal (480M, SBMO, SBMB), soybean oil (BOIL), popcorn by the pound (POP), cracked
+ * corn (CKYC). Converting one of those with its own factor would pass the quantity through unchanged
+ * and count 318 tons of MEAL as 318 bushels of soybeans. Rejecting factors outside this band is what
+ * stops that — everything real falls outside it, so those contracts are excluded and reported.
+ */
+const MIN_LBS_PER_BUSHEL = 25;
+const MAX_LBS_PER_BUSHEL = 80;
 
 export interface CommodityCoverage {
   /** Broad category ("Corn", "Wheat"), resolved from the Commodities lookup. */
   commodity: string;
-  /** Total contracted volume in {@link unit}. */
+  /** Total contracted volume in {@link unit}, with tonnage/pound contracts converted to bushels. */
   contracted: number;
   /** Acres × yield estimate. NULL when no yield estimate matched — NOT zero: "we don't know" and
    *  "they've sold none of it" are opposite conclusions and must not render identically. */
@@ -31,25 +73,25 @@ export interface CommodityCoverage {
   percentage: number | null;
   /** Bushels still available to contract. Null when projectedYield is unknown; never negative. */
   available: number | null;
-  /** The unit these contracts are actually denominated in — bu, CWT, tons, lbs. */
+  /** The unit `contracted` is expressed in — "bu" once mass units have been converted. */
   unit: string;
-  /** True when this commodity's contracts span more than one unit, so `contracted` covers only the
-   *  dominant one. The caller must surface this rather than presenting a single total. */
-  hasMixedUnits: boolean;
+  /** Contracts left OUT of `contracted` because their unit has no bushel equivalent, or because no
+   *  trustworthy lb-per-bushel factor was available. Zero in normal operation; when non-zero the
+   *  caller must say so rather than presenting the figure as complete. */
+  excludedContracts: number;
 }
 
 export interface ProductionCoverage {
   contractYear: number;
   totalContracted: number;
   totalProjectedYield: number;
-  /** Total contracted ÷ total projected, as a percentage. Meaningless when units differ, so it is
-   *  null in that case (see {@link hasMixedUnits}). */
+  /** Total contracted ÷ total projected, as a percentage. Null only when there is nothing projected. */
   marketSharePercentage: number | null;
   bushelsAvailable: number;
-  /** The single unit shared by every commodity, or null when they differ. */
-  totalUnit: string | null;
-  /** True when the commodities don't share one unit — totals can't legitimately be added. */
-  hasMixedUnits: boolean;
+  /** The unit the totals are expressed in — always "bu", since everything comparable is converted. */
+  totalUnit: string;
+  /** Contracts excluded across all commodities because they couldn't be expressed in bushels. */
+  excludedContracts: number;
   byCommodity: CommodityCoverage[];
 }
 
@@ -61,6 +103,21 @@ export interface ProductionCoverageInput {
   harvestWindows: HarvestWindow[];
   /** Planting year to scope to. 0 means "all years". */
   year: number;
+  /** lb-per-bushel factors from ctrm.vw_GNP024, keyed by commodity code — used to express tonnage
+   *  and pound contracts in bushels. Omit and non-bushel contracts are excluded instead. */
+  conversions?: CommodityConversion[];
+}
+
+/**
+ * lb-per-bushel by commodity code, from the GNP024 rows. Every screen that totals contracted volume
+ * should build this once and pass it to {@link sumInBushels}, so they all agree.
+ */
+export function buildLbsPerBushelMap(conversions: readonly CommodityConversion[] | undefined): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const conv of conversions ?? []) {
+    if (conv.commodityCode) map.set(conv.commodityCode.trim().toUpperCase(), conv.lbsPerUnit);
+  }
+  return map;
 }
 
 export function buildProductionCoverage(input: ProductionCoverageInput): ProductionCoverage {
@@ -131,9 +188,12 @@ export function buildProductionCoverage(input: ProductionCoverageInput): Product
     }
   }
 
+  // lb-per-bushel by commodity code, so tonnage contracts can be expressed in bushels.
+  const lbsPerBushelByCode = buildLbsPerBushelMap(input.conversions);
+
   const byCommodity: CommodityCoverage[] = Array.from(cropMap.values()).map(entry => {
     const matching = contracts.filter(c => contractMatchesSeason(c, entry.category));
-    const { contracted, unit, hasMixedUnits } = sumByUnit(matching);
+    const { contracted, unit, excludedContracts } = sumInBushels(matching, lbsPerBushelByCode);
     const projectedYield = entry.projectedYield;
 
     return {
@@ -145,14 +205,11 @@ export function buildProductionCoverage(input: ProductionCoverageInput): Product
         : null,
       available: projectedYield != null ? Math.max(0, projectedYield - contracted) : null,
       unit,
-      hasMixedUnits,
+      excludedContracts,
     };
   });
 
-  // Totals are only meaningful when every commodity is denominated the same way. Bushels of corn
-  // plus hundredweight of canola is not a number.
-  const units = new Set(byCommodity.map(c => c.unit));
-  const hasMixedUnits = units.size > 1 || byCommodity.some(c => c.hasMixedUnits);
+  // Everything comparable is now in bushels, so the totals are a real sum.
   const totalContracted = byCommodity.reduce((s, c) => s + c.contracted, 0);
   const totalProjectedYield = byCommodity.reduce((s, c) => s + (c.projectedYield ?? 0), 0);
 
@@ -160,12 +217,12 @@ export function buildProductionCoverage(input: ProductionCoverageInput): Product
     contractYear: year,
     totalContracted,
     totalProjectedYield,
-    marketSharePercentage: !hasMixedUnits && totalProjectedYield > 0
+    marketSharePercentage: totalProjectedYield > 0
       ? (totalContracted / totalProjectedYield) * 100
       : null,
     bushelsAvailable: Math.max(0, totalProjectedYield - totalContracted),
-    totalUnit: units.size === 1 ? [...units][0] : null,
-    hasMixedUnits,
+    totalUnit: 'bu',
+    excludedContracts: byCommodity.reduce((s, c) => s + c.excludedContracts, 0),
     byCommodity,
   };
 }
@@ -199,30 +256,56 @@ export function findYieldEstimate(
 }
 
 /**
- * Totals a commodity's contracts WITHOUT adding across units. Contracts are stored in their native
- * QuantityUom (bu / CWT / tons / lbs) and nothing in the app normalizes them, so a naive sum quietly
- * mixes them and the UI then labels the result "bu". Where units differ, the largest group wins and
- * the caller is told, rather than producing a confidently wrong total.
+ * Totals a commodity's contracts IN BUSHELS, converting the mass units some grain is contracted in.
+ *
+ * Contracts are stored in their native QuantityUom and nothing else in the app normalizes them, so a
+ * naive sum used to add short tons into a figure labelled "bu".
+ *
+ * On today's data no conversion actually occurs: every non-bushel contract inside a grain commodity
+ * group is a processed product (meal, oil, popcorn) whose factor fails the plausibility guard, so it
+ * is excluded. The conversion is kept for the legitimate case — a genuinely bushel-denominated crop
+ * contracted by weight, e.g. soybeans at 60 lb/bu sold in short tons — which the guard would accept.
+ *
+ * A contract is excluded (and counted) rather than approximated when its unit isn't mass-based or no
+ * trustworthy lb-per-bushel factor exists — silently dropping volume is bad, but inventing it is worse.
  */
-function sumByUnit(contracts: Contract[]): { contracted: number; unit: string; hasMixedUnits: boolean } {
-  if (contracts.length === 0) return { contracted: 0, unit: DEFAULT_UNIT, hasMixedUnits: false };
-
-  const totals = new Map<string, number>();
-  for (const c of contracts) {
-    const unit = (c.unit || DEFAULT_UNIT).trim() || DEFAULT_UNIT;
-    totals.set(unit, (totals.get(unit) ?? 0) + (c.quantity || 0));
-  }
-
-  // Largest group wins; first-seen breaks ties.
-  let unit = DEFAULT_UNIT;
+export function sumInBushels(
+  contracts: Contract[],
+  lbsPerBushelByCode: Map<string, number>,
+): { contracted: number; unit: string; excludedContracts: number } {
   let contracted = 0;
-  let first = true;
-  for (const [u, total] of totals) {
-    if (first || total > contracted) {
-      unit = u;
-      contracted = total;
-      first = false;
-    }
+  let excludedContracts = 0;
+
+  for (const c of contracts) {
+    const bushels = quantityInBushels(c, c.quantity || 0, lbsPerBushelByCode);
+    if (bushels == null) excludedContracts++;
+    else contracted += bushels;
   }
-  return { contracted, unit, hasMixedUnits: totals.size > 1 };
+
+  return { contracted, unit: 'bu', excludedContracts };
+}
+
+/**
+ * Expresses ONE quantity, denominated in `contract.unit`, in bushels. Returns null when it can't be —
+ * an inconvertible unit, or no trustworthy lb-per-bushel factor for the commodity.
+ *
+ * Takes the quantity separately from the contract so callers can convert something other than the
+ * contract's face value — the unshipped balance, for instance, which is in the same unit.
+ */
+export function quantityInBushels(
+  contract: Contract,
+  quantity: number,
+  lbsPerBushelByCode: Map<string, number>,
+): number | null {
+  const unit = (contract.unit || DEFAULT_UNIT).trim().toUpperCase() || DEFAULT_UNIT;
+  if (BUSHEL_UNITS.has(unit)) return quantity;
+
+  const lbsPerUnit = LBS_PER_MASS_UNIT[unit];
+  const lbsPerBushel = lbsPerBushelByCode.get((contract.commodityCode || '').trim().toUpperCase());
+  const usableFactor = lbsPerBushel != null
+    && lbsPerBushel >= MIN_LBS_PER_BUSHEL
+    && lbsPerBushel <= MAX_LBS_PER_BUSHEL;
+
+  if (lbsPerUnit == null || !usableFactor) return null;
+  return (quantity * lbsPerUnit) / lbsPerBushel!;
 }

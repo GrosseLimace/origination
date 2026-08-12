@@ -14,7 +14,7 @@ import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate } from '@models';
 import { commodityChipClass } from '@shared/utils/commodity-color';
-import { findYieldEstimate } from '@shared/utils/production-coverage';
+import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 import { plantingChips, plantingQueryScope, PlantingChip, isIrrigated, isDryland, isDoubleCrop } from '@shared/utils/planting-chips';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -363,8 +363,11 @@ export class BuildListComponent {
     }
     // Contract detail filters
     if (r.contractQuantityOver != null && r.contractQuantityOver > 0) {
+      // The refine is expressed in bushels, so compare in bushels — a raw sum counted tonnage at
+      // face value and excluded producers who actually cleared the threshold.
+      const lbsPerBushelByCode = buildLbsPerBushelMap(this.appState.commodityConversions());
       list = list.filter(c => {
-        const totalQty = getContracts(c).reduce((sum, ct) => sum + (ct.quantity ?? 0), 0);
+        const totalQty = sumInBushels(getContracts(c), lbsPerBushelByCode).contracted;
         return totalQty > r.contractQuantityOver!;
       });
     }
@@ -2530,6 +2533,7 @@ export class BuildListComponent {
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       commodities: this.appState.commodities(),
+      commodityConversions: this.appState.commodityConversions(),
       currentUserDisplayName: account?.name ?? '',
       currentUserUsername: account?.username ?? ''
     };
@@ -2951,14 +2955,27 @@ export class BuildListComponent {
 
       const allCustomers = this.customers();
 
-      // Helper: check if a contract covers a specific crop
-      const contractMatchesCrop = (ct: Contract, crop: string): boolean => {
+      // Same conversion table the producer page uses, so contracted bushels agree across screens.
+      const lbsPerBushelByCode = buildLbsPerBushelMap(this.appState.commodityConversions());
+
+      /**
+       * Does this contract cover the planting crop? Matched on the resolved commodity CATEGORY, the
+       * same join the producer page's Growth Opportunity panel uses.
+       *
+       * It used to match on substrings in either direction, which quietly pulled in different
+       * products: planting crop "YC" matched commodity code "CKYC" (cracked corn) and "SOR" matched
+       * "CSOR", because one string contains the other.
+       */
+      const contractMatchesCrop = (ct: Contract, cropCategory: string): boolean => {
+        const target = cropCategory.trim().toUpperCase();
+        if (!target) return false;
         const code = (ct.commodityCode || '').trim().toUpperCase();
-        const desc = (ct.commodityDescription || '').trim().toUpperCase();
-        const group = (ct.commodityGroup || '').trim().toUpperCase();
-        return code.includes(crop) || crop.includes(code) ||
-               desc.includes(crop) || crop.includes(desc) ||
-               group.includes(crop) || crop.includes(group);
+        // Exact code match covers the case where the planting crop isn't in dbo.Commodities either,
+        // so its "category" fell back to the raw code — otherwise that producer would match nothing.
+        if (code && code === target) return true;
+        const category = (codeToCategory.get(code) || ct.commodityGroup || ct.commodityDescription || code || '')
+          .trim().toUpperCase();
+        return category === target;
       };
 
       if (lq.includes('planting') && (lq.includes('no contract') || lq.includes('no active contract'))) {
@@ -2968,7 +2985,7 @@ export class BuildListComponent {
           if (!plantings) return false;
           const custContracts = contractsByCustomer.get(c.scoularId!) || [];
           return plantings.some(p =>
-            !custContracts.some(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.crop))
+            !custContracts.some(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category))
           );
         }));
       } else if (lq.includes('under') && lq.includes('percent contracted')) {
@@ -2986,9 +3003,12 @@ export class BuildListComponent {
             const yieldEst = findYieldEstimate(allEstimates, p.type, p.category, p.year);
             if (!yieldEst) return false; // can't calculate without a season target
             const estimatedProduction = p.acres * yieldEst;
-            const contractedBu = custContracts
-              .filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.crop))
-              .reduce((sum, ct) => sum + (ct.quantity ?? 0), 0);
+            // Bushels, not raw quantity: contracts for meal / oil / popcorn sit in the same
+            // commodity group but are priced by weight, and adding them in would overstate coverage
+            // and drop this producer off the very list that should surface them.
+            const { contracted: contractedBu } = sumInBushels(
+              custContracts.filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category)),
+              lbsPerBushelByCode);
             const coverage = estimatedProduction > 0 ? contractedBu / estimatedProduction : 0;
             return coverage < threshold;
           });
@@ -3005,9 +3025,9 @@ export class BuildListComponent {
             const yieldEst = findYieldEstimate(allEstimates, p.type, p.category, p.year);
             if (!yieldEst) continue;
             const estimatedProduction = p.acres * yieldEst;
-            const contractedBu = custContracts
-              .filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.crop))
-              .reduce((sum, ct) => sum + (ct.quantity ?? 0), 0);
+            const { contracted: contractedBu } = sumInBushels(
+              custContracts.filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category)),
+              lbsPerBushelByCode);
             totalGap += Math.max(0, estimatedProduction - contractedBu);
           }
           if (totalGap > 0) customerGaps.push({ customer: c, gap: totalGap });

@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Customer, Contract, Ticket, Note, NoteLastContact, PlantingIntention, StoredGrain, RefinementFilters, Commodity, CommodityConversion } from '@models';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
+import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
 
@@ -18,6 +19,10 @@ export interface NlqFilterContext {
   plantingIntentions: PlantingIntention[];
   storedGrain: StoredGrain[];
   commodities?: Commodity[];
+  /** lb-per-bushel factors (ctrm.vw_GNP024). Needed by quantity thresholds phrased in bushels —
+   *  contract quantities are in the commodity's own unit, so tonnage has to be converted before a
+   *  "more than N bushels" comparison means anything. */
+  commodityConversions?: CommodityConversion[];
   /** Current user's MSAL display name (e.g. "Caden Egr"). Optional — used by author-scoped
    *  contact / note filters to recognize "by me" notes regardless of whether the API resolved
    *  CreatedBy from UPN to display name. */
@@ -1259,7 +1264,7 @@ export class NlqFilterService {
     result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers, customerIdsWithNotes, context.currentUserDisplayName, context.currentUserUsername);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
     result = this.applyPlantingFilters(lowerQuery, result, context.plantingIntentions);
-    result = this.applyContractFilters(lowerQuery, result, context.contracts);
+    result = this.applyContractFilters(lowerQuery, result, context.contracts, context.commodityConversions);
     result = this.applyMultiCommodityContractFilter(lowerQuery, result, context.contracts);
     result = this.applyTicketFilters(lowerQuery, result, context.tickets, context.contracts);
     result = this.applyQuarterDateFilter(lowerQuery, result, context.tickets);
@@ -2427,7 +2432,12 @@ export class NlqFilterService {
   // CONTRACT FILTER (existing + quantity, value, price, status, dates)
   // ============================================================
 
-  private applyContractFilters(lowerQuery: string, result: Customer[], contracts: Contract[]): Customer[] {
+  private applyContractFilters(
+    lowerQuery: string,
+    result: Customer[],
+    contracts: Contract[],
+    commodityConversions?: CommodityConversion[],
+  ): Customer[] {
     // Open contracts (closedDate is null) — matches the home page / customer profile contracts tab.
     // Status-specific queries (fulfilled, cancelled) use the full set which includes recent closed contracts.
     const openByCustomer = new Map<string, Contract[]>();
@@ -2555,8 +2565,12 @@ export class NlqFilterService {
     const contractQty = contractQtyMatch?.[1] || contractQtyMatch2?.[1];
     if (contractQty) {
       const minQty = this.parseQuantity(contractQty);
+      // The phrase says bushels, so the comparison has to be in bushels. A raw sum counted 300 short
+      // tons of soybean meal as 300 against the threshold instead of ~10,000 bu, which dropped
+      // producers who genuinely cleared it.
+      const lbsPerBushelByCode = buildLbsPerBushelMap(commodityConversions);
       result = result.filter(c => {
-        const total = getOpenContracts(c).reduce((sum, ct) => sum + (ct.quantity || 0), 0);
+        const total = sumInBushels(getOpenContracts(c), lbsPerBushelByCode).contracted;
         return total >= minQty;
       });
     }
