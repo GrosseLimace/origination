@@ -8,6 +8,7 @@ import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDes
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate, Ticket } from '@models';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
+import { findYieldEstimate } from '@shared/utils/production-coverage';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
 
@@ -106,6 +107,10 @@ export class CustomerPrintReportComponent {
           this.showContracts.set(this.contracts().filter(c => !c.closedDate).length > 0);
           this.showTickets.set(this.tickets().filter(t => !t.isApplied).length > 0);
           this.showPlanting.set(this.plantingIntentions().length > 0);
+          // Every year on by default, so opening the dialog reports what it always has, with the
+          // picker collapsed until the user goes looking for it.
+          this.selectedPlantingYears.set(this.plantingYears());
+          this.plantingYearsExpanded.set(false);
           this.showStorage.set(this.storedGrain().length > 0);
           this.showPricingLines.set(this.visiblePricingLines().length > 0);
         });
@@ -223,11 +228,41 @@ export class CustomerPrintReportComponent {
       }));
   });
 
+  /** Crop years this producer has intentions for, newest first. */
+  readonly plantingYears = computed(() =>
+    [...new Set(this.plantingIntentions().map(pi => pi.plantingYear).filter(Boolean))]
+      .sort((a, b) => b - a)
+  );
+
+  /** Years the printed report includes. Defaults to all of them when the dialog opens; unchecking a
+   *  year drops it from the acres, the projection and the crop breakdown alike — otherwise a
+   *  multi-season producer's totals silently blend seasons that aren't comparable. */
+  readonly selectedPlantingYears = signal<number[]>([]);
+
+  /** The year checkboxes are collapsed until asked for — most reports want every year, and an
+   *  always-open list pushes the other detail sections out of view. */
+  readonly plantingYearsExpanded = signal(false);
+
+  isPlantingYearSelected(year: number): boolean {
+    return this.selectedPlantingYears().includes(year);
+  }
+
+  togglePlantingYear(year: number, include: boolean): void {
+    this.selectedPlantingYears.update(years =>
+      include ? [...new Set([...years, year])].sort((a, b) => b - a) : years.filter(y => y !== year));
+  }
+
+  /** Intentions limited to the chosen years — the single source every planting figure below reads. */
+  readonly includedPlantingIntentions = computed(() => {
+    const years = new Set(this.selectedPlantingYears());
+    return this.plantingIntentions().filter(pi => years.has(pi.plantingYear));
+  });
+
   /** Planting intentions grouped by crop then sorted by planting year desc */
   readonly plantingByCrop = computed(() => {
     const commodities = this.commodities();
     const map = new Map<string, { crop: string; intentions: PlantingIntention[] }>();
-    const sorted = [...this.plantingIntentions()].sort((a, b) => b.plantingYear - a.plantingYear);
+    const sorted = [...this.includedPlantingIntentions()].sort((a, b) => b.plantingYear - a.plantingYear);
     for (const pi of sorted) {
       const commodity = commodities.find(c => c.code === pi.crop);
       const category = commodity?.category || pi.crop;
@@ -250,17 +285,18 @@ export class CustomerPrintReportComponent {
   );
 
   readonly projectedProductionBu = computed(() => {
-    const intentions = this.plantingIntentions();
+    const intentions = this.includedPlantingIntentions();
     const commodities = this.commodities();
     const yieldEstimates = this.yieldEstimates();
     if (intentions.length === 0) return 0;
     return intentions.reduce((sum, pi) => {
       const commodity = commodities.find(c => c.code === pi.crop);
       const category = commodity?.category || pi.crop;
-      const cropKey = [pi.type, category].filter(Boolean).join(' ');
-      const est = yieldEstimates.find(ye => ye.crop === cropKey)
-        || yieldEstimates.find(ye => ye.crop === category);
-      return sum + (pi.acres ?? 0) * (est?.yieldEstimate ?? 0);
+      // Each intention is projected with ITS OWN season's estimate. Previously this matched on crop
+      // name alone, so a year with no season target silently borrowed another year's bu/ac — the
+      // printed sheet then showed a projection the Growth Opportunity panel refuses to make.
+      const est = findYieldEstimate(yieldEstimates, pi.type, category, pi.plantingYear);
+      return sum + (pi.acres ?? 0) * (est ?? 0);
     }, 0);
   });
 
@@ -282,7 +318,7 @@ export class CustomerPrintReportComponent {
   });
 
   readonly cropBreakdown = computed(() => {
-    const intentions = this.plantingIntentions();
+    const intentions = this.includedPlantingIntentions();
     const contracts = this.openContracts().filter(c => this.getCalculatedStatus(c) !== 'Cancelled');
     const commodities = this.commodities();
     const yieldEstimates = this.yieldEstimates();
@@ -300,10 +336,9 @@ export class CustomerPrintReportComponent {
       entry.acres += pi.acres ?? 0;
       const commodity = commodities.find(c => c.code === pi.crop);
       const category = commodity?.category || pi.crop;
-      const cropKey = [pi.type, category].filter(Boolean).join(' ');
-      const est = yieldEstimates.find(ye => ye.crop === cropKey)
-        || yieldEstimates.find(ye => ye.crop === category);
-      entry.projected += (pi.acres ?? 0) * (est?.yieldEstimate ?? 0);
+      // Same rule as above: an intention only projects off its own season's estimate.
+      const est = findYieldEstimate(yieldEstimates, pi.type, category, pi.plantingYear);
+      entry.projected += (pi.acres ?? 0) * (est ?? 0);
       cropMap.set(displayName, entry);
     }
     for (const c of contracts) {
@@ -514,15 +549,13 @@ export class CustomerPrintReportComponent {
 
   readonly anyTicketWheat = computed(() => this.ticketsByCommodity().some(g => g.isWheat || g.avgProtein != null));
 
+  /** Projected bushels for one intention row. Returns 0 when its season has no yield estimate —
+   *  the estimate is never taken from a different year (see findYieldEstimate). */
   getPlantingYield(pi: PlantingIntention): number {
-    const commodities = this.commodities();
-    const yieldEstimates = this.yieldEstimates();
-    const commodity = commodities.find(c => c.code === pi.crop);
+    const commodity = this.commodities().find(c => c.code === pi.crop);
     const category = commodity?.category || pi.crop;
-    const cropKey = [pi.type, category].filter(Boolean).join(' ');
-    const est = yieldEstimates.find(ye => ye.crop === cropKey)
-      || yieldEstimates.find(ye => ye.crop === category);
-    return Math.round((pi.acres ?? 0) * (est?.yieldEstimate ?? 0));
+    const est = findYieldEstimate(this.yieldEstimates(), pi.type, category, pi.plantingYear);
+    return Math.round((pi.acres ?? 0) * (est ?? 0));
   }
 
   formatDeliveryPeriod(start?: Date | string, end?: Date | string): string {
@@ -781,7 +814,7 @@ export class CustomerPrintReportComponent {
     }
 
     // Planting Intentions (grouped by crop; crop band + total acres, header once)
-    if (this.showPlanting() && this.plantingIntentions().length > 0) {
+    if (this.showPlanting() && this.includedPlantingIntentions().length > 0) {
       const plantingColgroup = `<colgroup><col style="width:40%;" /><col style="width:30%;" /><col style="width:30%;" /></colgroup>`;
       const plantingThead = `<thead><tr class="table-header">
         <th style="padding:5px 8px;border:1px solid #e5e7eb;">Type</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Acres</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Crop Year</th>

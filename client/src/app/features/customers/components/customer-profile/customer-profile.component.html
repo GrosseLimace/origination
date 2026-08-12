@@ -382,13 +382,20 @@
           [customerId]="customer().id">
         </app-contract-pacing-card>
 
-        <!-- AI Growth Forecast -->
-        <app-ai-growth-forecast
+        <!-- Growth Opportunity — projected production vs. what's contracted. Lived on the Planting
+             tab until it moved here, so all the coverage analysis sits in one place. -->
+        <app-growth-opportunity
           [customer]="customer()"
           [contracts]="contracts()"
-          [plantingIntentions]="plantingIntentions()"
-          [notes]="notes()">
-        </app-ai-growth-forecast>
+          [plantingIntentions]="visiblePlantingIntentions()"
+          [notes]="notes()"
+          [commodities]="commodities()"
+          [yieldEstimates]="yieldEstimates()"
+          [plantingYear]="selectedPlantingYear()"
+          [availableYears]="availablePlantingYears"
+          [isLoadingEstimates]="isLoadingEstimates()"
+          (yearSelect)="selectPlantingYear($event)">
+        </app-growth-opportunity>
       }
 
       <!-- Activity Summary - Always visible -->
@@ -431,67 +438,14 @@
               <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingUnappliedTickets()" [openCrop]="openTicketCrop()"></app-tickets-table>
             }
             @case ('planting') {
-              <!-- Contract Percentage Summary for this planting year -->
-              @if (isLoadingEstimates()) {
-                <div class="mb-4 flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500 px-1">
-                  <svg class="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
-                  </svg>
-                  Calculating contract percentage...
-                </div>
-              } @else if (plantingIntentions().length > 0) {
-                <div class="mb-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                  <!-- Per-commodity breakdown -->
-                  @if (contractMetrics().byCommodity.length > 0) {
-                    <div class="space-y-3">
-                      @for (crop of contractMetrics().byCommodity; track crop.commodity) {
-                        <div class="flex items-center gap-4 relative group">
-                          <div class="w-24 text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{{ crop.commodity }}</div>
-                          <div class="flex-1">
-                            <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                              <div class="h-full bg-scoular-green-accessible rounded-full transition-all" [style.width.%]="crop.percentage > 100 ? 100 : crop.percentage"></div>
-                            </div>
-                          </div>
-                          <div class="w-14 text-right text-sm font-bold cursor-default" [class]="crop.percentage > 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">{{ crop.percentage | number:'1.0-0' }}%</div>
-                          <div class="w-40 text-xs text-gray-500 dark:text-gray-400 text-right">{{ crop.contracted | number }} / {{ crop.projectedYield | number }} bu</div>
-                          <!-- Hover tooltip -->
-                          <div class="absolute bottom-full left-1/4 mb-2 hidden group-hover:block z-50 w-72 pointer-events-none">
-                            <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg text-left space-y-1">
-                              <p class="text-gray-200 font-medium">{{ crop.commodity }} — {{ crop.percentage | number:'1.0-0' }}% contracted</p>
-                              <p class="text-gray-400">{{ crop.contracted | number }} bu contracted / {{ crop.projectedYield | number }} bu projected yield</p>
-                              <p class="text-gray-400">Projected = planting acres × yield estimate. Contracts matched by delivery date within harvest window.</p>
-                              <p class="text-gray-400">{{ crop.available | number }} bu available to contract</p>
-                            </div>
-                            <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 ml-16 -mt-1"></div>
-                          </div>
-                        </div>
-                      }
-                    </div>
-                    <!-- Totals row (only when 2+ commodities) -->
-                    @if (contractMetrics().byCommodity.length > 1) {
-                      <div class="border-t border-gray-300 dark:border-gray-600 mt-3 pt-3">
-                        <div class="flex items-center gap-4">
-                          <div class="w-24 text-sm font-medium text-gray-700 dark:text-gray-300">Total</div>
-                          <div class="flex-1">
-                            <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                              <div class="h-full bg-scoular-green-accessible rounded-full transition-all" [style.width.%]="marketSharePercentage > 100 ? 100 : marketSharePercentage"></div>
-                            </div>
-                          </div>
-                          <div class="w-14 text-right text-sm font-bold" [class]="marketSharePercentage > 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">{{ marketSharePercentage | number:'1.0-0' }}%</div>
-                          <div class="w-40 text-xs text-gray-500 dark:text-gray-400 text-right">{{ totalContracted | number }} / {{ totalProjectedYield | number }} bu</div>
-                        </div>
-                      </div>
-                    }
-                  }
-                </div>
-              }
+              <!-- The projected-production vs. contracted breakdown that used to sit here now lives
+                   in the Growth Opportunity panel under Producer Insights, so this tab stays focused
+                   on entering acres. -->
               <app-planting-intentions-table
-                [plantingIntentions]="plantingIntentions()"
+                [plantingIntentions]="visiblePlantingIntentions()"
                 [customer]="customer()"
                 [tradeUnits]="selectedTradeUnits()"
                 [customerCommodityCodes]="getEffectiveCommodities()"
-                [yieldEstimateCrops]="yieldEstimateCrops()"
                 [selectedYear]="selectedPlantingYear()"
                 [isLoading]="isLoadingPlanting()"
                 (yearSelect)="selectPlantingYear($event)"
