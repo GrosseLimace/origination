@@ -28,8 +28,39 @@ The page is a 3-column responsive grid at large screens, single-column at mobile
 | **Trade Unit Selector** | Top-of-page selector that drives `selectedTradeUnits()` for the entire app. |
 | **Empty state** | When no producer is selected and viewport is `lg+`, shows "Select a Producer" placeholder. |
 | **"Back to Producers"** | Mobile-only button (`lg:hidden`) that returns to the list view from a profile view. |
+| **Producer Insights** (collapsible, inside the profile) | Hidden by default; opened by the "Producer Insights" button or the Harvest Contract Pace box. Contains the three analysis panels below. |
 
 The `CustomerProfileComponent` ([`client/src/app/features/customers/components/customer-profile/customer-profile.component.ts`](../../client/src/app/features/customers/components/customer-profile/customer-profile.component.ts)) renders four tabs identified by the literal strings `'contracts'`, `'tickets'`, `'planting'`, `'storage'` (default `'contracts'`).
+
+### Producer Insights panels
+
+Stacked in this order inside `@if (showProducerInsights())`:
+
+| Panel | Shows |
+| --- | --- |
+| **Producer Insights** (`producer-insights/`) | Green hero with three stat cards summarising the relationship. |
+| **Harvest Contract Pace** (`contract-pacing-card/`) | Year-over-year contracting pace per harvest window, with a per-commodity table. Fetches its own historical contracts. |
+| **Growth Opportunity** (`growth-opportunity/`) | Projected production (planting acres × yield estimate) vs. bushels contracted, per commodity, plus bushels still available and concrete action items. |
+
+**Growth Opportunity** was called "AI Growth Forecast" until 2026-08-12. Nothing about it was AI — it
+rendered a hardcoded sentence and two branches gated behind `const totalProjected = 0` that could
+never execute. It now shows the real coverage breakdown, which previously lived above the table on
+the Planting tab.
+
+Its arithmetic is [`client/src/app/shared/utils/production-coverage.ts`](../../client/src/app/shared/utils/production-coverage.ts) —
+a pure function, so it can be unit-tested and reused. Three things worth knowing about the numbers:
+
+- **Yield is not per producer.** It comes from `dbo.DashboardPlantingEstimates`, keyed
+  (trade unit, crop, planting year) and typed by hand under *Set Season Targets* on the Planting
+  Intentions dashboard. Every producer in a trade unit growing the same crop shares one bu/ac figure.
+  When no estimate exists the panel shows `—`, never `0%`.
+- **Season matching uses `Contract.CropYear`**, which is CTRM's own statement of the season. Harvest-
+  window delivery-date overlap is only a fallback for contracts with no crop year. (Overlap used to
+  be primary, which let a contract spanning a year boundary count in two seasons and made this screen
+  disagree with the dashboard.)
+- **Units are never summed together.** Contract quantities are stored in their native `QuantityUom`
+  (bu / CWT / tons / lbs) and nothing normalises them, so each commodity reports its own unit and a
+  combined total is suppressed when they differ.
 
 ## Data flow
 
@@ -58,6 +89,8 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | Customer list sub-component | `client/src/app/features/customers/components/customer-list/customer-list.component.ts` |
 | Notes sidebar sub-component | `client/src/app/features/customers/components/notes/customer-notes.component.ts` |
 | Per-tab tables | `customer-profile/contracts-table/`, `tickets-table/`, `planting-intentions-table/`, `stored-grain-table/` |
+| Producer Insights panels | `client/src/app/features/customers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` |
+| Production coverage math | `client/src/app/shared/utils/production-coverage.ts` (+ `.spec.ts`) |
 | Customer map (in profile) | `client/src/app/features/customers/components/map/customer-map.component.ts` |
 | Controllers | `CustomersController`, `ContractsController`, `TicketsController`, `NotesController`, `PlantingIntentionsController`, `StoredGrainController`, `ProducerDetailsController`, `SavedListsController`, `CommoditiesController` |
 | Service methods | See `IDataService` — Customer / Contract / Ticket / Note / PlantingIntention / StoredGrain / ProducerDetails groups |

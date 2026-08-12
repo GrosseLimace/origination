@@ -247,8 +247,8 @@
             </div>
           }
 
-          <!-- Planting Intentions (grouped by crop) -->
-          @if (showPlanting() && plantingIntentions().length > 0) {
+          <!-- Planting Intentions (grouped by crop, limited to the selected crop years) -->
+          @if (showPlanting() && includedPlantingIntentions().length > 0) {
             <div style="margin-bottom: 24px;">
               <div [style.color]="accentColor()" style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Planting Intentions</div>
 
@@ -409,11 +409,47 @@
                 class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
               <span class="text-sm text-gray-700 dark:text-gray-300">Unapplied Tickets ({{ unappliedTickets().length }})</span>
             </label>
-            <label class="flex items-center gap-2.5 cursor-pointer">
-              <input type="checkbox" [checked]="showPlanting()" (change)="showPlanting.set($any($event.target).checked)"
-                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
-              <span class="text-sm text-gray-700 dark:text-gray-300">Planting Intentions ({{ plantingIntentions().length }})</span>
-            </label>
+            <!-- The year picker stays collapsed behind this row; most reports want every year, and
+                 an always-open list of checkboxes buries the other detail sections. -->
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <label class="flex items-center gap-2.5 cursor-pointer">
+                <input type="checkbox" [checked]="showPlanting()" (change)="showPlanting.set($any($event.target).checked)"
+                  class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                <span class="text-sm text-gray-700 dark:text-gray-300">Planting Intentions ({{ includedPlantingIntentions().length }})</span>
+              </label>
+              @if (showPlanting() && plantingYears().length > 1) {
+                <button type="button" (click)="plantingYearsExpanded.set(!plantingYearsExpanded())"
+                  class="inline-flex items-center justify-center h-5 w-5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 transition-colors"
+                  [attr.aria-expanded]="plantingYearsExpanded()"
+                  [attr.aria-label]="plantingYearsExpanded() ? 'Hide crop year options' : 'Choose crop years'"
+                  [attr.title]="plantingYearsExpanded() ? 'Hide crop years' : 'Choose crop years'">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                    <path d="M5 12h14"/>
+                    @if (!plantingYearsExpanded()) { <path d="M12 5v14"/> }
+                  </svg>
+                </button>
+              }
+            </div>
+            <!-- Acres, projected production and the crop breakdown all read the selected years, so a
+                 producer with two seasons on file isn't blended into one total unless you want it. -->
+            @if (showPlanting() && plantingYearsExpanded() && plantingYears().length > 1) {
+              <div class="ml-6 pl-3 border-l border-gray-200 dark:border-gray-700 space-y-2">
+                <span class="block text-xs text-gray-500 dark:text-gray-400">Crop years to include</span>
+                @for (year of plantingYears(); track year) {
+                  <label class="flex items-center gap-2.5 cursor-pointer">
+                    <input type="checkbox" [checked]="isPlantingYearSelected(year)"
+                      (change)="togglePlantingYear(year, $any($event.target).checked)"
+                      class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ year }}</span>
+                  </label>
+                }
+                @if (selectedPlantingYears().length === 0) {
+                  <p class="text-xs text-amber-600 dark:text-amber-400">
+                    No crop years selected — the Planting Intentions section will be left out.
+                  </p>
+                }
+              </div>
+            }
             <label class="flex items-center gap-2.5 cursor-pointer">
               <input type="checkbox" [checked]="showStorage()" (change)="showStorage.set($any($event.target).checked)"
                 class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />

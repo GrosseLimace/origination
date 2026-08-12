@@ -151,7 +151,6 @@ export class HomeComponent {
   readonly allCustomerPlantingIntentions = signal<PlantingIntention[]>([]);
   readonly allCustomerStoredGrain = signal<StoredGrain[]>([]);
 
-  readonly yieldEstimateCrops = signal<string[]>([]);
   readonly yieldEstimates = signal<DashboardPlantingEstimate[]>([]);
   readonly commodities = signal<Commodity[]>([]);
   readonly isLoadingYieldData = signal(false);
@@ -520,7 +519,6 @@ export class HomeComponent {
     const key = [...this.selectedTradeUnits()].sort().join(',');
     if (!key) {
       this.yieldEstimates.set([]);
-      this.yieldEstimateCrops.set([]);
       this.commodities.set([]);
       return;
     }
@@ -555,9 +553,7 @@ export class HomeComponent {
             map.set(`${est.crop}|${est.plantingYear}`, est);
           }
         }
-        const merged = [...map.values()];
-        this.yieldEstimates.set(merged);
-        this.yieldEstimateCrops.set([...new Set(merged.map(e => e.crop))]);
+        this.yieldEstimates.set([...map.values()]);
         done();
       },
       error: () => done()
