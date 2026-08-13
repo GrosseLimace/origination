@@ -43,7 +43,6 @@ public static class DpContractMappings
         StatusDescription = d.StatusDescription,
         StorageProgramCode = d.StorageProgramCode,
         StorageErrorFlag = d.StorageErrorFlag,
-        StorageErrorDescription = d.StorageErrorDescription,
-        LocationName = d.LocationName,
+        StorageErrorDescription = d.StorageErrorDescription,
     };
 }

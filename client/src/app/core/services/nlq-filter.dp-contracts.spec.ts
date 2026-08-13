@@ -34,7 +34,7 @@ function row(over: Partial<DpContract> = {}): DpContract {
     chargedThruDate: new Date('2025-12-31T00:00:00'), paidThruDate: null,
     bolDate: new Date('2025-08-20T00:00:00'), status: '2',
     statusDescription: 'INITIAL CHARGE 2 - CHARGE/BU/D', storageProgramCode: 'D25',
-    storageErrorFlag: '', storageErrorDescription: '', locationName: 'Adrian, MO',
+    storageErrorFlag: '', storageErrorDescription: '',
     ...over,
   };
 }

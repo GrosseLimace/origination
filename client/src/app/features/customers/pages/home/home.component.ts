@@ -297,8 +297,10 @@ export class HomeComponent {
         });
       }
 
-      // Same for DP contracts — the preload may not have landed yet.
-      if (this.appState.dpContracts().length === 0) {
+      // Same for DP contracts — the preload may not have landed yet. Gate on the loaded flag, not
+      // length: a per-producer merge can leave rows present without a TU-wide load having happened,
+      // and a TU with genuinely zero DP would otherwise re-fetch on every pass.
+      if (!this.appState.dpContractsLoaded()) {
         this.apiService.getDpContracts().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (data) => {
             this.dpContracts.set(data);
@@ -1260,10 +1262,10 @@ export class HomeComponent {
 
     this.apiService.getDpContractsByCustomer(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (dp) => {
-        const existing = this.dpContracts();
-        const merged = [...existing.filter(d => d.customerId !== customerId), ...dp];
-        this.dpContracts.set(merged);
-        this.appState.setDpContracts(merged);
+        // Per-producer merge, NOT a TU-wide load: it must not flip dpContractsLoaded, or Build A List
+        // would treat this one producer's rows as the whole trade unit's DP set.
+        this.appState.mergeCustomerDpContracts(customerId, dp);
+        this.dpContracts.set(this.appState.dpContracts());
         this.isLoadingDpContracts.set(false);
         this._loadCustomerData(customerId);
         dpDone = true;

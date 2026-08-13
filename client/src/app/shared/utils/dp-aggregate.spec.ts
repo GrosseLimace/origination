@@ -45,7 +45,6 @@ function makeDp(over: Partial<DpContract> = {}): DpContract {
     storageProgramCode: 'D25',
     storageErrorFlag: '',
     storageErrorDescription: '',
-    locationName: 'Adrian, MO',
     ...over,
   };
 }

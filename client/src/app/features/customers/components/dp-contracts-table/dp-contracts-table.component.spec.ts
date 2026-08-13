@@ -56,7 +56,6 @@ function makeDp(over: Partial<DpContract> = {}): DpContract {
     storageProgramCode: 'DP',
     storageErrorFlag: '',
     storageErrorDescription: '',
-    locationName: 'Adrian, MO',
     ...over,
   };
 }
@@ -251,41 +250,26 @@ describe('DpContractsTableComponent', () => {
     expect(group.positions).toHaveLength(2);
   });
 
-  it('groups by location when the mode is switched', () => {
+  it('groups strictly by commodity — there is no location dimension', () => {
+    // vw_GNTA70D1 has no elevator/facility code, so the only location signal was the trade unit the
+    // user already selected. Rows differing in nothing but trade unit stay in ONE commodity group.
     ref.setInput('dpContracts', [
-      makeDelivery('a', { crop: 'YC', locationName: 'Adrian, MO' }),
-      makeDelivery('b', { crop: 'SOY', locationName: 'Adrian, MO' }),
+      makeDelivery('a', { crop: 'YC', tradeUnitCode: '1085' }),
+      makeDelivery('b', { crop: 'YC', tradeUnitCode: '2115' }),
     ]);
-    component.setGroupMode('location');
 
     const groups = component.groups();
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].location).toBe('Adrian, MO');
-  });
-
-  it('labels a blank location as "No location"', () => {
-    ref.setInput('dpContracts', [makeDp({ locationName: '' })]);
-    component.setGroupMode('location');
-
-    expect(component.groups()[0].location).toBe('No location');
-  });
-
-  it('separates crop and location groups in "both" mode', () => {
-    ref.setInput('dpContracts', [
-      makeDelivery('a', { crop: 'YC', locationName: 'Adrian, MO' }),
-      makeDelivery('b', { crop: 'YC', locationName: 'Pratt, KS' }),
-    ]);
-    component.setGroupMode('both');
-
-    expect(component.groups()).toHaveLength(2);
+    expect(groups[0].crop).toBe('YC');
+    expect(groups[0].deliveryCount).toBe(2);
   });
 
   describe('search', () => {
     beforeEach(() => {
       ref.setInput('dpContracts', [
-        makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL84649', ticketNumber: '370285', locationName: 'Adrian, MO', chargedFromDate: new Date('2025-08-20') }),
-        makeDelivery('b', { crop: 'YSB', contractNumber: 'PCPL83903', ticketNumber: '250057', locationName: 'Pratt, KS', chargedFromDate: new Date('2025-08-05') }),
+        makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL84649', ticketNumber: '370285', chargedFromDate: new Date('2025-08-20') }),
+        makeDelivery('b', { crop: 'YSB', contractNumber: 'PCPL83903', ticketNumber: '250057', chargedFromDate: new Date('2025-08-05') }),
       ]);
     });
 
@@ -314,8 +298,8 @@ describe('DpContractsTableComponent', () => {
       expect(component.groups()[0].contracts[0].contractNumber).toBe('PCPL84649');
     });
 
-    it('matches on location', () => {
-      component.searchQuery.set('pratt');
+    it('matches on commodity', () => {
+      component.searchQuery.set('YSB');
       expect(component.groups()[0].crop).toBe('YSB');
     });
 
@@ -362,10 +346,10 @@ describe('DpContractsTableComponent', () => {
     });
   });
 
-  it('filters by ticket number, contract number, and location', () => {
+  it('filters by ticket number and contract number', () => {
     ref.setInput('dpContracts', [
-      makeDelivery('a', { ticketNumber: '100', contractNumber: 'PW 111', locationName: 'Adrian, MO' }),
-      makeDelivery('b', { ticketNumber: '200', contractNumber: 'PW 222', locationName: 'Pratt, KS' }),
+      makeDelivery('a', { ticketNumber: '100', contractNumber: 'PW 111' }),
+      makeDelivery('b', { ticketNumber: '200', contractNumber: 'PW 222' }),
     ]);
 
     component.searchQuery.set('200');
@@ -373,9 +357,6 @@ describe('DpContractsTableComponent', () => {
 
     component.searchQuery.set('PW 111');
     expect(component.groups()[0].positions.map(p => p.id)).toEqual(['a|2']);
-
-    component.searchQuery.set('pratt');
-    expect(component.groups()[0].positions.map(p => p.id)).toEqual(['b|2']);
   });
 
   it('rebuilds group totals from the matched rows when searching', () => {

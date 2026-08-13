@@ -25,7 +25,7 @@ export interface DpContract {
   ticketStatus: string;            // e.g. "U/L" (unload)
   customerId: number;      // Numeric CustomerId from dbo.Customer
   customerCode: string;    // CTRM Customer_Id (same as Customer.scoularId)
-  tradeUnitCode: string;   // Also the MbpLocationSynonym LocationId behind locationName
+  tradeUnitCode: string;   // Trade unit the position sits under
   crop: string;            // Commodity_Code
 
   quantity: number;        // Net_Quantity in quantityUom units — NOT necessarily bushels
@@ -54,7 +54,4 @@ export interface DpContract {
   storageProgramCode: string;
   storageErrorFlag: string;
   storageErrorDescription: string;
-
-  /** Resolved "City, ST"; empty when the trade unit has no curated location. */
-  locationName: string;
 }

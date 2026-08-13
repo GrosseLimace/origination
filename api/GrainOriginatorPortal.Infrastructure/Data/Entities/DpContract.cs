@@ -8,10 +8,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 /// <c>ctrm.vw_GNTA39D1</c>) so the DP Contracts tab and the Storage tab read the same way. Two
 /// necessary divergences from that entity:
 /// <list type="bullet">
-///   <item><description><see cref="LocationName"/> is a single "City, ST" string resolved in C# from
-///   <c>dbo.MbpLocationSynonym</c> (the app DB — no cross-database join is possible), not the
-///   city/state pair Storage gets from the ODS elevator master. The view carries no elevator or
-///   location code, only <see cref="TradeUnitCode"/>.</description></item>
+///   <item><description>There is NO location. Storage resolves a real facility from the ODS elevator
+///   master, but this view carries no elevator or location code — only <see cref="TradeUnitCode"/>,
+///   which is the scope the user already selected, so a location column would just restate the
+///   filter. Surfacing a true delivery point requires the elevator code being added to the ODS
+///   view.</description></item>
 ///   <item><description><see cref="Bushels"/> is nullable. The view reports quantity in whatever
 ///   <see cref="QuantityUom"/> says, so bushels are only populated when the UOM is bushels outright
 ///   or a conversion factor exists. Null means "we cannot substantiate a bushel figure" and must
@@ -127,7 +128,4 @@ public class DpContract
     public string StorageErrorFlag { get; set; } = string.Empty;
     /// <summary>Storage_Error_Desc — accompanying error text.</summary>
     public string StorageErrorDescription { get; set; } = string.Empty;
-
-    /// <summary>Resolved "City, ST" display name; empty when the trade unit has no curated location.</summary>
-    public string LocationName { get; set; } = string.Empty;
 }

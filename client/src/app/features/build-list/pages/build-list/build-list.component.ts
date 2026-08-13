@@ -1071,6 +1071,27 @@ export class BuildListComponent {
   private _dpReady = signal(false);
   /** Guards the one-shot background DP fetch so overlapping queries don't each fire one. */
   private _dpFetchInFlight = false;
+  /**
+   * Keeps the local DP copy honest against the shared cache. Two cases this covers:
+   *  - the TU preload lands AFTER this page hydrated, so the local copy is empty while appState
+   *    has rows (adopt them);
+   *  - the trade unit changed, so appState dropped its cache while this page still holds the old
+   *    TU's rows (discard them, and stop reporting ready).
+   * Without this the page can filter against stale or empty data and honestly report "no match".
+   */
+  private _dpCacheSyncEffect = effect(() => {
+    const loaded = this.appState.dpContractsLoaded();
+    const shared = this.appState.dpContracts();
+    untracked(() => {
+      if (!loaded) {
+        if (this.dpContracts().length > 0) this.dpContracts.set([]);
+        this._dpReady.set(false);
+        return;
+      }
+      if (this.dpContracts() !== shared) this.dpContracts.set(shared);
+      this._dpReady.set(true);
+    });
+  });
   /** Guards the one-shot background notes fetch so overlapping queries don't each fire one. */
   private _notesFetchInFlight = false;
   hasGenerated = signal(false);

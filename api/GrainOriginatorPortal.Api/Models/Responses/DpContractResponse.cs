@@ -70,7 +70,4 @@ public record DpContractResponse
     public string StorageProgramCode { get; init; } = string.Empty;
     public string StorageErrorFlag { get; init; } = string.Empty;
     public string StorageErrorDescription { get; init; } = string.Empty;
-
-    /// <summary>Resolved "City, ST" location; empty when the trade unit has no curated location.</summary>
-    public string LocationName { get; init; } = string.Empty;
 }

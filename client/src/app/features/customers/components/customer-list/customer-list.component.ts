@@ -445,7 +445,9 @@ export class CustomerListComponent {
     if (this.nlqFilterService.queryInvolvesStorage(query) && this.appStateService.storedGrain().length === 0) {
       missing['storedGrain'] = this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[])));
     }
-    if (this.nlqFilterService.queryInvolvesDpContracts(query) && this.appStateService.dpContracts().length === 0) {
+    // Gate on the loaded flag, not length: a per-producer merge can leave rows present without a
+    // TU-wide load, and a TU with genuinely zero DP would otherwise re-fetch every time.
+    if (this.nlqFilterService.queryInvolvesDpContracts(query) && !this.appStateService.dpContractsLoaded()) {
       missing['dpContracts'] = this.apiService.getDpContracts(tuParam).pipe(catchError(() => of([] as DpContract[])));
     }
     // Guard on the explicit ticketsLoaded flag, not `.length === 0`: tickets are no longer

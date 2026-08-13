@@ -8,8 +8,6 @@ import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { compareNumericStrings } from '@shared/utils/ticket-sort';
 import { dpDeliveryCount, dpTotalBushels, dpUnconvertedCount, dpTotalCharges } from '@shared/utils/dp-aggregate';
 
-export type DpGroupMode = 'both' | 'crop' | 'location';
-
 /** Totals shared by both accordion levels. Bushels are per-delivery; charges are per-row. */
 interface DpTotals {
   /** Every charge-type row at this level — one delivery contributes several. */
@@ -31,11 +29,10 @@ export interface DpContractSubgroup extends DpTotals {
   contractNumber: string; // e.g. "PL84649-A"; "No contract" when the row carries none
 }
 
-/** First accordion level: a commodity, a location, or both, depending on the group mode. */
+/** First accordion level: one commodity. */
 export interface DpContractGroup extends DpTotals {
-  key: string;       // unique group key (drives expand/collapse); depends on the group mode
-  crop: string;      // commodity label (shown in crop / both modes)
-  location: string;  // location label (shown in location / both modes), e.g. "Adrian, MO" or "No location"
+  key: string;   // unique group key (drives expand/collapse) — the commodity
+  crop: string;  // commodity label
   /** The contracts inside this group — the tickets hang off these, not off the group. */
   contracts: DpContractSubgroup[];
   contractCount: number;
@@ -44,7 +41,12 @@ export interface DpContractGroup extends DpTotals {
 /**
  * DP (delayed-pricing) contract positions for one producer. Structured as a two-level accordion:
  *
- *   commodity (or location, or both)  →  DP contract  →  tickets  →  charge rows
+ *   commodity  →  DP contract  →  tickets  →  charge rows
+ *
+ * There is deliberately no location dimension: vw_GNTA70D1 carries no elevator or facility code, so
+ * the only location signal is the trade unit — which the user already picked, making the column pure
+ * restatement. If a real delivery point is wanted, the elevator code has to be added to the ODS view
+ * first, and it would be a different lookup than the trade-unit one.
  *
  * The contract level exists because several tickets are typically applied to one DP contract, and
  * originators think in terms of the contract. Where a group holds only ONE contract that contract is
@@ -75,11 +77,6 @@ export class DpContractsTableComponent {
   /** Expanded contract keys (second accordion level), independent of the group level. */
   expandedContracts = signal(new Set<string>());
 
-  /** Collapsible "Filter" bar + group-by mode, mirroring the Storage table.
-   *  Default 'crop' matches how originators think about DP positions. */
-  summaryExpanded = signal(false);
-  groupMode = signal<DpGroupMode>('crop');
-
   currentSortColumn: string | null = null;
   currentSortDirection: 'none' | 'asc' | 'desc' = 'none';
 
@@ -102,11 +99,6 @@ export class DpContractsTableComponent {
     });
   }
 
-  /** Display label for a position's location, or "No location" when the trade unit is unmapped. */
-  private _location(d: DpContract): string {
-    return d.locationName?.trim() || 'No location';
-  }
-
   /** Date a position is anchored to for "since" display and default ordering. */
   private _startDate(d: DpContract): Date | null {
     const raw = d.chargedFromDate ?? d.storageStartDate;
@@ -114,21 +106,17 @@ export class DpContractsTableComponent {
   }
 
   private readonly allGroups = computed<DpContractGroup[]>(() => {
-    const mode = this.groupMode();
-    const rowsByGroup = new Map<string, { crop: string; location: string; rows: DpContract[] }>();
+    const rowsByCrop = new Map<string, DpContract[]>();
 
     for (const dp of this.dpContracts()) {
       const crop = dp.crop || 'Unknown';
-      const location = this._location(dp);
-      const key = mode === 'crop' ? crop : mode === 'location' ? location : `${crop}|${location}`;
-      const bucket = rowsByGroup.get(key);
-      if (bucket) bucket.rows.push(dp);
-      else rowsByGroup.set(key, { crop, location, rows: [dp] });
+      const rows = rowsByCrop.get(crop);
+      if (rows) rows.push(dp); else rowsByCrop.set(crop, [dp]);
     }
 
-    return [...rowsByGroup.entries()]
-      .map(([key, b]) => this._buildGroup(key, b.crop, b.location, b.rows))
-      .sort((a, b) => a.crop.localeCompare(b.crop) || a.location.localeCompare(b.location));
+    return [...rowsByCrop.entries()]
+      .map(([crop, rows]) => this._buildGroup(crop, rows))
+      .sort((a, b) => a.crop.localeCompare(b.crop));
   });
 
   /**
@@ -139,7 +127,8 @@ export class DpContractsTableComponent {
    * counted once per physical delivery (a delivery contributes one row per charge type, each
    * repeating the same quantity), while charges are additive across those rows.
    */
-  private _buildGroup(key: string, crop: string, location: string, rows: DpContract[]): DpContractGroup {
+  private _buildGroup(crop: string, rows: DpContract[]): DpContractGroup {
+    const key = crop;
     const rowsByContract = new Map<string, DpContract[]>();
     for (const dp of rows) {
       const contract = dp.contractNumber?.trim() || 'No contract';
@@ -159,7 +148,7 @@ export class DpContractsTableComponent {
         (a.earliestDate.getTime() - b.earliestDate.getTime()) ||
         compareNumericStrings(a.contractNumber, b.contractNumber));
 
-    return { key, crop, location, contracts, contractCount: contracts.length, ...this._totals(rows) };
+    return { key, crop, contracts, contractCount: contracts.length, ...this._totals(rows) };
   }
 
   /** Totals for one row set — shared by the group and contract levels. */
@@ -182,29 +171,24 @@ export class DpContractsTableComponent {
     // Expand search term through commodity aliases (e.g., "milo" → also matches "sorghum")
     const searchTerms = expandCommodityAliases(term);
 
-    // Filter at the position level (works for every group mode): match commodity alias, ticket #,
-    // contract #, date, or location, then rebuild the group from the matched positions.
+    // Filter at the position level: match commodity alias, ticket #, contract #, or date, then
+    // rebuild the group from the matched positions.
     const result: DpContractGroup[] = [];
     for (const group of this.allGroups()) {
       const matched = group.positions.filter(d =>
         searchTerms.some(t => (d.crop || '').toLowerCase().includes(t)) ||
         d.ticketNumber.toLowerCase().includes(term) ||
         (d.contractNumber || '').toLowerCase().includes(term) ||
-        this._formatDate(d.chargedFromDate ?? d.storageStartDate).includes(term) ||
-        (d.locationName?.toLowerCase().includes(term) ?? false)
+        this._formatDate(d.chargedFromDate ?? d.storageStartDate).includes(term)
       );
       if (matched.length > 0) {
         // Rebuild through the same path as the unfiltered grouping so contracts and totals narrow
         // together — a contract whose every ticket was filtered out disappears with them.
-        result.push(this._buildGroup(group.key, group.crop, group.location, matched));
+        result.push(this._buildGroup(group.crop, matched));
       }
     }
     return result;
   });
-
-  setGroupMode(mode: DpGroupMode): void {
-    this.groupMode.set(mode);
-  }
 
   private _formatDate(d: Date | string | null): string {
     if (!d) return '';

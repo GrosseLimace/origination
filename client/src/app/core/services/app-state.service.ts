@@ -200,9 +200,23 @@ export class AppStateService {
     this.storedGrain.set(storedGrain);
   }
 
+  /** TU-WIDE load: replaces the set and marks DP loaded for the current trade units. Only call this
+   *  from a fetch that covers the whole trade-unit scope. */
   setDpContracts(dpContracts: DpContract[]): void {
     this.dpContracts.set(dpContracts);
     this.dpContractsLoaded.set(true);
+  }
+
+  /**
+   * PER-PRODUCER merge — swaps in one producer's DP rows and leaves everyone else's alone.
+   *
+   * Deliberately does NOT set dpContractsLoaded: one producer's rows are not a trade-unit-wide load.
+   * Claiming otherwise made TU-wide consumers (Build A List) believe DP was fully loaded after a
+   * single producer was opened, then filter every producer against that partial set and report
+   * "no producers match".
+   */
+  mergeCustomerDpContracts(customerId: number, rows: DpContract[]): void {
+    this.dpContracts.update(existing => [...existing.filter(d => d.customerId !== customerId), ...rows]);
   }
 
   setPricingLines(lines: ContractPricingLine[]): void {
@@ -247,6 +261,14 @@ export class AppStateService {
   clearTicketsCache(): void {
     this.tickets.set([]);
     this.ticketsLoaded.set(false);
+  }
+
+  /** Drops the DP set + its loaded flag. Must run on TU change: without it, dpContractsLoaded stays
+   *  true from the PREVIOUS trade unit, so a DP query runs against the prior TU's rows and reports
+   *  "no producers match" for producers that do hold DP. */
+  clearDpContractsCache(): void {
+    this.dpContracts.set([]);
+    this.dpContractsLoaded.set(false);
   }
 
   // True once the full TU-wide note set has been loaded into `notes` (via setNotes). NLQ/

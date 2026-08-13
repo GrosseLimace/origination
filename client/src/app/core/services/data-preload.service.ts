@@ -74,6 +74,9 @@ export class DataPreloadService {
         // Same for the full note set: NLQ/saved-list consumers fetch it lazily when a note
         // query needs it. Badges use the noteLastContacts aggregate below instead.
         this.appState.clearNotesCache();
+        // DP too: it IS preloaded below, but the loaded flag must drop first or a DP query fired
+        // between the TU change and the preload landing would run against the prior TU's rows.
+        this.appState.clearDpContractsCache();
 
         // Core group — dataLoading clears when all three are ready so that
         // Unconfirmed Contracts, Spot Loads, and Unshipped Bushels all appear

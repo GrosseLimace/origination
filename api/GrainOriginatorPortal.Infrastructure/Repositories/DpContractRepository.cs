@@ -15,26 +15,27 @@ public class DpContractRepository : IDpContractRepository
     // at an environment that actually HAS DP data (see DpOdsDbContext for why and how to revert).
     private readonly DpOdsDbContext _context;
     private readonly ApplicationDbContext _appContext;
-    private readonly IMbpLocationSynonymRepository _locationSynonyms;
     private readonly ILogger<DpContractRepository> _logger;
 
     public DpContractRepository(
         DpOdsDbContext context,
         ApplicationDbContext appContext,
-        IMbpLocationSynonymRepository locationSynonyms,
         ILogger<DpContractRepository> logger)
     {
         _context = context;
         _appContext = appContext;
-        _locationSynonyms = locationSynonyms;
         _logger = logger;
     }
 
     // Latest DP snapshot, one row per (trade unit, ticket, sequence, contract, customer).
     // Callers append "AND ..." (the base query already has WHERE rn = 1). Reads only from ODS
-    // (ctrm.vw_GNTA70D1); CustomerId, LocationName and Bushels are all filled in C# afterwards —
-    // the first two because their sources live in the app DB (Azure SQL has no cross-database
-    // joins), the third because the unit-conversion rules are branchy enough to want unit tests.
+    // (ctrm.vw_GNTA70D1); CustomerId is filled in C# afterwards because dbo.Customer lives in the app
+    // DB (Azure SQL has no cross-database joins), and Bushels because the unit-conversion rules are
+    // branchy enough to want unit tests.
+    //
+    // No location: the view carries no elevator or facility code, so the only signal is the trade
+    // unit the user already selected — a column that restates the filter. Showing a real delivery
+    // point needs the elevator code added to the ODS view first.
     //
     // Every column in this view is CHAR-padded and declared NOT NULL, so trimming is mandatory and
     // ISNULL is not: an "absent" value arrives as blanks (text) or a floor date, not as NULL.
@@ -145,9 +146,7 @@ public class DpContractRepository : IDpContractRepository
             LTRIM(RTRIM(dp.Status_Description))                               AS StatusDescription,
             LTRIM(RTRIM(dp.Storage_Program_Code))                             AS StorageProgramCode,
             LTRIM(RTRIM(dp.Storage_Error_Flag))                               AS StorageErrorFlag,
-            LTRIM(RTRIM(dp.Storage_Error_Desc))                               AS StorageErrorDescription,
-            -- Filled in C# from dbo.MbpLocationSynonym (app DB — not joinable from here).
-            CAST('' AS varchar(100))                                          AS LocationName
+            LTRIM(RTRIM(dp.Storage_Error_Desc))                               AS StorageErrorDescription
         FROM LatestDp dp
         WHERE dp.rn = 1
         """;
@@ -257,54 +256,15 @@ public class DpContractRepository : IDpContractRepository
     }
 
     /// <summary>
-    /// Fills the two derived fields the ODS query cannot: the display location and the bushel
-    /// quantity. Both degrade to "no value" rather than failing the load — a missing location or an
-    /// unconvertible quantity should cost that one cell, not the whole tab.
+    /// Fills the bushel quantity, which the ODS query cannot compute. Degrades to "no value" rather
+    /// than failing the load — an unconvertible quantity should cost that one cell, not the whole tab.
     /// </summary>
     private async Task EnrichAsync(List<DpContract> records, CancellationToken cancellationToken)
     {
         if (records.Count == 0) return;
 
-        await PopulateLocationNamesAsync(records, cancellationToken);
         await PopulateBushelsAsync(records, cancellationToken);
     }
-
-    /// <summary>
-    /// Resolves each row's display location from dbo.MbpLocationSynonym. The DP view carries no
-    /// elevator or location code — only Trade_Unit_Code — and a trade unit code IS a bare LocationId
-    /// in that master (e.g. "2115" → "Adrian, MO"), which is the same bridge the trade-unit selector
-    /// uses. DisplayName is already the full "City, ST" string the UI shows. Unmatched trade units
-    /// are left blank (rendered "—") rather than falling back to the division's town, which can be a
-    /// different place than where the grain actually sits.
-    /// </summary>
-    private async Task PopulateLocationNamesAsync(List<DpContract> records, CancellationToken cancellationToken)
-    {
-        var tradeUnitCodes = records
-            .Select(r => r.TradeUnitCode)
-            .Where(c => !string.IsNullOrWhiteSpace(c))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (tradeUnitCodes.Count == 0) return;
-
-        try
-        {
-            var displayNames = await _locationSynonyms.GetDisplayNamesByLocationIdsAsync(tradeUnitCodes, cancellationToken);
-
-            foreach (var record in records)
-            {
-                if (!string.IsNullOrWhiteSpace(record.TradeUnitCode)
-                    && displayNames.TryGetValue(record.TradeUnitCode.Trim(), out var display))
-                {
-                    record.LocationName = display;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "MbpLocationSynonym lookup failed — DP contracts will load without location display");
-        }
-    }
-
     /// <summary>
     /// Converts each row's quantity to bushels using the ODS commodity conversion factors. Rows the
     /// conversion can't substantiate keep a null <see cref="DpContract.Bushels"/> so the UI shows a
