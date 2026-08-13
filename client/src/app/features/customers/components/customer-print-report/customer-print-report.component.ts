@@ -691,19 +691,20 @@ export class CustomerPrintReportComponent {
     // multiple contracts for the same commodity are easier to read in print).
     if (this.showContracts() && this.openContracts().length > 0) {
       const contractColgroup = `<colgroup>
-        <col style="width: 18%;" />
         <col style="width: 16%;" />
         <col style="width: 14%;" />
-        <col style="width: 16%;" />
-        <col style="width: 20%;" />
-        <col style="width: 16%;" />
+        <col style="width: 12%;" />
+        <col style="width: 13%;" />
+        <col style="width: 14%;" />
+        <col style="width: 18%;" />
+        <col style="width: 13%;" />
       </colgroup>`;
       // Single gridlined header row shown once at the top of the Contracts section.
       const contractThead = `<thead><tr class="table-header">
-        <th style="padding:6px 8px;border:1px solid #e5e7eb;">Contract #</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Quantity</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Price</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Special Type</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Delivery Window</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Status</th>
+        <th style="padding:6px 8px;border:1px solid #e5e7eb;">Contract #</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Quantity</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Price</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Special Type</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Basis Location</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Delivery Window</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Status</th>
       </tr></thead>`;
 
-      // One contract's 6-cell row (borderCells = draw gridlines around each cell, for the flat view).
+      // One contract's 7-cell row (borderCells = draw gridlines around each cell, for the flat view).
       const contractRow = (ct: Contract, borderCells: boolean): string => {
         const status = this.getCalculatedStatus(ct);
         const styles = this.getStatusStyles(status);
@@ -713,6 +714,7 @@ export class CustomerPrintReportComponent {
           <td style="padding:4px 8px;${b}">${(ct.quantity ?? 0).toLocaleString()} ${unit}</td>
           <td style="padding:4px 8px;${b}">${this._esc(this.getContractPrice(ct))}</td>
           <td style="padding:4px 8px;${b}">${this._esc(ct.specialType || '—')}</td>
+          <td style="padding:4px 8px;${b}">${this._esc(ct.basisLocation || '—')}</td>
           <td style="padding:4px 8px;font-size:10px;${b}">${this._esc(this.formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd))}</td>
           <td style="padding:4px 8px;${b}"><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:600;background:${styles.bg};color:${styles.color};">${this._esc(status)}</span></td>`;
       };
@@ -752,7 +754,7 @@ export class CustomerPrintReportComponent {
 
       const grouped = this.showPricingLines();
       // Plain (borderless) header for the grouped view; gridlined header for the flat view.
-      const groupedHeader = `<table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;margin-bottom:6px;">${contractColgroup}<thead><tr class="table-header"><th style="padding:5px 8px;">Contract #</th><th style="padding:5px 8px;">Quantity</th><th style="padding:5px 8px;">Price</th><th style="padding:5px 8px;">Special Type</th><th style="padding:5px 8px;">Delivery Window</th><th style="padding:5px 8px;">Status</th></tr></thead></table>`;
+      const groupedHeader = `<table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;margin-bottom:6px;">${contractColgroup}<thead><tr class="table-header"><th style="padding:5px 8px;">Contract #</th><th style="padding:5px 8px;">Quantity</th><th style="padding:5px 8px;">Price</th><th style="padding:5px 8px;">Special Type</th><th style="padding:5px 8px;">Basis Location</th><th style="padding:5px 8px;">Delivery Window</th><th style="padding:5px 8px;">Status</th></tr></thead></table>`;
       // Column header shown ONCE at the top of the Contracts section, above the commodity bands.
       const sharedHeader = grouped
         ? groupedHeader
