@@ -6,6 +6,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 /// Used by the customer-data sync (DiagnosticsController populate endpoint) and by
 /// UserEntitlementService.ValidateCustomerAccessAsync.
 ///
+/// There is intentionally no IsActive / IsDeleted here. ODS removed those columns (2026-08) and now
+/// filters inactive and deleted records out of the view itself, so PRESENCE in the view is the active
+/// signal — the same treatment base.vw_CurrentTickets got. Don't add them back: a property EF can't
+/// find in the view fails the whole query with "Invalid column name", which is what broke the sync.
+///
 /// Not to be confused with the app-DB entity <see cref="CustomerTradeUnit"/> which is
 /// the materialized join table for the per-customer per-TU memberships.
 /// </summary>
@@ -31,7 +36,6 @@ public class CustomerTradeUnitView : ICustomerOdsAttributes
     public string? ExtendedPostalCode { get; set; }
     public string? ExtendedCountry { get; set; }
     public string? IndustryCode1 { get; set; }
-    public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }
     public string? TradeUnit { get; set; }
@@ -58,7 +62,9 @@ public class CustomerTradeUnitView : ICustomerOdsAttributes
         ExtendedPostalCode = ExtendedPostalCode,
         ExtendedCountry = ExtendedCountry,
         IndustryCode1 = IndustryCode1,
-        IsActive = IsActive,
+        // IsActive is deliberately NOT set from the view: it no longer carries the column, and
+        // presence in the view is itself the active signal. CustomerSyncService sets IsActive from
+        // presence (true on insert/reactivate, false when a row drops out).
         EffectiveStartDate = EffectiveStartDate,
         EffectiveEndDate = EffectiveEndDate,
     };
