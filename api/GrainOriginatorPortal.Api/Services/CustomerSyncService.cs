@@ -145,9 +145,14 @@ public class CustomerSyncService
                 if (existing.UserDeactivated) continue;
 
                 var changed = false;
-                if (existing.IsActive != odsRow.IsActive)
+                // Presence in the ODS view IS the active signal — the view no longer carries an
+                // IsActive column (ODS dropped it from the underlying data 2026-08). Being here means
+                // the producer has a real contract/ticket in this TU, and the soft-delete pass below
+                // deactivates anything that drops out. This mirrors how Customer.IsActive is already
+                // derived, so both levels now use one rule instead of two.
+                if (!existing.IsActive)
                 {
-                    existing.IsActive = odsRow.IsActive;
+                    existing.IsActive = true;
                     changed = true;
                 }
                 // A TU present in the ODS view is backed by a real contract/ticket, so it's a
@@ -173,7 +178,7 @@ public class CustomerSyncService
                 {
                     CustomerId = customerId,
                     TradeUnit  = tradeUnit,
-                    IsActive   = odsRow.IsActive,
+                    IsActive   = true,   // in the view ⇒ active (see above)
                     CreatedAt  = syncTime,
                     CreatedBy  = SyncActor
                 });
