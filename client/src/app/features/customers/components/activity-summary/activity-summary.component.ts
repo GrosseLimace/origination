@@ -1,4 +1,4 @@
-import { Component, input, effect, inject } from '@angular/core';
+import { Component, input, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
@@ -31,6 +31,33 @@ export class ActivitySummaryComponent {
   public historicalContracts = input<Contract[]>([]);
 
   summaryText = '';
+
+  /** localStorage key for the open/closed preference. Persisted rather than held in the component
+   *  so the choice survives selecting a different producer — this component is torn down whenever
+   *  the profile unmounts between selections — and survives a reload, which is what someone who
+   *  collapsed it expects. */
+  private static readonly COLLAPSED_KEY = 'origination.activitySummary.collapsed';
+
+  /** Open by default; only an explicit collapse is remembered. */
+  readonly expanded = signal(!ActivitySummaryComponent.readCollapsed());
+
+  toggle(): void {
+    const next = !this.expanded();
+    this.expanded.set(next);
+    try {
+      localStorage.setItem(ActivitySummaryComponent.COLLAPSED_KEY, next ? 'false' : 'true');
+    } catch {
+      // Private browsing / storage disabled — the toggle still works for this session.
+    }
+  }
+
+  private static readCollapsed(): boolean {
+    try {
+      return localStorage.getItem(ActivitySummaryComponent.COLLAPSED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
 
   constructor() {
     effect(() => {
