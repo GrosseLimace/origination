@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using GrainOriginatorPortal.Infrastructure.Json;
+
 namespace GrainOriginatorPortal.Api.Models.Responses;
 
 /// <summary>
@@ -47,10 +50,19 @@ public record DpContractResponse
     public decimal UnearnedStorageAmount { get; init; }
     public decimal UnpaidHandlingAmount { get; init; }
 
+    // Calendar dates, not timestamps. The global UtcDateTimeJsonConverter would tag these midnight
+    // Kind=Unspecified values with a 'Z', and the browser would then shift them by the user's offset —
+    // rendering 2023-10-09 as 10/8/23 for anyone west of UTC. CalendarDateJsonConverter writes them
+    // without an offset so they land on the intended day everywhere.
+    [JsonConverter(typeof(CalendarDateJsonConverter))]
     public DateTime? StorageStartDate { get; init; }
+    [JsonConverter(typeof(CalendarDateJsonConverter))]
     public DateTime? ChargedFromDate { get; init; }
+    [JsonConverter(typeof(CalendarDateJsonConverter))]
     public DateTime? ChargedThruDate { get; init; }
+    [JsonConverter(typeof(CalendarDateJsonConverter))]
     public DateTime? PaidThruDate { get; init; }
+    [JsonConverter(typeof(CalendarDateJsonConverter))]
     public DateTime? BolDate { get; init; }
 
     public string Status { get; init; } = string.Empty;

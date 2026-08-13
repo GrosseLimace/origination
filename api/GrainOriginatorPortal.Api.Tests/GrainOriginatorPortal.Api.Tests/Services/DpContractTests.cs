@@ -226,6 +226,43 @@ public class DpContractServiceTests
             Times.Never);
     }
 
+    // Regression: a delivery can carry two rows with the SAME Status ('S' / "REGULAR STG RATE") that
+    // differ only by charge PERIOD — a zero-rate free window then the real accrual. Real prod row set
+    // (ticket 364877): $0.00 for 2023-10-09→2024-01-31, then $782.13 for 2024-02-01→2026-08-12.
+    // Both must survive to the response, and their charges must add up.
+    [Fact]
+    public async Task GetByCustomerAsync_KeepsBothChargePeriodsOfOneDelivery()
+    {
+        const string ticketKey = "T|364877||277773493|1085";
+        _repositoryMock
+            .Setup(r => r.GetByCustomerAsync(7L, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new DpContract
+                {
+                    Id = $"{ticketKey}|S|20231009", TicketKey = ticketKey, CustomerId = 7,
+                    TicketNumber = "364877", Crop = "YSB", Quantity = 423.23m, Bushels = 423.23m,
+                    Status = "S", StatusDescription = "REGULAR STG RATE",
+                    StorageDays = 115, StorageRate = 0m, ReceivableAmount = 0m,
+                    ChargedFromDate = new DateTime(2023, 10, 9), ChargedThruDate = new DateTime(2024, 1, 31),
+                },
+                new DpContract
+                {
+                    Id = $"{ticketKey}|S|20240201", TicketKey = ticketKey, CustomerId = 7,
+                    TicketNumber = "364877", Crop = "YSB", Quantity = 423.23m, Bushels = 423.23m,
+                    Status = "S", StatusDescription = "REGULAR STG RATE",
+                    StorageDays = 924, StorageRate = 0.002m, ReceivableAmount = 782.13m,
+                    ChargedFromDate = new DateTime(2024, 2, 1), ChargedThruDate = new DateTime(2026, 8, 12),
+                },
+            ]);
+
+        var result = await _sut.GetByCustomerAsync(7L, CancellationToken.None);
+
+        Assert.Equal(2, result.Count);                                  // neither row dropped
+        Assert.Equal(2, result.Select(r => r.Id).Distinct().Count());    // ids unique (Angular track key)
+        Assert.Equal(782.13m, result.Sum(r => r.ReceivableAmount));      // the money survives
+        Assert.All(result, r => Assert.Equal(423.23m, r.Bushels));       // quantity repeats per row
+    }
+
     [Fact]
     public async Task GetByCustomerAsync_MapsNullBushelsAndSentinelDatesThrough()
     {

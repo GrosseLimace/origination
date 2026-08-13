@@ -78,10 +78,16 @@ public class DpContractRepository : IDpContractRepository
                 Storage_Error_Flag,
                 Storage_Error_Desc,
                 Ticket_Status,
+                -- A delivery carries one row per CHARGE PERIOD, and the period is what makes each row
+                -- distinct — NOT Status. Real prod case: one ticket with two rows both Status='S'
+                -- ("REGULAR STG RATE"), the first a zero-rate free window (2023-10-09→2024-01-31,
+                -- $0.00) and the second the actual accrual (2024-02-01→2026-08-12, $782.13).
+                -- Partitioning on Status collapsed those two and kept the $0.00 row, silently
+                -- discarding the money. Charged_From/Thru_Date must therefore be in the key.
                 ROW_NUMBER() OVER (
                     PARTITION BY Trade_Unit_Code, Ticket_Prefix, Ticket_Number, Ticket_Suffix,
                                  Sequence_Number, Contract_Number, Contract_Suffix, Customer_Id,
-                                 Status
+                                 Status, Charged_From_Date, Charged_Thru_Date
                     ORDER BY Report_Line
                 ) AS rn
             FROM ctrm.vw_GNTA70D1
@@ -98,9 +104,12 @@ public class DpContractRepository : IDpContractRepository
               + LTRIM(RTRIM(dp.Ticket_Suffix)) + '|' + CAST(dp.Sequence_Number AS varchar(20)) + '|'
               + LTRIM(RTRIM(dp.Trade_Unit_Code))                              AS TicketKey,
             -- Row identity = delivery + charge type. Must be unique for the Angular @for track.
+            -- Includes the charge period: Status alone is NOT unique per row (a delivery can have two
+            -- 'S' rows for different periods), which produced duplicate keys in the Angular @for track.
             LTRIM(RTRIM(dp.Ticket_Prefix)) + '|' + LTRIM(RTRIM(dp.Ticket_Number)) + '|'
               + LTRIM(RTRIM(dp.Ticket_Suffix)) + '|' + CAST(dp.Sequence_Number AS varchar(20)) + '|'
-              + LTRIM(RTRIM(dp.Trade_Unit_Code)) + '|' + LTRIM(RTRIM(dp.Status))  AS Id,
+              + LTRIM(RTRIM(dp.Trade_Unit_Code)) + '|' + LTRIM(RTRIM(dp.Status)) + '|'
+              + CONVERT(varchar(10), dp.Charged_From_Date, 112)                   AS Id,
             LTRIM(RTRIM(dp.Ticket_Number))                                    AS TicketNumber,
             -- Business-facing contract identifier: prefix type + prefix commodity + number, run
             -- together with no separator (P + C + PL84649 = "PCPL84649"). Confirmed with the business
