@@ -79,7 +79,7 @@
                 <p class="text-xs text-gray-500 dark:text-gray-400">Bushels</p>
                 <p class="text-sm font-medium text-gray-900 dark:text-white">
                   @if (group.deliveryCount > group.unconvertedCount) {
-                    {{ group.totalBushels | number:'1.0-0' }} bu
+                    {{ group.totalBushels | number:'1.2-2' }} bu
                   } @else {
                     —
                   }
@@ -135,7 +135,7 @@
                           <p class="text-xs text-gray-500 dark:text-gray-400">Bushels</p>
                           <p class="text-sm font-medium text-gray-900 dark:text-white">
                             @if (contract.deliveryCount > contract.unconvertedCount) {
-                              {{ contract.totalBushels | number:'1.0-0' }} bu
+                              {{ contract.totalBushels | number:'1.2-2' }} bu
                             } @else {
                               —
                             }
@@ -231,7 +231,7 @@
                            addition, explaining the dash on hover. -->
                       <app-table-cell class="text-center">
                         @if (dp.bushels !== null) {
-                          {{ dp.bushels | number }}
+                          {{ dp.bushels | number:'1.2-2' }}
                         } @else {
                           <span [title]="'Quantity is ' + (dp.quantity | number) + ' ' + (dp.quantityUom || 'an unknown unit') + ' and cannot be converted to bushels'">—</span>
                         }
