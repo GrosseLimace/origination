@@ -197,7 +197,7 @@ Every 90 days, a review cycle opens for Origination access. Both you AND the Acc
 
 - Ensure you're signed in with the correct account (admin vs. regular)
 - **Azure Production Support**: Only visible to admin accounts
-- **Developer Azure Access**: Visible to both admin accounts and IT members
+- **Developer Azure Access**: Visible to Admin accounts and IT members
 - **GitHub Maintainer**: Only visible to IT members (regular accounts)
 - Search for "Origination" in the catalog
 
@@ -229,4 +229,4 @@ Contact the Access Package Managers - App Dev or IT support if you have question
 
 ---
 
-*Document version: 1.2 | 2026-02-18*
+*Document version: 1.3 | 2026-08-11*
