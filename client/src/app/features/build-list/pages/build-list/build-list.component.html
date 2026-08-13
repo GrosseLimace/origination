@@ -590,6 +590,13 @@
                           No active contracts
                         </label>
                       }
+                      <!-- Stricter than "No active contracts": zero contracts of any status. -->
+                      @if (!h.has('noContractsAtAll')) {
+                        <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().noContractsAtAll" (ngModelChange)="pendingRefinements.update(r => ({...r, noContractsAtAll: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          No contracts at all
+                        </label>
+                      }
                       @if (!h.has('hasUnsignedContracts')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                           <input type="checkbox" [ngModel]="pendingRefinements().hasUnsignedContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, hasUnsignedContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
