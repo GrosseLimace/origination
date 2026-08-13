@@ -61,11 +61,11 @@ public static class DependencyInjection
 #endif
         });
 
-        // DP-contract ODS reads. TEMPORARY (2026-08-04): ctrm.vw_GNTA70D1 is empty in the Dev ODS, so
-        // when "ODSDpConnection" is configured these strictly read-only reads are pointed at that
-        // connection (currently the PROD ODS) instead. Absent the key, this is just ODSConnection and
-        // behaves exactly like OriginationDbContext — so reverting is a one-line config deletion.
-        // See DpOdsDbContext for the full rationale, caveats, and revert steps.
+        // DP-contract ODS reads. "ODSDpConnection" is not set in any environment, so this resolves to
+        // ODSConnection and every environment reads its own ODS — identical to OriginationDbContext.
+        // The key exists only as an opt-in local escape hatch for validating DP values against an ODS
+        // that has data (see DpOdsDbContext for the rationale, the read-only safety argument, and why
+        // it must never be set in a deployed environment).
         services.AddDbContext<DpOdsDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("ODSDpConnection")

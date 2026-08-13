@@ -129,21 +129,24 @@ see how fresh it is?
 
 ## Known limitations while we test
 
-1. **Reading production data from a developer machine.** Dev and QA have the view but it is **empty**
-   (0 rows), so the feature can't be exercised there. DP reads are temporarily pointed at the
-   production ODS, which is safe because nothing is ever written. This reverts by deleting one config
-   line once Dev/QA get data. Deployed Dev/QA are **not** pointed at production — their identities
-   don't have access.
-2. **Not every producer will show DP.** Positions come from production but producer records come from
-   the local environment, so producers that don't exist locally are skipped. This under-reports rather
-   than mis-attributes — it will never show a position against the wrong producer.
+1. **Only production has DP data.** Every environment reads its own ODS — Dev reads Dev, QA reads QA,
+   production reads production — exactly like every other part of the application. The view exists in
+   Dev and QA but is **empty** (0 rows), so the tab shows "no DP contracts" there until ODS loads it.
+   That is a data gap, not a build gap: when the data lands, the tab fills in with no change from us.
+   The practical consequence is that **the numbers can only be validated against production today**,
+   which is done through a read-only connection that is switched off by default.
+2. **While that read-only production connection is in use, not every producer shows DP.** Positions
+   come from production while producer records come from the local environment, so producers that
+   don't exist locally are skipped. This under-reports rather than mis-attributes — it will never show
+   a position against the wrong producer. This does not apply once Dev/QA have their own data.
 3. **Bushels only when we can prove them.** If the ODS reports a quantity in a unit we can't convert to
    bushels, we show a dash rather than a number, and say how many rows were left out of the total. We
    deliberately never guess — showing pounds as if they were bushels would be wrong by roughly 56×.
    Every row seen so far is already in bushels, so this is a safeguard, not a common case.
-4. **Group bushels are rounded** to whole bushels for display (812.50 shows as 813), matching Storage.
-5. **DP appears only on the producer tab so far.** The producer summary card, Build-A-List search, and
-   dashboard are planned but not built, so no other screen's numbers have changed.
+4. **Bushels show two decimals** everywhere on the tab (812.50, not 813), so displayed totals tie back
+   to the source exactly. Note this differs from the Storage tab, which still rounds to whole bushels.
+5. **DP appears on the producer tab and in Build-A-List.** The producer summary card and the dashboard
+   are planned but not built, so those screens' numbers have not changed.
 
 ---
 

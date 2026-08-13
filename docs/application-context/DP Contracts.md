@@ -16,44 +16,48 @@ immediately to the right of **Storage**, and deliberately built to mirror Storag
 Every column in the view is CHAR-padded and declared `NOT NULL`, so trimming is mandatory and
 `ISNULL` is pointless — an absent value arrives as blanks or a floor date, never as `NULL`.
 
-## ⚠ TEMPORARY: DP reads point at the PROD ODS (as of 2026-08-04)
+## Where DP reads come from (updated 2026-08-13)
 
-`ctrm.vw_GNTA70D1` is **empty in Dev** (`ctrm`, `stg`, and the view itself all returned 0 rows), so the
-feature cannot be exercised there. DP reads therefore go through a dedicated context whose connection
-can be aimed at an environment that actually has data.
+**Every environment reads its own ODS.** There is no cross-environment override anywhere; DP behaves
+exactly like every other ODS-backed feature, and running locally prompts for no extra sign-in.
 
-- **Context:** `DpOdsDbContext` (`api/GrainOriginatorPortal.Infrastructure/Data/DpOdsDbContext.cs`) —
-  inherits all ODS mappings from `OriginationDbContext` and differs *only* in its connection.
-- **Config key:** `ConnectionStrings:ODSDpConnection`. When absent, the DI registration falls back to
-  the normal `ODSConnection`, so the override is opt-in per environment.
-- **Safety:** acceptable because every DP path is strictly read-only — `DpContractRepository` contains
-  no insert, update, or delete.
-
-### Current state per environment
-
-| Environment | DP reads from | Notes |
+| Environment | DP reads from | State |
 | --- | --- | --- |
-| Local (`appsettings.Development.json`) | **PROD ODS** via `ODSDpConnection` | Uses `Authentication=Active Directory Interactive` so only this connection prompts for a prod-admin account; the other four connections stay on `Active Directory Default` (your normal account). Prod SQL rejects normal developer accounts. |
-| Deployed Dev / QA | Their own ODS (`ODSConnection`) | Override **not** enabled. Would require IT/DBA to grant the `app-origination-dev-eus` / `-qa-eus` managed identity read access to prod ODS. |
-| Prod | Prod ODS | Already correct; no override needed or present. |
+| Local (`appsettings.Development.json`) | Dev ODS (`ODSConnection`) | Tab shows its empty state until the Dev ODS loads the view. |
+| Deployed Dev | Dev ODS | Same — waiting on ODS data. |
+| QA | QA ODS | Same — waiting on ODS data. |
+| Prod | Prod ODS | Has data; the tab is populated. |
 
-### How to revert once Dev/QA get DP data
+`ctrm.vw_GNTA70D1` is still **empty in Dev and QA** (`ctrm`, `stg`, and the view itself all return 0
+rows). That is a *data* gap, not a config gap: when ODS loads the view, the tab populates on its own
+with **no code or config change**. Treat all four environments as identically wired.
 
-Delete the `ODSDpConnection` key from the environment's appsettings file. That is the whole change —
-`DpOdsDbContext` falls back to `ODSConnection` automatically.
+### The override (opt-in, local only)
+
+DP reads go through `DpOdsDbContext`
+(`api/GrainOriginatorPortal.Infrastructure/Data/DpOdsDbContext.cs`), which inherits all ODS mappings
+from `OriginationDbContext` and differs *only* in which connection string it binds:
+`ConnectionStrings:ODSDpConnection`, falling back to `ODSConnection` when absent. Since the key is
+absent everywhere, the two contexts are currently equivalent.
+
+The key is kept — commented out in `appsettings.Development.json` — as an escape hatch for validating
+displayed values against prod, the only environment with data. Enabling it locally is safe because
+every DP path is strictly read-only (`DpContractRepository` has no insert, update, or delete), and it
+uses `Authentication=Active Directory Interactive` so *only* that connection prompts for a prod-admin
+account while the other four stay on your normal account. **Never set it in a deployed environment** —
+it would also require IT/DBA to grant that App Service's managed identity read access to another
+environment's ODS, which is deliberately not in place.
+
+Caveat that applies only while the override is enabled: DP rows come from prod while producer identity
+still comes from the **local** app DB (`dbo.Customer`), because the customer-code → `CustomerId` join
+happens in C# (Azure SQL has no cross-database joins). A prod producer with no matching `ScoularId`
+locally resolves to `CustomerId` 0 and is filtered out — the safe direction to fail, since it omits a
+position rather than attributing it to the wrong producer.
 
 To retire the mechanism entirely: point `DpContractRepository` back at `OriginationDbContext`, remove
 the `AddDbContext<DpOdsDbContext>` registration in `Infrastructure/DependencyInjection.cs`, delete
 `DpOdsDbContext.cs`, and drop the `protected OriginationDbContext(DbContextOptions)` constructor added
 for it.
-
-### Caveat while the override is active
-
-DP rows come from prod, but producer identity still comes from the **local** app DB (`dbo.Customer`) —
-the customer-code → `CustomerId` join happens in C# because Azure SQL has no cross-database joins. A
-prod producer with no matching `ScoularId` in the current environment resolves to `CustomerId` 0 and is
-filtered out. That is the safe direction to fail: it never attributes a DP position to the wrong
-producer, it just omits one.
 
 ## Two deliberate divergences from Storage
 
