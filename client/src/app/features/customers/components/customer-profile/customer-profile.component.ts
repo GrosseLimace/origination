@@ -7,6 +7,7 @@ import { ContractsTableComponent } from '../contracts-table/contracts-table.comp
 import { TicketsTableComponent } from '../tickets-table/tickets-table.component';
 import { PlantingIntentionsTableComponent } from '../planting-intentions-table/planting-intentions-table.component';
 import { StoredGrainTableComponent } from '../stored-grain-table/stored-grain-table.component';
+import { DpContractsTableComponent } from '../dp-contracts-table/dp-contracts-table.component';
 import { ProducerInsightsComponent } from '../producer-insights/producer-insights.component';
 import { ContractPacingCardComponent } from '../contract-pacing-card/contract-pacing-card.component';
 import { GrowthOpportunityComponent } from '../growth-opportunity/growth-opportunity.component';
@@ -15,8 +16,9 @@ import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-custom
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
 import { commodityChipClass } from '@shared/utils/commodity-color';
+import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
@@ -30,6 +32,7 @@ import { buildProductionCoverage } from '@shared/utils/production-coverage';
     TicketsTableComponent,
     PlantingIntentionsTableComponent,
     StoredGrainTableComponent,
+    DpContractsTableComponent,
     ProducerInsightsComponent,
     ContractPacingCardComponent,
     GrowthOpportunityComponent,
@@ -82,6 +85,7 @@ export class CustomerProfileComponent {
   public pricingLines = input<ContractPricingLine[]>([]);
   public plantingIntentions = input<PlantingIntention[]>([]);
   public storedGrain = input<StoredGrain[]>([]);
+  public dpContracts = input<DpContract[]>([]);
   public notes = input<Note[]>([]);
   public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
   public commodities = input<Commodity[]>([]);
@@ -91,12 +95,14 @@ export class CustomerProfileComponent {
   public isLoadingPricingLines = input(false);
   public isLoadingPlanting = input(false);
   public isLoadingStoredGrain = input(false);
+  public isLoadingDpContracts = input(false);
 
   // Unfiltered data for Activity Summary
   public allCustomerContracts = input<Contract[]>([]);
   public allCustomerTickets = input<Ticket[]>([]);
   public allCustomerPlantingIntentions = input<PlantingIntention[]>([]);
   public allCustomerStoredGrain = input<StoredGrain[]>([]);
+  public allCustomerDpContracts = input<DpContract[]>([]);
 
   public onAddPlanting = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
   public onEditPlanting = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
@@ -324,7 +330,10 @@ export class CustomerProfileComponent {
         // Newest season only, not every year on record — the tab badge should answer "how many
         // crops are planned for the season I'm looking at", not "how many rows exist in total".
         { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.newestSeasonIntentionCount() },
-        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size }
+        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size },
+        // Badge is distinct CONTRACTS, not commodities (which Storage uses) and not charge rows.
+        // A producer with 8 contracts across 2 commodities reads as 8.
+        { id: 'dpContracts', label: 'DP Contracts', shortLabel: 'DP', count: dpContractCount(this.dpContracts()) }
       ];
     });
 
@@ -345,6 +354,7 @@ export class CustomerProfileComponent {
     // Track tab clicks for usage dashboard
     if (tabId === 'planting') this.usageTracking.trackPlantingTabClick();
     if (tabId === 'storage') this.usageTracking.trackStorageDropdownOpen(this.customer().id.toString());
+    if (tabId === 'dpContracts') this.usageTracking.trackDpContractsDropdownOpen(this.customer().id.toString());
     // Defer scroll until after Angular renders the new tab content — otherwise the DOM
     // still shows the old (tall) tab and the scroll position doesn't update correctly.
     setTimeout(() => {

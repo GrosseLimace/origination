@@ -10,7 +10,7 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
@@ -106,6 +106,7 @@ export class HomeComponent {
    *  fetched per-producer on selection into _customerNotesCache. */
   readonly noteLastContacts = signal<NoteLastContact[]>([]);
   readonly storedGrain = signal<StoredGrain[]>([]);
+  readonly dpContracts = signal<DpContract[]>([]);
   readonly savedLists = signal<SavedList[]>([]);
   /** Manager-only: saved lists tied to the selected TU(s) created by other users (overlap-matched
    *  server-side, enriched locally). Powers the Add-to-List "Team Lists" tab. */
@@ -145,11 +146,13 @@ export class HomeComponent {
   readonly customerCodeMap = signal<Map<number, string>>(new Map());
   readonly customerPlantingIntentions = signal<PlantingIntention[]>([]);
   readonly customerStoredGrain = signal<StoredGrain[]>([]);
+  readonly customerDpContracts = signal<DpContract[]>([]);
 
   readonly allCustomerContracts = signal<Contract[]>([]);
   readonly allCustomerTickets = signal<Ticket[]>([]);
   readonly allCustomerPlantingIntentions = signal<PlantingIntention[]>([]);
   readonly allCustomerStoredGrain = signal<StoredGrain[]>([]);
+  readonly allCustomerDpContracts = signal<DpContract[]>([]);
 
   readonly yieldEstimates = signal<DashboardPlantingEstimate[]>([]);
   readonly commodities = signal<Commodity[]>([]);
@@ -160,6 +163,7 @@ export class HomeComponent {
   readonly isLoadingUnappliedTickets = signal(false);
   readonly isLoadingPricingLines = signal(false);
   readonly isLoadingStoredGrain = signal(false);
+  readonly isLoadingDpContracts = signal(false);
   readonly isLoadingPlanting = signal(true);
   /** True while the selected producer's (and linked group's) notes are being fetched.
    *  Drives the notes panel's loading state so a producer with notes doesn't flash
@@ -277,6 +281,7 @@ export class HomeComponent {
       this.isLoadingPlanting.set(false);
       this.noteLastContacts.set(this.appState.noteLastContacts());
       this.storedGrain.set(this.appState.storedGrain());
+      this.dpContracts.set(this.appState.dpContracts());
       this.savedLists.set(this.appState.savedLists());
       this._enrichSavedLists();
 
@@ -286,6 +291,19 @@ export class HomeComponent {
           next: (data) => {
             this.storedGrain.set(data);
             this.appState.setStoredGrain(data);
+          },
+          error: () => {}
+        });
+      }
+
+      // Same for DP contracts — the preload may not have landed yet. Gate on the loaded flag, not
+      // length: a per-producer merge can leave rows present without a TU-wide load having happened,
+      // and a TU with genuinely zero DP would otherwise re-fetch on every pass.
+      if (!this.appState.dpContractsLoaded()) {
+        this.apiService.getDpContracts().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          next: (data) => {
+            this.dpContracts.set(data);
+            this.appState.setDpContracts(data);
           },
           error: () => {}
         });
@@ -420,6 +438,23 @@ export class HomeComponent {
         const merged = [...incoming, ...existing.filter(s => !seen.has(s.id))];
         this.storedGrain.set(merged);
         this.appState.setStoredGrain(merged);
+        const sel = this.selectedCustomer();
+        if (sel) this._loadCustomerData(sel.id);
+      },
+      error: () => {}
+    });
+
+    // Merge (not replace) for the same reason storage does: the TU-wide fetch and the per-producer
+    // fetch both write this signal, so a late TU response must not drop rows already loaded for the
+    // selected producer.
+    this.apiService.getDpContracts(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        const incoming = data ?? [];
+        const existing = this.dpContracts();
+        const seen = new Set(incoming.map(d => d.id));
+        const merged = [...incoming, ...existing.filter(d => !seen.has(d.id))];
+        this.dpContracts.set(merged);
+        this.appState.setDpContracts(merged);
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },
@@ -628,6 +663,7 @@ export class HomeComponent {
       noteLastContacts: this.appState.noteLastContacts(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
+      dpContracts: this.dpContracts(),
       commodities: this.appState.commodities(),
       commodityConversions: this.appState.commodityConversions(),
       // Thread identity through so saved-list "by me" filters work even when notes' CreatedBy
@@ -656,6 +692,7 @@ export class HomeComponent {
         ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.contracts(), this.appState.notes(), {
             tickets: this.tickets(),
             storedGrain: this.storedGrain(),
+            dpContracts: this.dpContracts(),
             plantingIntentions: this.plantingIntentions(),
             commodityConversions: this.appState.commodityConversions(),
             noteLastContacts: this.appState.noteLastContacts()
@@ -947,6 +984,7 @@ export class HomeComponent {
     this.isLoadingContracts.set(true);
     this.isLoadingUnappliedTickets.set(true);
     this.isLoadingStoredGrain.set(true);
+    this.isLoadingDpContracts.set(true);
     this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
     this._loadCustomerData(customer.id);
     this._fetchMissingLinkedProducers(customer);
@@ -1177,6 +1215,7 @@ export class HomeComponent {
       this.isLoadingContracts.set(false);
       this.isLoadingUnappliedTickets.set(false);
       this.isLoadingStoredGrain.set(false);
+      this.isLoadingDpContracts.set(false);
       this._loadCustomerData(customerId);
       return;
     }
@@ -1184,8 +1223,9 @@ export class HomeComponent {
     let contractsDone = false;
     let ticketsDone = false;
     let grainDone = false;
+    let dpDone = false;
     const markIfAllDone = () => {
-      if (contractsDone && ticketsDone && grainDone) this._customerLoadDone.add(customerId);
+      if (contractsDone && ticketsDone && grainDone && dpDone) this._customerLoadDone.add(customerId);
     };
 
     this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1224,6 +1264,20 @@ export class HomeComponent {
         markIfAllDone();
       },
       error: () => { this.isLoadingStoredGrain.set(false); }
+    });
+
+    this.apiService.getDpContractsByCustomer(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (dp) => {
+        // Per-producer merge, NOT a TU-wide load: it must not flip dpContractsLoaded, or Build A List
+        // would treat this one producer's rows as the whole trade unit's DP set.
+        this.appState.mergeCustomerDpContracts(customerId, dp);
+        this.dpContracts.set(this.appState.dpContracts());
+        this.isLoadingDpContracts.set(false);
+        this._loadCustomerData(customerId);
+        dpDone = true;
+        markIfAllDone();
+      },
+      error: () => { this.isLoadingDpContracts.set(false); }
     });
   }
 
@@ -1279,6 +1333,10 @@ export class HomeComponent {
     const allStored = this.storedGrain().filter(s => s.customerId === customerId);
     this.allCustomerStoredGrain.set([...allStored]);
     this.customerStoredGrain.set([...allStored]);
+
+    const allDp = this.dpContracts().filter(d => d.customerId === customerId);
+    this.allCustomerDpContracts.set([...allDp]);
+    this.customerDpContracts.set([...allDp]);
 
     const linkedGroup = this.getLinkedGroup(currentCustomer);
     const linkedIds = new Set([customerId, ...linkedGroup.map(c => c.id)]);

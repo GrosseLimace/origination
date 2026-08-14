@@ -47,6 +47,8 @@ public static class FeatureNameMapper
             return ("customers", "planting-intentions");
         if (p.StartsWith("/api/storedgrain"))
             return ("customers", "storage");
+        if (p.StartsWith("/api/dpcontracts"))
+            return ("customers", "dp-contracts");
         if (p.StartsWith("/api/producerdetails"))
             return ("customers", "producer-details");
 

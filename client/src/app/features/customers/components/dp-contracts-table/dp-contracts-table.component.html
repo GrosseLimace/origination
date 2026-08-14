@@ -1,0 +1,263 @@
+
+<div class="w-full">
+  @if (isLoading()) {
+    <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
+      <p class="mt-3 text-sm">Loading DP contracts...</p>
+    </div>
+  } @else if (dpContracts().length === 0) {
+    <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+      <svg class="mx-auto h-12 w-12 text-gray-400 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+      </svg>
+      <p class="mt-4">No DP contracts for this producer</p>
+    </div>
+  } @else {
+
+    <!-- Search toolbar -->
+    <div class="flex items-center border-b border-gray-100 dark:border-gray-800 px-3 py-1.5">
+      <div class="flex items-center w-full gap-2">
+        <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input
+          type="text"
+          [ngModel]="searchQuery()"
+          (ngModelChange)="searchQuery.set($event)"
+          placeholder="Search DP contracts..."
+          class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
+        />
+        @if (searchQuery()) {
+          <button (click)="searchQuery.set('')" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        }
+      </div>
+    </div>
+
+
+    <!-- DP Groups -->
+    <div class="max-h-[calc(100vh-14rem)] overflow-y-auto space-y-2 pt-2 px-1">
+
+      @if (groups().length === 0) {
+        <p class="text-center py-6 text-sm text-gray-500 dark:text-gray-400">
+          No DP contracts match "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery() }}</span>"
+        </p>
+      }
+
+      @for (group of groups(); track group.key) {
+        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+
+          <!-- Collapsed Header -->
+          <div
+            class="flex items-center justify-between px-4 py-3 cursor-pointer select-none bg-gray-50 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors"
+            (click)="toggleGroup(group.key, $event)"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <svg class="h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200" [class.rotate-90]="isExpanded(group.key)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+              </svg>
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ group.crop }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  <!-- Contracts first (the level below), then distinct deliveries -- NOT row count,
+                       since one delivery has a row per charge type. -->
+                  {{ group.contractCount }} contract{{ group.contractCount !== 1 ? 's' : '' }}
+                  &middot; {{ group.deliveryCount }} ticket{{ group.deliveryCount !== 1 ? 's' : '' }}
+                  &middot; Since {{ group.earliestDate | date:'M/d/yyyy' }}
+                  <!-- Disclose rows missing from the bushel total so it's never read as complete. -->
+                  @if (group.unconvertedCount > 0) {
+                    &middot; {{ group.unconvertedCount }} without bushel conversion
+                  }
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 flex-shrink-0">
+              <div class="w-24 text-center">
+                <p class="text-xs text-gray-500 dark:text-gray-400">Bushels</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">
+                  @if (group.deliveryCount > group.unconvertedCount) {
+                    {{ group.totalBushels | number:'1.2-2' }} bu
+                  } @else {
+                    —
+                  }
+                </p>
+              </div>
+              <div class="w-32 text-center">
+                <p class="text-xs text-gray-500 dark:text-gray-400">Accumulated Cost</p>
+                <p class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">{{ group.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
+              </div>
+              <div class="w-24 text-center">
+                <p class="text-xs text-gray-500 dark:text-gray-400">Cents/Bu</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.totalBushels > 0 ? ((group.totalCost / group.totalBushels) * 100 | number:'1.2-2') + '¢' : '—' }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expanded: the DP contracts in this group. Tickets hang off a contract, not off the
+               group, because several tickets are typically applied to one contract. A group with
+               only ONE contract has it auto-expanded, so this level costs no extra click there. -->
+          @if (isExpanded(group.key)) {
+            <div class="border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+              @for (contract of group.contracts; track contract.key) {
+                <div>
+
+                  <!-- Contract header (second level). Flush left (px-4) so the chevron lines up under
+                       the commodity chevron above rather than sitting indented. -->
+                  <div
+                    class="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none transition-colors hover:bg-gray-100 dark:hover:bg-gray-700/60"
+                    [ngClass]="isContractExpanded(contract.key) ? 'bg-gray-100 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700' : ''"
+                    (click)="toggleContract(contract.key, $event)"
+                  >
+                    <div class="flex items-center gap-3 min-w-0">
+                      <svg class="h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200" [class.rotate-90]="isContractExpanded(contract.key)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+                      </svg>
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ contract.contractNumber }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ contract.deliveryCount }} ticket{{ contract.deliveryCount !== 1 ? 's' : '' }}
+                          &middot; Since {{ contract.earliestDate | date:'M/d/yyyy' }}
+                          @if (contract.unconvertedCount > 0) {
+                            &middot; {{ contract.unconvertedCount }} without bushel conversion
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    <!-- With a single contract these totals are identical to the group header above,
+                         so they're suppressed rather than repeated. They only earn their space when
+                         there are several contracts to compare. -->
+                    @if (group.contractCount > 1) {
+                      <div class="flex items-center gap-4 flex-shrink-0">
+                        <div class="w-24 text-center">
+                          <p class="text-xs text-gray-500 dark:text-gray-400">Bushels</p>
+                          <p class="text-sm font-medium text-gray-900 dark:text-white">
+                            @if (contract.deliveryCount > contract.unconvertedCount) {
+                              {{ contract.totalBushels | number:'1.2-2' }} bu
+                            } @else {
+                              —
+                            }
+                          </p>
+                        </div>
+                        <div class="w-32 text-center">
+                          <p class="text-xs text-gray-500 dark:text-gray-400">Accumulated Cost</p>
+                          <p class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">{{ contract.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
+                        </div>
+                        <div class="w-24 text-center">
+                          <p class="text-xs text-gray-500 dark:text-gray-400">Cents/Bu</p>
+                          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ contract.totalBushels > 0 ? ((contract.totalCost / contract.totalBushels) * 100 | number:'1.2-2') + '¢' : '—' }}</p>
+                        </div>
+                      </div>
+                    }
+                  </div>
+
+                  <!-- Expanded: the tickets applied to this contract -->
+                  @if (isContractExpanded(contract.key)) {
+                    <div class="overflow-auto" style="max-height: min(50vh, 400px);">
+                      <app-table [stickyHeader]="true">
+                        <app-table-header>
+                  <app-table-row>
+                    <app-table-head [sortable]="true" (click)="handleSort('ticket')">
+                      <span class="flex items-center justify-center gap-1">Ticket #
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('ticket')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'ticket' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'ticket' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('charged')">
+                      <span class="flex items-center justify-center gap-1">Charged From – Thru
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('charged')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'charged' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'charged' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('netBu')">
+                      <span class="flex items-center justify-center gap-1">Net Bu
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('netBu')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'netBu' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'netBu' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('storageDays')" >
+                      <span class="flex items-center justify-center gap-1">Storage Days
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('storageDays')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'storageDays' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'storageDays' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('rate')" >
+                      <span class="flex items-center justify-center gap-1">Rate
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('rate')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'rate' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'rate' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('amount')" >
+                      <span class="flex items-center justify-center gap-1">Storage Amount
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('amount')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'amount' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'amount' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                  </app-table-row>
+                </app-table-header>
+                <app-table-body>
+                          @for (dp of sortedPositions(contract.positions); track dp.id) {
+                    <app-table-row>
+                      <app-table-cell class="text-center">{{ dp.ticketNumber }}</app-table-cell>
+                      <app-table-cell class="text-center">
+                        @if (dp.chargedFromDate || dp.chargedThruDate) {
+                          {{ dp.chargedFromDate | date:'M/d/yy' }} – {{ dp.chargedThruDate | date:'M/d/yy' }}
+                        } @else {
+                          —
+                        }
+                      </app-table-cell>
+                      <!-- Null bushels renders as a dash, never the raw quantity: the source unit may
+                           not be bushels. Styling matches every other cell; the title is the only
+                           addition, explaining the dash on hover. -->
+                      <app-table-cell class="text-center">
+                        @if (dp.bushels !== null) {
+                          {{ dp.bushels | number:'1.2-2' }}
+                        } @else {
+                          <span [title]="'Quantity is ' + (dp.quantity | number) + ' ' + (dp.quantityUom || 'an unknown unit') + ' and cannot be converted to bushels'">—</span>
+                        }
+                      </app-table-cell>
+                      <app-table-cell class="text-center" >{{ dp.storageDays | number:'1.0-1' }}</app-table-cell>
+                      <!-- Storage_Rate is numeric(8,6), and DP mixes magnitudes: a flat initial charge
+                           (0.300000) sits alongside a per-day rate (0.001667). Storage's 3-decimal
+                           format collapsed the latter to "$0.002". 1.2-6 keeps 2 decimals minimum for
+                           readability and up to 6 so the small rates stay exact. -->
+                      <app-table-cell class="text-center" >${{ dp.storageRate | number:'1.2-6' }}</app-table-cell>
+                      <app-table-cell class="text-center text-scoular-red-accessible dark:text-scoular-red font-medium" >{{ dp.receivableAmount | currency:'USD':'symbol':'1.2-2' }}</app-table-cell>
+                    </app-table-row>
+                  }
+                        </app-table-body>
+                      </app-table>
+                    </div>
+                  }
+
+                </div>
+              }
+            </div>
+          }
+
+        </div>
+      }
+    </div>
+
+  }
+</div>

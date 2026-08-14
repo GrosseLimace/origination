@@ -12,7 +12,8 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate } from '@models';
+import { dpTotalBushels, dpTotalCharges, dpBreakdownByCrop } from '@shared/utils/dp-aggregate';
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 import { plantingChips, plantingQueryScope, PlantingChip, isIrrigated, isDryland, isDoubleCrop } from '@shared/utils/planting-chips';
@@ -119,22 +120,28 @@ export class BuildListComponent {
     this.appState.notesLoaded();
     this._loadedNoteScopeKey();   // re-run when a scoped note slice lands
     this.storedGrain();
+    this.dpContracts();
+    this._dpReady();
     this._ticketsReady();
     this._contractsReady();
-    if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes()) && this.coreDataLoaded()) {
+    if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes() || this.waitingForDp()) && this.coreDataLoaded()) {
       untracked(() => {
         // Re-check if the needed data is now available
         const q = this.queryText();
         const ticketsOk = !this.nlqFilterService.queryInvolvesTickets(q) || this._ticketsReady();
         const contractsOk = !this.nlqFilterService.queryInvolvesContracts(q) || this._contractsReady();
         const storageOk = !this.nlqFilterService.queryInvolvesStorage(q) || this.storedGrain().length > 0;
+        // Loaded-flag, not length: a TU with genuinely zero DP rows must satisfy this or the
+        // spinner never clears.
+        const dpOk = !this.nlqFilterService.queryInvolvesDpContracts(q) || this._dpReady();
         // Gate on notesLoaded (not notes().length) so a trade unit with genuinely zero notes
         // doesn't hang the spinner forever. noteFilterActive() is true only when a prompt/refine
         // actually reads note content — non-note prompts never wait on notes.
         const notesOk = this._notesReadyForQuery();
-        if (ticketsOk && contractsOk && storageOk && notesOk) {
+        if (ticketsOk && contractsOk && storageOk && dpOk && notesOk) {
           this.waitingForTickets.set(false);
           this.waitingForNotes.set(false);
+          this.waitingForDp.set(false);
           // Async coverage queries own isProcessing until their fetch resolves (see _applyNlqFilter).
           if (!this._applyNlqFilter()) this.isProcessing.set(false);
         }
@@ -188,6 +195,7 @@ export class BuildListComponent {
   plantingIntentions = signal<PlantingIntention[]>([]);
   notes = signal<Note[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
+  dpContracts = signal<DpContract[]>([]);
   savedLists = signal<SavedList[]>([]);
   /** Saved lists belonging to other users in the selected trade unit(s) — manager-only. */
   teamSavedLists = signal<SavedList[]>([]);
@@ -269,6 +277,10 @@ export class BuildListComponent {
       r.storageDaysOver != null && r.storageDaysOver > 0,
       r.storageQuantityOver != null && r.storageQuantityOver > 0,
       r.storageReceivableOver != null && r.storageReceivableOver > 0,
+      r.hasDpContracts,
+      r.dpBushelsOver != null && r.dpBushelsOver > 0,
+      r.dpDaysOver != null && r.dpDaysOver > 0,
+      r.dpChargesOver != null && r.dpChargesOver > 0,
       r.plantingYear != null, r.irrigatedOnly, r.drylandOnly, r.doubleCropOnly,
       r.plantingAcresOver != null && r.plantingAcresOver > 0,
       r.grainOnFarmBushelsOver != null && r.grainOnFarmBushelsOver > 0,
@@ -656,6 +668,34 @@ export class BuildListComponent {
       list = list.filter(c => (customerTotals.get(c.id) || 0) > r.storageReceivableOver!);
     }
 
+    // DP filters — scoped to selected crops when active. Bushel and charge totals go through the
+    // dp-aggregate helpers: the DP view emits one row per charge type per delivery, each repeating
+    // the same quantity, so summing rows would double-count the grain (charges ARE additive).
+    if (r.hasDpContracts) {
+      const dpCustomers = new Set<number>(this.dpContracts().map(d => d.customerId));
+      list = list.filter(c => dpCustomers.has(c.id));
+    }
+    const hasDpFilter = r.dpBushelsOver != null || r.dpDaysOver != null || r.dpChargesOver != null;
+    if (hasDpFilter) {
+      const scopedDp = selectedCrops.size > 0
+        ? this.dpContracts().filter(d => d.crop && this._matchesCropFilter(d.crop, selectedCrops))
+        : this.dpContracts();
+      const dpByCustomer = new Map<number, DpContract[]>();
+      for (const d of scopedDp) {
+        const rows = dpByCustomer.get(d.customerId);
+        if (rows) rows.push(d); else dpByCustomer.set(d.customerId, [d]);
+      }
+      if (r.dpBushelsOver != null && r.dpBushelsOver > 0) {
+        list = list.filter(c => dpTotalBushels(dpByCustomer.get(c.id) ?? []) > r.dpBushelsOver!);
+      }
+      if (r.dpDaysOver != null && r.dpDaysOver > 0) {
+        list = list.filter(c => (dpByCustomer.get(c.id) ?? []).some(d => (d.storageDays ?? 0) >= r.dpDaysOver!));
+      }
+      if (r.dpChargesOver != null && r.dpChargesOver > 0) {
+        list = list.filter(c => dpTotalCharges(dpByCustomer.get(c.id) ?? []) > r.dpChargesOver!);
+      }
+    }
+
     // Ticket filters — pre-build lookup and scope tickets to selected crops
     const hasTicketFilter = r.ticketQuantityOver != null || r.ticketsInLastDays != null ||
       r.avgMoistureOver != null || r.avgMoistureUnder != null ||
@@ -753,6 +793,8 @@ export class BuildListComponent {
       const category = this.effectiveLibraryCategory();
       const isStorage = category === 'Storage' || r.hasGrainInStorage
         || r.storageDaysOver != null || r.storageQuantityOver != null || r.storageReceivableOver != null;
+      const isDp = category === 'DP Contracts' || r.hasDpContracts
+        || r.dpBushelsOver != null || r.dpDaysOver != null || r.dpChargesOver != null;
       const isTickets = category === 'Tickets' || r.hasDeliveriesThisYear
         || r.ticketQuantityOver != null || r.ticketsInLastDays != null
         || r.avgMoistureOver != null || r.avgMoistureUnder != null
@@ -770,7 +812,17 @@ export class BuildListComponent {
         || r.grainTargetOver != null || r.grainTargetUnder != null || r.hasGrade
         || r.gradeOver != null || r.gradeUnder != null;
 
-      if (isStorage) {
+      if (isDp) {
+        // Crop-scope a DP prompt against DP positions, not generic customer.commodities.
+        const dpByCustomer = new Map<number, DpContract[]>();
+        for (const d of this.dpContracts()) {
+          if (!dpByCustomer.has(d.customerId)) dpByCustomer.set(d.customerId, []);
+          dpByCustomer.get(d.customerId)!.push(d);
+        }
+        list = list.filter(c => (dpByCustomer.get(c.id) ?? []).some(d =>
+          !!d.crop && this._matchesCropFilter(d.crop, selectedCrops)
+        ));
+      } else if (isStorage) {
         const storageByCustomer = new Map<number, StoredGrain[]>();
         for (const s of this.storedGrain()) {
           if (!storageByCustomer.has(s.customerId)) storageByCustomer.set(s.customerId, []);
@@ -916,6 +968,11 @@ export class BuildListComponent {
       return [...list].sort((a, b) =>
         this.storageBu(b) - this.storageBu(a) || (a.name || '').localeCompare(b.name || ''));
     }
+    // DP prompts: most bushels on DP first, matching the inline per-commodity chips.
+    if (this.showDpFilters()) {
+      return [...list].sort((a, b) =>
+        this.dpBu(b) - this.dpBu(a) || (a.name || '').localeCompare(b.name || ''));
+    }
     // Planting prompts: same idea, biggest acreage first — matching the per-crop acres chips.
     // Acres are computed once per producer up front rather than inside the comparator, which
     // would rebuild each producer's breakdown on every comparison.
@@ -960,6 +1017,18 @@ export class BuildListComponent {
         }
       }
     }
+    // Same reasoning for DP: a producer can hold a commodity on DP without it appearing in
+    // c.commodities, so union in the crops actually on DP — mirroring the isDp crop filter.
+    if (this.showDpFilters()) {
+      const dpByCustomer = this._dpByCustomerId();
+      for (const c of this.filteredCustomers()) {
+        for (const d of (dpByCustomer.get(c.id) ?? [])) {
+          const crop = (d.crop || '').trim();
+          if (!crop) continue;
+          groups.add(groupByKey.get(crop.toLowerCase()) ?? crop);
+        }
+      }
+    }
     return [...groups].sort();
   });
 
@@ -999,6 +1068,38 @@ export class BuildListComponent {
    *  Drives the "Loading note data…" spinner and suppresses the no-match banner so the query
    *  doesn't flash "no results" before the notes fetch lands (mirrors waitingForTickets). */
   waitingForNotes = signal(false);
+  /** True while a DP-dependent query is parked waiting for the DP fetch. Drives the
+   *  "Loading DP contract data…" spinner and suppresses the no-match banner, so a DP prompt doesn't
+   *  read "no producers found" before the fetch lands (mirrors waitingForTickets / waitingForNotes). */
+  waitingForDp = signal(false);
+  /** True once THIS page's local `dpContracts` signal has been hydrated for the current trade units.
+   *  Deliberately separate from appState.dpContractsLoaded: the TU preload fills appState while this
+   *  page's local copy is still empty, and the NLQ context reads the LOCAL copy — gating on the
+   *  appState flag alone let a query run against an empty array and report "no producers found". */
+  private _dpReady = signal(false);
+  /** Guards the one-shot background DP fetch so overlapping queries don't each fire one. */
+  private _dpFetchInFlight = false;
+  /**
+   * Keeps the local DP copy honest against the shared cache. Two cases this covers:
+   *  - the TU preload lands AFTER this page hydrated, so the local copy is empty while appState
+   *    has rows (adopt them);
+   *  - the trade unit changed, so appState dropped its cache while this page still holds the old
+   *    TU's rows (discard them, and stop reporting ready).
+   * Without this the page can filter against stale or empty data and honestly report "no match".
+   */
+  private _dpCacheSyncEffect = effect(() => {
+    const loaded = this.appState.dpContractsLoaded();
+    const shared = this.appState.dpContracts();
+    untracked(() => {
+      if (!loaded) {
+        if (this.dpContracts().length > 0) this.dpContracts.set([]);
+        this._dpReady.set(false);
+        return;
+      }
+      if (this.dpContracts() !== shared) this.dpContracts.set(shared);
+      this._dpReady.set(true);
+    });
+  });
   /** Guards the one-shot background notes fetch so overlapping queries don't each fire one. */
   private _notesFetchInFlight = false;
   hasGenerated = signal(false);
@@ -1620,6 +1721,9 @@ export class BuildListComponent {
     if (q.includes('wheat') && q.includes('planting')) hidden.add('plantingCrop');
     if (q.includes('in storage') || q.includes('stored')) hidden.add('hasGrainInStorage');
     if (/stored.*over.*\d+\s*days|storage.*over.*\d+\s*days/.test(q)) hidden.add('storageDaysOver');
+    if (/\bon dp\b/.test(q) || /\bdp contract/.test(q) || q.includes('delayed pricing')) hidden.add('hasDpContracts');
+    if (/dp.*over.*\d+\s*days/.test(q)) hidden.add('dpDaysOver');
+    if (/dp\s*(?:charges?|cost)\s*(?:over|above|more than)/.test(q)) hidden.add('dpChargesOver');
     if (q.includes('unapplied') || q.includes('applied ticket')) hidden.add('hasDeliveriesThisYear');
     return hidden;
   });
@@ -1640,6 +1744,7 @@ export class BuildListComponent {
     return this.pendingRefinements().ticketViewMode ?? 'single';
   });
   readonly showStorageFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Storage');
+  readonly showDpFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'DP Contracts');
   readonly showPlantingFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Planting');
   readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Grain on Farm');
   readonly showGeneralFilters = computed(() => {
@@ -1816,6 +1921,10 @@ export class BuildListComponent {
       this.plantingIntentions.set(this.appState.plantingIntentions());
       this.notes.set(this.appState.notes());
       this.storedGrain.set(this.appState.storedGrain());
+      this.dpContracts.set(this.appState.dpContracts());
+      // Only "ready" if the shared cache was actually populated by a completed fetch — otherwise a
+      // DP query must still wait (and show its spinner) rather than filter on an empty array.
+      this._dpReady.set(this.appState.dpContractsLoaded());
       this.savedLists.set(this.appState.savedLists());
       // Don't set _ticketsReady from cache — ticket data may be stale or from a
       // different TU. The background refresh will set it when fresh tickets arrive.
@@ -2063,6 +2172,7 @@ export class BuildListComponent {
     // Must be cleared here too: the recovery effect only clears it while a query is active, so a
     // note prompt abandoned mid-fetch would leave "Loading note data…" spinning under the library.
     this.waitingForNotes.set(false);
+    this.waitingForDp.set(false);
     this.queryText.set('');
     this.hasGenerated.set(false);
     this.filteredCustomers.set([]);
@@ -2093,6 +2203,7 @@ export class BuildListComponent {
     this.isProcessing.set(false);
     this.waitingForTickets.set(false);
     this.waitingForNotes.set(false);
+    this.waitingForDp.set(false);
     this.queryReturnedNoMatches.set(false);
     this.showRefinePanel.set(false);
     this.pendingRefinements.set({});
@@ -2170,6 +2281,7 @@ export class BuildListComponent {
     this.isProcessing.set(true);
     this.waitingForTickets.set(false); // Reset — will be set to true below only if this query needs tickets
     this.waitingForNotes.set(false);   // Reset — will be set to true below only if this query needs notes
+    this.waitingForDp.set(false);      // Reset — will be set to true below only if this query needs DP
 
     // Saved lists always re-fetch to ensure fresh data (_fetchAndFilter loads notes itself).
     if (overrideTradeUnits && overrideTradeUnits.length > 0) {
@@ -2189,6 +2301,14 @@ export class BuildListComponent {
     const needsTickets = this.nlqFilterService.queryInvolvesTickets(this.queryText());
     if (needsTickets && !this._ticketsReady()) {
       this.waitingForTickets.set(true);
+      return;
+    }
+
+    // Same for DP: park on its own spinner until the fetch lands rather than filtering against an
+    // empty array, which reads as a genuine "no producers found".
+    if (this.nlqFilterService.queryInvolvesDpContracts(this.queryText()) && !this._dpReady()) {
+      this.waitingForDp.set(true);
+      this._ensureDpForQuery();
       return;
     }
 
@@ -2213,6 +2333,7 @@ export class BuildListComponent {
     // All needed data is in hand — run the NLQ immediately.
     this.waitingForTickets.set(false);
     this.waitingForNotes.set(false);
+    this.waitingForDp.set(false);
     // Coverage queries finish asynchronously and clear isProcessing themselves — clearing it here
     // would drop the spinner and paint the unfiltered list until their fetch resolves.
     if (!this._applyNlqFilter()) this.isProcessing.set(false);
@@ -2316,6 +2437,39 @@ export class BuildListComponent {
   /** Loads the notes the current prompt needs: full set (shared cache) for full-mode; a
    *  server-narrowed slice (local) for scoped; nothing here for batched (the batch effect loads
    *  note bodies per render batch). No-op when nothing's needed or the slice is already present. */
+  /**
+   * Fetches DP rows once for the current trade units if they haven't been loaded. Warms the shared
+   * appState cache so other pages skip the download, and flips dpContractsLoaded even on failure /
+   * empty so a DP-less trade unit can't park the spinner forever.
+   */
+  private _ensureDpForQuery(): void {
+    if (this._dpReady() || this._dpFetchInFlight) return;
+    // The TU preload may already have filled the shared cache while this page's local copy is empty.
+    // Adopt it rather than re-fetching the same rows.
+    if (this.appState.dpContractsLoaded()) {
+      this.dpContracts.set(this.appState.dpContracts());
+      this._dpReady.set(true);
+      return;
+    }
+    this._dpFetchInFlight = true;
+    const tu = this.appState.selectedTradeUnits();
+    const tuParam = tu.length > 0 ? tu : undefined;
+    this.apiService.getDpContracts(tuParam).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        this._dpFetchInFlight = false;
+        this.dpContracts.set(data ?? []);
+        this.appState.setDpContracts(data ?? []);  // also flips dpContractsLoaded
+        this._dpReady.set(true);                   // re-triggers _dataReadyEffect to run the query
+      },
+      error: () => {
+        this._dpFetchInFlight = false;
+        this.dpContracts.set([]);
+        this.appState.setDpContracts([]);          // loaded-but-empty, not "still loading"
+        this._dpReady.set(true);
+      }
+    });
+  }
+
   private _ensureNotesForQuery(): void {
     const scope = this._noteScope();
     if (scope.mode === 'none' || scope.mode === 'batched') return;
@@ -2424,16 +2578,18 @@ export class BuildListComponent {
     const query = this.queryText().toLowerCase();
     const needsTickets = this.nlqFilterService.queryInvolvesTickets(query);
     const needsStorage = this.nlqFilterService.queryInvolvesStorage(query);
+    const needsDp = this.nlqFilterService.queryInvolvesDpContracts(query);
     const needsNotes = this.noteFilterActive();
     const ticketsOk = !needsTickets || this._ticketsReady();
     const storageOk = !needsStorage || this.storedGrain().length > 0;
+    const dpOk = !needsDp || this._dpReady();
     const notesOk = !needsNotes || this.notes().length > 0;
     // The full note set is only required for prompts/refines that actually read note content,
     // authors, or pinned flags (noteFilterActive). Recency filtering uses the last-contact
     // aggregate and non-note prompts never touch notes, so neither waits on the full set.
     // notesLoaded (not length) distinguishes "not fetched" from "TU genuinely has none".
     const notesReady = !needsNotes || this.appState.notesLoaded();
-    if (tusMatch && this.coreDataLoaded() && this.customers().length > 0 && ticketsOk && storageOk && notesOk && notesReady) {
+    if (tusMatch && this.coreDataLoaded() && this.customers().length > 0 && ticketsOk && storageOk && dpOk && notesOk && notesReady) {
       this._resolvePendingIncludes();
       // Async coverage queries own isProcessing until their fetch resolves (see _applyNlqFilter).
       if (!this._applyNlqFilter()) this.isProcessing.set(false);
@@ -2454,6 +2610,7 @@ export class BuildListComponent {
         ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
         : of(this.appState.notes()),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
+      dpContracts: this.apiService.getDpContracts(tuParam).pipe(catchError(() => of([] as DpContract[]))),
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
@@ -2468,6 +2625,9 @@ export class BuildListComponent {
         if (fetchingNotes) this.appState.setNotes(data.notes);
         this.plantingIntentions.set(data.plantingIntentions);
         this.storedGrain.set(data.storedGrain);
+        this.dpContracts.set(data.dpContracts);
+        this.appState.setDpContracts(data.dpContracts);
+        this._dpReady.set(true);
         this._ticketsReady.set(true);
         this.coreDataLoaded.set(true);
         this._resolvePendingIncludes();
@@ -2483,6 +2643,7 @@ export class BuildListComponent {
         // spinners here or the failure reads as an endless load.
         this.waitingForTickets.set(false);
         this.waitingForNotes.set(false);
+        this.waitingForDp.set(false);
       }
     });
   }
@@ -2532,6 +2693,7 @@ export class BuildListComponent {
       noteLastContacts: this.appState.noteLastContacts(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
+      dpContracts: this.dpContracts(),
       commodities: this.appState.commodities(),
       commodityConversions: this.appState.commodityConversions(),
       currentUserDisplayName: account?.name ?? '',
@@ -3375,6 +3537,17 @@ export class BuildListComponent {
     // Notes already visible in the sidebar — no tab override needed.
     if (this.noteFilterActive()) return null;
 
+    // DP contracts. Checked BEFORE storage: DP prompts share storage vocabulary (both talk about
+    // days accruing and charges), so a storage-first test would swallow "on dp over 90 days" and
+    // land the user on the Storage tab instead.
+    if (this.nlqFilterService.queryInvolvesDpContracts(q) ||
+        r.hasDpContracts ||
+        (r.dpBushelsOver != null && r.dpBushelsOver > 0) ||
+        (r.dpDaysOver != null && r.dpDaysOver > 0) ||
+        (r.dpChargesOver != null && r.dpChargesOver > 0)) {
+      return 'dpContracts';
+    }
+
     // Storage
     if (q.includes('storage') || q.includes('stored grain') ||
         (r.storageDaysOver != null && r.storageDaysOver > 0) ||
@@ -3604,6 +3777,35 @@ export class BuildListComponent {
       .sort((a, b) => b.bushels - a.bushels);
   }
 
+  /** DP rows grouped by numeric customerId. Mirror of `_storageByCustomerId`. */
+  private readonly _dpByCustomerId = computed(() => {
+    const map = new Map<number, DpContract[]>();
+    for (const d of this.dpContracts()) {
+      const arr = map.get(d.customerId);
+      if (arr) arr.push(d); else map.set(d.customerId, [d]);
+    }
+    return map;
+  });
+
+  /** Total bushels a producer has on DP. Drives the DP-results sort (most DP first).
+   *  Counted once per delivery — the view repeats the quantity on every charge-type row. */
+  dpBu(customer: Customer): number {
+    return dpTotalBushels(this._dpByCustomerId().get(customer.id) ?? []);
+  }
+
+  /** Per-commodity DP totals, largest first — the inline chips on DP results. Bushels are
+   *  per-delivery and charges are summed across charge rows (see dp-aggregate). */
+  dpBreakdown(customer: Customer): { crop: string; bushels: number; category: string }[] {
+    const catByKey = this._commodityCategoryByKey();
+    return dpBreakdownByCrop(this._dpByCustomerId().get(customer.id) ?? [])
+      .filter(b => b.bushels > 0)
+      .map(b => ({
+        crop: b.crop,
+        bushels: b.bushels,
+        category: catByKey.get(b.crop.toLowerCase()) ?? b.crop,
+      }));
+  }
+
   /** Planting intentions grouped by numeric customerId. Mirror of `_storageByCustomerId`. */
   private readonly _plantingByCustomerId = computed(() => {
     const map = new Map<number, PlantingIntention[]>();
@@ -3650,6 +3852,10 @@ export class BuildListComponent {
    * Numbers are formatted here rather than in the template because each chip is a single string.
    */
   resultChips(customer: Customer): { text: string; colorKey: string }[] {
+    if (this.showDpFilters()) {
+      return this.dpBreakdown(customer)
+        .map(b => ({ text: `${b.crop} ${b.bushels.toLocaleString('en-US')}`, colorKey: b.category }));
+    }
     if (this.showStorageFilters()) {
       return this.storageBreakdown(customer)
         .map(b => ({ text: `${b.crop} ${b.bushels.toLocaleString('en-US')}`, colorKey: b.category }));
@@ -3670,5 +3876,5 @@ export class BuildListComponent {
    * true for the categories that render inline chips, which need the extra room.
    */
   readonly wideIdentityColumn = computed(() =>
-    this.showStorageFilters() || this.showPlantingFilters() || this.showGrainOnFarmFilters());
+    this.showStorageFilters() || this.showDpFilters() || this.showPlantingFilters() || this.showGrainOnFarmFilters());
 }
