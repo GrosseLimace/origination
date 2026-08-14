@@ -69,6 +69,8 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 - **Scope Name**: `Origination.Application.Dev`
 - **Scope URI**: `api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev`
 
+No additional identifierUris or delegated OAuth2 scopes configured for this environment.
+
 **Configuration:**
 - **Token Configuration**: Access tokens version 2
 - **Supported Account Types**: Single tenant (Accounts in this organizational directory only)
@@ -130,6 +132,8 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 **API Scope:**
 - **Scope URI**: `api://f3fcab2b-98c8-4622-86bd-c874d281b22a/Origination.Application.QA`
 
+No additional identifierUris or delegated OAuth2 scopes configured for this environment.
+
 **Configuration:**
 - **Token Configuration**: Access tokens version 2
 - **Supported Account Types**: Single tenant (Accounts in this organizational directory only)
@@ -187,6 +191,8 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 
 **API Scope:**
 - **Scope URI**: `api://e1458bcd-7212-4ea0-a836-7e08d03b5bbf/Origination.Application.Prod`
+
+No additional identifierUris or delegated OAuth2 scopes configured for this environment.
 
 **Configuration:**
 - **Token Configuration**: Access tokens version 2
@@ -385,6 +391,12 @@ A separate app registration is used for GitHub Actions CI/CD deployments via OID
 | QA | `origination-qa` | `repo:IT/origination:environment:qa` |
 | Prod | `origination-prod` | `repo:IT/origination:environment:prod` |
 
+**Note on repo age:** the `repo:IT/...` form above applies to repos created before 2026-07-15.
+Repos **created, renamed, or transferred on or after 2026-07-15** get an immutable subject
+format instead, embedding org/repo IDs: `repo:IT@{orgId}/origination@{repoId}:environment:dev`.
+Both forms authenticate identically once configured; infrastructure automation resolves the
+correct live value automatically.
+
 **Azure RBAC (per environment):**
 
 | Role | Scope |
@@ -515,4 +527,4 @@ If you get "Forbidden" when accessing the Key Vault secret, ensure you are a mem
 
 ---
 
-*Document version: 1.7 | 2026-06-21*
+*Document version: 1.9 | 2026-08-10*
