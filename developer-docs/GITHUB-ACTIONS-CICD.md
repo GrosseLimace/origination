@@ -7,6 +7,7 @@ This guide covers the GitHub Actions CI/CD pipeline for the Origination applicat
 - [Overview](#overview)
 - [Self-Hosted Runners](#self-hosted-runners)
 - [Workflow Configuration](#workflow-configuration)
+- [Action Version Pinning (Supply-Chain Hardening)](#action-version-pinning-supply-chain-hardening)
 - [Workload Identity Federation (Zero-Secret Auth)](#workload-identity-federation-zero-secret-auth)
 - [Repository Secrets](#repository-secrets)
 - [Environments and Deployment Approvals](#environments-and-deployment-approvals)
@@ -38,6 +39,76 @@ runs-on: self-hosted
 - Pre-installed tools: .NET SDK, Node.js, Git, Azure CLI
 - NOT GitHub-hosted runners (no per-minute billing, no internet egress restrictions)
 - Do NOT use `runs-on: ubuntu-latest` or other GitHub-hosted labels
+- **Runners have no Azure managed identity of any kind.** All Azure/SQL access from a workflow
+  comes exclusively from the workflow's own OIDC-federated service principal (via `azure/login`
+  below) — never from the runner VM itself. This is deliberate (a runner-level identity would be a
+  standing credential with broad blast radius if any single job were compromised), not an
+  oversight to work around.
+- **Every job runs on a freshly created VM that is deleted immediately after that job finishes.**
+  Runners are single-use (`--ephemeral` GHE registration) and the underlying VM itself is torn down
+  and replaced, not restarted or reused, after every job — including jobs that fail. Nothing
+  written to disk by one job (planted files, background processes, modified PATH) can persist into
+  a later job, even a later job on the "same" runner pool, because there is no "same VM" across two
+  jobs to persist into.
+
+### Trust Model — What This Does and Doesn't Protect Against
+
+The two properties above close a specific, real class of risk: **there is no standing credential on
+the runner to steal, and no way for one job's code to contaminate a later job.** That is what makes
+`runs-on: self-hosted` safe for the deploy/build/test pipelines this guide documents, which only
+ever run on `push`/`workflow_dispatch` — i.e., already-merged, already-reviewed code.
+
+**This does NOT mean it's safe to run arbitrary, unreviewed code on these runners.** Two things are
+unchanged by the properties above:
+
+1. **Network reachability — a smaller concern here than it first looks, given who can actually
+   place code.** Runners sit on the corporate network with reach to internal resources — SQL
+   servers, Key Vault, private endpoints. In the classic public-repo threat model this matters a
+   lot: an anonymous attacker who couldn't otherwise touch the corporate network gains a foothold
+   just by getting code onto a runner. That's not really the situation on `scoular.ghe.com` — every
+   account able to push code or open a PR is already a Scoular-provisioned corporate identity (see
+   the EMU note below), with their own legitimate network access that's typically equal to or
+   broader than what the runner's subnet can reach. A malicious insider using a runner to reach a
+   SQL server usually isn't gaining access they didn't already have from their own laptop — they're
+   just taking a noisier, more traceable path to do something they could do directly. **The one
+   place this doesn't fully hold:** a credential-only compromise — a phished GHE login or a stolen
+   session, without the attacker also controlling the account holder's own device or network
+   session — could still use the runner's network position to reach something the stolen credential
+   alone wouldn't grant.
+2. **Whatever privileges the job's own steps grant.** If a workflow step runs `docker run` without
+   additional isolation, invokes a build tool that executes arbitrary project-defined scripts
+   (MSBuild targets, npm lifecycle scripts, etc.), or otherwise grants itself elevated access on the
+   runner OS, that access is exactly as available to malicious code in that job as it is to your own
+   build steps. Ephemeral-VM-per-job bounds the *blast radius in time* (gone after this one job) —
+   it does not bound *what that one job can do while it's running*.
+
+**A note on who "PR-authored code" actually means here:** `scoular.ghe.com` is a GitHub Enterprise
+**Managed Users (EMU)** instance — every account, including every PR author, is a Scoular-provisioned
+identity synced from Entra ID via SCIM, not a free-standing
+public GitHub.com account. There is no fork-and-open-a-PR path from an anonymous internet stranger
+the way there is on a public open-source repo, and most generic CI/CD security-scanner heuristics
+(and the security policy language they cite, e.g. "self-hosted + `pull_request`") are calibrated for
+that public-repo threat model by default. **This narrows the threat, it does not eliminate it:** a
+compromised or misused corporate account (phished credentials, a compromised laptop, an insider) can
+still open a PR containing malicious code, same as any legitimate PR. Treat the guidance below as
+insider/compromised-account risk mitigation, not anonymous-internet-attacker mitigation — the
+likelihood and actor profile are different from a public repo, and (per the caveat above) that
+context genuinely shrinks the network-reachability concern for a legitimate-but-malicious account.
+It does NOT shrink the job-privilege exposure (item 2) — unrestricted Docker daemon access, or any
+other elevated access a job's own steps grant themselves, is exactly as dangerous regardless of
+whether the code coming through it belongs to a trusted employee or a compromised account.
+
+**Practical implication: think carefully before adding a `pull_request` trigger to any job that
+compiles, tests, or otherwise executes repository code** (as opposed to a job that only reads
+metadata, e.g. a PR title linter). A `pull_request`-triggered job executes PR-authored code —
+including code from the PR itself, not just the base branch — with full access to whatever
+privileges that job's steps carry (item 2 above), for the duration of that one job. There's no
+runner identity to steal, and — for a legitimate-account insider — not much of a network-reachability
+upgrade over what they already have from their own laptop either (item 1 above); the credential-only-
+compromise case is the one where this still matters. If you need pre-merge build/test/scan feedback
+on PRs, talk to the infrastructure team about a scoped approach (a dedicated runner group, a
+required-reviewer gate on the PR-triggered job, or narrowing what that specific job's steps are
+allowed to do) rather than adding the trigger to an existing job unmodified.
 
 ---
 
@@ -58,7 +129,7 @@ jobs:
 
     steps:
       - name: Azure Login (OIDC)
-        uses: azure/login@v3
+        uses: azure/login@858f4093d287a904987dfd22abd163280f939550  # v3.0.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -73,7 +144,7 @@ jobs:
 
 ```yaml
       - name: Deploy to App Service
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383  # v3.0.8
         with:
           app-name: app-origination-dev-eus  # or -qa-eus / -eus for prod
           package: ./publish
@@ -89,10 +160,6 @@ jobs:
 
 ### EF Core Migrations (Optional)
 
-If your workflow runs Entity Framework Core migrations, there are two parts: the **workflow step** and a required **design-time factory** in your C# code.
-
-#### Workflow step
-
 ```yaml
       - name: Run EF Migrations
         run: |
@@ -102,90 +169,17 @@ If your workflow runs Entity Framework Core migrations, there are two parts: the
           ConnectionStrings__DefaultConnection: "Server=azrscosqld01.database.windows.net;Database=Origination;Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False"
 ```
 
-> **Important: `Active Directory Default` and self-hosted runners**
->
-> The connection string uses `Authentication=Active Directory Default`, which internally uses
-> `DefaultAzureCredential` from the Azure.Identity library. This credential type tries multiple
-> authentication methods in order: Environment, Workload Identity, **Managed Identity**, then Azure CLI.
->
-> The self-hosted runners have a **system-assigned managed identity** (from the VMSS). Because
-> `DefaultAzureCredential` tries managed identity *before* Azure CLI, it will authenticate as the
-> **runner's VMSS identity** -- not as the workflow's service principal set up by `azure/login`.
-> The VMSS identity does not have database access, so the connection will fail with:
-> `Login failed for user '<token-identified principal>'`.
->
-> To fix this, your EF Core project must include a **design-time factory** that excludes managed
-> identity from the credential chain. See the next section.
-
-#### Design-time factory (required for CI/CD migrations)
-
-Your EF Core infrastructure project needs an `IDesignTimeDbContextFactory` that acquires the
-Azure AD token explicitly, skipping `ManagedIdentityCredential`. This factory is only used by
-`dotnet ef` commands -- it does **not** affect runtime behavior on the App Service.
-
-```csharp
-using Azure.Core;
-using Azure.Identity;
-using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Design;
-
-namespace YourApp.Infrastructure.Data;
-
-/// <summary>
-/// Design-time factory for EF Core migrations (used by dotnet ef commands).
-/// Excludes ManagedIdentityCredential so self-hosted CI/CD runners authenticate
-/// via Azure CLI (the service principal from azure/login) instead of the
-/// runner VMSS managed identity.
-/// </summary>
-public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
-{
-    public AppDbContext CreateDbContext(string[] args)
-    {
-        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
-
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            throw new InvalidOperationException(
-                "Connection string not found. Set the 'ConnectionStrings__DefaultConnection' environment variable.");
-        }
-
-        // Remove the Authentication parameter -- we handle token acquisition ourselves
-        // to control which credential is used.
-        var builder = new SqlConnectionStringBuilder(connectionString);
-        builder.Authentication = SqlAuthenticationMethod.NotSpecified;
-
-        var connection = new SqlConnection(builder.ConnectionString);
-
-        // Exclude ManagedIdentityCredential so the runner VMSS identity is not used.
-        // This falls through to AzureCliCredential, which uses the SP from azure/login.
-        var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
-        {
-            ExcludeManagedIdentityCredential = true
-        });
-
-        var token = credential.GetToken(
-            new TokenRequestContext(new[] { "https://database.windows.net/.default" }));
-        connection.AccessToken = token.Token;
-
-        var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseSqlServer(connection, sqlOptions =>
-        {
-            sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(30),
-                errorNumbersToAdd: null);
-            sqlOptions.CommandTimeout(60);
-            sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
-        });
-
-        return new AppDbContext(optionsBuilder.Options);
-    }
-}
-```
+`Authentication=Active Directory Default` uses `DefaultAzureCredential` under the hood, which tries
+several credential types in order (Environment, Workload Identity, Managed Identity, then Azure
+CLI) and uses whichever succeeds first. **Self-hosted runners have no managed identity at all**
+(see [Self-Hosted Runners](#self-hosted-runners) above), so that step in the chain fails
+immediately and falls through to `AzureCliCredential` — which picks up the workflow's own
+service principal from the `azure/login` step earlier in the job. No special handling, design-time
+factory, or credential exclusion is needed; a plain `dotnet ef` invocation authenticates correctly
+as long as `azure/login` ran first in the same job and that service principal has been granted the
+appropriate SQL role (see [SQL Database Roles](#sql-database-roles-per-environment) below).
 
 **Prerequisites:**
-- Add `Azure.Identity` NuGet package to the infrastructure project (if not already referenced)
 - Add a `.config/dotnet-tools.json` manifest with `dotnet-ef` in your backend project root:
   ```json
   {
@@ -199,10 +193,6 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
     }
   }
   ```
-
-**What this does NOT affect:**
-- **Runtime on App Service**: The App Service uses `Program.cs` DI configuration (not this factory). Its own managed identity authenticates correctly because it *is* the intended identity.
-- **Local development**: Developers don't have IMDS on their machines, so managed identity is skipped anyway. `AzureCliCredential` picks up their `az login` session.
 
 ### Complete Workflow Example
 
@@ -234,10 +224,10 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: '8.0.x'
 
@@ -245,7 +235,7 @@ jobs:
         run: dotnet publish src/Application.Api -c Release -o ./publish
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: app
           path: ./publish
@@ -260,20 +250,20 @@ jobs:
       contents: read
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: app
           path: ./publish
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v3
+        uses: azure/login@858f4093d287a904987dfd22abd163280f939550  # v3.0.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
 
       - name: Deploy to Dev
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383  # v3.0.8
         with:
           app-name: app-origination-dev-eus
           package: ./publish
@@ -288,20 +278,20 @@ jobs:
       contents: read
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: app
           path: ./publish
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v3
+        uses: azure/login@858f4093d287a904987dfd22abd163280f939550  # v3.0.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
 
       - name: Deploy to QA
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383  # v3.0.8
         with:
           app-name: app-origination-qa-eus
           package: ./publish
@@ -316,24 +306,61 @@ jobs:
       contents: read
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: app
           path: ./publish
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v3
+        uses: azure/login@858f4093d287a904987dfd22abd163280f939550  # v3.0.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
 
       - name: Deploy to Prod
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383  # v3.0.8
         with:
           app-name: app-origination-eus
           package: ./publish
 ```
+
+---
+
+## Action Version Pinning (Supply-Chain Hardening)
+
+Every `uses:` line in this doc (and in `deploy-workflow.yml.sample`, the actual workflow file
+scaffolded into your repo) is pinned to a full **commit SHA**, not a version tag — e.g.
+`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1`, not
+`actions/checkout@v7`. This is deliberate, not incidental style.
+
+A version tag (`@v7`, `@v3`, etc.) is convenient but not immutable — the action's maintainer (or an
+attacker who compromises their account) can move a tag to point at different code after the fact,
+or publish a malicious release under a plausible-looking new version. This is not a theoretical
+risk: several widely-used GitHub Actions have been compromised this way, with the malicious code
+exfiltrating secrets from every workflow run that pulled the action by tag before the compromise
+was caught. A commit SHA is immutable — once a workflow references a specific 40-character SHA, no
+one can silently change what that reference points to. Keep the trailing `# vX.Y.Z` comment on
+every pin; it's what makes a SHA-pinned line reviewable by a human at a glance.
+
+**Do not "simplify" these back to floating version tags for readability** — if you see
+`actions/checkout@v7` anywhere in your own workflow files (copied from an older example, a
+tutorial, or another repo), replace it with the SHA-pinned form using the lookup method below.
+
+**How to find the SHA for a given version:**
+- On GitHub, open the action's repo -> Releases -> the release you want -> the commit SHA is shown
+  next to the tag, or visible in the tag's own page (`github.com/{owner}/{repo}/releases/tag/{tag}`)
+- Via the API/CLI: `gh api repos/{owner}/{repo}/git/refs/tags/{tag} --jq '.object.sha'`
+  (add `GH_HOST=github.com` if your default `gh` host is GHE, since these are public github.com
+  actions, not GHE-hosted ones)
+
+**Keeping pins current:** a SHA pin does not update itself — enable Dependabot version updates for
+GitHub Actions in the consuming repo (a `.github/dependabot.yml` with `package-ecosystem:
+"github-actions"`); Dependabot tracks SHA-pinned actions correctly and opens a PR bumping both the
+SHA and the version comment when a new release ships, so pinning does not trade away visibility
+into available updates. Periodically check the actions this workflow depends on for new major
+versions and security advisories regardless of whether Dependabot is enabled — a pinned-but-stale
+action carries the same missed-fixes risk as an unpinned one, just not the same tamper risk.
 
 ---
 
@@ -375,6 +402,12 @@ Azure Resources (App Service, Resource Group, SQL)
 | QA | `repo:IT/origination:environment:qa` |
 | Prod | `repo:IT/origination:environment:prod` |
 
+**Note on repo age:** the `repo:IT/...` form above applies to repos created before 2026-07-15.
+GitHub Actions repos **created, renamed, or transferred on or after 2026-07-15** get an
+immutable subject format instead, embedding org/repo IDs: `repo:IT@{orgId}/origination@{repoId}:environment:dev`.
+Both forms authenticate identically once configured -- infrastructure automation queries the
+correct live value automatically, so no action is needed on your side either way.
+
 ---
 
 ## Repository Secrets
@@ -392,18 +425,24 @@ These secrets are configured at the repository level by the infrastructure team.
 
 ## Environments and Deployment Approvals
 
-| Environment | Trigger | Approval Required | Subscription |
-|-------------|---------|-------------------|--------------|
-| `dev` | Automatic on push to `main` | No | Non-Prod |
-| `qa` | After dev succeeds | Yes -- deployers group | Non-Prod |
-| `prod` | After qa succeeds | Yes -- deployers group | Prod |
+| Environment | Trigger | Approval Required | Branch Restriction | Subscription |
+|-------------|---------|-------------------|---------------------|--------------|
+| `dev` | Automatic on push, any branch | No -- see note below on restricting to Deployers | Any branch | Non-Prod |
+| `qa` | After dev succeeds | Yes -- deployers group | Any branch | Non-Prod |
+| `prod` | After qa succeeds | Yes -- deployers group | `main` only | Prod |
 
-**How to approve a deployment:**
+**How to approve a deployment (qa/prod):**
 1. Navigate to the workflow run in the GHE repository
 2. Click **"Review deployments"** on the pending environment
 3. Select the environment and click **"Approve and deploy"**
 
 **Manual dispatch**: Workflows can include `workflow_dispatch` with an environment input to deploy a specific environment on demand.
+
+### Restricting `dev` Deploys to Your Deployers Team -- pending, not built
+
+Fleet policy (2026-07-21) calls for `dev` deploys to be restricted to your repo's `origination-deployers` team, without the manual-approval click that `qa`/`prod` use. **Nothing enforces this today.** A workflow-embedded approach was built and tested against a real repo, then an independent review found it didn't actually restrict anything -- it lived in a file editable by the same population it was meant to restrict, and `dev` itself carries no GitHub-enforced protection either way, so it could be deleted or routed around by anyone with ordinary repo write access. It's been withdrawn rather than published as a false sense of security.
+
+Real enforcement needs either a GitHub custom deployment protection rule (server-side, no manual click) or a branch + Ruleset restriction as a lower-effort fallback -- neither has been decided or built yet. Don't build your own version of this in the meantime; check with infra for current status before assuming `dev` is restricted on any repo.
 
 ---
 
@@ -479,7 +518,7 @@ If your application consumes `@it` scoped npm packages (e.g., `@it/design-system
 
 ```yaml
     - name: Setup Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
       with:
         node-version: '24'
         registry-url: 'https://npm.scoular.ghe.com/'
@@ -517,7 +556,17 @@ Verify you are using the correct subscription secret:
 - Prod: `AZURE_SUBSCRIPTION_ID_PROD`
 
 ### SQL connection fails with "Login failed for user '&lt;token-identified principal&gt;'"
-This means a token was obtained but SQL Server could not map it to a database user. On self-hosted runners, this almost always means `DefaultAzureCredential` used the **runner VMSS managed identity** instead of the workflow service principal. See [EF Core Migrations](#ef-core-migrations-optional) for the required design-time factory that excludes managed identity from the credential chain.
+This means a token was obtained but SQL Server could not map it to a database user. Since
+self-hosted runners have no managed identity (see [Self-Hosted Runners](#self-hosted-runners)),
+this is NOT a credential-chain conflict — the token came from the workflow's own service
+principal. Check instead:
+- The SQL user `Origination - GitHub Actions` doesn't exist yet on the target database, or
+  was created against a different app registration than the one `azure/login` is authenticating as
+- The `azure/login` step ran in a **different job** than the SQL step, or didn't complete
+  successfully before it — `DefaultAzureCredential`'s Azure CLI credential only sees a login that
+  happened earlier in the **same job** (each job gets a fresh runner process)
+- The service principal has SQL role membership in the wrong environment's database (dev SP
+  granted access, but the connection string points at qa/prod, or vice versa)
 
 ### SQL connection fails with "Login failed" (other)
 - Verify the SQL user `Origination - GitHub Actions` exists on the target database
@@ -558,10 +607,10 @@ If this application has an external SPA, it deploys to Azure Static Web App via 
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v3
+        uses: azure/login@858f4093d287a904987dfd22abd163280f939550  # v3.0.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -590,4 +639,4 @@ If this application has an external SPA, it deploys to Azure Static Web App via 
 
 ---
 
-*Document version: 1.12 | 2026-06-15*
+*Document version: 1.20 | 2026-08-13*
