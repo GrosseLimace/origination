@@ -25,7 +25,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       # azure/login has no built-in retry, and the GHE data-residency OIDC token service can blip
       # intermittently ("Failed to fetch federated token from GitHub"). Attempt once, wait, then retry —
@@ -33,7 +33,7 @@ jobs:
       - name: Azure Login (OIDC)
         id: azlogin
         continue-on-error: true
-        uses: azure/login@v2
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6  # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -45,7 +45,7 @@ jobs:
 
       - name: Azure Login (OIDC) — retry
         if: steps.azlogin.outcome == 'failure'
-        uses: azure/login@v2
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6  # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
