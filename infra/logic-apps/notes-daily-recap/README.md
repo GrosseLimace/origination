@@ -18,6 +18,27 @@ Once a day it builds and sends a "daily recap" of CRM notes to each configured r
    - sends the recap via **Microsoft Graph `sendMail`** as the shared mailbox, by **email** or to a
      **Teams** channel address depending on the group's `DeliveryMethod`.
 
+### Send failures and retries
+
+Both Graph `sendMail` calls (`HTTP_Send_Recap_Email`, `HTTP_Send_to_Teams`) use an **exponential
+retry policy** (4 attempts, 5s–1m backoff). They previously used `retryPolicy: none`, which meant a
+single transient Graph failure silently cost that group its recap for the day.
+
+That is not hypothetical: on **2026-08-12** the 18:00 prod run lost *Western KS* and *MOKAN Daily
+Digest* to a Graph **504 GatewayTimeout** (`UnknownError`, empty message) ~95s into the send, while
+every other group delivered normally. The next night ran clean. Because a send failure is *handled*
+(`Record_Email_Send_Failure` runs on `Failed`/`TimedOut` and appends to `failedGroups`), the loop and
+its iterations still report **Succeeded** — only `Terminate_Failed` at the end goes red, and its
+inputs carry the group names. Look there first, then at the named group's iteration, when diagnosing.
+
+**Known trade-off:** a 504 is ambiguous — Graph may have sent the message before timing out — so a
+retry can deliver a **duplicate** recap. That is accepted deliberately: a missed digest is invisible
+to recipients, whereas a duplicate is obvious and harmless. If duplicates become the bigger
+complaint, revisit this rather than assuming it was an oversight.
+
+Groups are processed **sequentially** (`concurrency.repetitions: 1`), so a failure part-way through
+means earlier groups already sent — partial delivery, which reads to users as "the recap didn't run."
+
 ## Security model — no secrets
 
 Every external call authenticates with the workflow's **system-assigned managed identity**
