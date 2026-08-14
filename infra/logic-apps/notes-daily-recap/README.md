@@ -20,35 +20,45 @@ Once a day it builds and sends a "daily recap" of CRM notes to each configured r
 
 ### Send failures and retries
 
-Both Graph `sendMail` calls (`HTTP_Send_Recap_Email`, `HTTP_Send_to_Teams`) use
-**`retryPolicy: { "type": "none" }`**. Do **not** blanket-enable retries here — that is what caused
-the duplicate-recap complaints this policy was introduced to stop. This has now been learned twice;
-the history is below so it is not undone a third time.
+Every Graph `sendMail` call keeps **`retryPolicy: { "type": "none" }`**. Do **not** switch these to a
+built-in retry policy — blanket retry is what caused the duplicate-recap complaints, and it has now
+been learned twice. The built-in policy also cannot inspect the status code, so it must stay `none`
+for the conditional retry below to be the only retry path.
 
-**Why no retries.** `sendMail` is not idempotent and the failure we actually see is a **504
-GatewayTimeout**, which is *ambiguous* — Graph may have already accepted and delivered the message
-before the gateway gave up. Retrying that sends the recap twice. The groups that time out are the
-largest ones (biggest HTML bodies, slowest sends), so they time out repeatedly and would duplicate
-repeatedly, hitting exactly the recipients most likely to notice.
+**Why blanket retry is wrong here.** `sendMail` is not idempotent, and the failure we actually see is
+a **504 GatewayTimeout** — *ambiguous*, because Graph may have already accepted and delivered the
+message before the gateway gave up. Retrying that sends the recap twice. The groups that time out are
+the largest ones (biggest HTML bodies, slowest sends), so they time out repeatedly and would
+duplicate repeatedly, hitting exactly the recipients most likely to notice.
 
-**The cost of this choice, stated plainly:** a transient failure silently costs that group its recap
-for the day. On **2026-08-12** the 18:00 prod run lost *Western KS* and *MOKAN Daily Digest* to a 504
-(`UnknownError`, empty message) ~95s into the send, while every other group delivered normally; the
-next night ran clean. Missing recaps and duplicate recaps are the two ends of this trade-off, and no
-blanket retry setting avoids both.
+**What we do instead — retry only provable non-sends.** `If_Email_Send_Retryable` /
+`If_Teams_Send_Retryable` fire on `Failed`/`TimedOut` and inspect
+`outputs('HTTP_Send_...')?['statusCode']`:
 
-**If you want to fix this properly**, blanket retry is not the answer. Options, cheapest first:
-1. Retry **only** unambiguous rejections (`429`, `503`, `401`) where Graph provably did not send, and
-   never `504`/timeout. Cannot duplicate; also cannot recover the 504 case.
-2. Verify **before** retrying: `saveToSentItems` is already `true` and the subject is deterministic
+| Status | Behaviour | Why |
+|--------|-----------|-----|
+| `429` throttled, `503` unavailable, `401` auth rejected | wait 30s, send **once** more | Graph rejected the request before processing — a resend cannot duplicate |
+| `504`, other 5xx, timeouts, anything else | record failure, do **not** resend | Ambiguous — the message may already be delivered |
+
+The single resend also carries `retryPolicy: none`, so there is exactly one extra attempt and no
+compounding. Failures recorded after a retry are tagged `(email, retried)` / `(teams, retried)` in
+`failedGroups`, so `Terminate_Failed`'s message distinguishes them from first-attempt failures.
+
+**Known limitation:** this deliberately does **not** recover the 504 case, which is the failure that
+actually hit prod on **2026-08-12** (the 18:00 run lost *Western KS* and *MOKAN Daily Digest* ~95s
+into the send; the next night ran clean). Those groups can still silently miss a day. That is the
+accepted trade: never duplicate, occasionally miss.
+
+**To also recover the ambiguous case**, one of these is needed — neither is implemented:
+1. Verify **before** retrying: `saveToSentItems` is already `true` and the subject is deterministic
    (`... Daily Recap for <groupName>`), so query the shared mailbox's Sent Items after an ambiguous
    failure and resend only if the message is absent. Needs `Mail.Read` alongside `Mail.Send`.
-3. Make the send idempotent: replace `sendMail` with `createMessage` → `send` by message id, so
+2. Make the send idempotent: replace `sendMail` with `createMessage` → `send` by message id, so
    re-sending an already-sent draft errors instead of delivering twice.
 
-Highest leverage regardless of the above: the activities table is built from **every** note with no
-size cap, which is likely why the two biggest groups are the ones that time out. Capping it reduces
-how often the ambiguous failure happens at all.
+Highest leverage regardless: the activities table is built from **every** note with no size cap,
+which is likely why the two biggest groups are the ones that time out. Capping it reduces how often
+the ambiguous failure happens at all.
 
 **Diagnosing a failure.** A send failure is *handled* (`Record_Email_Send_Failure` runs on
 `Failed`/`TimedOut` and appends to `failedGroups`), so the loop and every iteration still report

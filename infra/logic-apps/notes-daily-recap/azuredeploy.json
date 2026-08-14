@@ -453,10 +453,94 @@
                               },
                               "type": "Http"
                             },
-                            "Record_Email_Send_Failure": {
-                              "inputs": {
-                                "name": "failedGroups",
-                                "value": "@{variables('groupName')} (email)"
+                            "If_Email_Send_Retryable": {
+                              "actions": {
+                                "HTTP_Send_Recap_Email_Retry": {
+                                  "inputs": {
+                                    "authentication": {
+                                      "audience": "https://graph.microsoft.com",
+                                      "type": "ManagedServiceIdentity"
+                                    },
+                                    "body": {
+                                      "message": {
+                                        "body": {
+                                          "content": "@{variables('emailBody')}",
+                                          "contentType": "HTML"
+                                        },
+                                        "ccRecipients": "@outputs('Compose_CC')",
+                                        "subject": "Email Origination App Daily Recap for @{variables('groupName')}",
+                                        "toRecipients": "@outputs('Compose_Email_Recipients')"
+                                      },
+                                      "saveToSentItems": true
+                                    },
+                                    "method": "POST",
+                                    "retryPolicy": {
+                                      "type": "none"
+                                    },
+                                    "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
+                                  },
+                                  "runAfter": {
+                                    "Wait_Before_Email_Retry": [
+                                      "Succeeded"
+                                    ]
+                                  },
+                                  "type": "Http"
+                                },
+                                "Record_Email_Send_Failure_After_Retry": {
+                                  "inputs": {
+                                    "name": "failedGroups",
+                                    "value": "@{variables('groupName')} (email, retried)"
+                                  },
+                                  "runAfter": {
+                                    "HTTP_Send_Recap_Email_Retry": [
+                                      "Failed",
+                                      "TimedOut"
+                                    ]
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                },
+                                "Wait_Before_Email_Retry": {
+                                  "inputs": {
+                                    "interval": {
+                                      "count": 30,
+                                      "unit": "Second"
+                                    }
+                                  },
+                                  "type": "Wait"
+                                }
+                              },
+                              "else": {
+                                "actions": {
+                                  "Record_Email_Send_Failure": {
+                                    "inputs": {
+                                      "name": "failedGroups",
+                                      "value": "@{variables('groupName')} (email)"
+                                    },
+                                    "type": "AppendToArrayVariable"
+                                  }
+                                }
+                              },
+                              "expression": {
+                                "or": [
+                                  {
+                                    "equals": [
+                                      "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                      429
+                                    ]
+                                  },
+                                  {
+                                    "equals": [
+                                      "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                      503
+                                    ]
+                                  },
+                                  {
+                                    "equals": [
+                                      "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                      401
+                                    ]
+                                  }
+                                ]
                               },
                               "runAfter": {
                                 "HTTP_Send_Recap_Email": [
@@ -464,7 +548,7 @@
                                   "TimedOut"
                                 ]
                               },
-                              "type": "AppendToArrayVariable"
+                              "type": "If"
                             }
                           },
                           "case": "email"
@@ -505,10 +589,100 @@
                                   },
                                   "type": "Http"
                                 },
-                                "Record_Teams_Send_Failure": {
-                                  "inputs": {
-                                    "name": "failedGroups",
-                                    "value": "@{variables('groupName')} (teams)"
+                                "If_Teams_Send_Retryable": {
+                                  "actions": {
+                                    "HTTP_Send_to_Teams_Retry": {
+                                      "inputs": {
+                                        "authentication": {
+                                          "audience": "https://graph.microsoft.com",
+                                          "type": "ManagedServiceIdentity"
+                                        },
+                                        "body": {
+                                          "message": {
+                                            "body": {
+                                              "content": "@{variables('emailBody')}",
+                                              "contentType": "HTML"
+                                            },
+                                            "ccRecipients": "@outputs('Compose_CC')",
+                                            "subject": "Teams Origination App Daily Recap for @{variables('groupName')}",
+                                            "toRecipients": [
+                                              {
+                                                "emailAddress": {
+                                                  "address": "@{item()?['TeamsChannelEmail']}"
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "saveToSentItems": true
+                                        },
+                                        "method": "POST",
+                                        "retryPolicy": {
+                                          "type": "none"
+                                        },
+                                        "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
+                                      },
+                                      "runAfter": {
+                                        "Wait_Before_Teams_Retry": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "Http"
+                                    },
+                                    "Record_Teams_Send_Failure_After_Retry": {
+                                      "inputs": {
+                                        "name": "failedGroups",
+                                        "value": "@{variables('groupName')} (teams, retried)"
+                                      },
+                                      "runAfter": {
+                                        "HTTP_Send_to_Teams_Retry": [
+                                          "Failed",
+                                          "TimedOut"
+                                        ]
+                                      },
+                                      "type": "AppendToArrayVariable"
+                                    },
+                                    "Wait_Before_Teams_Retry": {
+                                      "inputs": {
+                                        "interval": {
+                                          "count": 30,
+                                          "unit": "Second"
+                                        }
+                                      },
+                                      "type": "Wait"
+                                    }
+                                  },
+                                  "else": {
+                                    "actions": {
+                                      "Record_Teams_Send_Failure": {
+                                        "inputs": {
+                                          "name": "failedGroups",
+                                          "value": "@{variables('groupName')} (teams)"
+                                        },
+                                        "type": "AppendToArrayVariable"
+                                      }
+                                    }
+                                  },
+                                  "expression": {
+                                    "or": [
+                                      {
+                                        "equals": [
+                                          "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                          429
+                                        ]
+                                      },
+                                      {
+                                        "equals": [
+                                          "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                          503
+                                        ]
+                                      },
+                                      {
+                                        "equals": [
+                                          "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                          401
+                                        ]
+                                      }
+                                    ]
                                   },
                                   "runAfter": {
                                     "HTTP_Send_to_Teams": [
@@ -516,7 +690,7 @@
                                       "TimedOut"
                                     ]
                                   },
-                                  "type": "AppendToArrayVariable"
+                                  "type": "If"
                                 }
                               },
                               "else": {
