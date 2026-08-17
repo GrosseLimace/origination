@@ -447,11 +447,7 @@
                                 },
                                 "method": "POST",
                                 "retryPolicy": {
-                                  "count": 4,
-                                  "interval": "PT10S",
-                                  "maximumInterval": "PT1M",
-                                  "minimumInterval": "PT5S",
-                                  "type": "exponential"
+                                  "type": "none"
                                 },
                                 "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
                               },
@@ -503,11 +499,7 @@
                                     },
                                     "method": "POST",
                                     "retryPolicy": {
-                                      "count": 4,
-                                      "interval": "PT10S",
-                                      "maximumInterval": "PT1M",
-                                      "minimumInterval": "PT5S",
-                                      "type": "exponential"
+                                      "type": "none"
                                     },
                                     "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
                                   },
