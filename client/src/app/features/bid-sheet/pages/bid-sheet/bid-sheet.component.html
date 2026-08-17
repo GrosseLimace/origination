@@ -176,6 +176,13 @@
                 <div class="w-4 h-4 rounded shrink-0" style="background:#eab308; border:1.5px solid #a16207;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Matching</span>
               </div>
+              <!-- Scoular: green fill when no reference is set, green ring once status owns the fill.
+                   One green swatch only — the ring is self-evident on the map and a second swatch
+                   read as another status colour. -->
+              <div class="flex items-center gap-2 pt-1 mt-1 border-t border-gray-200 dark:border-gray-700">
+                <div class="w-4 h-4 rounded shrink-0" style="background:#00875F; border:1.5px solid #006B4C;"></div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Scoular facility</span>
+              </div>
             </div>
             }
           </div>
@@ -409,7 +416,9 @@
                     <tr
                       (click)="selectPanelItem(item)"
                       class="group border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors"
-                      [ngClass]="'hover:bg-gray-50 dark:hover:bg-gray-800'"
+                      [ngClass]="scoularLocationNames().has(item.name)
+                        ? 'bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-800'"
                     >
                       <td class="px-3 py-3 text-sm text-gray-900 dark:text-white">
                         <div class="flex items-center gap-1.5">
