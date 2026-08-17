@@ -948,8 +948,79 @@
                             @if (printPhone().trim()) { <p>{{ printPhone().trim() }}</p> }
                           </div>
                         </div>
-                        <!-- Preview tables grouped by crop -->
-                        @if (printCropGroups().length > 0) {
+                        <!-- Preview must honour the Layout toggle, otherwise switching appears to do
+                             nothing until you actually print. Blocks/row-count come from the same
+                             computeds the print output uses. -->
+                        @if (printCropGroups().length > 0 && printLayoutStyle() === 'sideBySide') {
+                          <!-- One table per BAND of up to 3 crops. Past that, blocks get too narrow to
+                               read, so crops wrap onto a new band instead of being squeezed. Widths are
+                               based on a full band so blocks stay the same size in every band. -->
+                          @for (band of previewSideBySideBands(); track $index) {
+                            <div class="mb-3">
+                              <table style="width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;">
+                                <colgroup>
+                                  @for (block of band; track block.crop) {
+                                    <!-- Same width maths as the print output, so the preview shows an
+                                         honest picture of what fits: value columns get exactly enough
+                                         for a one-line label, names take the remainder. -->
+                                    <col [style.width.%]="bandColumnWidths(band.length, block.columns.length).namePct" />
+                                    @for (col of block.columns; track col.key) {
+                                      <col [style.width.%]="bandColumnWidths(band.length, block.columns.length).valuePct" />
+                                    }
+                                  }
+                                </colgroup>
+                                <thead>
+                                  <tr>
+                                    @for (block of band; track block.crop; let bi = $index) {
+                                      <th [attr.colspan]="1 + block.columns.length"
+                                          [style.background]="cropHeaderTint(block.crop)"
+                                          [style.border-bottom]="'3px solid ' + cropHeaderColor(block.crop)"
+                                          [style.border-left]="bi === 0 ? '' : '3px solid #111827'"
+                                          style="padding:4px 6px;text-align:center;font-weight:700;color:#1f2937;border:1px solid #d1d5db;white-space:nowrap;">{{ block.crop }}</th>
+                                    }
+                                  </tr>
+                                  <tr>
+                                    @for (block of band; track block.crop; let bi = $index) {
+                                      <th [style.border-left]="bi === 0 ? '' : '3px solid #111827'"
+                                          style="padding:4px 6px;background:#f3f4f6;border:1px solid #d1d5db;"></th>
+                                      @for (col of block.columns; track col.key) {
+                                        <th style="padding:4px 6px;text-align:center;font-weight:700;color:#1f2937;background:#f3f4f6;border:1px solid #d1d5db;white-space:nowrap;">{{ col.compactLabel }}</th>
+                                      }
+                                    }
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  @for (ri of bandRowIndexes(band); track ri) {
+                                    <tr>
+                                      @for (block of band; track block.crop; let bi = $index) {
+                                        @let row = block.rows[ri];
+                                        @if (row) {
+                                          @let isScoular = printHighlightScoularLocations() && scoularLocationNames().has(row.name);
+                                          <td [style.font-weight]="isScoular ? '700' : '500'"
+                                              [style.background]="isScoular ? '#FFD400' : '#fff'"
+                                              [style.border-left]="bi === 0 ? '' : '3px solid #111827'"
+                                              [title]="row.name"
+                                              style="padding:4px 6px;color:#1f2937;border:1px solid #e5e7eb;white-space:normal;overflow-wrap:break-word;word-break:break-word;line-height:1.3;">{{ row.name }}</td>
+                                          @for (col of block.columns; track col.key) {
+                                            <td [style.background]="isScoular ? '#FFD400' : '#fff'"
+                                                style="padding:4px 6px;text-align:center;border:1px solid #e5e7eb;font-family:'Cascadia Mono','Fira Code',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ printCellValue(row, col) }}</td>
+                                          }
+                                        } @else {
+                                          <!-- Past this crop's list: blanks keep the blocks aligned. -->
+                                          <td [style.border-left]="bi === 0 ? '' : '3px solid #111827'"
+                                              style="padding:4px 6px;border:1px solid #e5e7eb;">&nbsp;</td>
+                                          @for (col of block.columns; track col.key) {
+                                            <td style="padding:4px 6px;border:1px solid #e5e7eb;">&nbsp;</td>
+                                          }
+                                        }
+                                      }
+                                    </tr>
+                                  }
+                                </tbody>
+                              </table>
+                            </div>
+                          }
+                        } @else if (printCropGroups().length > 0) {
                           @for (group of printCropGroups(); track group.crop) {
                             <div class="mb-4">
                               <table style="width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;">
@@ -960,10 +1031,16 @@
                                   }
                                 </colgroup>
                                 <thead>
+                                  <!-- Crop colour from the shared palette, same as the side-by-side
+                                       layout and the commodity chips elsewhere in the app. -->
                                   <tr>
-                                    <th style="padding:5px 8px;text-align:left;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ group.crop }} Basis</th>
+                                    <th [style.background]="cropHeaderTint(group.crop)"
+                                        [style.border-bottom]="'3px solid ' + cropHeaderColor(group.crop)"
+                                        style="padding:5px 8px;text-align:left;font-weight:700;color:#1f2937;border:1px solid #d1d5db;white-space:nowrap;">{{ group.crop }} Basis</th>
                                     @for (col of group.columns; track col.key) {
-                                      <th style="padding:5px 8px;text-align:center;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">
+                                      <th [style.background]="cropHeaderTint(group.crop)"
+                                          [style.border-bottom]="'3px solid ' + cropHeaderColor(group.crop)"
+                                          style="padding:5px 8px;text-align:center;color:#1f2937;border:1px solid #d1d5db;white-space:nowrap;">
                                         <div style="font-weight:600;">{{ col.label }}</div>
                                         @if (col.subLabel) { <div style="font-weight:400;opacity:0.75;font-size:9px;">{{ col.subLabel }}</div> }
                                       </th>
@@ -974,7 +1051,7 @@
                                   @for (row of previewRowsForGroup(group); track row.name; let i = $index) {
                                     @let isScoular = printHighlightScoularLocations() && scoularLocationNames().has(row.name);
                                     <tr [style.background]="isScoular ? '#FFD400' : (i % 2 === 0 ? '#fff' : '#f9fafb')">
-                                      <td [style.font-weight]="isScoular ? '700' : '500'" style="padding:5px 8px;color:#1f2937;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.name }}</td>
+                                      <td [style.font-weight]="isScoular ? '700' : '500'" style="padding:5px 8px;color:#1f2937;border:1px solid #e5e7eb;white-space:normal;overflow-wrap:break-word;word-break:break-word;line-height:1.3;">{{ row.name }}</td>
                                       @for (col of group.columns; track col.key) {
                                         @let cellVal = printCellValue(row, col);
                                         <td style="padding:5px 8px;text-align:center;border:1px solid #e5e7eb;font-family:'Cascadia Mono','Fira Code',monospace;">
@@ -1087,6 +1164,30 @@
                           </div>
                         </div>
                       }
+                      <!-- Layout: crops across the page vs the original stacked-per-crop tables.
+                           Same data in both — only the arrangement changes. -->
+                      <div>
+                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Layout</h4>
+                        <div class="inline-flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
+                          <button type="button" (click)="printLayoutStyle.set('sideBySide')"
+                            [ngClass]="printLayoutStyle() === 'sideBySide'
+                              ? 'bg-scoular-green-accessible text-white'
+                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-3 py-1.5 text-sm font-medium transition-colors">Side by Side</button>
+                          <button type="button" (click)="printLayoutStyle.set('stacked')"
+                            [ngClass]="printLayoutStyle() === 'stacked'
+                              ? 'bg-scoular-green-accessible text-white'
+                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-3 py-1.5 text-sm font-medium border-l border-gray-300 dark:border-gray-600 transition-colors">Stacked</button>
+                        </div>
+                        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                          @if (printLayoutStyle() === 'sideBySide') {
+                            Crops across the page, each with its own locations. Best for up to ~4 crops.
+                          } @else {
+                            One table per crop down the page. Better when several month columns are selected.
+                          }
+                        </p>
+                      </div>
                       <!-- Highlight Scoular facilities -->
                       <div>
                         <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Highlight</h4>

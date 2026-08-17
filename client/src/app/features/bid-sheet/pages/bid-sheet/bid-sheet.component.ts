@@ -11,6 +11,7 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { commodityHex } from '@shared/utils/commodity-color';
 
 interface EditBidsRow {
   name: string;
@@ -778,6 +779,7 @@ export class BidSheetComponent {
           if (typeof l?.address === 'string') this.printAddress.set(l.address);
           if (typeof l?.phone === 'string') this.printPhone.set(l.phone);
           if (typeof l?.highlightScoular === 'boolean') this.printHighlightScoularLocations.set(l.highlightScoular);
+          if (l?.layoutStyle === 'sideBySide' || l?.layoutStyle === 'stacked') this.printLayoutStyle.set(l.layoutStyle);
         } catch { /* invalid JSON — keep defaults */ }
       }
 
@@ -1820,6 +1822,114 @@ export class BidSheetComponent {
   printAddress = signal('');
   printPhone = signal('');
   printHighlightScoularLocations = signal<boolean>(true);
+  /**
+   * Which export layout to render. Same data either way — only the arrangement differs.
+   *   'sideBySide' — crop blocks across the page, each with its own locations. Easier to read bids
+   *                  across a geography, but page width limits it to roughly 4 crops.
+   *   'stacked'    — the original: one table per crop down the page. Better when many month columns
+   *                  are selected, since each crop gets the full page width.
+   * Persisted per trade unit alongside the rest of the print layout.
+   */
+  printLayoutStyle = signal<'sideBySide' | 'stacked'>('sideBySide');
+
+  /** Crop blocks for the side-by-side layout: each crop with its OWN location list (a crop only
+   *  lists elevators that actually quote it). Shared by the dialog preview and the print output so
+   *  the two can't diverge. */
+  readonly previewSideBySideBlocks = computed(() =>
+    this.printCropGroups().map(group => ({
+      crop: group.crop,
+      columns: group.columns,
+      rows: this.previewRowsForGroup(group)
+    }))
+  );
+
+  /** Solid per-crop hex from the shared palette — used for the header border/accent. */
+  cropHeaderColor(crop: string): string {
+    return commodityHex(crop);
+  }
+
+  /**
+   * Pastel version of a crop's colour, matching the commodity CHIPS used everywhere else in the app
+   * (light tint + dark text) rather than the saturated fill this export used to have.
+   *
+   * Derived by blending the palette hex toward white instead of hard-coding a second set of pastels,
+   * so it stays in step automatically if commodity-color.ts ever changes. Chips are roughly the
+   * Tailwind 100-level of the same hue, which is about an 82% blend.
+   */
+  cropHeaderTint(crop: string, blend = 0.82): string {
+    const hex = commodityHex(crop).replace('#', '');
+    const r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+    const mix = (c: number) => Math.round(c + (255 - c) * blend);
+    return `#${[mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  /** Most crops we'll ever put on one landscape sheet, and the fallback when 4 won't fit. */
+  static readonly MAX_CROPS_PER_BAND = 4;
+  static readonly FALLBACK_CROPS_PER_BAND = 3;
+
+  /**
+   * How many crops go on a page — 4 when every elevator name fits on one line at full 10px type,
+   * otherwise 3.
+   *
+   * Measured rather than fixed: 4 crops leaves a ~1.39in name column (~23 characters) and 3 leaves
+   * ~2.24in (~39), so a set of short names gets the denser 4-up sheet while a single long name
+   * ("Skyland Kendall/Midway/Lydia", 28) drops the print to 3-up. Decided ONCE for the whole export
+   * rather than per page, so every sheet in a run has the same shape.
+   *
+   * Names can still wrap if even 3-up can't fit one — a second line beats hidden text or tiny type.
+   */
+  cropsPerPage(blocks: { rows: { name: string }[]; columns: unknown[] }[]): number {
+    if (blocks.length === 0) return BidSheetComponent.MAX_CROPS_PER_BAND;
+    let longest = 0;
+    for (const b of blocks) for (const r of b.rows) longest = Math.max(longest, r.name.length);
+    const valueCols = blocks[0].columns.length || 1;
+    for (const candidate of [BidSheetComponent.MAX_CROPS_PER_BAND, BidSheetComponent.FALLBACK_CROPS_PER_BAND]) {
+      const { namePct } = this.bandColumnWidths(candidate, valueCols);
+      // 10px font ≈ 5.2px per character, less cell padding.
+      const chars = Math.floor(((namePct / 100) * 10.2 * 96 - 10) / 5.2);
+      if (longest <= chars) return candidate;
+    }
+    return BidSheetComponent.FALLBACK_CROPS_PER_BAND;
+  }
+
+  /** previewSideBySideBlocks split into pages, using the measured crops-per-page. */
+  readonly previewSideBySideBands = computed(() => {
+    const blocks = this.previewSideBySideBlocks();
+    const size = this.cropsPerPage(blocks);
+    const bands: (typeof blocks)[] = [];
+    for (let i = 0; i < blocks.length; i += size) bands.push(blocks.slice(i, i + size));
+    return bands;
+  });
+
+  /**
+   * Column width split for one band of the side-by-side layout.
+   *
+   * Value columns are given whatever width a label like "O/C 26" / "May 26" needs to sit on ONE
+   * line, and the name column takes the remainder — names wrap over multiple lines happily, whereas
+   * a header broken across lines just reads as two stacked fragments. The name column keeps a floor
+   * of 30% of the block so it never collapses when many month columns are selected.
+   *
+   * Shared by the print output and the dialog preview so the preview is dimensionally honest.
+   */
+  bandColumnWidths(blocksInBand: number, valueColumns: number): { namePct: number; valuePct: number } {
+    const PAGE_IN = 10.2;      // landscape letter minus 0.4in margins
+    const MIN_VALUE_IN = 0.58; // fits a 6-char label on one line at 10px, plus cell padding
+    const blockIn = PAGE_IN / Math.max(1, blocksInBand);
+    const needed = MIN_VALUE_IN * Math.max(1, valueColumns);
+    const nameIn = Math.max(blockIn * 0.30, blockIn - needed);
+    const valueIn = valueColumns > 0 ? (blockIn - nameIn) / valueColumns : 0;
+    return { namePct: (nameIn / PAGE_IN) * 100, valuePct: (valueIn / PAGE_IN) * 100 };
+  }
+
+  /** Tallest crop in a band — shorter ones pad with blanks to this. */
+  bandRowCount(band: { rows: unknown[] }[]): number {
+    return band.length === 0 ? 0 : Math.max(...band.map(b => b.rows.length));
+  }
+
+  /** Range helper for template row iteration (Angular has no numeric for-loop). */
+  bandRowIndexes(band: { rows: unknown[] }[]): number[] {
+    return Array.from({ length: this.bandRowCount(band) }, (_, i) => i);
+  }
   // Yearly export columns: a builder of rows the user adds (each = enable toggle + year + Old/New choice).
   // Year is an offset from the viewed year (rolls over). Header reads "Old Crop (2025)" / "New Crop (2025)"
   // or just "2025" when neither is picked. Persisted per trade unit.
@@ -1863,7 +1973,7 @@ export class BidSheetComponent {
     const crops = this.editBidsCrops().filter(c => selectedCrops.has(c));
     const months = this.editBidsMonths().filter(m => selectedMonths.has(m));
 
-    type PrintColumn = { key: string; crop: string; month: number; year: number; label: string; subLabel: string };
+    type PrintColumn = { key: string; crop: string; month: number; year: number; label: string; compactLabel: string; subLabel: string };
     return crops.map(crop => {
       const columns: PrintColumn[] = [];
       for (const m of months) {
@@ -1874,11 +1984,24 @@ export class BidSheetComponent {
             const label = row.oldNew === 'old' ? `Old Crop (${resolved})`
               : row.oldNew === 'new' ? `New Crop (${resolved})`
               : String(resolved);
-            columns.push({ key: `${crop}#0#${row.id}`, crop, month: 0, year: resolved, label, subLabel: '' });
+            // compactLabel is for the side-by-side layout, where a column is only a few percent of
+            // the page and "Old Crop (2026)" overflows into its neighbour. It ABBREVIATES the same
+            // column the user configured — it never renames it — so old crop still reads as old
+            // crop, not as some other word.
+            const yy = String(resolved).slice(-2);
+            const compactLabel = row.oldNew === 'old' ? `O/C ${yy}`
+              : row.oldNew === 'new' ? `N/C ${yy}`
+              : String(resolved);
+            columns.push({ key: `${crop}#0#${row.id}`, crop, month: 0, year: resolved, label, compactLabel, subLabel: '' });
           }
         } else {
           // Monthly: one column per selected month for the viewed year, headed "May (2026)".
-          columns.push({ key: `${crop}#${m}`, crop, month: m, year: viewedYear, label: `${this.getMonthName(m)} (${viewedYear})`, subLabel: '' });
+          columns.push({
+            key: `${crop}#${m}`, crop, month: m, year: viewedYear,
+            label: `${this.getMonthName(m)} (${viewedYear})`,
+            compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}`,
+            subLabel: ''
+          });
         }
       }
       return { crop, columns };
@@ -1955,7 +2078,8 @@ export class BidSheetComponent {
       yearlyRows: this.printYearlyRows().map(({ enabled, offset, oldNew }) => ({ enabled, offset, oldNew })),
       address: this.printAddress(),
       phone: this.printPhone(),
-      highlightScoular: this.printHighlightScoularLocations()
+      highlightScoular: this.printHighlightScoularLocations(),
+      layoutStyle: this.printLayoutStyle()
     });
     const cropCode = this.selectedCrop() || null;
     const month = this.selectedMonth();
@@ -2019,56 +2143,9 @@ export class BidSheetComponent {
     const scoularNames = this.scoularLocationNames();
     const scoularBg = '#FFD400';
 
-    // Build one table per crop — tables touch (no margin between).
-    // Use fixed layout with a shared first-column width so every crop's columns line up across tables.
-    const firstColPct = 28;
-    const dataColPct = cropGroups[0] && cropGroups[0].columns.length > 0
-      ? (100 - firstColPct) / cropGroups[0].columns.length
-      : (100 - firstColPct);
-    const colgroup = `<colgroup>
-      <col style="width:${firstColPct}%" />
-      ${cropGroups[0].columns.map(() => `<col style="width:${dataColPct}%" />`).join('')}
-    </colgroup>`;
-
-    const sections = cropGroups.map((group, gi) => {
-      const monthHeaders = group.columns.map(c => {
-        const sub = c.subLabel ? `<div style="font-weight:400;opacity:0.75;font-size:10px;">${this._esc(c.subLabel)}</div>` : '';
-        return `<th style="padding:8px 16px;text-align:center;font-size:12px;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">`
-          + `<div style="font-weight:600;">${this._esc(c.label)}</div>`
-          + sub
-          + `</th>`;
-      }).join('');
-
-      // Only include rows that have at least one bid value for any column in this crop group,
-      // keeping the SAME order as the edit grid (no Scoular re-sort) so print matches the screen.
-      const rowsWithBids = rows
-        .filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0));
-      const dataRows = rowsWithBids.map((row, i) => {
-        const isScoular = highlightScoular && scoularNames.has(row.name);
-        const bg = isScoular ? scoularBg : (i % 2 === 0 ? '#ffffff' : '#f9fafb');
-        const cells = group.columns.map(col => {
-          const val = this.printCellValue(row, col);
-          const display = val ? this._esc(val) : '<span style="color:#d1d5db;">&mdash;</span>';
-          return `<td style="padding:9px 16px;text-align:center;font-size:12px;border:1px solid #e5e7eb;background:${bg};font-family:'Cascadia Mono','Fira Code',monospace;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${display}</td>`;
-        }).join('');
-        return `<tr>
-          <td style="padding:9px 16px;font-size:12px;font-weight:${isScoular ? '700' : '500'};color:#1f2937;border:1px solid #e5e7eb;background:${bg};white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${this._esc(row.name)}</td>
-          ${cells}
-        </tr>`;
-      }).join('');
-
-      return `
-        <div style="page-break-inside:avoid;margin-bottom:18px;">
-          <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
-            ${colgroup}
-            <thead><tr>
-              <th style="padding:10px 16px;text-align:left;font-size:13px;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this._esc(group.crop)} Basis</th>
-              ${monthHeaders}
-            </tr></thead>
-            <tbody>${dataRows}</tbody>
-          </table>
-        </div>`;
-    }).join('');
+    const sections = this.printLayoutStyle() === 'sideBySide'
+      ? this._buildSideBySideSections(cropGroups, rows, highlightScoular, scoularNames, scoularBg)
+      : this._buildStackedSections(cropGroups, rows, highlightScoular, scoularNames, scoularBg);
 
     const html = `<!DOCTYPE html><html><head>
       <title>Scoular Bids</title>
@@ -2103,6 +2180,185 @@ export class BidSheetComponent {
       printWindow.onload = () => printWindow.print();
     }
     this.showPrintDialog.set(false);
+  }
+
+  /**
+   * ORIGINAL layout — one table per crop, stacked down the page, uniform blue headers.
+   * Kept selectable because it's what people are used to and it handles many month columns better
+   * than the side-by-side layout, which runs out of page width past ~4 crops.
+   */
+  private _buildStackedSections(
+    cropGroups: { crop: string; columns: { key: string; crop: string; month: number; year: number; label: string; compactLabel: string; subLabel: string }[] }[],
+    rows: EditBidsRow[],
+    highlightScoular: boolean,
+    scoularNames: Set<string>,
+    scoularBg: string
+  ): string {
+    // Use fixed layout with a shared first-column width so every crop's columns line up across tables.
+    const firstColPct = 28;
+    const dataColPct = cropGroups[0] && cropGroups[0].columns.length > 0
+      ? (100 - firstColPct) / cropGroups[0].columns.length
+      : (100 - firstColPct);
+    const colgroup = `<colgroup>
+      <col style="width:${firstColPct}%" />
+      ${cropGroups[0].columns.map(() => `<col style="width:${dataColPct}%" />`).join('')}
+    </colgroup>`;
+
+    return cropGroups.map(group => {
+      // Crop colour from the shared palette, in the same pastel-chip style as the side-by-side
+      // layout and the commodity chips elsewhere in the app — so a crop is the same colour wherever
+      // you see it, rather than every header being the old uniform blue.
+      const cropTint = this.cropHeaderTint(group.crop);
+      const cropSolid = commodityHex(group.crop);
+      const monthHeaders = group.columns.map(c => {
+        const sub = c.subLabel ? `<div style="font-weight:400;opacity:0.75;font-size:10px;">${this._esc(c.subLabel)}</div>` : '';
+        return `<th style="padding:8px 16px;text-align:center;font-size:12px;color:#1f2937;background:${cropTint};border:1px solid #d1d5db;border-bottom:3px solid ${cropSolid};white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;">`
+          + `<div style="font-weight:600;">${this._esc(c.label)}</div>`
+          + sub
+          + `</th>`;
+      }).join('');
+
+      // Only include rows that have at least one bid value for any column in this crop group,
+      // keeping the SAME order as the edit grid (no Scoular re-sort) so print matches the screen.
+      const rowsWithBids = rows
+        .filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0));
+      const dataRows = rowsWithBids.map((row, i) => {
+        const isScoular = highlightScoular && scoularNames.has(row.name);
+        const bg = isScoular ? scoularBg : (i % 2 === 0 ? '#ffffff' : '#f9fafb');
+        const cells = group.columns.map(col => {
+          const val = this.printCellValue(row, col);
+          const display = val ? this._esc(val) : '<span style="color:#d1d5db;">&mdash;</span>';
+          return `<td style="padding:9px 16px;text-align:center;font-size:12px;border:1px solid #e5e7eb;background:${bg};font-family:'Cascadia Mono','Fira Code',monospace;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${display}</td>`;
+        }).join('');
+        return `<tr>
+          <td style="padding:9px 16px;font-size:12px;line-height:1.3;font-weight:${isScoular ? '700' : '500'};color:#1f2937;border:1px solid #e5e7eb;background:${bg};white-space:normal;overflow-wrap:break-word;word-break:break-word;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${this._esc(row.name)}</td>
+          ${cells}
+        </tr>`;
+      }).join('');
+
+      return `
+        <div style="page-break-inside:avoid;margin-bottom:18px;">
+          <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+            ${colgroup}
+            <thead><tr>
+              <th style="padding:10px 16px;text-align:left;font-size:13px;font-weight:700;color:#1f2937;background:${cropTint};border:1px solid #d1d5db;border-bottom:3px solid ${cropSolid};white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${this._esc(group.crop)} Basis</th>
+              ${monthHeaders}
+            </tr></thead>
+            <tbody>${dataRows}</tbody>
+          </table>
+        </div>`;
+    }).join('');
+  }
+
+  /**
+   * SIDE BY SIDE layout — crop blocks across the page rather than stacked down it, which is what
+   * makes bids comparable across a geography at a glance. Each crop is a block of columns read
+   * left-to-right: [Location | cols] ‖ [Location | cols] ‖ ...
+   *
+   * Each crop keeps its OWN location list: a crop only lists the elevators that actually quote it
+   * (HWW may have 8 where HRWW has 18), and shorter lists pad with blanks so blocks stay aligned.
+   *
+   * Crops per page is measured, not fixed — see cropsPerPage. Each page is a self-contained table so
+   * a wide crop selection produces more sheets instead of narrower, colliding columns.
+   */
+  private _buildSideBySideSections(
+    cropGroups: { crop: string; columns: { key: string; crop: string; month: number; year: number; label: string; compactLabel: string; subLabel: string }[] }[],
+    rows: EditBidsRow[],
+    highlightScoular: boolean,
+    scoularNames: Set<string>,
+    scoularBg: string
+  ): string {
+    const cropBlocks = cropGroups.map(group => ({
+      crop: group.crop,
+      columns: group.columns,
+      // Same order as the edit grid (no Scoular re-sort) so the print matches the screen.
+      rows: rows.filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0))
+    }));
+    // Crops per page is measured from the longest name (4 if they fit, else 3 — see cropsPerPage).
+    // Each band prints on its own page, so a wide crop selection produces more pages rather than
+    // narrower, colliding columns.
+    const bandSize = this.cropsPerPage(cropBlocks);
+    const bands: (typeof cropBlocks)[] = [];
+    for (let i = 0; i < cropBlocks.length; i += bandSize) bands.push(cropBlocks.slice(i, i + bandSize));
+
+    // A heavy rule separates one crop from the next, so the eye doesn't run across a boundary.
+    const blockDivider = (i: number) => i === 0 ? '' : 'border-left:3px solid #111827;';
+    // Nothing is ever truncated and type stays at a readable 10px. cropsPerPage is what buys that:
+    // it drops from 4 crops to 3 when a name wouldn't fit on one line (~23 chars at 4-up vs ~39 at
+    // 3-up). Names may still wrap if something longer than 39 chars turns up — a second line is
+    // acceptable, hidden text and shrunken type are not.
+    // Value columns are sized to fit their label on one line by bandColumnWidths.
+    const nowrapValue = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+
+    return bands.map(band => {
+      // Widths are per BAND so each page fills its sheet. Value columns get exactly enough room for a
+      // one-line label; the name column takes the rest (see bandColumnWidths).
+      const { namePct: nameColPct, valuePct: valueColPct } =
+        this.bandColumnWidths(band.length, band[0].columns.length);
+
+      const colgroup = `<colgroup>`
+        + band.map(b =>
+            `<col style="width:${nameColPct}%" />`
+            + b.columns.map(() => `<col style="width:${valueColPct}%" />`).join('')
+          ).join('')
+        + `</colgroup>`;
+
+      // Crop header, tinted per crop from the shared palette in the same pastel style as the
+      // commodity chips elsewhere in the app (light fill, dark text) with the solid hue as a rule
+      // underneath — colour is what makes a block findable when several sit side by side.
+      const headerRow = `<tr>`
+        + band.map((b, i) =>
+            `<th colspan="${1 + b.columns.length}" style="padding:6px 8px;text-align:center;font-size:12px;font-weight:700;color:#1f2937;background:${this.cropHeaderTint(b.crop)};border:1px solid #d1d5db;border-bottom:3px solid ${commodityHex(b.crop)};${blockDivider(i)}white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${this._esc(b.crop)}</th>`
+          ).join('')
+        + `</tr>`;
+
+      // Second header row: blank above each name column, then the compact column labels (Cash /
+      // N/C 26, or a short month) repeated under every crop.
+      const subHeaderRow = `<tr>`
+        + band.map((b, i) =>
+            `<th style="padding:4px 6px;background:#f3f4f6;border:1px solid #d1d5db;${blockDivider(i)}"></th>`
+            + b.columns.map(c =>
+                `<th style="padding:4px 6px;text-align:center;font-size:10px;font-weight:700;color:#1f2937;background:#f3f4f6;border:1px solid #d1d5db;${nowrapValue}">${this._esc(c.compactLabel)}</th>`
+              ).join('')
+          ).join('')
+        + `</tr>`;
+
+      const bandRowCount = Math.max(...band.map(b => b.rows.length));
+      const bodyRows = Array.from({ length: bandRowCount }, (_, r) => `<tr>`
+        + band.map((b, i) => {
+            const row = b.rows[r];
+            // Past the end of this crop's list — emit empty cells so the blocks stay aligned.
+            if (!row) {
+              const filler = `<td style="border:1px solid #e5e7eb;padding:4px 6px;">&nbsp;</td>`;
+              return `<td style="border:1px solid #e5e7eb;${blockDivider(i)}padding:4px 6px;">&nbsp;</td>`
+                + b.columns.map(() => filler).join('');
+            }
+            const isScoular = highlightScoular && scoularNames.has(row.name);
+            const bg = isScoular ? scoularBg : '#ffffff';
+            const nameCell = `<td style="padding:4px 6px;font-size:10px;line-height:1.3;font-weight:${isScoular ? '700' : '500'};color:#1f2937;border:1px solid #e5e7eb;${blockDivider(i)}background:${bg};white-space:normal;overflow-wrap:break-word;word-break:break-word;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${this._esc(row.name)}</td>`;
+            const valueCells = b.columns.map(col => {
+              const val = this.printCellValue(row, col);
+              // Blank, not a dash: an em-dash in a dense side-by-side grid reads as a value.
+              const display = val ? this._esc(val) : '';
+              return `<td style="padding:4px 6px;text-align:center;font-size:10px;border:1px solid #e5e7eb;background:${bg};font-family:'Cascadia Mono','Fira Code',monospace;${nowrapValue}-webkit-print-color-adjust:exact;print-color-adjust:exact;">${display}</td>`;
+            }).join('');
+            return nameCell + valueCells;
+          }).join('')
+        + `</tr>`).join('');
+
+      // A partial trailing band spreads across the full width rather than leaving a gap at the right:
+      // since each band now owns a page, there's no band above it to line up with.
+      return `
+        <div style="page-break-inside:avoid;">
+          <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+            ${colgroup}
+            <thead>${headerRow}${subHeaderRow}</thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>`;
+    // Four crops is the most that fits a landscape sheet legibly, so each band gets its OWN page
+    // rather than stacking two bands onto one. The last band must not force a trailing blank page.
+    }).join('<div style="page-break-after:always;"></div>');
   }
 
   private _removeAddLocationPin(): void {
