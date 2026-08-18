@@ -7,11 +7,20 @@ export interface BidSheetLocationBid {
   cropYear: number;
   month: number;
   bid: string;
+  /** Who owns this cell: 'Manual' (a user typed it) or 'Barchart' (fed, read-only). */
+  source: BidSource;
+  /** Vendor symbol behind a fed cell; absent on manual cells. */
+  barchartSymbol?: string;
+  /** When the elevator last updated a fed bid — the "as of" shown next to the value. */
+  quoteAsOf?: string;
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;
   modifiedAt?: string;
 }
+
+/** Who owns a bid cell. The server enforces this too: writes to a 'Barchart' cell are rejected. */
+export type BidSource = 'Manual' | 'Barchart';
 
 export interface BidSheetLocation {
   id: number;
@@ -22,6 +31,8 @@ export interface BidSheetLocation {
   latitude?: number;
   longitude?: number;
   elevatorCode?: string;
+  /** Set when this row is linked to a BarChart listing; its bids are fed and read-only. */
+  barchartLocationKey?: string;
   tradeUnitCode: string;
   groupName?: string;
   isScoularFacility?: boolean;
@@ -43,6 +54,7 @@ export interface BidSheetEntry {
   latitude?: number;
   longitude?: number;
   elevatorCode?: string;
+  barchartLocationKey?: string;
   tradeUnitCode: string;
   groupName?: string;
   commodityCode: string;
@@ -51,6 +63,9 @@ export interface BidSheetEntry {
   cropYear: number;
   month: number;
   bid: string;
+  source: BidSource;
+  barchartSymbol?: string;
+  quoteAsOf?: string;
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;

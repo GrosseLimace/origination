@@ -21,7 +21,7 @@
           </div>
         }
 
-        @if (!addLocationMode()) {
+        @if (!addLocationMode() && !barchartMode()) {
           <!-- Floating filter bar (top-left, constrained to not overlap panel) -->
           <div #filterBar class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
                [style.max-width]="showPanel() ? 'calc(100% - 510px)' : 'calc(100% - 80px)'">
@@ -277,7 +277,15 @@
                 <tbody>
                   @for (row of panelLocationBids(); track row.crop) {
                     <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <td class="px-3 py-3 text-sm font-medium text-gray-900 dark:text-white">{{ row.crop }}</td>
+                      <td class="px-3 py-3 text-sm font-medium text-gray-900 dark:text-white">
+                        <div class="flex items-center gap-1.5">
+                          <span>{{ row.crop }}</span>
+                          @if (barchartEnabled && row.isFed) {
+                            <span class="px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
+                                  [title]="row.fedAsOf ? 'From BarChart — updated ' + formatAsOf(row.fedAsOf) : 'From BarChart'">Feed</span>
+                          }
+                        </div>
+                      </td>
                       <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.oldStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.oldStatus === 'matching',
@@ -292,10 +300,15 @@
                       }">{{ row.newBid || '--' }}</td>
                       @if (deleteMode()) {
                       <td class="px-1 py-3 text-center">
+                        @if (row.isFed) {
+                          <span class="text-[10px] text-gray-400 dark:text-gray-500"
+                                title="BarChart owns this crop's bids. Remove the location from this trade unit to stop showing them.">Feed</span>
+                        } @else {
                         <button (click)="requestDeleteCrop(row.crop)" title="Delete {{ row.crop }} bids"
                           class="p-1 rounded text-gray-400 hover:text-scoular-red-accessible dark:text-gray-500 dark:hover:text-scoular-red transition-colors">
                           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         </button>
+                        }
                       </td>
                       }
                     </tr>
@@ -496,6 +509,29 @@
               </div>
             </div>
           }
+
+        <!-- ============ ADD FROM BARCHART ============ -->
+        @if (barchartMode()) {
+          <div class="absolute top-4 left-4 z-[1100] bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 max-w-[340px]">
+            <p class="text-sm font-semibold text-gray-900 dark:text-white">Pick a location from BarChart</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Pins are competitor locations in the feed near this view. Pan the map to look elsewhere, or search by name.
+              Hollow pins are already on a bid sheet.
+            </p>
+          </div>
+
+          <app-barchart-picker
+            #picker
+            [searchArea]="barchartSearchArea()"
+            [tradeUnits]="addLocationTus()"
+            [selectedKey]="barchartSelectedKey()"
+            (resultsChange)="onBarchartResults($event)"
+            (focus)="onBarchartFocus($event)"
+            (add)="onBarchartAdd($event)"
+            (close)="exitBarchartMode()"
+            (detailClosed)="barchartSelectedKey.set(null)"
+          />
+        }
 
         <!-- ============ ADD LOCATION MODE ============ -->
         @if (addLocationMode()) {
@@ -859,6 +895,10 @@
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
                             </span>
                             <span class="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[160px] lg:max-w-[220px]" [title]="row.name">{{ row.name }}</span>
+                            @if (barchartEnabled && row.isBarchartLinked) {
+                              <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
+                                    title="Linked to BarChart — its bids update on their own and can't be edited here.">Feed</span>
+                            }
                           </div>
                         </td>
                         @for (col of editGridColumns(); track col.key; let colIdx = $index) {
@@ -871,15 +911,22 @@
                               (ngModelChange)="updateBid(rowIdx, col.key, $event)"
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                               (blur)="onBidBlur()"
-                              [readonly]="editBidsReadOnly()"
+                              [readonly]="editBidsReadOnly() || row.fedCells.has(col.key)"
+                              [title]="row.fedCells.has(col.key) ? fedCellTooltip(row, col.key) : ''"
                               placeholder="—"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="editBidsReadOnly()
                                 ? 'border-transparent bg-transparent text-gray-700 dark:text-gray-300 cursor-default focus:ring-0 read-only:cursor-default'
-                                : (row.bids[col.key] !== row.originalBids[col.key]
-                                  ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
-                                  : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
+                                : (row.fedCells.has(col.key)
+                                  ? 'border-dashed border-scoular-green/40 bg-scoular-green/5 dark:bg-scoular-green/10 text-gray-700 dark:text-gray-200 cursor-default focus:ring-0'
+                                  : (row.bids[col.key] !== row.originalBids[col.key]
+                                    ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
+                                    : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'))"
                             />
+                            @if (barchartEnabled && row.fedAsOf[col.key]) {
+                              <div class="mt-0.5 text-[10px] leading-none text-center text-gray-400 dark:text-gray-500 truncate"
+                                   [title]="fedCellTooltip(row, col.key)">{{ formatAsOf(row.fedAsOf[col.key]) }}</div>
+                            }
                           </td>
                         }
                       </tr>
@@ -896,6 +943,14 @@
                           </svg>
                           Add Location
                         </div>
+                        @if (barchartEnabled) {
+                          <button (click)="enterBarchartMode(); $event.stopPropagation()"
+                                  class="mt-1.5 flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 hover:text-scoular-green-accessible dark:hover:text-scoular-green transition-colors"
+                                  title="Search BarChart for a competitor location and let its bids fill in automatically">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                            Add from BarChart
+                          </button>
+                        }
                       </td>
                       <td [attr.colspan]="editGridColumns().length + 1"></td>
                     </tr>

@@ -1,0 +1,197 @@
+<div class="absolute top-0 right-0 h-full w-[380px] z-[1000] flex flex-col bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-xl">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Add from BarChart</h3>
+      @if (coverageSummary()) {
+        <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400 truncate" [title]="coverageSummary()">{{ coverageSummary() }}</p>
+      }
+    </div>
+    <button (click)="close.emit()" title="Close"
+            class="flex-shrink-0 p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
+  </div>
+
+  @if (detail() || detailLoading()) {
+    <!-- ============================ Confirm step ============================ -->
+    <div class="flex-1 overflow-y-auto">
+      @if (detailLoading()) {
+        <div class="p-4 text-sm text-gray-500 dark:text-gray-400">Loading location…</div>
+      } @else if (detail(); as d) {
+        <div class="p-4 space-y-4">
+          <button (click)="closeDetail()"
+                  class="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            Back to results
+          </button>
+
+          <div>
+            <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ d.location.locationName || d.location.elevator }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ locationSubtitle(d.location) }}</p>
+            @if (d.location.facilityType) {
+              <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ d.location.facilityType }}</p>
+            }
+          </div>
+
+          <!-- Name -->
+          <div>
+            <label class="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Name on your bid sheet</label>
+            <input type="text" [ngModel]="nameOverride()" (ngModelChange)="nameOverride.set($event)"
+                   class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+          </div>
+
+          <!-- Trade units -->
+          <div>
+            <label class="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Add to</label>
+            @if (tradeUnits().length === 0) {
+              <p class="text-xs text-gray-500 dark:text-gray-400">Select a single trade unit on the bid sheet to add a location.</p>
+            } @else {
+              <div class="space-y-1">
+                @for (tu of tradeUnits(); track tu) {
+                  <label class="flex items-center gap-2 text-sm"
+                         [class.opacity-50]="alreadyOn(tu)">
+                    <input type="checkbox" [disabled]="alreadyOn(tu)"
+                           [checked]="chosenTus().has(tu)" (change)="toggleTu(tu)"
+                           class="rounded border-gray-300 text-scoular-green focus:ring-scoular-green" />
+                    <span class="text-gray-800 dark:text-gray-200">{{ tu }}</span>
+                    @if (alreadyOn(tu)) {
+                      <span class="text-[10px] text-gray-400 dark:text-gray-500">already added</span>
+                    }
+                  </label>
+                }
+              </div>
+            }
+          </div>
+
+          <!-- Bid preview -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Bids that will appear</label>
+              <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ d.bids.length }}</span>
+            </div>
+            @if (d.bids.length === 0) {
+              <p class="text-xs text-gray-500 dark:text-gray-400">This location has no current bids in the feed.</p>
+            } @else {
+              <div class="rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800">
+                @for (b of d.bids; track b.symbol) {
+                  <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
+                    <div class="min-w-0">
+                      <span class="font-medium text-gray-800 dark:text-gray-200">{{ b.commodityCode || b.vendorCommodity }}</span>
+                      <span class="text-gray-400 dark:text-gray-500"> · {{ monthLabel(b.cropYear, b.month) }}</span>
+                      @if (!b.isMapped) {
+                        <span class="ml-1 text-[10px] text-scoular-yellow"
+                              [title]="'BarChart calls this ' + b.vendorCommodity + '. It has no commodity mapping yet, so it will not appear on the bid sheet.'">not mapped</span>
+                      }
+                    </div>
+                    <div class="flex-shrink-0 text-right">
+                      @if (b.price != null) {
+                        <span class="font-mono font-semibold text-gray-900 dark:text-white">{{ b.price }}</span>
+                        @if (b.quoteAsOf) {
+                          <span class="ml-1 text-[10px] text-gray-400 dark:text-gray-500">{{ formatAsOf(b.quoteAsOf) }}</span>
+                        }
+                      } @else {
+                        <span class="text-gray-400 dark:text-gray-500" title="The catalog lists this bid but no price has been loaded yet.">no price yet</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+            @if (d.unmappedBidCount > 0) {
+              <p class="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                {{ d.unmappedBidCount }} of these use a commodity we haven't mapped yet, so they won't reach the bid sheet.
+              </p>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Confirm footer -->
+    @if (detail()) {
+      <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-2">
+        <button (click)="confirmAdd()" [disabled]="!canAdd()"
+                class="flex-1 px-3 py-2 rounded-lg text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          {{ saving() ? 'Adding…' : 'Add location' }}
+        </button>
+        <button (click)="closeDetail()"
+                class="px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+          Cancel
+        </button>
+      </div>
+    }
+
+  } @else {
+    <!-- ============================ Search + results ============================ -->
+    <div class="px-4 py-3 space-y-2 border-b border-gray-200 dark:border-gray-700">
+      <div class="relative">
+        <input type="text" [ngModel]="searchText()" (ngModelChange)="onSearchInput($event)"
+               placeholder="Search elevator, site, or town"
+               class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pl-8 pr-7 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        @if (isTextSearch()) {
+          <button (click)="clearSearch()" title="Clear"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        }
+      </div>
+
+      <select [ngModel]="stateFilter()" (ngModelChange)="onStateChange($event)"
+              class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green">
+        <option value="">All states we hold</option>
+        @for (s of coverageStates(); track s.state) {
+          <option [value]="s.state">{{ s.state }} ({{ s.locationCount }})</option>
+        }
+      </select>
+
+      <p class="text-[11px] text-gray-400 dark:text-gray-500">
+        {{ isTextSearch() ? 'Searching the whole catalog.' : 'Showing locations near the map view — pan to look elsewhere.' }}
+      </p>
+    </div>
+
+    <div class="flex-1 overflow-y-auto">
+      @if (loading()) {
+        <div class="p-4 text-sm text-gray-500 dark:text-gray-400">Searching…</div>
+      } @else if (results().length === 0) {
+        <div class="p-4 space-y-2">
+          <p class="text-sm text-gray-600 dark:text-gray-300">No BarChart locations found.</p>
+          @if (coverage(); as c) {
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              The feed currently holds {{ c.locationCount.toLocaleString() }} locations in
+              {{ c.states.length }} states{{ topStatesLabel() }}.
+              If the location you want isn't here, add it manually instead.
+            </p>
+          }
+        </div>
+      } @else {
+        <div class="divide-y divide-gray-100 dark:divide-gray-800">
+          @for (loc of results(); track loc.locationKey) {
+            <button (click)="selectLocation(loc)"
+                    class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ loc.locationName || loc.elevator }}</p>
+                  <p class="text-[11px] text-gray-500 dark:text-gray-400 truncate">{{ locationSubtitle(loc) }}</p>
+                </div>
+                <div class="flex-shrink-0 text-right">
+                  @if (loc.distanceMiles != null) {
+                    <p class="text-[11px] text-gray-400 dark:text-gray-500">{{ loc.distanceMiles }} mi</p>
+                  }
+                  <p class="text-[10px] text-gray-400 dark:text-gray-500">{{ loc.commodityCount }} crop{{ loc.commodityCount === 1 ? '' : 's' }}</p>
+                </div>
+              </div>
+              @if (loc.placements.length > 0) {
+                <p class="mt-1 text-[10px] text-scoular-green-accessible dark:text-scoular-green">
+                  Already on {{ loc.placements.length === 1 ? loc.placements[0].tradeUnitCode : loc.placements.length + ' trade units' }}
+                </p>
+              }
+            </button>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

@@ -1,6 +1,6 @@
 # BarChart Bid Feed — Database Plan
 
-**Status:** BUILT — landing tables, ingestion API, and the picker's catalog API implemented; schema applied to Dev 2026-08-11
+**Status:** BUILT end to end — landing tables, ingestion API, catalog API, and the "Add from BarChart" picker UI; schema applied to Dev 2026-08-11. The picker and fed-bid display are gated by `environment.barchartBidsEnabled` (on for local + dev only). See [Bid Sheet](./Bid%20Sheet.md#add-from-barchart-fed-bids) for the UI behaviour.
 **Date:** 2026-07-23 (built 2026-08-11) · **Owner:** Caden Egr
 
 > **As-built notes.** Three things changed between approval and implementation:

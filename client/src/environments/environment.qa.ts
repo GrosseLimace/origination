@@ -2,6 +2,8 @@ export const environment = {
   production: false,
   envName: 'QA',
   bidSheetEnabled: true,
+  // "Add from BarChart" picker + fed-bid display. Off until the vendor feed is live in this environment.
+  barchartBidsEnabled: false,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
   calculatorEnabled: true,

@@ -55,7 +55,9 @@ flowchart LR
 | --- | --- |
 | Component | `client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts` |
 | Template | `client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.html` |
+| BarChart picker | `client/src/app/features/bid-sheet/components/barchart-picker/barchart-picker.component.ts` (+ `.html`, `.spec.ts`) |
 | Controller | `api/GrainOriginatorPortal.Api/Controllers/BidSheetController.cs` |
+| BarChart catalog controller | `api/GrainOriginatorPortal.Api/Controllers/BarchartController.cs` |
 | Service methods (group: BidSheet) | `GetElevatorsAsync`, `GetBidSheetLocationsAsync`, `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `DeleteBidSheetBidsAsync`, `GetBidCropYearsAsync`, `GetBidCommoditiesAsync`, `GetBidMonthsAsync`, `GetBidSheetLocationOrderAsync`, `SetBidSheetLocationOrderAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync` |
 | ODS view | `ctrm.vw_GNP026` (elevators with lat/lon, address, TU code, group name, IsScoularFacility flag) |
 | App tables | `dbo.BidSheetLocations`, `dbo.BidSheetLocationBids`, `dbo.BidSheetLocationOrders`, `dbo.BidSheetPreferences`, `dbo.ElevatorCache` |
@@ -126,7 +128,46 @@ Array<{
 
 Server-side validation lives in `BidSheetController` (TU validation via `IUserEntitlementService.ValidateTradeUnitsOrThrowAsync`).
 
+## Add from BarChart (fed bids)
+
+Available from the **Add from BarChart** link under the Edit Bids grid's Add Location row, when
+`environment.barchartBidsEnabled` is on. It opens a right-hand panel and hands the map to the picker.
+
+**Discovery is map-first on purpose.** With text-only search, a user who finds nothing can't tell
+whether BarChart doesn't list the location, lists it under a different company name, or we simply
+don't pull that state — and would reasonably conclude the feed is broken. So the panel searches
+around whatever the map is showing (pan to look elsewhere), text search is the secondary path, and
+the panel states the catalog's real coverage ("2,894 locations across 29 states, refreshed …") rather
+than leaving it to be inferred from an empty list. Manual entry stays available regardless.
+
+Candidate pins are drawn on their own Leaflet layer, and our own clustered pins are hidden while the
+picker is open. A **hollow** pin is already on some bid sheet; a filled one is new.
+
+Confirming an add creates **one bid sheet location per chosen trade unit**, all sharing the same
+`BarchartLocationKey` — that per-TU row *is* the placement record. The server prefills blank address
+and coordinate fields from the vendor record and runs the feed bridge on each create, so the bids are
+there when the panel closes instead of appearing after the next pipeline run.
+
+**Removing one** needs no special path: deleting the bid sheet location removes that trade unit's
+placement and its fed bids, while the catalog and price history persist — so re-adding it refills
+instantly, and other trade units' placements are untouched.
+
+### Fed vs manual bids
+
+`dbo.BidSheetLocationBids.Source` is `Manual` or `Barchart`, and each side owns its own cells:
+
+- Fed cells render with a dashed green tint, an "as of" line under the value, and are **read-only** —
+  the input is `readonly`, `updateBid` refuses them, and `_buildDirtyBids` skips them. The server
+  rejects writes to them independently, so all three layers agree.
+- A feed-linked location can still carry **manual** bids for crops or months the vendor doesn't
+  publish, and those behave exactly as they always have. The read-only rule is per cell, not per row.
+- The feed never overwrites a manual cell. In the bridge's `MERGE`, a manual row matches but satisfies
+  no clause, so it's left exactly as typed.
+- A feed-owned crop can't be deleted from the panel — the delete button is replaced with a "Feed"
+  label, because the server would ignore the request anyway.
+
 ## Crop year + month preferences
+
 
 `BidSheetPreferences` persists per-user, per-trade-unit selections so the screen opens with the user's last-used filters. Fields:
 
@@ -144,6 +185,8 @@ Persisted via `setBidSheetPreference`.
 - `authGuard` — required.
 - **`environment.bidSheetEnabled`** — checked in [`client/src/app/app.routes.ts`](../../client/src/app/app.routes.ts) (around line 30). When false, the route isn't registered (deep links 404 / redirect home) and the sidebar doesn't show the link.
 - `[Authorize]` on `BidSheetController`. TU validation per call via `IUserEntitlementService.ValidateTradeUnitsOrThrowAsync` (the only endpoint family in the app where TU access is enforced — bids are TU-scoped business data).
+- **`environment.barchartBidsEnabled`** — gates the "Add from BarChart" entry point and the fed-bid badges. Read directly by the component (not the router), so the screen still works normally when it's off. Currently **on for local and dev, off for QA and prod**, since the vendor feed is only loaded in dev.
+- `[Authorize]` on `BarchartController` too, but catalog reads are deliberately **not** TU-scoped: the catalog is global vendor data with no Scoular customer information in it. TU entitlement is enforced on the write that creates a placement, and on `refresh-bids`, against the row's persisted trade unit.
 
 ## External integrations
 

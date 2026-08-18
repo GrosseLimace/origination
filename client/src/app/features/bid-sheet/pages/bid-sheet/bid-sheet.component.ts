@@ -11,6 +11,9 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { environment } from '@env/environment';
+import { BarchartPickerComponent, BarchartAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
+import { BarchartCatalogLocation } from '@models';
 
 interface EditBidsRow {
   name: string;
@@ -21,6 +24,12 @@ interface EditBidsRow {
   longitude?: number;
   bids: Record<string, string>;
   originalBids: Record<string, string>;
+  /** Column keys whose value came from the BarChart feed. Those cells are not editable. */
+  fedCells: Set<string>;
+  /** Column key → when the elevator last updated that fed bid. Only set for fed cells. */
+  fedAsOf: Record<string, string | undefined>;
+  /** True when the whole location is linked to a BarChart listing. */
+  isBarchartLinked: boolean;
 }
 
 /** One row in the Yearly print columns builder. The resolved crop year = editBidsYear() + offset
@@ -56,7 +65,7 @@ const FILTER_BAR_WRAP_WIDTH = 1050;
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
-  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, CdkDropList, CdkDrag, CdkDragHandle],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, CdkDropList, CdkDrag, CdkDragHandle, BarchartPickerComponent],
   templateUrl: './bid-sheet.component.html',
   styleUrl: './bid-sheet.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -124,6 +133,7 @@ export class BidSheetComponent {
         latitude: loc.latitude,
         longitude: loc.longitude,
         elevatorCode: loc.elevatorCode,
+        barchartLocationKey: loc.barchartLocationKey,
         tradeUnitCode: loc.tradeUnitCode,
         groupName: loc.groupName,
         commodityCode: bid.commodityCode,
@@ -132,6 +142,9 @@ export class BidSheetComponent {
         cropYear: bid.cropYear,
         month: bid.month,
         bid: bid.bid,
+        source: bid.source ?? 'Manual',
+        barchartSymbol: bid.barchartSymbol,
+        quoteAsOf: bid.quoteAsOf,
         createdBy: bid.createdBy,
         createdAt: bid.createdAt,
         modifiedBy: bid.modifiedBy,
@@ -197,6 +210,28 @@ export class BidSheetComponent {
     return { month: month - 1, year };
   });
   /** Returns "Mar 26" / "Apr 26" / "2025" / "2026" depending on month context. */
+  /** Whether the BarChart picker and fed-bid display are turned on for this environment. */
+  readonly barchartEnabled = environment.barchartBidsEnabled === true;
+
+  /** Tooltip for a feed-owned cell: where it came from and when the elevator last changed it. */
+  fedCellTooltip(row: EditBidsRow, key: string): string {
+    const asOf = row.fedAsOf[key];
+    return asOf
+      ? `From BarChart — updated ${this.formatAsOf(asOf)}. Not editable.`
+      : 'From BarChart. Not editable.';
+  }
+
+  /** Short, human "as of" for a vendor timestamp: today shows a time, older shows a date. */
+  formatAsOf(iso: string | undefined): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const isToday = d.toDateString() === new Date().toDateString();
+    return isToday
+      ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
   formatMonthYear(month: number, year: number | null): string {
     if (year == null) return '';
     if (month === 0) return year.toString();
@@ -260,7 +295,12 @@ export class BidSheetComponent {
       const newRefBid = refName && !isRef ? this._parseBid(this._getLatestBid(refName, newD.year, crop!, newD.month)) : null;
       const oldStatus = isRef ? 'reference' : this._computeItemStatus(oldBid, false, oldRefBid);
       const newStatus = isRef ? 'reference' : this._computeItemStatus(newBid, false, newRefBid);
-      return { crop: crop!, oldBid, newBid, oldStatus, newStatus };
+      // Feed provenance for the displayed periods, so the panel can say where a number came from and
+      // when the elevator last touched it. Taken from the newer period when both are fed.
+      const newEntry = this._getLatestEntry(name, newD.year, crop!, newD.month);
+      const oldEntry = this._getLatestEntry(name, oldD.year, crop!, oldD.month);
+      const fedEntry = newEntry?.source === 'Barchart' ? newEntry : (oldEntry?.source === 'Barchart' ? oldEntry : null);
+      return { crop: crop!, oldBid, newBid, oldStatus, newStatus, isFed: !!fedEntry, fedAsOf: fedEntry?.quoteAsOf };
     });
   });
 
@@ -355,6 +395,21 @@ export class BidSheetComponent {
   newLocationTu = signal<string>('');
   newLocationIsScoular = signal<boolean>(false);
   private _addLocationPin: Leaflet.Marker | null = null;
+
+  // ---------------------------------------------------------------------------
+  // Add from BarChart (picker)
+  // ---------------------------------------------------------------------------
+  /** Picker panel open; the map switches to showing vendor candidates instead of our own pins. */
+  barchartMode = signal<boolean>(false);
+  /** Map centre the picker searches around. Updated as the user pans. */
+  barchartSearchArea = signal<BarchartSearchArea | null>(null);
+  /** Candidate clicked on the map, handed to the picker so map and panel stay in step. */
+  barchartSelectedKey = signal<string | null>(null);
+  barchartAdding = signal<boolean>(false);
+  /** Candidate pins live on their own layer so they never mix with the clustered bid-sheet pins. */
+  private _barchartLayer: Leaflet.LayerGroup | null = null;
+  private _barchartMoveTimer: ReturnType<typeof setTimeout> | null = null;
+  private _pickerRef = viewChild<BarchartPickerComponent>('picker');
 
   // TUs available for selection when adding a location.
   // Falls back to all TUs the user has access to when no TU/group is selected.
@@ -1237,6 +1292,128 @@ export class BidSheetComponent {
     if (fromEditBids) { this.openEditBids(); }
   }
 
+  // =========================================================================
+  // Add from BarChart
+  // =========================================================================
+
+  /** Opens the picker. The map keeps its current view — that view IS the search. */
+  enterBarchartMode(): void {
+    if (!this.barchartEnabled) return;
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'barchart-picker-opened');
+    this.editBidsMode.set(false);
+    this.showPanel.set(false);
+    this.barchartMode.set(true);
+    this._refreshMapMarkers();       // clears our own pins; the picker's candidates replace them
+    this._publishBarchartSearchArea();
+  }
+
+  exitBarchartMode(): void {
+    this.barchartMode.set(false);
+    this.barchartSelectedKey.set(null);
+    this.barchartSearchArea.set(null);
+    this._clearBarchartPins();
+    this._refreshMapMarkers();
+  }
+
+  /** Publishes the current map view as a centre + radius for the picker to search. */
+  private _publishBarchartSearchArea(): void {
+    if (!this._map) return;
+    const centre = this._map.getCenter();
+    const bounds = this._map.getBounds();
+    // Radius = centre to the north-east corner, so the search covers everything on screen rather
+    // than a circle inscribed in it (which would omit the corners the user can plainly see).
+    const radiusMiles = Math.max(10, Math.min(500,
+      Math.round(this._map.distance(centre, bounds.getNorthEast()) / 1609.34)));
+    this.barchartSearchArea.set({ latitude: centre.lat, longitude: centre.lng, radiusMiles });
+  }
+
+  /** Draws the picker's current results as candidate pins. */
+  onBarchartResults(rows: BarchartCatalogLocation[]): void {
+    if (!this._map || !this._L) return;
+    const L = this._L;
+    this._clearBarchartPins();
+    this._barchartLayer = L.layerGroup().addTo(this._map);
+
+    for (const loc of rows) {
+      if (loc.latitude == null || loc.longitude == null) continue;
+      // Already-placed candidates are drawn hollow so a user can see at a glance what's new to them.
+      const placed = loc.placements.length > 0;
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="width:20px;height:20px;border-radius:50%;border:3px solid #00875F;background:${placed ? 'transparent' : '#00A36F'};box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>`,
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
+      const marker = L.marker([loc.latitude, loc.longitude], { icon })
+        .bindTooltip(`${loc.locationName || loc.elevator || loc.locationKey}${loc.city ? ' — ' + loc.city : ''}`, { direction: 'top' });
+      marker.on('click', () => this.barchartSelectedKey.set(loc.locationKey));
+      marker.addTo(this._barchartLayer!);
+    }
+  }
+
+  private _clearBarchartPins(): void {
+    if (this._barchartLayer && this._map) {
+      this._map.removeLayer(this._barchartLayer);
+    }
+    this._barchartLayer = null;
+  }
+
+  /** The picker asked us to centre on a candidate it listed. */
+  onBarchartFocus(loc: BarchartCatalogLocation): void {
+    if (loc.latitude == null || loc.longitude == null) return;
+    this._flyToLocation(loc.latitude, loc.longitude, 11);
+  }
+
+  /**
+   * Creates one bid sheet location per chosen trade unit, all sharing the BarChart key — that per-TU
+   * row IS the placement record. The server prefills address and coordinates from the catalog and
+   * runs the feed bridge on each create, so bids are present the moment this returns.
+   */
+  onBarchartAdd(request: BarchartAddRequest): void {
+    if (this.barchartAdding()) return;
+    this.barchartAdding.set(true);
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
+
+    const creates = request.tradeUnitCodes.map(tu => this.apiService.createBidSheetLocation({
+      name: request.name,
+      tradeUnitCode: tu,
+      groupName: this._getGroupNameForTu(tu) || undefined,
+      barchartLocationKey: request.locationKey,
+      isScoularFacility: false,
+      bids: []
+    }));
+
+    forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (saved) => {
+        this.barchartAdding.set(false);
+        this._pickerRef()?.addFinished(true);
+        this.toastService.success(
+          request.tradeUnitCodes.length === 1
+            ? `Added ${request.name}`
+            : `Added ${request.name} to ${request.tradeUnitCodes.length} trade units`);
+
+        // Locations for the trade units currently being viewed can go straight into the local cache;
+        // the rest arrive with the background reload below.
+        const viewing = new Set(this.activeTradeUnits());
+        const mine = saved.filter(l => viewing.has(l.tradeUnitCode));
+        if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
+        this.allMapLocations.update(locs => [...saved, ...locs]);
+
+        this._loadAllMapLocations();
+        const tus = this.activeTradeUnits();
+        if (tus.length > 0) this._loadBidData(tus, undefined, 'refresh');
+      },
+      error: (err) => {
+        this.barchartAdding.set(false);
+        this._pickerRef()?.addFinished(false);
+        if (isDevMode()) console.error('[BidSheet] barchart add failed', err);
+        // A duplicate name or an already-linked trade unit comes back as a 400 with a specific
+        // message; surface it rather than a generic failure, since it tells the user what to change.
+        this.toastService.error(err?.message ? `Could not add location: ${err.message}` : 'Could not add location');
+      }
+    });
+  }
+
   private _getGroupNameForTu(tuCode: string): string {
     return this.appState.userGroups()
       .find(g => g.tradeUnitCodes.some(c => c.trim() === tuCode.trim()))
@@ -1299,10 +1476,19 @@ export class BidSheetComponent {
       addedNames.add(name);
       const rep = this.bidEntries().find(e => e.name === name);
       const bids: Record<string, string> = {};
+      const fedCells = new Set<string>();
+      const fedAsOf: Record<string, string | undefined> = {};
       for (const col of columns) {
-        bids[col.key] = lookup.get(`${name}|${col.crop}|${year}|${col.month}`)?.bid ?? '';
+        const entry = lookup.get(`${name}|${col.crop}|${year}|${col.month}`);
+        bids[col.key] = entry?.bid ?? '';
+        // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
+        // months the vendor doesn't publish, and those stay fully editable.
+        if (entry?.source === 'Barchart') {
+          fedCells.add(col.key);
+          fedAsOf[col.key] = entry.quoteAsOf;
+        }
       }
-      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids } });
+      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, fedCells, fedAsOf, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -1311,7 +1497,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids } });
+      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, fedCells: new Set<string>(), fedAsOf: {}, isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // Apply saved location order (unknown names go to end)
@@ -1582,6 +1768,9 @@ export class BidSheetComponent {
 
   updateBid(rowIndex: number, crop: string, value: string): void {
     if (this.editBidsReadOnly()) return; // All Producers grid is view-only
+    // Feed-owned cells belong to BarChart. The server rejects writes to them anyway; refusing here
+    // keeps the grid from showing a pending edit that would silently vanish on the next load.
+    if (this.editBidsRows()[rowIndex]?.fedCells.has(crop)) return;
     this.editBidsRows.update(rows => {
       const updated = [...rows];
       updated[rowIndex] = { ...updated[rowIndex], bids: { ...updated[rowIndex].bids, [crop]: value } };
@@ -1600,6 +1789,9 @@ export class BidSheetComponent {
 
     for (const row of this.editBidsRows()) {
       for (const col of this.editGridColumns()) {
+        // Feed-owned cells are never part of a save. updateBid already blocks editing them, so this is
+        // belt-and-braces against a fed value being echoed back as a manual write.
+        if (row.fedCells.has(col.key)) continue;
         const current = (row.bids[col.key] ?? '').trim();
         const original = (row.originalBids[col.key] ?? '').trim();
         if (current !== original) {
@@ -1715,7 +1907,9 @@ export class BidSheetComponent {
           if (idx >= 0) {
             bids[idx] = { ...bids[idx], bid: d.bid, commodityName: d.commodityName ?? bids[idx].commodityName, commodityCategory: d.commodityCategory ?? bids[idx].commodityCategory, modifiedAt: now };
           } else {
-            bids.push({ id: 0, locationId: loc.id, commodityCode: d.commodityCode, commodityName: d.commodityName, commodityCategory: d.commodityCategory, cropYear: d.cropYear, month, bid: d.bid, createdBy: '', createdAt: now, modifiedAt: now });
+            // Always 'Manual': this path only runs for a user's own grid edits. The feed writes
+            // its cells server-side and they arrive on the next load.
+            bids.push({ id: 0, locationId: loc.id, commodityCode: d.commodityCode, commodityName: d.commodityName, commodityCategory: d.commodityCategory, cropYear: d.cropYear, month, bid: d.bid, source: 'Manual', createdBy: '', createdAt: now, modifiedAt: now });
           }
         }
         return { ...loc, bids };
@@ -2545,6 +2739,14 @@ export class BidSheetComponent {
       // Left-click to place pin in add-location mode
       this._map.on('click', (e: any) => this._onMapClick(e));
 
+      // While the picker is open, panning re-asks "what's near here?". Debounced, because a single
+      // drag fires moveend repeatedly and each one would be a round trip.
+      this._map.on('moveend', () => {
+        if (!this.barchartMode()) return;
+        if (this._barchartMoveTimer) clearTimeout(this._barchartMoveTimer);
+        this._barchartMoveTimer = setTimeout(() => this._publishBarchartSearchArea(), 400);
+      });
+
       this._refreshMapMarkers();
     } catch { /* map init failed — will retry on next navigation */ }
   }
@@ -2553,8 +2755,8 @@ export class BidSheetComponent {
     if (!this._map || !this._clusterGroup || !this._L) return;
     const L = this._L;
     this._clusterGroup.clearLayers();
-    // Keep map clean during add-location mode
-    if (this.addLocationMode()) return;
+    // Keep map clean during add-location mode, and while the BarChart picker owns the map
+    if (this.addLocationMode() || this.barchartMode()) return;
 
     const activeTus = this.activeTradeUnits();
     const hasTu = activeTus.length > 0;

@@ -18,6 +18,7 @@ export * from './dashboard-summary.model';
 export * from './contract-pricing-line.model';
 export * from './refine-filters.model';
 export * from './bid-sheet.model';
+export * from './barchart.model';
 export * from './commodity-conversion.model';
 export * from './harvest-window.model';
 export * from './usage-dashboard.model';

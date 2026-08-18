@@ -23,6 +23,11 @@ import {
   BidSheetEntry,
   BidSheetLocation,
   BidSheetLocationBid,
+  BarchartCatalogLocation,
+  BarchartCatalogLocationDetail,
+  BarchartCoverage,
+  BarchartLocationSearchParams,
+  BarchartRefreshBidsResult,
   Elevator,
   CommodityConversion,
   HarvestWindow,
@@ -846,6 +851,8 @@ export class ApiService {
   createBidSheetLocation(location: {
     name?: string; address?: string; city?: string; state?: string;
     latitude?: number; longitude?: number; elevatorCode?: string;
+    /** Links this placement to a BarChart listing; the server prefills details and pulls its bids in. */
+    barchartLocationKey?: string;
     tradeUnitCode?: string; groupName?: string; isScoularFacility?: boolean;
     bids: Array<{ commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string }>;
   }): Observable<BidSheetLocation> {
@@ -931,6 +938,56 @@ export class ApiService {
   /** Saves bid sheet preferences for the current user and a trade unit key. */
   setBidSheetPreference(tradeUnitKey: string, cropCode: string | null, month: number | null, cropYear: number | null, cropOrder?: string | null, hiddenCrops?: string | null, selectedMonths?: string | null, printLayout?: string | null): Observable<void> {
     return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, { tradeUnitKey, cropCode, month, cropYear, cropOrder, hiddenCrops, selectedMonths, printLayout })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // =========================================================================
+  // BarChart Catalog (read-only vendor data behind the "Add from BarChart" picker)
+  // =========================================================================
+
+  /**
+   * Searches the vendor catalog. Pass latitude+longitude (and optionally radiusMiles) for the
+   * map-driven path; results then come back nearest-first with a distance on each one.
+   *
+   * Not de-duplicated on purpose: the caller varies these params as the user pans and types, so a
+   * cached first response would be the wrong answer for every later call.
+   */
+  searchBarchartLocations(params: BarchartLocationSearchParams): Observable<BarchartCatalogLocation[]> {
+    let httpParams = new HttpParams();
+    if (params.search) httpParams = httpParams.set('search', params.search);
+    if (params.state) httpParams = httpParams.set('state', params.state);
+    if (params.commodityCode) httpParams = httpParams.set('commodityCode', params.commodityCode);
+    if (params.latitude != null && params.longitude != null) {
+      httpParams = httpParams.set('latitude', String(params.latitude))
+                             .set('longitude', String(params.longitude));
+      if (params.radiusMiles != null) httpParams = httpParams.set('radiusMiles', String(params.radiusMiles));
+    }
+    if (params.take != null) httpParams = httpParams.set('take', String(params.take));
+    return this.http.get<BarchartCatalogLocation[]>(`${this.baseUrl}/barchart/locations`, { params: httpParams })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** One catalog listing plus the bids it publishes — what the picker previews before adding. */
+  getBarchartLocation(locationKey: string, instrumentType?: string): Observable<BarchartCatalogLocationDetail> {
+    const params: any = {};
+    if (instrumentType) params.instrumentType = instrumentType;
+    return this.http.get<BarchartCatalogLocationDetail>(
+      `${this.baseUrl}/barchart/locations/${encodeURIComponent(locationKey)}`, { params })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Catalog totals and per-state counts. De-duplicated: it changes only when the feed reloads. */
+  getBarchartCoverage(): Observable<BarchartCoverage> {
+    return this._dedupe('barchart-coverage',
+      this.http.get<BarchartCoverage>(`${this.baseUrl}/barchart/coverage`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Re-publishes current feed prices onto one linked location, instead of waiting for the next run. */
+  refreshBarchartBids(locationId: number): Observable<BarchartRefreshBidsResult> {
+    return this.http.post<BarchartRefreshBidsResult>(
+      `${this.baseUrl}/barchart/locations/${locationId}/refresh-bids`, {})
       .pipe(catchError(e => this.handleError(e)));
   }
 
