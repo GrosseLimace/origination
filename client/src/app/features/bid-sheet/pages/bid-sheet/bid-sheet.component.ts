@@ -403,6 +403,8 @@ export class BidSheetComponent {
   barchartMode = signal<boolean>(false);
   /** "Where should this location come from?" chooser, shown before either add flow starts. */
   showAddSourceChoice = signal<boolean>(false);
+  /** Trade-unit code → description, so the picker's selector can be searched by location too. */
+  readonly tradeUnitDescriptions = this.appState.tradeUnitDescriptions;
   /** Map centre the picker searches around. Updated as the user pans. */
   barchartSearchArea = signal<BarchartSearchArea | null>(null);
   /** Candidate clicked on the map, handed to the picker so map and panel stay in step. */

@@ -149,18 +149,27 @@ describe('BarchartPickerComponent', () => {
 
   it('falls back through site, then the key, when the company is missing', () => {
     expect(component.defaultName(location({ elevator: undefined }))).toBe('GPC-MUSCATINE');
+    // no trailing separator when only one half exists
     expect(component.defaultName(location({ elevator: undefined, locationName: undefined, city: undefined })))
       .toBe('BarChart 82259');
   });
 
   // The vendor sets the site name to the town on roughly half the catalog. Repeating "Norton" above
   // "Norton, KS" tells the user nothing, so the site is collapsed away in that case.
-  it('drops the site name when the vendor just repeated the town', () => {
+  it('headlines company and site, with the town on the second line', () => {
+    const loc = location({ elevator: 'Farmers Cooperative Dorchester', locationName: 'HERKIMER', city: 'Marysville', state: 'KS' });
+
+    expect(component.primaryName(loc)).toBe('Farmers Cooperative Dorchester - HERKIMER');
+    expect(component.locationSubtitle(loc)).toBe('Marysville, KS');
+  });
+
+  // The vendor sets the site name to the town on roughly half the catalog, so the site part of the
+  // headline falls back to the town rather than repeating a redundant vendor string.
+  it('uses the town as the site part when the vendor just repeated the town', () => {
     const loc = location({ locationName: 'NORTON', city: 'Norton', state: 'KS', elevator: 'Ag Valley Co-op' });
 
-    expect(component.primaryName(loc)).toBe('Ag Valley Co-op');
+    expect(component.primaryName(loc)).toBe('Ag Valley Co-op - Norton');
     expect(component.locationSubtitle(loc)).toBe('Norton, KS');
-    expect(component.defaultName(loc)).toBe('Ag Valley Co-op - Norton');
   });
 
   // Some listings carry another company's name as the site name — a CHS listing whose site name is
@@ -168,8 +177,15 @@ describe('BarchartPickerComponent', () => {
   it('leads with the company even when the site name names a different one', () => {
     const loc = location({ elevator: 'CHS - Illinois', locationName: 'GPC Muscatine', city: 'Muscatine', state: 'IA' });
 
-    expect(component.primaryName(loc)).toBe('CHS - Illinois');
-    expect(component.locationSubtitle(loc)).toBe('GPC Muscatine · Muscatine, IA');
+    expect(component.primaryName(loc)).toBe('CHS - Illinois - GPC Muscatine');
+    expect(component.locationSubtitle(loc)).toBe('Muscatine, IA');
+  });
+
+  // The label in the list and the name that gets saved are the same string, so nothing is renamed
+  // behind the user's back between picking a location and seeing it on the sheet.
+  it('saves exactly the label shown in the list', () => {
+    const loc = location();
+    expect(component.defaultName(loc)).toBe(component.primaryName(loc));
   });
 
   it('emits the add request with the chosen trade units', () => {
@@ -240,5 +256,78 @@ describe('BarchartPickerComponent', () => {
   it('formats a delivery month for the preview', () => {
     expect(component.monthLabel(2027, 1)).toBe('Jan 2027');
     expect(component.monthLabel(2026, 8)).toBe('Aug 2026');
+  });
+
+  // -------------------------------------------------------------------------
+  // Trade-unit selector. Originators can hold a lot of desks, and the picker is opened from the map
+  // with no trade unit chosen, so the list has to be searchable rather than just long.
+
+  it('searches trade units by code', () => {
+    fixture.componentRef.setInput('tradeUnits', ['2190', '4056', '3311']);
+    fixture.detectChanges();
+
+    component.tuSearch.set('40');
+
+    expect(component.filteredTradeUnits()).toEqual(['4056']);
+  });
+
+  // Searching by where a desk is matters more than by its number — originators know "Pratt", not "2190".
+  it('searches trade units by their location description', () => {
+    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
+    fixture.componentRef.setInput('tradeUnitLabels', new Map([['2190', 'Pratt, KS'], ['4056', 'Hastings, NE']]));
+    fixture.detectChanges();
+
+    component.tuSearch.set('pratt');
+
+    expect(component.filteredTradeUnits()).toEqual(['2190']);
+    expect(component.tradeUnitDisplay('2190')).toBe('2190 · Pratt, KS');
+  });
+
+  it('shows every trade unit when the search is empty', () => {
+    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
+    fixture.detectChanges();
+
+    expect(component.filteredTradeUnits()).toEqual(['2190', '4056']);
+  });
+
+  it('summarises the selection for the closed selector', () => {
+    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
+    fixture.componentRef.setInput('tradeUnitLabels', new Map([['2190', 'Pratt, KS']]));
+    fixture.detectChanges();
+
+    expect(component.tuSummary()).toBe('Select trade units');
+    component.toggleTu('2190');
+    expect(component.tuSummary()).toBe('2190 · Pratt, KS');
+    component.toggleTu('4056');
+    expect(component.tuSummary()).toBe('2 trade units');
+  });
+
+  // A second placement on a desk that already has this location would duplicate every fed bid, so the
+  // toggle refuses it rather than relying on the checkbox being disabled in the template.
+  it('refuses to select a trade unit the location is already on', () => {
+    apiMock.getBarchartLocation.mockReturnValue(of(detail({
+      location: location({ placements: [{ locationId: 12, tradeUnitCode: '2190', name: 'x' }] }),
+    })));
+    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
+    fixture.detectChanges();
+    component.openDetail('82259');
+
+    component.toggleTu('2190');
+
+    // 4056 is pre-selected (it's the only desk this location isn't already on), so the set isn't empty —
+    // what matters is that the already-placed 2190 never got in.
+    expect(component.chosenTus().has('2190')).toBe(false);
+    expect([...component.chosenTus()]).toEqual(['4056']);
+  });
+
+  it('clears the search when the selector is closed', () => {
+    fixture.detectChanges();
+    component.toggleTuPicker();
+    component.tuSearch.set('pratt');
+
+    component.toggleTuPicker();
+
+    expect(component.tuPickerOpen()).toBe(false);
+    expect(component.tuSearch()).toBe('');
   });
 });

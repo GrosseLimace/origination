@@ -47,6 +47,12 @@ export class BarchartPickerComponent {
   /** Trade units the user may add a location to. */
   readonly tradeUnits = input<string[]>([]);
 
+  /**
+   * Trade-unit code → description ("2190" → "Pratt, KS"). Used for display and search, so a user can
+   * find a desk by where it is rather than having to remember its number.
+   */
+  readonly tradeUnitLabels = input<Map<string, string>>(new Map());
+
   /** Location key the parent wants shown as selected (e.g. the user clicked its map pin). */
   readonly selectedKey = input<string | null>(null);
 
@@ -84,6 +90,29 @@ export class BarchartPickerComponent {
   readonly chosenTus = signal<Set<string>>(new Set());
   readonly nameOverride = signal('');
   readonly saving = signal(false);
+
+  /** Trade-unit selector state. Originators can hold a lot of desks, so it searches rather than scrolls. */
+  readonly tuPickerOpen = signal(false);
+  readonly tuSearch = signal('');
+
+  /** Trade units matching the search, already-added ones included but flagged. */
+  readonly filteredTradeUnits = computed(() => {
+    const term = this.tuSearch().trim().toLowerCase();
+    const labels = this.tradeUnitLabels();
+    return this.tradeUnits().filter(tu => {
+      if (!term) return true;
+      const label = labels.get(tu)?.toLowerCase() ?? '';
+      return tu.toLowerCase().includes(term) || label.includes(term);
+    });
+  });
+
+  /** What the closed selector says. */
+  readonly tuSummary = computed(() => {
+    const chosen = [...this.chosenTus()];
+    if (chosen.length === 0) return 'Select trade units';
+    if (chosen.length === 1) return this.tradeUnitDisplay(chosen[0]);
+    return `${chosen.length} trade units`;
+  });
 
   private _searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
@@ -226,10 +255,7 @@ export class BarchartPickerComponent {
    * CHS listing whose site name is "GPC Muscatine"), which would misattribute the price at a glance.
    */
   defaultName(location: BarchartCatalogLocation): string {
-    const company = location.elevator?.trim();
-    const site = this.siteLabel(location);
-    if (company && site) return `${company} - ${site}`;
-    return company || site || `BarChart ${location.locationKey}`;
+    return this.primaryName(location);
   }
 
   /**
@@ -244,17 +270,45 @@ export class BarchartPickerComponent {
     return site;
   }
 
-  /** Headline for a listing: who is buying. */
+  /**
+   * Headline for a listing: the company, then which of its sites —
+   * "Farmers Cooperative Dorchester - Beattie". This is also what gets saved, so what a user picks in
+   * the list is what lands on their sheet.
+   *
+   * Company leads deliberately. The vendor's site name alone is a poor label: half of them are just the
+   * town, which is ambiguous on a bid sheet and can collide with the unique name-per-trade-unit rule,
+   * and some name a different company than the one publishing the bid (a CHS listing whose site name is
+   * "GPC Muscatine") — leading with that would misattribute the price at a glance.
+   */
   primaryName(location: BarchartCatalogLocation): string {
-    return location.elevator?.trim() || this.siteLabel(location) || `BarChart ${location.locationKey}`;
+    const company = location.elevator?.trim();
+    const site = this.siteLabel(location);
+    if (company && site) return `${company} - ${site}`;
+    return company || site || `BarChart ${location.locationKey}`;
   }
 
   toggleTu(tu: string): void {
+    if (this.alreadyOn(tu)) return; // adding a second placement to the same desk would duplicate its bids
     this.chosenTus.update(set => {
       const next = new Set(set);
       next.has(tu) ? next.delete(tu) : next.add(tu);
       return next;
     });
+  }
+
+  /** "2190 · Pratt, KS" when we know the description, else just the code. */
+  tradeUnitDisplay(tu: string): string {
+    const label = this.tradeUnitLabels().get(tu);
+    return label ? `${tu} · ${label}` : tu;
+  }
+
+  toggleTuPicker(): void {
+    this.tuPickerOpen.update(open => !open);
+    if (!this.tuPickerOpen()) this.tuSearch.set('');
+  }
+
+  clearChosenTus(): void {
+    this.chosenTus.set(new Set());
   }
 
   /** True when this location is already on that trade unit — the checkbox is then disabled. */
@@ -292,16 +346,8 @@ export class BarchartPickerComponent {
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
-  /**
-   * Under the company: the site and its town. The site is left out when the vendor set it to the town
-   * name, since repeating "Norton" over "Norton, KS" tells the user nothing.
-   */
+  /** Under the headline: just where it is. The site name is already part of the headline. */
   locationSubtitle(location: BarchartCatalogLocation): string {
-    const place = [location.city, location.state].filter(Boolean).join(', ');
-    const site = this.siteLabel(location);
-    const distinctSite = site && site.toUpperCase() !== (location.city?.trim().toUpperCase() ?? '')
-      ? site
-      : '';
-    return [distinctSite, place].filter(Boolean).join(' · ');
+    return [location.city, location.state].filter(Boolean).join(', ');
   }
 }

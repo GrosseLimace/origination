@@ -50,22 +50,73 @@
           <div>
             <label class="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Add to</label>
             @if (tradeUnits().length === 0) {
-              <p class="text-xs text-gray-500 dark:text-gray-400">Select a single trade unit on the bid sheet to add a location.</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">No trade units available on your account.</p>
             } @else {
-              <div class="space-y-1">
-                @for (tu of tradeUnits(); track tu) {
-                  <label class="flex items-center gap-2 text-sm"
-                         [class.opacity-50]="alreadyOn(tu)">
-                    <input type="checkbox" [disabled]="alreadyOn(tu)"
-                           [checked]="chosenTus().has(tu)" (change)="toggleTu(tu)"
-                           class="rounded border-gray-300 text-scoular-green focus:ring-scoular-green" />
-                    <span class="text-gray-800 dark:text-gray-200">{{ tu }}</span>
-                    @if (alreadyOn(tu)) {
-                      <span class="text-[10px] text-gray-400 dark:text-gray-500">already added</span>
+              <!-- Closed state: what's chosen, click to change. -->
+              <button (click)="toggleTuPicker()"
+                      class="w-full flex items-center justify-between gap-2 text-sm rounded-lg border px-3 py-2 transition-colors"
+                      [class]="chosenTus().size > 0
+                        ? 'border-scoular-green-accessible bg-scoular-green/5 dark:bg-scoular-green/10 text-gray-900 dark:text-white'
+                        : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400'">
+                <span class="truncate">{{ tuSummary() }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                  @if (tuPickerOpen()) { <polyline points="18 15 12 9 6 15"/> } @else { <polyline points="6 9 12 15 18 9"/> }
+                </svg>
+              </button>
+
+              <!-- Chips, so several selections stay visible with the list closed. -->
+              @if (chosenTus().size > 1 && !tuPickerOpen()) {
+                <div class="mt-1.5 flex flex-wrap gap-1">
+                  @for (tu of chosenTus(); track tu) {
+                    <button (click)="toggleTu(tu)" [title]="'Remove ' + tradeUnitDisplay(tu)"
+                            class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green hover:opacity-70 transition-opacity">
+                      {{ tu }}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                  }
+                </div>
+              }
+
+              <!-- Open state: search, then scroll. Inline rather than floating, so it can't be clipped
+                   by the panel's own scroll container. -->
+              @if (tuPickerOpen()) {
+                <div class="mt-1.5 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div class="relative border-b border-gray-200 dark:border-gray-700">
+                    <input type="text" [ngModel]="tuSearch()" (ngModelChange)="tuSearch.set($event)"
+                           placeholder="Search trade unit or location"
+                           class="w-full text-xs bg-transparent text-gray-900 dark:text-white pl-7 pr-2 py-2 focus:outline-none" />
+                    <svg class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  </div>
+
+                  <div class="max-h-44 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
+                    @if (filteredTradeUnits().length === 0) {
+                      <p class="px-2.5 py-3 text-xs text-gray-500 dark:text-gray-400">No trade unit matches "{{ tuSearch() }}".</p>
                     }
-                  </label>
-                }
-              </div>
+                    @for (tu of filteredTradeUnits(); track tu) {
+                      <label class="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                             [class.opacity-50]="alreadyOn(tu)" [class.cursor-default]="alreadyOn(tu)">
+                        <input type="checkbox" [disabled]="alreadyOn(tu)"
+                               [checked]="chosenTus().has(tu)" (change)="toggleTu(tu)"
+                               class="flex-shrink-0 rounded border-gray-300 text-scoular-green focus:ring-scoular-green" />
+                        <span class="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">{{ tradeUnitDisplay(tu) }}</span>
+                        @if (alreadyOn(tu)) {
+                          <span class="flex-shrink-0 text-[10px] text-gray-400 dark:text-gray-500">already added</span>
+                        }
+                      </label>
+                    }
+                  </div>
+
+                  <div class="flex items-center justify-between px-2.5 py-1.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <span class="text-[10px] text-gray-500 dark:text-gray-400">{{ chosenTus().size }} selected</span>
+                    <div class="flex items-center gap-2">
+                      @if (chosenTus().size > 0) {
+                        <button (click)="clearChosenTus()" class="text-[10px] text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">Clear</button>
+                      }
+                      <button (click)="toggleTuPicker()" class="text-[10px] font-medium text-scoular-green-accessible dark:text-scoular-green hover:opacity-70">Done</button>
+                    </div>
+                  </div>
+                </div>
+              }
             }
           </div>
 

@@ -144,13 +144,22 @@ Candidate pins are drawn on their own Leaflet layer, and our own clustered pins 
 picker is open. A **hollow** pin is already on some bid sheet; a filled one is new. Distance is used to
 sort nearest-first but isn't displayed.
 
-**Listings are named company-first** — "Farmers Cooperative Dorchester" with "Beattie, KS" underneath —
-not by the vendor's site name. Two reasons, both measured against the live catalog: about half of the
-2,894 site names are just the town again ("NORTON" over "Norton, KS"), and some name a *different*
-company than the one publishing the bid (a CHS - Illinois listing whose site name is "GPC Muscatine"),
-which would misattribute the price at a glance. The vendor's own site name is still shown on the
-confirm step so a listing stays traceable, and the default saved name is "Company - Site", which is
-also less likely to collide with the unique name-per-trade-unit rule than a bare town name.
+**Listings are labelled "Company - Site" with the town underneath** — "Farmers Cooperative Dorchester -
+HERKIMER" over "Marysville, KS" — and that label is also exactly what gets saved, so nothing is renamed
+between picking a location and seeing it on the sheet.
+
+Company leads deliberately, measured against the live catalog: about half of the 2,894 vendor site names
+are just the town again, and some name a *different* company than the one publishing the bid (a
+CHS - Illinois listing whose site name is "GPC Muscatine"), which would misattribute the price at a
+glance. Where the vendor set the site name to the town, the site half falls back to the town rather than
+repeating a redundant string. The vendor's own site name is printed verbatim on the confirm step so a
+listing stays traceable to the feed.
+
+**Trade units are chosen from a searchable multi-select.** The picker is normally opened from the map
+with no trade unit selected, in which case every trade unit on the user's account is offered — which can
+be a long list, so it searches by code *and* by location description ("pratt" finds 2190), shows chips
+for multiple selections, and disables any desk the location is already on. Descriptions come from
+`AppStateService.tradeUnitDescriptions`.
 
 Confirming an add creates **one bid sheet location per chosen trade unit**, all sharing the same
 `BarchartLocationKey` — that per-TU row *is* the placement record. The server prefills blank address
