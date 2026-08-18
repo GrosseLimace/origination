@@ -56,7 +56,7 @@ regardless of a valid token.
 | `POST` | `/quotes?snapshotDate=YYYY-MM-DD` | Send a vendor quote response. `snapshotDate` optional — defaults to today, Central time. |
 | `POST` | `/instruments` | Send a vendor instrument (catalog) response. |
 | `POST` | `/apply-bids?instrumentType=bidCash` | Publish current prices onto the Bid Sheet. Call after a quote load. |
-| `POST` | `/deactivate-instruments?lastSeenBefore=<utc>` | Retire catalog entries the vendor stopped publishing. **Only after a complete catalog sweep.** |
+| `POST` | `/deactivate-instruments?lastSeenBefore=<utc>&maxSharePercent=25` | Retire catalog entries the vendor stopped publishing. **Only after a complete catalog cycle** — see the warning below. Refused with a 400 if it would retire more than `maxSharePercent` of the active catalog (default 25). |
 | `GET` | `/budget?monthlyCap=250000` | Month-to-date call usage on our side, as a cross-check against your own monitoring. |
 | `POST` | `/purge-history?auditRetentionDays=400&snapshotRetentionDays=730` | Optional housekeeping — trims the audit and price-history tables. Call it on a schedule or leave it to us. |
 
@@ -100,11 +100,28 @@ Occasionally (weekly is plenty), refresh the catalog so new locations and delive
 
 ```
 1. for each page: call BarChart getGrainInstruments, then POST /instruments
-2. after a COMPLETE sweep only: POST /deactivate-instruments?lastSeenBefore=<when the sweep began>
+2. after a COMPLETE cycle only: POST /deactivate-instruments?lastSeenBefore=<when the cycle began>
 ```
 
 Skipping step 2 is harmless — nothing breaks, the catalog just keeps entries the vendor has dropped.
-Running it after a *partial* sweep is not harmless: it would retire instruments that still exist.
+
+### Deactivation and a sharded sweep (read this before scheduling step 2)
+
+Confirmed 2026-08-18: the sweep is **sharded across 7 daily runs**, each covering roughly a seventh of
+the instrument/state/month cross-product, to stay under the vendor's 250,000-call monthly cap.
+
+That makes "complete sweep" mean **a complete 7-day cycle, not last night's run**. On any single day
+only part of the catalog is re-seen, so `lastSeenBefore = yesterday` would retire most of the book —
+and because every linked Bid Sheet location draws its bids from active instruments, those sheets would
+silently go blank. It reads as data loss, and the recovery is a full re-sweep.
+
+Two things protect against that:
+
+- **`lastSeenBefore` must be older than one full cycle.** With a 7-day rotation, that means at least
+  8 days back, plus margin for a missed run.
+- **We refuse an implausible cutoff.** If a call would deactivate more than `maxSharePercent` (default
+  25%) of the active catalog, it returns a 400 naming the counts and changes nothing. Raise the
+  parameter explicitly if a large retirement is genuinely intended.
 
 ## Retries
 

@@ -401,6 +401,8 @@ export class BidSheetComponent {
   // ---------------------------------------------------------------------------
   /** Picker panel open; the map switches to showing vendor candidates instead of our own pins. */
   barchartMode = signal<boolean>(false);
+  /** "Where should this location come from?" chooser, shown before either add flow starts. */
+  showAddSourceChoice = signal<boolean>(false);
   /** Map centre the picker searches around. Updated as the user pans. */
   barchartSearchArea = signal<BarchartSearchArea | null>(null);
   /** Candidate clicked on the map, handed to the picker so map and panel stay in step. */
@@ -1165,11 +1167,44 @@ export class BidSheetComponent {
     this.addCommodityQuery.set('');
   }
 
-  addLocationFromEditBids(): void {
-    if (this.editBidsReadOnly()) return; // view-only grid has no add-location row
-    this.addLocationOrigin.set('editBids');
-    this.editBidsMode.set(false);
+  /**
+   * Single entry point for adding a location. Asks where it should come from first, because the two
+   * sources behave differently once chosen: a BarChart location brings its own bids and keeps them
+   * read-only, a manual one is yours to type. Deciding up front beats discovering that afterwards.
+   *
+   * With the feed turned off there's nothing to choose, so this goes straight to the manual flow —
+   * the behaviour every environment had before the picker existed.
+   */
+  startAddLocation(origin: 'editBids' | 'map'): void {
+    if (origin === 'editBids' && this.editBidsReadOnly()) return; // view-only grid has no add row
+    this.addLocationOrigin.set(origin === 'editBids' ? 'editBids' : null);
+    if (!this.barchartEnabled) { this._startManualAdd(); return; }
+    this.showAddSourceChoice.set(true);
+  }
+
+  chooseManualAdd(): void {
+    this.showAddSourceChoice.set(false);
+    this._startManualAdd();
+  }
+
+  chooseBarchartAdd(): void {
+    this.showAddSourceChoice.set(false);
+    this.enterBarchartMode();
+  }
+
+  cancelAddSourceChoice(): void {
+    this.showAddSourceChoice.set(false);
+    this.addLocationOrigin.set(null);
+  }
+
+  private _startManualAdd(): void {
+    if (this.addLocationOrigin() === 'editBids') this.editBidsMode.set(false);
     this.enterAddLocationMode();
+  }
+
+  /** Kept for the grid's Add Location row, which is scoped to the Edit Bids origin. */
+  addLocationFromEditBids(): void {
+    this.startAddLocation('editBids');
   }
 
   enterAddLocationMode(): void {
@@ -1300,6 +1335,7 @@ export class BidSheetComponent {
   enterBarchartMode(): void {
     if (!this.barchartEnabled) return;
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'barchart-picker-opened');
+    // Leaves addLocationOrigin alone on purpose — exitBarchartMode reads it to decide where to return.
     this.editBidsMode.set(false);
     this.showPanel.set(false);
     this.barchartMode.set(true);
@@ -1313,6 +1349,10 @@ export class BidSheetComponent {
     this.barchartSearchArea.set(null);
     this._clearBarchartPins();
     this._refreshMapMarkers();
+    // Return the user where they started, matching cancelAddLocation's behaviour for the manual flow.
+    const fromEditBids = this.addLocationOrigin() === 'editBids';
+    this.addLocationOrigin.set(null);
+    if (fromEditBids) this.openEditBids();
   }
 
   /** Publishes the current map view as a centre + radius for the picker to search. */

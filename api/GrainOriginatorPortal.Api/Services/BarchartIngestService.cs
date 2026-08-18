@@ -30,6 +30,13 @@ public class BarchartIngestService : IBarchartIngestService
     /// </summary>
     public const int MaxPayloadBytes = 10 * 1024 * 1024;
 
+    /// <summary>
+    /// Largest share of the active catalog one deactivation call may switch off before it is refused.
+    /// Set from observed behaviour: a healthy sweep retires a handful of rolled-off symbols, so anything
+    /// approaching a quarter of the book means the cutoff is wrong, not that the vendor dropped that much.
+    /// </summary>
+    public const int DefaultMaxDeactivationSharePercent = 25;
+
     public BarchartIngestService(IBarchartIngestRepository repository, ILogger<BarchartIngestService> logger)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
@@ -163,9 +170,37 @@ public class BarchartIngestService : IBarchartIngestService
 
     /// <inheritdoc />
     public async Task<BarchartDeactivateResponse> DeactivateInstrumentsAsync(
-        DateTime lastSeenBeforeUtc, CancellationToken cancellationToken = default)
+        DateTime lastSeenBeforeUtc, int maxSharePercent = DefaultMaxDeactivationSharePercent,
+        CancellationToken cancellationToken = default)
     {
         var sw = Stopwatch.StartNew();
+
+        // Blast-radius check before anything changes. The vendor sweep is sharded across several days,
+        // so on any single day only a fraction of the catalog is re-seen — a cutoff picked as
+        // "yesterday" would retire almost the whole book and silently empty every linked Bid Sheet
+        // location. A share guard holds whatever the shard cadence turns out to be, where a fixed
+        // minimum age would not. Raise maxSharePercent deliberately to force a large retirement through.
+        var impact = await _repository.PreviewDeactivationAsync(lastSeenBeforeUtc, cancellationToken);
+        if (impact.WouldDeactivate > 0 && impact.SharePercent > maxSharePercent)
+        {
+            sw.Stop();
+            var message =
+                $"Refusing to deactivate {impact.WouldDeactivate} of {impact.ActiveCount} active instruments " +
+                $"({impact.SharePercent}%), which is over the {maxSharePercent}% limit. The catalog sweep is " +
+                $"sharded across several days, so a cutoff must be older than one full cycle. Check " +
+                $"lastSeenBefore, or pass maxSharePercent to override deliberately.";
+
+            _logger.LogWarning(
+                "BarChart deactivation refused: cutoff {LastSeenBeforeUtc} would switch off {WouldDeactivate} of {ActiveCount} instruments ({SharePercent}%), over the {MaxSharePercent}% limit [BARCHART_DEACTIVATE_REFUSED] [DataMutation]",
+                lastSeenBeforeUtc, impact.WouldDeactivate, impact.ActiveCount, impact.SharePercent, maxSharePercent);
+
+            await AuditAsync("ingest/deactivate-instruments",
+                $"lastSeenBefore={lastSeenBeforeUtc:O};refused=1;wouldDeactivate={impact.WouldDeactivate}",
+                400, false, 0, sw, message, cancellationToken);
+
+            throw new ValidationException(nameof(lastSeenBeforeUtc), message);
+        }
+
         var rows = await _repository.DeactivateMissingInstrumentsAsync(lastSeenBeforeUtc, cancellationToken);
         sw.Stop();
 

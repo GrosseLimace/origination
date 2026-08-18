@@ -109,14 +109,21 @@ public class BarchartIngestController : ControllerBase
     /// Rows are flagged inactive, never deleted.
     /// </summary>
     /// <param name="lastSeenBefore">Deactivate instruments not seen since this UTC time.</param>
+    /// <param name="maxSharePercent">
+    /// Safety limit: the call is refused with a 400 if it would switch off more than this share of the
+    /// active catalog. The sweep is sharded across several days, so a cutoff of "yesterday" would retire
+    /// most of the book; raise this only when a large retirement is genuinely intended.
+    /// </param>
     [HttpPost("deactivate-instruments")]
     [ProducesResponseType(typeof(BarchartDeactivateResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<BarchartDeactivateResponse>> DeactivateInstruments(
-        [FromQuery] DateTime lastSeenBefore, CancellationToken cancellationToken = default)
-        => Ok(await _service.DeactivateInstrumentsAsync(lastSeenBefore, cancellationToken));
+        [FromQuery] DateTime lastSeenBefore,
+        [FromQuery] int maxSharePercent = BarchartIngestService.DefaultMaxDeactivationSharePercent,
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.DeactivateInstrumentsAsync(lastSeenBefore, maxSharePercent, cancellationToken));
 
     /// <summary>
     /// Month-to-date ingest usage against the vendor's monthly call cap. The cap is shared across all

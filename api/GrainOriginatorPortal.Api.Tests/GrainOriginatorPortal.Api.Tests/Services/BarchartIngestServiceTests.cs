@@ -213,4 +213,83 @@ public class BarchartIngestServiceTests
 
         Assert.Equal(1_500, result.RowsRemoved);
     }
+
+    // -------------------------------------------------------------------------
+    // Deactivation blast-radius guard.
+    //
+    // The vendor catalog sweep is sharded across several days, so on any single day only a fraction of
+    // the book is re-seen. A cutoff picked as "yesterday" would retire almost everything and silently
+    // empty every linked Bid Sheet location — the guard turns that into a refusal instead.
+
+    [Fact]
+    public async Task DeactivateInstrumentsAsync_WithinShareLimit_DeactivatesAndAudits()
+    {
+        var cutoff = new DateTime(2026, 8, 11, 0, 0, 0, DateTimeKind.Utc);
+        _repository.PreviewDeactivationAsync(cutoff, Arg.Any<CancellationToken>())
+            .Returns(new BarchartDeactivationImpact { ActiveCount = 10342, WouldDeactivate = 16 });
+        _repository.DeactivateMissingInstrumentsAsync(cutoff, Arg.Any<CancellationToken>()).Returns(16);
+
+        var result = await _sut.DeactivateInstrumentsAsync(cutoff);
+
+        Assert.Equal(16, result.RowsDeactivated);
+        await _repository.Received(1).LogApiCallAsync(
+            Arg.Is<BarchartApiCallAudit>(a => a.Success && a.Endpoint == "ingest/deactivate-instruments"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeactivateInstrumentsAsync_OverShareLimit_ThrowsAndChangesNothing()
+    {
+        var cutoff = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+        _repository.PreviewDeactivationAsync(cutoff, Arg.Any<CancellationToken>())
+            .Returns(new BarchartDeactivationImpact { ActiveCount = 10342, WouldDeactivate = 8864 });
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => _sut.DeactivateInstrumentsAsync(cutoff));
+
+        Assert.Contains("8864 of 10342", ex.Message);
+        Assert.Contains("sharded", ex.Message);
+        await _repository.DidNotReceive().DeactivateMissingInstrumentsAsync(
+            Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeactivateInstrumentsAsync_RefusedCall_IsStillAuditedAsAFailure()
+    {
+        var cutoff = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+        _repository.PreviewDeactivationAsync(cutoff, Arg.Any<CancellationToken>())
+            .Returns(new BarchartDeactivationImpact { ActiveCount = 100, WouldDeactivate = 90 });
+
+        await Assert.ThrowsAsync<ValidationException>(() => _sut.DeactivateInstrumentsAsync(cutoff));
+
+        await _repository.Received(1).LogApiCallAsync(
+            Arg.Is<BarchartApiCallAudit>(a => !a.Success && a.HttpStatus == 400),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeactivateInstrumentsAsync_ExplicitHigherLimit_AllowsALargeRetirement()
+    {
+        var cutoff = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+        _repository.PreviewDeactivationAsync(cutoff, Arg.Any<CancellationToken>())
+            .Returns(new BarchartDeactivationImpact { ActiveCount = 100, WouldDeactivate = 90 });
+        _repository.DeactivateMissingInstrumentsAsync(cutoff, Arg.Any<CancellationToken>()).Returns(90);
+
+        var result = await _sut.DeactivateInstrumentsAsync(cutoff, maxSharePercent: 95);
+
+        Assert.Equal(90, result.RowsDeactivated);
+    }
+
+    // An empty catalog must not divide by zero, and there is nothing to protect.
+    [Fact]
+    public async Task DeactivateInstrumentsAsync_EmptyCatalog_ProceedsWithoutError()
+    {
+        var cutoff = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+        _repository.PreviewDeactivationAsync(cutoff, Arg.Any<CancellationToken>())
+            .Returns(new BarchartDeactivationImpact { ActiveCount = 0, WouldDeactivate = 0 });
+        _repository.DeactivateMissingInstrumentsAsync(cutoff, Arg.Any<CancellationToken>()).Returns(0);
+
+        var result = await _sut.DeactivateInstrumentsAsync(cutoff);
+
+        Assert.Equal(0, result.RowsDeactivated);
+    }
 }

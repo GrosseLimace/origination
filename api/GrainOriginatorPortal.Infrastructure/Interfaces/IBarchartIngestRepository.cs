@@ -40,6 +40,13 @@ public interface IBarchartIngestRepository
     Task<int> DeactivateMissingInstrumentsAsync(DateTime lastSeenBeforeUtc, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// How many instruments a proposed cutoff would switch off, and out of how many. Lets the caller
+    /// refuse an obviously wrong cutoff before any rows change, which matters because the vendor sweep
+    /// is sharded over several days and a naive "not seen since yesterday" would retire most of the book.
+    /// </summary>
+    Task<BarchartDeactivationImpact> PreviewDeactivationAsync(DateTime lastSeenBeforeUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Copies current feed prices onto the Bid Sheet for locations linked to a BarChart location key.
     /// Writes only cells owned by the feed, never touches manually entered bids, and prunes its own
     /// rows once a delivery window or commodity mapping goes away.

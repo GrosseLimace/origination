@@ -185,16 +185,29 @@ paths:
         Marks instruments not seen since `lastSeenBefore` as inactive. Rows are never deleted, so
         history and any linked location survive.
 
-        **Call this only after a complete catalog sweep.** Running it after a partial sweep would
-        retire instruments that still exist. Pass the time the sweep began. Skipping it entirely is
-        harmless — the catalog simply keeps entries the vendor has dropped.
+        **Call this only after a complete catalog cycle.** The sweep is sharded across 7 daily runs
+        (confirmed 2026-08-18), so "complete" means the whole 7-day rotation, not last night's run — on
+        any one day only part of the catalog is re-seen. A cutoff of yesterday would retire most of the
+        book and blank every linked Bid Sheet location. Pass a time older than one full cycle.
+
+        Skipping this entirely is harmless — the catalog simply keeps entries the vendor has dropped.
+
+        As a backstop, a call that would retire more than `maxSharePercent` of the active catalog is
+        refused with a 400 and changes nothing.
       operationId: deactivateInstruments
       parameters:
         - name: lastSeenBefore
           in: query
           required: true
-          description: UTC timestamp; typically when the catalog sweep started.
-          schema: { type: string, format: date-time, example: "2026-08-11T05:00:00Z" }
+          description: UTC timestamp older than one full catalog cycle.
+          schema: { type: string, format: date-time, example: "2026-08-01T05:00:00Z" }
+        - name: maxSharePercent
+          in: query
+          required: false
+          description: >
+            Safety limit on how much of the active catalog one call may retire. Raise it only when a
+            large retirement is genuinely intended.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
       responses:
         "200":
           description: Retirement complete.

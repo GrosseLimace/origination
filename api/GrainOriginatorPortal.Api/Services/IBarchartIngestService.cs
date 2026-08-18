@@ -22,8 +22,16 @@ public interface IBarchartIngestService
     /// <summary>Publishes current feed prices onto the Bid Sheet for linked locations.</summary>
     Task<BarchartApplyBidsResponse> ApplyBidsAsync(int? locationId, string? instrumentType, CancellationToken cancellationToken = default);
 
-    /// <summary>Deactivates catalog entries last seen before the given time. Run only after a complete sweep.</summary>
-    Task<BarchartDeactivateResponse> DeactivateInstrumentsAsync(DateTime lastSeenBeforeUtc, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Deactivates catalog entries last seen before the given time. Run only after a complete sweep —
+    /// and note the sweep is sharded over several days, so a cutoff must be older than one full cycle.
+    /// Refused with a ValidationException when it would switch off more than
+    /// <paramref name="maxSharePercent"/> of the active catalog.
+    /// </summary>
+    Task<BarchartDeactivateResponse> DeactivateInstrumentsAsync(
+        DateTime lastSeenBeforeUtc,
+        int maxSharePercent = BarchartIngestService.DefaultMaxDeactivationSharePercent,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Month-to-date ingest usage against the vendor cap.</summary>
     Task<BarchartBudgetResponse> GetBudgetAsync(int monthlyCap, CancellationToken cancellationToken = default);

@@ -173,7 +173,7 @@ pipeline's managed identity holding the `Origination.Application` app role, or a
 | POST | `/barchart-ingest/instruments` | Load a vendor instrument (catalog) payload |
 | POST | `/barchart-ingest/quotes?snapshotDate=` | Load a vendor quote payload + the day's history |
 | POST | `/barchart-ingest/apply-bids?locationId=&instrumentType=` | Publish feed prices onto the Bid Sheet |
-| POST | `/barchart-ingest/deactivate-instruments?lastSeenBefore=` | Retire catalog entries after a complete sweep |
+| POST | `/barchart-ingest/deactivate-instruments?lastSeenBefore=&maxSharePercent=` | Retire catalog entries after a complete 7-day catalog cycle; refused if it would retire more than the allowed share |
 | GET | `/barchart-ingest/budget?monthlyCap=` | Month-to-date ingest usage vs the vendor cap |
 | POST | `/barchart-ingest/purge-history?auditRetentionDays=&snapshotRetentionDays=` | Trim the audit and price-history tables to their retention windows |
 

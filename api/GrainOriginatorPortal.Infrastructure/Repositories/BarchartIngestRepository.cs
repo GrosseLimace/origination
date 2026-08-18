@@ -408,6 +408,31 @@ SELECT CAST(@@ROWCOUNT AS int);";
     }
 
     /// <inheritdoc />
+    public async Task<BarchartDeactivationImpact> PreviewDeactivationAsync(
+        DateTime lastSeenBeforeUtc, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+SELECT
+    ActiveCount     = COUNT(*),
+    WouldDeactivate = SUM(CASE WHEN i.LastSeenUtc < @LastSeenBeforeUtc THEN 1 ELSE 0 END)
+FROM dbo.BarchartInstrument AS i
+WHERE i.IsActive = 1
+  AND i.IsTest = 0;";
+
+        var rows = await ExecuteReaderAsync(
+            sql,
+            reader => new BarchartDeactivationImpact
+            {
+                ActiveCount = reader.IsDBNull(0) ? 0 : reader.GetInt32(0),
+                WouldDeactivate = reader.IsDBNull(1) ? 0 : reader.GetInt32(1)
+            },
+            cancellationToken,
+            ("@LastSeenBeforeUtc", lastSeenBeforeUtc));
+
+        return rows.FirstOrDefault() ?? new BarchartDeactivationImpact();
+    }
+
+    /// <inheritdoc />
     public async Task<int> ApplyBidsToBidSheetAsync(
         int? locationId, string? instrumentType, string appliedBy, CancellationToken cancellationToken = default)
     {
