@@ -19,6 +19,7 @@ public class ControllerAuthorizationTests
 {
     public static IEnumerable<object[]> AllControllerTypes()
     {
+        yield return new object[] { typeof(BarchartController) };
         yield return new object[] { typeof(BarchartIngestController) };
         yield return new object[] { typeof(BidSheetController) };
         yield return new object[] { typeof(CommoditiesController) };

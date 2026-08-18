@@ -59,6 +59,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<BarchartQuoteSnapshot> BarchartQuoteSnapshots => Set<BarchartQuoteSnapshot>();
     public DbSet<BarchartCommodityMap> BarchartCommodityMaps => Set<BarchartCommodityMap>();
     public DbSet<BarchartApiCallAudit> BarchartApiCallAudits => Set<BarchartApiCallAudit>();
+    /// <summary>Read model over dbo.vw_BarchartLocation — one row per elevator listing, for the picker.</summary>
+    public DbSet<BarchartLocationSummary> BarchartLocationSummaries => Set<BarchartLocationSummary>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -714,6 +716,14 @@ public class ApplicationDbContext : DbContext
                   .IncludeProperties(e => new { e.Endpoint, e.Success });
         });
 
+
+        // Read model for the picker. ToView keeps it out of migrations; the view itself is created by
+        // the AddBarchartFeed migration. Keyless because it is a projection, never written to.
+        modelBuilder.Entity<BarchartLocationSummary>(entity =>
+        {
+            entity.HasNoKey();
+            entity.ToView("vw_BarchartLocation", schema: "dbo");
+        });
         modelBuilder.Entity<HarvestWindow>(entity =>
         {
             entity.ToTable("HarvestWindows", schema: "dbo");

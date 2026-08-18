@@ -14,12 +14,21 @@ public class BidSheetService : IBidSheetService
     private readonly IBidSheetRepository _repository;
     private readonly IRequestContextService _requestContext;
     private readonly IUserEntitlementService _entitlementService;
+    private readonly IBarchartCatalogRepository _barchartCatalog;
+    private readonly IBarchartIngestRepository _barchartIngest;
 
-    public BidSheetService(IBidSheetRepository repository, IRequestContextService requestContext, IUserEntitlementService entitlementService)
+    public BidSheetService(
+        IBidSheetRepository repository,
+        IRequestContextService requestContext,
+        IUserEntitlementService entitlementService,
+        IBarchartCatalogRepository barchartCatalog,
+        IBarchartIngestRepository barchartIngest)
     {
         _repository = repository;
         _requestContext = requestContext;
         _entitlementService = entitlementService;
+        _barchartCatalog = barchartCatalog;
+        _barchartIngest = barchartIngest;
     }
 
     /// <summary>Authorizes a mutation against the target location's PERSISTED trade unit (not a
@@ -60,17 +69,25 @@ public class BidSheetService : IBidSheetService
             throw new ValidationException("name",
                 $"A location named \"{request.Name.Trim()}\" already exists in this trade unit. Use a different name.");
 
+        // Resolved before anything is written so a bad link fails as a 400 rather than leaving an
+        // unlinked location behind.
+        var barchartLocation = await ResolveBarchartLocationAsync(request, cancellationToken);
+
         var user = _requestContext.GetCurrentUser();
         var now = DateTime.UtcNow;
         var location = new BidSheetLocation
         {
             Name = request.Name,
-            Address = request.Address,
-            City = request.City,
-            State = request.State,
-            Latitude = request.Latitude,
-            Longitude = request.Longitude,
+            // Fall back to the vendor's record for anything the caller left blank: adding from the picker
+            // sends little more than a key, and a location with no coordinates never gets a map pin.
+            Address = request.Address ?? barchartLocation?.Address,
+            City = request.City ?? barchartLocation?.City,
+            State = request.State ?? barchartLocation?.State,
+            Latitude = request.Latitude ?? barchartLocation?.Latitude,
+            Longitude = request.Longitude ?? barchartLocation?.Longitude,
             ElevatorCode = request.ElevatorCode,
+            // Taken from the catalog, not the request, so the stored key is always canonical.
+            BarchartLocationKey = barchartLocation?.LocationKey,
             TradeUnitCode = request.TradeUnitCode,
             GroupName = request.GroupName,
             IsScoularFacility = request.IsScoularFacility,
@@ -90,7 +107,36 @@ public class BidSheetService : IBidSheetService
         };
 
         var created = await _repository.CreateLocationAsync(location, cancellationToken);
-        return created.ToResponse();
+        if (barchartLocation is null) return created.ToResponse();
+
+        // Publish the feed's current prices immediately, so a location added from the picker shows its
+        // bids right away instead of looking empty until the next pipeline run.
+        await _barchartIngest.ApplyBidsToBidSheetAsync(
+            created.Id, BarchartFeedDefaults.InstrumentType, BarchartFeedDefaults.Actor, cancellationToken);
+
+        var withFedBids = await _repository.GetLocationAsync(created.Id, cancellationToken);
+        return (withFedBids ?? created).ToResponse();
+    }
+
+    /// <summary>
+    /// Validates a requested BarChart link and returns the catalog listing it points at, or null when the
+    /// request isn't a feed link. Rejects unknown keys and a second link to the same location in one trade
+    /// unit, which would put duplicate fed bids on the sheet.
+    /// </summary>
+    private async Task<BarchartLocationSummary?> ResolveBarchartLocationAsync(
+        CreateBidSheetLocationRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.BarchartLocationKey)) return null;
+
+        var key = request.BarchartLocationKey.Trim();
+
+        if (await _repository.BarchartLocationLinkedAsync(key, request.TradeUnitCode, cancellationToken))
+            throw new ValidationException("barchartLocationKey",
+                "This BarChart location is already on this trade unit's bid sheet.");
+
+        return await _barchartCatalog.GetLocationAsync(key, cancellationToken)
+            ?? throw new ValidationException("barchartLocationKey",
+                "That BarChart location is no longer in the feed. Refresh the list and try again.");
     }
 
     /// <inheritdoc />

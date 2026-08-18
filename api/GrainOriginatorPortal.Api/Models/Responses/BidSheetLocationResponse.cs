@@ -11,6 +11,9 @@ public record BidSheetLocationResponse
     public double? Latitude { get; init; }
     public double? Longitude { get; init; }
     public string? ElevatorCode { get; init; }
+
+    /// <summary>BarChart location this row is linked to; null on a normal manually managed location.</summary>
+    public string? BarchartLocationKey { get; init; }
     public string TradeUnitCode { get; init; } = string.Empty;
     public string? GroupName { get; init; }
     public bool IsScoularFacility { get; init; }

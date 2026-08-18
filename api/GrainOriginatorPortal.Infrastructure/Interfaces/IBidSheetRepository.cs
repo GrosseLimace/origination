@@ -20,6 +20,13 @@ public interface IBidSheetRepository
     /// <summary>True if a location with this name already exists in the trade unit (matches the
     /// unique (Name, TradeUnitCode) index). Lets the service surface a friendly duplicate-name error.</summary>
     Task<bool> LocationNameExistsAsync(string name, string tradeUnitCode, CancellationToken cancellationToken);
+    /// <summary>True if this trade unit is already linked to the given BarChart location. Keeps a
+    /// user from adding the same feed location twice to one trade unit, which would duplicate every
+    /// fed bid on the sheet.</summary>
+    Task<bool> BarchartLocationLinkedAsync(string barchartLocationKey, string tradeUnitCode, CancellationToken cancellationToken);
+    /// <summary>A single location with its bids, or null. Used to return a freshly linked location
+    /// after the feed bridge has filled in its bids.</summary>
+    Task<BidSheetLocation?> GetLocationAsync(int id, CancellationToken cancellationToken);
     Task<BidSheetLocation> CreateLocationAsync(BidSheetLocation location, CancellationToken cancellationToken);
     Task<BidSheetLocation?> UpdateLocationAsync(int id, BidSheetLocation location, CancellationToken cancellationToken);
     Task DeleteLocationAsync(int id, CancellationToken cancellationToken);

@@ -64,6 +64,16 @@ public class BidSheetRepository : IBidSheetRepository
             .AnyAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name == trimmed, cancellationToken);
     }
 
+    public Task<bool> BarchartLocationLinkedAsync(string barchartLocationKey, string tradeUnitCode, CancellationToken cancellationToken) =>
+        _appContext.BidSheetLocations
+            .AnyAsync(l => l.TradeUnitCode == tradeUnitCode && l.BarchartLocationKey == barchartLocationKey, cancellationToken);
+
+    public async Task<BidSheetLocation?> GetLocationAsync(int id, CancellationToken cancellationToken) =>
+        await _appContext.BidSheetLocations
+            .AsNoTracking()
+            .Include(l => l.Bids)
+            .FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
+
     public async Task<BidSheetLocation> CreateLocationAsync(BidSheetLocation location, CancellationToken cancellationToken)
     {
         _appContext.BidSheetLocations.Add(location);

@@ -22,6 +22,14 @@ public record CreateBidSheetLocationRequest
     [MaxLength(50)]
     public string? ElevatorCode { get; init; }
 
+    /// <summary>
+    /// BarChart location key to link this placement to the feed. When supplied, missing address and
+    /// coordinate fields are filled from the catalog and fed bids are published immediately, so the
+    /// location does not sit blank until the next pipeline run.
+    /// </summary>
+    [MaxLength(50)]
+    public string? BarchartLocationKey { get; init; }
+
     [Required, MaxLength(100)]
     public string TradeUnitCode { get; init; } = string.Empty;
 

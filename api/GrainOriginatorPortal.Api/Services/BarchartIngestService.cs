@@ -21,7 +21,7 @@ public class BarchartIngestService : IBarchartIngestService
     private readonly ILogger<BarchartIngestService> _logger;
 
     /// <summary>Actor stamped on feed-written rows. Ingest callers are machine identities with no user name.</summary>
-    private const string FeedActor = "barchart-feed";
+    private const string FeedActor = GrainOriginatorPortal.Infrastructure.Abstractions.BarchartFeedDefaults.Actor;
 
     /// <summary>
     /// Largest payload we accept. No repo-wide standard exists for request size, so this is set

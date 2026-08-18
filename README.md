@@ -177,6 +177,17 @@ pipeline's managed identity holding the `Origination.Application` app role, or a
 | GET | `/barchart-ingest/budget?monthlyCap=` | Month-to-date ingest usage vs the vendor cap |
 | POST | `/barchart-ingest/purge-history?auditRetentionDays=&snapshotRetentionDays=` | Trim the audit and price-history tables to their retention windows |
 
+### BarChart Catalog (application DB — read-only, user-facing)
+Routed at `/api/barchart` (no `/v1` segment). Standard signed-in user auth. Backs the "Add from
+BarChart" picker; catalog reads are not trade-unit scoped because the catalog is global vendor data.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/barchart/locations?search=&state=&commodityCode=&latitude=&longitude=&radiusMiles=&take=` | Search the vendor catalog; supplying a map centre returns nearest-first with distances |
+| GET | `/barchart/locations/{locationKey}?instrumentType=` | One listing plus the bids it publishes (the picker's preview) |
+| GET | `/barchart/coverage` | Catalog totals and per-state counts, so an empty search is explainable |
+| POST | `/barchart/locations/{locationId}/refresh-bids` | Re-publish feed prices onto one linked Bid Sheet location |
+
 ### Utilities
 | Method | Endpoint | Description |
 |--------|----------|-------------|

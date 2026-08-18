@@ -1,6 +1,6 @@
 # BarChart Bid Feed — Database Plan
 
-**Status:** BUILT — landing tables and ingestion API implemented; applied to Dev 2026-08-11
+**Status:** BUILT — landing tables, ingestion API, and the picker's catalog API implemented; schema applied to Dev 2026-08-11
 **Date:** 2026-07-23 (built 2026-08-11) · **Owner:** Caden Egr
 
 > **As-built notes.** Three things changed between approval and implementation:
@@ -188,6 +188,43 @@ The vendor's data contains typos, mangled phone numbers, blank fields, and addre
 - Feed locations default to competitor, but if Scoular's own elevators come through the feed, a linked location can be flagged as a Scoular facility — nothing precludes it.
 - No API key is ever stored or logged in the database (Key Vault only).
 - Vendor test data (`IsTest`) never reaches the app.
+
+## The catalog API (what the picker calls)
+
+The ingestion API above is machine-to-machine. The picker needs the other direction — reading the
+catalog as a signed-in originator — so those endpoints live on their own controller at `/api/barchart`
+under the normal user `[Authorize]`, backed by `BarchartCatalogService` and
+`BarchartCatalogRepository`.
+
+| Endpoint | What it answers |
+|---|---|
+| `GET /barchart/locations` | "Which BarChart locations match this text / state / crop, or sit near this point on the map?" |
+| `GET /barchart/locations/{locationKey}` | "What would actually land on my Bid Sheet if I add this one?" |
+| `GET /barchart/coverage` | "How many locations do we hold, in which states, as of when?" |
+| `POST /barchart/locations/{locationId}/refresh-bids` | "Fill this location's bids in now, without waiting for the next run." |
+
+Three things about these reads are deliberate:
+
+- **Catalog reads are not trade-unit scoped.** The catalog is global vendor data with no Scoular
+  customer information in it. Trade units matter for the *write* that creates a placement, and for
+  reporting where a location is already placed — which every search result carries, so the picker can
+  show "already added" instead of letting the user hit a duplicate error.
+- **Radius search filters in two steps.** SQL narrows to a latitude/longitude box (index-friendly),
+  then the service computes exact great-circle distance and sorts nearest-first. The box over-selects
+  at its corners, so the service asks for extra rows and trims back to the requested page size.
+- **The preview mirrors the bridge exactly.** A location can publish several instruments that overlap
+  one Bid Sheet cell (a whole month plus first/last-half splits), and the bridge writes only one. The
+  preview applies the same ranking and the same expired-window rule, so the rows a user sees before
+  adding are the rows they get. Bids whose commodity has no mapping are shown and counted rather than
+  hidden — an unmapped crop is the usual reason a location looks live in the vendor's data but lands
+  nothing here.
+
+**Linking a location** happens through the existing `POST /bidsheet/locations` with a
+`barchartLocationKey`. That path validates the key against the catalog, refuses a second link to the
+same location within one trade unit, fills blank address and coordinate fields from the vendor record,
+and runs the bridge immediately so the new row isn't blank. **Unlinking** needs no new endpoint:
+deleting the Bid Sheet location removes that trade unit's placement and its fed bids, while the
+catalog and price history are untouched — so re-adding it refills instantly.
 
 ## Symbol anatomy (confirmed 2026-07-23)
 

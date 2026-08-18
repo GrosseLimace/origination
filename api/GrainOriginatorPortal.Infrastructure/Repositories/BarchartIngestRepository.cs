@@ -467,6 +467,9 @@ DECLARE @winners TABLE
        AND i.IsTest = 0
        AND i.DeliveryStart IS NOT NULL
        AND (@instrumentType IS NULL OR i.InstrumentType = @instrumentType)
+       -- Skip windows that have fully elapsed: an originator can no longer deliver into them, so
+       -- publishing a price for one would put a dead month on the Bid Sheet.
+       AND (i.DeliveryEnd IS NULL OR i.DeliveryEnd >= CAST(SYSUTCDATETIME() AS date))
     INNER JOIN dbo.BarchartCurrentQuote AS q
         ON q.Symbol = i.Symbol
        AND q.LastPrice IS NOT NULL
