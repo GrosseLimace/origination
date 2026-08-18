@@ -154,8 +154,7 @@ describe('BarchartPickerComponent', () => {
       .toBe('BarChart 82259');
   });
 
-  // The vendor sets the site name to the town on roughly half the catalog. Repeating "Norton" above
-  // "Norton, KS" tells the user nothing, so the site is collapsed away in that case.
+  // 1,138 of the 2,894 listings have a site name that genuinely identifies one of a company's sites.
   it('headlines company and site, with the town on the second line', () => {
     const loc = location({ elevator: 'Farmers Cooperative Dorchester', locationName: 'HERKIMER', city: 'Marysville', state: 'KS' });
 
@@ -163,13 +162,33 @@ describe('BarchartPickerComponent', () => {
     expect(component.locationSubtitle(loc)).toBe('Marysville, KS');
   });
 
-  // The vendor sets the site name to the town on roughly half the catalog, so the site part of the
-  // headline falls back to the town rather than repeating a redundant vendor string.
-  it('uses the town as the site part when the vendor just repeated the town', () => {
+  // 1,483 of the 2,894 listings set the site name to the city. Keeping it would print the town twice,
+  // once in the label and again on the line below it.
+  it('drops the site from the label when the vendor just repeated the town', () => {
     const loc = location({ locationName: 'NORTON', city: 'Norton', state: 'KS', elevator: 'Ag Valley Co-op' });
 
-    expect(component.primaryName(loc)).toBe('Ag Valley Co-op - Norton');
+    expect(component.primaryName(loc)).toBe('Ag Valley Co-op');
     expect(component.locationSubtitle(loc)).toBe('Norton, KS');
+  });
+
+  // Another 273 set it to the town AND state — "Salina, KS", "FARNSWORTH TX". Comparing raw strings
+  // missed these, so the label read "Scoular Company - Kansas - Salina, KS" over "Salina, KS".
+  it.each(['Salina, KS', 'SALINA KS', 'salina-ks'])(
+    'drops the site when the vendor repeated the town and state as "%s"', (site) => {
+      const loc = location({ locationName: site, city: 'Salina', state: 'KS', elevator: 'Scoular Company - Kansas' });
+
+      expect(component.siteLabel(loc)).toBe('');
+      expect(component.primaryName(loc)).toBe('Scoular Company - Kansas');
+      expect(component.locationSubtitle(loc)).toBe('Salina, KS');
+    });
+
+  // The bid sheet row has no second line to carry the town, and names are unique per trade unit — so
+  // the SAVED name keeps the town even where the label drops it.
+  it('keeps the town in the saved name even when the label drops it', () => {
+    const loc = location({ locationName: 'Salina, KS', city: 'Salina', state: 'KS', elevator: 'Scoular Company - Kansas' });
+
+    expect(component.primaryName(loc)).toBe('Scoular Company - Kansas');
+    expect(component.defaultName(loc)).toBe('Scoular Company - Kansas - Salina');
   });
 
   // Some listings carry another company's name as the site name — a CHS listing whose site name is
@@ -181,11 +200,11 @@ describe('BarchartPickerComponent', () => {
     expect(component.locationSubtitle(loc)).toBe('Muscatine, IA');
   });
 
-  // The label in the list and the name that gets saved are the same string, so nothing is renamed
-  // behind the user's back between picking a location and seeing it on the sheet.
-  it('saves exactly the label shown in the list', () => {
+  // Where the site name is genuinely distinct, label and saved name agree exactly.
+  it('saves exactly the label shown when the site name is distinct', () => {
     const loc = location();
     expect(component.defaultName(loc)).toBe(component.primaryName(loc));
+    expect(component.defaultName(loc)).toBe('Grain Processing Corporation - GPC-MUSCATINE');
   });
 
   it('emits the add request with the chosen trade units', () => {

@@ -246,28 +246,42 @@ export class BarchartPickerComponent {
   }
 
   /**
-   * Company first, then whichever of the site name or town identifies which of its locations this is —
-   * e.g. "Farmers Cooperative Dorchester - Beattie".
+   * The name proposed for the bid sheet — "Farmers Cooperative Dorchester - Beattie".
    *
-   * Deliberately not the vendor's site name alone, which is what the bid sheet used to get. Half of
-   * those are just the town ("NORTON"), which is ambiguous on a sheet and can collide with the unique
-   * name-per-trade-unit rule; and some name a different company than the one publishing the bid (a
-   * CHS listing whose site name is "GPC Muscatine"), which would misattribute the price at a glance.
+   * Same as the displayed label, except this always carries a site or town. On screen the town sits on
+   * the line below the label; a bid sheet row has no second line, and names must be unique per trade
+   * unit, so a company with several town-named sites would otherwise want the same row name for all of
+   * them. It's shown in an editable field on the confirm step, so it is never a hidden rename.
    */
   defaultName(location: BarchartCatalogLocation): string {
-    return this.primaryName(location);
+    const company = location.elevator?.trim();
+    const site = this.siteLabel(location) || location.city?.trim() || '';
+    if (company && site) return `${company} - ${site}`;
+    return company || site || `BarChart ${location.locationKey}`;
   }
 
   /**
-   * The part that distinguishes one of a company's locations from another: its site name, or the town
-   * when the vendor just repeated the town as the site name.
+   * The part that distinguishes one of a company's locations from another — or empty when the vendor's
+   * site name is just the town again and would only repeat the line beneath it.
+   *
+   * Measured on the live catalog: of 2,894 listings, 1,483 set the site name to the city and another
+   * 273 set it to the city plus the state ("Salina, KS", "FARNSWORTH TX"). Comparison is on letters and
+   * digits only, so all those spellings collapse the same way.
    */
   siteLabel(location: BarchartCatalogLocation): string {
     const site = location.locationName?.trim() ?? '';
-    const city = location.city?.trim() ?? '';
-    if (!site) return city;
-    if (city && site.toUpperCase() === city.toUpperCase()) return city;
+    if (!site) return '';
+
+    const key = this._nameKey(site);
+    const city = this._nameKey(location.city);
+    if (city && (key === city || key === city + this._nameKey(location.state))) return '';
+
     return site;
+  }
+
+  /** Letters and digits only, upper-cased — so "Salina, KS", "SALINA KS" and "salinaks" all match. */
+  private _nameKey(value: string | undefined): string {
+    return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
 
   /**

@@ -148,12 +148,22 @@ sort nearest-first but isn't displayed.
 HERKIMER" over "Marysville, KS" — and that label is also exactly what gets saved, so nothing is renamed
 between picking a location and seeing it on the sheet.
 
-Company leads deliberately, measured against the live catalog: about half of the 2,894 vendor site names
-are just the town again, and some name a *different* company than the one publishing the bid (a
+Company leads deliberately, measured against the live catalog: 1,756 of the 2,894 vendor site names are
+just the town again, and some name a *different* company than the one publishing the bid (a
 CHS - Illinois listing whose site name is "GPC Muscatine"), which would misattribute the price at a
-glance. Where the vendor set the site name to the town, the site half falls back to the town rather than
-repeating a redundant string. The vendor's own site name is printed verbatim on the confirm step so a
-listing stays traceable to the feed.
+glance.
+
+**Redundant site names are dropped from the label.** Of those 1,756, 1,483 set the site name to the city
+and 273 to the city *plus* the state — "Salina, KS", "FARNSWORTH TX". Comparison is on letters and digits
+only (`_nameKey`), so every spelling collapses the same way; without that, the label read
+"Scoular Company - Kansas - Salina, KS" directly above "Salina, KS". The vendor's own site name is
+printed verbatim on the confirm step when it is something not already shown, so a listing stays
+traceable to the feed.
+
+**The saved name always keeps a site or town**, even where the label drops it — a bid sheet row has no
+second line for the town, and names are unique per trade unit, so a company with several town-named
+sites would otherwise want one row name for all of them. It's an editable field on the confirm step, so
+it is never a hidden rename.
 
 **Trade units are chosen from a searchable multi-select.** The picker is normally opened from the map
 with no trade unit selected, in which case every trade unit on the user's account is offered — which can

@@ -30,7 +30,9 @@
           <div>
             <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ primaryName(d.location) }}</p>
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ locationSubtitle(d.location) }}</p>
-            @if (d.location.locationName && d.location.locationName !== siteLabel(d.location)) {
+            <!-- Only when the vendor's own site name is something we aren't already showing. Suppressed
+                 when it was just the town, where repeating it would add nothing. -->
+            @if (siteLabel(d.location) && d.location.locationName !== siteLabel(d.location)) {
               <p class="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500"
                  title="The site name exactly as BarChart publishes it">BarChart calls this "{{ d.location.locationName }}"</p>
             }
