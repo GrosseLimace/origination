@@ -141,7 +141,16 @@ the panel states the catalog's real coverage ("2,894 locations across 29 states,
 than leaving it to be inferred from an empty list. Manual entry stays available regardless.
 
 Candidate pins are drawn on their own Leaflet layer, and our own clustered pins are hidden while the
-picker is open. A **hollow** pin is already on some bid sheet; a filled one is new.
+picker is open. A **hollow** pin is already on some bid sheet; a filled one is new. Distance is used to
+sort nearest-first but isn't displayed.
+
+**Listings are named company-first** — "Farmers Cooperative Dorchester" with "Beattie, KS" underneath —
+not by the vendor's site name. Two reasons, both measured against the live catalog: about half of the
+2,894 site names are just the town again ("NORTON" over "Norton, KS"), and some name a *different*
+company than the one publishing the bid (a CHS - Illinois listing whose site name is "GPC Muscatine"),
+which would misattribute the price at a glance. The vendor's own site name is still shown on the
+confirm step so a listing stays traceable, and the default saved name is "Company - Site", which is
+also less likely to collide with the unique name-per-trade-unit rule than a bare town name.
 
 Confirming an add creates **one bid sheet location per chosen trade unit**, all sharing the same
 `BarchartLocationKey` — that per-TU row *is* the placement record. The server prefills blank address

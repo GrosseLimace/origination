@@ -141,15 +141,35 @@ describe('BarchartPickerComponent', () => {
     expect(component.alreadyOn('2190')).toBe(true);
   });
 
-  it('defaults the saved name to the vendor site name', () => {
+  it('defaults the saved name to company plus site', () => {
     fixture.detectChanges();
     component.openDetail('82259');
-    expect(component.nameOverride()).toBe('GPC-MUSCATINE');
+    expect(component.nameOverride()).toBe('Grain Processing Corporation - GPC-MUSCATINE');
   });
 
-  it('falls back to the company, then the key, when a site name is missing', () => {
-    expect(component.defaultName(location({ locationName: undefined }))).toBe('Grain Processing Corporation');
-    expect(component.defaultName(location({ locationName: undefined, elevator: undefined }))).toBe('BarChart 82259');
+  it('falls back through site, then the key, when the company is missing', () => {
+    expect(component.defaultName(location({ elevator: undefined }))).toBe('GPC-MUSCATINE');
+    expect(component.defaultName(location({ elevator: undefined, locationName: undefined, city: undefined })))
+      .toBe('BarChart 82259');
+  });
+
+  // The vendor sets the site name to the town on roughly half the catalog. Repeating "Norton" above
+  // "Norton, KS" tells the user nothing, so the site is collapsed away in that case.
+  it('drops the site name when the vendor just repeated the town', () => {
+    const loc = location({ locationName: 'NORTON', city: 'Norton', state: 'KS', elevator: 'Ag Valley Co-op' });
+
+    expect(component.primaryName(loc)).toBe('Ag Valley Co-op');
+    expect(component.locationSubtitle(loc)).toBe('Norton, KS');
+    expect(component.defaultName(loc)).toBe('Ag Valley Co-op - Norton');
+  });
+
+  // Some listings carry another company's name as the site name — a CHS listing whose site name is
+  // "GPC Muscatine". Leading with the company keeps the bid attributed to whoever is actually buying.
+  it('leads with the company even when the site name names a different one', () => {
+    const loc = location({ elevator: 'CHS - Illinois', locationName: 'GPC Muscatine', city: 'Muscatine', state: 'IA' });
+
+    expect(component.primaryName(loc)).toBe('CHS - Illinois');
+    expect(component.locationSubtitle(loc)).toBe('GPC Muscatine · Muscatine, IA');
   });
 
   it('emits the add request with the chosen trade units', () => {
@@ -162,7 +182,11 @@ describe('BarchartPickerComponent', () => {
 
     component.confirmAdd();
 
-    expect(emitted[0]).toEqual({ locationKey: '82259', name: 'GPC-MUSCATINE', tradeUnitCodes: ['4056'] });
+    expect(emitted[0]).toEqual({
+      locationKey: '82259',
+      name: 'Grain Processing Corporation - GPC-MUSCATINE',
+      tradeUnitCodes: ['4056'],
+    });
     expect(component.saving()).toBe(true);
   });
 

@@ -216,9 +216,37 @@ export class BarchartPickerComponent {
     this.detailClosed.emit();
   }
 
-  /** Vendor site name if there is one, else the company, else the key. */
+  /**
+   * Company first, then whichever of the site name or town identifies which of its locations this is —
+   * e.g. "Farmers Cooperative Dorchester - Beattie".
+   *
+   * Deliberately not the vendor's site name alone, which is what the bid sheet used to get. Half of
+   * those are just the town ("NORTON"), which is ambiguous on a sheet and can collide with the unique
+   * name-per-trade-unit rule; and some name a different company than the one publishing the bid (a
+   * CHS listing whose site name is "GPC Muscatine"), which would misattribute the price at a glance.
+   */
   defaultName(location: BarchartCatalogLocation): string {
-    return location.locationName?.trim() || location.elevator?.trim() || `BarChart ${location.locationKey}`;
+    const company = location.elevator?.trim();
+    const site = this.siteLabel(location);
+    if (company && site) return `${company} - ${site}`;
+    return company || site || `BarChart ${location.locationKey}`;
+  }
+
+  /**
+   * The part that distinguishes one of a company's locations from another: its site name, or the town
+   * when the vendor just repeated the town as the site name.
+   */
+  siteLabel(location: BarchartCatalogLocation): string {
+    const site = location.locationName?.trim() ?? '';
+    const city = location.city?.trim() ?? '';
+    if (!site) return city;
+    if (city && site.toUpperCase() === city.toUpperCase()) return city;
+    return site;
+  }
+
+  /** Headline for a listing: who is buying. */
+  primaryName(location: BarchartCatalogLocation): string {
+    return location.elevator?.trim() || this.siteLabel(location) || `BarChart ${location.locationKey}`;
   }
 
   toggleTu(tu: string): void {
@@ -264,8 +292,16 @@ export class BarchartPickerComponent {
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
+  /**
+   * Under the company: the site and its town. The site is left out when the vendor set it to the town
+   * name, since repeating "Norton" over "Norton, KS" tells the user nothing.
+   */
   locationSubtitle(location: BarchartCatalogLocation): string {
     const place = [location.city, location.state].filter(Boolean).join(', ');
-    return [location.elevator, place].filter(Boolean).join(' · ');
+    const site = this.siteLabel(location);
+    const distinctSite = site && site.toUpperCase() !== (location.city?.trim().toUpperCase() ?? '')
+      ? site
+      : '';
+    return [distinctSite, place].filter(Boolean).join(' · ');
   }
 }

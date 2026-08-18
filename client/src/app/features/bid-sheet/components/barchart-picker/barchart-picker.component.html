@@ -28,8 +28,12 @@
           </button>
 
           <div>
-            <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ d.location.locationName || d.location.elevator }}</p>
+            <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ primaryName(d.location) }}</p>
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ locationSubtitle(d.location) }}</p>
+            @if (d.location.locationName && d.location.locationName !== siteLabel(d.location)) {
+              <p class="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500"
+                 title="The site name exactly as BarChart publishes it">BarChart calls this "{{ d.location.locationName }}"</p>
+            }
             @if (d.location.facilityType) {
               <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ d.location.facilityType }}</p>
             }
@@ -173,13 +177,10 @@
                     class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
-                  <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ loc.locationName || loc.elevator }}</p>
+                  <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ primaryName(loc) }}</p>
                   <p class="text-[11px] text-gray-500 dark:text-gray-400 truncate">{{ locationSubtitle(loc) }}</p>
                 </div>
                 <div class="flex-shrink-0 text-right">
-                  @if (loc.distanceMiles != null) {
-                    <p class="text-[11px] text-gray-400 dark:text-gray-500">{{ loc.distanceMiles }} mi</p>
-                  }
                   <p class="text-[10px] text-gray-400 dark:text-gray-500">{{ loc.commodityCount }} crop{{ loc.commodityCount === 1 ? '' : 's' }}</p>
                 </div>
               </div>

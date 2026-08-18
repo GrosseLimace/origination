@@ -1385,7 +1385,11 @@ export class BidSheetComponent {
         iconAnchor: [10, 10]
       });
       const marker = L.marker([loc.latitude, loc.longitude], { icon })
-        .bindTooltip(`${loc.locationName || loc.elevator || loc.locationKey}${loc.city ? ' — ' + loc.city : ''}`, { direction: 'top' });
+        // Company first, matching the panel — the vendor's site name is sometimes another company's
+        // name, so leading with it on a pin would misattribute the bid.
+        .bindTooltip(
+          `${loc.elevator || loc.locationName || loc.locationKey}${loc.city ? ' — ' + loc.city : ''}`,
+          { direction: 'top' });
       marker.on('click', () => this.barchartSelectedKey.set(loc.locationKey));
       marker.addTo(this._barchartLayer!);
     }
