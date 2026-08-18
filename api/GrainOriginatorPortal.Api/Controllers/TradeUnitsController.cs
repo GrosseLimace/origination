@@ -8,7 +8,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 /// <summary>
 /// All trade units in the system — used by the producer-onboarding UI's "assign trade
 /// units" dropdown, which (by product decision) lets a user pick any TU, not just the
-/// ones they're entitled to. Sourced from the Entitlements DB's vw_UserTradeUnitAccess
+/// ones they're entitled to. Sourced from the Entitlements DB's vw_UserTradeUnitPreference
 /// (the authoritative TU catalog); falls back to dbo.CustomerTradeUnit if entitlements
 /// is unavailable.
 /// </summary>

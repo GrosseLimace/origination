@@ -16,13 +16,13 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class NotesController : ControllerBase
 {
     private readonly INoteService _service;
-    private readonly EntitlementsDbContext _entitlementsDb;
+    private readonly TradeUnitPreferencesDbContext _entitlementsDb;
     private readonly IDailyRecapGroupService _recapGroups;
     private readonly ILogger<NotesController> _logger;
 
     public NotesController(
         INoteService service,
-        EntitlementsDbContext entitlementsDb,
+        TradeUnitPreferencesDbContext entitlementsDb,
         IDailyRecapGroupService recapGroups,
         ILogger<NotesController> logger)
     {
@@ -79,7 +79,7 @@ public class NotesController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>
     /// Lookup data for the "@" mention picker — people, trade units and trade-unit groups from the
-    /// caller's entitlements (vw_UserTradeUnitAccess), plus the caller's own groups from the
+    /// caller's entitlements (vw_UserTradeUnitPreference), plus the caller's own groups from the
     /// Origination DB. The two sources are gathered independently and each degrades to an empty
     /// list on failure, so the picker never 500s and one database being down can't hide the other's
     /// results.
@@ -89,7 +89,7 @@ public class NotesController : ControllerBase
     public async Task<ActionResult<MentionCatalogResponse>> GetMentionCatalog(CancellationToken cancellationToken = default)
     {
         // Derive the caller's UserId from the UPN claim (e.g. CEgr@scoular.com → CEgr),
-        // matching how vw_UserTradeUnitAccess.UserId is stored.
+        // matching how vw_UserTradeUnitPreference.UserId is stored.
         var upn = User.FindFirst("preferred_username")?.Value
             ?? User.FindFirst("upn")?.Value
             ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
@@ -105,7 +105,7 @@ public class NotesController : ControllerBase
             try
             {
                 // The caller's own trade-unit assignments (gives their TU codes + group memberships).
-                var callerRows = await _entitlementsDb.UserTradeUnitAccess
+                var callerRows = await _entitlementsDb.UserTradeUnitPreferences
                     .Where(u => u.UserId == userId)
                     .Select(u => new { u.TradeUnitCode, u.Description, u.GroupId, u.GroupName })
                     .ToListAsync(cancellationToken);
@@ -117,7 +117,7 @@ public class NotesController : ControllerBase
                 {
                     // People who share at least one of the caller's trade units. The caller is
                     // INCLUDED so they can @-mention themselves (they're in their own trade units).
-                    var peopleRows = await _entitlementsDb.UserTradeUnitAccess
+                    var peopleRows = await _entitlementsDb.UserTradeUnitPreferences
                         .Where(u => callerTuCodes.Contains(u.TradeUnitCode))
                         .Select(u => new { u.UserId, u.DisplayName })
                         .Distinct()

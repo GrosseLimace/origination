@@ -180,7 +180,7 @@ All read endpoints require `[Authorize(Policy = "AdminOnly")]`. The exclusion en
 | `FeatureUsageDaily` | Per-feature daily rollup (no user dimension). `SessionCount` is **no longer written** — it used to hold unique-users as a stand-in for sessions. |
 | `UserFeatureUsageDaily` | Per-user-per-feature daily rollup: `RequestCount`, `InteractionCount`, `ScreenMinutes`. The user dimension is what lets the feature panels honor trade-unit filters and exclusions. |
 | `WeeklyLoginAggregate` | Per-user weekly rollup — `LoginCount` is distinct active days, `SessionCount` is sessions. Read by `/weekly-trend`. |
-| `UserTradeUnitSnapshot` | Cached user → trade-unit mapping from the Entitlements DB. Rebuilt every 6 hours inside one transaction. |
+| `UserTradeUnitSnapshot` | Cached user → trade-unit mapping from the TradeUnitPreferences DB (`vw_UserTradeUnitPreferences`; was the Entitlements DB until 2026-08-18). Rebuilt every 6 hours inside one transaction. |
 | `UsageDashboardExcludedUsers` | Accounts hidden from every dashboard view. Managed from the UI (gear icon) or by SQL. |
 | `QueryLibrary` | Library prompt names, for resolving `TargetId`s. |
 

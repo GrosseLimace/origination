@@ -4,25 +4,30 @@ using GrainOriginatorPortal.Infrastructure.Data.Entities;
 namespace GrainOriginatorPortal.Infrastructure.Data;
 
 /// <summary>
-/// Read-only DbContext for the Entitlements database.
+/// Read-only DbContext for the TradeUnitPreferences database.
 /// Only maps views — no migrations or writes are performed against this context.
+///
+/// Replaced EntitlementsDbContext (2026-08-18). Trade-unit assignment moved to a dedicated
+/// application where managers add users and assign trade units; this app reads the result and never
+/// writes it. Column-for-column identical to the old vw_UserTradeUnitAccess, so nothing downstream
+/// of this context had to change.
 /// </summary>
-public class EntitlementsDbContext : DbContext
+public class TradeUnitPreferencesDbContext : DbContext
 {
-    public EntitlementsDbContext(DbContextOptions<EntitlementsDbContext> options)
+    public TradeUnitPreferencesDbContext(DbContextOptions<TradeUnitPreferencesDbContext> options)
         : base(options)
     {
     }
 
-    public DbSet<UserTradeUnitAccess> UserTradeUnitAccess => Set<UserTradeUnitAccess>();
+    public DbSet<UserTradeUnitPreference> UserTradeUnitPreferences => Set<UserTradeUnitPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<UserTradeUnitAccess>(entity =>
+        modelBuilder.Entity<UserTradeUnitPreference>(entity =>
         {
-            entity.ToView("vw_UserTradeUnitAccess", schema: "dbo");
+            entity.ToView("vw_UserTradeUnitPreferences", schema: "dbo");
             entity.HasNoKey();
             entity.Property(e => e.UserId).HasColumnName("UserId").HasMaxLength(100);
             entity.Property(e => e.DisplayName).HasColumnName("DisplayName").HasMaxLength(255);

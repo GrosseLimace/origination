@@ -61,7 +61,7 @@ public class UserTradeUnitServiceTests
         // Arrange — three codes in one group covering all three fallback branches.
         _entitlementsMock
             .Setup(e => e.GetByUserAsync("tuser", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<UserTradeUnitAccess>
+            .ReturnsAsync(new List<UserTradeUnitPreference>
             {
                 // In MBP master AND has an entitlements desc -> MBP wins.
                 new() { GroupName = "West", TradeUnitCode = "2115", Description = "Entitlements Adrian" },

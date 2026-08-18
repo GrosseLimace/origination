@@ -32,7 +32,7 @@ public class SavedListServiceTests
             _entitlementService.Object, _requestContext.Object);
     }
 
-    private static UserTradeUnitAccess Member(string userId, string tu, string? name = null) =>
+    private static UserTradeUnitPreference Member(string userId, string tu, string? name = null) =>
         new() { UserId = userId, TradeUnitCode = tu, DisplayName = name ?? userId };
 
     // -------------------------------------------------------------------------
@@ -41,7 +41,7 @@ public class SavedListServiceTests
     {
         _entitlements
             .Setup(e => e.GetUsersByTradeUnitsAsync(It.Is<IReadOnlyCollection<string>>(c => c.Contains("TU1")), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<UserTradeUnitAccess> { Member("sam", "TU1"), Member("dana", "TU1") });
+            .ReturnsAsync(new List<UserTradeUnitPreference> { Member("sam", "TU1"), Member("dana", "TU1") });
 
         List<SavedList>? captured = null;
         _repo.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<SavedList>>(), It.IsAny<CancellationToken>()))
@@ -65,7 +65,7 @@ public class SavedListServiceTests
     {
         _entitlements
             .Setup(e => e.GetUsersByTradeUnitsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<UserTradeUnitAccess> { Member("sam", "TU1") });
+            .ReturnsAsync(new List<UserTradeUnitPreference> { Member("sam", "TU1") });
 
         var result = await _sut.AssignAsync(new[] { "evil" }, "Corn", "corn", "TU1", null, null, null, CancellationToken.None);
 
@@ -79,7 +79,7 @@ public class SavedListServiceTests
     {
         _entitlements
             .Setup(e => e.GetUsersByTradeUnitsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<UserTradeUnitAccess>
+            .ReturnsAsync(new List<UserTradeUnitPreference>
             {
                 Member("sam", "TU1", "Sam Smith"),
                 Member("sam", "TU2", "Sam Smith"), // duplicate across TUs → one entry

@@ -3,7 +3,7 @@ namespace GrainOriginatorPortal.Api.Models;
 /// <summary>
 /// Lookup data for the note "@" mention picker. The four lists map to the four
 /// <see cref="NoteMention"/> types a user can mention. The first three are scoped to the caller's
-/// trade-unit access (dbo.vw_UserTradeUnitAccess, Entitlements DB); <see cref="AppGroups"/> comes
+/// trade-unit access (dbo.vw_UserTradeUnitPreference, Entitlements DB); <see cref="AppGroups"/> comes
 /// from the Origination DB instead, so the two are gathered independently — an outage of one
 /// source must not empty the other.
 /// </summary>
