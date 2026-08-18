@@ -2,7 +2,7 @@ using GrainOriginatorPortal.Api.Models.Responses;
 
 namespace GrainOriginatorPortal.Api.Services;
 
-/// <summary>The current user's trade-unit assignments (from the Entitlements DB, grouped by AD
+/// <summary>The current user's trade-unit assignments (from the TradeUnitPreferences DB, grouped by AD
 /// group), with a CustomerTradeUnit fallback when entitlements are unavailable.</summary>
 public interface IUserTradeUnitService
 {

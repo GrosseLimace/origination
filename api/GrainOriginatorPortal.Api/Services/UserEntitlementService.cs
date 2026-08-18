@@ -7,16 +7,16 @@ namespace GrainOriginatorPortal.Api.Services;
 
 /// <summary>
 /// Scoped service that lazily loads the authenticated user's trade unit entitlements
-/// from the Entitlements DB and caches them for the request lifetime.
+/// from the TradeUnitPreferences DB and caches them for the request lifetime.
 /// Fail-closed: if entitlements cannot be loaded AND no recent value is cached, access is denied
-/// (not silently allowed). On a transient Entitlements DB outage the last-known-good entitlements
+/// (not silently allowed). On a transient TradeUnitPreferences DB outage the last-known-good entitlements
 /// (cross-request <see cref="IMemoryCache"/>, short TTL) are served so reads stay correctly filtered
 /// rather than falling open to all trade units; only a cold outage with no cache fails closed.
 /// </summary>
 public class UserEntitlementService : IUserEntitlementService
 {
     /// <summary>How long a successfully-loaded entitlement set is retained as last-known-good for
-    /// fallback during an Entitlements DB outage. Kept short so revocations still take effect quickly
+    /// fallback during an TradeUnitPreferences DB outage. Kept short so revocations still take effect quickly
     /// once the DB recovers (the cache is a failure fallback, never the primary path).</summary>
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(10);
 
@@ -60,20 +60,20 @@ public class UserEntitlementService : IUserEntitlementService
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            // Transient Entitlements DB outage. Serve last-known-good entitlements if we have a
+            // Transient TradeUnitPreferences DB outage. Serve last-known-good entitlements if we have a
             // recent successful fetch cached — keeps reads correctly filtered instead of falling
             // open to all trade units. Only fail closed (empty set) when there is no cache.
             if (_cache.TryGetValue(cacheKey, out HashSet<string>? cached) && cached is not null)
             {
                 _logger.LogWarning(ex,
-                    "Entitlements DB unavailable for user {UserId} — serving {Count} last-known-good cached entitlements. [{ErrorCode}]",
+                    "TradeUnitPreferences DB unavailable for user {UserId} — serving {Count} last-known-good cached entitlements. [{ErrorCode}]",
                     userId, cached.Count, "ENTITLEMENTS_DB_UNAVAILABLE_CACHED");
                 _cachedEntitlements = cached;
                 return _cachedEntitlements;
             }
 
             _logger.LogError(ex,
-                "Entitlements DB unavailable for user {UserId} and no cached entitlements — failing closed. [{ErrorCode}]",
+                "TradeUnitPreferences DB unavailable for user {UserId} and no cached entitlements — failing closed. [{ErrorCode}]",
                 userId, "ENTITLEMENTS_DB_UNAVAILABLE");
             EntitlementsAvailable = false;
             _cachedEntitlements = [];

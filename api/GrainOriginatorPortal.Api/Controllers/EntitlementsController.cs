@@ -8,8 +8,8 @@ namespace GrainOriginatorPortal.Api.Controllers;
 /// <summary>
 /// Read-only catalog of the entitlements directory — used by the Daily Digest
 /// "Recap Group" picker to surface people, trade units, and trade-unit groups
-/// the merchandiser can include as recipients. Backed by <c>vw_UserTradeUnitPreference</c>
-/// in the Entitlements database (a flattened user × trade-unit × group join).
+/// the merchandiser can include as recipients. Backed by <c>vw_UserTradeUnitPreferences</c>
+/// in the TradeUnitPreferences database (a flattened user × trade-unit × group join).
 ///
 /// All three lists are returned in one response so the picker dialog can fetch
 /// once when it opens.

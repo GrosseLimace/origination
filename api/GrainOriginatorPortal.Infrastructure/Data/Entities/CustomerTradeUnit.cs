@@ -7,7 +7,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 ///
 /// TradeUnit is the CTRM organization code (e.g. "2057") and is a soft reference to
 /// the shared CTRM vocabulary — no FK to a local catalog (the app DB doesn't own one;
-/// see Entitlements DB vw_UserTradeUnitPreference for the authoritative TU/group catalog).
+/// see TradeUnitPreferences DB vw_UserTradeUnitPreferences for the authoritative TU/group catalog).
 ///
 /// Not to be confused with <see cref="CustomerTradeUnitView"/>, the read-only projection
 /// of the ODS source view that drives the sync into this table.

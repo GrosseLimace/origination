@@ -36,7 +36,7 @@ public class UserTradeUnitServiceTests
             NullLogger<UserTradeUnitService>.Instance);
     }
 
-    // #5 (CWE-285): on an Entitlements DB outage the service must FAIL CLOSED (no trade units),
+    // #5 (CWE-285): on an TradeUnitPreferences DB outage the service must FAIL CLOSED (no trade units),
     // not fall open to the full org trade-unit list.
     [Fact]
     public async Task GetForCurrentUserAsync_WhenEntitlementsDbThrowsSql_FailsClosedReturnsEmpty()

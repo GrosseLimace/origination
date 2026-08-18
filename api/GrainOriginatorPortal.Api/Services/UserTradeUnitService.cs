@@ -89,14 +89,14 @@ public class UserTradeUnitService : IUserTradeUnitService
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            // Fail closed on an Entitlements DB outage: return no trade units rather than falling
+            // Fail closed on an TradeUnitPreferences DB outage: return no trade units rather than falling
             // open to ALL trade unit codes (CWE-285). Previously this fell back to every active code
             // from dbo.CustomerTradeUnit, which leaked the full org trade-unit structure to any user
             // during a transient outage. Empty is consistent with the cold-outage behavior of
             // UserEntitlementService.GetAllowedTradeUnitCodesAsync and lets the selector show an
             // "unavailable" state instead of an unentitled list.
             _logger.LogError(ex,
-                "Entitlements DB unavailable for user {UserId} — failing closed (no trade units). [{ErrorCode}]",
+                "TradeUnitPreferences DB unavailable for user {UserId} — failing closed (no trade units). [{ErrorCode}]",
                 userId, "ENTITLEMENTS_DB_UNAVAILABLE");
             return [];
         }

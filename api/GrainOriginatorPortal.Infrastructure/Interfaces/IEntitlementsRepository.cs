@@ -2,7 +2,7 @@ using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Interfaces;
 
-/// <summary>Read-only access to the Entitlements DB's vw_UserTradeUnitPreference — the authoritative
+/// <summary>Read-only access to the TradeUnitPreferences DB's vw_UserTradeUnitPreferences — the authoritative
 /// user→trade-unit assignment catalog. Callers handle the "entitlements unavailable" fallback.</summary>
 public interface IEntitlementsRepository
 {

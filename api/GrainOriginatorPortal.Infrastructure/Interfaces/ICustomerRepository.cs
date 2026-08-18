@@ -33,6 +33,6 @@ public interface ICustomerRepository
     Task<string?> GetFirstActiveTradeUnitAsync(long customerId, CancellationToken cancellationToken);
 
     /// <summary>All distinct active trade-unit codes from dbo.CustomerTradeUnit, ordered — the
-    /// fallback TU catalog when the Entitlements DB is unavailable.</summary>
+    /// fallback TU catalog when the TradeUnitPreferences DB is unavailable.</summary>
     Task<List<string>> GetAllActiveTradeUnitCodesAsync(CancellationToken cancellationToken);
 }
