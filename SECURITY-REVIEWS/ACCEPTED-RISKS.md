@@ -8,7 +8,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | ID | Title | Severity | CWE | Status | Accepted | Re-review by |
 |----|-------|----------|-----|--------|----------|-------------|
 | AR-01 | Collaborative edit/delete of shared producer data (no per-record ownership check) | Medium | CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
-| AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
+| AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-05 | Bid-sheet location/elevator reads unscoped across trade units (writes are gated) | High | CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
@@ -81,6 +81,7 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/notes/customer/{customerId}`
 - `GET /api/plantingintentions/customer/{customerId}`
 - `GET /api/producerdetails/customer/{customerId}`
+- `GET /api/dpcontracts/customer/{customerId}` (added 2026-08-18 — see the update below)
 
 **Update (2026-07-21):** the notes list/search endpoints are no longer trade-unit-filtered on the
 server either — note **content** is now returned org-wide to any authenticated rep:
@@ -101,6 +102,65 @@ to pull up any producer (cross-trade-unit coverage, linked producers that span t
 upcoming incoming-call popup all depend on it), so per-producer read authorization is intentionally
 not enforced. Route list above extended to name every endpoint the scan cited. Triage future scan
 hits on these routes against this entry.
+
+**Update (2026-08-18):** flagged HIGH by the Codex scan against the new
+`DpContractsController.GetByCustomer` / `DpContractService.GetByCustomerAsync`. Reviewed and
+**accepted under this entry** — the route is the same shape as `GET /api/contracts/customer/{customerId}`
+already listed above (`[Authorize]` only, no object-level check, straight to the repository), it feeds
+the DP Contracts tab on the producer page, and the surrounding Contracts and Tickets tabs on that same
+page are already open. `GetAllAsync` filters by entitled trade units and `GetByCustomerAsync` does not:
+that is the app-wide pattern, not an oversight — **list** views are trade-unit-scoped as a relevance
+default, **by-id** reads are open by design.
+
+The scan's stated reason for saying this entry does not cover the route ("the accepted customer-read
+risk explicitly excludes financial/system-of-record data") is a misreading: the compensating control
+below excludes financial/system-of-record **mutation**, not financial reads, and contract positions
+with quantities and prices are already in scope via the contracts route.
+
+Worth recording plainly, because it is the closest this entry has come to its own re-evaluation
+trigger: this endpoint returns producer **balance** fields — `ReceivableAmount`, `PrepaidAmount`,
+`UnearnedStorageAmount`, `UnpaidHandlingAmount`, plus `StorageRate` and `StorageDays` — which is a
+step beyond the quantities and prices previously exposed. Judged not to cross the "regulatory/financial
+sensitivity" line in **Re-evaluate if** below: it is storage-settlement data originators work daily,
+read-only, and gating it would make DP stricter than every neighbouring tab on the same page. If that
+judgement is revisited, wire `ValidateCustomerAccessAsync` onto the route — and onto the contracts and
+tickets routes at the same time, or the inconsistency simply moves.
+
+**Update (2026-08-18, second scan — same route, independent finding).** The Claude security scan
+raised `GET /api/dpcontracts/customer/{customerId}` HIGH on its own, adding two arguments the Codex
+hit did not make. Both were considered; the entry stands, with one process action falling out of it.
+
+*"Crosses a data-confidentiality boundary with financial impact"* — **overstated as a new boundary.**
+`ContractResponse` on the already-listed `GET /api/contracts/customer/{customerId}` route already
+returns `Price` and `TotalValue` (the dollar value of the producer's contract), plus `SettledQuantity`
+and `OpenBalanceQuantity`, org-wide to any authenticated user. Producer financial figures have been
+readable cross-trade-unit, deliberately, since this entry was written. DP's storage receivable /
+prepaid / unearned amounts are the same class of data, not a first crossing. Recording that precedent
+here so the third scan doesn't have to relitigate it.
+
+*"Enumerable sequential `customerId`, not an unguessable UUID"* — true, and true of every route in the
+list above. Not specific to this one.
+
+*Suggestion to wire `ValidateCustomerAccessAsync`* — answered in the method's own summary
+(`UserEntitlementService.cs`, recorded on main 2026-08-18): deliberately not called on any path,
+because it would break cross-trade-unit coverage, linked producers, and the incoming-call popup, and
+it fails CLOSED for producers with no trade-unit mapping. Don't wire it without reopening this entry.
+
+*Middle suggestion — keep the route open but strip the balance fields for producers outside the
+caller's trade units* — **considered and not taken.** It would blank part of the DP tab during exactly
+the coverage workflow this entry exists to protect, and to be consistent it would have to strip
+`Price`/`TotalValue` from the contracts route too, or the boundary simply moves one tab over. Revisit
+alongside AR-02 as a whole if the access model changes — it is the least-disruptive option on the table
+if per-record protection of financial fields is ever required.
+
+*The argument that does land:* **"the acceptance is a project-level decision and does not satisfy the
+mandatory enforcement checklist."** Fair. Every entry in this file is signed "Origination engineering,"
+and AR-02 specifically has now been flagged four times (2026-06-23, 2026-08-10, and twice on
+2026-08-18) and self-accepted each time. Engineering accepting its own repeatedly-raised HIGH
+authorization finding is a process gap independent of whether the technical judgement is right.
+**Action: take AR-02 to IT Security (asksecurity@scoular.com) for a sign-off line, or a rejection that
+forces the code change.** Until that exists, expect this to re-flag every release. See the pending-
+sign-off note under **Accepted by** below.
 
 ### Decision: Accepted
 
@@ -125,6 +185,11 @@ regulatory/financial sensitivity requiring per-record authorization. The mechani
 access model changes.
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
+
+**⚠ Security-team sign-off PENDING (raised 2026-08-18).** Engineering acceptance only, on a finding
+now raised four times by automated scans. Not a blocker for the technical judgement above, which
+stands, but this entry needs IT Security (asksecurity@scoular.com) either to countersign it or to
+reject it and require the code change. Whoever gets that answer: record it on this line with a date.
 
 ---
 
@@ -284,6 +349,49 @@ Vault via the existing provider). This matches the TODO already present in
 `appsettings.Production.json`.
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
+
+---
+
+## AR-07 — Mentioning a group addresses that group's members, not the mentioner's entitlements
+
+**Finding** (self-raised 2026-08-11; MEDIUM; CWE-284). A user can `@`-mention any group they can
+**see** — the ones they created plus the ones they are a member of. The API flattens that group into
+its member references and the Instant Share Note Logic App emails the note to all of them. Those
+members were validated against the **creator's** entitlement overlap when the group was saved
+(`DailyRecapGroupService.BuildValidatedMembersAsync`, fail-closed), so mentioning someone else's
+group can reach people the direct person picker would not have offered the mentioner — that picker is
+scoped to users sharing a trade unit with the caller.
+
+### Decision: Accepted
+
+**Rationale.** Every recipient is an **internal address constructed server-side** from a UPN local
+part — twice, independently: the API rebuilds person addresses in `NoteService.NormalizeMention`, and
+the Logic App re-derives them from `UserId` columns rather than trusting anything stored
+(**M-025 / M-025a**). The boundary in question is therefore *which internal colleague receives an
+internal note*, never whether data can leave the tenant. That is consistent with **AR-02**: notes are
+already open per producer, and trade-unit entitlement is a relevance default rather than an access
+boundary. The group is also not an arbitrary set — someone entitled to assemble it did so
+deliberately, and if its daily recap is on, that same set already receives those notes every evening.
+
+Re-validating each member against the *mentioner's* entitlements was considered and rejected: it
+would make cross-trade-unit groups — the main reason to build one — unusable, and it would put a
+fail-closed entitlements call in the note-save path, which is high-frequency and user-blocking.
+
+**Scope / compensating controls.** A group the caller can neither see nor own is **rejected** at save
+(`ValidationException`, nothing persisted) — visibility is enforced server-side against the same query
+that builds the picker, so a forged group id in a crafted request does not resolve. Expansion is
+capped at 250 mention rows per note. Group membership is still entitlement-validated fail-closed at
+group-save time, and only the creator can modify a group. All recipients are `@scoular.com` by
+construction.
+
+**Residual risk.** An employee can cause an internal note to be emailed to the members of a group they
+belong to but did not create, including people outside their own trade units. Accepted.
+
+**Re-evaluate if:** groups become shareable beyond their membership (e.g. an org-wide directory of
+groups), or note content becomes restricted per producer — at which point AR-02 changes too and the
+mention path should be re-scoped alongside it.
+
+**Accepted by:** Origination engineering — recorded 2026-08-11.
 
 ---
 

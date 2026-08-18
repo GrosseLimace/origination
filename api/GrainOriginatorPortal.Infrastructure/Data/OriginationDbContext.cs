@@ -14,6 +14,15 @@ public class OriginationDbContext : DbContext
     {
     }
 
+    /// <summary>
+    /// For derived read-only contexts that reuse these ODS mappings against a DIFFERENT connection
+    /// (see <see cref="DpOdsDbContext"/>). Protected so only a subclass can opt in.
+    /// </summary>
+    protected OriginationDbContext(DbContextOptions options)
+        : base(options)
+    {
+    }
+
     // DbSet properties for each entity
     // Contract and Ticket exist in ODS (base schema). CustomerTradeUnitView is the
     // read-only projection of originations.vw_CustomerTradeUnits and drives the
@@ -326,6 +335,10 @@ public class OriginationDbContext : DbContext
         // Configure StorageCommodity — keyless projection for SqlQueryRaw (storage-commodity
         // aggregate used to gate customer-storage unapplied tickets). No table/view mapping.
         modelBuilder.Entity<StorageCommodity>(entity => entity.HasNoKey());
+
+        // Configure DpContract — keyless result type for SqlQueryRaw over ctrm.vw_GNTA70D1 (no
+        // table/view mapping; the query needs a latest-snapshot CTE, same as StoredGrain).
+        modelBuilder.Entity<DpContract>(entity => entity.HasNoKey());
 
         // Configure SavedList entity - DISABLED: Table doesn't exist in ODS
         // modelBuilder.Entity<SavedList>(entity => { ... });

@@ -29,6 +29,8 @@ public interface INoteRepository
     Task<Note?> GetByIdAsync(long noteId, CancellationToken cancellationToken);
     Task<Note> AddAsync(long customerId, string content, string? tradeUnit, string? mentionsJson, string currentUser, CancellationToken cancellationToken);
     Task<Note?> TogglePinAsync(long noteId, CancellationToken cancellationToken);
-    Task<Note?> UpdateAsync(long noteId, string content, string? mentionsJson, string currentUser, CancellationToken cancellationToken);
+    /// <param name="replaceMentions">False leaves the note's existing Mentions untouched (the caller
+    /// sent none); true writes <paramref name="mentionsJson"/>, where null CLEARS them.</param>
+    Task<Note?> UpdateAsync(long noteId, string content, string? mentionsJson, bool replaceMentions, string currentUser, CancellationToken cancellationToken);
     Task DeleteAsync(long noteId, string currentUser, CancellationToken cancellationToken);
 }

@@ -34,6 +34,30 @@ public record UpsertProducerDetailsRequest
     /// <summary>Per-commodity grain-on-farm rows (bushels on hand + target). Replaces the customer's
     /// existing set on save. Rows with an unknown/blank commodity code are ignored server-side.</summary>
     public IReadOnlyList<GrainOnFarmItemRequest>? GrainOnFarm { get; init; }
+
+    /// <summary>User-entered contacts. Replaces the customer's existing set on save; array order is
+    /// the display order. NULL (property absent) means "not provided" — existing contacts are
+    /// preserved and the legacy PrimaryContact/PrimaryPhone fields above are used as-sent. When
+    /// provided, the legacy fields are ignored and derived from the primary row instead.</summary>
+    public IReadOnlyList<ContactItemRequest>? Contacts { get; init; }
+}
+
+public record ContactItemRequest
+{
+    [Required]
+    [StringLength(200)]
+    public required string Name { get; init; }
+
+    [StringLength(50)]
+    public string? Phone { get; init; }
+
+    [StringLength(255)]
+    [EmailAddress]
+    public string? Email { get; init; }
+
+    /// <summary>At most one row should be flagged; the server enforces exactly one (first wins,
+    /// defaulting to the first row when none is flagged).</summary>
+    public bool IsPrimary { get; init; }
 }
 
 public record GrainOnFarmItemRequest

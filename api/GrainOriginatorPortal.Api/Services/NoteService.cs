@@ -15,17 +15,23 @@ public class NoteService : INoteService
     private readonly ICustomerRepository _customerRepository;
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IRequestContextService _requestContext;
+    private readonly IDailyRecapGroupService _groups;
+    private readonly ILogger<NoteService> _logger;
 
     public NoteService(
         INoteRepository repository,
         ICustomerRepository customerRepository,
         IDisplayNameLookupRepository displayNameLookup,
-        IRequestContextService requestContext)
+        IRequestContextService requestContext,
+        IDailyRecapGroupService groups,
+        ILogger<NoteService> logger)
     {
         _repository = repository;
         _customerRepository = customerRepository;
         _displayNameLookup = displayNameLookup;
         _requestContext = requestContext;
+        _groups = groups;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -93,10 +99,14 @@ public class NoteService : INoteService
         // (Logic moved out of NotesController.Create so the controller no longer touches a DbContext.)
         var tradeUnit = await _customerRepository.GetFirstActiveTradeUnitAsync(customerId, cancellationToken);
 
+        // Built OUTSIDE the try below: that catch filter maps a repository permissions failure to a
+        // 503, and expansion raises its own 400/503 that must not be reinterpreted by it.
+        var mentionsJson = await BuildMentionsJsonAsync(mentions, cancellationToken);
+
         Note note;
         try
         {
-            note = await _repository.AddAsync(customerId, content, tradeUnit, SerializeMentions(mentions), _requestContext.GetCurrentUser(), cancellationToken);
+            note = await _repository.AddAsync(customerId, content, tradeUnit, mentionsJson, _requestContext.GetCurrentUser(), cancellationToken);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
         {
@@ -121,7 +131,12 @@ public class NoteService : INoteService
     /// <inheritdoc />
     public async Task<NoteResponse?> UpdateAsync(long noteId, string content, IReadOnlyList<NoteMention>? mentions, CancellationToken cancellationToken)
     {
-        var note = await _repository.UpdateAsync(noteId, content, SerializeMentions(mentions), _requestContext.GetCurrentUser(), cancellationToken);
+        // null = the caller sent no mentions field at all → leave the note's mentions ALONE.
+        // [] = the caller explicitly cleared them. The two used to be conflated, so editing a
+        // note's text through a client that omits mentions destroyed them (and their highlighting).
+        var replaceMentions = mentions is not null;
+        var mentionsJson = await BuildMentionsJsonAsync(mentions, cancellationToken);
+        var note = await _repository.UpdateAsync(noteId, content, mentionsJson, replaceMentions, _requestContext.GetCurrentUser(), cancellationToken);
         return note is null ? null : note.ToResponse(await ResolveAsync(note, cancellationToken));
     }
 
@@ -129,21 +144,138 @@ public class NoteService : INoteService
     /// <c>localPart@{InternalEmailDomain}</c>, so no persisted mention can address an outside domain.</summary>
     private const string InternalEmailDomain = "scoular.com";
 
-    /// <summary>Normalizes then serializes the structured mentions to the JSON stored on the note.
-    /// Null/empty → null so the column stays NULL rather than an empty "[]".
+    /// <summary>The most mention rows a single note may carry AFTER group expansion. The inbound
+    /// [MaxLength(50)] on the request caps only what the client sent — model validation runs before
+    /// expansion, so one group can multiply well past it. The blow-up guard has to live here.</summary>
+    private const int MaxExpandedMentions = 250;
+
+    /// <summary>Expands the caller's own group mentions, then normalizes and serializes everything to
+    /// the JSON stored on the note. Null/empty → null so the column stays NULL rather than "[]".
     /// <para>
-    /// SECURITY (M-025 / CWE-284): the persisted Mentions feed the Instant Share Note Logic App,
-    /// which emails the note from the privileged shared mailbox to each person mention's address.
-    /// Both the client-supplied <c>email</c> AND <c>id</c> are therefore untrusted input — the
-    /// recipient is rebuilt from the id's local part plus the internal domain, and any id carrying a
-    /// foreign domain is rejected outright. Trade-unit / group mentions never carry an email
-    /// (recipients are re-resolved from the Entitlements DB at send time), so we strip it.
+    /// ORDER IS LOAD-BEARING. Expansion runs FIRST and emits raw member references; then EVERY row —
+    /// client-sent and expanded alike — goes through <see cref="NormalizeMention"/>. That is what
+    /// extends the M-025 guarantees to group members: a person member's address is rebuilt from its
+    /// id, non-person rows lose their email, and a member id carrying a foreign domain is rejected.
+    /// Swapping these two lines would make the group path a laundering route around a rule the
+    /// direct path enforces.
     /// </para></summary>
-    private static string? SerializeMentions(IReadOnlyList<NoteMention>? mentions)
+    private async Task<string?> BuildMentionsJsonAsync(IReadOnlyList<NoteMention>? mentions, CancellationToken cancellationToken)
     {
         if (mentions is not { Count: > 0 }) return null;
-        var normalized = mentions.Select(NormalizeMention).ToList();
+        var expanded = await ExpandGroupsAsync(mentions, cancellationToken);
+        var normalized = expanded.Select(NormalizeMention).ToList();
         return JsonSerializer.Serialize(normalized);
+    }
+
+    /// <summary>Replaces each "app-group" mention with the group's own row PLUS one row per member,
+    /// typed with the person / trade-unit / trade-unit-group vocabulary the Instant Share Note Logic
+    /// App already resolves. Two consequences worth stating: the Logic App needs no change, and
+    /// trade-unit members stay a single row that it expands LIVE at send time — so entitlement
+    /// resolution keeps living in exactly one place, and a 40-person trade unit doesn't become 40
+    /// rows in the note. The group row itself is kept so "@Group Name" still highlights on the saved
+    /// note and the note records which group was used.
+    /// <para>
+    /// Visibility is the SAME query that builds the picker (<see cref="IDailyRecapGroupService.GetAllAsync"/>
+    /// — groups the caller created or belongs to), so the dropdown can never offer a group the save
+    /// then rejects.
+    /// </para></summary>
+    private async Task<List<NoteMention>> ExpandGroupsAsync(IReadOnlyList<NoteMention> mentions, CancellationToken cancellationToken)
+    {
+        var hasGroup = mentions.Any(m => string.Equals(m.Type, NoteMention.AppGroupType, StringComparison.OrdinalIgnoreCase));
+        if (!hasGroup)
+        {
+            // Hot path: an ordinary note pays nothing for this feature.
+            return mentions.ToList();
+        }
+
+        List<RecapGroupDto> visible;
+        try
+        {
+            visible = await _groups.GetAllAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Fail CLOSED: we can't prove who the group resolves to, and a note that silently
+            // reaches nobody is worse than a retryable error the user can see. Note this is a
+            // stricter policy than GetAllAsync's own — it degrades an Entitlements outage to
+            // owned-only groups, deliberately, because a note save is high-frequency and blocking.
+            _logger.LogWarning(ex, "Groups unavailable while expanding note mentions — rejecting the save");
+            throw new InfrastructureException(
+                "Can't look up that group right now. Please try again in a moment.",
+                "INFRASTRUCTURE_DATABASE_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var result = new List<NoteMention>(mentions.Count);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Dedupe on type+id so a person mentioned directly AND through a group is stored once. The
+        // FIRST occurrence wins, and client-sent rows are walked before their expansions, so a
+        // direct mention keeps its null Via rather than being recorded as group-derived.
+        bool Add(NoteMention mention)
+        {
+            var id = mention.Id?.Trim() ?? string.Empty;
+            if (id.Length == 0) return false;
+            if (!seen.Add($"{mention.Type?.ToLowerInvariant()}|{id.ToLowerInvariant()}")) return false;
+            result.Add(mention with { Id = id });
+            return true;
+        }
+
+        foreach (var mention in mentions)
+        {
+            // Via is server-set provenance; clear whatever the client sent so it can't be forged.
+            if (!Add(mention with { Via = null })) continue;
+            if (!string.Equals(mention.Type, NoteMention.AppGroupType, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var group = visible.FirstOrDefault(g => g.Id.ToString() == mention.Id.Trim());
+            if (group is null)
+            {
+                // Rejected, never silently dropped: the alternative is a note the author believes
+                // was shared with a dozen people that notified none of them, with no signal anywhere.
+                // ValidationException (400), not ForbiddenException — the client's 403 handler fires
+                // its own toast and would double up on this one.
+                throw new ValidationException("mentions",
+                    $"The group '{mention.Name}' is no longer available to you. Remove the mention, or refresh the page and try again.");
+            }
+
+            // An empty group contributes no resolvable rows, and the app-group row itself resolves
+            // to nobody — so this would save a note the author believes was shared and notify no
+            // one. The picker omits empty groups; this catches one emptied since it was loaded.
+            if (group.Members.Count == 0)
+            {
+                throw new ValidationException("mentions",
+                    $"The group '{group.Name}' has no members, so nobody would be notified.");
+            }
+
+            // Authoritative name — never persist the client's label for a row we own.
+            result[^1] = result[^1] with { Name = group.Name };
+
+            foreach (var member in group.Members)
+            {
+                // Groups can't contain groups (RecapGroupRequest constrains member types, and the
+                // recap service throws on anything else). Skipping them anyway keeps this a single
+                // non-recursive pass, so future schema drift can't turn it into infinite expansion.
+                if (string.Equals(member.Type, NoteMention.AppGroupType, StringComparison.OrdinalIgnoreCase)) continue;
+
+                // Email dropped deliberately even though the stored member email is itself
+                // server-derived: NormalizeMention is the single place that decides an address.
+                Add(new NoteMention
+                {
+                    Type = member.Type,
+                    Id = member.Id,
+                    Name = string.IsNullOrWhiteSpace(member.Name) ? member.Id : member.Name,
+                    Email = null,
+                    Via = $"{NoteMention.AppGroupType}:{group.Id}",
+                });
+            }
+        }
+
+        if (result.Count > MaxExpandedMentions)
+        {
+            throw new ValidationException("mentions",
+                $"That would mention {result.Count} recipients (limit {MaxExpandedMentions}). Try mentioning fewer groups.");
+        }
+
+        return result;
     }
 
     /// <summary>Rebuilds a person mention's email as an internal address derived from its id, and

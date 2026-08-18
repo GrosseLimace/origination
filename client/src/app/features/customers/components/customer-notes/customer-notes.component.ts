@@ -49,7 +49,7 @@ export class CustomerNotesComponent {
   public addDisabledReason = input<string | null>(null);
   public addNote = output<{ content: string; mentions: NoteMention[] }>();
   public togglePin = output<Note>();
-  public editNote = output<{ noteId: number; content: string }>();
+  public editNote = output<{ noteId: number; content: string; mentions: NoteMention[] }>();
   public deleteNote = output<number>();
 
   private readonly destroyRef = inject(DestroyRef);
@@ -63,7 +63,7 @@ export class CustomerNotesComponent {
   noteTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('noteTextarea');
   /** Backdrop div mirroring the textarea text so selected @mentions render green while typing. */
   noteBackdrop = viewChild<ElementRef<HTMLDivElement>>('noteBackdrop');
-  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], groups: [] });
+  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [] });
   /** Structured mentions chosen for the note being composed; sent to the API on submit. */
   mentions = signal<NoteMention[]>([]);
   /** Live segmentation of the compose text so already-selected @mentions show green as the
@@ -109,9 +109,16 @@ export class CustomerNotesComponent {
       const s = score([t.code], [t.description ?? '']);
       if (s >= 0) ranked.push({ opt: { type: 'trade-unit', id: t.code, name: t.code, secondary: t.description || 'Trade unit' }, score: s });
     }
-    for (const g of cat.groups) {
+    for (const g of cat.tradeUnitGroups) {
       const s = score([g.name], []);
-      if (s >= 0) ranked.push({ opt: { type: 'trade-unit-group', id: String(g.groupId), name: g.name, secondary: 'Group' }, score: s });
+      // "Trade unit group", not "Group" — the user's own groups are in this same flat list now,
+      // and two different things reading identically is worse than a longer label.
+      if (s >= 0) ranked.push({ opt: { type: 'trade-unit-group', id: String(g.groupId), name: g.name, secondary: 'Trade unit group' }, score: s });
+    }
+    for (const g of cat.appGroups ?? []) {
+      const s = score([g.name], []);
+      const members = `${g.memberCount} member${g.memberCount === 1 ? '' : 's'}`;
+      if (s >= 0) ranked.push({ opt: { type: 'app-group', id: String(g.groupId), name: g.name, secondary: `Group · ${members}` }, score: s });
     }
 
     ranked.sort((a, b) => a.score - b.score || a.opt.name.localeCompare(b.opt.name));
@@ -249,7 +256,11 @@ export class CustomerNotesComponent {
    *  shared with them) plus, within the remaining text, any current search-term matches (highlighted).
    *  Pure string splitting into text segments — no HTML is built, so there is no XSS surface. */
   noteViewSegments(note: Note): { text: string; kind: 'plain' | 'mention' | 'search' }[] {
-    const mentionSegs = this._segmentMentions(note.content ?? '', (note.mentions ?? []).map(m => m.name));
+    // Only mentions the author actually typed produce highlight tokens. Rows carrying `via` were
+    // expanded server-side out of a group mention — they're recipients, not text the author wrote,
+    // so highlighting their names would light up words that merely happen to appear in the note.
+    const typedNames = (note.mentions ?? []).filter(m => !m.via).map(m => m.name);
+    const mentionSegs = this._segmentMentions(note.content ?? '', typedNames);
     const terms = this.noteSearch().trim().toLowerCase().split(/\s+/).filter(Boolean);
 
     const out: { text: string; kind: 'plain' | 'mention' | 'search' }[] = [];
@@ -519,7 +530,12 @@ export class CustomerNotesComponent {
       return;
     }
     if (text !== note.content) {
-      this.editNote.emit({ noteId: note.id, content: text });
+      // Send the mentions that survive the edited text, mirroring submitNote's rule — deleting
+      // "@Name" from the body drops that mention. Rows the server expanded out of a group (`via`)
+      // are deliberately NOT echoed back: the group row alone is sent and the server re-expands it,
+      // so membership changes are picked up and there is one owner of that derivation.
+      const mentions = (note.mentions ?? []).filter(m => !m.via && text.includes('@' + m.name));
+      this.editNote.emit({ noteId: note.id, content: text, mentions });
     }
     this.editingNoteId.set(null);
     this.editContent.set('');

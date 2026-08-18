@@ -41,7 +41,7 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], groups: [] }) } },
+        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [] }) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
       ],
     });
