@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Responses;
@@ -9,7 +10,7 @@ using GrainOriginatorPortal.Infrastructure.Interfaces;
 namespace GrainOriginatorPortal.Api.Services;
 
 /// <inheritdoc />
-public class NoteService : INoteService
+public partial class NoteService : INoteService
 {
     private readonly INoteRepository _repository;
     private readonly ICustomerRepository _customerRepository;
@@ -284,7 +285,19 @@ public class NoteService : INoteService
     private static NoteMention NormalizeMention(NoteMention mention)
     {
         if (!string.Equals(mention.Type, "person", StringComparison.OrdinalIgnoreCase))
-            return mention with { Email = null };
+        {
+            // Non-person ids are INTERPOLATED INTO AN ODATA $filter by the Instant Share Note and
+            // Daily Recap workflows ("TradeUnitCode eq @{item()?['id']}", "GroupId eq @{...}"),
+            // unquoted and unescaped. Model validation only bounds the length, so without this an
+            // authenticated caller could post a mention whose id widens the filter — e.g. an id that
+            // appends "or IsActive eq 1" — and have the workflow mail the note body to everyone the
+            // broadened query returns, from a privileged shared mailbox. The workflows can't defend
+            // themselves (no parameterisation in the SQL connector's $filter), so the id is pinned
+            // to a safe shape HERE, at the same place the person path is already pinned.
+            // Store the SAME string that was validated. Trimming after the check would mean the
+            // filter receives a value this method never inspected.
+            return mention with { Id = ValidateNonPersonMentionId(mention), Email = null };
+        }
 
         // Accept exactly two shapes: a bare short name ("CEgr") or a full internal UPN
         // ("CEgr@scoular.com"). A foreign domain, extra '@', or empty local part is rejected rather
@@ -303,6 +316,38 @@ public class NoteService : INoteService
 
         return mention with { Email = $"{localPart}@{InternalEmailDomain}" };
     }
+
+    /// <summary>Pins a non-person mention id to the shape its backing column actually holds, so it
+    /// can't carry OData filter syntax into the workflows. Trade unit ids are matched against
+    /// TradeUnitCode (nvarchar(20)); trade-unit-group and app-group ids are integer keys (GroupId,
+    /// DailyRecapGroups.Id). Anything else is rejected loudly rather than trimmed — a mention the
+    /// catalog didn't emit is forged, and quietly coercing it would hide that.</summary>
+    /// <returns>The trimmed id, so the caller stores exactly what was validated.</returns>
+    private static string ValidateNonPersonMentionId(NoteMention mention)
+    {
+        var id = mention.Id?.Trim() ?? string.Empty;
+
+        var ok = mention.Type switch
+        {
+            NoteMention.TradeUnitType => TradeUnitIdPattern().IsMatch(id),
+            NoteMention.TradeUnitGroupType or NoteMention.AppGroupType => NumericIdPattern().IsMatch(id),
+            _ => false,
+        };
+
+        if (!ok)
+            throw new ValidationException("mentions",
+                $"Mention id '{mention.Id}' is not valid for a '{mention.Type}' mention.");
+
+        return id;
+    }
+
+    // Trade unit codes are short alphanumerics (e.g. "3078", "4056"); dot/dash/underscore are
+    // allowed as separators. No quotes, spaces or operators, which is what keeps $filter safe.
+    [GeneratedRegex(@"^[A-Za-z0-9._-]{1,20}$")]
+    private static partial Regex TradeUnitIdPattern();
+
+    [GeneratedRegex(@"^[0-9]{1,10}$")]
+    private static partial Regex NumericIdPattern();
 
     /// <inheritdoc />
     public Task DeleteAsync(long noteId, CancellationToken cancellationToken) =>

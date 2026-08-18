@@ -103,7 +103,7 @@ export class BuildListComponent {
   // True once the forkJoin (or cache restore) has populated all core data signals.
   // Guards processQuery() and example chips from running against partial/empty data.
   readonly coreDataLoaded = signal(false);
-  // All trade units the user can access (union of all groups from Entitlements DB)
+  // All trade units the user can access (union of all groups from the TradeUnitPreferences DB)
   private _allUserTradeUnits = signal<string[]>([]);
 
   // Re-trigger a staged query when needed data arrives from the background refresh.

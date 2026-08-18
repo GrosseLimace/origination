@@ -197,7 +197,7 @@
                       }
                     },
                     "method": "get",
-                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items/@{encodeURIComponent(encodeURIComponent(first(split(triggerBody()?['CreatedBy'],'@'))))}"
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items/@{encodeURIComponent(encodeURIComponent(first(split(triggerBody()?['CreatedBy'],'@'))))}"
                   },
                   "runAfter": {
                     "Get_Customer": [
@@ -212,16 +212,34 @@
                       "cases": {
                         "Case_person": {
                           "actions": {
-                            "Append_Person_Recipient": {
-                              "inputs": {
-                                "name": "recipient",
-                                "value": {
-                                  "emailAddress": {
-                                    "address": "@{concat(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']), '@scoular.com')}"
-                                  }
+                            "Condition_Person_Is_Active": {
+                              "actions": {
+                                "Append_Person_Recipient": {
+                                  "inputs": {
+                                    "name": "recipient",
+                                    "value": {
+                                      "emailAddress": {
+                                        "address": "@{concat(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']), '@scoular.com')}"
+                                      }
+                                    }
+                                  },
+                                  "type": "AppendToArrayVariable"
                                 }
                               },
-                              "type": "AppendToArrayVariable"
+                              "else": {
+                                "actions": {}
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "contains": [
+                                      "@coalesce(body('Select_Active_User_Ids'), createArray(toLower(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']))))",
+                                      "@toLower(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']))"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "type": "If"
                             }
                           },
                           "case": "person"
@@ -236,7 +254,7 @@
                                   }
                                 },
                                 "method": "get",
-                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[UserTradeUnitAssignments]'))}/items",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[vw_UserTradeUnitPreferences]'))}/items",
                                 "queries": {
                                   "$filter": "TradeUnitCode eq @{item()?['id']}"
                                 }
@@ -245,16 +263,34 @@
                             },
                             "For_each_Trade_Unit_Member": {
                               "actions": {
-                                "Append_Trade_Unit_Recipient": {
-                                  "inputs": {
-                                    "name": "recipient",
-                                    "value": {
-                                      "emailAddress": {
-                                        "address": "@{item()?['UserId']}@scoular.com"
-                                      }
+                                "Condition_Trade_Unit_Member_Is_Active": {
+                                  "actions": {
+                                    "Append_Trade_Unit_Recipient": {
+                                      "inputs": {
+                                        "name": "recipient",
+                                        "value": {
+                                          "emailAddress": {
+                                            "address": "@{item()?['UserId']}@scoular.com"
+                                          }
+                                        }
+                                      },
+                                      "type": "AppendToArrayVariable"
                                     }
                                   },
-                                  "type": "AppendToArrayVariable"
+                                  "else": {
+                                    "actions": {}
+                                  },
+                                  "expression": {
+                                    "and": [
+                                      {
+                                        "contains": [
+                                          "@coalesce(body('Select_Active_User_Ids'), createArray(toLower(item()?['UserId'])))",
+                                          "@toLower(item()?['UserId'])"
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "type": "If"
                                 }
                               },
                               "foreach": "@body('Get_Trade_Unit_Members')?['value']",
@@ -278,7 +314,7 @@
                                   }
                                 },
                                 "method": "get",
-                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[UserGroupAssignments]'))}/items",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[vw_UserTradeUnitPreferences]'))}/items",
                                 "queries": {
                                   "$filter": "GroupId eq @{item()?['id']}"
                                 }
@@ -287,16 +323,34 @@
                             },
                             "For_each_Group_Member": {
                               "actions": {
-                                "Append_Group_Recipient": {
-                                  "inputs": {
-                                    "name": "recipient",
-                                    "value": {
-                                      "emailAddress": {
-                                        "address": "@{item()?['UserId']}@scoular.com"
-                                      }
+                                "Condition_Group_Member_Is_Active": {
+                                  "actions": {
+                                    "Append_Group_Recipient": {
+                                      "inputs": {
+                                        "name": "recipient",
+                                        "value": {
+                                          "emailAddress": {
+                                            "address": "@{item()?['UserId']}@scoular.com"
+                                          }
+                                        }
+                                      },
+                                      "type": "AppendToArrayVariable"
                                     }
                                   },
-                                  "type": "AppendToArrayVariable"
+                                  "else": {
+                                    "actions": {}
+                                  },
+                                  "expression": {
+                                    "and": [
+                                      {
+                                        "contains": [
+                                          "@coalesce(body('Select_Active_User_Ids'), createArray(toLower(item()?['UserId'])))",
+                                          "@toLower(item()?['UserId'])"
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "type": "If"
                                 }
                               },
                               "foreach": "@body('Get_Trade_Unit_Group_Members')?['value']",
@@ -332,9 +386,9 @@
                   },
                   "foreach": "@body('Parse_Mentions')",
                   "runAfter": {
-                    "Get_Author": [
+                    "Select_Active_User_Ids": [
                       "Succeeded",
-                      "Failed"
+                      "Skipped"
                     ]
                   },
                   "runtimeConfiguration": {
@@ -433,6 +487,74 @@
                     ]
                   },
                   "type": "If"
+                },
+                "Get_Active_Users": {
+                  "inputs": {
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['sql']['connectionId']"
+                      }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items/@{encodeURIComponent(encodeURIComponent(first(split(triggerBody()?['CreatedBy'],'@'))))}",
+                    "queries": {
+                      "$filter": "IsActive eq 1",
+                      "$select": "UserId",
+                      "$top": 2000
+                    }
+                  },
+                  "type": "ApiConnection",
+                  "runAfter": {
+                    "Get_Author": [
+                      "Succeeded",
+                      "Failed"
+                    ]
+                  }
+                },
+                "Condition_Active_User_Cap": {
+                  "actions": {
+                    "Terminate_Active_User_Cap": {
+                      "inputs": {
+                        "runError": {
+                          "code": "ActiveUserCapReached",
+                          "message": "Get_Active_Users returned @{length(body('Get_Active_Users')?['value'])} rows, at or above the $top cap of 2000. The active-user list may be truncated, which would silently drop legitimate recipients from trade-unit and group expansions. Raise the cap or switch to a filtered view."
+                        },
+                        "runStatus": "Failed"
+                      },
+                      "type": "Terminate"
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "expression": {
+                    "and": [
+                      {
+                        "greaterOrEquals": [
+                          "@length(body('Get_Active_Users')?['value'])",
+                          2000
+                        ]
+                      }
+                    ]
+                  },
+                  "runAfter": {
+                    "Get_Active_Users": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "If"
+                },
+                "Select_Active_User_Ids": {
+                  "inputs": {
+                    "from": "@body('Get_Active_Users')?['value']",
+                    "select": "@toLower(item()?['UserId'])"
+                  },
+                  "runAfter": {
+                    "Condition_Active_User_Cap": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "Select"
                 }
               },
               "else": {

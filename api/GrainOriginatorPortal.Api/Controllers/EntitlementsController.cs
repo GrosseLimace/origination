@@ -8,8 +8,8 @@ namespace GrainOriginatorPortal.Api.Controllers;
 /// <summary>
 /// Read-only catalog of the entitlements directory — used by the Daily Digest
 /// "Recap Group" picker to surface people, trade units, and trade-unit groups
-/// the merchandiser can include as recipients. Backed by <c>vw_UserTradeUnitAccess</c>
-/// in the Entitlements database (a flattened user × trade-unit × group join).
+/// the merchandiser can include as recipients. Backed by <c>vw_UserTradeUnitPreferences</c>
+/// in the TradeUnitPreferences database (a flattened user × trade-unit × group join).
 ///
 /// All three lists are returned in one response so the picker dialog can fetch
 /// once when it opens.
@@ -19,10 +19,10 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Route("api/[controller]")]
 public class EntitlementsController : ControllerBase
 {
-    private readonly EntitlementsDbContext _entitlementsDb;
+    private readonly TradeUnitPreferencesDbContext _entitlementsDb;
     private readonly ILogger<EntitlementsController> _logger;
 
-    public EntitlementsController(EntitlementsDbContext entitlementsDb, ILogger<EntitlementsController> logger)
+    public EntitlementsController(TradeUnitPreferencesDbContext entitlementsDb, ILogger<EntitlementsController> logger)
     {
         _entitlementsDb = entitlementsDb;
         _logger = logger;
@@ -47,7 +47,7 @@ public class EntitlementsController : ControllerBase
             ?? User.Identity?.Name
             ?? string.Empty;
 
-        // UserTradeUnitAccess.UserId is the UPN prefix (e.g. "CEgr"), not the full UPN.
+        // UserTradeUnitPreference.UserId is the UPN prefix (e.g. "CEgr"), not the full UPN.
         var userId = upn.Contains('@') ? upn.Split('@')[0] : upn;
         if (string.IsNullOrWhiteSpace(userId))
             return Unauthorized("Unable to determine user identity from token.");
@@ -56,7 +56,7 @@ public class EntitlementsController : ControllerBase
         {
             // Step 1: read ONLY the caller's own rows (UserId == caller). This drives which TUs and
             // groups we expand, and bounds the read to a handful of rows regardless of directory size.
-            var callerRows = await _entitlementsDb.UserTradeUnitAccess
+            var callerRows = await _entitlementsDb.UserTradeUnitPreferences
                 .AsNoTracking()
                 .Where(r => r.UserId == userId)
                 .Select(r => new { r.TradeUnitCode, r.GroupId })
@@ -86,7 +86,7 @@ public class EntitlementsController : ControllerBase
             // unbounded-materialization / DoS risk if the view grows.
             var tuFilter = callerTuCodes.ToList();
             var groupFilter = callerGroupIds.Select(id => (int?)id).ToList();
-            var rows = await _entitlementsDb.UserTradeUnitAccess
+            var rows = await _entitlementsDb.UserTradeUnitPreferences
                 .AsNoTracking()
                 .Where(r => tuFilter.Contains(r.TradeUnitCode) || groupFilter.Contains(r.GroupId))
                 .ToListAsync(ct);
