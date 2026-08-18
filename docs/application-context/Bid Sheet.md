@@ -146,6 +146,9 @@ listing currently open in the panel, so the name on screen is tied to a place on
 the list highlights the same pin as clicking it, and the selected pin is raised above its neighbours.
 Distance is used to sort nearest-first but isn't displayed.
 
+**Escape backs out** of the picker, the source chooser, and the manual pin-drop flow. All three hide the
+map's own controls while active, so without it the panel's small X is the only exit.
+
 ### Renaming a linked location
 
 The name is display only. The feed link is `BarchartLocationKey`, and the bridge joins on that, so

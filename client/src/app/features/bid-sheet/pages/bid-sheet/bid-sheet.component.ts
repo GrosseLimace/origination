@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, computed, viewChild, ElementRef, isDevMode } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, HostListener, inject, signal, computed, viewChild, ElementRef, isDevMode } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -1343,6 +1343,17 @@ export class BidSheetComponent {
   // =========================================================================
   // Add from BarChart
   // =========================================================================
+
+  /**
+   * Escape backs out of the add-location flows. Both of them hide the map's own controls while active,
+   * so without this the panel's small X is the only way out and it's easy to feel stranded.
+   */
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.showAddSourceChoice()) { this.cancelAddSourceChoice(); return; }
+    if (this.barchartMode()) { this.exitBarchartMode(); return; }
+    if (this.addLocationMode()) this.cancelAddLocation();
+  }
 
   /** Opens the picker. The map keeps its current view — that view IS the search. */
   enterBarchartMode(): void {
