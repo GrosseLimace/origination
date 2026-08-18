@@ -292,4 +292,37 @@ public class BarchartIngestServiceTests
 
         Assert.Equal(0, result.RowsDeactivated);
     }
+
+    // -------------------------------------------------------------------------
+    // quote-batches is audited even though it is a read and costs no vendor quota. It is the first step
+    // of the pipeline's quote run, so its audit row is how we answer "did the loader reach us at all?" —
+    // a run can succeed on the caller's side and never arrive (an auth failure never reaches this
+    // service), and with no row there is nothing to separate "not called" from "called and fine".
+    [Fact]
+    public async Task GetQuoteBatchesAsync_AuditsTheCall_SoArrivalIsProvable()
+    {
+        _repository.GetQuoteBatchesAsync(100, Arg.Any<CancellationToken>()).Returns(
+        [
+            new BarchartQuoteBatch { BatchNumber = 1, SymbolCount = 100, SymbolsCsv = "A,B" },
+            new BarchartQuoteBatch { BatchNumber = 2, SymbolCount = 42, SymbolsCsv = "C" }
+        ]);
+
+        var result = await _sut.GetQuoteBatchesAsync(100);
+
+        Assert.Equal(2, result.Count);
+        await _repository.Received(1).LogApiCallAsync(
+            Arg.Is<BarchartApiCallAudit>(a =>
+                a.Endpoint == "ingest/quote-batches" && a.Success && a.RowsAffected == 2),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1001)]
+    public async Task GetQuoteBatchesAsync_BatchSizeOutOfRange_ThrowsWithoutTouchingTheRepository(int batchSize)
+    {
+        await Assert.ThrowsAsync<ValidationException>(() => _sut.GetQuoteBatchesAsync(batchSize));
+
+        await _repository.DidNotReceive().GetQuoteBatchesAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
 }

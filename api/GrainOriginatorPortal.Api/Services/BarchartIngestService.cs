@@ -123,11 +123,21 @@ public class BarchartIngestService : IBarchartIngestService
         if (batchSize < 1 || batchSize > 1000)
             throw new ValidationException(nameof(batchSize), "batchSize must be between 1 and 1000.");
 
+        var sw = Stopwatch.StartNew();
         var batches = await _repository.GetQuoteBatchesAsync(batchSize, cancellationToken);
+        sw.Stop();
 
         _logger.LogInformation(
             "BarChart quote-batch request returned {BatchCount} batches of up to {BatchSize} symbols",
             batches.Count, batchSize);
+
+        // Audited even though it is only a read and consumes no vendor quota: this is the FIRST step of
+        // the pipeline's quote run, so its presence is how we answer "did the loader actually reach us?".
+        // Learned the hard way — a run can succeed on the caller's side and never arrive here (an auth
+        // failure never reaches this service at all), and without a row there is nothing to distinguish
+        // "not called" from "called and fine". Excluded from the budget count; see VendorCallEndpoints.
+        await AuditAsync("ingest/quote-batches", $"batchSize={batchSize}",
+            200, true, batches.Count, sw, null, cancellationToken);
 
         return batches
             .Select(b => new BarchartQuoteBatchResponse

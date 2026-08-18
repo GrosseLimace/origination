@@ -641,9 +641,15 @@ SELECT CAST(@removed AS int);";
         var now = DateTime.UtcNow;
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
+        // Only the two endpoints that stand in 1:1 for a real BarChart call. The pipeline posts to
+        // these immediately after calling the vendor, so counting them measures vendor quota; the rest
+        // (quote-batches, apply-bids, deactivate, purge) are internal and consume none of it, and
+        // including them would overstate usage against the contract cap.
         var monthToDate = await _appContext.BarchartApiCallAudits
             .AsNoTracking()
-            .CountAsync(a => a.CalledAtUtc >= monthStart, cancellationToken);
+            .CountAsync(a => a.CalledAtUtc >= monthStart
+                          && (a.Endpoint == VendorCallEndpoints.Instruments
+                           || a.Endpoint == VendorCallEndpoints.Quotes), cancellationToken);
 
         return new BarchartApiBudget
         {
