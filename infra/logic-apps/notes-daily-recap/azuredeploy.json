@@ -521,24 +521,38 @@
                                 }
                               },
                               "expression": {
-                                "or": [
+                                "and": [
                                   {
-                                    "equals": [
-                                      "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
-                                      429
-                                    ]
+                                    "not": {
+                                      "equals": [
+                                        "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                        400
+                                      ]
+                                    }
                                   },
                                   {
-                                    "equals": [
-                                      "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
-                                      503
-                                    ]
+                                    "not": {
+                                      "equals": [
+                                        "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                        403
+                                      ]
+                                    }
                                   },
                                   {
-                                    "equals": [
-                                      "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
-                                      401
-                                    ]
+                                    "not": {
+                                      "equals": [
+                                        "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                        404
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "not": {
+                                      "equals": [
+                                        "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                        413
+                                      ]
+                                    }
                                   }
                                 ]
                               },
@@ -663,24 +677,38 @@
                                     }
                                   },
                                   "expression": {
-                                    "or": [
+                                    "and": [
                                       {
-                                        "equals": [
-                                          "@outputs('HTTP_Send_to_Teams')?['statusCode']",
-                                          429
-                                        ]
+                                        "not": {
+                                          "equals": [
+                                            "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                            400
+                                          ]
+                                        }
                                       },
                                       {
-                                        "equals": [
-                                          "@outputs('HTTP_Send_to_Teams')?['statusCode']",
-                                          503
-                                        ]
+                                        "not": {
+                                          "equals": [
+                                            "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                            403
+                                          ]
+                                        }
                                       },
                                       {
-                                        "equals": [
-                                          "@outputs('HTTP_Send_to_Teams')?['statusCode']",
-                                          401
-                                        ]
+                                        "not": {
+                                          "equals": [
+                                            "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                            404
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "not": {
+                                          "equals": [
+                                            "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                            413
+                                          ]
+                                        }
                                       }
                                     ]
                                   },
