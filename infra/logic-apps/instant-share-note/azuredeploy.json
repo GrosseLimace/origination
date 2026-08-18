@@ -117,6 +117,22 @@
               "runAfter": {},
               "type": "InitializeVariable"
             },
+            "Initialize_unresolved_types": {
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "unresolvedTypes",
+                    "type": "array"
+                  }
+                ]
+              },
+              "runAfter": {
+                "Initialize_recipient": [
+                  "Succeeded"
+                ]
+              },
+              "type": "InitializeVariable"
+            },
             "Condition_Has_Mentions": {
               "actions": {
                 "Parse_Mentions": {
@@ -293,10 +309,22 @@
                             }
                           },
                           "case": "trade-unit-group"
+                        },
+                        "Case_app-group": {
+                          "actions": {},
+                          "case": "app-group"
                         }
                       },
                       "default": {
-                        "actions": {}
+                        "actions": {
+                          "Append_Unresolved_Type": {
+                            "inputs": {
+                              "name": "unresolvedTypes",
+                              "value": "@item()?['type']"
+                            },
+                            "type": "AppendToArrayVariable"
+                          }
+                        }
                       },
                       "expression": "@item()?['type']",
                       "type": "Switch"
@@ -309,12 +337,50 @@
                       "Failed"
                     ]
                   },
+                  "runtimeConfiguration": {
+                    "concurrency": {
+                      "repetitions": 1
+                    }
+                  },
                   "type": "Foreach"
+                },
+                "Condition_Unresolved_Mention_Types": {
+                  "actions": {
+                    "Terminate_Unresolved_Mention_Type": {
+                      "inputs": {
+                        "runError": {
+                          "code": "UnknownMentionType",
+                          "message": "Note @{triggerBody()?['Id']} carries mention type(s) @{join(variables('unresolvedTypes'), ', ')} that this workflow cannot resolve, so some recipients would have been silently skipped. Deploy the workflow version that handles them."
+                        },
+                        "runStatus": "Failed"
+                      },
+                      "type": "Terminate"
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "expression": {
+                    "and": [
+                      {
+                        "greater": [
+                          "@length(variables('unresolvedTypes'))",
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  "runAfter": {
+                    "For_each_Mention": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "If"
                 },
                 "Compose_Recipients": {
                   "inputs": "@union(variables('recipient'), variables('recipient'))",
                   "runAfter": {
-                    "For_each_Mention": [
+                    "Condition_Unresolved_Mention_Types": [
                       "Succeeded"
                     ]
                   },
@@ -340,12 +406,10 @@
                           "saveToSentItems": true
                         },
                         "method": "POST",
+                        "retryPolicy": {
+                          "type": "none"
+                        },
                         "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
-                      },
-                      "runtimeConfiguration": {
-                        "contentTransfer": {
-                          "transferMode": "Chunked"
-                        }
                       },
                       "type": "Http"
                     }
@@ -393,7 +457,7 @@
                 ]
               },
               "runAfter": {
-                "Initialize_recipient": [
+                "Initialize_unresolved_types": [
                   "Succeeded"
                 ]
               },

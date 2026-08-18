@@ -61,6 +61,32 @@ public static class DependencyInjection
 #endif
         });
 
+        // DP-contract ODS reads. "ODSDpConnection" is not set in any environment, so this resolves to
+        // ODSConnection and every environment reads its own ODS — identical to OriginationDbContext.
+        // The key exists only as an opt-in local escape hatch for validating DP values against an ODS
+        // that has data (see DpOdsDbContext for the rationale, the read-only safety argument, and why
+        // it must never be set in a deployed environment).
+        services.AddDbContext<DpOdsDbContext>(options =>
+        {
+            var connectionString = configuration.GetConnectionString("ODSDpConnection")
+                ?? configuration.GetConnectionString("ODSConnection");
+            options.UseSqlServer(connectionString, sqlOptions =>
+            {
+                sqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(30),
+                    errorNumbersToAdd: null);
+                sqlOptions.CommandTimeout(120);
+            });
+#if DEBUG
+            if (isDevelopment)
+            {
+                options.EnableSensitiveDataLogging();
+                options.EnableDetailedErrors();
+            }
+#endif
+        });
+
         // Entitlements — read-only access for user trade-unit assignments.
         services.AddDbContext<EntitlementsDbContext>(options =>
         {
@@ -85,6 +111,7 @@ public static class DependencyInjection
         services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
         services.AddScoped<ICommodityRepository, CommodityRepository>();
         services.AddScoped<IStoredGrainRepository, StoredGrainRepository>();
+        services.AddScoped<IDpContractRepository, DpContractRepository>();
         services.AddScoped<ISavedListRepository, SavedListRepository>();
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
         services.AddScoped<IProducerDetailsRepository, ProducerDetailsRepository>();

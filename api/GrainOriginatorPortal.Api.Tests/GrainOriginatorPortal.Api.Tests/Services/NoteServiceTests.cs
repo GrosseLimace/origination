@@ -1,3 +1,6 @@
+// Microsoft namespaces
+using Microsoft.Extensions.Logging;
+
 // Third-party namespaces
 using Moq;
 
@@ -14,6 +17,7 @@ public class NoteServiceTests
     private readonly Mock<ICustomerRepository> _customerRepositoryMock = new();
     private readonly Mock<IDisplayNameLookupRepository> _displayNameMock = new();
     private readonly Mock<IRequestContextService> _requestContextMock = new();
+    private readonly Mock<IDailyRecapGroupService> _groupsMock = new();
     private readonly NoteService _sut;
 
     public NoteServiceTests()
@@ -21,13 +25,19 @@ public class NoteServiceTests
         _displayNameMock
             .Setup(d => d.ResolveAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, string>());
+        // Groups are only consulted when a note carries an "app-group" mention; these tests don't.
+        _groupsMock
+            .Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
         // NoteService no longer depends on IUserEntitlementService — note reads are not
         // entitlement-gated (trade units scope producers, not notes; AR-02).
         _sut = new NoteService(
             _repositoryMock.Object,
             _customerRepositoryMock.Object,
             _displayNameMock.Object,
-            _requestContextMock.Object);
+            _requestContextMock.Object,
+            _groupsMock.Object,
+            new Mock<ILogger<NoteService>>().Object);
     }
 
     // -------------------------------------------------------------------------

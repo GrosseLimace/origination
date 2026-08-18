@@ -17,8 +17,23 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
 5. **`For_each_Mention` → `Switch_Member_Type`** — resolves each mention to email address(es):
    - `person` → **always `<local part of id>@scoular.com`** — the id's domain, if any, is discarded;
    - `trade-unit` → members of `[dbo].[UserTradeUnitAssignments]` (Entitlements), each `<UserId>@scoular.com`;
-   - `trade-unit-group` → members of `[dbo].[UserGroupAssignments]` (Entitlements), each `<UserId>@scoular.com`.
+   - `trade-unit-group` → members of `[dbo].[UserGroupAssignments]` (Entitlements), each `<UserId>@scoular.com`;
+   - `app-group` → **intentionally resolves to nothing here.** One of the user's own groups; the API
+     flattens it into member rows of the three types above before the note is ever stored, so by the
+     time this workflow sees it the recipients are already present as siblings. The empty
+     `Case_app-group` exists so that no-op is explicit rather than an accident of the `default` branch.
    Addresses are de-duplicated with `union()`.
+
+   > **Unknown types fail the run.** The `default` branch collects the type into `unresolvedTypes`
+   > and `Condition_Unresolved_Mention_Types` then terminates the run as **Failed**. Previously
+   > `default` was `{}`, so a type this workflow didn't know about produced a run that reported
+   > **Succeeded while emailing nobody** — the worst possible outcome, since the author believes the
+   > note was shared. If you add a mention type to the API, add its case here *first*.
+   >
+   > **`For_each_Mention` is pinned to `concurrency.repetitions: 1`.** Every branch appends to the
+   > shared `recipient` variable, and parallel iterations can lose an append — which drops a
+   > recipient silently, again inside a Succeeded run. `union()` de-duplicates; it cannot recover a
+   > lost entry. The daily-recap workflow pins its group loop for the same reason.
 
    > **Security (2026-08-10) — do not "simplify" the person branch.** Both the stored `email` **and
    > `id`** are client-authored, so neither may reach `sendMail` unmodified: trusting `email` (M-025),
@@ -31,6 +46,11 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    > one bad assumption can't defeat both. See `SECURITY-REVIEWS/ACCEPTED-RISKS.md` (**M-025**, **M-025a**).
 6. **`HTTP_Send_Share_Email`** — sends the note (Regarding / Note / From / Created) via **Microsoft Graph
    `sendMail`** as the shared mailbox, to the resolved recipients. No AI summary — the raw note is shared.
+   Runs with **`retryPolicy: none`** and **no chunked transfer**: Graph `sendMail` is a non-idempotent
+   POST with no idempotency key, so when Graph accepts the message but the 202 is lost (client timeout,
+   reset, or a gateway 504 raised after the backend already delivered), the default policy re-POSTs and
+   the user receives up to five copies — while the run still reports Succeeded. Diagnosed and fixed in
+   the daily-recap workflow (commits `999f0d59`, `97b8ea08`); this is the same fix ported here.
 
 ### Dedup / one-send guarantee
 
@@ -51,18 +71,28 @@ The Logic App reads `dbo.Notes.Mentions` (`nvarchar(max)`), which the API writes
 
 ```json
 [
-  { "id": "CEgr",  "name": "Caden Egr",  "type": "person", "email": "CEgr@scoular.com" },
-  { "id": "OMAHA", "name": "Omaha TU",   "type": "trade-unit" },
-  { "id": "123",   "name": "West Group", "type": "trade-unit-group" }
+  { "id": "CEgr",  "name": "Caden Egr",   "type": "person", "email": "CEgr@scoular.com" },
+  { "id": "OMAHA", "name": "Omaha TU",    "type": "trade-unit" },
+  { "id": "123",   "name": "West Group",  "type": "trade-unit-group" },
+
+  { "id": "7",     "name": "Corn Belt",   "type": "app-group" },
+  { "id": "SFletcher", "name": "Sam Fletcher", "type": "person", "email": "SFletcher@scoular.com", "via": "app-group:7" },
+  { "id": "1084",  "name": "1084",        "type": "trade-unit", "via": "app-group:7" }
 ]
 ```
 
+The last three rows show a group mention: the API writes the `app-group` row **plus** one row per
+member. Note the member rows are ordinary mentions — a `trade-unit` member stays a single row that
+this workflow expands live at send time, so entitlements resolution is never duplicated in the API
+and a 40-person trade unit doesn't become 40 rows in the note.
+
 | Field | Required | Notes |
 |-------|----------|-------|
-| `id` | yes | Entitlements identifier: UPN prefix (`person`), `TradeUnitCode` (`trade-unit`), or `GroupId` (`trade-unit-group`). **Client-authored — treat as untrusted.** For `person` the API accepts only a bare short name or a `@scoular.com` UPN (rejects anything else); the Logic App additionally keeps only the local part. |
-| `type` | yes | `person` \| `trade-unit` \| `trade-unit-group`. |
-| `email` | no | **Not used for routing** (since 2026-08-10, M-025). Person recipients are derived from `id`; the API writes this field as `id@scoular.com` for `person` and null for TU/group. Retained for display/back-compat only. |
-| `name` | no | Display only; not used for routing. |
+| `id` | yes | Entitlements identifier: UPN prefix (`person`), `TradeUnitCode` (`trade-unit`), `GroupId` (`trade-unit-group`), or the app's own group id (`app-group`). **Client-authored — treat as untrusted.** For `person` the API accepts only a bare short name or a `@scoular.com` UPN (rejects anything else); the Logic App additionally keeps only the local part. |
+| `type` | yes | `person` \| `trade-unit` \| `trade-unit-group` \| `app-group`. The API constrains this with `[AllowedValues]`, and this workflow **fails the run** on anything else. |
+| `email` | no | **Not used for routing** (since 2026-08-10, M-025). Person recipients are derived from `id`; the API writes this field as `id@scoular.com` for `person` and null for every other type. Retained for display/back-compat only. |
+| `name` | no | Display only; not used for routing. For `app-group` the API overwrites whatever the client sent with the authoritative group name. |
+| `via` | no | Server-set provenance (`app-group:7`) marking a row the API expanded out of a group. Not used for routing — the client uses it to avoid highlighting names the note's author never typed. |
 
 ## Security model — no secrets
 

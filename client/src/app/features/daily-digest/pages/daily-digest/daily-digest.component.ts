@@ -120,7 +120,7 @@ export class DailyDigestComponent implements OnInit {
           this.groupsLoading.set(false);
         },
         error: () => {
-          this.groupsError.set('Could not load your recap groups. Try again later.');
+          this.groupsError.set('Could not load your groups. Try again later.');
           this.groupsLoading.set(false);
         },
       });
@@ -137,6 +137,9 @@ export class DailyDigestComponent implements OnInit {
   protected readonly newCcEmail = signal('');
   // Microsoft Teams channel email — only used/required when deliveryMethod is 'teams'.
   protected readonly formTeamsEmail = signal('');
+  /** Daily-recap opt-in, honoured on CREATE only (after that the card toggle owns it). Defaults to
+   *  false so a group made purely to @-mention doesn't quietly start emailing everyone in it. */
+  protected readonly formEnabled = signal(false);
   protected readonly memberPickerTab = signal<MemberTab>('people');
   // Free-text filter for the member picker — applies to the active tab's list.
   protected readonly memberSearch = signal('');
@@ -340,9 +343,9 @@ export class DailyDigestComponent implements OnInit {
       .subscribe({
         next: () => {
           this.groups.update(list => list.filter(g => g.id !== id));
-          this.toast.success('Recap group deleted.');
+          this.toast.success('Group deleted.');
         },
-        error: () => this.toast.error('Could not delete the recap group. Try again.'),
+        error: () => this.toast.error('Could not delete the group. Try again.'),
       });
     this.cancelDeleteGroup();
   }
@@ -358,7 +361,7 @@ export class DailyDigestComponent implements OnInit {
         next: updated => this.groups.update(list => list.map(g => g.id === updated.id ? updated : g)),
         error: () => {
           this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: group.enabled } : g));
-          this.toast.error('Could not update the recap group. Try again.');
+          this.toast.error('Could not update the group. Try again.');
         },
       });
   }
@@ -379,6 +382,8 @@ export class DailyDigestComponent implements OnInit {
       ccList: this.formCcList(),
       // Only persist the Teams email for Teams groups; clear it if the method is Email.
       teamsChannelEmail: this.formDeliveryMethod() === 'teams' ? this.formTeamsEmail().trim() : undefined,
+      // Create-only — the API ignores this on update, where the card's toggle is the source of truth.
+      enabled: this.formEnabled(),
     };
     this.saving.set(true);
     const request$ = editingId
@@ -393,12 +398,12 @@ export class DailyDigestComponent implements OnInit {
               ? list.map(g => g.id === saved.id ? saved : g)
               : [...list, saved]);
           this.saving.set(false);
-          this.toast.success(editingId ? 'Recap group updated.' : 'Recap group created.');
+          this.toast.success(editingId ? 'Group updated.' : 'Group created.');
           this.closeDialog();
         },
         error: () => {
           this.saving.set(false);
-          this.toast.error('Could not save the recap group. Try again.');
+          this.toast.error('Could not save the group. Try again.');
         },
       });
   }
@@ -470,6 +475,7 @@ export class DailyDigestComponent implements OnInit {
     this.formCcList.set([]);
     this.newCcEmail.set('');
     this.formTeamsEmail.set('');
+    this.formEnabled.set(false);
     this.memberPickerTab.set('people');
     this.memberSearch.set('');
   }

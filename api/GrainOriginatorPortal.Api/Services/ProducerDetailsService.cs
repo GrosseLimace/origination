@@ -79,11 +79,9 @@ public class ProducerDetailsService : IProducerDetailsService
     }
 
     /// <inheritdoc />
-    public async Task<ProducerDetailsResponse> UpsertAsync(long customerId, string? scoularId, string customerName,
-        decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? primaryPhone, string? commodities,
-        string? linkedProducerIds, IReadOnlyList<GrainOnFarmItemRequest>? grainOnFarm, CancellationToken cancellationToken)
+    public async Task<ProducerDetailsResponse> UpsertAsync(long customerId, UpsertProducerDetailsRequest request, CancellationToken cancellationToken)
     {
-        var grainEntries = (grainOnFarm ?? [])
+        var grainEntries = (request.GrainOnFarm ?? [])
             .Select(g => new GrainOnFarmEntry
             {
                 CommodityGroup = g.CommodityGroup,
@@ -93,8 +91,32 @@ public class ProducerDetailsService : IProducerDetailsService
             })
             .ToList();
 
-        var saved = await _repository.UpsertAsync(customerId, scoularId, customerName, totalAcres, binCapacity,
-            primaryContact, primaryPhone, commodities, linkedProducerIds, grainEntries, _requestContext.GetCurrentUser(), cancellationToken);
+        // Null contacts (old client) stays null — the repository preserves existing rows then.
+        var contactEntries = request.Contacts?
+            .Select((c, index) => new ProducerContactEntry
+            {
+                Name = c.Name,
+                Phone = c.Phone,
+                Email = c.Email,
+                IsPrimary = c.IsPrimary,
+                SortOrder = index
+            })
+            .ToList();
+
+        var saved = await _repository.UpsertAsync(new ProducerDetailsUpsertArgs
+        {
+            CustomerId = customerId,
+            ScoularId = request.ScoularId,
+            CustomerName = request.CustomerName,
+            TotalAcres = request.TotalAcres,
+            BinCapacity = request.BinCapacity,
+            PrimaryContact = request.PrimaryContact,
+            PrimaryPhone = request.PrimaryPhone,
+            Commodities = request.Commodities,
+            LinkedProducerIds = request.LinkedProducerIds,
+            GrainOnFarm = grainEntries,
+            Contacts = contactEntries
+        }, _requestContext.GetCurrentUser(), cancellationToken);
 
         var nameMap = await _displayNameLookup.ResolveAsync(
             new[] { saved.CreatedBy, saved.ModifiedBy ?? string.Empty }, cancellationToken);

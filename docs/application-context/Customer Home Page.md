@@ -28,8 +28,56 @@ The page is a 3-column responsive grid at large screens, single-column at mobile
 | **Trade Unit Selector** | Top-of-page selector that drives `selectedTradeUnits()` for the entire app. |
 | **Empty state** | When no producer is selected and viewport is `lg+`, shows "Select a Producer" placeholder. |
 | **"Back to Producers"** | Mobile-only button (`lg:hidden`) that returns to the list view from a profile view. |
+| **Producer Insights** (collapsible, inside the profile) | Hidden by default; opened by the "Producer Insights" button or the Harvest Contract Pace box. Contains the three analysis panels below. |
 
 The `CustomerProfileComponent` ([`client/src/app/features/customers/components/customer-profile/customer-profile.component.ts`](../../client/src/app/features/customers/components/customer-profile/customer-profile.component.ts)) renders four tabs identified by the literal strings `'contracts'`, `'tickets'`, `'planting'`, `'storage'` (default `'contracts'`).
+
+### Producer Insights panels
+
+Stacked in this order inside `@if (showProducerInsights())`:
+
+| Panel | Shows |
+| --- | --- |
+| **Producer Insights** (`producer-insights/`) | Green hero with three stat cards summarising the relationship. |
+| **Harvest Contract Pace** (`contract-pacing-card/`) | Year-over-year contracting pace per harvest window, with a per-commodity table. Fetches its own historical contracts. |
+| **Growth Opportunity** (`growth-opportunity/`) | Projected production (planting acres × yield estimate) vs. bushels contracted, per commodity, plus bushels still available and concrete action items. |
+
+**Growth Opportunity** was called "AI Growth Forecast" until 2026-08-12. Nothing about it was AI — it
+rendered a hardcoded sentence and two branches gated behind `const totalProjected = 0` that could
+never execute. It now shows the real coverage breakdown, which previously lived above the table on
+the Planting tab.
+
+Its arithmetic is [`client/src/app/shared/utils/production-coverage.ts`](../../client/src/app/shared/utils/production-coverage.ts) —
+a pure function, so it can be unit-tested and reused. Three things worth knowing about the numbers:
+
+- **Yield is not per producer.** It comes from `dbo.DashboardPlantingEstimates`, keyed
+  (trade unit, crop, planting year) and typed by hand under *Set Season Targets* on the Planting
+  Intentions dashboard. Every producer in a trade unit growing the same crop shares one bu/ac figure.
+  When no estimate exists the panel shows `—`, never `0%`.
+- **Season matching uses `Contract.CropYear`**, which is CTRM's own statement of the season. Harvest-
+  window delivery-date overlap is only a fallback for contracts with no crop year. (Overlap used to
+  be primary, which let a contract spanning a year boundary count in two seasons and made this screen
+  disagree with the dashboard.)
+- **Everything is expressed in bushels.** Contract quantities are stored in their native
+  `QuantityUom` (bu / ST / MT / LB / CW / GL …), so `sumInBushels` converts the mass units via
+  pounds-per-bushel from `ctrm.vw_GNP024` before totalling.
+
+  The load-bearing part is the **plausibility guard**: `Pounds_To_Commodity_Unit` is pounds per the
+  commodity's *own* standard unit (verified against its `Commodity_Std_Unit_Measure` column), so a
+  bushel crop carries a real lb/bu figure — canola 50, millet 50, corn 56, sorghum 56, wheat 60,
+  soybeans 60 — while a ton-based commodity carries 2000 and a tonne 2204.62. Factors outside
+  25–80 lb/bu are refused and the contract is excluded and reported instead.
+
+  That matters because a grain commodity *group* contains products that aren't the grain: soybean
+  meal (`480M`, `SBMO`, `SBMB`) and oil (`BOIL`) in short tons, popcorn (`POP`) by the pound, cracked
+  corn (`CKYC`). Before this, 318 short tons of meal were summed into a producer's soybean coverage
+  as if they were bushels. On current data no conversion actually fires — every non-bushel grain
+  contract is one of those products and is excluded — but the path is kept and tested for the
+  legitimate case of a bushel crop contracted by weight.
+
+  **Every screen that totals contracted volume uses this same helper** — the Growth Opportunity
+  panel, the Producer Insights "bushels contracted" card, the print report KPI, the dashboard's
+  Contract Coverage card, and Build a List's coverage prompts — so they agree on one number.
 
 ## Data flow
 
@@ -58,6 +106,8 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | Customer list sub-component | `client/src/app/features/customers/components/customer-list/customer-list.component.ts` |
 | Notes sidebar sub-component | `client/src/app/features/customers/components/notes/customer-notes.component.ts` |
 | Per-tab tables | `customer-profile/contracts-table/`, `tickets-table/`, `planting-intentions-table/`, `stored-grain-table/` |
+| Producer Insights panels | `client/src/app/features/customers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` |
+| Production coverage math | `client/src/app/shared/utils/production-coverage.ts` (+ `.spec.ts`) |
 | Customer map (in profile) | `client/src/app/features/customers/components/map/customer-map.component.ts` |
 | Controllers | `CustomersController`, `ContractsController`, `TicketsController`, `NotesController`, `PlantingIntentionsController`, `StoredGrainController`, `ProducerDetailsController`, `SavedListsController`, `CommoditiesController` |
 | Service methods | See `IDataService` — Customer / Contract / Ticket / Note / PlantingIntention / StoredGrain / ProducerDetails groups |

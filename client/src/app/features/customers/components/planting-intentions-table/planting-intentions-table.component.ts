@@ -50,7 +50,6 @@ export class PlantingIntentionsTableComponent {
   public customer = input.required<Customer>();
   public tradeUnits = input<string[]>([]);
   public customerCommodityCodes = input<string[]>([]);
-  public yieldEstimateCrops = input<string[]>([]);
   public selectedYear = input<number>(0);
   public add = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
   public edit = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number}>();

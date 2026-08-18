@@ -41,11 +41,15 @@ export interface RecapGroup {
   createdBy: string;
 }
 
-/** Create/update payload sent to the API (no id/enabled — enabled is toggled separately). */
+/** Create/update payload sent to the API. `enabled` is honoured on CREATE only — after that the
+ *  card's own toggle owns it, so updates leave it alone. */
 export interface RecapGroupSaveRequest {
   name: string;
   deliveryMethod: DeliveryMethod;
   teamsChannelEmail?: string;
   members: RecapMember[];
   ccList: string[];
+  /** Whether the new group also receives the daily recap email. Defaults to false: a group is a
+   *  reusable list of people you can @-mention, and the recap is one opt-in behavior on it. */
+  enabled?: boolean;
 }

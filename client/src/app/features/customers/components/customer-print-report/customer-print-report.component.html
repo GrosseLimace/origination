@@ -84,13 +84,14 @@
               <!-- Column header shown ONCE above all commodities (borderless for the grouped/pricing view, gridlined for the flat view). -->
               @if (showPricingLines()) {
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; margin-bottom: 6px;">
-                  <colgroup><col style="width: 18%;" /><col style="width: 16%;" /><col style="width: 14%;" /><col style="width: 16%;" /><col style="width: 20%;" /><col style="width: 16%;" /></colgroup>
+                  <colgroup><col style="width: 16%;" /><col style="width: 14%;" /><col style="width: 12%;" /><col style="width: 13%;" /><col style="width: 14%;" /><col style="width: 18%;" /><col style="width: 13%;" /></colgroup>
                   <thead>
                     <tr [style.background]="accentLight()">
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Contract #</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Quantity</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Price</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Special Type</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Basis Location</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Delivery Window</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Status</th>
                     </tr>
@@ -98,13 +99,14 @@
                 </table>
               } @else {
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; margin-bottom: 6px;">
-                  <colgroup><col style="width: 18%;" /><col style="width: 16%;" /><col style="width: 14%;" /><col style="width: 16%;" /><col style="width: 20%;" /><col style="width: 16%;" /></colgroup>
+                  <colgroup><col style="width: 16%;" /><col style="width: 14%;" /><col style="width: 12%;" /><col style="width: 13%;" /><col style="width: 14%;" /><col style="width: 18%;" /><col style="width: 13%;" /></colgroup>
                   <thead>
                     <tr [style.background]="accentLight()">
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Contract #</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Quantity</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Price</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Special Type</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Basis Location</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Delivery Window</th>
                       <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Status</th>
                     </tr>
@@ -126,13 +128,14 @@
                       @for (ct of group.contracts; track ct.id) {
                         <div style="border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; margin-top: 6px; page-break-inside: avoid;">
                           <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;">
-                            <colgroup><col style="width: 18%;" /><col style="width: 16%;" /><col style="width: 14%;" /><col style="width: 16%;" /><col style="width: 20%;" /><col style="width: 16%;" /></colgroup>
+                            <colgroup><col style="width: 16%;" /><col style="width: 14%;" /><col style="width: 12%;" /><col style="width: 13%;" /><col style="width: 14%;" /><col style="width: 18%;" /><col style="width: 13%;" /></colgroup>
                             <tbody>
                               <tr>
                                 <td style="padding: 4px 8px; text-align: center; font-weight: 500;">{{ ct.sourceContractId || ct.contractNumber }}</td>
                                 <td style="padding: 4px 8px; text-align: center;">{{ ct.quantity.toLocaleString() }} {{ ct.unit }}</td>
                                 <td style="padding: 4px 8px; text-align: center;">{{ getContractPrice(ct) }}</td>
                                 <td style="padding: 4px 8px; text-align: center;">{{ ct.specialType || '—' }}</td>
+                                <td style="padding: 4px 8px; text-align: center;">{{ ct.basisLocation || '—' }}</td>
                                 <td style="padding: 4px 8px; text-align: center; font-size: 10px;">{{ formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd) }}</td>
                                 <td style="padding: 4px 8px; text-align: center;">
                                   <span [style.background]="getStatusStyles(getCalculatedStatus(ct)).bg"
@@ -182,7 +185,7 @@
                   } @else {
                     <!-- Pricing hidden: flat, tight single table with gridlines -->
                     <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-                      <colgroup><col style="width: 18%;" /><col style="width: 16%;" /><col style="width: 14%;" /><col style="width: 16%;" /><col style="width: 20%;" /><col style="width: 16%;" /></colgroup>
+                      <colgroup><col style="width: 16%;" /><col style="width: 14%;" /><col style="width: 12%;" /><col style="width: 13%;" /><col style="width: 14%;" /><col style="width: 18%;" /><col style="width: 13%;" /></colgroup>
                       <tbody>
                         @for (ct of group.contracts; track ct.id) {
                           <tr>
@@ -190,6 +193,7 @@
                             <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ ct.quantity.toLocaleString() }} {{ ct.unit }}</td>
                             <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ getContractPrice(ct) }}</td>
                             <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ ct.specialType || '—' }}</td>
+                            <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ ct.basisLocation || '—' }}</td>
                             <td style="padding: 4px 8px; text-align: center; font-size: 10px; border: 1px solid #e5e7eb;">{{ formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd) }}</td>
                             <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">
                               <span [style.background]="getStatusStyles(getCalculatedStatus(ct)).bg"
@@ -247,8 +251,8 @@
             </div>
           }
 
-          <!-- Planting Intentions (grouped by crop) -->
-          @if (showPlanting() && plantingIntentions().length > 0) {
+          <!-- Planting Intentions (grouped by crop, limited to the selected crop years) -->
+          @if (showPlanting() && includedPlantingIntentions().length > 0) {
             <div style="margin-bottom: 24px;">
               <div [style.color]="accentColor()" style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Planting Intentions</div>
 
@@ -409,11 +413,47 @@
                 class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
               <span class="text-sm text-gray-700 dark:text-gray-300">Unapplied Tickets ({{ unappliedTickets().length }})</span>
             </label>
-            <label class="flex items-center gap-2.5 cursor-pointer">
-              <input type="checkbox" [checked]="showPlanting()" (change)="showPlanting.set($any($event.target).checked)"
-                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
-              <span class="text-sm text-gray-700 dark:text-gray-300">Planting Intentions ({{ plantingIntentions().length }})</span>
-            </label>
+            <!-- The year picker stays collapsed behind this row; most reports want every year, and
+                 an always-open list of checkboxes buries the other detail sections. -->
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <label class="flex items-center gap-2.5 cursor-pointer">
+                <input type="checkbox" [checked]="showPlanting()" (change)="showPlanting.set($any($event.target).checked)"
+                  class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                <span class="text-sm text-gray-700 dark:text-gray-300">Planting Intentions ({{ includedPlantingIntentions().length }})</span>
+              </label>
+              @if (showPlanting() && plantingYears().length > 1) {
+                <button type="button" (click)="plantingYearsExpanded.set(!plantingYearsExpanded())"
+                  class="inline-flex items-center justify-center h-5 w-5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 transition-colors"
+                  [attr.aria-expanded]="plantingYearsExpanded()"
+                  [attr.aria-label]="plantingYearsExpanded() ? 'Hide crop year options' : 'Choose crop years'"
+                  [attr.title]="plantingYearsExpanded() ? 'Hide crop years' : 'Choose crop years'">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                    <path d="M5 12h14"/>
+                    @if (!plantingYearsExpanded()) { <path d="M12 5v14"/> }
+                  </svg>
+                </button>
+              }
+            </div>
+            <!-- Acres, projected production and the crop breakdown all read the selected years, so a
+                 producer with two seasons on file isn't blended into one total unless you want it. -->
+            @if (showPlanting() && plantingYearsExpanded() && plantingYears().length > 1) {
+              <div class="ml-6 pl-3 border-l border-gray-200 dark:border-gray-700 space-y-2">
+                <span class="block text-xs text-gray-500 dark:text-gray-400">Crop years to include</span>
+                @for (year of plantingYears(); track year) {
+                  <label class="flex items-center gap-2.5 cursor-pointer">
+                    <input type="checkbox" [checked]="isPlantingYearSelected(year)"
+                      (change)="togglePlantingYear(year, $any($event.target).checked)"
+                      class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ year }}</span>
+                  </label>
+                }
+                @if (selectedPlantingYears().length === 0) {
+                  <p class="text-xs text-amber-600 dark:text-amber-400">
+                    No crop years selected — the Planting Intentions section will be left out.
+                  </p>
+                }
+              </div>
+            }
             <label class="flex items-center gap-2.5 cursor-pointer">
               <input type="checkbox" [checked]="showStorage()" (change)="showStorage.set($any($event.target).checked)"
                 class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />

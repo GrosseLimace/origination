@@ -2,13 +2,20 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-/// <summary>Create/update payload for a Daily Recap group. Members are references the Logic App
-/// re-resolves at send time (person UPN / trade-unit code / trade-unit-group name).</summary>
+/// <summary>Create/update payload for a group. Members are references the Logic App re-resolves at
+/// send time (person UPN / trade-unit code / trade-unit-group id).</summary>
 public record RecapGroupRequest : IValidatableObject
 {
     [Required]
     [StringLength(200)]
     public required string Name { get; init; }
+
+    /// <summary>Whether this group receives the daily recap email. CREATE-ONLY: the update path
+    /// deliberately doesn't touch it (the card's own toggle endpoint owns it after creation).
+    /// <para>Defaults to FALSE. A group is now a reusable list of people that can be @-mentioned in
+    /// a note, and the recap is one opt-in behavior on it — creating one used to force the daily
+    /// send on, so a group made purely to @-mention started mailing everyone in it that evening.</para></summary>
+    public bool Enabled { get; init; }
 
     /// <summary>"email" or "teams".</summary>
     [Required]

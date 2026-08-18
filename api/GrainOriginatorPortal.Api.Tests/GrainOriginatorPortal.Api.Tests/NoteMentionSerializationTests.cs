@@ -8,6 +8,7 @@ using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -125,14 +126,26 @@ public class NoteMentionSerializationTests
     // (internal UPN), forcing @scoular.com. These go through CreateAsync and capture what actually
     // lands in the Notes.Mentions column.
 
-    private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions()
+    private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions(
+        params RecapGroupDto[] visibleGroups)
+        => BuildServiceCapturingMentions(out _, visibleGroups);
+
+    /// <param name="groups">The recap-group service mock, exposed so a test can make it throw or
+    /// assert it was never consulted.</param>
+    private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions(
+        out Mock<IDailyRecapGroupService> groups, params RecapGroupDto[] visibleGroups)
     {
         var captured = new List<string?>();
         var repo = new Mock<INoteRepository>();
+        var note = new Note { Id = 1, CustomerId = 100, CustomerName = "Acme", CreatedBy = "CEgr", Description = "body" };
         repo.Setup(r => r.AddAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Callback<long, string, string?, string?, string, CancellationToken>((_, _, _, mentionsJson, _, _) => captured.Add(mentionsJson))
-            .ReturnsAsync(new Note { Id = 1, CustomerId = 100, CustomerName = "Acme", CreatedBy = "CEgr", Description = "body" });
+            .ReturnsAsync(note);
+        repo.Setup(r => r.UpdateAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<long, string, string?, bool, string, CancellationToken>((_, _, mentionsJson, _, _, _) => captured.Add(mentionsJson))
+            .ReturnsAsync(note);
 
         var customerRepo = new Mock<ICustomerRepository>();
         customerRepo.Setup(c => c.GetFirstActiveTradeUnitAsync(It.IsAny<long>(), It.IsAny<CancellationToken>())).ReturnsAsync("OMAHA");
@@ -142,8 +155,20 @@ public class NoteMentionSerializationTests
         var ctx = new Mock<IRequestContextService>();
         ctx.Setup(c => c.GetCurrentUser()).Returns("CEgr");
 
-        return (new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object), captured);
+        groups = new Mock<IDailyRecapGroupService>();
+        groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(visibleGroups.ToList());
+
+        var svc = new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
+            groups.Object, new Mock<ILogger<NoteService>>().Object);
+        return (svc, captured);
     }
+
+    private static RecapGroupDto Group(int id, string name, params RecapGroupMemberDto[] members) => new()
+    {
+        Id = id,
+        Name = name,
+        Members = members.ToList(),
+    };
 
     [Fact]
     public async Task CreateAsync_OverwritesClientSuppliedPersonEmail_WithIdDerivedInternalAddress()
@@ -223,5 +248,276 @@ public class NoteMentionSerializationTests
         var stored = JsonSerializer.Deserialize<List<NoteMention>>(Assert.Single(captured)!)!;
         Assert.All(stored, m => Assert.Null(m.Email));
         Assert.DoesNotContain("evil.com", captured[0]);
+    }
+
+    // ── Group ("app-group") mention expansion ──────────────────────────────────────────────────
+    // A group is flattened server-side into its member references, so the Logic App resolves them
+    // with the three cases it already has. The group row itself is kept for display/provenance and
+    // is inert there. These tests pin the two properties that make that safe: every stored row is a
+    // type the deployed workflow understands, and expansion runs BEFORE normalization so group
+    // members can't dodge the M-025 rules.
+
+    private static readonly RecapGroupMemberDto PersonMember =
+        new() { Type = "person", Id = "SFletcher", Name = "Sam Fletcher", Email = "SFletcher@scoular.com" };
+    private static readonly RecapGroupMemberDto TradeUnitMember =
+        new() { Type = "trade-unit", Id = "1084", Name = "1084" };
+    private static readonly RecapGroupMemberDto TradeUnitGroupMember =
+        new() { Type = "trade-unit-group", Id = "12", Name = "West Group" };
+
+    private static List<NoteMention> StoredMentions(List<string?> captured) =>
+        JsonSerializer.Deserialize<List<NoteMention>>(Assert.Single(captured)!)!;
+
+    [Fact]
+    public async Task CreateAsync_ExpandsGroupMention_IntoGroupRowPlusOneRowPerMember()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(
+            Group(7, "Corn Belt", PersonMember, TradeUnitMember, TradeUnitGroupMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await svc.CreateAsync(100, "note body", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal(4, stored.Count);
+        Assert.Equal("app-group", stored[0].Type);
+        Assert.Null(stored[0].Via);                       // the row the user actually picked
+        Assert.Equal(["person", "trade-unit", "trade-unit-group"], stored.Skip(1).Select(m => m.Type));
+        Assert.Equal(["1084", "12"], stored.Skip(2).Select(m => m.Id));
+        Assert.All(stored.Skip(1), m => Assert.Equal("app-group:7", m.Via));
+    }
+
+    [Fact]
+    public async Task CreateAsync_GroupMention_AlwaysStoresAtLeastOneTypeTheLogicAppResolves()
+    {
+        // The regression guard for "silently emails nobody": the app-group row itself resolves to no
+        // recipients in the workflow, so a non-empty group MUST also contribute rows it understands.
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        string[] resolvable = ["person", "trade-unit", "trade-unit-group"];
+        Assert.Contains(StoredMentions(captured), m => resolvable.Contains(m.Type));
+    }
+
+    [Fact]
+    public async Task CreateAsync_ExpandedPersonMember_GetsIdDerivedInternalEmail()
+    {
+        // Order test: expansion emits the member, normalization then rebuilds its address. If the two
+        // steps were ever swapped, a stored group member email would pass straight through.
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt",
+            new RecapGroupMemberDto { Type = "person", Id = "SFletcher", Name = "Sam", Email = "attacker@evil.com" }));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal("SFletcher@scoular.com", stored[1].Email);
+        Assert.DoesNotContain("evil.com", captured[0]);
+        Assert.Null(stored[0].Email);   // the group row never carries an address
+    }
+
+    [Theory]
+    [InlineData("attacker@evil.com")]
+    [InlineData("attacker@EVIL.com")]
+    [InlineData("attacker@evil.com@scoular.com")]
+    [InlineData("attacker@scoular.com.evil.com")]
+    [InlineData("@scoular.com")]
+    public async Task CreateAsync_RejectsForgedPersonIdArrivingViaGroupMember(string forgedId)
+    {
+        // The group path must not become a laundering route around the rule the direct path enforces.
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt",
+            new RecapGroupMemberDto { Type = "person", Id = forgedId, Name = "Mallory" }));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "note body", mentions, CancellationToken.None));
+        Assert.Empty(captured);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RejectsMentionOfAnEmptyGroup()
+    {
+        // Same failure mode as an unknown type: the app-group row alone resolves to no recipients,
+        // so this would save a note the author believes was shared and notify nobody.
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt"));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Empty(captured);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RejectsMentionOfGroupTheCallerCannotSee()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "999", Name = "Someone Else's" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Empty(captured);   // rejected, never silently dropped
+    }
+
+    [Fact]
+    public async Task CreateAsync_FailsClosed_WhenGroupsCannotBeLoaded()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(out var groups, Group(7, "Corn Belt", PersonMember));
+        groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("db down"));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        var ex = await Assert.ThrowsAsync<InfrastructureException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Equal(503, ex.HttpStatusCode);
+        Assert.Empty(captured);
+    }
+
+    [Fact]
+    public async Task CreateAsync_UsesTheServerSideGroupName_AndIgnoresClientSuppliedProvenance()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Executives", Via = "app-group:999" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal("Corn Belt", stored[0].Name);   // client's label loses to the real one
+        Assert.Null(stored[0].Via);                  // forged provenance cleared
+    }
+
+    [Fact]
+    public async Task CreateAsync_DedupesPersonMentionedDirectlyAndThroughAGroup()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
+        var mentions = new[]
+        {
+            new NoteMention { Type = "person", Id = "SFletcher", Name = "Sam Fletcher" },
+            new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" },
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        var sam = Assert.Single(stored, m => m.Type == "person" && m.Id == "SFletcher");
+        Assert.Null(sam.Via);   // the direct mention wins, so it still highlights in the note text
+    }
+
+    [Fact]
+    public async Task CreateAsync_DedupesTheSameGroupMentionedTwice()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
+        var mentions = new[]
+        {
+            new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" },
+            new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" },
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        Assert.Equal(2, StoredMentions(captured).Count);   // one group row + one member
+    }
+
+    [Fact]
+    public async Task CreateAsync_RejectsWhenExpansionExceedsTheCap()
+    {
+        var many = Enumerable.Range(1, 260)
+            .Select(i => new RecapGroupMemberDto { Type = "person", Id = $"User{i}", Name = $"User {i}" })
+            .ToArray();
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Everyone", many));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Everyone" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Empty(captured);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithoutAGroupMention_NeverQueriesGroups()
+    {
+        // Ordinary notes must pay nothing for this feature.
+        var (svc, _) = BuildServiceCapturingMentions(out var groups, Group(7, "Corn Belt", PersonMember));
+        var mentions = new[] { new NoteMention { Type = "person", Id = "SFletcher", Name = "Sam" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        groups.Verify(g => g.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_AlsoExpandsGroupMentions()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await svc.UpdateAsync(1, "edited", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal(2, stored.Count);
+        Assert.Equal("app-group:7", stored[1].Via);
+    }
+
+    [Fact]
+    public void GroupMentionSerializesWithLowercaseKeys_IncludingVia()
+    {
+        var json = JsonSerializer.Serialize(new[]
+        {
+            new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" },
+            new NoteMention { Type = "person", Id = "SFletcher", Name = "Sam", Email = "SFletcher@scoular.com", Via = "app-group:7" },
+        });
+
+        Assert.Contains("\"type\":\"app-group\"", json);
+        Assert.Contains("\"via\":\"app-group:7\"", json);
+        Assert.DoesNotContain("\"Via\"", json);
+    }
+
+    // ── Update mention semantics (null = unchanged, [] = clear) ────────────────────────────────
+    // Sending no mentions used to null the column, so every edit silently destroyed a note's
+    // mentions and their highlighting. The repository is now told explicitly whether to replace.
+
+    [Fact]
+    public async Task UpdateAsync_WithNullMentions_LeavesExistingMentionsUntouched()
+    {
+        var repo = new Mock<INoteRepository>();
+        bool? replace = null;
+        repo.Setup(r => r.UpdateAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<long, string, string?, bool, string, CancellationToken>((_, _, _, r, _, _) => replace = r)
+            .ReturnsAsync(new Note { Id = 1, CustomerId = 100, CreatedBy = "CEgr", Description = "b" });
+
+        var svc = BuildServiceWith(repo);
+        await svc.UpdateAsync(1, "edited", null, CancellationToken.None);
+
+        Assert.False(replace);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WithEmptyMentions_ClearsThem()
+    {
+        var repo = new Mock<INoteRepository>();
+        bool? replace = null;
+        string? json = "unset";
+        repo.Setup(r => r.UpdateAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<long, string, string?, bool, string, CancellationToken>((_, _, m, r, _, _) => { json = m; replace = r; })
+            .ReturnsAsync(new Note { Id = 1, CustomerId = 100, CreatedBy = "CEgr", Description = "b" });
+
+        var svc = BuildServiceWith(repo);
+        await svc.UpdateAsync(1, "edited", [], CancellationToken.None);
+
+        Assert.True(replace);
+        Assert.Null(json);   // null column = no mentions
+    }
+
+    private static NoteService BuildServiceWith(Mock<INoteRepository> repo)
+    {
+        var customerRepo = new Mock<ICustomerRepository>();
+        var names = new Mock<IDisplayNameLookupRepository>();
+        names.Setup(n => n.ResolveAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, string>());
+        var ctx = new Mock<IRequestContextService>();
+        ctx.Setup(c => c.GetCurrentUser()).Returns("CEgr");
+        var groups = new Mock<IDailyRecapGroupService>();
+        groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        return new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
+            groups.Object, new Mock<ILogger<NoteService>>().Object);
     }
 }
