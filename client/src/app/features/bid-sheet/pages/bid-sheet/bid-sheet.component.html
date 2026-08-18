@@ -944,16 +944,18 @@
                               : (row.type === 'elevator'
                                 ? 'bg-[#e6f6f1] dark:bg-[#0e3435]'
                                 : 'bg-white dark:bg-gray-900')">
-                          <div class="flex items-center gap-2">
+                          <div class="flex items-center gap-2 w-full">
                             <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
                             </span>
                             <!-- Wraps to a second line rather than truncating: BarChart names carry the
                                  company AND the site ("Farmers Cooperative Dorchester - Beattie"), which
                                  a single ellipsised line cuts off exactly where it stops being useful. -->
-                            <span class="text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words max-w-[170px] lg:max-w-[260px]" [title]="row.name">{{ row.name }}</span>
+                            <span class="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words" [title]="row.name">{{ row.name }}</span>
                             @if (barchartEnabled && row.isBarchartLinked) {
-                              <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
+                              <!-- Pinned to the right edge so the chips line up down the column, whatever
+                                   length the names are and whether or not they wrap. -->
+                              <span class="ml-auto flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
                                     title="Linked to BarChart — its bids update on their own and can't be edited here.">Feed</span>
                             }
                           </div>
