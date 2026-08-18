@@ -496,7 +496,7 @@
                       }
                     },
                     "method": "get",
-                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items/@{encodeURIComponent(encodeURIComponent(first(split(triggerBody()?['CreatedBy'],'@'))))}",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items",
                     "queries": {
                       "$filter": "IsActive eq 1",
                       "$select": "UserId",
