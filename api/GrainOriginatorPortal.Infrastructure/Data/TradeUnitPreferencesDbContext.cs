@@ -29,13 +29,13 @@ public class TradeUnitPreferencesDbContext : DbContext
         {
             entity.ToView("vw_UserTradeUnitPreferences", schema: "dbo");
             entity.HasNoKey();
-            entity.Property(e => e.UserId).HasColumnName("UserId").HasMaxLength(100);
-            entity.Property(e => e.DisplayName).HasColumnName("DisplayName").HasMaxLength(255);
-            entity.Property(e => e.TradeUnitCode).HasColumnName("TradeUnitCode").HasMaxLength(100);
+            entity.Property(e => e.UserId).HasColumnName("UserId").HasMaxLength(50);
+            entity.Property(e => e.DisplayName).HasColumnName("DisplayName").HasMaxLength(200);
+            entity.Property(e => e.TradeUnitCode).HasColumnName("TradeUnitCode").HasMaxLength(20);
             entity.Property(e => e.Description).HasColumnName("Description").HasMaxLength(500);
             entity.Property(e => e.AssignmentSource).HasColumnName("AssignmentSource").HasMaxLength(50);
             entity.Property(e => e.GroupId).HasColumnName("GroupId");
-            entity.Property(e => e.GroupName).HasColumnName("GroupName").HasMaxLength(100);
+            entity.Property(e => e.GroupName).HasColumnName("GroupName").HasMaxLength(200);
         });
     }
 }
