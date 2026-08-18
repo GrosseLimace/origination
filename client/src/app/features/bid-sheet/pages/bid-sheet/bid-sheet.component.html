@@ -864,7 +864,7 @@
                   <thead>
                     <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onCropColumnDrop($event)"
                         class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[180px] lg:min-w-[260px]">Location</th>
+                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[240px] lg:min-w-[340px]">Location</th>
                       @for (col of editGridColumns(); track col.key) {
                         <th cdkDrag cdkDragLockAxis="x"
                             (cdkDragStarted)="draggingCrop.set(col.crop)"
@@ -948,7 +948,10 @@
                             <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
                             </span>
-                            <span class="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[160px] lg:max-w-[220px]" [title]="row.name">{{ row.name }}</span>
+                            <!-- Wraps to a second line rather than truncating: BarChart names carry the
+                                 company AND the site ("Farmers Cooperative Dorchester - Beattie"), which
+                                 a single ellipsised line cuts off exactly where it stops being useful. -->
+                            <span class="text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words max-w-[170px] lg:max-w-[260px]" [title]="row.name">{{ row.name }}</span>
                             @if (barchartEnabled && row.isBarchartLinked) {
                               <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
                                     title="Linked to BarChart — its bids update on their own and can't be edited here.">Feed</span>
