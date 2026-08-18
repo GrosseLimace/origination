@@ -137,7 +137,7 @@
                 ]
               },
               "runAfter": {
-                "For_each_Recap_Group": [
+                "Compose_Retry_Summary": [
                   "Succeeded"
                 ]
               },
@@ -507,6 +507,18 @@
                                     }
                                   },
                                   "type": "Wait"
+                                },
+                                "Record_Email_Retry_Success": {
+                                  "inputs": {
+                                    "name": "retriedGroups",
+                                    "value": "@{variables('groupName')} (email)"
+                                  },
+                                  "runAfter": {
+                                    "HTTP_Send_Recap_Email_Retry": [
+                                      "Succeeded"
+                                    ]
+                                  },
+                                  "type": "AppendToArrayVariable"
                                 }
                               },
                               "else": {
@@ -663,6 +675,18 @@
                                         }
                                       },
                                       "type": "Wait"
+                                    },
+                                    "Record_Teams_Retry_Success": {
+                                      "inputs": {
+                                        "name": "retriedGroups",
+                                        "value": "@{variables('groupName')} (teams)"
+                                      },
+                                      "runAfter": {
+                                        "HTTP_Send_to_Teams_Retry": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "AppendToArrayVariable"
                                     }
                                   },
                                   "else": {
@@ -1265,11 +1289,24 @@
                   {
                     "name": "failedGroups",
                     "type": "array"
+                  },
+                  {
+                    "name": "retriedGroups",
+                    "type": "array"
                   }
                 ]
               },
               "runAfter": {},
               "type": "InitializeVariable"
+            },
+            "Compose_Retry_Summary": {
+              "inputs": "@if(equals(length(variables('retriedGroups')), 0), 'No groups needed a retry.', concat('Recovered on retry (first send failed, resend succeeded - these may have received a duplicate): ', join(variables('retriedGroups'), ', ')))",
+              "runAfter": {
+                "For_each_Recap_Group": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Compose"
             }
           },
           "contentVersion": "1.0.0.0",

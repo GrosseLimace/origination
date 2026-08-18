@@ -48,6 +48,16 @@ compounding — **at most two copies, never five**. Failures recorded after a re
 `(email, retried)` / `(teams, retried)` in `failedGroups`, so `Terminate_Failed`'s message
 distinguishes them from first-attempt failures.
 
+**A retry that SUCCEEDS is recorded too**, in `retriedGroups`. Without it that case is invisible in
+any summary: the run reports Succeeded, `failedGroups` stays empty, and a group that nearly missed
+looks exactly like one that never had trouble. It also happens to be the only case that can produce
+a duplicate, so it is the first thing to check when someone reports getting two copies.
+`Compose_Retry_Summary` runs after the loop and prints either `No groups needed a retry.` or
+`Recovered on retry (...): <groups>`. It sits **before** `Fail_Run_If_Any_Group_Failed` on purpose —
+`Terminate` stops everything after it, so a run that recovered one group and lost another would
+otherwise report the loss and swallow the recovery. The run still reports Succeeded when only
+retries occurred, because delivery did happen.
+
 **What this fixes.** On **2026-08-12** the 18:00 prod run lost *Western KS* and *MOKAN Daily Digest*
 to a 504 (`UnknownError`, empty message) ~95s into the send, while every other group delivered
 normally. The previous status-code allowlist (`429`/`503`/`401` only) would **not** have recovered
