@@ -234,7 +234,7 @@ public class NoteRepository : INoteRepository
         return note;
     }
 
-    public async Task<Note?> UpdateAsync(long noteId, string content, string? mentionsJson, string currentUser, CancellationToken cancellationToken)
+    public async Task<Note?> UpdateAsync(long noteId, string content, string? mentionsJson, bool replaceMentions, string currentUser, CancellationToken cancellationToken)
     {
         var note = await _appContext.Notes
             .Include(n => n.Customer)
@@ -245,7 +245,13 @@ public class NoteRepository : INoteRepository
         }
 
         note.Description = content;
-        note.MentionsJson = mentionsJson;   // replace mentions on update (null clears them)
+        // Only touch Mentions when the caller actually supplied them. Assigning unconditionally is
+        // what made every edit wipe a note's mentions: a client that sends only the edited text
+        // (as the notes UI did) reached here with null and silently destroyed them.
+        if (replaceMentions)
+        {
+            note.MentionsJson = mentionsJson;   // null here means the caller asked to CLEAR them
+        }
         note.ModifiedBy = currentUser;
         note.ModifiedAt = DateTime.UtcNow;
         await _appContext.SaveChangesAsync(cancellationToken);

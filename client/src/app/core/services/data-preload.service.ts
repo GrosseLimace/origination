@@ -6,7 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
-import { Customer, Contract, Ticket, NoteLastContact, PlantingIntention, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardSummary } from '@models';
+import { Customer, Contract, Ticket, NoteLastContact, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardSummary } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 @Injectable({ providedIn: 'root' })
@@ -74,6 +74,9 @@ export class DataPreloadService {
         // Same for the full note set: NLQ/saved-list consumers fetch it lazily when a note
         // query needs it. Badges use the noteLastContacts aggregate below instead.
         this.appState.clearNotesCache();
+        // DP too: it IS preloaded below, but the loaded flag must drop first or a DP query fired
+        // between the TU change and the preload landing would run against the prior TU's rows.
+        this.appState.clearDpContractsCache();
 
         // Core group — dataLoading clears when all three are ready so that
         // Unconfirmed Contracts, Spot Loads, and Unshipped Bushels all appear
@@ -133,6 +136,12 @@ export class DataPreloadService {
             this.appState.setStoredGrain(data);
           })
         );
+        const dpContracts$ = this.apiService.getDpContracts(tradeUnits).pipe(
+          catchError(() => of([] as DpContract[])),
+          tap(data => {
+            this.appState.setDpContracts(data);
+          })
+        );
         const savedLists$ = this.apiService.getSavedLists().pipe(
           catchError(() => of([] as SavedList[])),
           tap(data => {
@@ -170,7 +179,7 @@ export class DataPreloadService {
           })
         );
 
-        return merge(customers$, contracts$, todaysTickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);
+        return merge(customers$, contracts$, todaysTickets$, notes$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

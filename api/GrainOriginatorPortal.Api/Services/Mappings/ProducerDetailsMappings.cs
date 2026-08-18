@@ -29,5 +29,14 @@ public static class ProducerDetailsMappings
             TargetBushels = g.TargetBushels,
             Grade = g.Grade,
         }).ToList(),
+        // Repository composes contacts primary-first; keep that order on the wire.
+        Contacts = p.Contacts.Select(c => new ContactItemResponse
+        {
+            Name = c.Name,
+            Phone = c.Phone,
+            Email = c.Email,
+            IsPrimary = c.IsPrimary,
+            SortOrder = c.SortOrder,
+        }).ToList(),
     };
 }

@@ -10,7 +10,7 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
@@ -106,6 +106,7 @@ export class HomeComponent {
    *  fetched per-producer on selection into _customerNotesCache. */
   readonly noteLastContacts = signal<NoteLastContact[]>([]);
   readonly storedGrain = signal<StoredGrain[]>([]);
+  readonly dpContracts = signal<DpContract[]>([]);
   readonly savedLists = signal<SavedList[]>([]);
   /** Manager-only: saved lists tied to the selected TU(s) created by other users (overlap-matched
    *  server-side, enriched locally). Powers the Add-to-List "Team Lists" tab. */
@@ -145,13 +146,14 @@ export class HomeComponent {
   readonly customerCodeMap = signal<Map<number, string>>(new Map());
   readonly customerPlantingIntentions = signal<PlantingIntention[]>([]);
   readonly customerStoredGrain = signal<StoredGrain[]>([]);
+  readonly customerDpContracts = signal<DpContract[]>([]);
 
   readonly allCustomerContracts = signal<Contract[]>([]);
   readonly allCustomerTickets = signal<Ticket[]>([]);
   readonly allCustomerPlantingIntentions = signal<PlantingIntention[]>([]);
   readonly allCustomerStoredGrain = signal<StoredGrain[]>([]);
+  readonly allCustomerDpContracts = signal<DpContract[]>([]);
 
-  readonly yieldEstimateCrops = signal<string[]>([]);
   readonly yieldEstimates = signal<DashboardPlantingEstimate[]>([]);
   readonly commodities = signal<Commodity[]>([]);
   readonly isLoadingYieldData = signal(false);
@@ -161,6 +163,7 @@ export class HomeComponent {
   readonly isLoadingUnappliedTickets = signal(false);
   readonly isLoadingPricingLines = signal(false);
   readonly isLoadingStoredGrain = signal(false);
+  readonly isLoadingDpContracts = signal(false);
   readonly isLoadingPlanting = signal(true);
   /** True while the selected producer's (and linked group's) notes are being fetched.
    *  Drives the notes panel's loading state so a producer with notes doesn't flash
@@ -278,6 +281,7 @@ export class HomeComponent {
       this.isLoadingPlanting.set(false);
       this.noteLastContacts.set(this.appState.noteLastContacts());
       this.storedGrain.set(this.appState.storedGrain());
+      this.dpContracts.set(this.appState.dpContracts());
       this.savedLists.set(this.appState.savedLists());
       this._enrichSavedLists();
 
@@ -287,6 +291,19 @@ export class HomeComponent {
           next: (data) => {
             this.storedGrain.set(data);
             this.appState.setStoredGrain(data);
+          },
+          error: () => {}
+        });
+      }
+
+      // Same for DP contracts — the preload may not have landed yet. Gate on the loaded flag, not
+      // length: a per-producer merge can leave rows present without a TU-wide load having happened,
+      // and a TU with genuinely zero DP would otherwise re-fetch on every pass.
+      if (!this.appState.dpContractsLoaded()) {
+        this.apiService.getDpContracts().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          next: (data) => {
+            this.dpContracts.set(data);
+            this.appState.setDpContracts(data);
           },
           error: () => {}
         });
@@ -427,6 +444,23 @@ export class HomeComponent {
       error: () => {}
     });
 
+    // Merge (not replace) for the same reason storage does: the TU-wide fetch and the per-producer
+    // fetch both write this signal, so a late TU response must not drop rows already loaded for the
+    // selected producer.
+    this.apiService.getDpContracts(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        const incoming = data ?? [];
+        const existing = this.dpContracts();
+        const seen = new Set(incoming.map(d => d.id));
+        const merged = [...incoming, ...existing.filter(d => !seen.has(d.id))];
+        this.dpContracts.set(merged);
+        this.appState.setDpContracts(merged);
+        const sel = this.selectedCustomer();
+        if (sel) this._loadCustomerData(sel.id);
+      },
+      error: () => {}
+    });
+
     this._loadYieldData();
 
     this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -491,6 +525,7 @@ export class HomeComponent {
           grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
+          contacts: pd.contacts ?? customer.contacts,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
@@ -520,7 +555,6 @@ export class HomeComponent {
     const key = [...this.selectedTradeUnits()].sort().join(',');
     if (!key) {
       this.yieldEstimates.set([]);
-      this.yieldEstimateCrops.set([]);
       this.commodities.set([]);
       return;
     }
@@ -555,9 +589,7 @@ export class HomeComponent {
             map.set(`${est.crop}|${est.plantingYear}`, est);
           }
         }
-        const merged = [...map.values()];
-        this.yieldEstimates.set(merged);
-        this.yieldEstimateCrops.set([...new Set(merged.map(e => e.crop))]);
+        this.yieldEstimates.set([...map.values()]);
         done();
       },
       error: () => done()
@@ -631,7 +663,9 @@ export class HomeComponent {
       noteLastContacts: this.appState.noteLastContacts(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
+      dpContracts: this.dpContracts(),
       commodities: this.appState.commodities(),
+      commodityConversions: this.appState.commodityConversions(),
       // Thread identity through so saved-list "by me" filters work even when notes' CreatedBy
       // wasn't resolved to a display name on the API side.
       currentUserDisplayName: account?.name ?? '',
@@ -658,6 +692,7 @@ export class HomeComponent {
         ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.contracts(), this.appState.notes(), {
             tickets: this.tickets(),
             storedGrain: this.storedGrain(),
+            dpContracts: this.dpContracts(),
             plantingIntentions: this.plantingIntentions(),
             commodityConversions: this.appState.commodityConversions(),
             noteLastContacts: this.appState.noteLastContacts()
@@ -909,6 +944,7 @@ export class HomeComponent {
         totalAcres: pd.totalAcres ?? customer.totalAcres,
         binCapacity: pd.binCapacity ?? customer.binCapacity,
         primaryContact: pd.primaryContact ?? customer.primaryContact,
+        contacts: pd.contacts ?? customer.contacts,
         commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
         linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
       };
@@ -927,6 +963,7 @@ export class HomeComponent {
               grainOnFarm: details.grainOnFarm ?? sel.grainOnFarm,
               primaryContact: details.primaryContact ?? sel.primaryContact,
               primaryPhone: details.primaryPhone ?? sel.primaryPhone,
+              contacts: details.contacts ?? sel.contacts,
               commodities: details.commodities ? details.commodities.split(',').map(c => c.trim()) : sel.commodities,
               linkedProducerIds: details.linkedProducerIds ? details.linkedProducerIds.split(',').filter(Boolean) : sel.linkedProducerIds
             };
@@ -947,6 +984,7 @@ export class HomeComponent {
     this.isLoadingContracts.set(true);
     this.isLoadingUnappliedTickets.set(true);
     this.isLoadingStoredGrain.set(true);
+    this.isLoadingDpContracts.set(true);
     this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
     this._loadCustomerData(customer.id);
     this._fetchMissingLinkedProducers(customer);
@@ -996,6 +1034,7 @@ export class HomeComponent {
       grainOnFarm: pd.grainOnFarm ?? fetched.grainOnFarm,
       primaryContact: pd.primaryContact ?? fetched.primaryContact,
       primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
+      contacts: pd.contacts ?? fetched.contacts,
       commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
       linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
     };
@@ -1080,7 +1119,7 @@ export class HomeComponent {
     });
   }
 
-  private _propagatePrimaryContact(linkedCustomer: Customer, primaryContact: string): void {
+  private _propagatePrimaryContact(linkedCustomer: Customer, primary: { name: string; phone?: string; email?: string }): void {
     const existingPd = this.producerDetailsMap().get(linkedCustomer.id);
     // Skip if the linked producer already has a primary contact
     if (existingPd?.primaryContact || linkedCustomer.primaryContact) return;
@@ -1090,18 +1129,23 @@ export class HomeComponent {
       customerName: linkedCustomer.name,
       totalAcres: existingPd?.totalAcres ?? null,
       binCapacity: existingPd?.binCapacity ?? null,
-      primaryContact: primaryContact,
-      primaryPhone: existingPd?.primaryPhone ?? null,  // preserve — this save only propagates the contact
+      primaryContact: primary.name,
+      primaryPhone: primary.phone ?? null,
       commodities: existingPd?.commodities ?? null,
       linkedProducerIds: existingPd?.linkedProducerIds ?? ((linkedCustomer.linkedProducerIds || []).join(',') || null),
-      grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
+      grainOnFarm: existingPd?.grainOnFarm ?? [],  // preserve — this save isn't editing grain on farm
+      // Preserve any existing contact rows; otherwise seed the full primary row (name + phone +
+      // email) so the linked producer gets the same contact card (never wipes rows).
+      contacts: existingPd?.contacts && existingPd.contacts.length > 0
+        ? existingPd.contacts.map(c => ({ name: c.name, phone: c.phone, email: c.email, isPrimary: c.isPrimary }))
+        : [{ name: primary.name, phone: primary.phone, email: primary.email, isPrimary: true }]
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (pd) => {
         const map = new Map(this.producerDetailsMap());
         map.set(pd.customerId, pd);
         this.producerDetailsMap.set(map);
-        // Update the customer object in local state
-        const updated = { ...linkedCustomer, primaryContact };
+        // Update the customer object in local state (server response already updated the pd map).
+        const updated = { ...linkedCustomer, primaryContact: primary.name, primaryPhone: primary.phone, contacts: pd.contacts };
         const idx = this.customers().findIndex(c => c.id === linkedCustomer.id);
         if (idx >= 0) {
           const arr = [...this.customers()];
@@ -1171,6 +1215,7 @@ export class HomeComponent {
       this.isLoadingContracts.set(false);
       this.isLoadingUnappliedTickets.set(false);
       this.isLoadingStoredGrain.set(false);
+      this.isLoadingDpContracts.set(false);
       this._loadCustomerData(customerId);
       return;
     }
@@ -1178,8 +1223,9 @@ export class HomeComponent {
     let contractsDone = false;
     let ticketsDone = false;
     let grainDone = false;
+    let dpDone = false;
     const markIfAllDone = () => {
-      if (contractsDone && ticketsDone && grainDone) this._customerLoadDone.add(customerId);
+      if (contractsDone && ticketsDone && grainDone && dpDone) this._customerLoadDone.add(customerId);
     };
 
     this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1218,6 +1264,20 @@ export class HomeComponent {
         markIfAllDone();
       },
       error: () => { this.isLoadingStoredGrain.set(false); }
+    });
+
+    this.apiService.getDpContractsByCustomer(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (dp) => {
+        // Per-producer merge, NOT a TU-wide load: it must not flip dpContractsLoaded, or Build A List
+        // would treat this one producer's rows as the whole trade unit's DP set.
+        this.appState.mergeCustomerDpContracts(customerId, dp);
+        this.dpContracts.set(this.appState.dpContracts());
+        this.isLoadingDpContracts.set(false);
+        this._loadCustomerData(customerId);
+        dpDone = true;
+        markIfAllDone();
+      },
+      error: () => { this.isLoadingDpContracts.set(false); }
     });
   }
 
@@ -1273,6 +1333,10 @@ export class HomeComponent {
     const allStored = this.storedGrain().filter(s => s.customerId === customerId);
     this.allCustomerStoredGrain.set([...allStored]);
     this.customerStoredGrain.set([...allStored]);
+
+    const allDp = this.dpContracts().filter(d => d.customerId === customerId);
+    this.allCustomerDpContracts.set([...allDp]);
+    this.customerDpContracts.set([...allDp]);
 
     const linkedGroup = this.getLinkedGroup(currentCustomer);
     const linkedIds = new Set([customerId, ...linkedGroup.map(c => c.id)]);
@@ -1359,7 +1423,7 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
@@ -1382,7 +1446,7 @@ export class HomeComponent {
     }
   }
 
-  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     const customers = this.customers();
     const sel = this.selectedCustomer();
     const customer = customers.find(c => c.id === data.customerId)
@@ -1393,6 +1457,7 @@ export class HomeComponent {
     const contractCommodities = [...new Set(this.allCustomerContracts().map(c => c.commodityCode || '').filter(Boolean))];
     const allCommodities = [...new Set([...ticketCommodities, ...contractCommodities, ...data.commodities])].sort();
 
+    const optimisticContacts = data.contacts.map((c, i) => ({ ...c, sortOrder: i }));
     const updated: Customer = {
       ...customer,
       totalAcres: data.acres,
@@ -1401,6 +1466,7 @@ export class HomeComponent {
       commodities: allCommodities,
       primaryContact: data.primaryContact,
       primaryPhone: data.primaryPhone,
+      contacts: optimisticContacts,
       linkedProducerIds: data.linkedProducerIds,
       eSignEnabled: data.eSignEnabled
     };
@@ -1416,13 +1482,14 @@ export class HomeComponent {
       primaryPhone: data.primaryPhone || null,
       commodities: savedCommodities,
       linkedProducerIds: savedLinkedIds,
-      grainOnFarm: data.grainOnFarm
+      grainOnFarm: data.grainOnFarm,
+      contacts: data.contacts
     };
 
     const existingPd = this.producerDetailsMap().get(data.customerId);
     if (existingPd) {
       const map = new Map(this.producerDetailsMap());
-      map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, primaryPhone: data.primaryPhone || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: data.grainOnFarm });
+      map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, primaryPhone: data.primaryPhone || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: data.grainOnFarm, contacts: optimisticContacts });
       this.producerDetailsMap.set(map);
     }
 
@@ -1463,6 +1530,7 @@ export class HomeComponent {
         commodities: existingPd?.commodities ?? null,
         linkedProducerIds: updatedLinkedIds.length > 0 ? updatedLinkedIds.join(',') : null,
         grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
+        // `contacts` intentionally omitted — the server preserves existing rows when absent.
       }).subscribe({
         next: (pd) => {
           const map = new Map(this.producerDetailsMap());
@@ -1491,12 +1559,15 @@ export class HomeComponent {
     }
 
     if (data.primaryContact) {
-      // Propagate primary contact to ALL linked producers that don't have one yet
+      // Propagate the FULL primary contact row (name + phone + email) to ALL linked producers
+      // that don't have one yet.
+      const primaryRow = data.contacts.find(c => c.isPrimary)
+        ?? { name: data.primaryContact, phone: data.primaryPhone || undefined, isPrimary: true };
       const allKnown = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
       for (const linkedIdStr of data.linkedProducerIds) {
         const linkedCustomer = allKnown.find(c => c.scoularId === linkedIdStr);
         if (linkedCustomer) {
-          this._propagatePrimaryContact(linkedCustomer, data.primaryContact);
+          this._propagatePrimaryContact(linkedCustomer, primaryRow);
         } else {
           // Linked producer not loaded locally — fetch by sourceId then propagate
           this.apiService.getCustomerBySourceId(linkedIdStr).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1504,7 +1575,7 @@ export class HomeComponent {
               const cache = new Map(this._crossTradeUnitCustomers());
               cache.set(fetched.id, fetched);
               this._crossTradeUnitCustomers.set(cache);
-              this._propagatePrimaryContact(fetched, data.primaryContact);
+              this._propagatePrimaryContact(fetched, primaryRow);
             },
             error: () => {}
           });
@@ -1644,7 +1715,8 @@ export class HomeComponent {
               binCapacity: pd.binCapacity ?? fetched.binCapacity,
               grainOnFarm: pd.grainOnFarm ?? fetched.grainOnFarm,
               primaryContact: pd.primaryContact ?? fetched.primaryContact,
-      primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
+              primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
+              contacts: pd.contacts ?? fetched.contacts,
               commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
               linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
             };
@@ -1821,8 +1893,10 @@ export class HomeComponent {
         this.noteSaveSucceededCounter.update(n => n + 1);
         this.isSavingNote.set(false);
       },
-      error: () => {
-        this.toastService.error('Failed to add note');
+      error: (err: Error) => {
+        // Surface the server's reason (e.g. a mentioned group that's no longer available) —
+        // the generic message gives the user nothing to act on.
+        this.toastService.error(err?.message || 'Failed to add note');
         // Leave the success counter alone — the child keeps the text so the user
         // can retry. Just clear the in-flight flag so the button re-enables.
         this.isSavingNote.set(false);
@@ -1908,8 +1982,8 @@ export class HomeComponent {
     });
   }
 
-  editNote(data: { noteId: number; content: string }): void {
-    this.apiService.updateNote(data.noteId, data.content).subscribe({
+  editNote(data: { noteId: number; content: string; mentions: NoteMention[] }): void {
+    this.apiService.updateNote(data.noteId, data.content, data.mentions).subscribe({
       next: (updated) => {
         // Content edits don't change createdAt, so the last-contact aggregate is untouched.
         this._applyNoteToCache(updated);
@@ -1918,7 +1992,9 @@ export class HomeComponent {
         );
         this.toastService.success('Note updated');
       },
-      error: () => this.toastService.error('Failed to update note')
+      // Surface the server's reason (e.g. a group that's no longer available) instead of a
+      // generic failure — the message is actionable and the generic one isn't.
+      error: (err: Error) => this.toastService.error(err?.message || 'Failed to update note')
     });
   }
 

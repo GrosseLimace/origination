@@ -62,7 +62,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
             Name = request.Name.Trim(),
             DeliveryMethod = request.DeliveryMethod,
             TeamsChannelEmail = request.DeliveryMethod == "teams" ? request.TeamsChannelEmail?.Trim() : null,
-            Enabled = true,
+            Enabled = request.Enabled,
             CreatedBy = _requestContext.GetCurrentUser(),
             CreatedAt = DateTime.UtcNow,
             Members = members,

@@ -7,6 +7,7 @@ export * from './planting-intention.model';
 export * from './note.model';
 export * from './note-mention.model';
 export * from './stored-grain.model';
+export * from './dp-contract.model';
 export * from './saved-list.model';
 export * from './commodity.model';
 export * from './producer-details.model';

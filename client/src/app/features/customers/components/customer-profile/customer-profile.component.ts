@@ -7,16 +7,20 @@ import { ContractsTableComponent } from '../contracts-table/contracts-table.comp
 import { TicketsTableComponent } from '../tickets-table/tickets-table.component';
 import { PlantingIntentionsTableComponent } from '../planting-intentions-table/planting-intentions-table.component';
 import { StoredGrainTableComponent } from '../stored-grain-table/stored-grain-table.component';
+import { DpContractsTableComponent } from '../dp-contracts-table/dp-contracts-table.component';
 import { ProducerInsightsComponent } from '../producer-insights/producer-insights.component';
 import { ContractPacingCardComponent } from '../contract-pacing-card/contract-pacing-card.component';
-import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forecast.component';
+import { GrowthOpportunityComponent } from '../growth-opportunity/growth-opportunity.component';
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
 import { commodityChipClass } from '@shared/utils/commodity-color';
+import { dpContractCount } from '@shared/utils/dp-aggregate';
+import { formatPhoneDisplay } from '@shared/utils/phone';
+import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
   selector: 'app-customer-profile',
@@ -28,9 +32,10 @@ import { commodityChipClass } from '@shared/utils/commodity-color';
     TicketsTableComponent,
     PlantingIntentionsTableComponent,
     StoredGrainTableComponent,
+    DpContractsTableComponent,
     ProducerInsightsComponent,
     ContractPacingCardComponent,
-    AIGrowthForecastComponent,
+    GrowthOpportunityComponent,
     ActivitySummaryComponent,
     EditCustomerDialogComponent,
     CustomerPrintReportComponent
@@ -80,8 +85,8 @@ export class CustomerProfileComponent {
   public pricingLines = input<ContractPricingLine[]>([]);
   public plantingIntentions = input<PlantingIntention[]>([]);
   public storedGrain = input<StoredGrain[]>([]);
+  public dpContracts = input<DpContract[]>([]);
   public notes = input<Note[]>([]);
-  public yieldEstimateCrops = input<string[]>([]);
   public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
   public commodities = input<Commodity[]>([]);
   public isLoadingEstimates = input(false);
@@ -90,12 +95,14 @@ export class CustomerProfileComponent {
   public isLoadingPricingLines = input(false);
   public isLoadingPlanting = input(false);
   public isLoadingStoredGrain = input(false);
+  public isLoadingDpContracts = input(false);
 
   // Unfiltered data for Activity Summary
   public allCustomerContracts = input<Contract[]>([]);
   public allCustomerTickets = input<Ticket[]>([]);
   public allCustomerPlantingIntentions = input<PlantingIntention[]>([]);
   public allCustomerStoredGrain = input<StoredGrain[]>([]);
+  public allCustomerDpContracts = input<DpContract[]>([]);
 
   public onAddPlanting = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
   public onEditPlanting = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
@@ -113,7 +120,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -296,25 +303,14 @@ export class CustomerProfileComponent {
         .subscribe(contracts => this.historicalContracts.set(contracts));
     });
 
-    // Effect: auto-select the best planting year when data changes.
+    // Effect: auto-select the newest planting year when data changes.
     // Kept as an effect (not computed) because it writes to selectedPlantingYear.
     effect(() => {
-      const plantingIntentions = this.plantingIntentions();
-      const contracts = this.contracts();
-      const yearSet = new Set<number>();
-      for (const pi of plantingIntentions) {
-        if (pi.plantingYear) yearSet.add(pi.plantingYear);
-      }
-      for (const c of contracts) {
-        if (c.cropYear) yearSet.add(c.cropYear);
-      }
-      this._availablePlantingYears = [...yearSet].sort((a, b) => b - a);
-
       // If the user explicitly chose a year (or arrived with one from the dashboard),
       // honor it even if there's no data for that year — don't silently jump to newest.
       if (this._yearUserSelected) return;
 
-      const best = this._availablePlantingYears[0] || 0;
+      const best = this.plantingYearOptions()[0] || 0;
       if (best !== this.selectedPlantingYear()) {
         this.selectedPlantingYear.set(best);
       }
@@ -331,8 +327,13 @@ export class CustomerProfileComponent {
       this._tabs = [
         { id: 'contracts', label: 'Open Contracts', shortLabel: 'Cont', count: contracts.filter(c => !c.closedDate).length },
         { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this._unappliedTicketCount },
-        { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions().length },
-        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size }
+        // Newest season only, not every year on record — the tab badge should answer "how many
+        // crops are planned for the season I'm looking at", not "how many rows exist in total".
+        { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.newestSeasonIntentionCount() },
+        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size },
+        // Badge is distinct CONTRACTS, not commodities (which Storage uses) and not charge rows.
+        // A producer with 8 contracts across 2 commodities reads as 8.
+        { id: 'dpContracts', label: 'DP Contracts', shortLabel: 'DP', count: dpContractCount(this.dpContracts()) }
       ];
     });
 
@@ -353,6 +354,7 @@ export class CustomerProfileComponent {
     // Track tab clicks for usage dashboard
     if (tabId === 'planting') this.usageTracking.trackPlantingTabClick();
     if (tabId === 'storage') this.usageTracking.trackStorageDropdownOpen(this.customer().id.toString());
+    if (tabId === 'dpContracts') this.usageTracking.trackDpContractsDropdownOpen(this.customer().id.toString());
     // Defer scroll until after Angular renders the new tab content — otherwise the DOM
     // still shows the old (tall) tab and the scroll position doesn't update correctly.
     setTimeout(() => {
@@ -363,111 +365,56 @@ export class CustomerProfileComponent {
     }, 0);
   }
 
-  // Computed signal: all planting metrics derived reactively from signals.
-  // Angular's signal system re-evaluates this whenever any dependency changes,
-  // and automatically triggers OnPush re-render — no effect/detectChanges needed.
-  readonly contractMetrics = computed(() => {
-    const year = this.selectedPlantingYear();
-    const plantingIntentions = this.plantingIntentions();
-    const contracts = this.contracts();
-    const commodities = this.commodities();
-    const yieldEstimates = this.yieldEstimates();
-    const harvestWindows = this.appState.harvestWindows();
+  // Projected production vs. contracted volume, per commodity. The arithmetic lives in a shared
+  // pure util so it can be unit-tested and so the other places that recompute it can converge on
+  // one implementation. Still a computed(), so it re-derives whenever any input signal changes and
+  // OnPush re-renders on its own.
+  readonly contractMetrics = computed(() => buildProductionCoverage({
+    intentions: this.plantingIntentions(),
+    contracts: this.contracts(),
+    commodities: this.commodities(),
+    yieldEstimates: this.yieldEstimates(),
+    harvestWindows: this.appState.harvestWindows(),
+    year: this.selectedPlantingYear(),
+  }));
 
-    const intentionsForYear = year > 0
-      ? plantingIntentions.filter(pi => pi.plantingYear === year)
-      : plantingIntentions;
+  /** How many crop years the profile surfaces. Producers accumulate seasons indefinitely, but only
+   *  the current and prior one are actionable, so older years are hidden rather than paged. */
+  private static readonly MaxPlantingYears = 2;
 
-    // Build a map from commodity code → category using the Commodities lookup table
-    // e.g. "HRWW" → "Wheat", "YC" → "Corn", "SB" → "Soybeans"
-    const codeToCategory = new Map<string, string>();
-    for (const c of commodities) {
-      if (c.code && c.category) codeToCategory.set(c.code.toUpperCase(), c.category.toUpperCase());
+  /** The crop years this profile offers, newest first — the most recent
+   *  {@link MaxPlantingYears} the producer has planting intentions for. Contract crop years are only
+   *  a fallback, for a producer who has contracts but hasn't declared any intentions yet. */
+  readonly plantingYearOptions = computed(() => {
+    const intentionYears = [...new Set(
+      this.plantingIntentions().map(pi => pi.plantingYear).filter((y): y is number => !!y)
+    )].sort((a, b) => b - a);
+
+    if (intentionYears.length > 0) {
+      return intentionYears.slice(0, CustomerProfileComponent.MaxPlantingYears);
     }
 
-    // Helper: get the broad category for a contract's commodity
-    const getContractCategory = (c: Contract): string => {
-      const code = (c.commodityCode || '').toUpperCase();
-      if (codeToCategory.has(code)) return codeToCategory.get(code)!;
-      // Fallback: check if description contains a known harvest window commodity
-      const desc = (c.commodityDescription || '').toUpperCase();
-      for (const hw of harvestWindows) {
-        if (desc.includes(hw.commodity.toUpperCase()) || code.includes(hw.commodity.toUpperCase())) {
-          return hw.commodity.toUpperCase();
-        }
-      }
-      return desc || code;
-    };
-
-    // Helper: does a contract's delivery period overlap with the harvest window for this category?
-    const contractMatchesCategory = (c: Contract, category: string): boolean => {
-      if (c.status === 'Cancelled') return false;
-      if (getContractCategory(c) !== category.toUpperCase()) return false;
-      if (year === 0) return true;
-      // If no delivery dates, fall back to cropYear matching
-      if (!c.deliveryEnd && !c.deliveryStart) return c.cropYear === year;
-      const hw = harvestWindows.find(w => w.commodity.toUpperCase() === category.toUpperCase());
-      if (!hw) return c.cropYear === year;
-      const windowStart = new Date(year, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
-      const windowEnd = new Date(year, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
-      windowEnd.setHours(23, 59, 59); // include the full end day
-      const delStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
-      const delEnd = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
-      // Contract overlaps if its delivery period intersects with the harvest window
-      return delStart <= windowEnd && delEnd >= windowStart;
-    };
-
-    // Build per-commodity metrics from planting intentions
-    const cropMap = new Map<string, { category: string; projectedYield: number; contracted: number }>();
-
-    for (const pi of intentionsForYear) {
-      const commodity = commodities.find(c => c.code === pi.crop);
-      const category = commodity?.category || pi.crop;
-      const cropKey = [pi.type, category].filter(Boolean).join(' ');
-      // Try exact match (e.g., "Dryland Wheat" for year), then exact without year,
-      // then category-only match (e.g., "Wheat") as fallback for missing type
-      const est = yieldEstimates.find(ye => ye.crop === cropKey && ye.plantingYear === year)
-        || yieldEstimates.find(ye => ye.crop === cropKey)
-        || (cropKey !== category ? yieldEstimates.find(ye => ye.crop === category && ye.plantingYear === year) : undefined)
-        || (cropKey !== category ? yieldEstimates.find(ye => ye.crop === category) : undefined);
-      const projectedYield = pi.acres * (est?.yieldEstimate ?? 0);
-
-      if (!cropMap.has(category)) {
-        cropMap.set(category, { category, projectedYield: 0, contracted: 0 });
-      }
-      cropMap.get(category)!.projectedYield += projectedYield;
-    }
-
-    // Match contracts to each commodity category via harvest windows
-    for (const [category, data] of cropMap) {
-      data.contracted = contracts
-        .filter(c => contractMatchesCategory(c, category))
-        .reduce((sum, c) => sum + c.quantity, 0);
-    }
-
-    const byCommodity = Array.from(cropMap.values()).map(d => ({
-      commodity: d.category,
-      contracted: d.contracted,
-      projectedYield: d.projectedYield,
-      percentage: d.projectedYield > 0 ? (d.contracted / d.projectedYield) * 100 : 0,
-      available: Math.max(0, d.projectedYield - d.contracted),
-    }));
-
-    // Totals
-    const totalContracted = byCommodity.reduce((s, c) => s + c.contracted, 0);
-    const totalProjectedYield = byCommodity.reduce((s, c) => s + c.projectedYield, 0);
-
-    return {
-      contractYear: year,
-      totalContracted,
-      totalProjectedYield,
-      marketSharePercentage: totalProjectedYield > 0 ? (totalContracted / totalProjectedYield) * 100 : 0,
-      bushelsAvailable: Math.max(0, totalProjectedYield - totalContracted),
-      byCommodity,
-    };
+    return [...new Set(
+      this.contracts().map(c => c.cropYear).filter((y): y is number => !!y)
+    )].sort((a, b) => b - a).slice(0, CustomerProfileComponent.MaxPlantingYears);
   });
 
-  private _availablePlantingYears: number[] = [];
+  /** Number of intentions in the most recent season the producer has planted — what the Planting
+   *  tab badge counts. */
+  readonly newestSeasonIntentionCount = computed(() => {
+    const newest = this.plantingYearOptions()[0];
+    if (!newest) return this.plantingIntentions().length;
+    return this.plantingIntentions().filter(pi => pi.plantingYear === newest).length;
+  });
+
+  /** Planting intentions scoped to the years the profile shows, so the table and the Growth
+   *  Opportunity picker agree on which seasons exist. */
+  readonly visiblePlantingIntentions = computed(() => {
+    const years = new Set(this.availablePlantingYears);
+    if (years.size === 0) return this.plantingIntentions();
+    return this.plantingIntentions().filter(pi => years.has(pi.plantingYear));
+  });
+
   private _tabs: any[] = [];
   private _unappliedTicketCount = 0;
   private _effectiveCommodities: string[] = [];
@@ -488,7 +435,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
@@ -512,8 +459,14 @@ export class CustomerProfileComponent {
     return `${baseClass} bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white`;
   }
 
+  /** Year options for the picker. A year deep-linked from the dashboard is included even when it
+   *  falls outside the most-recent window, so the active selection is never missing from the list. */
   get availablePlantingYears(): number[] {
-    return this._availablePlantingYears;
+    const options = this.plantingYearOptions();
+    const selected = this.selectedPlantingYear();
+    return selected > 0 && !options.includes(selected)
+      ? [selected, ...options].sort((a, b) => b - a)
+      : options;
   }
 
   selectPlantingYear(year: number): void {
@@ -521,8 +474,9 @@ export class CustomerProfileComponent {
     this.selectedPlantingYear.set(year);
   }
 
-  get contractYear(): number { return this.contractMetrics().contractYear; }
-  get totalProjectedYield(): number { return this.contractMetrics().totalProjectedYield; }
+  /** Feeds the printed summary boxes below. (contractYear / totalProjectedYield /
+   *  marketSharePercentage were dropped when the coverage breakdown moved to Growth Opportunity —
+   *  that panel reads the same computed directly.) */
   get totalContracted(): number { return this.contractMetrics().totalContracted; }
 
   getCustomerAddress(): string {
@@ -559,7 +513,6 @@ export class CustomerProfileComponent {
     }
     return results;
   }
-  get marketSharePercentage(): number { return this.contractMetrics().marketSharePercentage; }
   get bushelsAvailable(): number { return this.contractMetrics().bushelsAvailable; }
 
   /**
@@ -807,6 +760,20 @@ export class CustomerProfileComponent {
     return [c.addressLine1, c.location, c.stateProvince].filter(v => !!v).join(', ');
   }
 
+  /** User-entered contacts, primary first then saved order. Older cached customers without a
+   *  contacts array fall back to a synthesized row from the legacy primary fields. */
+  getContacts(): ProducerContactItem[] {
+    const c = this.customer();
+    if (c.contacts && c.contacts.length > 0) {
+      return [...c.contacts].sort((a, b) =>
+        (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    }
+    if (c.primaryContact || c.primaryPhone) {
+      return [{ name: c.primaryContact || 'Primary Contact', phone: c.primaryPhone, isPrimary: true }];
+    }
+    return [];
+  }
+
   getFormattedLocation(): string {
     const c = this.customer();
     if (!c.location && !c.stateProvince) {
@@ -831,15 +798,6 @@ export class CustomerProfileComponent {
   }
 
   getFormattedPhone(): string {
-    const phone = this.getCustomerPhone();
-    if (!phone) return '';
-    // Remove all non-digit characters
-    const cleaned = phone.replace(/\D/g, '');
-    // Format as (XXX) XXX-XXXX
-    if (cleaned.length === 10) {
-      return `(${cleaned.substring(0, 3)}) ${cleaned.substring(3, 6)}-${cleaned.substring(6)}`;
-    }
-    // Return original if not 10 digits
-    return phone;
+    return formatPhoneDisplay(this.getCustomerPhone());
   }
 }

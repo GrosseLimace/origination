@@ -1,0 +1,197 @@
+
+    <div class="rounded-xl border overflow-hidden" [style]="containerStyle">
+      <!-- Header with gradient background -->
+      <div class="p-5" [style]="headerStyle">
+        <div class="flex items-start justify-between">
+          <div class="flex items-start gap-3">
+            <div class="p-2 rounded-lg" [style]="iconBgStyle">
+              <!-- Trend line, matching the pacing card. (Was a sparkles glyph, which implied AI.) -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [style]="iconColorStyle">
+                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                <polyline points="16 7 22 7 22 13"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold" [style]="titleStyle">Growth Opportunity</h3>
+              <p class="text-sm" [style]="subtitleColorStyle">Revenue opportunity analysis and strategic recommendations</p>
+            </div>
+          </div>
+          <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium" [style]="badgeStatusStyle">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [style]="badgeIconStyle">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+              <line x1="12" x2="12" y1="9" y2="13"/>
+              <line x1="12" x2="12.01" y1="17" y2="17"/>
+            </svg>
+            {{ statusLabel() }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div class="p-6 space-y-6" [style]="bodyStyle">
+
+        <!-- Production coverage -->
+        <div>
+          <div class="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <div class="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #2563eb;">
+                <path d="M3 3v18h18"/>
+                <rect x="7" y="12" width="3" height="6" rx="1"/>
+                <rect x="14" y="8" width="3" height="10" rx="1"/>
+              </svg>
+              <h4 class="font-semibold" [style]="sectionTitleStyle">Production Coverage</h4>
+            </div>
+
+            <!-- Crop-year picker. The coverage numbers are per season, and this panel is no longer
+                 next to the Planting tab's year headers, so without this you can't tell which year
+                 you're looking at. Selecting here moves the Planting tab too. -->
+            @if (availableYears().length > 0) {
+              <div class="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Crop year">
+                <span class="text-xs mr-0.5" [style]="mutedTextStyle">Crop year</span>
+                @for (year of availableYears(); track year) {
+                  <button type="button" (click)="yearSelect.emit(year)"
+                    class="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors"
+                    [attr.aria-pressed]="plantingYear() === year"
+                    [class]="plantingYear() === year
+                      ? 'bg-scoular-green-accessible text-white'
+                      : 'text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                    {{ year }}
+                  </button>
+                }
+              </div>
+            }
+          </div>
+
+          @if (isLoadingEstimates()) {
+            <div class="flex items-center gap-2 text-sm px-1" [style]="mutedTextStyle">
+              <svg class="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
+              </svg>
+              Calculating contract percentage...
+            </div>
+          } @else if (coverage().byCommodity.length === 0) {
+            <p class="text-sm" [style]="mutedTextStyle">
+              No planting intentions recorded for
+              {{ plantingYear() > 0 ? plantingYear() : 'this season' }}, so there's nothing to project
+              against. Add acres on the Planting tab to see coverage here.
+            </p>
+          } @else {
+            @if (hasNoYieldEstimates()) {
+              <p class="text-sm mb-3 text-amber-600 dark:text-amber-400">
+                No yield estimate has been set for {{ plantingYear() > 0 ? plantingYear() : 'this season' }}.
+                Enter one under <span class="font-medium">Set Season Targets</span> on the Planting
+                Intentions dashboard — estimates are per season and are never carried over from
+                another year.
+              </p>
+            }
+            <div class="space-y-3">
+              @for (crop of coverage().byCommodity; track crop.commodity) {
+                <div class="flex items-center gap-4 relative group">
+                  <div class="w-24 text-sm font-medium truncate" [style]="itemTextStyle">{{ crop.commodity }}</div>
+                  <div class="flex-1">
+                    <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      @if (crop.percentage !== null) {
+                        <div class="h-full bg-scoular-green-accessible rounded-full transition-all"
+                             [style.width.%]="crop.percentage > 100 ? 100 : crop.percentage"></div>
+                      }
+                    </div>
+                  </div>
+                  <!-- A missing yield estimate shows an em dash, never 0% — "we don't know" and
+                       "they've sold none of it" must not look identical. -->
+                  <div class="w-14 text-right text-sm font-bold cursor-default"
+                       [class]="crop.percentage ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">
+                    {{ crop.percentage !== null ? (crop.percentage | number:'1.0-0') + '%' : '—' }}
+                  </div>
+                  <div class="w-56 text-xs text-right" [style]="mutedTextStyle">
+                    @if (crop.projectedYield !== null) {
+                      {{ crop.contracted | number:'1.2-2' }} / {{ crop.projectedYield | number:'1.2-2' }} {{ crop.unit }}
+                    } @else {
+                      {{ crop.contracted | number:'1.2-2' }} {{ crop.unit }} ·
+                      <span class="text-amber-600 dark:text-amber-400 font-medium">no season target</span>
+                    }
+                  </div>
+
+                  <!-- Hover tooltip -->
+                  <div class="absolute bottom-full left-1/4 mb-2 hidden group-hover:block z-50 w-72 pointer-events-none">
+                    <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg text-left space-y-1">
+                      <p class="text-gray-200 font-medium">
+                        {{ crop.commodity }}@if (crop.percentage !== null) { — {{ crop.percentage | number:'1.0-0' }}% contracted }
+                      </p>
+                      @if (crop.projectedYield !== null) {
+                        <p class="text-gray-400">{{ crop.contracted | number:'1.2-2' }} {{ crop.unit }} contracted / {{ crop.projectedYield | number:'1.2-2' }} {{ crop.unit }} projected</p>
+                        <p class="text-gray-400">Projected = planting acres × yield estimate. Contracts matched on crop year.</p>
+                        <p class="text-gray-400">{{ crop.available | number:'1.2-2' }} {{ crop.unit }} available to contract</p>
+                      } @else {
+                        <p class="text-gray-400">{{ crop.contracted | number:'1.2-2' }} {{ crop.unit }} contracted.</p>
+                        <p class="text-amber-300">No yield estimate for {{ crop.commodity }} in {{ plantingYear() }}. Add one under Set Season Targets on the Planting Intentions dashboard — estimates are never carried over from another year.</p>
+                      }
+                      @if (crop.excludedContracts > 0) {
+                        <p class="text-amber-300">
+                          {{ crop.excludedContracts }} contract{{ crop.excludedContracts === 1 ? '' : 's' }}
+                          not counted — priced by weight in a product that isn't bushels of this crop
+                          (meal, oil and similar are grouped under the same commodity).
+                        </p>
+                      }
+                    </div>
+                    <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 ml-16 -mt-1"></div>
+                  </div>
+                </div>
+              }
+            </div>
+
+            <!-- Total across commodities. Everything comparable is expressed in bushels — tonnage
+                 and pound contracts are converted — so this is a real sum. -->
+            @if (coverage().byCommodity.length > 1) {
+              <div class="border-t border-gray-300 dark:border-gray-600 mt-3 pt-3">
+                <div class="flex items-center gap-4">
+                  <div class="w-24 text-sm font-medium" [style]="itemTextStyle">Total</div>
+                  <div class="flex-1">
+                    <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      @if (coverage().marketSharePercentage !== null) {
+                        <div class="h-full bg-scoular-green-accessible rounded-full transition-all"
+                             [style.width.%]="coverage().marketSharePercentage! > 100 ? 100 : coverage().marketSharePercentage"></div>
+                      }
+                    </div>
+                  </div>
+                  <div class="w-14 text-right text-sm font-bold"
+                       [class]="coverage().marketSharePercentage ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">
+                    {{ coverage().marketSharePercentage !== null ? (coverage().marketSharePercentage | number:'1.0-0') + '%' : '—' }}
+                  </div>
+                  <div class="w-56 text-xs text-right" [style]="mutedTextStyle">
+                    {{ coverage().totalContracted | number:'1.2-2' }} / {{ coverage().totalProjectedYield | number:'1.2-2' }} {{ coverage().totalUnit }}
+                  </div>
+                </div>
+                @if (coverage().excludedContracts > 0) {
+                  <p class="text-xs mt-2 text-amber-600 dark:text-amber-400">
+                    {{ coverage().excludedContracts }} contract{{ coverage().excludedContracts === 1 ? '' : 's' }}
+                    excluded — priced by weight in a product that isn't bushels of the crop
+                    (meal, oil and similar share the same commodity group).
+                  </p>
+                }
+              </div>
+            }
+          }
+        </div>
+
+        <!-- Action Items -->
+        <div>
+          <div class="flex items-center gap-2 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #16a34a;">
+              <circle cx="12" cy="12" r="10"/>
+              <circle cx="12" cy="12" r="6"/>
+              <circle cx="12" cy="12" r="2"/>
+            </svg>
+            <h4 class="font-semibold" [style]="sectionTitleStyle">Action Items</h4>
+          </div>
+          <div>
+            @for (item of actionItems(); track item) {
+              <div class="flex items-start gap-3 p-3 rounded-lg" [style]="actionItemStyle">
+                <div class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-green-500"></div>
+                <p class="text-sm" [style]="itemTextStyle">{{ item }}</p>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>

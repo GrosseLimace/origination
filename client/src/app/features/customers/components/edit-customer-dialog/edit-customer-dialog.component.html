@@ -127,54 +127,67 @@
               </button>
               @if (isExpanded('farm')) {
 
-              <!-- Primary Contact + Primary Phone (a manual override for the pulled-in phone) -->
-              <div class="grid grid-cols-2 gap-4">
-                <div class="space-y-2">
+              <!-- Contacts: name + label + phone + email per row; one starred primary. These are
+                   user-entered and kept alongside (not replacing) the pulled-in ODS phone/email. -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
                   <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
                     </svg>
-                    Primary Contact
+                    Contacts
                   </label>
-                  <div class="relative">
-                    <input
-                      type="text"
-                      [ngModel]="editPrimaryContact()"
-                      (ngModelChange)="editPrimaryContact.set($event)"
-                      placeholder="e.g., John Smith"
-                      maxlength="200"
-                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                    />
-                    @if (editPrimaryContact()) {
-                      <button type="button" (click)="editPrimaryContact.set('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                      </button>
-                    }
-                  </div>
+                  <button type="button" (click)="addContactRow()"
+                    class="flex items-center gap-1 text-sm font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add contact
+                  </button>
                 </div>
-                <div class="space-y-2">
-                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                    </svg>
-                    Primary Phone Number
-                  </label>
-                  <div class="relative">
-                    <input
-                      type="tel"
-                      [ngModel]="editPrimaryPhone()"
-                      (ngModelChange)="onPrimaryPhoneInput($event)"
-                      placeholder="(___) ___-____"
-                      maxlength="14"
-                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                    />
-                    @if (editPrimaryPhone()) {
-                      <button type="button" (click)="editPrimaryPhone.set('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                      </button>
-                    }
+
+                @if (editContacts().length > 0) {
+                  <!-- Header row -->
+                  <div class="grid grid-cols-[1.25rem_1.2fr_1fr_1.2fr_1.25rem] gap-2 items-center px-1">
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500" title="Primary">★</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Phone</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Email</span>
+                    <span></span>
                   </div>
-                </div>
+                  @for (row of editContacts(); track $index) {
+                    <div class="grid grid-cols-[1.25rem_1.2fr_1fr_1.2fr_1.25rem] gap-2 items-center">
+                      <button type="button" (click)="setPrimaryContactRow($index)"
+                        [title]="row.isPrimary ? 'Primary contact' : 'Make primary contact'"
+                        [attr.aria-pressed]="row.isPrimary"
+                        class="justify-self-center transition-colors"
+                        [class]="row.isPrimary ? 'text-scoular-green-accessible' : 'text-gray-300 dark:text-gray-600 hover:text-gray-400 dark:hover:text-gray-500'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                          [attr.fill]="row.isPrimary ? 'currentColor' : 'none'"
+                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>
+                        </svg>
+                      </button>
+                      <input type="text" [ngModel]="row.name" (ngModelChange)="updateContactField($index, 'name', $event)"
+                        placeholder="Name" maxlength="200"
+                        class="w-full h-9 px-2.5 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                        [class]="!row.name.trim() && (row.phone.trim() || row.email.trim()) ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
+                      <input type="tel" [ngModel]="row.phone" (ngModelChange)="onContactPhoneInput($index, $event)"
+                        placeholder="(___) ___-____" maxlength="14"
+                        class="w-full h-9 px-2.5 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                      <input type="email" [ngModel]="row.email" (ngModelChange)="updateContactField($index, 'email', $event)"
+                        placeholder="email@example.com" maxlength="255"
+                        class="w-full h-9 px-2.5 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                      <button type="button" (click)="removeContactRow($index)" title="Remove contact"
+                        class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors justify-self-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  }
+                  @if (contactsInvalid()) {
+                    <p class="text-xs text-red-500 dark:text-red-400">Each contact needs a name.</p>
+                  }
+                } @else {
+                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No contacts added — use "Add contact" for people or numbers (Dad's cell, the shop line, an insurance email).</p>
+                }
               </div>
 
               <div class="grid grid-cols-2 gap-4">
@@ -437,8 +450,8 @@
                 </div>
               }
 
-              <!-- Search to add — requires Primary Contact -->
-              @if (!editPrimaryContact().trim()) {
+              <!-- Search to add — requires a named primary contact -->
+              @if (!primaryContactName()) {
                 <p class="text-sm text-scoular-yellow dark:text-scoular-yellow">A Primary Contact is required to link additional producers.</p>
               } @else {
                 <div class="space-y-2">
@@ -501,7 +514,7 @@
           <button
             type="button"
             class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-scoular-green-accessible text-white hover:bg-scoular-green-accessible h-10 px-4 py-2"
-            [disabled]="!hasChanges() || !canSave()"
+            [disabled]="!hasChanges() || !canSave() || contactsInvalid()"
             (click)="onSave()"
           >
             Save Changes
