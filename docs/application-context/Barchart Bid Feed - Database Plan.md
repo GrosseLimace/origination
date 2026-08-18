@@ -101,6 +101,22 @@ BarChart says "Corn (#2 Yellow)"; our bid grid runs on Scoular commodity codes. 
 | `CommodityCode`, `CommodityName`, `CommodityCategory` | Our code / name / category |
 | `IsActive` | Turn a mapping off without deleting it |
 
+**Seeded by `scripts/SeedBarchartCommodityMap.sql`** — 19 mappings, confirmed by Travis 2026-08-18.
+Idempotent (a `MERGE` that only writes when something differs), so it is safe to re-run, and it prints a
+coverage report of every vendor commodity in the catalog with whether it will reach the Bid Sheet. Run it
+in each environment after the migration; **without it the feed loads normally and no bids ever appear**,
+which reads as a broken feed rather than a missing row.
+
+Grade and protein variants collapse into their parent code ("Wheat (Hard Red Winter, Kansas City, 11.5)"
+→ HRWW). Verified safe against the live catalog first: a location publishes either the standard grade or
+a protein spec in a given month, never both, so two mappings can't compete for one cell.
+
+Two commodities are deliberately left unmapped and were raised with the vendor rather than guessed: the
+25 blank-commodity listings (all CHS United Plains Ag — the mapping key *is* the commodity string, so a
+rule for empty would misfile any future blank from any publisher), and Soybean Meal on 11 locations
+(our codes are protein-specific, the vendor states no protein, and it's a product Scoular sells rather
+than a crop bought from farmers).
+
 ### ⑤ `barchart.ApiCallAudit` — the meter
 
 One row per API call (the load side logs it with a one-line procedure call). Exists because the contract caps us at **250,000 calls/month** on our shared key — a view sums this table so usage is always one query away, and loads can check it before running. Failed calls count against the cap, so they're logged too.
