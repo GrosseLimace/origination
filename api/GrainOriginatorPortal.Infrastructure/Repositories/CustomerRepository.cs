@@ -123,7 +123,8 @@ public class CustomerRepository : ICustomerRepository
             var phoneClause = digits.Length >= 3
                 ? $@"
                 OR {StripPhone("c.MerchandisingPhone")} LIKE '%' + @d{i} + '%'
-                OR {StripPhone("c.ExtendedPrimaryPhone")} LIKE '%' + @d{i} + '%'"
+                OR {StripPhone("c.ExtendedPrimaryPhone")} LIKE '%' + @d{i} + '%'
+                OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerContact WHERE {StripPhone("Phone")} LIKE '%' + @d{i} + '%')"
                 : string.Empty;
             if (digits.Length >= 3)
                 parameters.Add(new SqlParameter($"@d{i}", digits));
@@ -134,6 +135,7 @@ public class CustomerRepository : ICustomerRepository
                 OR c.MerchandisingCity LIKE '%' + {paramName} + '%'
                 OR c.MerchandisingStateProvince = {paramName}
                 OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerDetails WHERE PrimaryContact LIKE '%' + {paramName} + '%')
+                OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerContact WHERE Name LIKE '%' + {paramName} + '%')
             )");
         }
 

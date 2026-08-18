@@ -41,7 +41,8 @@ import {
   ExclusionPermissions,
   QueryLibraryItem,
   NoteMention,
-  MentionCatalog
+  MentionCatalog,
+  DpContract
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -160,14 +161,21 @@ export class ApiService {
     };
   }
 
-  /** Builds the API request body from a save request (members -> {type,id,name,email}, ccList -> ccEmails). */
-  private toRecapGroupBody(req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest) {
+  /** Builds the API request body from a save request (members -> {type,id,name,email}, ccList -> ccEmails).
+   *  `enabled` is sent on CREATE only — after that the card's toggle endpoint owns it. The update
+   *  endpoint ignores the field today; omitting it means a future change that starts honouring it
+   *  can't silently switch off an existing group's recap. */
+  private toRecapGroupBody(
+    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
+    isCreate: boolean,
+  ) {
     return {
       name: req.name,
       deliveryMethod: req.deliveryMethod,
       teamsChannelEmail: req.deliveryMethod === 'teams' ? req.teamsChannelEmail : undefined,
       members: req.members.map(m => ({ type: m.type, id: m.id, name: m.name, email: m.email })),
       ccEmails: req.ccList,
+      enabled: isCreate ? (req.enabled ?? false) : undefined,
     };
   }
 
@@ -184,7 +192,7 @@ export class ApiService {
   createRecapGroup(
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req))
+    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -193,7 +201,7 @@ export class ApiService {
     id: string,
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req))
+    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -553,7 +561,7 @@ export class ApiService {
   getMentionCatalog(): Observable<MentionCatalog> {
     return this._dedupe('mention-catalog',
       this.http.get<MentionCatalog>(`${this.baseUrl}/notes/mention-catalog`)
-        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], groups: [] })))
+        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [] })))
     );
   }
 
@@ -563,9 +571,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Updates the content of a note */
-  updateNote(id: number, content: string): Observable<Note> {
-    return this.http.put<Note>(`${this.baseUrl}/notes/${id}`, { content })
+  /** Updates the content of a note. `mentions` MUST be supplied whenever the caller knows them:
+   *  omitting it leaves the note's existing mentions untouched, while passing [] clears them.
+   *  (Sending nothing used to wipe them outright — every edit silently destroyed a note's
+   *  mentions and their highlighting.) */
+  updateNote(id: number, content: string, mentions?: NoteMention[]): Observable<Note> {
+    return this.http.put<Note>(`${this.baseUrl}/notes/${id}`, { content, mentions })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -593,8 +604,9 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Creates or updates producer details for a customer */
-  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityGroup: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[] }): Observable<ProducerDetails> {
+  /** Creates or updates producer details for a customer. `contacts` array order is the display
+   *  order; omitting the property entirely preserves the customer's existing contact rows. */
+  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityGroup: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[] }): Observable<ProducerDetails> {
     return this.http.put<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`, data)
       .pipe(catchError(e => this.handleError(e)));
   }
@@ -623,6 +635,27 @@ export class ApiService {
   /** Fetches all stored grain records for a specific customer */
   getStoredGrainByCustomer(customerId: number): Observable<StoredGrain[]> {
     return this.http.get<StoredGrain[]>(`${this.baseUrl}/storedgrain/customer/${customerId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // ==========================================================================
+  // DP Contract Operations
+  // ==========================================================================
+
+  /** Fetches all DP (delayed-pricing) contract positions in the system */
+  getDpContracts(tradeUnits?: string[]): Observable<DpContract[]> {
+    let params = new HttpParams();
+    if (tradeUnits?.length) params = params.set('tradeUnits', tradeUnits.join(','));
+    const key = `dpcontracts:${[...(tradeUnits ?? [])].sort().join(',')}`;
+    return this._dedupe(key,
+      this.http.get<DpContract[]>(`${this.baseUrl}/dpcontracts`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Fetches all DP contract positions for a specific customer */
+  getDpContractsByCustomer(customerId: number): Observable<DpContract[]> {
+    return this.http.get<DpContract[]>(`${this.baseUrl}/dpcontracts/customer/${customerId}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

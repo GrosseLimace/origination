@@ -53,6 +53,29 @@ describe('ApiService', () => {
     req.flush({});
   });
 
+  // ── DP Contracts ───────────────────────────────────────────────────────────
+
+  it('getDpContracts() calls GET /dpcontracts', () => {
+    service.getDpContracts().subscribe();
+    const req = httpMock.expectOne(`${BASE}/dpcontracts`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('getDpContracts() passes tradeUnits as a comma-joined param', () => {
+    service.getDpContracts(['TU1', 'TU2']).subscribe();
+    const req = httpMock.expectOne(r => r.url === `${BASE}/dpcontracts`);
+    expect(req.request.params.get('tradeUnits')).toBe('TU1,TU2');
+    req.flush([]);
+  });
+
+  it('getDpContractsByCustomer() calls GET /dpcontracts/customer/:id', () => {
+    service.getDpContractsByCustomer(42).subscribe();
+    const req = httpMock.expectOne(`${BASE}/dpcontracts/customer/42`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
   // ── Contracts ──────────────────────────────────────────────────────────────
 
   it('getContracts() calls GET /contracts', () => {
@@ -188,6 +211,30 @@ describe('ApiService', () => {
     const req = httpMock.expectOne(`${BASE}/producerdetails/customer/42`);
     expect(req.request.method).toBe('PUT');
     expect(req.request.body.grainOnFarm).toEqual([{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 }]);
+    req.flush({ id: 1, customerId: 42, customerName: 'Smith' });
+  });
+
+  it('saveProducerDetails() PUTs contacts in array order and round-trips them on read', () => {
+    const contacts = [
+      { name: 'Dad', phone: '(402) 555-1111', isPrimary: true },
+      { name: 'Acme Insurance', email: 'claims@acme.com', isPrimary: false },
+    ];
+    service.saveProducerDetails(42, { customerName: 'Smith', contacts }).subscribe();
+    const put = httpMock.expectOne(`${BASE}/producerdetails/customer/42`);
+    expect(put.request.body.contacts).toEqual(contacts);
+    put.flush({ id: 1, customerId: 42, customerName: 'Smith' });
+
+    service.getProducerDetails(42).subscribe(pd => {
+      expect(pd.contacts?.[0]).toEqual({ name: 'Dad', phone: '(402) 555-1111', isPrimary: true, sortOrder: 0 });
+    });
+    const get = httpMock.expectOne(`${BASE}/producerdetails/customer/42`);
+    get.flush({ id: 1, customerId: 42, customerName: 'Smith', contacts: [{ name: 'Dad', phone: '(402) 555-1111', isPrimary: true, sortOrder: 0 }] });
+  });
+
+  it('saveProducerDetails() omits contacts from the body when the caller does not pass them (server preserves rows)', () => {
+    service.saveProducerDetails(42, { customerName: 'Smith' }).subscribe();
+    const req = httpMock.expectOne(`${BASE}/producerdetails/customer/42`);
+    expect('contacts' in req.request.body).toBe(false);
     req.flush({ id: 1, customerId: 42, customerName: 'Smith' });
   });
 

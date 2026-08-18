@@ -36,6 +36,8 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         pd.Commodities = await GetCommodityCodesCsvAsync(customerId, cancellationToken);
         // Per-commodity grain-on-farm breakdown composed from dbo.ProducerGrainOnFarm.
         pd.GrainOnFarm = await GetGrainOnFarmAsync(customerId, cancellationToken);
+        // User-entered contacts composed from dbo.ProducerContact (primary first).
+        pd.Contacts = await GetContactsAsync(customerId, cancellationToken);
         return pd;
     }
 
@@ -88,6 +90,22 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 Grade = x.Grade
             }).ToList());
 
+        // Same batching pattern for ProducerContact → contact rows, primary first.
+        var contactRows = await _appContext.ProducerContacts.AsNoTracking()
+            .Where(c => customerIds.Contains(c.CustomerId))
+            .OrderByDescending(c => c.IsPrimary).ThenBy(c => c.SortOrder).ThenBy(c => c.Id)
+            .ToListAsync(cancellationToken);
+        var contactsByCustomer = contactRows
+            .GroupBy(x => x.CustomerId)
+            .ToDictionary(g => g.Key, g => g.Select(x => new ProducerContactEntry
+            {
+                Name = x.Name,
+                Phone = x.Phone,
+                Email = x.Email,
+                IsPrimary = x.IsPrimary,
+                SortOrder = x.SortOrder
+            }).ToList());
+
         foreach (var p in all)
         {
             p.CustomerName = p.Customer?.Name ?? string.Empty;
@@ -99,14 +117,27 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 ? string.Join(",", codes)
                 : null;
             p.GrainOnFarm = grainByCustomer.TryGetValue(p.CustomerId, out var grain) ? grain : new();
+            p.Contacts = contactsByCustomer.TryGetValue(p.CustomerId, out var contacts) ? contacts : new();
         }
         return all;
     }
 
-    public async Task<ProducerDetails> UpsertAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres,
-        decimal? binCapacity, string? primaryContact, string? primaryPhone, string? commodities, string? linkedProducerIds,
-        IReadOnlyList<GrainOnFarmEntry> grainOnFarm, string currentUser, CancellationToken cancellationToken)
+    public async Task<ProducerDetails> UpsertAsync(ProducerDetailsUpsertArgs args, string currentUser, CancellationToken cancellationToken)
     {
+        var customerId = args.CustomerId;
+        var (scoularId, customerName) = (args.ScoularId, args.CustomerName);
+        var (totalAcres, binCapacity) = (args.TotalAcres, args.BinCapacity);
+        var (commodities, linkedProducerIds) = (args.Commodities, args.LinkedProducerIds);
+        var grainOnFarm = args.GrainOnFarm;
+
+        // Contacts drive the legacy PrimaryContact/PrimaryPhone columns (dual-write). When the
+        // request didn't include contacts at all (old client during a deploy window), fall through
+        // to the legacy fields as-sent and leave existing contact rows untouched.
+        var contactItems = args.Contacts == null ? null : NormalizeContacts(args.Contacts);
+        var primaryRow = contactItems?.FirstOrDefault(c => c.IsPrimary);
+        var primaryContact = contactItems == null ? args.PrimaryContact : primaryRow?.Name;
+        var primaryPhone = contactItems == null ? args.PrimaryPhone : primaryRow?.Phone;
+
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
 
         ProducerDetails saved;
@@ -234,12 +265,78 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             });
         }
 
+        // Same rebuild pattern for dbo.ProducerContact — but ONLY when the request carried a
+        // contacts list. Null means "not provided" and must preserve the existing rows, so an
+        // old-shape client payload can never wipe contacts mid-deploy.
+        if (contactItems != null)
+        {
+            var oldContacts = await _appContext.ProducerContacts
+                .Where(c => c.CustomerId == customerId)
+                .ToListAsync(cancellationToken);
+            if (oldContacts.Count > 0)
+            {
+                _appContext.ProducerContacts.RemoveRange(oldContacts);
+            }
+            foreach (var item in contactItems)
+            {
+                _appContext.ProducerContacts.Add(new ProducerContact
+                {
+                    CustomerId = customerId,
+                    Name = item.Name,
+                    Phone = item.Phone,
+                    Email = item.Email,
+                    IsPrimary = item.IsPrimary,
+                    SortOrder = item.SortOrder
+                });
+            }
+        }
+
         await _appContext.SaveChangesAsync(cancellationToken);
-        // Reflect the persisted grain-on-farm set (with commodity names) back on the returned entity
-        // so the upsert response carries the breakdown.
+        // Reflect the persisted child sets back on the returned entity so the upsert response
+        // carries them.
         saved.GrainOnFarm = await GetGrainOnFarmAsync(customerId, cancellationToken);
+        saved.Contacts = await GetContactsAsync(customerId, cancellationToken);
         _logger.LogInformation("Upserted ProducerDetails for customer {CustomerId}", customerId);
         return saved;
+    }
+
+    /// <summary>
+    /// Cleans and normalizes incoming contact rows: trims every field, drops rows with a blank
+    /// name, defensively caps lengths, collapses exact duplicates (same name/label/phone/email,
+    /// case-insensitive), and enforces exactly one primary — the first flagged row wins; when none
+    /// is flagged the first row becomes primary. SortOrder is the post-filter position so the
+    /// client's array order is the display order.
+    /// </summary>
+    private static List<ProducerContactEntry> NormalizeContacts(IReadOnlyList<ProducerContactEntry> contacts)
+    {
+        static string? Clean(string? value, int max)
+        {
+            var trimmed = value?.Trim();
+            if (string.IsNullOrEmpty(trimmed)) return null;
+            return trimmed.Length <= max ? trimmed : trimmed[..max];
+        }
+
+        var cleaned = contacts
+            .Select(c => new ProducerContactEntry
+            {
+                Name = Clean(c.Name, 200) ?? string.Empty,
+                Phone = Clean(c.Phone, 50),
+                Email = Clean(c.Email, 255),
+                IsPrimary = c.IsPrimary
+            })
+            .Where(c => c.Name.Length > 0)
+            .GroupBy(c => $"{c.Name}|{c.Phone}|{c.Email}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+
+        var primaryIndex = cleaned.FindIndex(c => c.IsPrimary);
+        if (primaryIndex < 0 && cleaned.Count > 0) primaryIndex = 0;
+        for (var i = 0; i < cleaned.Count; i++)
+        {
+            cleaned[i].IsPrimary = i == primaryIndex;
+            cleaned[i].SortOrder = i;
+        }
+        return cleaned;
     }
 
     public async Task DeleteAsync(long customerId, CancellationToken cancellationToken)
@@ -247,6 +344,17 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
         if (existing != null)
         {
+            // Child rows FK to dbo.Customer (not ProducerDetails), so they don't cascade — remove
+            // them explicitly or they'd silently reattach if details are ever re-created.
+            var contacts = await _appContext.ProducerContacts
+                .Where(c => c.CustomerId == customerId)
+                .ToListAsync(cancellationToken);
+            if (contacts.Count > 0) _appContext.ProducerContacts.RemoveRange(contacts);
+            var grain = await _appContext.ProducerGrainOnFarm
+                .Where(g => g.CustomerId == customerId)
+                .ToListAsync(cancellationToken);
+            if (grain.Count > 0) _appContext.ProducerGrainOnFarm.RemoveRange(grain);
+
             _appContext.ProducerDetails.Remove(existing);
             await _appContext.SaveChangesAsync(cancellationToken);
             _logger.LogInformation("Deleted ProducerDetails for customer {CustomerId}", customerId);
@@ -288,6 +396,23 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             .Where(code => !string.IsNullOrEmpty(code))
             .ToListAsync(cancellationToken);
         return codes.Count == 0 ? null : string.Join(",", codes);
+    }
+
+    /// <summary>Composes the contact rows for a customer from dbo.ProducerContact, primary first.</summary>
+    private async Task<List<ProducerContactEntry>> GetContactsAsync(long customerId, CancellationToken cancellationToken)
+    {
+        return await _appContext.ProducerContacts.AsNoTracking()
+            .Where(c => c.CustomerId == customerId)
+            .OrderByDescending(c => c.IsPrimary).ThenBy(c => c.SortOrder).ThenBy(c => c.Id)
+            .Select(c => new ProducerContactEntry
+            {
+                Name = c.Name,
+                Phone = c.Phone,
+                Email = c.Email,
+                IsPrimary = c.IsPrimary,
+                SortOrder = c.SortOrder
+            })
+            .ToListAsync(cancellationToken);
     }
 
     /// <summary>Composes the per-group grain-on-farm rows for a customer from dbo.ProducerGrainOnFarm.</summary>

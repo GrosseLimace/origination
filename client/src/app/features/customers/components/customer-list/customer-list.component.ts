@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap, map } from 'rxjs/operators';
-import { StoredGrain, Ticket, PlantingIntention, Contract } from '@models';
+import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
 import { Customer, SavedList, Note, NoteLastContact, ProducerDetails } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
@@ -445,6 +445,11 @@ export class CustomerListComponent {
     if (this.nlqFilterService.queryInvolvesStorage(query) && this.appStateService.storedGrain().length === 0) {
       missing['storedGrain'] = this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[])));
     }
+    // Gate on the loaded flag, not length: a per-producer merge can leave rows present without a
+    // TU-wide load, and a TU with genuinely zero DP would otherwise re-fetch every time.
+    if (this.nlqFilterService.queryInvolvesDpContracts(query) && !this.appStateService.dpContractsLoaded()) {
+      missing['dpContracts'] = this.apiService.getDpContracts(tuParam).pipe(catchError(() => of([] as DpContract[])));
+    }
     // Guard on the explicit ticketsLoaded flag, not `.length === 0`: tickets are no longer
     // eagerly bulk-loaded, and per-producer selection no longer writes into appState.tickets, so an
     // emptiness check could misfire (or skip the fetch after a partial write). ticketsLoaded is only
@@ -486,6 +491,7 @@ export class CustomerListComponent {
           // Stale-response guard — ignore callbacks from a superseded selection.
           if (runId !== this._activeSavedListRunId) return;
           if (results.storedGrain) this.appStateService.setStoredGrain(results.storedGrain);
+          if (results.dpContracts) this.appStateService.setDpContracts(results.dpContracts);
           if (results.tickets) this.appStateService.setTickets(results.tickets);
           if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
           if (results.contracts) this.appStateService.setContracts(results.contracts);
@@ -522,7 +528,9 @@ export class CustomerListComponent {
       noteLastContacts: this.appStateService.noteLastContacts(),
       plantingIntentions: this.appStateService.plantingIntentions(),
       storedGrain: this.appStateService.storedGrain(),
-      commodities: this.appStateService.commodities()
+      dpContracts: this.appStateService.dpContracts(),
+      commodities: this.appStateService.commodities(),
+      commodityConversions: this.appStateService.commodityConversions()
     };
     // Resolve "I"/"me"/"my" to the user's name so author-based queries work
     const account = this.msalService.instance.getActiveAccount()
@@ -545,6 +553,7 @@ export class CustomerListComponent {
       ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, contracts, notes, {
           tickets: this.appStateService.tickets(),
           storedGrain: this.appStateService.storedGrain(),
+          dpContracts: this.appStateService.dpContracts(),
           plantingIntentions: this.appStateService.plantingIntentions(),
           commodityConversions: this.appStateService.commodityConversions(),
           noteLastContacts: this.appStateService.noteLastContacts()

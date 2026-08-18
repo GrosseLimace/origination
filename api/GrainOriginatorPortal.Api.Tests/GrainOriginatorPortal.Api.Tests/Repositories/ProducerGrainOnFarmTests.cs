@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
@@ -33,6 +34,9 @@ public class ProducerGrainOnFarmTests
     private static GrainOnFarmEntry Entry(string group, decimal? onHand, decimal? target) =>
         new() { CommodityGroup = group, BushelsOnHand = onHand, TargetBushels = target };
 
+    private static ProducerDetailsUpsertArgs Args(IReadOnlyList<GrainOnFarmEntry> grain) =>
+        new() { CustomerId = 100, ScoularId = "S1", CustomerName = "Smith Farm", GrainOnFarm = grain };
+
     // -------------------------------------------------------------------------
     [Fact]
     public async Task Upsert_PersistsGrainRows_AndGetComposesGroups()
@@ -40,8 +44,8 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(100, "S1", "Smith Farm", null, null, null, null, null, null,
-            new[] { Entry("Corn", 80_000, 100_000), Entry("Soybeans", 40_000, 50_000) }, "tuser", CancellationToken.None);
+        await repo.UpsertAsync(Args(new[] { Entry("Corn", 80_000, 100_000), Entry("Soybeans", 40_000, 50_000) }),
+            "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
         Assert.NotNull(pd);
@@ -58,11 +62,10 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
-            new[] { Entry("Corn", 80_000, 100_000), Entry("Soybeans", 40_000, null) }, "tuser", CancellationToken.None);
+        await repo.UpsertAsync(Args(new[] { Entry("Corn", 80_000, 100_000), Entry("Soybeans", 40_000, null) }),
+            "tuser", CancellationToken.None);
         // Re-save with only corn → soybeans row should be gone.
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
-            new[] { Entry("Corn", 90_000, 110_000) }, "tuser", CancellationToken.None);
+        await repo.UpsertAsync(Args(new[] { Entry("Corn", 90_000, 110_000) }), "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
         var only = Assert.Single(pd!.GrainOnFarm);
@@ -77,8 +80,7 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
-            new[] { Entry("Corn", 10, 20), Entry("  ", 99, 99) }, "tuser", CancellationToken.None);
+        await repo.UpsertAsync(Args(new[] { Entry("Corn", 10, 20), Entry("  ", 99, 99) }), "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
         Assert.Single(pd!.GrainOnFarm);
@@ -92,10 +94,8 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
-            new[] { Entry("Corn", 10, 20) }, "tuser", CancellationToken.None);
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
-            Array.Empty<GrainOnFarmEntry>(), "tuser", CancellationToken.None);
+        await repo.UpsertAsync(Args(new[] { Entry("Corn", 10, 20) }), "tuser", CancellationToken.None);
+        await repo.UpsertAsync(Args(Array.Empty<GrainOnFarmEntry>()), "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
         Assert.Empty(pd!.GrainOnFarm);

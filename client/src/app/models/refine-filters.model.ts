@@ -59,6 +59,13 @@ export interface RefinementFilters {
   storageDaysOver?: number | null;
   storageQuantityOver?: number | null;
   storageReceivableOver?: number | null;
+  // DP (delayed pricing) contracts. Bushel/charge totals are computed per-delivery via the
+  // dp-aggregate helpers, never by summing rows — the DP view repeats a delivery's quantity on
+  // every charge-type row.
+  hasDpContracts?: boolean;
+  dpBushelsOver?: number | null;
+  dpDaysOver?: number | null;
+  dpChargesOver?: number | null;
   // Planting
   plantingYear?: number | null;
   irrigatedOnly?: boolean;
