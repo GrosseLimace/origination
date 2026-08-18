@@ -141,8 +141,24 @@ the panel states the catalog's real coverage ("2,894 locations across 29 states,
 than leaving it to be inferred from an empty list. Manual entry stays available regardless.
 
 Candidate pins are drawn on their own Leaflet layer, and our own clustered pins are hidden while the
-picker is open. A **hollow** pin is already on some bid sheet; a filled one is new. Distance is used to
-sort nearest-first but isn't displayed.
+picker is open. A **hollow** pin is already on some bid sheet; a filled one is new; a **blue** pin is the
+listing currently open in the panel, so the name on screen is tied to a place on the map. Selecting from
+the list highlights the same pin as clicking it, and the selected pin is raised above its neighbours.
+Distance is used to sort nearest-first but isn't displayed.
+
+### Renaming a linked location
+
+The name is display only. The feed link is `BarchartLocationKey`, and the bridge joins on that, so
+renaming — in the picker before adding, or later from the panel — never affects whether bids arrive.
+`UpdateLocationAsync` doesn't touch the key either. The one rule that applies is the existing unique
+(Name, TradeUnitCode) index: reusing a name already on that trade unit comes back as a 400 naming the
+clash.
+
+Caveat worth knowing: the panel's inline rename resolves the row by *name*
+(`allMapLocations().find(l => l.name === oldName)`), so when the same location sits on several trade
+units under one name — which a multi-trade-unit BarChart add creates by design — it renames only the
+first match. Pre-existing behaviour, but the picker makes duplicate names across trade units much more
+likely than before.
 
 **Listings are labelled "Company - Site" with the town underneath** — "Farmers Cooperative Dorchester -
 HERKIMER" over "Marysville, KS" — and that label is also exactly what gets saved, so nothing is renamed

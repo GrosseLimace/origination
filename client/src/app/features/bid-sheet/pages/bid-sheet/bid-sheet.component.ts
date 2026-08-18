@@ -412,6 +412,10 @@ export class BidSheetComponent {
   barchartAdding = signal<boolean>(false);
   /** Candidate pins live on their own layer so they never mix with the clustered bid-sheet pins. */
   private _barchartLayer: Leaflet.LayerGroup | null = null;
+  /** Candidate markers by location key, so the selected one can be re-styled without a full redraw. */
+  private _barchartMarkers = new Map<string, Leaflet.Marker>();
+  /** Keys already on some bid sheet — they draw hollow, and stay hollow when selected. */
+  private _barchartPlacedKeys = new Set<string>();
   private _barchartMoveTimer: ReturnType<typeof setTimeout> | null = null;
   private _pickerRef = viewChild<BarchartPickerComponent>('picker');
 
@@ -524,6 +528,13 @@ export class BidSheetComponent {
   readonly activeTradeUnitKey = computed(() => [...this.activeTradeUnits()].sort().join(','));
 
   constructor() {
+    // Keep the map in step with the BarChart panel: whichever listing is open shows as a blue pin, so
+    // the name on screen is tied to a place on the map rather than left to be guessed.
+    effect(() => {
+      const key = this.barchartSelectedKey();
+      this._highlightBarchartPin(key);
+    });
+
     // Observe the filter bar's actual width so we can wrap search/clear to a centered second row when narrow.
     effect(() => {
       const ref = this.filterBarRef();
@@ -1375,18 +1386,13 @@ export class BidSheetComponent {
     const L = this._L;
     this._clearBarchartPins();
     this._barchartLayer = L.layerGroup().addTo(this._map);
+    this._barchartPlacedKeys = new Set(rows.filter(r => r.placements.length > 0).map(r => r.locationKey));
 
     for (const loc of rows) {
       if (loc.latitude == null || loc.longitude == null) continue;
-      // Already-placed candidates are drawn hollow so a user can see at a glance what's new to them.
       const placed = loc.placements.length > 0;
-      const icon = L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="width:20px;height:20px;border-radius:50%;border:3px solid #00875F;background:${placed ? 'transparent' : '#00A36F'};box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>`,
-        iconSize: [20, 20],
-        iconAnchor: [10, 10]
-      });
-      const marker = L.marker([loc.latitude, loc.longitude], { icon })
+      const marker = L.marker([loc.latitude, loc.longitude],
+          { icon: this._barchartPinIcon(placed, loc.locationKey === this.barchartSelectedKey()) })
         // Company first, matching the panel — the vendor's site name is sometimes another company's
         // name, so leading with it on a pin would misattribute the bid.
         .bindTooltip(
@@ -1394,6 +1400,35 @@ export class BidSheetComponent {
           { direction: 'top' });
       marker.on('click', () => this.barchartSelectedKey.set(loc.locationKey));
       marker.addTo(this._barchartLayer!);
+      this._barchartMarkers.set(loc.locationKey, marker);
+    }
+  }
+
+  /**
+   * Candidate pin. Green = a location in the feed, hollow = already on someone's bid sheet, and BLUE =
+   * the one whose details are open in the panel, so it's obvious which pin the name on screen refers to.
+   * Blue matches the reference-location colour the rest of the map already uses for "this is the one".
+   */
+  private _barchartPinIcon(placed: boolean, selected: boolean): any {
+    const L = this._L!;
+    const size = selected ? 26 : 20;
+    const border = selected ? '#1d4ed8' : '#00875F';
+    const fill = placed ? 'transparent' : (selected ? '#2563eb' : '#00A36F');
+    return L.divIcon({
+      className: 'custom-marker',
+      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${border};background:${fill};box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2]
+    });
+  }
+
+  /** Re-styles the candidate pins so exactly one reads as selected, without redrawing the layer. */
+  private _highlightBarchartPin(selectedKey: string | null): void {
+    for (const [key, marker] of this._barchartMarkers) {
+      const selected = key === selectedKey;
+      marker.setIcon(this._barchartPinIcon(this._barchartPlacedKeys.has(key), selected));
+      // Selected pin on top, so a neighbouring pin can't sit over the one being described in the panel.
+      marker.setZIndexOffset(selected ? 1000 : 0);
     }
   }
 
@@ -1402,10 +1437,14 @@ export class BidSheetComponent {
       this._map.removeLayer(this._barchartLayer);
     }
     this._barchartLayer = null;
+    this._barchartMarkers.clear();
+    this._barchartPlacedKeys.clear();
   }
 
   /** The picker asked us to centre on a candidate it listed. */
   onBarchartFocus(loc: BarchartCatalogLocation): void {
+    // Also mark it selected, so picking from the list turns the same pin blue as clicking it on the map.
+    this.barchartSelectedKey.set(loc.locationKey);
     if (loc.latitude == null || loc.longitude == null) return;
     this._flyToLocation(loc.latitude, loc.longitude, 11);
   }
