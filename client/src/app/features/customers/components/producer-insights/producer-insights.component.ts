@@ -1,7 +1,9 @@
 import { Component, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
+import { AppStateService } from '@core/services/app-state.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from '@models';
+import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
 
 @Component({
   selector: 'app-producer-insights',
@@ -21,6 +23,7 @@ export class ProducerInsightsComponent {
   public storedGrain = input<StoredGrain[]>([]);
 
   private themeService = inject(ThemeService);
+  private readonly appState = inject(AppStateService);
 
   get isDarkMode(): boolean {
     return this.themeService.isDarkMode();
@@ -113,6 +116,12 @@ export class ProducerInsightsComponent {
     return merged;
   }
 
+  /** The calendar year this card reports on — always the current one, shown on the card so the
+   *  figure can't be mistaken for all-time or for the crop year selected elsewhere on the page. */
+  get currentYear(): number {
+    return new Date().getFullYear();
+  }
+
   /** Contracts whose delivery period falls in the current calendar year. */
   private get currentYearContracts() {
     const year = new Date().getFullYear();
@@ -124,8 +133,14 @@ export class ProducerInsightsComponent {
     });
   }
 
+  /** The "bushels contracted" stat card. Genuinely bushels — a raw quantity sum would add soybean
+   *  meal in short tons and popcorn by the pound to it, under a label that says bushels, sitting
+   *  directly above the Growth Opportunity panel that excludes them. */
   get totalContracted(): number {
-    return this.currentYearContracts.reduce((sum, c) => sum + c.quantity, 0);
+    return sumInBushels(
+      this.currentYearContracts,
+      buildLbsPerBushelMap(this.appState.commodityConversions()),
+    ).contracted;
   }
 
   get averageContractSize(): number {

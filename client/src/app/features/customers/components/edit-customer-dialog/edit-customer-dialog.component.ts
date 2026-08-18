@@ -5,6 +5,7 @@ import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDes
 import { Customer, Contract, Ticket, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
+import { formatPhoneProgressive } from '@shared/utils/phone';
 
 @Component({
   selector: 'app-edit-customer-dialog',
@@ -39,8 +40,11 @@ export class EditCustomerDialogComponent {
     acres: number;
     binCapacity: number;
     commodities: string[];
+    // Derived from the primary contact row — kept on the payload so downstream consumers
+    // (optimistic updates, linked-producer propagation) don't need to re-derive it.
     primaryContact: string;
     primaryPhone: string;
+    contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
@@ -151,9 +155,69 @@ export class EditCustomerDialogComponent {
   editLinkedProducerIds = signal<string[]>([]);
   removedIncomingIds = signal<string[]>([]); // incoming links removed locally, saved on Save Changes
   editESignEnabled = signal(false);
-  editPrimaryContact = signal('');
-  editPrimaryPhone = signal('');
   newCommodity = signal('');
+
+  // ── Contacts (name + phone + email; exactly one primary) ────────────────
+  editContacts = signal<{ name: string; phone: string; email: string; isPrimary: boolean }[]>([]);
+
+  /** Rows that have details (phone/email) but no name can't be saved — the name is the key. */
+  readonly contactsInvalid = computed(() =>
+    this.editContacts().some(r => !r.name.trim() && (r.phone.trim() || r.email.trim())));
+
+  /** Linking producers requires a named primary contact (it's what gets propagated to them). */
+  readonly primaryContactName = computed(() =>
+    this.editContacts().find(r => r.isPrimary)?.name.trim() ?? '');
+
+  addContactRow(): void {
+    this.editContacts.update(rows => [
+      ...rows,
+      { name: '', phone: '', email: '', isPrimary: rows.length === 0 }
+    ]);
+  }
+
+  removeContactRow(index: number): void {
+    this.editContacts.update(rows => {
+      const next = rows.filter((_, i) => i !== index);
+      // Deleting the primary row promotes the first remaining one.
+      if (next.length > 0 && !next.some(r => r.isPrimary)) next[0] = { ...next[0], isPrimary: true };
+      return next;
+    });
+  }
+
+  setPrimaryContactRow(index: number): void {
+    this.editContacts.update(rows => rows.map((r, i) => ({ ...r, isPrimary: i === index })));
+  }
+
+  onContactPhoneInput(index: number, value: string): void {
+    this.editContacts.update(rows => rows.map((r, i) => i === index ? { ...r, phone: formatPhoneProgressive(value) } : r));
+  }
+
+  updateContactField(index: number, field: 'name' | 'email', value: string): void {
+    this.editContacts.update(rows => rows.map((r, i) => i === index ? { ...r, [field]: value } : r));
+  }
+
+  /** Hydrates the contact rows from the customer's saved contacts; older cached data without a
+   *  contacts array falls back to synthesizing one row from the legacy primary fields. */
+  private _contactsFromCustomer(customer: Customer): { name: string; phone: string; email: string; isPrimary: boolean }[] {
+    const saved = customer.contacts;
+    if (saved && saved.length > 0) {
+      return saved.map(c => ({
+        name: c.name || '',
+        phone: c.phone || '',
+        email: c.email || '',
+        isPrimary: !!c.isPrimary
+      }));
+    }
+    if (customer.primaryContact || customer.primaryPhone) {
+      return [{
+        name: customer.primaryContact || '',
+        phone: customer.primaryPhone || '',
+        email: '',
+        isPrimary: true
+      }];
+    }
+    return [];
+  }
 
   // Commodity lookup
   allCommodities = signal<Commodity[]>([]);
@@ -199,20 +263,6 @@ export class EditCustomerDialogComponent {
     this.editGrainOnFarm.update(rows => rows.filter(r => r.commodityGroup !== commodityGroup));
   }
 
-  /** Progressive US phone mask → "(XXX) XXX-XXXX" (matches getFormattedPhone on the profile).
-   *  Strips non-digits, caps at 10, and formats what's entered so far. Stored formatted. */
-  formatPhoneNumber(value: string): string {
-    const d = (value ?? '').replace(/\D/g, '').slice(0, 10);
-    if (d.length === 0) return '';
-    if (d.length <= 3) return `(${d}`;
-    if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
-    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  }
-
-  onPrimaryPhoneInput(value: string): void {
-    this.editPrimaryPhone.set(this.formatPhoneNumber(value));
-  }
-
   // ── Collapsible sections (edit dialog) ──────────────────────────────────
   // Each section header toggles its body so the dialog opens compact and the user
   // expands only what they need (less scrolling).
@@ -238,8 +288,7 @@ export class EditCustomerDialogComponent {
   private _originalGrainOnFarm: string = '[]'; // serialized snapshot for change detection
   private _originalLinkedProducerIds: string[] = [];
   private _originalESignEnabled = false;
-  private _originalPrimaryContact = '';
-  private _originalPrimaryPhone = '';
+  private _originalContacts = '[]'; // serialized snapshot for change detection
 
   private _initialized = false;
   isLoadingCommodities = signal(false);
@@ -294,8 +343,7 @@ export class EditCustomerDialogComponent {
         this.editLinkedProducerIds.set([...(customer.linkedProducerIds || [])]);
         this.removedIncomingIds.set([]);
         this.editESignEnabled.set(customer.eSignEnabled);
-        this.editPrimaryContact.set(customer.primaryContact || '');
-        this.editPrimaryPhone.set(customer.primaryPhone || '');
+        this.editContacts.set(this._contactsFromCustomer(customer));
         this.editGrainOnFarm.set((customer.grainOnFarm || []).map(g => ({
           commodityGroup: g.commodityGroup,
           bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
@@ -311,8 +359,7 @@ export class EditCustomerDialogComponent {
         this._originalGrainOnFarm = this._serializeGrain();
         this._originalLinkedProducerIds = [...(customer.linkedProducerIds || [])];
         this._originalESignEnabled = customer.eSignEnabled;
-        this._originalPrimaryContact = customer.primaryContact || '';
-        this._originalPrimaryPhone = customer.primaryPhone || '';
+        this._originalContacts = this._serializeContacts();
 
         // If no trade units and the cache still isn't loaded (edge case: first open before effect
         // on selectedTradeUnits fired), kick off the load now.
@@ -370,8 +417,7 @@ export class EditCustomerDialogComponent {
     this.editCommodities.set([]);
     this.editGrainOnFarm.set([]);
     this.newGrainGroup.set('');
-    this.editPrimaryContact.set('');
-    this.editPrimaryPhone.set('');
+    this.editContacts.set([]);
     this.editLinkedProducerIds.set([]);
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(false);
@@ -458,8 +504,7 @@ export class EditCustomerDialogComponent {
       || commoditiesChanged
       || this._serializeGrain() !== this._originalGrainOnFarm
       || this.editESignEnabled() !== this._originalESignEnabled
-      || this.editPrimaryContact() !== this._originalPrimaryContact
-      || this.editPrimaryPhone() !== this._originalPrimaryPhone
+      || this._serializeContacts() !== this._originalContacts
       || linkedProducerIdsChanged
       || this.removedIncomingIds().length > 0;
   }
@@ -470,6 +515,17 @@ export class EditCustomerDialogComponent {
       this.editGrainOnFarm()
         .map(r => ({ g: r.commodityGroup, h: r.bushelsOnHand.trim(), t: r.targetBushels.trim(), gr: r.grade.trim() }))
         .sort((a, b) => a.g.localeCompare(b.g))
+    );
+  }
+
+  /** Serialization of the contact rows for change detection. Deliberately ORDER-DEPENDENT —
+   *  row order is the saved display order, so reordering counts as a change. Fully-blank rows
+   *  are skipped so adding-then-clearing a row doesn't read as dirty. */
+  private _serializeContacts(): string {
+    return JSON.stringify(
+      this.editContacts()
+        .filter(r => r.name.trim() || r.phone.trim() || r.email.trim())
+        .map(r => ({ n: r.name.trim(), p: r.phone.trim(), e: r.email.trim(), pr: r.isPrimary }))
     );
   }
 
@@ -680,8 +736,8 @@ export class EditCustomerDialogComponent {
     this.editLinkedProducerIds.set([...this._originalLinkedProducerIds]);
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(this._originalESignEnabled);
-    this.editPrimaryContact.set(this._originalPrimaryContact);
-    this.editPrimaryPhone.set(this._originalPrimaryPhone);
+    const customer = this.customer();
+    this.editContacts.set(customer ? this._contactsFromCustomer(customer) : []);
     this.newCommodity.set('');
     this.filteredCommodities.set([]);
     this.showSuggestions.set(false);
@@ -707,6 +763,19 @@ export class EditCustomerDialogComponent {
         });
       }
 
+      // Contacts: drop fully-blank rows, normalize to exactly one primary. Rows with details but
+      // no name are blocked before this point (contactsInvalid gates the Save button).
+      const contactRows = this.editContacts()
+        .filter(r => r.name.trim())
+        .map(r => ({
+          name: r.name.trim().slice(0, 200),
+          phone: r.phone.trim().slice(0, 50) || undefined,
+          email: r.email.trim().slice(0, 255) || undefined,
+          isPrimary: r.isPrimary
+        }));
+      if (contactRows.length > 0 && !contactRows.some(r => r.isPrimary)) contactRows[0].isPrimary = true;
+      const primaryRow = contactRows.find(r => r.isPrimary);
+
       // Only save user-added commodities to ProducerDetails — ticket-derived ones are
       // always re-derived fresh from current tickets, so they should never be persisted.
       this.save.emit({
@@ -714,8 +783,9 @@ export class EditCustomerDialogComponent {
         acres: this._parseNumericInput(this.editAcres),
         binCapacity: this._parseNumericInput(this.editBinCapacity),
         commodities: this.editCommodities().filter(c => !this.isTicketCommodity(c)),
-        primaryContact: this.editPrimaryContact().slice(0, 200),
-        primaryPhone: this.editPrimaryPhone().slice(0, 50),
+        primaryContact: primaryRow?.name ?? '',
+        primaryPhone: primaryRow?.phone ?? '',
+        contacts: contactRows,
         linkedProducerIds: this.editLinkedProducerIds(),
         removedIncomingIds: this.removedIncomingIds(),
         eSignEnabled: this.editESignEnabled(),

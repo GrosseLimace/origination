@@ -5,7 +5,7 @@ import { CustomerProfileComponent } from './customer-profile.component';
 import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, SavedList } from '@models';
+import { Contract, Customer, PlantingIntention, SavedList } from '@models';
 
 // Covers the Add-to-List "Team Lists" manager extension: the dropdown stages membership across
 // BOTH the user's own saved lists and (for managers) team lists, and the toggle is manager-gated.
@@ -95,5 +95,72 @@ describe('CustomerProfileComponent — Add to List (Team Lists)', () => {
     expect(component.activeAddToLists().map(l => l.id)).toEqual([1]);
     component.addToListTab.set('team');
     expect(component.activeAddToLists().map(l => l.id)).toEqual([2]);
+  });
+});
+
+/**
+ * The profile surfaces only the two most recent crop years. Producers accumulate seasons forever,
+ * and the Planting tab plus the Growth Opportunity year picker must agree on which ones exist.
+ */
+describe('CustomerProfileComponent — crop year scoping', () => {
+  let component: CustomerProfileComponent;
+  let ref: ComponentRef<CustomerProfileComponent>;
+
+  const intention = (id: number, plantingYear: number) =>
+    ({ id, customerId: 42, plantingYear, crop: 'YC', acres: 100 }) as PlantingIntention;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: {} },
+        { provide: ThemeService, useValue: {} },
+        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerProfileComponent, {
+      set: { template: '', templateUrl: undefined, imports: [] },
+    });
+    const fixture = TestBed.createComponent(CustomerProfileComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+    ref.setInput('customer', makeCustomer({ id: 42 }));
+  });
+
+  it('offers only the two most recent planting years', () => {
+    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026), intention(3, 2027)]);
+    expect(component.plantingYearOptions()).toEqual([2027, 2026]);
+  });
+
+  it('drops intentions from years outside that window', () => {
+    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026), intention(3, 2027)]);
+    expect(component.visiblePlantingIntentions().map(pi => pi.plantingYear).sort()).toEqual([2026, 2027]);
+  });
+
+  it('rolls the window forward when a newer year is added', () => {
+    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026)]);
+    expect(component.plantingYearOptions()).toEqual([2026, 2025]);
+
+    // Adding 2027 pushes 2025 out of view.
+    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026), intention(3, 2027)]);
+    expect(component.plantingYearOptions()).toEqual([2027, 2026]);
+    expect(component.visiblePlantingIntentions().some(pi => pi.plantingYear === 2025)).toBe(false);
+  });
+
+  it('falls back to contract crop years when no intentions exist', () => {
+    ref.setInput('plantingIntentions', []);
+    ref.setInput('contracts', [
+      { id: 1, cropYear: 2026 } as Contract,
+      { id: 2, cropYear: 2024 } as Contract,
+      { id: 3, cropYear: 2025 } as Contract,
+    ]);
+    expect(component.plantingYearOptions()).toEqual([2026, 2025]);
+  });
+
+  it('keeps a deep-linked older year visible so the picker never omits the active selection', () => {
+    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026), intention(3, 2027)]);
+    component.selectPlantingYear(2025);
+
+    expect(component.availablePlantingYears).toEqual([2027, 2026, 2025]);
+    expect(component.visiblePlantingIntentions().some(pi => pi.plantingYear === 2025)).toBe(true);
   });
 });

@@ -10,6 +10,7 @@ import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.s
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
+import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { commodityColor, commodityChipClass } from '@shared/utils/commodity-color';
 
@@ -215,11 +216,22 @@ export class DashboardComponent {
   // so contracts group by the same category name as planting intentions.
   private readonly _contractedByCategory = computed(() => {
     const commodityMap = this._commodityByCode();
-    const map = new Map<string, number>();
+    // Totals are BUSHELS, not raw quantity. A commodity group carries processed products priced by
+    // weight — soybean meal and oil in short tons, popcorn by the pound — and adding their quantity
+    // straight in overstated contracted volume against a bushel production estimate. Same helper the
+    // producer page uses, so the two agree.
+    const lbsPerBushelByCode = buildLbsPerBushelMap(this.appStateService.commodityConversions());
+    const byCategory = new Map<string, Contract[]>();
     for (const c of this.contractsForYear()) {
       const commodity = commodityMap.get(c.commodityCode || '') || commodityMap.get(c.commodityDescription || '');
       const category = (commodity?.category || c.commodityDescription || c.commodityGroup || c.commodityCode || '').toLowerCase();
-      map.set(category, (map.get(category) || 0) + (c.quantity || 0));
+      const arr = byCategory.get(category);
+      if (arr) arr.push(c); else byCategory.set(category, [c]);
+    }
+
+    const map = new Map<string, number>();
+    for (const [category, contracts] of byCategory) {
+      map.set(category, sumInBushels(contracts, lbsPerBushelByCode).contracted);
     }
     return map;
   });
@@ -1231,10 +1243,15 @@ export class DashboardComponent {
   }
 
   private _calculateCropDistribution(): void {
+    // Shares are computed from BUSHELS. On raw quantity a tonnage commodity's slice was sized by its
+    // ton count, so it looked far smaller than the volume it represents.
+    const lbsPerBushelByCode = buildLbsPerBushelMap(this.appStateService.commodityConversions());
     const cropMap = new Map<string, number>();
     for (const contract of this.contracts().filter(c => !c.closedDate)) {
       const commodity = contract.commodityDescription || contract.commodityCode || 'Unknown';
-      cropMap.set(commodity, (cropMap.get(commodity) || 0) + (contract.quantity || 0));
+      const bushels = quantityInBushels(contract, contract.quantity || 0, lbsPerBushelByCode);
+      if (bushels == null) continue;
+      cropMap.set(commodity, (cropMap.get(commodity) || 0) + bushels);
     }
 
     const total = Array.from(cropMap.values()).reduce((a, b) => a + b, 0);

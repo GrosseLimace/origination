@@ -62,6 +62,38 @@ public class DailyRecapGroupServiceTests
         new() { Type = "person", Id = id, Name = id, Email = email };
 
     // -------------------------------------------------------------------------
+    // A group is a reusable list of people that can be @-mentioned in a note; the daily recap is one
+    // opt-in behavior on it. Creation used to hardcode Enabled = true, so a group made purely to
+    // @-mention started emailing everyone in it that evening.
+
+    [Fact]
+    public async Task CreateAsync_DefaultsTheDailyRecapOff()
+    {
+        DailyRecapGroup? captured = null;
+        _repo.Setup(r => r.AddAsync(It.IsAny<DailyRecapGroup>(), It.IsAny<CancellationToken>()))
+            .Callback<DailyRecapGroup, CancellationToken>((g, _) => captured = g)
+            .ReturnsAsync((DailyRecapGroup g, CancellationToken _) => g);
+
+        await _sut.CreateAsync(Request(Person("sam")), CancellationToken.None);
+
+        Assert.False(captured!.Enabled);
+    }
+
+    [Fact]
+    public async Task CreateAsync_HonoursAnExplicitDailyRecapOptIn()
+    {
+        DailyRecapGroup? captured = null;
+        _repo.Setup(r => r.AddAsync(It.IsAny<DailyRecapGroup>(), It.IsAny<CancellationToken>()))
+            .Callback<DailyRecapGroup, CancellationToken>((g, _) => captured = g)
+            .ReturnsAsync((DailyRecapGroup g, CancellationToken _) => g);
+
+        var request = Request(Person("sam")) with { Enabled = true };
+        await _sut.CreateAsync(request, CancellationToken.None);
+
+        Assert.True(captured!.Enabled);
+    }
+
+    // -------------------------------------------------------------------------
     [Fact]
     public async Task CreateAsync_PersonInOverlap_PersistsWithDerivedEmail()
     {

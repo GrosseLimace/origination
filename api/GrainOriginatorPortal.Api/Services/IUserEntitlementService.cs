@@ -29,6 +29,10 @@ public interface IUserEntitlementService
     /// Validates that the current user has access to the specified customer by checking
     /// the customer's trade unit(s) against the user's entitlements.
     /// Throws <see cref="Exceptions.ForbiddenException"/> if access is denied.
+    ///
+    /// ⚠️ INTENTIONALLY UNUSED on request paths — per-producer read authorization is accepted risk
+    /// AR-02 (SECURITY-REVIEWS/ACCEPTED-RISKS.md). See the implementation for why, and what would
+    /// break if it were enabled. Triage scan hits on the customer-scoped reads against AR-02.
     /// </summary>
     Task ValidateCustomerAccessAsync(long customerId, CancellationToken cancellationToken = default);
 }

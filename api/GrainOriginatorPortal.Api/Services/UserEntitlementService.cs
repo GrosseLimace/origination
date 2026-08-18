@@ -117,6 +117,28 @@ public class UserEntitlementService : IUserEntitlementService
         }
     }
 
+    /// <summary>
+    /// Object-level authorization for a single customer: throws <see cref="ForbiddenException"/>
+    /// unless the caller is entitled to at least one trade unit the customer belongs to.
+    ///
+    /// ⚠️ DELIBERATELY NOT CALLED ON ANY REQUEST PATH. This is not an oversight or dead code left
+    /// behind — per-producer read authorization is an ACCEPTED RISK, recorded as AR-02 in
+    /// SECURITY-REVIEWS/ACCEPTED-RISKS.md (re-reviewed and re-accepted 2026-08-10). Trade units are
+    /// a UX default, not an access boundary: originators must be able to pull up any producer.
+    ///
+    /// Security scans repeatedly flag the customer-scoped reads (CustomersController GetById /
+    /// GetBySourceId / GetLinkedTo / GetTradeUnits, NotesController GetByCustomer) as CWE-639 and
+    /// suggest calling this method. Triage those hits against AR-02 rather than wiring this up — doing
+    /// so would break three shipped or in-flight behaviours:
+    ///   • cross-trade-unit coverage (a rep covering for someone else's producers),
+    ///   • linked producers, whose links deliberately span trade units (GetLinkedTo),
+    ///   • the incoming-call popup, which resolves an arbitrary caller to a producer page.
+    /// It also fails CLOSED when a customer has no trade-unit mapping (see below), so enabling it
+    /// would deny access to producers that haven't been synced yet.
+    ///
+    /// Kept — with tests — so the control is ready if that product decision is ever reversed. If you
+    /// do wire it up, update AR-02 in the same change.
+    /// </summary>
     public async Task ValidateCustomerAccessAsync(long customerId, CancellationToken cancellationToken = default)
     {
         // Look up customer's trade unit(s) from the live ODS view

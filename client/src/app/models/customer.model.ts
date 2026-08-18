@@ -1,5 +1,5 @@
 import { Coordinates } from './coordinates.model';
-import { GrainOnFarmItem } from './producer-details.model';
+import { GrainOnFarmItem, ProducerContactItem } from './producer-details.model';
 
 export interface Customer {
   id: number;             // Maps to bigint in C# API
@@ -36,8 +36,9 @@ export interface Customer {
   binCapacity?: number;       // Bushels - bin storage capacity
   grainOnFarm?: GrainOnFarmItem[]; // Per-commodity bushels on hand + target
   commodities?: string[];     // e.g. ['Corn', 'Soybeans', 'Wheat']
-  primaryContact?: string;    // User-entered primary contact name
-  primaryPhone?: string;      // User-entered primary phone (override for the pulled-in phone)
+  primaryContact?: string;    // Derived from the primary contact row (kept for compat/search)
+  primaryPhone?: string;      // Derived from the primary contact row (kept for compat/search)
+  contacts?: ProducerContactItem[]; // User-entered contacts, primary first
 
   // Onboarding: true when a user manually added this producer (assigned trade units)
   // rather than the nightly sync. Used to distinguish ODS search candidates and to

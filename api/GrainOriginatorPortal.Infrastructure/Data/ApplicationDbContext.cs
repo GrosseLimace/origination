@@ -29,6 +29,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CustomerLink> CustomerLinks => Set<CustomerLink>();
     public DbSet<CustomerCommodity> CustomerCommodities => Set<CustomerCommodity>();
     public DbSet<ProducerGrainOnFarm> ProducerGrainOnFarm => Set<ProducerGrainOnFarm>();
+    public DbSet<ProducerContact> ProducerContacts => Set<ProducerContact>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
@@ -281,6 +282,8 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.Commodities);
             // GrainOnFarm is composed server-side from dbo.ProducerGrainOnFarm on read / rebuilt on upsert.
             entity.Ignore(e => e.GrainOnFarm);
+            // Contacts is composed server-side from dbo.ProducerContact on read / rebuilt on upsert.
+            entity.Ignore(e => e.Contacts);
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
@@ -373,6 +376,29 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => new { e.CustomerId, e.CommodityGroup })
                   .IsUnique()
                   .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Group");
+        });
+
+        modelBuilder.Entity<ProducerContact>(entity =>
+        {
+            entity.ToTable("ProducerContact", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Phone).HasColumnName("Phone").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Email).HasColumnName("Email").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.IsPrimary).HasColumnName("IsPrimary").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
+
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerContact_Customer");
+
+            // Plain (non-unique) index — a producer can have many contacts, and names/labels can
+            // legitimately repeat (Dad's cell + Dad's shop), unlike the grain table's UQ.
+            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerContact_CustomerId");
         });
 
         // -------------------------------------------------------------------------
