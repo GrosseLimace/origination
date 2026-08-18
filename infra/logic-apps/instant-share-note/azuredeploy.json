@@ -212,16 +212,34 @@
                       "cases": {
                         "Case_person": {
                           "actions": {
-                            "Append_Person_Recipient": {
-                              "inputs": {
-                                "name": "recipient",
-                                "value": {
-                                  "emailAddress": {
-                                    "address": "@{concat(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']), '@scoular.com')}"
-                                  }
+                            "Condition_Person_Is_Active": {
+                              "actions": {
+                                "Append_Person_Recipient": {
+                                  "inputs": {
+                                    "name": "recipient",
+                                    "value": {
+                                      "emailAddress": {
+                                        "address": "@{concat(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']), '@scoular.com')}"
+                                      }
+                                    }
+                                  },
+                                  "type": "AppendToArrayVariable"
                                 }
                               },
-                              "type": "AppendToArrayVariable"
+                              "else": {
+                                "actions": {}
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "contains": [
+                                      "@coalesce(body('Select_Active_User_Ids'), createArray(toLower(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']))))",
+                                      "@toLower(if(contains(item()?['id'], '@'), split(item()?['id'], '@')[0], item()?['id']))"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "type": "If"
                             }
                           },
                           "case": "person"

@@ -578,12 +578,30 @@
                       "cases": {
                         "Case_person": {
                           "actions": {
-                            "Append_to_groupMembers_Array_3": {
-                              "inputs": {
-                                "name": "groupMembers",
-                                "value": "@item()?['Email']"
+                            "Condition_Person_Is_Active": {
+                              "actions": {
+                                "Append_to_groupMembers_Array_3": {
+                                  "inputs": {
+                                    "name": "groupMembers",
+                                    "value": "@item()?['Email']"
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                }
                               },
-                              "type": "AppendToArrayVariable"
+                              "else": {
+                                "actions": {}
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "contains": [
+                                      "@coalesce(body('Select_Active_User_Ids'), createArray(toLower(item()?['MemberId'])))",
+                                      "@toLower(item()?['MemberId'])"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "type": "If"
                             }
                           },
                           "case": "person"
