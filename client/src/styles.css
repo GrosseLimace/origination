@@ -17,6 +17,27 @@
   --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
+/* App chrome metrics.
+   --app-header-h must match the rendered height of app-header (see
+   shared/components/header/header.component.html): py-5 + h-11 logo + label row.
+   --app-main-pad mirrors the padding on <main> in app.component.html (p-4 sm:p-6).
+   Panes that cannot use a flex min-h-0 chain size themselves off --app-chrome. */
+:root {
+  --app-header-h: 6.5rem;
+  --app-main-pad: 1rem;
+  --app-chrome: calc(var(--app-header-h) + 2 * var(--app-main-pad));
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --app-main-pad: 1.5rem;
+  }
+}
+
+/* Overlay stacking scale — keep new overlays on these tiers:
+   50 = dropdowns / menus / toasts · 60 = dialogs (app-dialog) ·
+   70 = confirms nested inside a dialog · 1000+ = Leaflet map overlays (bid sheet). */
+
 /* Base styles */
 html {
   scrollbar-gutter: stable;
