@@ -45,20 +45,36 @@ html {
 
 body {
   font-family: var(--font-sans);
-  font-size: 16px;
+  /* 1rem, not a fixed 16px, so body text follows the root step-down below. */
+  font-size: 1rem;
   line-height: 1.5;
   font-weight: 400;
   @apply bg-gray-50 text-gray-900;
 }
 
-/* Scoular Typescale — in @layer base so Tailwind utility classes can override */
+/* Laptop density.
+   Tailwind sizes and spacing are both rem-based, so stepping the root font size
+   down scales type and padding together — the whole UI gets ~6% tighter without
+   touching a single component. Screens 1536px and wider are untouched and keep
+   today's scale exactly. Turn the dial here (15px -> 14px) to go further.
+   Note: rem inside a media query always resolves against the initial 16px, so
+   this does not move any breakpoint. */
+@media (max-width: 1535.98px) {
+  :root {
+    font-size: 15px;
+  }
+}
+
+/* Scoular Typescale — in @layer base so Tailwind utility classes can override.
+   Expressed in rem (identical to the original px at a 16px root) so headings
+   follow the laptop step-down instead of staying oversized. */
 @layer base {
-  h1 { font-size: 64px; font-weight: 700; line-height: 72px; }
-  h2 { font-size: 36px; font-weight: 700; line-height: 48px; }
-  h3 { font-size: 24px; font-weight: 400; line-height: 40px; }
-  h4 { font-size: 19px; font-weight: 700; line-height: 26px; }
-  h5 { font-size: 18px; font-weight: 700; line-height: 24px; letter-spacing: 0.08em; }
-  h6 { font-size: 16px; font-weight: 700; line-height: 20px; }
+  h1 { font-size: 4rem; font-weight: 700; line-height: 4.5rem; }
+  h2 { font-size: 2.25rem; font-weight: 700; line-height: 3rem; }
+  h3 { font-size: 1.5rem; font-weight: 400; line-height: 2.5rem; }
+  h4 { font-size: 1.1875rem; font-weight: 700; line-height: 1.625rem; }
+  h5 { font-size: 1.125rem; font-weight: 700; line-height: 1.5rem; letter-spacing: 0.08em; }
+  h6 { font-size: 1rem; font-weight: 700; line-height: 1.25rem; }
 }
 
 .dark body {
