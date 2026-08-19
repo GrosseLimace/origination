@@ -1,4 +1,7 @@
-    <div class="relative overflow-hidden isolate rounded-lg h-full" style="min-height: 400px;">
+    <!-- --bid-panel-w tracks the slide-in panel's own responsive width (see the panel
+         below). Overlays that dodge the panel offset themselves off this instead of
+         hardcoding the widest value, which was wrong at every width under 1024px. -->
+    <div class="relative overflow-hidden isolate rounded-lg h-full [--bid-panel-w:100%] sm:[--bid-panel-w:360px] lg:[--bid-panel-w:420px]" style="min-height: 400px;">
 
         <!-- Full-screen map -->
         <div #mapEl id="bid-locations-map" style="height: 100%; width: 100%;"></div>
@@ -16,7 +19,7 @@
         <!-- Loading overlay (map only, shifts left when panel is open) -->
         @if (isRefreshing()) {
           <div class="absolute top-0 left-0 bottom-0 z-[998] flex items-center justify-center bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm transition-all duration-300"
-               [style.right]="showPanel() ? '420px' : '0'">
+               [style.right]="showPanel() ? 'var(--bid-panel-w)' : '0'">
             <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
           </div>
         }
@@ -24,7 +27,7 @@
         @if (!addLocationMode()) {
           <!-- Floating filter bar (top-left, constrained to not overlap panel) -->
           <div #filterBar class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
-               [style.max-width]="showPanel() ? 'calc(100% - 510px)' : 'calc(100% - 80px)'">
+               [style.max-width]="showPanel() ? 'calc(100% - var(--bid-panel-w) - 90px)' : 'calc(100% - 80px)'">
             <button (click)="showFilters.set(!showFilters())" class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" [title]="showFilters() ? 'Collapse filters' : 'Expand filters'">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 @if (showFilters()) {
@@ -83,7 +86,7 @@
                 (ngModelChange)="searchQuery.set($event)"
                 (input)="onSearchInput()"
                 placeholder="Search locations..."
-                class="w-44 @4xl:w-48 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+                class="w-44 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
               />
               @if (activeTradeUnits().length > 0 || searchQuery()) {
               <button (click)="clearAllFilters()" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-scoular-red hover:bg-gray-100 dark:text-gray-400 dark:hover:text-scoular-red dark:hover:bg-gray-700 transition-colors">Clear</button>
@@ -151,7 +154,7 @@
 
           <!-- Map legend (bottom-right, shifts left when panel is open) -->
           <div class="absolute bottom-4 z-[1000] bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
-               [style.right]="showPanel() ? '452px' : '16px'">
+               [style.right]="showPanel() ? 'calc(var(--bid-panel-w) + 32px)' : '16px'">
             <div class="flex items-center gap-2 px-3 py-2 cursor-pointer" (click)="showLegend.set(!showLegend())">
               <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Key</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400">
