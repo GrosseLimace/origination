@@ -2,8 +2,9 @@
   <!-- Customer List — fr tracks (not percentages) so the gap is subtracted from
        the tracks instead of overflowing the grid; the minmax floor keeps the list
        readable on laptops. -->
-  <div class="lg:overflow-auto lg:max-h-full lg:pb-2" [class.hidden]="selectedCustomer() && isMobile()" [class.lg:block]="true">
+  <div class="lg:max-h-full lg:pb-2 lg:flex lg:flex-col lg:min-h-0" [class.hidden]="selectedCustomer() && isMobile()" [class.lg:flex]="true">
     <app-customer-list
+      class="flex flex-col min-h-0 lg:flex-1"
       [customers]="customers()"
       [selectedCustomer]="selectedCustomer()"
       [savedLists]="savedLists()"

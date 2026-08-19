@@ -72,11 +72,6 @@ export class CustomerListComponent {
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.
   lastContactCache = signal(new Map<number, LastContactInfo>());
 
-  readonly listMaxHeight = computed(() => {
-    const hasSavedLists = !this.loading() && this.getVisibleSavedLists().length > 0;
-    return `calc(100vh - ${hasSavedLists ? 21 : 16}rem)`;
-  });
-
   private _scrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {

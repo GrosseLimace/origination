@@ -49,7 +49,10 @@
           </div>
         </div>
 
-        <div class="overflow-auto relative max-h-[400px] 2xl:max-h-[calc(100vh-14rem)] [&_thead_th]:!px-2 [&_tbody_td]:!px-2">
+        <!-- One height for every screen: the 400px floor keeps short viewports usable,
+             and taller ones get the room they actually have (was capped at 400px
+             below 1536px, which is every laptop). -->
+        <div class="overflow-auto relative max-h-[max(400px,calc(100dvh-var(--app-chrome)-3rem))] [&_thead_th]:!px-2 [&_tbody_td]:!px-2">
         <app-table [stickyHeader]="true">
           <app-table-header>
             <app-table-row>

@@ -1,6 +1,8 @@
 
-    <app-card>
-      <app-card-content class="p-0">
+    <!-- Flex chain (list column -> card -> content -> scroll area) so the producer
+         list fills whatever height is left instead of guessing at a vh offset. -->
+    <app-card class="flex flex-col min-h-0 flex-1">
+      <app-card-content class="p-0 flex flex-col min-h-0 flex-1">
         <!-- Header with Title and Filters -->
         <div class="px-4 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700 space-y-3">
           <!-- Title Row -->
@@ -78,7 +80,7 @@
         }
 
         <!-- Customer List -->
-        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="listMaxHeight()"
+        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto flex-1 min-h-0 max-h-[70dvh] lg:max-h-none"
         >
           @if (savedListLoading()) {
             <div class="p-8 text-center">
