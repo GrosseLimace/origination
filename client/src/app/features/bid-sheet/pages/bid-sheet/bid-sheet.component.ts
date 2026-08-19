@@ -2465,7 +2465,7 @@ export class BidSheetComponent {
     if (this.editBidsReadOnly()) return; // read-only in All Producers — no deletes
     const name = this.panelSelectedLocation();
     if (!name) return;
-    const loc = this.allMapLocations().find(l => l.name === name);
+    const loc = this._findLocationByName(name);
     if (!loc) return;
     const tu = loc.tradeUnitCode ?? this.activeTradeUnit();
 
@@ -2504,8 +2504,7 @@ export class BidSheetComponent {
     const crop = this.pendingDeleteCrop();
     const name = this.panelSelectedLocation();
     if (!crop || !name) return;
-    const loc = this.allMapLocations().find(l => l.name === name)
-             ?? this.bidLocations().find(l => l.name === name);
+    const loc = this._findLocationByName(name);
     if (!loc) return;
     const tu = loc.tradeUnitCode ?? this.activeTradeUnit();
 
@@ -2542,6 +2541,26 @@ export class BidSheetComponent {
     this.editLocationNameValue.set('');
   }
 
+  /**
+   * Resolves a panel-selected location name to the row the user is actually looking at.
+   *
+   * Location names are only unique WITHIN a trade unit, so a bare name lookup across every trade unit
+   * can return someone else's row — and then a rename, a Scoular toggle or a delete lands on the wrong
+   * desk. Adding a location to several trade units from the BarChart picker creates identical names by
+   * design, so this went from unlikely to routine.
+   *
+   * Prefers a row in the trade units currently in view, lowest id first so repeat actions are stable.
+   * Falls back to any match, which preserves the old behaviour for the case where the panel is showing
+   * something outside the current selection — mutations are gated on a trade unit being selected
+   * (editBidsReadOnly), so in practice the scoped branch is the one that runs.
+   */
+  private _findLocationByName(name: string): BidSheetLocation | undefined {
+    const inView = new Set(this.activeTradeUnits());
+    const candidates = [...this.allMapLocations(), ...this.bidLocations()].filter(l => l.name === name);
+    return candidates.filter(l => inView.has(l.tradeUnitCode)).sort((a, b) => a.id - b.id)[0]
+        ?? candidates[0];
+  }
+
   saveLocationName(): void {
     if (this.editBidsReadOnly()) return; // read-only in All Producers
     const newName = this.editLocationNameValue().trim();
@@ -2550,7 +2569,7 @@ export class BidSheetComponent {
       this.cancelEditLocationName();
       return;
     }
-    const loc = this.allMapLocations().find(l => l.name === oldName);
+    const loc = this._findLocationByName(oldName);
     if (!loc) return;
 
     this.apiService.updateBidSheetLocation(loc.id, {
@@ -2585,7 +2604,7 @@ export class BidSheetComponent {
     if (this.editBidsReadOnly()) return; // read-only in All Producers
     const name = this.panelSelectedLocation();
     if (!name) return;
-    const loc = this.allMapLocations().find(l => l.name === name);
+    const loc = this._findLocationByName(name);
     if (!loc) return;
     const newValue = !(loc.isScoularFacility ?? false);
 

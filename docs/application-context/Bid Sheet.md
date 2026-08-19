@@ -161,11 +161,20 @@ renaming — in the picker before adding, or later from the panel — never affe
 (Name, TradeUnitCode) index: reusing a name already on that trade unit comes back as a 400 naming the
 clash.
 
-Caveat worth knowing: the panel's inline rename resolves the row by *name*
-(`allMapLocations().find(l => l.name === oldName)`), so when the same location sits on several trade
-units under one name — which a multi-trade-unit BarChart add creates by design — it renames only the
-first match. Pre-existing behaviour, but the picker makes duplicate names across trade units much more
-likely than before.
+**Renames, deletes and the Scoular toggle are scoped to the trade unit in view.** Location names are
+only unique *within* a trade unit, so the panel's name-based lookup used to be able to resolve to a row
+on a different desk — and then rename, un-Scoular or delete that one instead. All four mutation paths
+now go through `_findLocationByName`, which prefers a row in the trade units currently in view (lowest
+id first, so repeat actions are stable) before falling back to any match.
+
+This was reachable before the feed existed — nothing stopped two trade units having a location of the
+same name — but adding one location to several trade units from the picker creates identical names *by
+design*, which turned a corner case into the normal case.
+
+Renaming therefore affects **only your trade unit's row**; the other placements keep their own names.
+That matches how the rest of the screen is scoped. If names drifting apart between desks turns out to
+be a nuisance, "apply to all trade units" is an easy addition — the rows share a `BarchartLocationKey`,
+so they're trivially findable.
 
 **Listings are labelled "Company - Site" with the town underneath** — "Farmers Cooperative Dorchester -
 HERKIMER" over "Marysville, KS" — and that label is also exactly what gets saved, so nothing is renamed
