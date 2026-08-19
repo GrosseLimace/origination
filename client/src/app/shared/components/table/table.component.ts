@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div [class]="wrapperClass()">
+    <div [class]="wrapperClass()" [style.max-height]="maxHeight()">
       <table class="w-full min-w-max caption-bottom text-sm border-collapse">
         <ng-content></ng-content>
       </table>
@@ -57,9 +57,21 @@ import { CommonModule } from '@angular/common';
 })
 export class TableComponent {
   public stickyHeader = input<boolean>(false);
-  readonly wrapperClass = computed(() =>
-    this.stickyHeader() ? 'w-full' : 'w-full overflow-x-auto overflow-y-visible'
-  );
+
+  /**
+   * Caps the scroll area, e.g. `calc(100dvh - var(--app-chrome) - 3rem)`.
+   * Set this rather than putting a max-height on an ancestor: a sticky header
+   * only sticks to the element that scrolls, which is this wrapper.
+   */
+  public maxHeight = input<string | undefined>(undefined);
+
+  readonly wrapperClass = computed(() => {
+    // With a height cap the wrapper owns both axes. Without one, sticky-header
+    // tables still rely on an ancestor for horizontal scroll (callers predate
+    // maxHeight); plain tables scroll themselves.
+    if (this.maxHeight()) return 'w-full overflow-auto';
+    return this.stickyHeader() ? 'w-full' : 'w-full overflow-x-auto overflow-y-visible';
+  });
 }
 
 @Component({

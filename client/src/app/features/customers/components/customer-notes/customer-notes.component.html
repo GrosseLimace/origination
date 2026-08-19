@@ -262,8 +262,9 @@
 
       <!-- Delete Confirmation Dialog -->
       @if (showDeleteConfirm() && noteToDelete()) {
-        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="cancelDelete()">
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90vh]" (click)="$event.stopPropagation()">
+        <!-- z-[70]: a confirm has to sit above dialogs (z-[60]) and menus/toasts (z-50). -->
+        <div class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="cancelDelete()">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90dvh]" (click)="$event.stopPropagation()">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Note?</h3>
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
               Are you sure you want to delete this note? This action cannot be undone.
