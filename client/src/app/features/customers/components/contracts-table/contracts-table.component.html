@@ -378,7 +378,7 @@
                       </div>
 
                       <!-- Three column layout: Contract identity → Pricing → Fulfillment -->
-                      <div class="grid grid-cols-1 @xl/profile:grid-cols-2 @4xl/profile:grid-cols-3 gap-6 lg:gap-8 w-full">
+                      <div class="grid grid-cols-1 @md/profile:grid-cols-2 @4xl/profile:grid-cols-3 gap-6 lg:gap-8 w-full">
                         <!-- Column 1: Contract identity -->
                         <div class="space-y-5">
                           <div class="flex flex-col">
@@ -593,7 +593,7 @@
                           @if (getAppliedTickets(contract).length > 0) {
                             @for (ticket of getAppliedTickets(contract); track ticket.id) {
                               <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
-                                <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-1 @xl/profile:grid-cols-4 @4xl/profile:grid-cols-8 gap-4' : 'grid grid-cols-1 @xl/profile:grid-cols-4 @4xl/profile:grid-cols-7 gap-4'">
+                                <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-2 @md/profile:grid-cols-4 @4xl/profile:grid-cols-8 gap-4' : 'grid grid-cols-2 @md/profile:grid-cols-4 @4xl/profile:grid-cols-7 gap-4'">
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Ticket Number</p>
                                     <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ticketNumber }}</p>
