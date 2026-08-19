@@ -72,8 +72,9 @@
 
     <!-- Desktop Layout -->
     <div class="hidden lg:block">
-      <!-- lg (non-xl) row -->
-      <div class="xl:hidden flex items-center justify-between gap-4">
+      <!-- lg (non-2xl) row — short nav labels; serves 1024-1535 where the long
+           labels below would overflow the grid and clip into the logo column -->
+      <div class="2xl:hidden flex items-center justify-between gap-4">
         <div class="flex items-center gap-3 shrink-0">
           <div class="flex flex-col items-start gap-0.5 cursor-pointer" (click)="navigate('/')">
             <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-11 flex-shrink-0 hidden dark:block">
@@ -178,10 +179,10 @@
         </div>
       </div>
 
-      <!-- xl grid layout -->
-      <div class="hidden xl:grid xl:grid-cols-12 xl:gap-6">
+      <!-- 2xl grid layout — long nav labels only once there is room for them -->
+      <div class="hidden 2xl:grid 2xl:grid-cols-12 2xl:gap-6">
         <!-- Left: Logo (4 cols) -->
-        <div class="xl:col-span-4 flex items-center gap-3">
+        <div class="2xl:col-span-4 flex items-center gap-3">
           <div class="flex flex-col items-start gap-0.5 cursor-pointer" (click)="navigate('/')">
             <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-11 flex-shrink-0 hidden dark:block">
             <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-11 flex-shrink-0 dark:hidden">
@@ -198,7 +199,7 @@
         </div>
 
         <!-- Right: Nav + Profile (8 cols) -->
-        <div class="xl:col-span-8 flex items-center justify-end gap-2">
+        <div class="2xl:col-span-8 flex items-center justify-end gap-2">
           <app-button [variant]="isActive('/dashboard') ? 'default' : 'outline'" (onClick)="navigate('/dashboard')" class="gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               @if (isActive('/dashboard')) { <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/> }
