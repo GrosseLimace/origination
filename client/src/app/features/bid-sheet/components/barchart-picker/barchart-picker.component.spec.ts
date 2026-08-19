@@ -154,7 +154,7 @@ describe('BarchartPickerComponent', () => {
       .toBe('BarChart 82259');
   });
 
-  // 1,138 of the 2,894 listings have a site name that genuinely identifies one of a company's sites.
+  // 1,367 of the 3,446 listings have a site name that genuinely identifies one of a company's sites.
   it('headlines company and site, with the town on the second line', () => {
     const loc = location({ elevator: 'Farmers Cooperative Dorchester', locationName: 'HERKIMER', city: 'Marysville', state: 'KS' });
 
@@ -162,7 +162,7 @@ describe('BarchartPickerComponent', () => {
     expect(component.locationSubtitle(loc)).toBe('Marysville, KS');
   });
 
-  // 1,483 of the 2,894 listings set the site name to the city. Keeping it would print the town twice,
+  // 1,775 of the 3,446 listings set the site name to the city. Keeping it would print the town twice,
   // once in the label and again on the line below it.
   it('drops the site from the label when the vendor just repeated the town', () => {
     const loc = location({ locationName: 'NORTON', city: 'Norton', state: 'KS', elevator: 'Ag Valley Co-op' });
@@ -171,7 +171,7 @@ describe('BarchartPickerComponent', () => {
     expect(component.locationSubtitle(loc)).toBe('Norton, KS');
   });
 
-  // Another 273 set it to the town AND state — "Salina, KS", "FARNSWORTH TX". Comparing raw strings
+  // Another 304 set it to the town AND state — "Salina, KS", "FARNSWORTH TX". Comparing raw strings
   // missed these, so the label read "Scoular Company - Kansas - Salina, KS" over "Salina, KS".
   it.each(['Salina, KS', 'SALINA KS', 'salina-ks'])(
     'drops the site when the vendor repeated the town and state as "%s"', (site) => {

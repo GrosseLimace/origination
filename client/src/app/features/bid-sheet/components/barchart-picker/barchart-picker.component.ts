@@ -264,8 +264,9 @@ export class BarchartPickerComponent {
    * The part that distinguishes one of a company's locations from another — or empty when the vendor's
    * site name is just the town again and would only repeat the line beneath it.
    *
-   * Measured on the live catalog: of 2,894 listings, 1,483 set the site name to the city and another
-   * 273 set it to the city plus the state ("Salina, KS", "FARNSWORTH TX"). Comparison is on letters and
+   * Measured on the live catalog (2026-08-19, 3,446 listings): 1,775 set the site name to the city and
+   * another 304 set it to the city plus the state ("Salina, KS", "FARNSWORTH TX") — 60% of the catalog
+   * between them, and that share has held steady as the catalog grew. Comparison is on letters and
    * digits only, so all those spellings collapse the same way.
    */
   siteLabel(location: BarchartCatalogLocation): string {

@@ -9,10 +9,19 @@
 -- "Corn (#2 Yellow)" from "Corn (NonGMO)".
 --
 -- Grade and protein variants deliberately collapse into their parent code (for example
--- "Wheat (Hard Red Winter, Kansas City, 11.5)" -> HRWW). Checked against the live catalog first: a
--- location publishes either the standard grade or a protein spec for a given month, never both, so
--- collapsing them can't produce two rows competing for one Bid Sheet cell (HRWW 0 collisions of 278,
--- Minneapolis-spring 0 of 134, SRWW 0 of 151, YSB 3 of 1763).
+-- "Wheat (Hard Red Winter, Kansas City, 11.5)" -> HRWW), because in almost every case a location
+-- publishes either the standard grade or one protein spec for a given month, so the collapse can't
+-- produce two instruments competing for one Bid Sheet cell.
+--
+-- "Almost" is doing real work there. Re-checked 2026-08-19 against a catalog nearly twice the size, and
+-- there is now exactly one counter-example: CHS Garrison, ND (LocationKey 7218) publishes Minneapolis
+-- spring wheat at 13.0, 14.0 AND 15.0 protein for the same month. That is why the 13.0 and 15.0 strings
+-- below are NOT mapped -- with three variants in one cell the bridge would pick one deterministically
+-- and label, say, a 13.0-protein price as plain DNSW, which is a materially different price presented
+-- as the standard grade. The 14.0 variant stays mapped; it is the closest thing to a standard spec.
+--
+-- If more multi-protein locations appear, the answer is protein-specific codes, not a wider collapse.
+-- Current collision counts: Minneapolis spring 1 cell at 1 location; KC HRW and Chicago SRW both 0.
 --
 -- Codes confirmed by Travis 2026-08-18.
 --
@@ -90,10 +99,14 @@ WHERE i.IsActive = 1
 GROUP BY i.Commodity
 ORDER BY Mapped, Locations DESC;
 
--- Known and intentionally unmapped as of 2026-08-18, both raised with the vendor rather than guessed:
---   "" (blank)     25 locations, all CHS United Plains Ag. The mapping key IS the commodity string, so
---                  a rule for empty would silently catch any future blank from any publisher and misfile
---                  it. Their descriptions read as HRW wheat, but that is an inference, not vendor data.
---   "Soybean Meal" 11 locations. Only protein-specific codes exist on our side (465M at 46.5%, 475M at
+-- Known and intentionally unmapped as of 2026-08-19, all raised with the vendor rather than guessed:
+--   "" (blank)     51 locations across 17 different companies -- Key Cooperative 12, Akron Services 11,
+--                  Ag Valley Co-op 8, CHS United Plains Ag 6, then a long tail. It looked like one
+--                  publisher's quirk on 2026-08-18 (25 locations, all CHS); the wider catalog shows it
+--                  is a vendor-wide data-quality gap, which makes mapping it worse rather than better:
+--                  the mapping key IS the commodity string, so a rule for empty would silently catch
+--                  every future blank from every publisher and misfile them all under one crop.
+--   "Soybean Meal" 12 locations. Only protein-specific codes exist on our side (465M at 46.5%, 475M at
 --                  47.5%) and the vendor states no protein; it is also a product Scoular sells rather
 --                  than a crop bought from farmers.
+--   Minneapolis spring wheat at 13.0 and 15.0 protein -- 2 locations. See the collapse note at the top.

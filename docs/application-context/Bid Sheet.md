@@ -137,8 +137,12 @@ Available from the **Add from BarChart** link under the Edit Bids grid's Add Loc
 whether BarChart doesn't list the location, lists it under a different company name, or we simply
 don't pull that state — and would reasonably conclude the feed is broken. So the panel searches
 around whatever the map is showing (pan to look elsewhere), text search is the secondary path, and
-the panel states the catalog's real coverage ("2,894 locations across 29 states, refreshed …") rather
+the panel states the catalog's real coverage ("3,446 locations across 30 states, refreshed …") rather
 than leaving it to be inferred from an empty list. Manual entry stays available regardless.
+
+That coverage line is read live from `/barchart/coverage`, which matters more than it looks: the vendor
+sweep is sharded across 7 daily runs, so the catalog grows for about a week after the first load rather
+than arriving complete. A count hard-coded anywhere would be wrong within a day.
 
 Candidate pins are drawn on their own Leaflet layer, and our own clustered pins are hidden while the
 picker is open. A **hollow** pin is already on some bid sheet; a filled one is new; a **blue** pin is the
@@ -167,17 +171,20 @@ likely than before.
 HERKIMER" over "Marysville, KS" — and that label is also exactly what gets saved, so nothing is renamed
 between picking a location and seeing it on the sheet.
 
-Company leads deliberately, measured against the live catalog: 1,756 of the 2,894 vendor site names are
-just the town again, and some name a *different* company than the one publishing the bid (a
-CHS - Illinois listing whose site name is "GPC Muscatine"), which would misattribute the price at a
+Company leads deliberately, measured against the live catalog (2026-08-19): 2,079 of the 3,446 vendor
+site names are just the town again, and some name a *different* company than the one publishing the bid
+(a CHS - Illinois listing whose site name is "GPC Muscatine"), which would misattribute the price at a
 glance.
 
-**Redundant site names are dropped from the label.** Of those 1,756, 1,483 set the site name to the city
-and 273 to the city *plus* the state — "Salina, KS", "FARNSWORTH TX". Comparison is on letters and digits
+**Redundant site names are dropped from the label.** Of those 2,079, 1,775 set the site name to the city
+and 304 to the city *plus* the state — "Salina, KS", "FARNSWORTH TX". Comparison is on letters and digits
 only (`_nameKey`), so every spelling collapses the same way; without that, the label read
 "Scoular Company - Kansas - Salina, KS" directly above "Salina, KS". The vendor's own site name is
 printed verbatim on the confirm step when it is something not already shown, so a listing stays
 traceable to the feed.
+
+These proportions held when the catalog nearly doubled (60% redundant at 2,894 listings, 60% at 3,446),
+so the rule isn't fitted to one sample of the data.
 
 **The saved name always keeps a site or town**, even where the label drops it — a bid sheet row has no
 second line for the town, and names are unique per trade unit, so a company with several town-named
