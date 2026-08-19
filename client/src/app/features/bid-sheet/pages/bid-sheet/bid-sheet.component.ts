@@ -213,6 +213,72 @@ export class BidSheetComponent {
   /** Whether the BarChart picker and fed-bid display are turned on for this environment. */
   readonly barchartEnabled = environment.barchartBidsEnabled === true;
 
+  // ---------------------------------------------------------------------------
+  // Finding fed bids
+  //
+  // The feed writes bids at a specific delivery MONTH (1-12), never at month 0. The map, panel and grid
+  // all default to month 0 ("Year"), and the bid lookup keys on the month exactly — so a user whose
+  // locations are full of BarChart bids sees an empty sheet on the default view and concludes the feed
+  // is broken. Nothing is wrong; they're looking at a period the feed never publishes.
+  //
+  // Rather than change what the screen opens with (which would override saved preferences for everyone,
+  // fed bids or not), these surface where the fed bids actually are and offer one click to go there.
+  // ---------------------------------------------------------------------------
+
+  /** Distinct crop / crop-year / delivery-month cells the feed has published, from the loaded bids. */
+  readonly fedPeriods = computed(() => {
+    const cells = new Map<string, { crop: string; year: number; month: number }>();
+    for (const e of this.bidEntries()) {
+      if (e.source !== 'Barchart' || !e.commodityCode) continue;
+      const key = `${e.commodityCode}|${e.cropYear}|${e.month}`;
+      if (!cells.has(key)) cells.set(key, { crop: e.commodityCode, year: e.cropYear, month: e.month });
+    }
+    return [...cells.values()].sort((a, b) =>
+      a.year - b.year || a.month - b.month || a.crop.localeCompare(b.crop));
+  });
+
+  /** Fed cells to offer as shortcuts — empty once the current crop/year/month already shows some. */
+  readonly fedPeriodsToOffer = computed(() => {
+    if (!this.barchartEnabled) return [];
+    const crop = this.selectedCrop(), year = this.selectedYear(), month = this.selectedMonth();
+    const periods = this.fedPeriods();
+    if (periods.some(p => p.crop === crop && p.year === year && p.month === month)) return [];
+    return periods.slice(0, 6);
+  });
+
+  /** Delivery months with fed bids for the grid's current year that aren't among its columns. */
+  readonly fedMonthsMissingFromGrid = computed(() => {
+    if (!this.barchartEnabled) return [];
+    const shown = new Set(this.editBidsMonths());
+    const year = this.editBidsYear();
+    return [...new Set(this.fedPeriods()
+      .filter(p => p.year === year && !shown.has(p.month))
+      .map(p => p.month))].sort((a, b) => a - b);
+  });
+
+  /** "YC · Oct 26" for a fed-period shortcut. */
+  fedPeriodLabel(p: { crop: string; year: number; month: number }): string {
+    return `${p.crop} · ${BidSheetComponent.MONTH_NAMES[p.month]} ${String(p.year).slice(-2)}`;
+  }
+
+  /** Points the map and panel at a cell the feed has actually published. */
+  jumpToFedPeriod(p: { crop: string; year: number; month: number }): void {
+    this.selectedCrop.set(p.crop);
+    this.selectedYear.set(p.year);
+    this.selectedMonth.set(p.month);
+    this.yearOffset.set(0);
+    this.onFilterChange();
+    this._savePreference();
+  }
+
+  /** Adds the grid's missing fed months to its columns, going through the normal apply path. */
+  showFedMonthsInGrid(): void {
+    const missing = this.fedMonthsMissingFromGrid();
+    if (missing.length === 0) return;
+    this.pendingMonths.set([...new Set([...this.editBidsMonths(), ...missing])]);
+    this.confirmMonthSelection();
+  }
+
   /** Tooltip for a feed-owned cell: where it came from and when the elevator last changed it. */
   fedCellTooltip(row: EditBidsRow, key: string): string {
     const asOf = row.fedAsOf[key];

@@ -215,6 +215,30 @@ there when the panel closes instead of appearing after the next pipeline run.
 placement and its fed bids, while the catalog and price history persist — so re-adding it refills
 instantly, and other trade units' placements are untouched.
 
+### Finding fed bids (why an empty sheet doesn't mean a broken feed)
+
+The feed writes each bid at its **delivery month** (1-12) and its delivery **crop year**. It never writes
+month 0. The map, side panel and Edit Bids grid all default to month 0 ("Year"), and the bid lookup keys
+on `name|crop|year|month` with an exact match — so **on the default view, a sheet full of BarChart bids
+renders completely empty**. Pins go grey, the panel shows `--`, the grid has no cells. Nothing is wrong;
+the user is looking at a period the feed never publishes.
+
+Rather than change what the screen opens with (which would override saved month preferences for every
+user, fed bids or not), two prompts point at where the data actually is:
+
+- **On the map**, above the action buttons: chips for the crop/year/month cells the feed has published,
+  shown only while the current view has none of them. Clicking one sets crop, year and month together.
+- **In the Edit Bids grid**, above the table: "BarChart has bids for months not shown here — Show them",
+  which adds those delivery months to the grid's columns through the normal apply path (so the choice
+  persists like any other month selection).
+
+Both are driven by `fedPeriods`, computed from the loaded bids rather than from a separate query, so they
+cost nothing and stay correct as bids come and go. They disappear once the view can show fed bids.
+
+Also worth knowing when checking a feed location: the grid shows **one crop year at a time**, and feed
+bids routinely span two or three (Oct 2026 and Feb 2027 and May 2027 on the same location), so a location
+can look half-empty until the year is switched.
+
 ### Fed vs manual bids
 
 `dbo.BidSheetLocationBids.Source` is `Manual` or `Barchart`, and each side owns its own cells:

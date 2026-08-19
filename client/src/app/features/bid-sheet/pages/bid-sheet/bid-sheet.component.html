@@ -93,6 +93,25 @@
           </div>
 
           <!-- Floating action buttons (bottom-left) -->
+          <!-- BarChart bids sit at a specific delivery MONTH, never at "Year". On the default yearly view
+               a sheet full of fed bids looks empty, so point at the periods that actually have them. -->
+          @if (fedPeriodsToOffer().length > 0) {
+            <div class="absolute bottom-16 left-4 z-[1000] max-w-[calc(100%-2rem)] bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+              <p class="text-[11px] text-gray-500 dark:text-gray-400 mb-1.5">
+                BarChart has bids for other periods — this view has none:
+              </p>
+              <div class="flex flex-wrap items-center gap-1.5">
+                @for (p of fedPeriodsToOffer(); track fedPeriodLabel(p)) {
+                  <button (click)="jumpToFedPeriod(p)"
+                          [title]="'Show ' + fedPeriodLabel(p)"
+                          class="px-2 py-1 rounded-md text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green hover:opacity-70 transition-opacity">
+                    {{ fedPeriodLabel(p) }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+
           <div class="absolute bottom-4 left-4 z-[1000] flex items-center gap-2">
             <button
               (click)="startAddLocation('map')"
@@ -565,7 +584,8 @@
 
         <!-- ============ ADD FROM BARCHART ============ -->
         @if (barchartMode()) {
-          <div class="absolute top-4 left-4 z-[1100] bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 max-w-[340px]">
+          <!-- left-14 clears Leaflet's zoom control, the same offset the filter bar uses. -->
+          <div class="absolute top-2.5 left-14 z-[1100] bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 max-w-[300px]">
             <p class="text-sm font-semibold text-gray-900 dark:text-white">Pick a location from BarChart</p>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Pins are competitor locations in the feed near this view. Pan the map to look elsewhere, or search by name.
@@ -859,6 +879,21 @@
                 </button>
               </div>
             } @else {
+              <!-- Fed bids land on delivery months, so a grid showing only "Year" columns has nowhere to
+                   render them. Offer to add the months that actually have them. -->
+              @if (fedMonthsMissingFromGrid().length > 0) {
+                <div class="shrink-0 mx-5 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-scoular-green/30 bg-scoular-green/5 dark:bg-scoular-green/10 px-3 py-2">
+                  <span class="text-xs text-gray-700 dark:text-gray-200">
+                    BarChart has bids for
+                    {{ fedMonthsMissingFromGrid().length === 1 ? 'a month' : 'months' }}
+                    not shown here.
+                  </span>
+                  <button (click)="showFedMonthsInGrid()"
+                          class="px-2.5 py-1 rounded-md text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
+                    Show them
+                  </button>
+                </div>
+              }
               <div class="flex-1 overflow-auto">
                 <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
                   <thead>
