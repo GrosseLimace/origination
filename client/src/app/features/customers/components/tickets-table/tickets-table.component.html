@@ -86,7 +86,7 @@
           }
         </div>
 
-        <div class="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto relative space-y-2 py-2">
+        <div class="max-h-[calc(100dvh-var(--app-chrome)-3rem)] overflow-y-auto overflow-x-auto relative space-y-2 py-2">
           @for (group of ticketGroups; track group.groupKey) {
             <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
 
@@ -142,8 +142,7 @@
 
               <!-- Expanded: Ticket Table -->
               @if (isCommodityExpanded(group.groupKey)) {
-                <div class="overflow-auto" style="max-height: min(50vh, 400px);">
-                  <app-table [stickyHeader]="true">
+                  <app-table [stickyHeader]="true" [maxHeight]="'min(50vh, 400px)'">
                     <app-table-header>
                       <app-table-row>
                         <app-table-head [sortable]="true" (click)="handleSort('id')">
@@ -243,7 +242,6 @@
                       }
                     </app-table-body>
                   </app-table>
-                </div>
               }
             </div>
           }

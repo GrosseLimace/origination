@@ -1,4 +1,4 @@
-import { Component, input, output, inject, DestroyRef, effect } from '@angular/core';
+import { Component, input, output, inject, DestroyRef, effect, computed } from '@angular/core';
 
 @Component({
   selector: 'app-dialog',
@@ -11,8 +11,8 @@ import { Component, input, output, inject, DestroyRef, effect } from '@angular/c
       <!-- Dialog wrapper -->
       <div class="fixed inset-0 z-[60] flex justify-center px-4 overflow-y-auto" [class]="alignClass" (click)="onBackdropClick()">
         <div
-          class="relative w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl max-h-[calc(100vh-4rem)] overflow-y-auto border border-gray-200 dark:border-gray-700"
-          [class]="sizeClass"
+          class="relative w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700"
+          [class]="panelClass"
           (click)="$event.stopPropagation()"
         >
           @if (showCloseButton()) {
@@ -34,9 +34,13 @@ import { Component, input, output, inject, DestroyRef, effect } from '@angular/c
 })
 export class DialogComponent {
   public isOpen = input<boolean>(false);
-  public size = input<'sm' | 'md' | 'lg' | 'xl' | '2xl'>('md');
+  public size = input<'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'>('md');
   public closeOnBackdrop = input<boolean>(true);
   public showCloseButton = input<boolean>(true);
+  /** Scroll the body instead of the whole panel, so the title and the footer
+   *  actions stay put. Worth turning on for any dialog tall enough to scroll on
+   *  a laptop, where the buttons would otherwise scroll out of reach. */
+  public scrollBody = input<boolean>(false);
   /** Vertical placement. 'center' (default) keeps the existing centered behavior;
    *  'top' anchors the dialog in the upper third — better for short confirm dialogs
    *  that otherwise read as "low" when dead-centered on a tall viewport. */
@@ -67,9 +71,22 @@ export class DialogComponent {
       md: 'max-w-3xl',
       lg: 'max-w-4xl',
       xl: 'max-w-5xl',
-      '2xl': 'max-w-7xl'
+      '2xl': 'max-w-7xl',
+      full: 'max-w-[1400px] w-[95vw]'
     };
     return sizes[this.size()];
+  }
+
+  public get panelClass(): string {
+    // The cap has to account for the wrapper's own offset, or a full-height
+    // dialog runs off the bottom of a short screen: 'top' adds 12vh above the
+    // panel and 2rem below, 'center' adds 4rem split between the two.
+    const maxHeight = this.align() === 'top'
+      ? 'max-h-[calc(88dvh-2rem)]'
+      : 'max-h-[calc(100dvh-4rem)]';
+    // Scrolling the body means the panel itself must not scroll.
+    const overflow = this.scrollBody() ? 'flex flex-col overflow-hidden' : 'overflow-y-auto';
+    return `${this.sizeClass} ${maxHeight} ${overflow}`;
   }
 
   public onBackdropClick(): void {
@@ -82,6 +99,9 @@ export class DialogComponent {
 @Component({
   selector: 'app-dialog-header',
   standalone: true,
+  // Inert unless the dialog scrolls its body, where this keeps the title from
+  // being squeezed by a tall body.
+  host: { 'class': 'shrink-0' },
   template: `
     <div class="flex flex-col gap-1.5 text-center sm:text-left p-6 pb-0">
       <ng-content></ng-content>
@@ -115,17 +135,27 @@ export class DialogDescriptionComponent {}
 @Component({
   selector: 'app-dialog-content',
   standalone: true,
+  // display:contents makes the inner div a direct flex item of the dialog panel,
+  // which is what lets it take the leftover height when the body scrolls.
+  host: { '[style.display]': "scrolls() ? 'contents' : null" },
   template: `
-    <div class="p-6">
+    <div [class]="scrolls() ? 'p-6 flex-1 min-h-0 overflow-y-auto' : 'p-6'">
       <ng-content></ng-content>
     </div>
   `
 })
-export class DialogContentComponent {}
+export class DialogContentComponent {
+  // Content projected into <app-dialog> is a logical child of it, so the element
+  // injector resolves the host dialog here.
+  private readonly dialog = inject(DialogComponent, { optional: true });
+  readonly scrolls = computed(() => this.dialog?.scrollBody() ?? false);
+}
 
 @Component({
   selector: 'app-dialog-footer',
   standalone: true,
+  // Keeps the action buttons anchored when the dialog scrolls its body.
+  host: { 'class': 'shrink-0' },
   template: `
     <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 p-6 pt-4">
       <ng-content></ng-content>

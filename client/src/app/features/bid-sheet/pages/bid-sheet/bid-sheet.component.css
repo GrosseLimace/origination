@@ -1,6 +1,8 @@
 :host {
   display: block;
-  height: calc(100vh - 160px);
+  /* Fill the content area exactly. The old fixed 160px offset was ~8px away from
+     the real chrome height, so any header change pushed the map into a scrollbar. */
+  height: calc(100dvh - var(--app-chrome));
 }
 
 /* CDK drag-drop styling for the edit bids grid */

@@ -72,11 +72,6 @@ export class CustomerListComponent {
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.
   lastContactCache = signal(new Map<number, LastContactInfo>());
 
-  readonly listMaxHeight = computed(() => {
-    const hasSavedLists = !this.loading() && this.getVisibleSavedLists().length > 0;
-    return `calc(100vh - ${hasSavedLists ? 21 : 16}rem)`;
-  });
-
   private _scrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
@@ -689,7 +684,7 @@ export class CustomerListComponent {
 
   getCustomerItemClass(customer: Customer): string {
     const isSelected = this.selectedCustomer()?.id === customer.id;
-    const baseClass = 'p-4 cursor-pointer transition-colors';
+    const baseClass = 'px-4 py-3 cursor-pointer transition-colors';
     const stateClass = isSelected
       ? 'bg-green-50 dark:bg-green-900/30'
       : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700';

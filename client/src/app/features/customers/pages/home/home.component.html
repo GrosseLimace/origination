@@ -1,7 +1,10 @@
-<div class="grid grid-cols-1 lg:grid-cols-[33.3%_66.7%] xl:grid-cols-[25%_75%] 2xl:grid-cols-[22%_78%] gap-4 lg:gap-4 h-full overflow-auto lg:overflow-hidden pr-1 lg:pr-0">
-  <!-- Customer List - Precisely sized for optimal space usage (22% on 2xl) -->
-  <div class="lg:overflow-auto lg:max-h-full lg:pb-2" [class.hidden]="selectedCustomer() && isMobile()" [class.lg:block]="true">
+<div class="grid grid-cols-1 lg:grid-cols-[clamp(300px,calc(15.5vw_+_112px),430px)_minmax(0,1fr)] gap-4 lg:gap-4 h-full overflow-auto lg:overflow-hidden pr-1 lg:pr-0">
+  <!-- Customer List — fr tracks (not percentages) so the gap is subtracted from
+       the tracks instead of overflowing the grid; the minmax floor keeps the list
+       readable on laptops. -->
+  <div class="lg:max-h-full lg:pb-2 lg:flex lg:flex-col lg:min-h-0" [class.hidden]="selectedCustomer() && isMobile()" [class.lg:flex]="true">
     <app-customer-list
+      class="flex flex-col min-h-0 lg:flex-1"
       [customers]="customers()"
       [selectedCustomer]="selectedCustomer()"
       [savedLists]="savedLists()"
@@ -17,9 +20,11 @@
   <!-- Profile and Notes Container - Optimized content display (78% on 2xl) -->
   <div [class.hidden]="!selectedCustomer() && isMobile()" [class.lg:block]="true" class="lg:overflow-auto lg:max-h-full lg:pb-2 lg:pr-1">
     <div class="space-y-6"
-      [class]="contractsWide() ? '' : 'xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,500px)] xl:gap-3 xl:space-y-0'">
-      <!-- Profile Section - Optimized for data visibility, minmax(0,1fr) prevents overflow -->
-      <div class="space-y-6 min-w-0">
+      [class]="contractsWide() ? '' : 'xl:grid xl:grid-cols-[minmax(0,1fr)_clamp(320px,24vw,460px)] xl:gap-3 xl:space-y-0'">
+      <!-- Profile Section — declares the named container the profile subtree sizes
+           against. Its children must use @*/profile: variants, not viewport
+           prefixes: this column is ~600px on a laptop while the viewport is 1366. -->
+      <div class="space-y-6 min-w-0 @container/profile">
         @if (selectedCustomer(); as customer) {
           <!-- Back button on mobile -->
           <button
