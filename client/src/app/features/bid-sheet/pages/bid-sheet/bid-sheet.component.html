@@ -971,10 +971,12 @@
                                   @for (block of band; track block.crop) {
                                     <!-- Same width maths as the print output, so the preview shows an
                                          honest picture of what fits: value columns get exactly enough
-                                         for a one-line label, names take the remainder. -->
-                                    <col [style.width.%]="bandColumnWidths(band.length, block.columns.length).namePct" />
+                                         for a one-line label, names take the remainder. Keyed off the
+                                         page size, NOT band.length — a partly-full last band must
+                                         match the pages before it instead of stretching to fill. -->
+                                    <col [style.width.%]="bandColumnWidths(sideBySidePageSize(), block.columns.length).namePct" />
                                     @for (col of block.columns; track col.key) {
-                                      <col [style.width.%]="bandColumnWidths(band.length, block.columns.length).valuePct" />
+                                      <col [style.width.%]="bandColumnWidths(sideBySidePageSize(), block.columns.length).valuePct" />
                                     }
                                   }
                                 </colgroup>

@@ -1863,39 +1863,62 @@ export class BidSheetComponent {
     return `#${[mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
   }
 
-  /** Most crops we'll ever put on one landscape sheet, and the fallback when 4 won't fit. */
+  /** Most crops we'll ever put on one landscape sheet, and the fewest we'll shrink a page to. */
   static readonly MAX_CROPS_PER_BAND = 4;
-  static readonly FALLBACK_CROPS_PER_BAND = 3;
+  static readonly MIN_CROPS_PER_BAND = 2;
 
   /**
-   * How many crops go on a page — 4 when every elevator name fits on one line at full 10px type,
-   * otherwise 3.
+   * The DENSEST page that still fits every elevator name on one line at 10px — 4 if it can, then 3,
+   * then 2. This is a ceiling, not the final layout: see sideBySidePageSize, which then evens the
+   * crops out across pages.
    *
-   * Measured rather than fixed: 4 crops leaves a ~1.39in name column (~23 characters) and 3 leaves
-   * ~2.24in (~39), so a set of short names gets the denser 4-up sheet while a single long name
-   * ("Skyland Kendall/Midway/Lydia", 28) drops the print to 3-up. Decided ONCE for the whole export
-   * rather than per page, so every sheet in a run has the same shape.
+   * Measured rather than fixed. 4-up leaves a ~1.39in name column (~23 characters), 3-up ~2.24in
+   * (~39) and 2-up ~3.94in (~71), so short names get the dense 4-up sheet while one long name
+   * ("OmahaNebraskaScoularHeadquarters", 31) forces a wider page. Decided ONCE for the whole export
+   * so every sheet in a run has the same shape.
    *
-   * Names can still wrap if even 3-up can't fit one — a second line beats hidden text or tiny type.
+   * Floored at 2 deliberately. A single crop stretched across a full landscape sheet is the thing
+   * users specifically rejected, so a name past ~71 characters is allowed to wrap rather than
+   * earning its own full-width page — that is the one case where a second line wins.
    */
   cropsPerPage(blocks: { rows: { name: string }[]; columns: unknown[] }[]): number {
     if (blocks.length === 0) return BidSheetComponent.MAX_CROPS_PER_BAND;
     let longest = 0;
     for (const b of blocks) for (const r of b.rows) longest = Math.max(longest, r.name.length);
     const valueCols = blocks[0].columns.length || 1;
-    for (const candidate of [BidSheetComponent.MAX_CROPS_PER_BAND, BidSheetComponent.FALLBACK_CROPS_PER_BAND]) {
+    for (let candidate = BidSheetComponent.MAX_CROPS_PER_BAND; candidate > BidSheetComponent.MIN_CROPS_PER_BAND; candidate--) {
       const { namePct } = this.bandColumnWidths(candidate, valueCols);
       // 10px font ≈ 5.2px per character, less cell padding.
       const chars = Math.floor(((namePct / 100) * 10.2 * 96 - 10) / 5.2);
       if (longest <= chars) return candidate;
     }
-    return BidSheetComponent.FALLBACK_CROPS_PER_BAND;
+    return BidSheetComponent.MIN_CROPS_PER_BAND;
   }
 
-  /** previewSideBySideBlocks split into pages, using the measured crops-per-page. */
+  /**
+   * Crops per page, EVENED OUT rather than packed.
+   *
+   * cropsPerPage gives the densest page that fits the names; filling pages greedily to that number
+   * then leaves a remainder, and a remainder of one is what produced the complaint: with a long name
+   * the ceiling drops to 3, so four crops printed as 3 + 1 and that last crop sat alone across a
+   * whole landscape sheet. Dividing by the page COUNT instead of packing gives 2 + 2, and because
+   * each band is sized by how many blocks it holds, both pages are full and the blocks are simply
+   * wider. Four across whenever the names allow; otherwise the flattest balanced split.
+   *
+   * 5 crops with a 3 ceiling → 2 pages → 3 + 2. 7 with a 4 ceiling → 2 pages → 4 + 3.
+   */
+  readonly sideBySidePageSize = computed(() => {
+    const blocks = this.previewSideBySideBlocks();
+    const ceiling = this.cropsPerPage(blocks);
+    if (blocks.length === 0) return ceiling;
+    const pages = Math.ceil(blocks.length / ceiling);
+    return Math.ceil(blocks.length / pages);
+  });
+
+  /** previewSideBySideBlocks split into pages, using the balanced crops-per-page. */
   readonly previewSideBySideBands = computed(() => {
     const blocks = this.previewSideBySideBlocks();
-    const size = this.cropsPerPage(blocks);
+    const size = this.sideBySidePageSize();
     const bands: (typeof blocks)[] = [];
     for (let i = 0; i < blocks.length; i += size) bands.push(blocks.slice(i, i + size));
     return bands;
@@ -2290,11 +2313,15 @@ export class BidSheetComponent {
     // Value columns are sized to fit their label on one line by bandColumnWidths.
     const nowrapValue = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
 
+    const pageSize = this.sideBySidePageSize();
+
     return bands.map(band => {
-      // Widths are per BAND so each page fills its sheet. Value columns get exactly enough room for a
-      // one-line label; the name column takes the rest (see bandColumnWidths).
+      // Widths key off the PAGE SIZE, never band.length: a trailing band with fewer crops must draw
+      // them at the same width as a full page and leave the remainder blank, rather than stretching
+      // one crop across the sheet. Value columns get exactly enough room for a one-line label; the
+      // name column takes the rest (see bandColumnWidths).
       const { namePct: nameColPct, valuePct: valueColPct } =
-        this.bandColumnWidths(band.length, band[0].columns.length);
+        this.bandColumnWidths(pageSize, band[0].columns.length);
 
       const colgroup = `<colgroup>`
         + band.map(b =>
