@@ -35,38 +35,7 @@
             <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
           }
         </button>
-        @if (profileMenuOpen()) {
-          <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 max-h-[calc(100dvh-7rem)] overflow-y-auto">
-            <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
-              <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
-              <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
-            </div>
-            <div class="flex items-center gap-4 px-5 py-5 border-b border-gray-200 dark:border-gray-700">
-              <div class="w-20 h-20 rounded-full bg-scoular-green-accessible overflow-hidden flex-shrink-0 ring-2 ring-scoular-green/20">
-                @if (profilePhotoUrl()) {
-                  <img [src]="profilePhotoUrl()" alt="" class="w-full h-full object-cover">
-                } @else {
-                  <span class="w-full h-full flex items-center justify-center text-xl font-semibold text-white select-none">{{ getInitials() }}</span>
-                }
-              </div>
-              <div class="min-w-0 flex-1">
-                <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ getAccountName() }}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">{{ getEmail() }}</p>
-              </div>
-            </div>
-            <div class="py-1">
-              <button type="button" (click)="themeService.toggleTheme(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                @if (themeService.isDarkMode()) {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
-                  Light Mode
-                } @else {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-                  Dark Mode
-                }
-              </button>
-            </div>
-          </div>
-        }
+        <ng-container [ngTemplateOutlet]="profileMenu"></ng-container>
       </div>
     </div>
 
@@ -131,50 +100,7 @@
                 <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
               }
             </button>
-            @if (profileMenuOpen()) {
-              <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 max-h-[calc(100dvh-7rem)] overflow-y-auto">
-                <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
-                  <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
-                  <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
-                </div>
-                <div class="flex items-center gap-4 px-5 py-5 border-b border-gray-200 dark:border-gray-700">
-                  <div class="w-20 h-20 rounded-full bg-scoular-green-accessible overflow-hidden flex-shrink-0 ring-2 ring-scoular-green/20">
-                    @if (profilePhotoUrl()) {
-                      <img [src]="profilePhotoUrl()" alt="" class="w-full h-full object-cover">
-                    } @else {
-                      <span class="w-full h-full flex items-center justify-center text-xl font-semibold text-white select-none">{{ getInitials() }}</span>
-                    }
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <p class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ getAccountName() }}</p>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{{ getEmail() }}</p>
-                  </div>
-                </div>
-                <div class="py-1">
-                  <button type="button" (click)="themeService.toggleTheme(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                    @if (themeService.isDarkMode()) {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
-                      Light Mode
-                    } @else {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-                      Dark Mode
-                    }
-                  </button>
-                  @if (usageDashboardEnabled) {
-                    <button type="button" (click)="navigate('/usage-dashboard'); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                      Usage Dashboard
-                    </button>
-                  }
-                  @if (dailyDigestEnabled) {
-                    <button type="button" (click)="navigate('/daily-digest'); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                      Manage Groups
-                    </button>
-                  }
-                </div>
-              </div>
-            }
+            <ng-container [ngTemplateOutlet]="profileMenu"></ng-container>
           </div>
         </div>
       </div>
@@ -240,50 +166,7 @@
                 <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
               }
             </button>
-            @if (profileMenuOpen()) {
-              <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 max-h-[calc(100dvh-7rem)] overflow-y-auto">
-                <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
-                  <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
-                  <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
-                </div>
-                <div class="flex items-center gap-4 px-5 py-5 border-b border-gray-200 dark:border-gray-700">
-                  <div class="w-20 h-20 rounded-full bg-scoular-green-accessible overflow-hidden flex-shrink-0 ring-2 ring-scoular-green/20">
-                    @if (profilePhotoUrl()) {
-                      <img [src]="profilePhotoUrl()" alt="" class="w-full h-full object-cover">
-                    } @else {
-                      <span class="w-full h-full flex items-center justify-center text-xl font-semibold text-white select-none">{{ getInitials() }}</span>
-                    }
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <p class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ getAccountName() }}</p>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{{ getEmail() }}</p>
-                  </div>
-                </div>
-                <div class="py-1">
-                  <button type="button" (click)="themeService.toggleTheme(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                    @if (themeService.isDarkMode()) {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
-                      Light Mode
-                    } @else {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-                      Dark Mode
-                    }
-                  </button>
-                  @if (usageDashboardEnabled) {
-                    <button type="button" (click)="navigate('/usage-dashboard'); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                      Usage Dashboard
-                    </button>
-                  }
-                  @if (dailyDigestEnabled) {
-                    <button type="button" (click)="navigate('/daily-digest'); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                      Manage Groups
-                    </button>
-                  }
-                </div>
-              </div>
-            }
+            <ng-container [ngTemplateOutlet]="profileMenu"></ng-container>
           </div>
         </div>
       </div>
@@ -384,3 +267,54 @@
     </div>
   </div>
 }
+
+<!-- Profile menu, defined once and rendered by all three header layouts.
+     It used to be pasted three times and the copies had drifted: the mobile
+     copy was missing Usage Dashboard and Manage Groups entirely, so those two
+     features were unreachable on a phone. -->
+<ng-template #profileMenu>
+  @if (profileMenuOpen()) {
+    <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 max-h-[calc(100dvh-7rem)] overflow-y-auto">
+      <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
+        <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
+        <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
+      </div>
+      <div class="flex items-center gap-4 px-5 py-5 border-b border-gray-200 dark:border-gray-700">
+        <div class="w-20 h-20 rounded-full bg-scoular-green-accessible overflow-hidden flex-shrink-0 ring-2 ring-scoular-green/20">
+          @if (profilePhotoUrl()) {
+            <img [src]="profilePhotoUrl()" alt="" class="w-full h-full object-cover">
+          } @else {
+            <span class="w-full h-full flex items-center justify-center text-xl font-semibold text-white select-none">{{ getInitials() }}</span>
+          }
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ getAccountName() }}</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{{ getEmail() }}</p>
+        </div>
+      </div>
+      <div class="py-1">
+        <button type="button" (click)="themeService.toggleTheme(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+          @if (themeService.isDarkMode()) {
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            Light Mode
+          } @else {
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+            Dark Mode
+          }
+        </button>
+        @if (usageDashboardEnabled) {
+          <button type="button" (click)="navigate('/usage-dashboard'); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Usage Dashboard
+          </button>
+        }
+        @if (dailyDigestEnabled) {
+          <button type="button" (click)="navigate('/daily-digest'); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            Manage Groups
+          </button>
+        }
+      </div>
+    </div>
+  }
+</ng-template>
