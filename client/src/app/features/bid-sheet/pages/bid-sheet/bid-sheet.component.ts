@@ -1867,6 +1867,23 @@ export class BidSheetComponent {
   static readonly MAX_CROPS_PER_BAND = 4;
   static readonly MIN_CROPS_PER_BAND = 2;
 
+  // ── Export page geometry ────────────────────────────────────────────────────────────────────
+  // These four numbers decide whether four crops fit on one sheet, so they live together and are
+  // the only place to change it. PAGE_MARGIN_IN must match the @page rule in the printed CSS —
+  // they were separate literals before and drifting them silently mis-sizes every column.
+  static readonly PAGE_MARGIN_IN = 0.3;                                    // was 0.4
+  static readonly PAGE_WIDTH_IN = 11 - (2 * BidSheetComponent.PAGE_MARGIN_IN);  // landscape letter
+  /** Enough for a 6-char header ("O/C 25") on one line at 10px bold, plus padding and borders.
+   *  Measured need is ~0.50in; 0.55 keeps ~5px of slack so a different print font can't clip it.
+   *  Do not shave this below the header's real width — the value header ellipsises rather than
+   *  wrapping, and a clipped column heading is hidden information. */
+  static readonly MIN_VALUE_COL_IN = 0.55;                                 // was 0.58
+  /** Horizontal chrome inside a name cell: 6px padding each side plus 1px borders. The old figure
+   *  of 10 understated it, which let a name be judged as fitting and then wrap in the output. */
+  static readonly NAME_CELL_CHROME_PX = 14;
+  /** Average advance width of a mixed-case name at 10px in the print stack. */
+  static readonly NAME_CHAR_PX = 5.2;
+
   /**
    * The DENSEST page that still fits every elevator name on one line at 10px — 4 if it can, then 3,
    * then 2. This is a ceiling, not the final layout: see sideBySidePageSize, which then evens the
@@ -1889,7 +1906,7 @@ export class BidSheetComponent {
     for (let candidate = BidSheetComponent.MAX_CROPS_PER_BAND; candidate > BidSheetComponent.MIN_CROPS_PER_BAND; candidate--) {
       const { namePct } = this.bandColumnWidths(candidate, valueCols);
       // 10px font ≈ 5.2px per character, less cell padding.
-      const chars = Math.floor(((namePct / 100) * 10.2 * 96 - 10) / 5.2);
+      const chars = Math.floor(((namePct / 100) * BidSheetComponent.PAGE_WIDTH_IN * 96 - BidSheetComponent.NAME_CELL_CHROME_PX) / BidSheetComponent.NAME_CHAR_PX);
       if (longest <= chars) return candidate;
     }
     return BidSheetComponent.MIN_CROPS_PER_BAND;
@@ -1936,8 +1953,8 @@ export class BidSheetComponent {
    * Shared by the print output and the dialog preview so the preview is dimensionally honest.
    */
   bandColumnWidths(blocksInBand: number, valueColumns: number): { namePct: number; valuePct: number } {
-    const PAGE_IN = 10.2;      // landscape letter minus 0.4in margins
-    const MIN_VALUE_IN = 0.58; // fits a 6-char label on one line at 10px, plus cell padding
+    const PAGE_IN = BidSheetComponent.PAGE_WIDTH_IN;
+    const MIN_VALUE_IN = BidSheetComponent.MIN_VALUE_COL_IN;
     const blockIn = PAGE_IN / Math.max(1, blocksInBand);
     const needed = MIN_VALUE_IN * Math.max(1, valueColumns);
     const nameIn = Math.max(blockIn * 0.30, blockIn - needed);
@@ -2176,7 +2193,7 @@ export class BidSheetComponent {
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Open Sans', 'Segoe UI', system-ui, sans-serif; color: #1a1a1a; line-height: 1.5; padding: 0.4in; }
-        @page { margin: 0.4in; size: landscape; }
+        @page { margin: ${BidSheetComponent.PAGE_MARGIN_IN}in; size: landscape; }
         @media print { body { padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
         table { width: 100%; border-collapse: collapse; }
       </style>
