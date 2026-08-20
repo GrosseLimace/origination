@@ -209,7 +209,7 @@
                column — its rows (name · phone · email, full address) are the longest lines and
                shouldn't wrap onto a second row. Sized off the profile column, not the
                viewport: three columns only once there is room for them. -->
-          <div class="grid grid-cols-1 @md/profile:grid-cols-2 @4xl/profile:grid-cols-[1.6fr_1fr_1fr] gap-4 mb-4">
+          <div class="grid grid-cols-1 @md/profile:grid-cols-2 @lg/profile:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] @4xl/profile:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-4 @4xl/profile:gap-4 mb-4">
             <!-- Contact -->
             <div>
               <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contact</h3>
