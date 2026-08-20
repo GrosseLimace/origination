@@ -225,7 +225,7 @@
       }
 
       <!-- Add Dialog -->
-      <app-dialog [isOpen]="showAddDialog" (close)="closeAddDialog()" size="md">
+      <app-dialog [isOpen]="showAddDialog" (close)="closeAddDialog()" size="md" [scrollBody]="true">
         <app-dialog-header>
           <app-dialog-title>Add Planting Intention</app-dialog-title>
           <app-dialog-description>Record a new planting intention for {{ customer().name }}</app-dialog-description>
@@ -357,7 +357,7 @@
       </app-dialog>
 
       <!-- Edit Dialog -->
-      <app-dialog [isOpen]="showEditDialog" (close)="closeEditDialog()" size="md">
+      <app-dialog [isOpen]="showEditDialog" (close)="closeEditDialog()" size="md" [scrollBody]="true">
         <app-dialog-header>
           <app-dialog-title>Edit Planting Intention</app-dialog-title>
           <app-dialog-description>Update planting intention for {{ customer().name }}</app-dialog-description>
