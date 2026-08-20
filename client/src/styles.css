@@ -28,6 +28,24 @@
   --app-chrome: calc(var(--app-header-h) + 2 * var(--app-main-pad));
 }
 
+/* Fluid scale, laptop -> monitor.
+   One shared set of curves so every screen interpolates instead of snapping at a
+   breakpoint, and so the whole app grows at the same rate. All reach their max at
+   1920px and their min at or below 1366px.
+   Use as text-[var(--text-fluid-sm)], p-[var(--space-fluid-card)], etc. */
+:root {
+  /* body copy and row metadata: 13px -> 16px */
+  --text-fluid-sm: clamp(13px, calc(0.55vw + 5.5px), 16px);
+  /* row and card headings, one step above the body: 15px -> 18px */
+  --text-fluid-md: clamp(15px, calc(0.55vw + 7.5px), 18px);
+  /* card padding and list gaps: 12px -> 16px */
+  --space-fluid-card: clamp(12px, calc(0.72vw + 2.14px), 16px);
+  /* chart plot areas: holds today's laptop size, grows on a monitor */
+  --size-fluid-chart: clamp(200px, calc(7.22vw + 101.4px), 240px);
+  /* circular chart diameter: same rule */
+  --size-fluid-dial: clamp(148px, calc(5.78vw + 69px), 180px);
+}
+
 @media (min-width: 40rem) {
   :root {
     --app-main-pad: 1.5rem;

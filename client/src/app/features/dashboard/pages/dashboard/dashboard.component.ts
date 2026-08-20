@@ -879,11 +879,11 @@ export class DashboardComponent {
         commodity, bushels, hex: commodityColorMap.get(commodity)!
       }));
       const total = segments.reduce((s, x) => s + x.bushels, 0);
-      return { month, monthIndex: i, segments, total, barHeightPx: 0 };
+      return { month, monthIndex: i, segments, total, barHeightPct: 0 };
     });
 
     const max = Math.max(...raw.map(m => m.total), 1);
-    return raw.map(m => ({ ...m, barHeightPx: Math.round((m.total / max) * 128) }));
+    return raw.map(m => ({ ...m, barHeightPct: (m.total / max) * 100 }));
   });
 
   readonly harvestTimelineMax = computed(() =>
