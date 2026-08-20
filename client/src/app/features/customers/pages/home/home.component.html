@@ -20,7 +20,7 @@
   <!-- Profile and Notes Container - Optimized content display (78% on 2xl) -->
   <div [class.hidden]="!selectedCustomer() && isMobile()" [class.lg:block]="true" class="lg:overflow-auto lg:max-h-full lg:pb-2 lg:pr-1">
     <div class="space-y-6"
-      [class]="contractsWide() ? '' : 'xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,500px)] xl:gap-3 xl:space-y-0'">
+      [class]="contractsWide() ? '' : 'xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:gap-3 xl:space-y-0'">
       <!-- Profile Section — declares the named container the profile subtree sizes
            against. Its children must use @*/profile: variants, not viewport
            prefixes: this column is ~600px on a laptop while the viewport is 1366. -->
