@@ -142,8 +142,7 @@
 
               <!-- Expanded: Ticket Table -->
               @if (isCommodityExpanded(group.groupKey)) {
-                <div class="overflow-auto" style="max-height: min(50vh, 400px);">
-                  <app-table [stickyHeader]="true">
+                  <app-table [stickyHeader]="true" [maxHeight]="'min(50vh, 400px)'">
                     <app-table-header>
                       <app-table-row>
                         <app-table-head [sortable]="true" (click)="handleSort('id')">
@@ -243,7 +242,6 @@
                       }
                     </app-table-body>
                   </app-table>
-                </div>
               }
             </div>
           }

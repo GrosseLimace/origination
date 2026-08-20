@@ -52,8 +52,8 @@
         <!-- One height for every screen: the 400px floor keeps short viewports usable,
              and taller ones get the room they actually have (was capped at 400px
              below 1536px, which is every laptop). -->
-        <div class="overflow-auto relative max-h-[max(400px,calc(100dvh-var(--app-chrome)-3rem))] [&_thead_th]:!px-2 [&_tbody_td]:!px-2">
-        <app-table [stickyHeader]="true">
+        <div class="relative [&_thead_th]:!px-2 [&_tbody_td]:!px-2">
+        <app-table [stickyHeader]="true" [maxHeight]="'max(400px, calc(100dvh - var(--app-chrome) - 3rem))'">
           <app-table-header>
             <app-table-row>
               <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('contractNumber')">
