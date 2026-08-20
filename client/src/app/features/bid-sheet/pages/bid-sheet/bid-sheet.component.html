@@ -1,7 +1,7 @@
     <!-- --bid-panel-w tracks the slide-in panel's own responsive width (see the panel
          below). Overlays that dodge the panel offset themselves off this instead of
          hardcoding the widest value, which was wrong at every width under 1024px. -->
-    <div class="relative overflow-hidden isolate rounded-lg h-full [--bid-panel-w:100%] sm:[--bid-panel-w:360px] lg:[--bid-panel-w:420px]" style="min-height: 400px;">
+    <div class="relative overflow-hidden isolate rounded-lg h-full [--bid-panel-w:100%] sm:[--bid-panel-w:360px] lg:[--bid-panel-w:clamp(420px,calc(14.44vw_+_222.7px),500px)]" style="min-height: 400px;">
 
         <!-- Full-screen map -->
         <div #mapEl id="bid-locations-map" style="height: 100%; width: 100%;"></div>
@@ -184,7 +184,7 @@
           </div>
 
           <!-- Slide-in bids panel (right edge) -->
-          <div class="absolute top-0 right-0 h-full w-full sm:w-[360px] lg:w-[420px] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
+          <div class="absolute top-0 right-0 h-full w-full sm:w-[var(--bid-panel-w)] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
                [style.transform]="showPanel() ? 'translateX(0)' : 'translateX(100%)'">
 
             @if (panelSelectedLocation()) {

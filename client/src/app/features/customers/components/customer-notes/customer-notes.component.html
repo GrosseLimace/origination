@@ -211,7 +211,7 @@
                   {{ getInitials(note.createdBy || 'User') }}
                 </div>
                 <div class="min-w-0">
-                  <div class="text-[var(--text-fluid-sm)] font-medium text-gray-900 dark:text-white truncate">
+                  <div class="text-[length:var(--text-fluid-sm)] font-medium text-gray-900 dark:text-white truncate">
                     {{ note.createdBy || 'User' }}
                   </div>
                   <div class="flex items-center gap-1.5">
@@ -227,7 +227,7 @@
 
               <!-- Note content (view mode) -->
               @if (editingNoteId() !== note.id) {
-                <p class="text-[var(--text-fluid-sm)] text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-2"
+                <p class="text-[length:var(--text-fluid-sm)] text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-2"
                    appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
                    [class.line-clamp-4]="!isNoteExpanded(note.id)">@for (seg of noteViewSegments(note); track $index) {<span [class]="seg.kind === 'mention' ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'search' ? 'rounded bg-green-100 px-0.5 text-green-800 dark:bg-green-500/30 dark:text-green-200' : ''">{{ seg.text }}</span>}</p>
                 @if (isNoteOverflowing(note.id) || isNoteExpanded(note.id)) {
