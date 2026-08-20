@@ -133,9 +133,9 @@
             {{ noteSearch().trim() ? 'No notes match your search.' : 'No notes from this producer.' }}
           </div>
         } @else {
-        <div class="space-y-6 overflow-y-auto pr-1 max-h-[calc(100dvh-var(--app-chrome)-5rem)]">
+        <div class="space-y-3 overflow-y-auto pr-1 max-h-[calc(100dvh-var(--app-chrome)-5rem)]">
           @for (note of displayedNotes(); track note.id) {
-            <div class="border rounded-lg p-4 relative" [ngClass]="getNoteClass(note)">
+            <div class="border rounded-lg p-3 relative" [ngClass]="getNoteClass(note)">
               <!-- Top right actions -->
               <div class="absolute top-3 right-3 flex items-center gap-2">
                 <!-- Pin/Unpin button -->
@@ -206,12 +206,12 @@
               </div>
 
               <!-- Avatar and author info -->
-              <div class="flex items-center gap-3 pb-3 border-b border-gray-200 dark:border-gray-700 pr-20">
+              <div class="flex items-center gap-3 pb-2 border-b border-gray-200 dark:border-gray-700 pr-20">
                 <div class="h-8 w-8 shrink-0 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-300">
                   {{ getInitials(note.createdBy || 'User') }}
                 </div>
                 <div class="min-w-0">
-                  <div class="font-medium text-gray-900 dark:text-white truncate">
+                  <div class="text-sm font-medium text-gray-900 dark:text-white truncate">
                     {{ note.createdBy || 'User' }}
                   </div>
                   <div class="flex items-center gap-1.5">
@@ -227,7 +227,7 @@
 
               <!-- Note content (view mode) -->
               @if (editingNoteId() !== note.id) {
-                <p class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-3"
+                <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-2"
                    appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
                    [class.line-clamp-4]="!isNoteExpanded(note.id)">@for (seg of noteViewSegments(note); track $index) {<span [class]="seg.kind === 'mention' ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'search' ? 'rounded bg-green-100 px-0.5 text-green-800 dark:bg-green-500/30 dark:text-green-200' : ''">{{ seg.text }}</span>}</p>
                 @if (isNoteOverflowing(note.id) || isNoteExpanded(note.id)) {
