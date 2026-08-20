@@ -52,17 +52,14 @@ body {
   @apply bg-gray-50 text-gray-900;
 }
 
-/* Laptop density.
-   Tailwind sizes and spacing are both rem-based, so stepping the root font size
-   down scales type and padding together — the whole UI gets ~6% tighter without
-   touching a single component. Screens 1536px and wider are untouched and keep
-   today's scale exactly. Turn the dial here (15px -> 14px) to go further.
-   Note: rem inside a media query always resolves against the initial 16px, so
-   this does not move any breakpoint. */
-@media (max-width: 1535.98px) {
-  :root {
-    font-size: 15px;
-  }
+/* Laptop-to-monitor density, fluid.
+   Interpolates 15px -> 16px between 1280px and 1536px viewport width instead of
+   snapping at a breakpoint. Tailwind sizes and spacing are rem-based, so this
+   makes type AND padding flow continuously across that whole range. Clamped, so
+   <=1280px stays 15px and >=1536px stays 16px exactly as before.
+   0.390625vw == 1px per 256px of width, i.e. 1px gained over 1280->1536. */
+:root {
+  font-size: clamp(15px, calc(0.390625vw + 10px), 16px);
 }
 
 /* Scoular Typescale — in @layer base so Tailwind utility classes can override.

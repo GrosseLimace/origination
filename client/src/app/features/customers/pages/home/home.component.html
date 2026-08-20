@@ -1,4 +1,4 @@
-<div class="grid grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_minmax(0,2fr)] xl:grid-cols-[minmax(300px,1fr)_minmax(0,3fr)] 2xl:grid-cols-[minmax(320px,2fr)_minmax(0,7fr)] gap-4 lg:gap-4 h-full overflow-auto lg:overflow-hidden pr-1 lg:pr-0">
+<div class="grid grid-cols-1 lg:grid-cols-[clamp(300px,calc(15.5vw_+_112px),430px)_minmax(0,1fr)] gap-4 lg:gap-4 h-full overflow-auto lg:overflow-hidden pr-1 lg:pr-0">
   <!-- Customer List — fr tracks (not percentages) so the gap is subtracted from
        the tracks instead of overflowing the grid; the minmax floor keeps the list
        readable on laptops. -->
@@ -20,7 +20,7 @@
   <!-- Profile and Notes Container - Optimized content display (78% on 2xl) -->
   <div [class.hidden]="!selectedCustomer() && isMobile()" [class.lg:block]="true" class="lg:overflow-auto lg:max-h-full lg:pb-2 lg:pr-1">
     <div class="space-y-6"
-      [class]="contractsWide() ? '' : 'xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,460px)] xl:gap-3 xl:space-y-0'">
+      [class]="contractsWide() ? '' : 'xl:grid xl:grid-cols-[minmax(0,1fr)_clamp(320px,24vw,460px)] xl:gap-3 xl:space-y-0'">
       <!-- Profile Section — declares the named container the profile subtree sizes
            against. Its children must use @*/profile: variants, not viewport
            prefixes: this column is ~600px on a laptop while the viewport is 1366. -->
