@@ -256,7 +256,7 @@
 
               <!-- Crop / Bid rows -->
               @if (panelLocationBids().length > 0) {
-              <table class="w-full border-collapse text-sm">
+              <table class="w-full border-collapse text-[length:var(--text-fluid-sm)]">
                 <thead class="sticky top-0 z-10">
                   <tr class="bg-gray-50 dark:bg-gray-800">
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Crop</th>
@@ -280,14 +280,14 @@
                 <tbody>
                   @for (row of panelLocationBids(); track row.crop) {
                     <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <td class="px-3 py-3 text-sm font-medium text-gray-900 dark:text-white">{{ row.crop }}</td>
-                      <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
+                      <td class="px-3 py-3 text-[length:var(--text-fluid-sm)] font-medium text-gray-900 dark:text-white">{{ row.crop }}</td>
+                      <td class="px-1 py-3 text-[length:var(--text-fluid-md)] font-mono font-semibold text-center" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.oldStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.oldStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.oldStatus === 'beating',
                         'text-gray-900 dark:text-white': row.oldStatus === 'none'
                       }">{{ row.oldBid || '--' }}</td>
-                      <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
+                      <td class="px-1 py-3 text-[length:var(--text-fluid-md)] font-mono font-semibold text-center" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.newStatus === 'beating',
