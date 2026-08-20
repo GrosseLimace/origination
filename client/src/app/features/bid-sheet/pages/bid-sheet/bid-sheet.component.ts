@@ -1907,13 +1907,14 @@ export class BidSheetComponent {
    *
    * 5 crops with a 3 ceiling → 2 pages → 3 + 2. 7 with a 4 ceiling → 2 pages → 4 + 3.
    */
-  readonly sideBySidePageSize = computed(() => {
-    const blocks = this.previewSideBySideBlocks();
+  balancedPageSize(blocks: { rows: { name: string }[]; columns: unknown[] }[]): number {
     const ceiling = this.cropsPerPage(blocks);
     if (blocks.length === 0) return ceiling;
     const pages = Math.ceil(blocks.length / ceiling);
     return Math.ceil(blocks.length / pages);
-  });
+  }
+
+  readonly sideBySidePageSize = computed(() => this.balancedPageSize(this.previewSideBySideBlocks()));
 
   /** previewSideBySideBlocks split into pages, using the balanced crops-per-page. */
   readonly previewSideBySideBands = computed(() => {
@@ -2297,31 +2298,30 @@ export class BidSheetComponent {
       // Same order as the edit grid (no Scoular re-sort) so the print matches the screen.
       rows: rows.filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0))
     }));
-    // Crops per page is measured from the longest name (4 if they fit, else 3 — see cropsPerPage).
-    // Each band prints on its own page, so a wide crop selection produces more pages rather than
-    // narrower, colliding columns.
-    const bandSize = this.cropsPerPage(cropBlocks);
+    // ONE number drives both the split and the widths, and it is derived from THESE blocks.
+    // Previously the split used the raw cropsPerPage ceiling while the widths came from the
+    // preview's balanced size — two different numbers, and computed from a different block list.
+    // The mismatch put three blocks on a page sized for two, so the colgroup percentages summed
+    // past 100% and every value cell was squeezed into an ellipsis ("-4…"). Keep these together.
+    const bandSize = this.balancedPageSize(cropBlocks);
     const bands: (typeof cropBlocks)[] = [];
     for (let i = 0; i < cropBlocks.length; i += bandSize) bands.push(cropBlocks.slice(i, i + bandSize));
 
     // A heavy rule separates one crop from the next, so the eye doesn't run across a boundary.
     const blockDivider = (i: number) => i === 0 ? '' : 'border-left:3px solid #111827;';
-    // Nothing is ever truncated and type stays at a readable 10px. cropsPerPage is what buys that:
-    // it drops from 4 crops to 3 when a name wouldn't fit on one line (~23 chars at 4-up vs ~39 at
-    // 3-up). Names may still wrap if something longer than 39 chars turns up — a second line is
-    // acceptable, hidden text and shrunken type are not.
-    // Value columns are sized to fit their label on one line by bandColumnWidths.
+    // Type stays at a readable 10px and values are never truncated — provided bandSize above and
+    // bandColumnWidths below agree, which is what the mismatch broke. Value columns get exactly
+    // enough for a one-line label; the name column takes the rest. The ellipsis here is a last
+    // resort that should never fire; if you see one in the output, the widths are wrong again.
     const nowrapValue = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
 
-    const pageSize = this.sideBySidePageSize();
-
     return bands.map(band => {
-      // Widths key off the PAGE SIZE, never band.length: a trailing band with fewer crops must draw
+      // Widths key off bandSize, never band.length: a trailing band with fewer crops must draw
       // them at the same width as a full page and leave the remainder blank, rather than stretching
       // one crop across the sheet. Value columns get exactly enough room for a one-line label; the
       // name column takes the rest (see bandColumnWidths).
       const { namePct: nameColPct, valuePct: valueColPct } =
-        this.bandColumnWidths(pageSize, band[0].columns.length);
+        this.bandColumnWidths(bandSize, band[0].columns.length);
 
       const colgroup = `<colgroup>`
         + band.map(b =>
