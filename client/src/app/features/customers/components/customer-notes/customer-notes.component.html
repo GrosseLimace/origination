@@ -133,9 +133,9 @@
             {{ noteSearch().trim() ? 'No notes match your search.' : 'No notes from this producer.' }}
           </div>
         } @else {
-        <div class="space-y-3 overflow-y-auto pr-1 max-h-[calc(100dvh-var(--app-chrome)-5rem)]">
+        <div class="space-y-3 2xl:space-y-4 overflow-y-auto pr-1 max-h-[calc(100dvh-var(--app-chrome)-5rem)]">
           @for (note of displayedNotes(); track note.id) {
-            <div class="border rounded-lg p-3 relative" [ngClass]="getNoteClass(note)">
+            <div class="border rounded-lg p-3 2xl:p-4 relative" [ngClass]="getNoteClass(note)">
               <!-- Top right actions -->
               <div class="absolute top-3 right-3 flex items-center gap-2">
                 <!-- Pin/Unpin button -->
