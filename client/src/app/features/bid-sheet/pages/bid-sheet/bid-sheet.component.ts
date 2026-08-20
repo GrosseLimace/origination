@@ -2390,8 +2390,9 @@ export class BidSheetComponent {
           }).join('')
         + `</tr>`).join('');
 
-      // A partial trailing band spreads across the full width rather than leaving a gap at the right:
-      // since each band now owns a page, there's no band above it to line up with.
+      // page-break-inside:avoid keeps a band whole — it moves to the next sheet in one piece rather
+      // than splitting its rows across the fold. Because every band is sized to the same page size,
+      // a partial trailing band lines up column-for-column under the band above it.
       return `
         <div style="page-break-inside:avoid;">
           <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
@@ -2400,9 +2401,12 @@ export class BidSheetComponent {
             <tbody>${bodyRows}</tbody>
           </table>
         </div>`;
-    // Four crops is the most that fits a landscape sheet legibly, so each band gets its OWN page
-    // rather than stacking two bands onto one. The last band must not force a trailing blank page.
-    }).join('<div style="page-break-after:always;"></div>');
+    // Bands FLOW; they are not one-per-page. This used to join with page-break-after:always, which
+    // forced a new sheet after every band — so a 2 + 2 split printed on two sheets even though both
+    // bands together filled barely half of one, which is what users were seeing. A band is only ever
+    // as tall as its longest crop's location list, so several commonly share a sheet. Pagination is
+    // left to the browser, bounded by page-break-inside:avoid above so a band is never cut in half.
+    }).join('<div style="height:14px;"></div>');
   }
 
   private _removeAddLocationPin(): void {
