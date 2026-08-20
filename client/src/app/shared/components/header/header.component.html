@@ -36,7 +36,7 @@
           }
         </button>
         @if (profileMenuOpen()) {
-          <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
+          <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 max-h-[calc(100dvh-7rem)] overflow-y-auto">
             <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
               <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
               <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
@@ -132,7 +132,7 @@
               }
             </button>
             @if (profileMenuOpen()) {
-              <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
+              <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 max-h-[calc(100dvh-7rem)] overflow-y-auto">
                 <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
                   <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
                   <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
@@ -241,7 +241,7 @@
               }
             </button>
             @if (profileMenuOpen()) {
-              <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
+              <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 max-h-[calc(100dvh-7rem)] overflow-y-auto">
                 <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
                   <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
                   <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
