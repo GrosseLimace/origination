@@ -312,6 +312,68 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("BarchartInstrument", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartLocationSummary", b =>
+                {
+                    b.Property<long>("ActiveInstrumentCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Address")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("City")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("CommodityCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("EarliestDeliveryStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Elevator")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FacilityType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("LastSeenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LatestDeliveryEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LatestQuoteTimestamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
+                    b.Property<string>("LocationKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LocationName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
+
+                    b.Property<string>("Phone")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("State")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Website")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ZipCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("vw_BarchartLocation", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartQuoteSnapshot", b =>
                 {
                     b.Property<DateOnly>("SnapshotDate")

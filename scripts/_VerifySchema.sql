@@ -543,7 +543,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (20; see KNOWN PRE-EXISTING GAPS in the header)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (22; see KNOWN PRE-EXISTING GAPS in the header)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Migrations (MigrationId) VALUES
 ('20260310202402_AddESignEnrollment'),
@@ -565,7 +565,9 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260603200941_RemoveCasmFromPlantingIntentions'),
 ('20260604150610_AddUserDeactivatedToCustomerTradeUnit'),
 ('20260609161126_AddPrintLayoutToBidSheetPreference'),
-('20260811142608_AddBarchartFeed');
+('20260811142608_AddBarchartFeed'),
+('20260812143729_AddCoverageQueryLibraryItems'),
+('20260821124557_AddBarchartPublishableBidView');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
@@ -774,6 +776,29 @@ INSERT INTO @Findings (SortBucket, Category, Item, Expected, Actual, Status)
         SELECT 1 FROM dbo.__EFMigrationsHistory h
         WHERE h.MigrationId = e.MigrationId
     )
+
+    UNION ALL
+
+    -- ---- BarChart diagnostic view vs reality ----
+    -- vw_BarchartPublishableBid re-implements the bridge's rules so it can explain a missing bid, which
+    -- means it can drift from the bridge and start lying. Every winner it names should be on the sheet
+    -- as a feed-owned cell with the same value. A mismatch means one of the two was changed alone.
+    -- Skipped when no bids have been published yet (nothing to compare) or when a caller used a
+    -- non-default maxQuoteAgeDays, which legitimately produces a different set.
+    SELECT 55, 'Barchart.ViewDrift',
+           CAST(COUNT(*) AS nvarchar(20)) + ' winner(s) disagree with the published cell',
+           '0', CAST(COUNT(*) AS nvarchar(20)), 'WARN'
+    FROM dbo.vw_BarchartPublishableBid AS v
+    LEFT JOIN dbo.BidSheetLocationBids AS b
+        ON b.LocationId    = v.LocationId
+       AND b.CommodityCode = v.CommodityCode
+       AND b.CropYear      = v.CropYear
+       AND b.Month         = v.BidMonth
+       AND b.Source        = N'Barchart'
+    WHERE v.WinnerRank = 1
+      AND EXISTS (SELECT 1 FROM dbo.BidSheetLocationBids WHERE Source = N'Barchart')
+      AND (b.Id IS NULL OR b.Bid <> FORMAT(v.LastPrice, N'0.00##', N'en-US'))
+    HAVING COUNT(*) > 0
 
     UNION ALL
 

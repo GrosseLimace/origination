@@ -267,7 +267,41 @@ it put soybeans at **$3.51 for Sep 2026** directly between **$11.70** in August 
 originator reads that as the market falling out of bed, not as missing data. A blank cell is honest; a
 confidently wrong number is not.
 
+### Diagnosing a missing bid: `dbo.vw_BarchartPublishableBid`
+
+The question that comes up every time the feed looks wrong is "why is there no bid here?", and answering
+it from the tables means a five-way join plus knowing the bridge's rules. This view answers it directly.
+
+One row per **candidate** — every cash instrument on a feed-linked location, *including the ones that get
+rejected*, which is the point: an unmapped commodity or a stale quote is invisible in the published data.
+
+| Column | Use |
+|---|---|
+| `BlockedReason` | `unmapped commodity`, `stale quote`, `implausible price`, `delivery window elapsed`, `no quote yet`, or null |
+| `WouldPublishAtDefaults` | Named to be honest: `apply-bids` accepts a `maxQuoteAgeDays` override, so a caller can get a different answer |
+| `WinnerRank` | 1 = the row the bridge would write for that cell. Blocked rows sort last, so rank 1 is always publishable |
+| `QuoteAgeDays`, `QuoteMode` | Why something is stale. `mode = i` is fresh, `d` is the months-old population |
+| `CurrentSheetBid`, `CurrentSheetSource` | What's on the sheet *now*. `Manual` here against a publishable candidate is a typed bid deliberately blocking the feed — the most confusing state to explain without seeing both sides |
+
+```sql
+-- Why is this location not showing what I expect?
+SELECT CommodityCode, CropYear, BidMonth, LastPrice, QuoteAgeDays, BlockedReason,
+       WinnerRank, CurrentSheetBid, CurrentSheetSource
+FROM dbo.vw_BarchartPublishableBid
+WHERE LocationName = 'Scoular Company - Kansas - Salina'
+ORDER BY CropYear, BidMonth, CommodityCode;
+```
+
+**Cash bids only.** Basis instruments load alongside and are legitimately negative (-30, -116 observed),
+so including them would flag every one as an implausible price and bury the real problems.
+
+**It re-implements the bridge's rules, so it can drift and start lying.** `scripts/_VerifySchema.sql`
+compares the view's winners against the published feed cells and warns on any mismatch, so a change made
+to one and not the other is caught rather than discovered. The check skips itself when nothing has been
+published yet.
+
 ### Fed vs manual bids
+
 
 
 `dbo.BidSheetLocationBids.Source` is `Manual` or `Barchart`, and each side owns its own cells:
