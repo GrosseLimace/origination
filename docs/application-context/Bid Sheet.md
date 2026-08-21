@@ -224,16 +224,16 @@ renders completely empty**. Pins go grey, the panel shows `--`, the grid has no 
 the user is looking at a period the feed never publishes.
 
 Rather than change what the screen opens with (which would override saved month preferences for every
-user, fed bids or not), two prompts point at where the data actually is:
+user, fed bids or not), the **Edit Bids grid** shows a prompt above the table when fed bids exist in
+months it isn't displaying: "BarChart has bids for months not shown here — Show them". It adds those
+delivery months to the grid's columns through the normal apply path, so the choice persists like any
+other month selection, and it disappears once the columns cover the fed months.
 
-- **On the map**, above the action buttons: chips for the crop/year/month cells the feed has published,
-  shown only while the current view has none of them. Clicking one sets crop, year and month together.
-- **In the Edit Bids grid**, above the table: "BarChart has bids for months not shown here — Show them",
-  which adds those delivery months to the grid's columns through the normal apply path (so the choice
-  persists like any other month selection).
+Driven by `fedPeriods`, computed from the already-loaded bids rather than a separate query.
 
-Both are driven by `fedPeriods`, computed from the loaded bids rather than from a separate query, so they
-cost nothing and stay correct as bids come and go. They disappear once the view can show fed bids.
+A matching set of shortcut chips on the map was tried and **removed** (2026-08-21) — an unprompted panel
+over the map was more intrusive than the problem warranted. The grid prompt covers the same need at the
+point where someone is actually looking for the numbers.
 
 Also worth knowing when checking a feed location: the grid shows **one crop year at a time**, and feed
 bids routinely span two or three (Oct 2026 and Feb 2027 and May 2027 on the same location), so a location

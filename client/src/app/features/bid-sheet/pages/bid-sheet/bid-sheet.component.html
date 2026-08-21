@@ -93,25 +93,6 @@
           </div>
 
           <!-- Floating action buttons (bottom-left) -->
-          <!-- BarChart bids sit at a specific delivery MONTH, never at "Year". On the default yearly view
-               a sheet full of fed bids looks empty, so point at the periods that actually have them. -->
-          @if (fedPeriodsToOffer().length > 0) {
-            <div class="absolute bottom-16 left-4 z-[1000] max-w-[calc(100%-2rem)] bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
-              <p class="text-[11px] text-gray-500 dark:text-gray-400 mb-1.5">
-                BarChart has bids for other periods — this view has none:
-              </p>
-              <div class="flex flex-wrap items-center gap-1.5">
-                @for (p of fedPeriodsToOffer(); track fedPeriodLabel(p)) {
-                  <button (click)="jumpToFedPeriod(p)"
-                          [title]="'Show ' + fedPeriodLabel(p)"
-                          class="px-2 py-1 rounded-md text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green hover:opacity-70 transition-opacity">
-                    {{ fedPeriodLabel(p) }}
-                  </button>
-                }
-              </div>
-            </div>
-          }
-
           <div class="absolute bottom-4 left-4 z-[1000] flex items-center gap-2">
             <button
               (click)="startAddLocation('map')"
