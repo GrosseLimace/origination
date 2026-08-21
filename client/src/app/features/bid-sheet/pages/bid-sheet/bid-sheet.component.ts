@@ -1843,9 +1843,24 @@ export class BidSheetComponent {
     }))
   );
 
+  /**
+   * Commodity CODE → the key the shared palette actually understands.
+   *
+   * The bid sheet groups by code (YC, SOR, YSB) but commodity-color.ts is keyed by crop NAME
+   * (corn, sorghum, soybeans). Passing a code straight in misses every entry and falls through to
+   * the hashed fallback palette — and YC, SOR and YSB all hash to the same bucket, so the whole
+   * sheet printed in one colour. Category is the Commodities table's code→crop mapping.
+   */
+  private readonly cropCategoryByCode = computed(
+    () => new Map(this.allCommodities().map(c => [c.code, c.category?.trim() || c.code])));
+
+  cropPaletteKey(crop: string): string {
+    return this.cropCategoryByCode().get(crop) ?? crop;
+  }
+
   /** Solid per-crop hex from the shared palette — used for the header border/accent. */
   cropHeaderColor(crop: string): string {
-    return commodityHex(crop);
+    return commodityHex(this.cropPaletteKey(crop));
   }
 
   /**
@@ -1857,7 +1872,7 @@ export class BidSheetComponent {
    * Tailwind 100-level of the same hue, which is about an 82% blend.
    */
   cropHeaderTint(crop: string, blend = 0.82): string {
-    const hex = commodityHex(crop).replace('#', '');
+    const hex = this.cropHeaderColor(crop).replace('#', '');
     const r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
     const mix = (c: number) => Math.round(c + (255 - c) * blend);
     return `#${[mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
@@ -2352,7 +2367,7 @@ export class BidSheetComponent {
       // underneath — colour is what makes a block findable when several sit side by side.
       const headerRow = `<tr>`
         + band.map((b, i) =>
-            `<th colspan="${1 + b.columns.length}" style="padding:6px 8px;text-align:center;font-size:12px;font-weight:700;color:#1f2937;background:${this.cropHeaderTint(b.crop)};border:1px solid #d1d5db;border-bottom:3px solid ${commodityHex(b.crop)};${blockDivider(i)}white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${this._esc(b.crop)}</th>`
+            `<th colspan="${1 + b.columns.length}" style="padding:6px 8px;text-align:center;font-size:12px;font-weight:700;color:#1f2937;background:${this.cropHeaderTint(b.crop)};border:1px solid #d1d5db;border-bottom:3px solid ${this.cropHeaderColor(b.crop)};${blockDivider(i)}white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${this._esc(b.crop)}</th>`
           ).join('')
         + `</tr>`;
 
