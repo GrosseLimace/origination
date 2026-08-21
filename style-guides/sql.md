@@ -708,6 +708,57 @@ BEGIN
 END
 ```
 
+### Migrations Must Parse Before Merge
+
+Every `.sql` file must parse against the SQL Server grammar. A migration with a
+syntax error is not caught by review, by a build, or by a unit test — the first
+thing that evaluates it is the deployment itself, and by then it fails in every
+environment at once.
+
+Migration runners stop on the first failure, so one bad script blocks every
+later one. A runner using per-script transactions makes this worse: earlier
+scripts in the same run commit and are journaled while the bad one rolls back
+unjournaled, leaving that environment on a **partially applied** migration set
+that no longer matches any other environment.
+
+Do not rely on a SQL linter for this. Linters that reimplement the T-SQL grammar
+accept statements the engine rejects. The case this rule exists for:
+
+```sql
+-- Invalid: THROW takes a literal or a variable, never an expression.
+-- sqlfluff 4.2.2 (dialect tsql) reports ZERO unparsable segments here.
+;THROW 50000, LEFT(@msg, 2044), 1;
+
+-- Valid: hoist the expression into a variable first.
+DECLARE @ThrowMsg NVARCHAR(2048) = LEFT(@msg, 2044);
+THROW 50000, @ThrowMsg, 1;
+```
+
+The gate therefore parses with Microsoft's ScriptDom — the same grammar the
+engine uses — rather than a linter. Reproduce a failure locally before pushing:
+
+```powershell
+pwsh -File dev-standards/tools/tsql-parse.ps1 <scriptdom.dll> path/to/script.sql
+```
+
+```rule
+id: sql-must-parse
+source: sql.md§Migration-Standards
+severity: error
+description: Every changed .sql file must parse against the SQL Server grammar (ScriptDom)
+applies-to: [changed-files]
+files: ['*.sql']
+tool: tsql-parse
+args:
+  sql-version: '160'
+message: |
+  This file does not parse against the SQL Server grammar, so it will fail at
+  deployment time rather than in review. Fix the reported line before merging —
+  a migration runner stops on the first failing script and, with per-script
+  transactions, leaves the environment partially applied.
+  See dev-standards/style-guides/sql.md §Migration-Standards.
+```
+
 ---
 
 ## Azure SQL Specific
