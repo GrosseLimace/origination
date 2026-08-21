@@ -66,6 +66,19 @@ copy now corresponds to. Do **not** commit automatically — let the user review
 
 - Shell state does not persist between Bash tool calls; substitute literal paths.
 - Guides are occasionally renamed upstream (`X-guide.md` → `X.md`). A rename shows up as
-  an add plus a stale leftover — check for and remove the orphan rather than keeping both.
-- If a guide referenced by a project-local skill disappears upstream, update that skill
-  rather than pinning an orphaned copy here.
+  an add plus a stale leftover — check for and remove the orphan rather than keeping both,
+  and update any project-local skill that referenced the old name.
+- **Four guides are deliberately retained and are NOT in the plugin.** Scoular retired them
+  upstream on 2026-04-15, but this repo's project-local audit skills still depend on them:
+
+  | Guide | Depended on by |
+  |-------|----------------|
+  | `refactoring-guide.md` | all 7 project-local `audit-*` skills (smells E1–E7) |
+  | `error-smells-guide.md` | `audit-error-paths` (E8–E10) |
+  | `integration-smells-guide.md` | `audit-integrations` |
+  | `model-smells-guide.md` | `audit-models` |
+
+  The copy step above overwrites matching filenames but leaves local-only files alone, so
+  these survive a refresh. **Do not delete them as orphans.** If they ever need updating,
+  the last upstream versions are at `git show e16ab391^:style-guides/<name>.md`. If a
+  project-local skill stops referencing one, retire that guide with it.
