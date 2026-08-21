@@ -112,7 +112,8 @@ public class BidSheetService : IBidSheetService
         // Publish the feed's current prices immediately, so a location added from the picker shows its
         // bids right away instead of looking empty until the next pipeline run.
         await _barchartIngest.ApplyBidsToBidSheetAsync(
-            created.Id, BarchartFeedDefaults.InstrumentType, BarchartFeedDefaults.Actor, cancellationToken);
+            created.Id, BarchartFeedDefaults.InstrumentType, BarchartFeedDefaults.Actor,
+            cancellationToken: cancellationToken);
 
         var withFedBids = await _repository.GetLocationAsync(created.Id, cancellationToken);
         return (withFedBids ?? created).ToResponse();

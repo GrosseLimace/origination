@@ -128,7 +128,7 @@ public class BarchartCatalogService : IBarchartCatalogService
         await _entitlementService.ValidateTradeUnitsOrThrowAsync([storedTradeUnit], cancellationToken);
 
         var rows = await _ingest.ApplyBidsToBidSheetAsync(
-            locationId, DefaultInstrumentType, FeedActor, cancellationToken);
+            locationId, DefaultInstrumentType, FeedActor, cancellationToken: cancellationToken);
 
         _logger.LogInformation(
             "BarChart bids refreshed for location {LocationId}: {RowsAffected} cells [DataMutation]",

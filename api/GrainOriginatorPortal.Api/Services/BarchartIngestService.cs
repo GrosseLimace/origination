@@ -157,7 +157,8 @@ public class BarchartIngestService : IBarchartIngestService
 
         try
         {
-            var rows = await _repository.ApplyBidsToBidSheetAsync(locationId, instrumentType, FeedActor, cancellationToken);
+            var rows = await _repository.ApplyBidsToBidSheetAsync(
+                locationId, instrumentType, FeedActor, cancellationToken: cancellationToken);
             sw.Stop();
 
             _logger.LogInformation(

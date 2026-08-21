@@ -239,7 +239,36 @@ Also worth knowing when checking a feed location: the grid shows **one crop year
 bids routinely span two or three (Oct 2026 and Feb 2027 and May 2027 on the same location), so a location
 can look half-empty until the year is switched.
 
+### What the feed refuses to publish
+
+The bridge only writes a price it would stand behind. From the first live quote run (2026-08-21, 31,559
+quotes) the vendor sends three populations in one payload:
+
+| | Rows | Notes |
+|---|---|---|
+| Fresh (`mode = i`) | ~14,100 | 0.4-1.6 days old. Real bids. |
+| Stale (`mode = d`) | ~1,300 | **Averaging 181 days old**, and holds every sentinel |
+| Placeholders | — | `0.0025` for a no-bid, and `214748.3647` = `int.MaxValue / 10000` |
+
+So three conditions sit on the quote join, from `BarchartFeedDefaults`:
+
+- **`MaxQuoteAgeDays` (7)** — a quote with a trade timestamp older than this is skipped. A missing
+  timestamp still publishes: that's absent metadata, not a bad price.
+- **`MinPublishablePrice` (0.01)** — excludes the `0.0025` no-bid placeholder, seen on corn and soybeans.
+- **`MaxPublishablePrice` (100,000)** — excludes the sentinel. Deliberately *not* a $/bu band: **canola
+  legitimately quotes around 800** because it's priced per metric tonne, so a "sane" band of 0.50-100
+  would have silently dropped every canola bid.
+
+`apply-bids` takes `maxQuoteAgeDays` as a query parameter to widen the window deliberately (a backfill,
+or a quiet market), so the default is a floor rather than a hard rule.
+
+**Why this matters more than it sounds.** A stale price isn't a cosmetic problem — on the test location
+it put soybeans at **$3.51 for Sep 2026** directly between **$11.70** in August and October. An
+originator reads that as the market falling out of bed, not as missing data. A blank cell is honest; a
+confidently wrong number is not.
+
 ### Fed vs manual bids
+
 
 `dbo.BidSheetLocationBids.Source` is `Manual` or `Barchart`, and each side owns its own cells:
 

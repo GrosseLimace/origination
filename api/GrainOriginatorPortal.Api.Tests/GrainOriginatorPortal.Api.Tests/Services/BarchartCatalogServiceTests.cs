@@ -158,7 +158,7 @@ public class BarchartCatalogServiceTests
 
         Assert.Null(result);
         await _ingest.DidNotReceive().ApplyBidsToBidSheetAsync(
-            Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -168,7 +168,7 @@ public class BarchartCatalogServiceTests
     public async Task RefreshBidsAsync_ValidatesStoredTradeUnit_AndScopesBridgeToLocation()
     {
         _bidSheet.GetLocationTradeUnitCodeAsync(12, Arg.Any<CancellationToken>()).Returns("2190");
-        _ingest.ApplyBidsToBidSheetAsync(12, "bidCash", "barchart-feed", Arg.Any<CancellationToken>()).Returns(6);
+        _ingest.ApplyBidsToBidSheetAsync(12, "bidCash", "barchart-feed", Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(6);
 
         var result = await _sut.RefreshBidsAsync(12, CancellationToken.None);
 

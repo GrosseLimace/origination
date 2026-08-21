@@ -54,8 +54,15 @@ public interface IBarchartIngestRepository
     /// <param name="locationId">Limit to one Bid Sheet location; null processes every linked location.</param>
     /// <param name="instrumentType">Vendor price type to publish, e.g. <c>bidCash</c>. Null publishes any type.</param>
     /// <param name="appliedBy">Actor recorded on written rows.</param>
+    /// <param name="maxQuoteAgeDays">
+    /// Skip quotes older than this. The vendor returns fresh and months-old quotes in the same payload,
+    /// and a stale price on the sheet is read as today's market — worse than a blank cell.
+    /// </param>
     /// <returns>Bid rows written or removed.</returns>
-    Task<int> ApplyBidsToBidSheetAsync(int? locationId, string? instrumentType, string appliedBy, CancellationToken cancellationToken = default);
+    Task<int> ApplyBidsToBidSheetAsync(
+        int? locationId, string? instrumentType, string appliedBy,
+        int maxQuoteAgeDays = BarchartFeedDefaults.MaxQuoteAgeDays,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Records one ingest call for monthly usage tracking.</summary>
     Task LogApiCallAsync(BarchartApiCallAudit audit, CancellationToken cancellationToken = default);

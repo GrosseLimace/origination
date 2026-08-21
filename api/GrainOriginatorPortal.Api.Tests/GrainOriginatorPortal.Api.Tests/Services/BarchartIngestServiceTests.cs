@@ -154,13 +154,13 @@ public class BarchartIngestServiceTests
     public async Task ApplyBidsAsync_StampsTheFeedActorSoWrittenCellsAreAttributableToTheFeed()
     {
         _repository.ApplyBidsToBidSheetAsync(
-                Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(12);
 
         var result = await _sut.ApplyBidsAsync(locationId: 42, instrumentType: "bidCash");
 
         Assert.Equal(12, result.RowsAffected);
-        await _repository.Received(1).ApplyBidsToBidSheetAsync(42, "bidCash", "barchart-feed", Arg.Any<CancellationToken>());
+        await _repository.Received(1).ApplyBidsToBidSheetAsync(42, "bidCash", "barchart-feed", Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

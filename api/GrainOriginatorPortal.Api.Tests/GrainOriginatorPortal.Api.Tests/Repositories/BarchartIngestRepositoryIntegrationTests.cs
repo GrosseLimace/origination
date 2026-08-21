@@ -323,4 +323,96 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         CreatedBy = "integration-test",
         CreatedAt = DateTime.UtcNow
     };
+
+    // -------------------------------------------------------------------------
+    // The first live quote run (2026-08-21) showed the vendor mixes three populations in one payload:
+    // fresh quotes, quotes averaging 181 days old, and placeholders (0.0025, and the sentinel
+    // 214748.3647 = int.MaxValue / 10000). A stale or sentinel price on the sheet is worse than a blank
+    // cell -- it put soybeans at $3.51 for one month beside $11.70 either side of it, which reads as a
+    // market move rather than as missing data.
+    [Fact]
+    public async Task ApplyBids_SkipsStalePlaceholderAndSentinelPrices()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+
+        var mixedQuotes = """
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPQ26F-82259-15194.CM", "lastPrice": "4.47",
+                "tradeTimestamp": "REPLACE_FRESH", "mode": "i", "unitCode": "4", "code": 200 },
+              { "symbol": "ZCPQ26L-82259-15194.CM", "lastPrice": "214748.3647",
+                "tradeTimestamp": "REPLACE_FRESH", "mode": "d", "unitCode": "4", "code": 200 },
+              { "symbol": "ZCPQ26-27300-6916.CM", "lastPrice": "3.51",
+                "tradeTimestamp": "REPLACE_STALE", "mode": "d", "unitCode": "4", "code": 200 },
+              { "symbol": "ZCPQ26-87495-17523.CM", "lastPrice": "0.0025",
+                "tradeTimestamp": "REPLACE_FRESH", "mode": "i", "unitCode": "4", "code": 200 }
+            ] }
+            """
+            .Replace("REPLACE_FRESH", DateTime.UtcNow.AddHours(-2).ToString("yyyy-MM-ddTHH:mm:sszzz"))
+            .Replace("REPLACE_STALE", DateTime.UtcNow.AddDays(-262).ToString("yyyy-MM-ddTHH:mm:sszzz"));
+
+        await _sut.LoadQuotesAsync(mixedQuotes, BusinessDate);
+
+        _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (#2 Yellow)",
+            CommodityCode = "CORN",
+            CommodityName = "Corn",
+            CommodityCategory = "Grains",
+            CreatedBy = "integration-test"
+        });
+        var gpc = NewLinkedLocation("__IT GPC Quality", "82259");
+        var sioux = NewLinkedLocation("__IT Sioux Quality", "27300");
+        var third = NewLinkedLocation("__IT Placeholder Quality", "87495");
+        _context.BidSheetLocations.AddRange(gpc, sioux, third);
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
+
+        var gpcCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == gpc.Id).ToListAsync();
+        var siouxCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == sioux.Id).ToListAsync();
+        var thirdCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == third.Id).ToListAsync();
+
+        // The fresh, plausible price publishes -- and the sentinel does not win its cell despite being
+        // the wider delivery window, which is what the ranking would otherwise have preferred.
+        Assert.Equal("4.47", Assert.Single(gpcCells).Bid);
+        // A 262-day-old quote is not published at all.
+        Assert.Empty(siouxCells);
+        // Neither is a no-bid placeholder.
+        Assert.Empty(thirdCells);
+    }
+
+    // A caller can widen the window deliberately -- useful for a backfill or a quiet market -- and the
+    // stale row then publishes, which proves the cutoff is what excluded it rather than something else.
+    [Fact]
+    public async Task ApplyBids_WithAWiderAgeWindow_PublishesTheOlderQuote()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+
+        var stale = """
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPQ26-27300-6916.CM", "lastPrice": "3.51",
+                "tradeTimestamp": "REPLACE_STALE", "mode": "d", "unitCode": "4", "code": 200 }
+            ] }
+            """.Replace("REPLACE_STALE", DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:sszzz"));
+        await _sut.LoadQuotesAsync(stale, BusinessDate);
+
+        _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (#2 Yellow)",
+            CommodityCode = "CORN",
+            CreatedBy = "integration-test"
+        });
+        var sioux = NewLinkedLocation("__IT Sioux Wide", "27300");
+        _context.BidSheetLocations.Add(sioux);
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed", maxQuoteAgeDays: 45);
+
+        var cells = await _context.BidSheetLocationBids.Where(b => b.LocationId == sioux.Id).ToListAsync();
+        Assert.Equal("3.51", Assert.Single(cells).Bid);
+    }
 }

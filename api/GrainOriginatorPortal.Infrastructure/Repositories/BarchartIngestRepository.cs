@@ -434,7 +434,9 @@ WHERE i.IsActive = 1
 
     /// <inheritdoc />
     public async Task<int> ApplyBidsToBidSheetAsync(
-        int? locationId, string? instrumentType, string appliedBy, CancellationToken cancellationToken = default)
+        int? locationId, string? instrumentType, string appliedBy,
+        int maxQuoteAgeDays = BarchartFeedDefaults.MaxQuoteAgeDays,
+        CancellationToken cancellationToken = default)
     {
         // Publishes one winning price per (location, commodity, crop year, month) cell, then prunes
         // feed-owned cells that no longer have a winner (rolled-off delivery months, deactivated
@@ -498,6 +500,15 @@ DECLARE @winners TABLE
     INNER JOIN dbo.BarchartCurrentQuote AS q
         ON q.Symbol = i.Symbol
        AND q.LastPrice IS NOT NULL
+       -- Only publish a price we'd stand behind. The vendor mixes fresh quotes with long-stale ones and
+       -- with placeholders in the same payload, and a wrong number on the sheet is worse than a blank
+       -- cell: an originator can see a blank, but reads a stale price as today's market.
+       AND q.LastPrice >= @minPrice
+       AND q.LastPrice <= @maxPrice
+       -- A missing trade timestamp means the vendor didn't say when this was set; publish it rather than
+       -- discard a price over absent metadata, but anything with a timestamp must be recent.
+       AND (q.TradeTimestamp IS NULL
+            OR q.TradeTimestamp >= DATEADD(DAY, -@maxQuoteAgeDays, SYSUTCDATETIME()))
     INNER JOIN dbo.BarchartCommodityMap AS m
         ON m.BarchartCommodity = i.Commodity
        AND m.IsActive = 1
@@ -584,7 +595,10 @@ SELECT CAST(@written + @pruned AS int);";
             cancellationToken,
             ("@locationId", locationId.HasValue ? locationId.Value : DBNull.Value),
             ("@instrumentType", string.IsNullOrWhiteSpace(instrumentType) ? DBNull.Value : instrumentType),
-            ("@appliedBy", appliedBy));
+            ("@appliedBy", appliedBy),
+            ("@maxQuoteAgeDays", maxQuoteAgeDays),
+            ("@minPrice", BarchartFeedDefaults.MinPublishablePrice),
+            ("@maxPrice", BarchartFeedDefaults.MaxPublishablePrice));
     }
 
     /// <inheritdoc />

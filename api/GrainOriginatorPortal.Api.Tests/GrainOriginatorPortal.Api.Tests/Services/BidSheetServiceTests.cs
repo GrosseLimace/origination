@@ -117,7 +117,7 @@ public class BidSheetServiceTests
         Assert.Equal("IA", captured.State);
         Assert.Equal(41.42, captured.Latitude);
         _barchartIngest.Verify(i => i.ApplyBidsToBidSheetAsync(
-            7, "bidCash", "barchart-feed", It.IsAny<CancellationToken>()), Times.Once);
+            7, "bidCash", "barchart-feed", It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // -------------------------------------------------------------------------
@@ -195,6 +195,6 @@ public class BidSheetServiceTests
 
         _barchartCatalog.Verify(c => c.GetLocationAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _barchartIngest.Verify(i => i.ApplyBidsToBidSheetAsync(
-            It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }
