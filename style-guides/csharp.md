@@ -144,6 +144,28 @@ Api → Infrastructure (only reference needed)
 
 ## Formatting
 
+Whitespace conformance is enforced at PR time, so it is not a matter of taste or
+of reviewer attention. Run `dotnet format whitespace` before pushing.
+
+Only the `whitespace` subcommand is enforced, deliberately. The full
+`dotnet format` also runs the style and analyzer formatters, and those need
+NuGet packages restored to resolve type references — so they fail with
+unrelated `CS0246` errors on a gate that has not restored. Style and analyzer
+concerns belong to Roslyn analyzers configured in the projects themselves.
+
+```rule
+id: csharp-whitespace-formatted
+source: csharp.md§Formatting
+severity: error
+description: C# projects must be whitespace-formatted (dotnet format whitespace --verify-no-changes)
+applies-to: [changed-files]
+files: ['*.cs', '*.csproj']
+tool: dotnet-format-whitespace
+message: |
+  C# whitespace formatting does not match. Run `dotnet format whitespace <sln-or-csproj>`
+  and commit the result. See csharp.md §Formatting.
+```
+
 ### Indentation and Spacing
 
 - **Indentation**: 4 spaces (no tabs)
