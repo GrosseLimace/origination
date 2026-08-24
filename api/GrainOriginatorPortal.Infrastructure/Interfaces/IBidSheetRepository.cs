@@ -39,5 +39,5 @@ public interface IBidSheetRepository
     Task SetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken);
     Task<BidSheetPreference?> GetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken);
     Task SetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear,
-        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? printLayout, CancellationToken cancellationToken);
+        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? printLayout, string? priceMode, CancellationToken cancellationToken);
 }

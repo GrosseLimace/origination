@@ -36,6 +36,9 @@ public static class BidSheetMappings
         Source = b.Source,
         BarchartSymbol = b.BarchartSymbol,
         QuoteAsOf = b.QuoteAsOf,
+        BasisBid = b.BasisBid,
+        BasisSymbol = b.BasisSymbol,
+        BasisQuoteAsOf = b.BasisQuoteAsOf,
         CreatedBy = b.CreatedBy,
         CreatedAt = b.CreatedAt,
         ModifiedBy = b.ModifiedBy,
@@ -84,6 +87,7 @@ public static class BidSheetMappings
         HiddenCrops = p.HiddenCrops,
         SelectedMonths = p.SelectedMonths,
         PrintLayout = p.PrintLayout,
+        PriceMode = p.PriceMode,
         ModifiedAt = p.ModifiedAt,
     };
 }

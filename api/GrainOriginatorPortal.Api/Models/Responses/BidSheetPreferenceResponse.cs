@@ -13,5 +13,6 @@ public record BidSheetPreferenceResponse
     public string? HiddenCrops { get; init; }
     public string? SelectedMonths { get; init; }
     public string? PrintLayout { get; init; }
+    public string? PriceMode { get; init; }
     public DateTime ModifiedAt { get; init; }
 }

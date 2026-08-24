@@ -415,4 +415,84 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         var cells = await _context.BidSheetLocationBids.Where(b => b.LocationId == sioux.Id).ToListAsync();
         Assert.Equal("3.51", Assert.Single(cells).Bid);
     }
+
+    // -------------------------------------------------------------------------
+    // Basis publishes onto the SAME row as cash, into its own columns. It is normally negative
+    // (-30 reads as thirty under), which is exactly why it can't share the cash price floor: the
+    // 0.01 minimum that screens out the vendor's no-bid placeholder would reject every basis quote.
+    [Fact]
+    public async Task ApplyBids_PublishesBasisAlongsideCash_AndKeepsNegativeValues()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+
+        var fresh = DateTime.UtcNow.AddHours(-1).ToString("yyyy-MM-ddTHH:mm:sszzz");
+        var quotes = """
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPQ26-27300-6916.CM", "lastPrice": "4.41",
+                "tradeTimestamp": "REPLACE", "mode": "i", "unitCode": "4", "code": 200 },
+              { "symbol": "ZBPQ26-27300-6916.CM", "lastPrice": "-30",
+                "tradeTimestamp": "REPLACE", "mode": "i", "unitCode": "4", "code": 200 }
+            ] }
+            """.Replace("REPLACE", fresh);
+        await _sut.LoadQuotesAsync(quotes, BusinessDate);
+
+        _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (#2 Yellow)",
+            CommodityCode = "CORN",
+            CreatedBy = "integration-test"
+        });
+        var loc = NewLinkedLocation("__IT Basis Pairing", "27300");
+        _context.BidSheetLocations.Add(loc);
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.SingleAsync(b => b.LocationId == loc.Id);
+        Assert.Equal("4.41", cell.Bid);
+        // Minus sign preserved, and no trailing zeros -- an originator reads 30 under, not -30.00.
+        Assert.Equal("-30", cell.BasisBid);
+        Assert.Equal(BidSources.Barchart, cell.Source);
+    }
+
+    // A manual cell is off limits to both prices, not just the cash one -- otherwise the feed could
+    // half-write a row a user owns.
+    [Fact]
+    public async Task ApplyBids_DoesNotAttachBasisToAManualBid()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+        var fresh = DateTime.UtcNow.AddHours(-1).ToString("yyyy-MM-ddTHH:mm:sszzz");
+        await _sut.LoadQuotesAsync("""
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZBPQ26-27300-6916.CM", "lastPrice": "-30",
+                "tradeTimestamp": "REPLACE", "mode": "i", "unitCode": "4", "code": 200 }
+            ] }
+            """.Replace("REPLACE", fresh), BusinessDate);
+
+        _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (#2 Yellow)", CommodityCode = "CORN", CreatedBy = "integration-test"
+        });
+        var loc = NewLinkedLocation("__IT Basis Manual", "27300");
+        _context.BidSheetLocations.Add(loc);
+        await _context.SaveChangesAsync();
+
+        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
+        {
+            LocationId = loc.Id, CommodityCode = "CORN", CropYear = 2026, Month = 8,
+            Bid = "9.99", Source = BidSources.Manual, CreatedBy = "integration-test", CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.SingleAsync(b => b.LocationId == loc.Id);
+        Assert.Equal("9.99", cell.Bid);
+        Assert.Null(cell.BasisBid);
+        Assert.Equal(BidSources.Manual, cell.Source);
+    }
 }

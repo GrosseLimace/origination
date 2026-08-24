@@ -83,11 +83,23 @@ export class BidSheetComponent {
   readonly hasIndividualTu = computed(() => this.activeTradeUnits().length > 0);
   /** The bids grid is read-only in "All Producers" mode (no single TU to save against) — it's a
    *  view of every location's bids for the selected year. Editing requires picking a trade unit. */
-  readonly editBidsReadOnly = computed(() => !this.hasIndividualTu());
+  /**
+   * The grid is view-only in All Producers, and also in basis mode: every write path targets the CASH
+   * column, so a bid typed while basis is displayed would silently overwrite that cell's cash price
+   * with a basis number. Entering basis by hand needs its own write path — until then, read-only.
+   */
+  readonly editBidsReadOnly = computed(() => !this.hasIndividualTu() || this.priceMode() === 'basis');
   selectedYear = signal<number>(new Date().getFullYear());
   selectedCrop = signal<string>('');
   searchQuery = signal<string>('');
   selectedBasis = signal<string>('all');
+
+  /**
+   * Which price the sheet is showing. Cash is the posted flat price; basis is cents against the futures
+   * board and is normally negative, so "-30" reads as thirty under. Both come from the feed on the same
+   * row, so switching is a display change with no refetch.
+   */
+  priceMode = signal<'cash' | 'basis'>('cash');
   selectedMonth = signal<number>(0); // 0=yearly, 1-12=monthly
 
   // --- Data ---
@@ -123,6 +135,7 @@ export class BidSheetComponent {
   /** Flattened view of locations — uses TU-filtered bidLocations when a TU is active, otherwise allMapLocations. */
   readonly bidEntries = computed<BidSheetEntry[]>(() => {
     const source = this.activeTradeUnits().length > 0 ? this.bidLocations() : this.allMapLocations();
+    const basisMode = this.priceMode() === 'basis';
     return source.flatMap(loc =>
       (loc.bids ?? []).map(bid => ({
         id: bid.id,
@@ -142,10 +155,12 @@ export class BidSheetComponent {
         commodityCategory: bid.commodityCategory,
         cropYear: bid.cropYear,
         month: bid.month,
-        bid: bid.bid,
+        // The entry carries whichever price the sheet is showing, so every downstream consumer --
+        // map colours, panel, grid, print -- follows the toggle without knowing it exists.
+        bid: basisMode ? (bid.basisBid ?? '') : bid.bid,
         source: bid.source ?? 'Manual',
-        barchartSymbol: bid.barchartSymbol,
-        quoteAsOf: bid.quoteAsOf,
+        barchartSymbol: basisMode ? bid.basisSymbol : bid.barchartSymbol,
+        quoteAsOf: basisMode ? bid.basisQuoteAsOf : bid.quoteAsOf,
         createdBy: bid.createdBy,
         createdAt: bid.createdAt,
         modifiedBy: bid.modifiedBy,
@@ -872,6 +887,11 @@ export class BidSheetComponent {
         } catch { /* invalid JSON — skip */ }
       }
 
+      // Restore the cash/basis choice, per-key then global. Validated rather than trusted: an
+      // unrecognised value falls back to cash rather than putting the sheet in a mode nothing renders.
+      const savedPriceMode = perKey?.priceMode ?? global?.priceMode ?? null;
+      this.priceMode.set(savedPriceMode === 'basis' ? 'basis' : 'cash');
+
       // Apply saved print/export layout if available (per-key then global). Sanitize on read so
       // malformed/out-of-range persisted data can't break the year pickers.
       const printLayoutJson = perKey?.printLayout ?? global?.printLayout ?? null;
@@ -908,13 +928,16 @@ export class BidSheetComponent {
     const month = this.selectedMonth();
     const cropYear = this.selectedYear() || null;
     const key = this.activeTradeUnitKey();
+    // Cash/basis rides along with crop, month and year: it's the same kind of choice, and having it
+    // reset on every visit would be its own small annoyance.
+    const priceMode = this.priceMode();
     if (key) {
-      this.apiService.setBidSheetPreference(key, cropCode, month, cropYear)
+      this.apiService.setBidSheetPreference(key, cropCode, month, cropYear, undefined, undefined, undefined, undefined, priceMode)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save per-TU bid sheet preference', err); } });
     }
     // Always save globally so choices carry over to new TU/group selections
-    this.apiService.setBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear)
+    this.apiService.setBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, undefined, undefined, undefined, undefined, priceMode)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save global bid sheet preference', err); } });
   }
@@ -974,6 +997,18 @@ export class BidSheetComponent {
   // =========================================================================
   // Filter & Display (Panel)
   // =========================================================================
+
+  /**
+   * Switches between the cash and basis views. Only fed bids carry a basis, so a sheet of manually
+   * typed bids goes largely blank in basis mode — that is the data being honest, not a fault.
+   */
+  setPriceMode(mode: 'cash' | 'basis'): void {
+    if (this.priceMode() === mode) return;
+    this.priceMode.set(mode);
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', `price-mode-${mode}`);
+    this.onFilterChange();
+    if (this.editBidsMode()) this._buildEditGrid(this.editBidsYear());
+  }
 
   onFilterChange(): void {
     if (this._map) this._map.closePopup();

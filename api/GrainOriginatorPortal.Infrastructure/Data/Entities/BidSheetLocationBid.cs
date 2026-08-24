@@ -32,6 +32,20 @@ public class BidSheetLocationBid
     /// <summary>UTC time the elevator last updated the fed bid — the "as of" shown in the UI.</summary>
     public DateTime? QuoteAsOf { get; set; }
 
+    /// <summary>
+    /// The basis bid for this same cell, quoted in cents against the futures board (so "-30" reads as
+    /// thirty under). Held alongside the cash bid rather than as its own row: the Bid Sheet's unique
+    /// index allows one row per location/commodity/crop year/month, and every publishable cell observed
+    /// in the feed carries both a cash and a basis quote.
+    /// </summary>
+    public string? BasisBid { get; set; }
+
+    /// <summary>The barchart.Instrument symbol behind <see cref="BasisBid"/>.</summary>
+    public string? BasisSymbol { get; set; }
+
+    /// <summary>UTC time the elevator last updated the basis bid.</summary>
+    public DateTime? BasisQuoteAsOf { get; set; }
+
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }

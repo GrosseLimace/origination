@@ -21,6 +21,15 @@ public record BidSheetLocationBidResponse
 
     /// <summary>When the elevator last updated a fed bid — the "as of" shown in the UI.</summary>
     public DateTime? QuoteAsOf { get; init; }
+
+    /// <summary>The basis bid for this cell, in cents against the board (negative = under).</summary>
+    public string? BasisBid { get; init; }
+
+    /// <summary>Vendor symbol behind the basis bid.</summary>
+    public string? BasisSymbol { get; init; }
+
+    /// <summary>When the elevator last updated the basis bid.</summary>
+    public DateTime? BasisQuoteAsOf { get; init; }
     public string CreatedBy { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }
     public string? ModifiedBy { get; init; }

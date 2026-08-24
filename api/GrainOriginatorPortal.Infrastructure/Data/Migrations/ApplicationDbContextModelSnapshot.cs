@@ -501,6 +501,17 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("BasisBid")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("BasisQuoteAsOf")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("BasisSymbol")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Bid")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -635,6 +646,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     b.Property<int?>("Month")
                         .HasColumnType("int");
+
+                    b.Property<string>("PriceMode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<string>("PrintLayout")
                         .HasColumnType("nvarchar(max)");

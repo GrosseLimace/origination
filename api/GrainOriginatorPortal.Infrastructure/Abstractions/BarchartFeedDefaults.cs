@@ -14,6 +14,13 @@ public static class BarchartFeedDefaults
     public const string InstrumentType = "bidCash";
 
     /// <summary>
+    /// The vendor's basis price type, published alongside cash into its own columns so the Bid Sheet can
+    /// switch between the two. Basis is quoted in cents against the futures board and is normally
+    /// negative — "-30" reads as thirty under — which is why it can't share the cash price bounds.
+    /// </summary>
+    public const string BasisInstrumentType = "bidBasis";
+
+    /// <summary>
     /// Actor stamped on feed-written rows. Machine callers have no user identity, and using one constant
     /// everywhere keeps authorship consistent whether the bridge ran from the pipeline or from the UI.
     /// </summary>

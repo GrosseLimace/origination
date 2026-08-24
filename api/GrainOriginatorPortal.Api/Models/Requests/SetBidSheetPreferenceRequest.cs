@@ -16,4 +16,7 @@ public record SetBidSheetPreferenceRequest
     public string? HiddenCrops { get; init; }
     public string? SelectedMonths { get; init; }
     public string? PrintLayout { get; init; }
+
+    [MaxLength(10)]
+    public string? PriceMode { get; init; }
 }

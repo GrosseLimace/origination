@@ -207,7 +207,7 @@ public class BidSheetController : ControllerBase
     {
         if (request.TradeUnitKey != GlobalPreferenceKey)
             await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), cancellationToken);
-        await _service.SetPreferenceAsync(request.TradeUnitKey, request.CropCode, request.Month, request.CropYear, request.CropOrder, request.HiddenCrops, request.SelectedMonths, request.PrintLayout, cancellationToken);
+        await _service.SetPreferenceAsync(request.TradeUnitKey, request.CropCode, request.Month, request.CropYear, request.CropOrder, request.HiddenCrops, request.SelectedMonths, request.PrintLayout, request.PriceMode, cancellationToken);
         return NoContent();
     }
 }

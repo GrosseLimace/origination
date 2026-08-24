@@ -76,6 +76,26 @@
               <option value="beating">Beating</option>
             </select>
             }
+
+            <!-- Cash / basis. A segmented control rather than a dropdown: it's two states the user flips
+                 between constantly, and the current one should be readable without opening anything. -->
+            @if (barchartEnabled) {
+              <div class="flex items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
+                   title="Cash is the posted flat price. Basis is cents against the futures board, so -30 is thirty under.">
+                <button (click)="setPriceMode('cash')"
+                        [class]="priceMode() === 'cash'
+                          ? 'px-2.5 py-1.5 text-sm font-medium bg-scoular-green-accessible text-white'
+                          : 'px-2.5 py-1.5 text-sm font-medium bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'">
+                  Cash
+                </button>
+                <button (click)="setPriceMode('basis')"
+                        [class]="priceMode() === 'basis'
+                          ? 'px-2.5 py-1.5 text-sm font-medium bg-scoular-green-accessible text-white'
+                          : 'px-2.5 py-1.5 text-sm font-medium bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'">
+                  Basis
+                </button>
+              </div>
+            }
             }
             <!-- Search + Clear group: flows naturally with dropdowns, fitting on row 2 if there's room or wrapping further if needed -->
             <div class="flex items-center gap-2">

@@ -356,7 +356,8 @@ public class BidSheetRepository : IBidSheetRepository
     }
 
     public async Task SetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear,
-        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? printLayout, CancellationToken cancellationToken)
+        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? printLayout, string? priceMode,
+        CancellationToken cancellationToken)
     {
         var existing = await _appContext.BidSheetPreferences
             .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
@@ -370,6 +371,7 @@ public class BidSheetRepository : IBidSheetRepository
             if (hiddenCrops is not null) existing.HiddenCrops = hiddenCrops;
             if (selectedMonths is not null) existing.SelectedMonths = selectedMonths;
             if (printLayout is not null) existing.PrintLayout = printLayout;
+            if (priceMode is not null) existing.PriceMode = priceMode;
             existing.ModifiedAt = DateTime.UtcNow;
         }
         else
@@ -385,6 +387,7 @@ public class BidSheetRepository : IBidSheetRepository
                 HiddenCrops = hiddenCrops,
                 SelectedMonths = selectedMonths,
                 PrintLayout = printLayout,
+                PriceMode = priceMode,
                 ModifiedAt = DateTime.UtcNow
             });
         }

@@ -305,7 +305,41 @@ compares the view's winners against the published feed cells and warns on any mi
 to one and not the other is caught rather than discovered. The check skips itself when nothing has been
 published yet.
 
+### Cash and basis
+
+The filter bar carries a **Cash / Basis** toggle (feed-enabled environments only). Both prices come from
+the feed on the **same row** — `Bid` / `BarchartSymbol` / `QuoteAsOf` for cash, `BasisBid` /
+`BasisSymbol` / `BasisQuoteAsOf` for basis — so switching is a pure display change with no refetch.
+
+**Why one row rather than two.** The unique index is
+`(LocationId, CommodityCode, CropYear, Month)`, and a great deal of code leans on "one row per cell":
+the bulk upsert, delete-bids, the duplicate reconciler, the grid build, print, and the diagnostic view.
+Adding a price type to that key would have broken all of them at once. Checked against the live feed
+first — every publishable cell carries both a cash and a basis quote (67 of 67 at the time), so the
+second row would have bought nothing.
+
+**Basis is quoted in cents against the futures board and is normally negative**: `-30` reads as thirty
+under. Two consequences:
+
+- **It can't share the cash price bounds.** Cash has a 0.01 floor to screen out the vendor's `0.0025`
+  no-bid placeholder; that floor would reject every basis quote. Basis gets a symmetric magnitude bound
+  instead, which still excludes the `214748.3647` sentinel.
+- **It's formatted `0.####` rather than `0.00##`**, so it renders `-30` and not `-30.00`. The minus is
+  preserved either way — only trailing zeros are dropped.
+
+**The grid is read-only in basis mode.** Every write path targets the cash column, so a bid typed while
+basis is displayed would silently overwrite that cell's cash price with a basis number. Entering basis by
+hand needs its own write path; until then the safe behaviour is to refuse.
+
+**The choice persists** in `BidSheetPreferences.PriceMode`, per trade unit and globally, alongside crop,
+month and year. An unrecognised stored value falls back to cash rather than leaving the sheet in a mode
+nothing renders.
+
+Only fed bids carry a basis, so a sheet of hand-typed bids goes largely blank in basis mode. That's the
+data being honest rather than a fault.
+
 ### Fed vs manual bids
+
 
 
 

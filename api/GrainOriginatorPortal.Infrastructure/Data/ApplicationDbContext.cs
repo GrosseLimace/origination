@@ -572,6 +572,8 @@ public class ApplicationDbContext : DbContext
             // the bridge proc only ever writes rows where Source='Barchart'.
             entity.Property(e => e.Source).HasMaxLength(20).HasDefaultValue(BidSources.Manual).IsRequired();
             entity.Property(e => e.BarchartSymbol).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.BasisBid).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.BasisSymbol).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.QuoteAsOf).IsRequired(false);
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
@@ -607,6 +609,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.PrintLayout).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.PriceMode).HasMaxLength(10).IsRequired(false);
             entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetPreferences_User_TradeUnitKey");
             entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetPreferences_UserId");

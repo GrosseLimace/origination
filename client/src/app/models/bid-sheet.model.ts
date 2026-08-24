@@ -13,6 +13,12 @@ export interface BidSheetLocationBid {
   barchartSymbol?: string;
   /** When the elevator last updated a fed bid — the "as of" shown next to the value. */
   quoteAsOf?: string;
+  /** Basis bid for this cell, in cents against the board. Negative is the normal case ("30 under"). */
+  basisBid?: string;
+  /** Vendor symbol behind the basis bid. */
+  basisSymbol?: string;
+  /** When the elevator last updated the basis bid. */
+  basisQuoteAsOf?: string;
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;
@@ -66,6 +72,8 @@ export interface BidSheetEntry {
   source: BidSource;
   barchartSymbol?: string;
   quoteAsOf?: string;
+  basisBid?: string;
+  basisQuoteAsOf?: string;
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;

@@ -460,9 +460,12 @@ DECLARE @winners TABLE
     CommodityCategory nvarchar(100) NULL,
     CropYear          int           NOT NULL,
     BidMonth          int           NOT NULL,
-    Symbol            nvarchar(100) NOT NULL,
-    BidText           nvarchar(50)  NOT NULL,
+    Symbol            nvarchar(100) NULL,
+    BidText           nvarchar(50)  NULL,
     QuoteAsOf         datetime2     NULL,
+    BasisSymbol       nvarchar(100) NULL,
+    BasisText         nvarchar(50)  NULL,
+    BasisQuoteAsOf    datetime2     NULL,
     PRIMARY KEY (LocationId, CommodityCode, CropYear, BidMonth)
 );
 
@@ -476,12 +479,19 @@ DECLARE @winners TABLE
         CropYear          = YEAR(i.DeliveryStart),
         BidMonth          = MONTH(i.DeliveryStart),
         Symbol            = i.Symbol,
-        BidText           = FORMAT(q.LastPrice, N'0.00##', N'en-US'),
+        PriceType         = i.InstrumentType,
+        -- Cash renders as money; basis is whole cents against the board, so trailing zeros are noise:
+        -- an originator reads 30 under, not minus thirty point zero zero.
+        BidText           = CASE WHEN i.InstrumentType = @basisType
+                                 THEN FORMAT(q.LastPrice, N'0.####', N'en-US')
+                                 ELSE FORMAT(q.LastPrice, N'0.00##', N'en-US') END,
         QuoteAsOf         = CONVERT(datetime2, q.TradeTimestamp),
         -- Whole-month bids beat half-month splits; then the widest window, earliest start and
         -- freshest quote. Symbol last makes the order total, so the winner never flip-flops.
+        -- Partitioned by type as well, so cash and basis each get their own winner for the cell.
         rn = ROW_NUMBER() OVER (
-                 PARTITION BY loc.Id, m.CommodityCode, YEAR(i.DeliveryStart), MONTH(i.DeliveryStart)
+                 PARTITION BY loc.Id, m.CommodityCode, YEAR(i.DeliveryStart), MONTH(i.DeliveryStart),
+                              i.InstrumentType
                  ORDER BY CASE WHEN i.DeliveryWindowFlag IS NULL THEN 0 ELSE 1 END,
                           DATEDIFF(DAY, i.DeliveryStart, i.DeliveryEnd) DESC,
                           i.DeliveryStart ASC,
@@ -493,7 +503,7 @@ DECLARE @winners TABLE
        AND i.IsActive = 1
        AND i.IsTest = 0
        AND i.DeliveryStart IS NOT NULL
-       AND (@instrumentType IS NULL OR i.InstrumentType = @instrumentType)
+       AND i.InstrumentType IN (@cashType, @basisType)
        -- Skip windows that have fully elapsed: an originator can no longer deliver into them, so
        -- publishing a price for one would put a dead month on the Bid Sheet.
        AND (i.DeliveryEnd IS NULL OR i.DeliveryEnd >= CAST(SYSUTCDATETIME() AS date))
@@ -503,8 +513,10 @@ DECLARE @winners TABLE
        -- Only publish a price we'd stand behind. The vendor mixes fresh quotes with long-stale ones and
        -- with placeholders in the same payload, and a wrong number on the sheet is worse than a blank
        -- cell: an originator can see a blank, but reads a stale price as today's market.
-       AND q.LastPrice >= @minPrice
-       AND q.LastPrice <= @maxPrice
+       -- Cash has a floor (0.0025 is the vendor's no-bid placeholder); basis is legitimately negative,
+       -- so it gets a symmetric magnitude bound instead. Both exclude the 214748.3647 sentinel.
+       AND ((i.InstrumentType = @cashType AND q.LastPrice >= @minPrice AND q.LastPrice <= @maxPrice)
+         OR (i.InstrumentType = @basisType AND ABS(q.LastPrice) <= @maxPrice))
        -- A missing trade timestamp means the vendor didn't say when this was set; publish it rather than
        -- discard a price over absent metadata, but anything with a timestamp must be recent.
        AND (q.TradeTimestamp IS NULL
@@ -515,13 +527,24 @@ DECLARE @winners TABLE
     WHERE loc.BarchartLocationKey IS NOT NULL
       AND (@locationId IS NULL OR loc.Id = @locationId)
 )
+-- One row per cell carrying both prices. A cell with only one of the two still produces a row; the
+-- other side stays NULL and the sheet simply has nothing to show for that mode.
 INSERT @winners
-    (LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth, Symbol, BidText, QuoteAsOf)
+    (LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
+     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf)
 SELECT
-    c.LocationId, c.CommodityCode, c.CommodityName, c.CommodityCategory, c.CropYear, c.BidMonth,
-    c.Symbol, c.BidText, c.QuoteAsOf
+    c.LocationId, c.CommodityCode,
+    MAX(c.CommodityName), MAX(c.CommodityCategory),
+    c.CropYear, c.BidMonth,
+    Symbol         = MAX(CASE WHEN c.PriceType = @cashType  THEN c.Symbol    END),
+    BidText        = MAX(CASE WHEN c.PriceType = @cashType  THEN c.BidText   END),
+    QuoteAsOf      = MAX(CASE WHEN c.PriceType = @cashType  THEN c.QuoteAsOf END),
+    BasisSymbol    = MAX(CASE WHEN c.PriceType = @basisType THEN c.Symbol    END),
+    BasisText      = MAX(CASE WHEN c.PriceType = @basisType THEN c.BidText   END),
+    BasisQuoteAsOf = MAX(CASE WHEN c.PriceType = @basisType THEN c.QuoteAsOf END)
 FROM candidate AS c
-WHERE c.rn = 1;
+WHERE c.rn = 1
+GROUP BY c.LocationId, c.CommodityCode, c.CropYear, c.BidMonth;
 
 DECLARE @written int = 0;
 DECLARE @pruned  int = 0;
@@ -532,7 +555,7 @@ MERGE dbo.BidSheetLocationBids WITH (HOLDLOCK) AS t
 USING
 (
     SELECT LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
-           Symbol, BidText, QuoteAsOf
+           Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf
     FROM @winners
 ) AS s
    ON t.LocationId    = s.LocationId
@@ -541,26 +564,33 @@ USING
   AND t.Month         = s.BidMonth
 -- A manual cell matches here but satisfies no clause, so it is left exactly as the user typed it.
 WHEN MATCHED AND t.Source = N'Barchart'
-             AND (t.Bid <> s.BidText
-                  OR ISNULL(t.BarchartSymbol, N'') <> s.Symbol
-                  OR ISNULL(t.QuoteAsOf, N'19000101') <> ISNULL(s.QuoteAsOf, N'19000101'))
+             AND (t.Bid <> ISNULL(s.BidText, N'')
+                  OR ISNULL(t.BarchartSymbol, N'') <> ISNULL(s.Symbol, N'')
+                  OR ISNULL(t.QuoteAsOf, N'19000101') <> ISNULL(s.QuoteAsOf, N'19000101')
+                  OR ISNULL(t.BasisBid, N'') <> ISNULL(s.BasisText, N'')
+                  OR ISNULL(t.BasisSymbol, N'') <> ISNULL(s.BasisSymbol, N'')
+                  OR ISNULL(t.BasisQuoteAsOf, N'19000101') <> ISNULL(s.BasisQuoteAsOf, N'19000101'))
     THEN UPDATE SET
-        t.Bid               = s.BidText,
+        t.Bid               = ISNULL(s.BidText, N''),
         t.CommodityName     = s.CommodityName,
         t.CommodityCategory = s.CommodityCategory,
         t.BarchartSymbol    = s.Symbol,
         t.QuoteAsOf         = s.QuoteAsOf,
+        t.BasisBid          = s.BasisText,
+        t.BasisSymbol       = s.BasisSymbol,
+        t.BasisQuoteAsOf    = s.BasisQuoteAsOf,
         t.ModifiedBy        = @appliedBy,
         t.ModifiedAt        = SYSUTCDATETIME()
 WHEN NOT MATCHED BY TARGET THEN INSERT
 (
     LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, Month,
-    Bid, Source, BarchartSymbol, QuoteAsOf, CreatedBy, CreatedAt
+    Bid, Source, BarchartSymbol, QuoteAsOf, BasisBid, BasisSymbol, BasisQuoteAsOf, CreatedBy, CreatedAt
 )
 VALUES
 (
     s.LocationId, s.CommodityCode, s.CommodityName, s.CommodityCategory, s.CropYear, s.BidMonth,
-    s.BidText, N'Barchart', s.Symbol, s.QuoteAsOf, @appliedBy, SYSUTCDATETIME()
+    ISNULL(s.BidText, N''), N'Barchart', s.Symbol, s.QuoteAsOf,
+    s.BasisText, s.BasisSymbol, s.BasisQuoteAsOf, @appliedBy, SYSUTCDATETIME()
 );
 
 SET @written = @@ROWCOUNT;
@@ -594,7 +624,11 @@ SELECT CAST(@written + @pruned AS int);";
             sql,
             cancellationToken,
             ("@locationId", locationId.HasValue ? locationId.Value : DBNull.Value),
-            ("@instrumentType", string.IsNullOrWhiteSpace(instrumentType) ? DBNull.Value : instrumentType),
+            // instrumentType names the CASH type; basis is always published alongside it into its own
+            // columns, so the sheet can switch between the two without a second run.
+            ("@cashType", string.IsNullOrWhiteSpace(instrumentType)
+                ? BarchartFeedDefaults.InstrumentType : instrumentType),
+            ("@basisType", BarchartFeedDefaults.BasisInstrumentType),
             ("@appliedBy", appliedBy),
             ("@maxQuoteAgeDays", maxQuoteAgeDays),
             ("@minPrice", BarchartFeedDefaults.MinPublishablePrice),
