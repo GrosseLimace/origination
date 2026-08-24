@@ -476,8 +476,8 @@ DECLARE @winners TABLE
         CommodityCode     = m.CommodityCode,
         CommodityName     = m.CommodityName,
         CommodityCategory = m.CommodityCategory,
-        CropYear          = YEAR(i.DeliveryStart),
-        BidMonth          = MONTH(i.DeliveryStart),
+        CropYear          = cmo.CropYear,
+        BidMonth          = cmo.BidMonth,
         Symbol            = i.Symbol,
         PriceType         = i.InstrumentType,
         -- Cash renders as money; basis is whole cents against the board, so trailing zeros are noise:
@@ -486,16 +486,19 @@ DECLARE @winners TABLE
                                  THEN FORMAT(q.LastPrice, N'0.####', N'en-US')
                                  ELSE FORMAT(q.LastPrice, N'0.00##', N'en-US') END,
         QuoteAsOf         = CONVERT(datetime2, q.TradeTimestamp),
-        -- Whole-month bids beat half-month splits; then the widest window, earliest start and
-        -- freshest quote. Symbol last makes the order total, so the winner never flip-flops.
+        -- Keying off the contract month leaves at most one candidate per cell in practice, so this
+        -- ordering is a backstop for the case that remains: a month the vendor splits into first-half
+        -- and last-half symbols. Whole-month bids win those; then the freshest quote, then the
+        -- widest window, which covers more of the month. Symbol last makes the order total, so the
+        -- winner never flip-flops between runs.
         -- Partitioned by type as well, so cash and basis each get their own winner for the cell.
         rn = ROW_NUMBER() OVER (
-                 PARTITION BY loc.Id, m.CommodityCode, YEAR(i.DeliveryStart), MONTH(i.DeliveryStart),
+                 PARTITION BY loc.Id, m.CommodityCode, cmo.CropYear, cmo.BidMonth,
                               i.InstrumentType
                  ORDER BY CASE WHEN i.DeliveryWindowFlag IS NULL THEN 0 ELSE 1 END,
+                          q.TradeTimestamp DESC,
                           DATEDIFF(DAY, i.DeliveryStart, i.DeliveryEnd) DESC,
                           i.DeliveryStart ASC,
-                          q.TradeTimestamp DESC,
                           i.Symbol ASC)
     FROM dbo.BidSheetLocations AS loc
     INNER JOIN dbo.BarchartInstrument AS i
@@ -530,6 +533,26 @@ DECLARE @winners TABLE
     INNER JOIN dbo.BarchartCommodityMap AS m
         ON m.BarchartCommodity = i.Commodity
        AND m.IsActive = 1
+    -- The contract month comes from the symbol, not from the delivery window. A symbol is
+    -- {root}{P|B}{monthCode}{yy}[F|L]-{location}-{map}.CM, and the vendor publishes one symbol per
+    -- contract month; the window only says how much delivery flexibility that contract carries.
+    -- Herkimer's ZCPX26 (X = November) legitimately runs 1 Oct - 1 Dec, so keying the cell off the
+    -- window start filed November's price under October and left November blank. Spreading a window
+    -- across every month it touches would be wrong for the same reason: ADM Enid's ZCPX26 spans
+    -- 1 Aug - 1 Dec and is still only the November bid.
+    CROSS APPLY (SELECT Pos = PATINDEX(N'%[FGHJKMNQUVXZ][0-9][0-9][-FL]%', i.Symbol)) AS sp
+    CROSS APPLY (SELECT MonthCode = CASE WHEN sp.Pos > 0 THEN SUBSTRING(i.Symbol, sp.Pos, 1) END,
+                        CodeYear  = CASE WHEN sp.Pos > 0
+                                         THEN TRY_CONVERT(int, SUBSTRING(i.Symbol, sp.Pos + 1, 2)) END) AS sy
+    -- Falls back to the delivery window when a symbol does not parse, so an unrecognised vendor
+    -- format degrades to the previous behaviour instead of dropping the bid.
+    CROSS APPLY (SELECT CropYear = ISNULL(2000 + sy.CodeYear, YEAR(i.DeliveryStart)),
+                        BidMonth = ISNULL(CASE sy.MonthCode
+                                              WHEN N'F' THEN 1  WHEN N'G' THEN 2  WHEN N'H' THEN 3
+                                              WHEN N'J' THEN 4  WHEN N'K' THEN 5  WHEN N'M' THEN 6
+                                              WHEN N'N' THEN 7  WHEN N'Q' THEN 8  WHEN N'U' THEN 9
+                                              WHEN N'V' THEN 10 WHEN N'X' THEN 11 WHEN N'Z' THEN 12
+                                          END, MONTH(i.DeliveryStart))) AS cmo
     WHERE loc.BarchartLocationKey IS NOT NULL
       AND (@locationId IS NULL OR loc.Id = @locationId)
 )

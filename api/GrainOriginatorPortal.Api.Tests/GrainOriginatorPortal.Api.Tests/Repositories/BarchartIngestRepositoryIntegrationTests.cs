@@ -383,6 +383,115 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Empty(thirdCells);
     }
 
+    // Synthetic catalog rows on a location key the vendor does not use, so these two tests keep working
+    // on a database that already holds a real BarChart sweep. The shared POC fixture cannot: its GPC
+    // key (82259) is a real location, and a loaded catalog puts dozens of extra instruments under it.
+    private const string ContractMonthInstrumentsJson = """
+        { "status": { "code": 200 }, "results": [
+          { "symbol": "ZCPQ26-990001-990010.CM", "symbolDescription": "IT Contract Month Elevator Corn (IT Flexible) Aug 26 Cash",
+            "elevator": "IT Contract Month Elevator", "commodity": "Corn (IT Flexible)", "underlyingFuture": "ZCU26",
+            "deliveryStart": "2026-06-01T00:00:00-05:00", "deliveryEnd": "2026-08-31T00:00:00-05:00",
+            "location": "IT-CONTRACT-MONTH", "facilityType": "Country Elevator", "address": "1 Test Road",
+            "city": "Testville", "state": "IA", "zipCode": "50001" },
+          { "symbol": "ZCPQ26F-990001-990011.CM", "symbolDescription": "IT Contract Month Elevator Corn (IT Split) 1/2 Aug 26 Cash",
+            "elevator": "IT Contract Month Elevator", "commodity": "Corn (IT Split)", "underlyingFuture": "ZCU26",
+            "deliveryStart": "2026-08-08T00:00:00-05:00", "deliveryEnd": "2026-08-14T00:00:00-05:00",
+            "location": "IT-CONTRACT-MONTH", "facilityType": "Country Elevator", "address": "1 Test Road",
+            "city": "Testville", "state": "IA", "zipCode": "50001" },
+          { "symbol": "ZCPQ26L-990001-990011.CM", "symbolDescription": "IT Contract Month Elevator Corn (IT Split) 2/2 Aug 26 Cash",
+            "elevator": "IT Contract Month Elevator", "commodity": "Corn (IT Split)", "underlyingFuture": "ZCU26",
+            "deliveryStart": "2026-08-22T00:00:00-05:00", "deliveryEnd": "2026-08-31T00:00:00-05:00",
+            "location": "IT-CONTRACT-MONTH", "facilityType": "Country Elevator", "address": "1 Test Road",
+            "city": "Testville", "state": "IA", "zipCode": "50001" }
+        ] }
+        """;
+
+    private const string ContractMonthQuotesJson = """
+        { "status": { "code": 200 }, "results": [
+          { "symbol": "ZCPQ26-990001-990010.CM", "lastPrice": "4.47",
+            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 },
+          { "symbol": "ZCPQ26F-990001-990011.CM", "lastPrice": "4.41",
+            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 },
+          { "symbol": "ZCPQ26L-990001-990011.CM", "lastPrice": "4.53",
+            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 }
+        ] }
+        """;
+
+    private async Task<BidSheetLocation> SeedContractMonthCatalogAsync()
+    {
+        await _sut.LoadInstrumentsAsync(ContractMonthInstrumentsJson);
+        await _sut.LoadQuotesAsync(ContractMonthQuotesJson, BusinessDate);
+
+        _context.BarchartCommodityMaps.AddRange(
+            new BarchartCommodityMap
+            {
+                BarchartCommodity = "Corn (IT Flexible)",
+                CommodityCode = "IT_FLEX",
+                CommodityName = "Corn (IT Flexible)",
+                CommodityCategory = "Grains",
+                CreatedBy = "integration-test"
+            },
+            new BarchartCommodityMap
+            {
+                BarchartCommodity = "Corn (IT Split)",
+                CommodityCode = "IT_SPLIT",
+                CommodityName = "Corn (IT Split)",
+                CommodityCategory = "Grains",
+                CreatedBy = "integration-test"
+            });
+
+        var location = NewLinkedLocation("__IT Contract Month", "990001");
+        _context.BidSheetLocations.Add(location);
+        await _context.SaveChangesAsync();
+        return location;
+    }
+
+    // The vendor names the contract month in the symbol and uses the delivery window only to say how
+    // much flexibility that contract carries, so the two disagree whenever an elevator allows early or
+    // late delivery. ZCPQ26 is the August contract (Q) even though it accepts delivery from 1 June.
+    // Keying the cell off the window start filed it under June -- and on the live feed that mis-filed
+    // 9,623 of 61,387 instruments, most visibly at Herkimer, where November's price sat in the October
+    // cell while November itself stayed blank.
+    [Fact]
+    public async Task ApplyBids_FilesABidUnderItsContractMonth_NotTheMonthTheWindowStartsIn()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX");
+
+        // August, from the Q in ZCPQ26 -- not June, where the 1 Jun - 31 Aug window begins.
+        Assert.Equal(2026, cell.CropYear);
+        Assert.Equal(8, cell.Month);
+        Assert.Equal("ZCPQ26-990001-990010.CM", cell.BarchartSymbol);
+        Assert.Equal("4.47", cell.Bid);
+    }
+
+    // Half-month splits carry an F/L suffix after the year, which is the shape most likely to trip a
+    // stricter parse. Both halves must still read as August and collapse into the one August cell.
+    [Fact]
+    public async Task ApplyBids_ReadsTheContractMonthThroughAHalfMonthSuffix()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT");
+
+        Assert.Equal(2026, cell.CropYear);
+        Assert.Equal(8, cell.Month);
+        // Neither half covers the whole month, so the wider second half wins the cell.
+        Assert.Equal("ZCPQ26L-990001-990011.CM", cell.BarchartSymbol);
+        Assert.Equal("4.53", cell.Bid);
+    }
+
     // An elevator that posts a bid and then leaves it alone is behaving normally, especially on a
     // deferred month -- so a LIVE quote publishes however old it is. Age used to be the test, and it hid
     // real bids: on the live feed no mode-i quote exceeds 90 days, so age was only ever a proxy for mode.

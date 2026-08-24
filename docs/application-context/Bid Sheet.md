@@ -222,7 +222,12 @@ instantly, and other trade units' placements are untouched.
 
 ### Finding fed bids (why an empty sheet doesn't mean a broken feed)
 
-The feed writes each bid at its **delivery month** (1-12) and its delivery **crop year**. It never writes
+The feed writes each bid at its **contract month** (1-12) and **crop year**, both read from the symbol
+rather than from the delivery window. A symbol is `{root}{P|B}{monthCode}{yy}[F|L]-{location}-{map}.CM`,
+and BarChart publishes one symbol per contract month; the window only says how much delivery flexibility
+that contract carries. The two disagree on about one instrument in six, so keying off the window start
+mis-filed those bids -- Herkimer's `ZCPX26` (November, delivering 1 Oct - 1 Dec) landed November's price
+in the October cell and left November blank. It never writes
 month 0. The map, side panel and Edit Bids grid all default to month 0 ("Year"), and the bid lookup keys
 on `name|crop|year|month` with an exact match — so **on the default view, a sheet full of BarChart bids
 renders completely empty**. Pins go grey, the panel shows `--`, the grid has no cells. Nothing is wrong;

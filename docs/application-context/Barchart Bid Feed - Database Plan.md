@@ -182,7 +182,7 @@ The tables are the *nouns*; these are the *verbs* — the only write and read pa
 ### Procedure 3 — The bridge (the only thing that writes to the Bid Sheet)
 
 **Runs:** three ways — automatically at the end of every price load, whatever its cadence; **instantly when an originator adds a location** from the search screen (so their bids appear on click, not at the next load); and on demand by an admin.
-**Does:** finds every Bid Sheet location linked to BarChart → joins to its current prices → translates the commodity through `CommodityMap` (unmapped = skipped, never guessed) → works out the crop-year/month cell from the delivery window (whole-month bids preferred over split-window ones) → writes the cells, touching **only** rows tagged `Source='Barchart'` and never anything a user typed. Cleans up its own rows when a delivery month rolls off.
+**Does:** finds every Bid Sheet location linked to BarChart → joins to its current prices → translates the commodity through `CommodityMap` (unmapped = skipped, never guessed) → reads the crop-year/month cell from the contract month encoded in the symbol, falling back to the delivery window if a symbol will not parse (whole-month bids preferred over split-window ones) → writes the cells, touching **only** rows tagged `Source='Barchart'` and never anything a user typed. Cleans up its own rows when a delivery month rolls off.
 **Why:** the feed-owns-its-cells / users-own-theirs rule is enforced in exactly one place, and both triggers (nightly run, Add click) produce identical results because they run the same code.
 
 ### View 1 — Grouped locations (what the picker searches)

@@ -571,7 +571,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260824132811_AddBasisBidColumns'),
 ('20260824133524_AddBasisToPublishableBidView'),
 ('20260824134238_AddPriceModePreference'),
-('20260824140609_UsePriceModeForStaleQuotes');
+('20260824140609_UsePriceModeForStaleQuotes'),
+('20260824151441_UseContractMonthForBidCells');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
