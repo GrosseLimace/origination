@@ -221,6 +221,7 @@ describe('BarchartPickerComponent', () => {
       locationKey: '82259',
       name: 'Grain Processing Corporation - GPC-MUSCATINE',
       tradeUnitCodes: ['4056'],
+      isScoularFacility: false,
     });
     expect(component.saving()).toBe(true);
   });
@@ -348,5 +349,40 @@ describe('BarchartPickerComponent', () => {
 
     expect(component.tuPickerOpen()).toBe(false);
     expect(component.tuSearch()).toBe('');
+  });
+
+  // Scoular's own elevators come through the feed like anyone else's -- 45 listings in the catalog --
+  // and the picker used to hard-code every added location as a competitor. Salina and Pratt both went
+  // on the sheet that way before this was noticed.
+  it('ticks the Scoular flag when the vendor company name says Scoular', () => {
+    apiMock.getBarchartLocation.mockReturnValue(of(detail({
+      location: location({ elevator: 'Scoular Company - Kansas', locationName: 'Salina, KS', city: 'Salina', state: 'KS' }),
+    })));
+    fixture.componentRef.setInput('tradeUnits', ['2190']);
+    fixture.detectChanges();
+
+    component.openDetail('4087');
+
+    expect(component.isScoular()).toBe(true);
+  });
+
+  it('leaves the Scoular flag off for a competitor', () => {
+    fixture.detectChanges();
+    component.openDetail('82259');
+    expect(component.isScoular()).toBe(false);
+  });
+
+  // A suggestion, not a decision -- the user's choice is what gets emitted.
+  it('emits whatever the user set the Scoular flag to', () => {
+    const emitted: any[] = [];
+    component.add.subscribe(r => emitted.push(r));
+    fixture.componentRef.setInput('tradeUnits', ['2190']);
+    fixture.detectChanges();
+    component.openDetail('82259');
+    component.isScoular.set(true);
+
+    component.confirmAdd();
+
+    expect(emitted[0].isScoularFacility).toBe(true);
   });
 });

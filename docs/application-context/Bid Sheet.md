@@ -200,6 +200,11 @@ second line for the town, and names are unique per trade unit, so a company with
 sites would otherwise want one row name for all of them. It's an editable field on the confirm step, so
 it is never a hidden rename.
 
+**Scoular facilities are markable from the picker.** Scoular's own elevators come through the feed like
+anyone else's — 45 listings in the catalog — so the confirm step has a "This is a Scoular facility"
+checkbox, ticked automatically when the vendor's company name matches `/scoular/i` and editable either
+way. It was hard-coded false until 2026-08-24, which put Salina and Pratt on the sheet as competitors.
+
 **Trade units are chosen from a searchable multi-select.** The picker is normally opened from the map
 with no trade unit selected, in which case every trade unit on the user's account is offered — which can
 be a long list, so it searches by code *and* by location description ("pratt" finds 2190), shows chips

@@ -22,6 +22,8 @@ export interface BarchartAddRequest {
   /** Display name to save. Defaults to the vendor's site name but the user can change it. */
   name: string;
   tradeUnitCodes: string[];
+  /** Mark the new row as a Scoular facility (green on the map) rather than a competitor. */
+  isScoularFacility: boolean;
 }
 
 /**
@@ -90,6 +92,13 @@ export class BarchartPickerComponent {
   readonly chosenTus = signal<Set<string>>(new Set());
   readonly nameOverride = signal('');
   readonly saving = signal(false);
+
+  /**
+   * Whether to mark the new row as a Scoular facility. Scoular's own elevators come through the feed
+   * like anyone else's — 45 listings in the catalog — so this can't be hard-coded false, which is what
+   * the picker did until now: Salina and Pratt both went on as competitors.
+   */
+  readonly isScoular = signal(false);
 
   /** Trade-unit selector state. Originators can hold a lot of desks, so it searches rather than scrolls. */
   readonly tuPickerOpen = signal(false);
@@ -226,6 +235,9 @@ export class BarchartPickerComponent {
         this.detailLoading.set(false);
         this.detail.set(d);
         this.nameOverride.set(this.defaultName(d.location));
+        // Suggested from the vendor's company name rather than decided by it — the checkbox is right
+        // there to correct, and getting it wrong silently is what we're fixing.
+        this.isScoular.set(this.looksScoular(d.location));
         // Pre-tick the trade units this location isn't already on, but only when there's exactly one
         // choice; with several, making the user pick avoids a location quietly landing on the wrong desk.
         const already = new Set(d.location.placements.map(p => p.tradeUnitCode));
@@ -311,6 +323,11 @@ export class BarchartPickerComponent {
     });
   }
 
+  /** True when the vendor's company name says this is one of ours. */
+  looksScoular(location: BarchartCatalogLocation): boolean {
+    return /scoular/i.test(location.elevator ?? '');
+  }
+
   /** "2190 · Pratt, KS" when we know the description, else just the code. */
   tradeUnitDisplay(tu: string): string {
     const label = this.tradeUnitLabels().get(tu);
@@ -339,6 +356,7 @@ export class BarchartPickerComponent {
       locationKey: d.location.locationKey,
       name: this.nameOverride().trim() || this.defaultName(d.location),
       tradeUnitCodes: [...this.chosenTus()],
+      isScoularFacility: this.isScoular(),
     });
   }
 

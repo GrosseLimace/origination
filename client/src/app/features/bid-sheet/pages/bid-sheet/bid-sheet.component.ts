@@ -1517,7 +1517,7 @@ export class BidSheetComponent {
       tradeUnitCode: tu,
       groupName: this._getGroupNameForTu(tu) || undefined,
       barchartLocationKey: request.locationKey,
-      isScoularFacility: false,
+      isScoularFacility: request.isScoularFacility,
       bids: []
     }));
 

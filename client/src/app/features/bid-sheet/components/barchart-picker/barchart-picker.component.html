@@ -48,6 +48,17 @@
                    class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
           </div>
 
+          <!-- Scoular facility. Ticked automatically when the vendor's company name says Scoular, but
+               left editable: the feed carries our own elevators the same as everyone else's. -->
+          <label class="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" [checked]="isScoular()" (change)="isScoular.set(!isScoular())"
+                   class="mt-0.5 flex-shrink-0 w-4 h-4 rounded border-gray-300 text-scoular-green focus:ring-scoular-green" />
+            <span class="min-w-0">
+              <span class="block text-sm text-gray-800 dark:text-gray-200">This is a Scoular facility</span>
+              <span class="block text-xs text-gray-500 dark:text-gray-400">Shows green on the map instead of as a competitor.</span>
+            </span>
+          </label>
+
           <!-- Trade units -->
           <div>
             <label class="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Add to</label>
