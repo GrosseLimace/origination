@@ -26,6 +26,7 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 public sealed class CtrmTicketRepository : ITicketRepository
 {
     private readonly CtrmTicketReader _reader;
+    private readonly CtrmContractReader _contractReader;
     private readonly CtrmTicketSnapshot _snapshot;
     private readonly ApplicationDbContext _appContext;
     private readonly TicketRepository _ods;
@@ -34,6 +35,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
     public CtrmTicketRepository(
         CtrmTicketReader reader,
+        CtrmContractReader contractReader,
         CtrmTicketSnapshot snapshot,
         ApplicationDbContext appContext,
         TicketRepository ods,
@@ -41,6 +43,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         ILogger<CtrmTicketRepository> logger)
     {
         _reader = reader;
+        _contractReader = contractReader;
         _snapshot = snapshot;
         _appContext = appContext;
         _ods = ods;
@@ -73,8 +76,13 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
+        // The applied side must be scoped to this producer's OPEN PURCHASE contracts, exactly as the ODS
+        // query does. Costs no extra round trip: the contract reader has almost certainly already served
+        // the contract list for this same producer, so this hits its cache.
+        var openPurchaseContractIds = await GetOpenPurchaseContractIdsAsync(code, cancellationToken);
+
         var tickets = (read.Value ?? [])
-            .SelectMany(header => CtrmMappings.ToTickets(header, code))
+            .SelectMany(header => CtrmMappings.ToTicketsForProducer(header, code, openPurchaseContractIds))
             .ToList();
 
         // ODS parity, both steps. The storage gate drops C-prefix tickets whose grain is no longer in
@@ -178,6 +186,36 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// The contract ids of this producer's OPEN purchase contracts, used to scope applied tickets.
+    /// </summary>
+    /// <remarks>
+    /// "Open" mirrors the ODS predicate: no closed date, or the Db2 min-date sentinel standing in for one.
+    /// An empty set is a legitimate answer — a producer with no open contracts should show only unapplied
+    /// tickets — so a failed contract read is distinguished from an empty one by the reader's status.
+    /// </remarks>
+    private async Task<HashSet<string>> GetOpenPurchaseContractIdsAsync(string scoularId, CancellationToken cancellationToken)
+    {
+        var read = await _contractReader.GetForProducerAsync(scoularId, cancellationToken);
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!read.Ok)
+        {
+            _logger.LogWarning(
+                "CTRM tickets: could not read {ScoularId} contracts to scope applied tickets ({Status}) — " +
+                "applied tickets will be omitted this pass.", scoularId, read.Status);
+            return ids;
+        }
+
+        foreach (var c in read.Value ?? [])
+        {
+            if (CtrmMappings.NullIfSentinel(c.ClosedDate) is not null) continue;   // closed
+            var id = c.ContractId?.Trim();
+            if (!string.IsNullOrEmpty(id)) ids.Add(id);
+        }
+
+        return ids;
+    }
     private async Task<List<Ticket>> DelegateAsync(string reason, Task<List<Ticket>> odsRead)
     {
         var tickets = await odsRead;

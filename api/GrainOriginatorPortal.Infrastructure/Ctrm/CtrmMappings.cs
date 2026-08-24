@@ -178,6 +178,44 @@ public static class CtrmMappings
     /// <para>Cancelled rows are dropped. The ODS view excludes them upstream; whether CTRM does is
     /// still unconfirmed, so this filters defensively rather than assuming parity.</para>
     /// </remarks>
+    /// <summary>
+    /// Projects the detail rows this producer should see, applying the ODS scoping rule.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The applied side is scoped to the producer's OPEN PURCHASE contracts</b>, not merely to
+    /// their customer code. This is the rule the ODS ticket query applies, and omitting it was a real
+    /// defect: filtering on customer code alone also returns sale-contract and closed-contract tickets,
+    /// which ODS never shows. Measured on one producer, that was 1,525 applied tickets instead of 280 —
+    /// mostly sale-side activity for a customer that both buys and sells.</para>
+    ///
+    /// <para>The unapplied side keeps the customer-code scoping instead, because a U/L/C ticket has no real
+    /// contract to match against — again mirroring ODS.</para>
+    ///
+    /// <para>One known narrowing versus ODS: ODS matches the applied side by contract number ALONE, so it
+    /// can surface a split-load ticket whose own customer code differs from the producer. Our rows arrive
+    /// pre-filtered by the server on <c>details.customerCode</c>, so such a ticket would not reach us. A
+    /// check across six dev producers found no instance of it (CAMPAS 8/0, LUSAME 87/0), but that is dev
+    /// data — worth re-checking against prod before relying on it.</para>
+    /// </remarks>
+    public static List<Ticket> ToTicketsForProducer(
+        CtrmTicketDto header, string scoularId, ISet<string> openPurchaseContractIds)
+        => ToTickets(header, d =>
+        {
+            if (!Matches(d.CustomerCode, scoularId)) return false;
+
+            var contractNumber = d.ContractNumber?.Trim();
+            if (string.IsNullOrEmpty(contractNumber)) return false;
+
+            // U (unload), L (loadout) and C (customer storage) mean no real purchase contract is assigned,
+            // so these are the unapplied set and are kept on customer code alone.
+            if (IsUnappliedPrefix(contractNumber[0])) return true;
+
+            return openPurchaseContractIds.Contains(contractNumber);
+        });
+
+    /// <summary>U, L and C mark a ticket as not yet applied to a purchase contract.</summary>
+    private static bool IsUnappliedPrefix(char c)
+        => c is 'U' or 'u' or 'L' or 'l' or 'C' or 'c';
     public static List<Ticket> ToTickets(CtrmTicketDto header, string scoularId)
         => ToTickets(header, d => Matches(d.CustomerCode, scoularId));
 

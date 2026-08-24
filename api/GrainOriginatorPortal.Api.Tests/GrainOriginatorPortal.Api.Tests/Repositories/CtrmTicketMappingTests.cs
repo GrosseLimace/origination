@@ -175,6 +175,86 @@ public class CtrmTicketMappingTests
 
     // -------------------------------------------------------------------------
     [Fact]
+    public void ForProducer_KeepsAppliedTicketsOnlyOnOpenPurchaseContracts()
+    {
+        // The rule the ODS query applies. Filtering on customer code alone also returns sale-contract and
+        // closed-contract tickets, which ODS never shows — measured at 1,525 applied instead of 280 on one
+        // producer that both buys and sells.
+        var header = Header(
+            Detail(contractNumber: "PWW227420", sequence: 1, appliedNet: 10_000m),   // open purchase -> keep
+            Detail(contractNumber: "SWW999999", sequence: 2, appliedNet: 20_000m),   // sale contract -> drop
+            Detail(contractNumber: "PWW111111", sequence: 3, appliedNet: 30_000m));  // closed purchase -> drop
+
+        var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PWW227420" };
+
+        var ticket = Assert.Single(CtrmMappings.ToTicketsForProducer(header, "TATOBIN", open));
+        Assert.Equal("PWW227420", ticket.CtrmContractNumber);
+    }
+
+    // -------------------------------------------------------------------------
+    [Theory]
+    [InlineData("UWW227420")]
+    [InlineData("LWW227420")]
+    [InlineData("CWW227420")]
+    public void ForProducer_KeepsUnappliedRegardlessOfTheContractSet(string contractNumber)
+    {
+        // A U/L/C ticket has no real purchase contract to match against, so it is scoped by customer code
+        // alone — again mirroring ODS. An empty contract set must not suppress these.
+        var header = Header(Detail(contractNumber: contractNumber));
+
+        var ticket = Assert.Single(CtrmMappings.ToTicketsForProducer(
+            header, "TATOBIN", new HashSet<string>(StringComparer.OrdinalIgnoreCase)));
+
+        Assert.False(ticket.IsApplied);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void ForProducer_WithNoOpenContracts_ShowsUnappliedOnly()
+    {
+        // A producer whose contracts have all closed should still see their unapplied tickets, and none of
+        // the applied ones — not an empty list, and not everything.
+        var header = Header(
+            Detail(contractNumber: "PWW227420", sequence: 1),
+            Detail(contractNumber: "UWW227420", sequence: 2));
+
+        var ticket = Assert.Single(CtrmMappings.ToTicketsForProducer(
+            header, "TATOBIN", new HashSet<string>(StringComparer.OrdinalIgnoreCase)));
+
+        Assert.Equal("UWW227420", ticket.CtrmContractNumber);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void ForProducer_IgnoresAnotherProducersRows()
+    {
+        var header = Header(Detail(customerCode: "OTHERCO", contractNumber: "PWW227420"));
+        var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PWW227420" };
+
+        Assert.Empty(CtrmMappings.ToTicketsForProducer(header, "TATOBIN", open));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void ForProducer_DropsWrongTicketTypesAndConsolidated()
+    {
+        // ODS filters both at the ticket level; in CTRM they sit on the detail row and have no server-side
+        // argument. Without them we returned types the app never shows and double-counted consolidated bushels.
+        var wrongType = Detail(contractNumber: "PWW227420", sequence: 1);
+        wrongType.TicketType = "S";
+        var consolidated = Detail(contractNumber: "PWW227420", sequence: 2);
+        consolidated.TicketStatusDescription = "Consolidated";
+        var good = Detail(contractNumber: "PWW227420", sequence: 3, appliedNet: 42_000m);
+
+        var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PWW227420" };
+
+        var ticket = Assert.Single(CtrmMappings.ToTicketsForProducer(
+            Header(wrongType, consolidated, good), "TATOBIN", open));
+
+        Assert.Equal(42_000L, ticket.AppliedDockQuantity);
+    }
+    // -------------------------------------------------------------------------
+    [Fact]
     public void ForContract_KeepsEveryProducersRowOnThatContract()
     {
         // Backs the contracts table row expansion. A contract's applied bushels are the sum of ALL detail
