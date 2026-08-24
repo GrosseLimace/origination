@@ -188,4 +188,97 @@ public static class CtrmQueries
         var document = $"query ({declarations}) {{{Environment.NewLine}{body}}}";
         return (document, variables);
     }
+
+    // -------------------------------------------------------------------------
+    // Per-producer live reads (AB#33538 / AB#33814 / AB#33816)
+    // -------------------------------------------------------------------------
+
+    /// <summary>Field list shared by every contract read, so a live per-producer query and the
+    /// window walk can never drift into projecting different columns.</summary>
+    private const string ContractProjection = """
+        contractId contractPrefixType contractNumber
+        customerId customerName tradeUnit
+        commodityCode commodityDescription commodityGroup
+        contractDate startShipDate finalShipDate closedDate cropYear
+        quantity quantityUom totalValue
+        pricedQuantity openBalanceQuantity settledQuantity
+        priceTypeCode specialType customerConfirmStatus
+        marketZone basisLocation
+        hedgeMarketMonthDescription priceMarketMonthDescription
+        prices {
+          priceSequence priceQuantity priceUom
+          flatPrice basisPrice hedgePrice freightAdjustment
+          priceDate priceCurrency
+          traderInitials trader
+          priceOpenQuantity priceAppliedQuantity priceSettledQuantity
+          priceOpenWeight priceAppliedWeight priceSettledWeight
+          customerConfirmStatus brokerConfirmStatus
+          lastActivityTimestamp
+        }
+        """;
+
+    /// <summary>
+    /// One producer's purchase contracts, filtered server-side, with NO date range at all.
+    /// Variables: <c>$customerId</c> (String), <c>$prefix</c> (String), <c>$skip</c>, <c>$take</c> (Int).
+    /// </summary>
+    /// <remarks>
+    /// <para>This is the query the whole snapshot design existed to work around. Omitting the dates is
+    /// legal ONLY because a single <c>customerId</c> is supplied — the server treats that as a selective
+    /// indexed predicate and waives the otherwise-mandatory range. It therefore returns the producer's
+    /// FULL history, not a window: verified 2023-2026 for real producers.</para>
+    ///
+    /// <para><c>contractPrefixType</c> filters to purchases server-side, so sale contracts never cross
+    /// the wire — every contract screen in this app is purchase-only.</para>
+    ///
+    /// <para>Do NOT be tempted to swap <c>customerId</c> for <c>customerIds</c> here. The plural form
+    /// still requires a date range, and supplying a wide one to compensate makes the server exceed its
+    /// own 30-second timeout (<c>HC0045</c>) — measured, not theorised.</para>
+    /// </remarks>
+    public const string ContractsByCustomer = """
+        query ($customerId: String, $prefix: String, $skip: Int, $take: Int) {
+          contracts(skip: $skip, take: $take, customerId: $customerId, contractPrefixType: $prefix) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+        """ + ContractProjection + """
+            }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// One producer's tickets over a bill-of-lading window, filtered server-side.
+    /// Variables: <c>$customerId</c> (String), <c>$from</c>/<c>$to</c> (Date), <c>$skip</c>, <c>$take</c> (Int).
+    /// </summary>
+    /// <remarks>
+    /// Unlike contracts, the date range stays MANDATORY here even with a customer filter, and it is still
+    /// capped at <see cref="MaxTicketRangeDays"/>. The reason is structural: the ticket header carries no
+    /// customer at all — the customer lives on the detail rows — so the filter is an EXISTS semi-join and
+    /// the date range is what keeps the header scan bounded. Callers therefore slice a longer lookback
+    /// into consecutive windows rather than asking for one wide one.
+    /// </remarks>
+    public const string TicketsByCustomer = """
+        query ($customerId: String, $from: Date, $to: Date, $skip: Int, $take: Int) {
+          tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to, customerId: $customerId) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+              ticketPrefix ticketNumber ticketSuffix ticketBLDate productCode
+              shipmentTicketNumber loadOrganizationCode unloadOrganizationCode loadElevatorCode
+              unloadQuantity loadoutQuantity
+              details {
+                ticketSequenceNumber
+                customerCode organizationCode elevatorCode gradeCode
+                contractNumber ticketType
+                ticketStatusCode ticketStatusDescription
+                appliedGrossQuantity appliedNetQuantity appliedDockQuantity appliedShrinkQuantity
+                finalSettledNetQuantity finalSettledDate ticketLastChangeDate
+                gradeFactorMoisturePercent gradeFactorTestWeightPercent gradeFactorProteinPercent
+                storageProgramCode cancelFlag priceSequence
+              }
+            }
+          }
+        }
+        """;
+
 }

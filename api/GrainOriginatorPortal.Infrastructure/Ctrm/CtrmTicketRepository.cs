@@ -8,30 +8,21 @@ using Microsoft.Extensions.Logging;
 namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 
 /// <summary>
-/// Serves a producer's tickets from CTRM only, by way of <see cref="CtrmTicketSnapshot"/>.
+/// Serves a producer's tickets from CTRM.
 /// </summary>
 /// <remarks>
-/// <para><b>Nothing on the producer screen's ticket surface reads ODS.</b> That is the point of this
-/// class: the spike exists to establish what CTRM can and cannot supply on its own, so a gap has to
-/// render as a gap. Enriching or completing a CTRM result from ODS would make the screen look better
-/// while destroying the measurement — you could no longer tell which system produced what.</para>
+/// <para>Per-producer reads go live through <see cref="CtrmTicketReader"/>, using the <c>customerId</c>
+/// filter. Unlike contracts, tickets still need a date range — the header carries no customer, so the
+/// range is what bounds the scan — which the reader handles by slicing a three-year lookback into
+/// consecutive windows within the server's 366-day cap.</para>
 ///
-/// <para>Consequences that are deliberate, not defects:</para>
-/// <list type="bullet">
-/// <item><b>Tickets outside the bill-of-lading window are absent.</b> The window is capped at 366 days
-/// by the API and ticket volume outside 2026 is prohibitive, so a 2025 contract's tickets do not
-/// appear. An empty list is the honest answer, and it is a finding worth recording.</item>
-/// <item><b>Location columns are blank.</b> CTRM returns organization and elevator codes but no place
-/// names; those live in the MbpLocationSynonym table on our side.</item>
-/// <item><b>Customer-storage gating is not applied.</b> The rule needs active-storage data from
-/// <c>ctrm.vw_GNTA39D1</c>, which is ODS-only, so C-prefix tickets are shown ungated.</item>
-/// </list>
-///
-/// <para>Methods serving screens other than the producer profile still delegate to ODS — returning
-/// empty there would break Build-A-List and the position report for no benefit to this test.</para>
+/// <para>Nothing on this surface reads ODS. Location names and storage gating are deliberately absent:
+/// CTRM has no place names and no storage entity, so filling them from ODS would make the screen look
+/// complete while destroying the measurement of what CTRM can actually supply.</para>
 /// </remarks>
 public sealed class CtrmTicketRepository : ITicketRepository
 {
+    private readonly CtrmTicketReader _reader;
     private readonly CtrmTicketSnapshot _snapshot;
     private readonly ApplicationDbContext _appContext;
     private readonly TicketRepository _ods;
@@ -39,12 +30,14 @@ public sealed class CtrmTicketRepository : ITicketRepository
     private readonly ILogger<CtrmTicketRepository> _logger;
 
     public CtrmTicketRepository(
+        CtrmTicketReader reader,
         CtrmTicketSnapshot snapshot,
         ApplicationDbContext appContext,
         TicketRepository ods,
         CtrmProvenance provenance,
         ILogger<CtrmTicketRepository> logger)
     {
+        _reader = reader;
         _snapshot = snapshot;
         _appContext = appContext;
         _ods = ods;
@@ -53,7 +46,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
     }
 
     // -------------------------------------------------------------------------
-    // CTRM only — the producer screen's ticket surface
+    // Live per-producer reads
     // -------------------------------------------------------------------------
 
     /// <inheritdoc />
@@ -66,27 +59,34 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
-        var snapshot = await _snapshot.GetAsync(cancellationToken);
-        if (!snapshot.Ok) return Unavailable(snapshot);
+        var read = await _reader.GetForProducerAsync(code, cancellationToken);
+        if (!read.Ok)
+        {
+            // No ODS fallback: serving ODS tickets while the screen is meant to show CTRM would hide the
+            // failure and invalidate any conclusion drawn about CTRM's coverage.
+            _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
+            return [];
+        }
 
-        var tickets = snapshot.Tickets
+        var tickets = (read.Value ?? [])
             .SelectMany(header => CtrmMappings.ToTickets(header, code))
             .OrderByDescending(t => t.Date)
             .ToList();
 
         _provenance.RecordTickets("ctrm", "Ok", tickets.Count);
 
-        _logger.LogInformation(
-            "CTRM tickets: {Count} rows for producer {ScoularId} from the {Window} window ({Cached} tickets cached).",
-            tickets.Count, code, snapshot.Window, snapshot.Tickets.Count);
+        _logger.LogInformation("CTRM tickets: {Count} rows for producer {ScoularId} (live).", tickets.Count, code);
 
         return tickets;
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// The same CTRM set narrowed by the contract-number prefix rule the entity itself applies, so the
-    /// two tabs cannot disagree about what "unapplied" means.
+    /// The same live set narrowed by the contract-number prefix rule the entity itself applies, so the two
+    /// tabs cannot disagree about what "unapplied" means. Shares the reader's cached request rather than
+    /// issuing a second one.
     /// </remarks>
     public async Task<List<Ticket>> GetUnappliedByCustomerAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
     {
@@ -95,20 +95,13 @@ public sealed class CtrmTicketRepository : ITicketRepository
     }
 
     /// <summary>
-    /// One contract's applied tickets, filtered from the CTRM snapshot.
+    /// One contract's applied tickets, filtered from the ticket window snapshot.
     /// </summary>
     /// <remarks>
-    /// <para>Matched on <c>details.contractNumber</c> across every cached ticket and NOT filtered by
-    /// producer: a contract's applied bushels are the sum of all detail rows against it, so filtering by
-    /// producer would understate a load split between parties.</para>
-    ///
-    /// <para>An ODS-indexed variant of this existed briefly — ODS supplying the contract's ticket keys so
-    /// the result was complete at any date — and was removed to keep the producer surface CTRM-only.
-    /// Bounded by the window, like every other ticket read here.</para>
-    ///
-    /// <para>Note this method is not currently reached from the producer screen: the client's Applied
-    /// Tickets section filters the already-loaded producer ticket list in the browser rather than calling
-    /// the API.</para>
+    /// Cannot use the live reader: this method is keyed by contract id, and with no contract filter on
+    /// <c>tickets</c> there is no way to know which producer to ask for. Not reached from the producer
+    /// screen — the client's Applied Tickets section filters the already-loaded producer ticket list in
+    /// the browser rather than calling the API.
     /// </remarks>
     public async Task<List<Ticket>> GetAppliedByContractAsync(string sourceContractId, CancellationToken cancellationToken)
     {
@@ -120,7 +113,17 @@ public sealed class CtrmTicketRepository : ITicketRepository
         }
 
         var snapshot = await _snapshot.GetAsync(cancellationToken);
-        if (!snapshot.Ok) return Unavailable(snapshot);
+        if (!snapshot.Ok)
+        {
+            if (snapshot.Status == CtrmReadStatus.Warming)
+                _logger.LogInformation("CTRM applied tickets: snapshot still warming — {Detail}", snapshot.Detail);
+            else
+                _logger.LogError("CTRM applied tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
+                    "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", snapshot.Status, snapshot.Detail);
+
+            _provenance.RecordTickets("ctrm", snapshot.Status.ToString(), 0);
+            return [];
+        }
 
         var tickets = snapshot.Tickets
             .SelectMany(header => CtrmMappings.ToTicketsForContract(header, id))
@@ -128,21 +131,18 @@ public sealed class CtrmTicketRepository : ITicketRepository
             .ToList();
 
         _provenance.RecordTickets("ctrm", "Ok", tickets.Count);
-
-        _logger.LogInformation("CTRM applied tickets: {Count} rows for contract {ContractId}.", tickets.Count, id);
-
         return tickets;
     }
 
     // -------------------------------------------------------------------------
-    // Other screens — still ODS, because emptying them serves no test
+    // Other screens — ODS
     // -------------------------------------------------------------------------
 
-    /// <summary>Delegated. Trade-unit-wide, and not part of the producer screen's ticket surface.</summary>
+    /// <summary>Delegated. Trade-unit-wide, not part of the producer screen's ticket surface.</summary>
     public Task<List<Ticket>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
         => DelegateAsync("TradeUnitWide", _ods.GetAsync(tradeUnits, cancellationToken));
 
-    /// <summary>Delegated. Feeds the preload/insights surfaces, not the producer profile.</summary>
+    /// <summary>Delegated. Feeds preload/insights, not the producer profile.</summary>
     public Task<List<Ticket>> GetTodaysAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
         => DelegateAsync("Todays", _ods.GetTodaysAsync(tradeUnits, cancellationToken));
 
@@ -151,9 +151,9 @@ public sealed class CtrmTicketRepository : ITicketRepository
         => DelegateAsync("ByFarm", _ods.GetByFarmAsync(farmId, cancellationToken));
 
     /// <summary>
-    /// Delegated. Storage lives in <c>ctrm.vw_GNTA39D1</c> on ODS and CTRM has no storage entity, so this
-    /// is an ODS read on both paths. Exposed for callers that gate their own ticket sets; the CTRM
-    /// producer read deliberately does NOT apply it.
+    /// Delegated by design: storage lives in <c>ctrm.vw_GNTA39D1</c> on ODS and CTRM has no storage
+    /// entity. Exposed for callers that gate their own ticket sets; the CTRM producer read does NOT
+    /// apply it, so C-prefix tickets show ungated there.
     /// </summary>
     public Task<Dictionary<string, HashSet<string>>> GetActiveStorageCommoditiesAsync(
         IReadOnlyCollection<string> customerCodes, CancellationToken cancellationToken)
@@ -165,27 +165,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Reports an unusable snapshot as an empty result. No ODS fallback: quietly serving ODS rows would
-    /// hide the failure and invalidate any conclusion drawn about CTRM's coverage.
-    /// </summary>
-    private List<Ticket> Unavailable(CtrmTicketSnapshotResult snapshot)
-    {
-        // Warming is the expected state just after a restart, not a fault.
-        if (snapshot.Status == CtrmReadStatus.Warming)
-            _logger.LogInformation("CTRM tickets: snapshot still warming — {Detail}", snapshot.Detail);
-        else
-            _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
-                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", snapshot.Status, snapshot.Detail);
-
-        _provenance.RecordTickets("ctrm", snapshot.Status.ToString(), 0);
-        return [];
-    }
-
-    /// <summary>
-    /// Awaits an ODS-delegated read and records it as ODS-served, so the provenance header cannot claim
-    /// CTRM for data ODS actually supplied.
-    /// </summary>
     private async Task<List<Ticket>> DelegateAsync(string reason, Task<List<Ticket>> odsRead)
     {
         var tickets = await odsRead;
@@ -197,8 +176,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
     {
         if (!string.IsNullOrWhiteSpace(scoularId)) return scoularId.Trim();
 
-        // The customer↔code mapping is ours, not CTRM's — resolving it here is not an ODS data source for
-        // ticket content, it is how we know which producer was asked for.
         var resolved = await _appContext.Customers.AsNoTracking()
             .Where(c => c.Id == customerId)
             .Select(c => c.ScoularId)

@@ -111,6 +111,12 @@ public static class DependencyInjection
         // Singleton so one date-window fetch is shared by every request and every producer, rather
         // than each scoped repository paging the window again. ICtrmGraphQlClient is registered in
         // the Api project (it needs IHttpClientFactory and a credential).
+        // Live per-producer readers. Singleton so their short request-coalescing cache is shared:
+        // selecting a producer triggers the contract list, the pricing lines and the pacing card, which all
+        // want the same rows, so one CTRM call serves all three instead of three identical round trips.
+        services.AddSingleton<CtrmContractReader>();
+        services.AddSingleton<CtrmTicketReader>();
+
         services.AddSingleton<CtrmContractSnapshot>();
         services.AddSingleton<CtrmTicketSnapshot>();
 

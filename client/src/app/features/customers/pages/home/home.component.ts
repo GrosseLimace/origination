@@ -1230,9 +1230,13 @@ export class HomeComponent {
 
     this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (contracts) => {
-        const existing = this.contracts();
-        const merged = [...existing];
-        contracts.forEach(c => { if (!merged.some(e => e.id === c.id)) merged.push(c); });
+        // The per-customer response is a LIVE read with no date window; the pool it merges into is a
+        // cached window snapshot. So on an id collision the incoming row is the fresher of the two and
+        // must WIN. This previously skipped incoming rows already present, which kept the stale pool
+        // copy and made the live read look like it had changed nothing.
+        const byId = new Map(this.contracts().map(c => [c.id, c]));
+        contracts.forEach(c => byId.set(c.id, c));
+        const merged = [...byId.values()];
         this.contracts.set(merged);
         this.appState.setContracts(merged);
         this.isLoadingContracts.set(false);
