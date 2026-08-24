@@ -16,9 +16,12 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// range is what bounds the scan — which the reader handles by slicing a three-year lookback into
 /// consecutive windows within the server's 366-day cap.</para>
 ///
-/// <para>Nothing on this surface reads ODS. Location names and storage gating are deliberately absent:
-/// CTRM has no place names and no storage entity, so filling them from ODS would make the screen look
-/// complete while destroying the measurement of what CTRM can actually supply.</para>
+/// <para><b>Where the ticket rows come from vs. how they are shaped.</b> Every ticket ROW is CTRM. Two
+    /// ODS reads are applied on top, and they are required for ODS parity rather than shortcuts: the
+    /// customer-storage gate (CTRM has no storage entity) and the elevator/location lookup (CTRM returns
+    /// codes, not place names). Both only subtract from or annotate a CTRM-derived set — neither can add a
+    /// ticket. The row-level ticket-type and consolidated filters the ODS query applies live in
+    /// CtrmMappings, because CTRM exposes no server-side argument for either.</para>
 /// </remarks>
 public sealed class CtrmTicketRepository : ITicketRepository
 {
@@ -72,10 +75,20 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
         var tickets = (read.Value ?? [])
             .SelectMany(header => CtrmMappings.ToTickets(header, code))
-            .OrderByDescending(t => t.Date)
             .ToList();
 
-        _provenance.RecordTickets("ctrm", "Ok", tickets.Count);
+        // ODS parity, both steps. The storage gate drops C-prefix tickets whose grain is no longer in
+        // active storage, and the location lookup fills the elevator city the ticket views render. Both
+        // read ODS because CTRM has neither a storage entity nor place names — so matching ODS behaviour
+        // REQUIRES them. They enrich and subtract from a CTRM-derived set; they never add tickets.
+        var beforeGate = tickets.Count;
+        tickets = await ApplyStorageGateAsync(tickets, code, cancellationToken);
+        await _ods.PopulateElevatorLocations(tickets, cancellationToken);
+
+        tickets = tickets.OrderByDescending(t => t.Date).ToList();
+
+        var gated = beforeGate != tickets.Count;
+        _provenance.RecordTickets("ctrm", gated ? "OkStorageGated" : "Ok", tickets.Count);
 
         _logger.LogInformation("CTRM tickets: {Count} rows for producer {ScoularId} (live).", tickets.Count, code);
 
@@ -172,6 +185,25 @@ public sealed class CtrmTicketRepository : ITicketRepository
         return tickets;
     }
 
+    /// <summary>
+    /// Applies the customer-storage gate, reusing the ODS implementation.
+    /// </summary>
+    /// <remarks>
+    /// C-prefix tickets linger after the grain is priced out, so one is kept only while the producer still
+    /// holds that commodity in active storage. Reused rather than reimplemented: storage is ODS-only
+    /// regardless, and a second copy of the rule would be somewhere for the two paths to drift apart.
+    /// </remarks>
+    private async Task<List<Ticket>> ApplyStorageGateAsync(
+        List<Ticket> tickets, string scoularId, CancellationToken cancellationToken)
+    {
+        var hasStorageTickets = tickets.Exists(t =>
+            t.CtrmContractNumber is { Length: > 0 } cn && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase));
+
+        if (!hasStorageTickets) return tickets;
+
+        var storageByCustomer = await _ods.GetActiveStorageCommoditiesAsync([scoularId], cancellationToken);
+        return _ods.GateCustomerStorageTickets(tickets, storageByCustomer);
+    }
     private async Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(scoularId)) return scoularId.Trim();

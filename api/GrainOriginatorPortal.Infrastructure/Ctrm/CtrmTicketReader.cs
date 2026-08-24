@@ -100,7 +100,7 @@ public sealed class CtrmTicketReader
 
     private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchAsync(string scoularId)
     {
-        var lookbackDays = Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 365));
+        var lookbackDays = Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 1095));
         var windows = BuildWindows(DateTime.Today, lookbackDays);
 
         var results = await Task.WhenAll(windows.Select(w => FetchWindowAsync(scoularId, w.From, w.To)));

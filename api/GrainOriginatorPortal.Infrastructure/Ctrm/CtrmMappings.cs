@@ -199,6 +199,7 @@ public static class CtrmMappings
         return header.Details
             .Where(keep)
             .Where(d => !string.Equals(d.CancelFlag?.Trim(), CancelledFlag, StringComparison.OrdinalIgnoreCase))
+            .Where(IsOdsEligible)
             .Select(d => new Ticket
             {
                 Id = CtrmSyntheticId.From(
@@ -271,6 +272,32 @@ public static class CtrmMappings
     public static DateTime? NullIfSentinel(DateTime? value) =>
         value is null || value.Value.Date <= OdsConstants.OpenClosedDateSentinel ? null : value;
 
+    /// <summary>Ticket types the application shows: Unload and Purchase.</summary>
+    private static readonly string[] VisibleTicketTypes = ["U", "P"];
+
+    /// <summary>Status the ODS query excludes — a consolidated ticket is superseded by the one that
+    /// consolidated it, so showing both would double-count the bushels.</summary>
+    private const string ConsolidatedStatus = "Consolidated";
+
+    /// <summary>
+    /// The two row-level filters the ODS ticket query applies, so both sources scope the same population.
+    /// </summary>
+    /// <remarks>
+    /// These live on the DETAIL row in CTRM but on the ticket row in the ODS view, which is why they are
+    /// applied here rather than in the query: there is no server-side argument for either. Without them the
+    /// CTRM path returned ticket types the app never shows and double-counted consolidated bushels, so a
+    /// source comparison would differ for reasons that have nothing to do with data freshness.
+    /// </remarks>
+    private static bool IsOdsEligible(CtrmTicketDetailDto d)
+    {
+        var type = d.TicketType?.Trim();
+        if (type is null || !VisibleTicketTypes.Contains(type, StringComparer.OrdinalIgnoreCase))
+            return false;
+
+        // ODS treats a NULL status as eligible; only an explicit "Consolidated" is excluded.
+        var status = d.TicketStatusDescription?.Trim();
+        return status is null || !status.Equals(ConsolidatedStatus, StringComparison.OrdinalIgnoreCase);
+    }
     /// <summary>Case-insensitive, whitespace-tolerant comparison of a CTRM code against one of ours.</summary>
     private static bool Matches(string? value, string code) =>
         string.Equals(value?.Trim(), code?.Trim(), StringComparison.OrdinalIgnoreCase);
