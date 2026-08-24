@@ -1031,7 +1031,12 @@
                                     : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'))"
                             />
                             @if (barchartEnabled && row.fedAsOf[col.key]) {
-                              <div class="mt-0.5 text-[10px] leading-none text-center text-gray-400 dark:text-gray-500 truncate"
+                              <!-- An old bid is shown, not hidden -- but it has to LOOK old, or it reads
+                                   as today's market. Amber and dated rather than silently absent. -->
+                              <div class="mt-0.5 text-[10px] leading-none text-center truncate"
+                                   [class]="row.agingCells.has(col.key)
+                                     ? 'text-scoular-yellow dark:text-scoular-yellow font-medium'
+                                     : 'text-gray-400 dark:text-gray-500'"
                                    [title]="fedCellTooltip(row, col.key)">{{ formatAsOf(row.fedAsOf[col.key]) }}</div>
                             }
                           </td>

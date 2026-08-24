@@ -383,22 +383,23 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Empty(thirdCells);
     }
 
-    // A caller can widen the window deliberately -- useful for a backfill or a quiet market -- and the
-    // stale row then publishes, which proves the cutoff is what excluded it rather than something else.
+    // An elevator that posts a bid and then leaves it alone is behaving normally, especially on a
+    // deferred month -- so a LIVE quote publishes however old it is. Age used to be the test, and it hid
+    // real bids: on the live feed no mode-i quote exceeds 90 days, so age was only ever a proxy for mode.
     [Fact]
-    public async Task ApplyBids_WithAWiderAgeWindow_PublishesTheOlderQuote()
+    public async Task ApplyBids_PublishesALiveQuoteThatHasNotMovedInWeeks()
     {
         if (!Enabled) return;
 
         await _sut.LoadInstrumentsAsync(InstrumentsJson);
 
-        var stale = """
+        var unmoved = """
             { "status": { "code": 200 }, "results": [
-              { "symbol": "ZCPQ26-27300-6916.CM", "lastPrice": "3.51",
-                "tradeTimestamp": "REPLACE_STALE", "mode": "d", "unitCode": "4", "code": 200 }
+              { "symbol": "ZCPQ26-27300-6916.CM", "lastPrice": "4.41",
+                "tradeTimestamp": "REPLACE_OLD", "mode": "i", "unitCode": "4", "code": 200 }
             ] }
-            """.Replace("REPLACE_STALE", DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:sszzz"));
-        await _sut.LoadQuotesAsync(stale, BusinessDate);
+            """.Replace("REPLACE_OLD", DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:sszzz"));
+        await _sut.LoadQuotesAsync(unmoved, BusinessDate);
 
         _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
         {
@@ -406,14 +407,14 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
             CommodityCode = "CORN",
             CreatedBy = "integration-test"
         });
-        var sioux = NewLinkedLocation("__IT Sioux Wide", "27300");
+        var sioux = NewLinkedLocation("__IT Sioux Unmoved", "27300");
         _context.BidSheetLocations.Add(sioux);
         await _context.SaveChangesAsync();
 
-        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed", maxQuoteAgeDays: 45);
+        await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
 
         var cells = await _context.BidSheetLocationBids.Where(b => b.LocationId == sioux.Id).ToListAsync();
-        Assert.Equal("3.51", Assert.Single(cells).Bid);
+        Assert.Equal("4.41", Assert.Single(cells).Bid);
     }
 
     // -------------------------------------------------------------------------

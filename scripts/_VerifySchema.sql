@@ -543,7 +543,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (25; see KNOWN PRE-EXISTING GAPS in the header)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (26; see KNOWN PRE-EXISTING GAPS in the header)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Migrations (MigrationId) VALUES
 ('20260310202402_AddESignEnrollment'),
@@ -570,7 +570,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260821124557_AddBarchartPublishableBidView'),
 ('20260824132811_AddBasisBidColumns'),
 ('20260824133524_AddBasisToPublishableBidView'),
-('20260824134238_AddPriceModePreference');
+('20260824134238_AddPriceModePreference'),
+('20260824140609_UsePriceModeForStaleQuotes');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

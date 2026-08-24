@@ -517,8 +517,14 @@ DECLARE @winners TABLE
        -- so it gets a symmetric magnitude bound instead. Both exclude the 214748.3647 sentinel.
        AND ((i.InstrumentType = @cashType AND q.LastPrice >= @minPrice AND q.LastPrice <= @maxPrice)
          OR (i.InstrumentType = @basisType AND ABS(q.LastPrice) <= @maxPrice))
-       -- A missing trade timestamp means the vendor didn't say when this was set; publish it rather than
-       -- discard a price over absent metadata, but anything with a timestamp must be recent.
+       -- Publish live quotes at any age, and let the UI show how old they are. Age alone is a poor
+       -- test: an elevator that posts a new-crop bid and leaves it for two months is behaving normally,
+       -- and a delivery month already tells the user which period a bid covers. Measured on the feed,
+       -- age was only ever a proxy for the vendor's own mode flag -- no live (mode i) quote exceeds 90
+       -- days, while every quote past 90 days is mode d, as is every sentinel. A 7-day cutoff was
+       -- therefore hiding ~1,245 real bids to block a population that mode identifies exactly.
+       AND ISNULL(q.QuoteMode, N'i') <> N'd'
+       -- Far outer backstop only, in case mode ever stops being trustworthy.
        AND (q.TradeTimestamp IS NULL
             OR q.TradeTimestamp >= DATEADD(DAY, -@maxQuoteAgeDays, SYSUTCDATETIME()))
     INNER JOIN dbo.BarchartCommodityMap AS m

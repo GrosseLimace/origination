@@ -27,14 +27,19 @@ public static class BarchartFeedDefaults
     public const string Actor = "barchart-feed";
 
     /// <summary>
-    /// How old a vendor quote may be and still be published to the Bid Sheet.
+    /// Far outer bound on quote age — a backstop, not the main filter.
     ///
-    /// Set from the first live quote run (2026-08-21): the vendor returns two populations, one updated
-    /// within a day or two and one averaging 181 days old, and both arrive in the same payload. The stale
-    /// half is worse than no bid — it put soybeans at $3.51 for Sep 2026 immediately beside $11.70 for
-    /// Aug and Oct, which reads as a price collapse rather than as missing data.
+    /// Publishing is gated on the vendor's own mode flag instead: <c>d</c> quotes are dead records and
+    /// never publish, <c>i</c> quotes are live and publish at any age with their age surfaced in the UI.
+    /// This started at 7 days, which turned out to be a proxy for mode and a lossy one — measured on the
+    /// feed, no live quote exceeds 90 days while every quote past 90 days is mode <c>d</c>, so the cutoff
+    /// was hiding roughly 1,245 real bids to block a population that mode identifies exactly. An elevator
+    /// that posts a new-crop bid and leaves it for two months is behaving normally, and the delivery
+    /// month already tells the user which period a bid covers.
+    ///
+    /// Kept only in case mode ever stops being trustworthy; <c>apply-bids</c> can override it per call.
     /// </summary>
-    public const int MaxQuoteAgeDays = 7;
+    public const int MaxQuoteAgeDays = 365;
 
     /// <summary>
     /// Lowest price treated as a real bid. The vendor uses tiny values (observed: 0.0025) as a

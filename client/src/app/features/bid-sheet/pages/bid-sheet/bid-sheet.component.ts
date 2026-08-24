@@ -29,6 +29,8 @@ interface EditBidsRow {
   fedCells: Set<string>;
   /** Column key → when the elevator last updated that fed bid. Only set for fed cells. */
   fedAsOf: Record<string, string | undefined>;
+  /** Column keys whose fed bid hasn't moved in a while — shown muted so it can't read as today's price. */
+  agingCells: Set<string>;
   /** True when the whole location is linked to a BarChart listing. */
   isBarchartLinked: boolean;
 }
@@ -271,12 +273,30 @@ export class BidSheetComponent {
     this.confirmMonthSelection();
   }
 
+  /**
+   * How long a fed bid can sit unchanged before the UI mutes it. This is presentation only — the feed
+   * publishes live quotes at any age, because an elevator leaving a new-crop bid alone for weeks is
+   * normal. Muting means an old price can never be mistaken for today's without hiding it.
+   */
+  private static readonly AGING_QUOTE_DAYS = 7;
+
+  /** True when a fed bid hasn't been touched by the elevator in a while. */
+  isAgingQuote(asOf: string | undefined): boolean {
+    if (!asOf) return false;
+    const when = new Date(asOf);
+    if (isNaN(when.getTime())) return false;
+    const days = (Date.now() - when.getTime()) / 86_400_000;
+    return days > BidSheetComponent.AGING_QUOTE_DAYS;
+  }
+
   /** Tooltip for a feed-owned cell: where it came from and when the elevator last changed it. */
   fedCellTooltip(row: EditBidsRow, key: string): string {
     const asOf = row.fedAsOf[key];
-    return asOf
-      ? `From BarChart — updated ${this.formatAsOf(asOf)}. Not editable.`
-      : 'From BarChart. Not editable.';
+    if (!asOf) return 'From BarChart. Not editable.';
+    const aging = row.agingCells.has(key)
+      ? ' The elevator has not changed this bid since then.'
+      : '';
+    return `From BarChart — updated ${this.formatAsOf(asOf)}.${aging} Not editable.`;
   }
 
   /** Short, human "as of" for a vendor timestamp: today shows a time, older shows a date. */
@@ -1653,6 +1673,7 @@ export class BidSheetComponent {
       const bids: Record<string, string> = {};
       const fedCells = new Set<string>();
       const fedAsOf: Record<string, string | undefined> = {};
+      const agingCells = new Set<string>();
       for (const col of columns) {
         const entry = lookup.get(`${name}|${col.crop}|${year}|${col.month}`);
         bids[col.key] = entry?.bid ?? '';
@@ -1661,9 +1682,10 @@ export class BidSheetComponent {
         if (entry?.source === 'Barchart') {
           fedCells.add(col.key);
           fedAsOf[col.key] = entry.quoteAsOf;
+          if (this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
         }
       }
-      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, fedCells, fedAsOf, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, fedCells, fedAsOf, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -1672,7 +1694,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, fedCells: new Set<string>(), fedAsOf: {}, isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, fedCells: new Set<string>(), fedAsOf: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // Apply saved location order (unknown names go to end)

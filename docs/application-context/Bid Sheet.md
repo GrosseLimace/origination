@@ -246,32 +246,37 @@ can look half-empty until the year is switched.
 
 ### What the feed refuses to publish
 
-The bridge only writes a price it would stand behind. From the first live quote run (2026-08-21, 31,559
-quotes) the vendor sends three populations in one payload:
+The bridge publishes a price it would stand behind, and **shows an old one rather than hiding it**.
 
-| | Rows | Notes |
+**Blocking is on the vendor's mode flag, not on age.** Measured across the live feed:
+
+| | mode `i` (live) | mode `d` (dead) |
 |---|---|---|
-| Fresh (`mode = i`) | ~14,100 | 0.4-1.6 days old. Real bids. |
-| Stale (`mode = d`) | ~1,300 | **Averaging 181 days old**, and holds every sentinel |
-| Placeholders | — | `0.0025` for a no-bid, and `214748.3647` = `int.MaxValue / 10000` |
+| 0–7 days | 27,628 | 0 |
+| 8–90 days | 1,245 | 411 |
+| over 90 days | **0** | **2,272** |
 
-So three conditions sit on the quote join, from `BarchartFeedDefaults`:
+No live quote exceeds 90 days; every ancient one is `d`, as is every sentinel. This started as a 7-day
+age cutoff, which was a **proxy for mode and a lossy one** — it hid ~1,245 real bids to block a
+population that mode identifies exactly. An elevator that posts a new-crop bid and leaves it for weeks
+is behaving normally, and the delivery month already tells the user which period a bid covers.
 
-- **`MaxQuoteAgeDays` (7)** — a quote with a trade timestamp older than this is skipped. A missing
-  timestamp still publishes: that's absent metadata, not a bad price.
-- **`MinPublishablePrice` (0.01)** — excludes the `0.0025` no-bid placeholder, seen on corn and soybeans.
-- **`MaxPublishablePrice` (100,000)** — excludes the sentinel. Deliberately *not* a $/bu band: **canola
-  legitimately quotes around 800** because it's priced per metric tonne, so a "sane" band of 0.50-100
-  would have silently dropped every canola bid.
+So, from `BarchartFeedDefaults`:
 
-`apply-bids` takes `maxQuoteAgeDays` as a query parameter to widen the window deliberately (a backfill,
-or a quiet market), so the default is a floor rather than a hard rule.
+- **`mode = d` never publishes.** Dead records, not offers.
+- **`MinPublishablePrice` (0.01)** for cash — excludes the `0.0025` no-bid placeholder. Basis is
+  normally negative, so it gets a symmetric magnitude bound instead; both exclude the `214748.3647`
+  sentinel (`int.MaxValue / 10000`).
+- **`MaxQuoteAgeDays` (365)** is a far backstop only, in case mode stops being trustworthy.
+  `apply-bids` can override it per call.
 
-**Why this matters more than it sounds.** A stale price isn't a cosmetic problem — on the test location
-it put soybeans at **$3.51 for Sep 2026** directly between **$11.70** in August and October. An
-originator reads that as the market falling out of bed, not as missing data. A blank cell is honest; a
-confidently wrong number is not.
+**Age is surfaced, not used to hide.** A fed cell whose quote hasn't moved in more than 7 days shows its
+as-of date in amber with "the elevator has not changed this bid since then". That keeps the one real
+hazard — a stale price *read as today's market* — without throwing away a bid the user asked to see. It
+was that hazard, not age itself, that justified the original rule: an unmarked 262-day-old soybean quote
+put **$3.51 for Sep 2026** between **$11.70** in August and October, which reads as a collapse.
 
+### 
 ### Diagnosing a missing bid: `dbo.vw_BarchartPublishableBid`
 
 The question that comes up every time the feed looks wrong is "why is there no bid here?", and answering
