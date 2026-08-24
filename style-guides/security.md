@@ -47,9 +47,10 @@ applies-to: [changed-files]
 files: ['*.cs', '*.ps1', '*.psm1', '*.bicep', '*.bicepparam', '*.json', '*.yaml', '*.yml', '*.xml', '*.xslt', '*.config', '*.sql', '*.tf', '*.py', '*.js', '*.ts', '*.env', '*.txt']
 tool: grep-forbidden
 args:
-  pattern: 'password[[:space:]]*[:=][[:space:]]*"[^"$<{]{4,}"'
+  pattern: 'password[[:space:]]*[:=][[:space:]]*"(?P<secret>[^"$<{]{4,})"'
   ignore-case: true
   except: '(\$\(|\$\{|@Microsoft\.KeyVault|<<|placeholder|YOUR_|EXAMPLE|REDACTED|x{4,}|\*{4,}|\bnull\b|""|"""|TODO|TBD|sample|dummy|fake)'
+  except-scope: secret
 message: Use Azure Key Vault + Managed Identity (security.md §2). No hardcoded password literals.
 ```
 
@@ -62,9 +63,10 @@ applies-to: [changed-files]
 files: ['*.cs', '*.ps1', '*.psm1', '*.bicep', '*.bicepparam', '*.json', '*.yaml', '*.yml', '*.xml', '*.xslt', '*.config', '*.sql', '*.tf', '*.py', '*.js', '*.ts', '*.env', '*.txt']
 tool: grep-forbidden
 args:
-  pattern: '(api[_-]?key|secret[_-]?key|access[_-]?token|client[_-]?secret|bearer[_-]?token)[[:space:]]*[:=][[:space:]]*"[A-Za-z0-9+/_=.\-]{16,}"'
+  pattern: '(api[_-]?key|secret[_-]?key|access[_-]?token|client[_-]?secret|bearer[_-]?token)[[:space:]]*[:=][[:space:]]*"(?P<secret>[A-Za-z0-9+/_=.\-]{16,})"'
   ignore-case: true
   except: '(\$\(|\$\{|@Microsoft\.KeyVault|<<|placeholder|YOUR_|EXAMPLE|REDACTED|x{4,}|\*{4,}|TODO|TBD|sample|dummy|fake)'
+  except-scope: secret
 message: Move the value to Key Vault and reference via @Microsoft.KeyVault(...) (security.md §2 / §5).
 ```
 
@@ -112,6 +114,78 @@ message: Private key material must never be committed; rotate immediately if it 
 7. **AI-generated code is untrusted code**
    - All AI-generated code must pass automated security validation before merge.
    - When the author cannot fully explain the code, additional review artifacts are required (see Section 9).
+
+### 2.1 Credential shapes that must never be committed
+
+Beyond bare password and API-key literals, three composite credential shapes are
+common enough in Azure work to be worth naming explicitly. Each is a live
+credential the moment it lands in history, so a rotation — not just a revert — is
+the remediation.
+
+**Connection strings carrying their own password.** A `Server=…;Password=…`
+string is a complete credential, and it evades the bare-password rule because the
+secret is a `;`-delimited segment rather than a `password:` assignment. Use a
+Key Vault reference or Managed Identity instead.
+
+```rule
+id: no-connection-string-password
+source: security.md§2.1
+severity: error
+description: Connection strings must not embed a password; use Managed Identity or a Key Vault reference
+applies-to: [changed-files]
+files: ['*.cs', '*.ps1', '*.psm1', '*.bicep', '*.bicepparam', '*.json', '*.yaml', '*.yml', '*.xml', '*.xslt', '*.config', '*.sql', '*.tf', '*.py', '*.js', '*.ts', '*.env', '*.txt']
+tool: grep-forbidden
+args:
+  pattern: '(server|data[[:space:]]+source)=[^;"]+;[^"]*(password|pwd)=(?P<secret>[^;"$<{]{4,})'
+  ignore-case: true
+  except: '(\$\(|\$\{|@Microsoft\.KeyVault|<<|placeholder|YOUR_|EXAMPLE|REDACTED|x{4,}|\*{4,}|\bnull\b|""|"""|TODO|TBD|sample|dummy|fake)'
+  except-scope: secret
+message: |
+  Connection string with an embedded password. Use Managed Identity, or move the
+  string to Key Vault and reference it with @Microsoft.KeyVault(SecretUri=...).
+  See security.md §2.1 and §5.
+```
+
+**SAS tokens.** A URL carrying `sig=` is a bearer credential for the resource it
+points at, and it is frequently pasted into config while debugging.
+
+```rule
+id: no-sas-token
+source: security.md§2.1
+severity: error
+description: Shared Access Signature tokens must not be committed
+applies-to: [changed-files]
+files: ['*']
+tool: grep-forbidden
+args:
+  pattern: '[?&]sig=(?P<secret>[A-Za-z0-9%/+_=.\-]{20,})'
+  ignore-case: true
+  except: '(\$\(|\$\{|@Microsoft\.KeyVault|placeholder|YOUR_|EXAMPLE|REDACTED|x{4,}|\*{4,}|TODO|TBD|sample|dummy|fake)'
+  except-scope: secret
+message: |
+  Possible SAS token. Generate SAS values at runtime with a user delegation key,
+  or use Managed Identity and drop the SAS entirely. Revoke the signing key if
+  this has been pushed. See security.md §2.1.
+```
+
+**JWTs.** A committed access or ID token is a credential until it expires, and
+its three dot-separated base64 segments are unmistakable.
+
+```rule
+id: no-jwt-token
+source: security.md§2.1
+severity: error
+description: JWT access or ID tokens must not be committed
+applies-to: [changed-files]
+files: ['*']
+tool: grep-forbidden
+args:
+  pattern: 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+message: |
+  Possible JWT in source. Acquire tokens at runtime; never commit one, even an
+  expired one, since it leaks tenant, audience, and claim structure.
+  See security.md §2.1.
+```
 
 ---
 
@@ -242,8 +316,45 @@ message: |
 - **Secret scanning** with push protection where available.
 - **Dependency scanning** for NuGet and npm.
 - **SAST (code scanning)** for common vulnerability patterns.
+- **Infrastructure-as-code must compile.** An IaC template that does not build has
+  not been security-reviewed by anything — no analyzer, policy scanner, or
+  what-if runs against a template the compiler rejects, so a build failure is a
+  silent gap in every other IaC control rather than a mere inconvenience.
+
+```rule
+id: bicep-must-compile
+source: security.md§6.2
+severity: error
+description: Changed Bicep templates must compile (az bicep build)
+applies-to: [changed-files]
+files: ['*.bicep']
+tool: bicep-lint
+message: |
+  `az bicep build` failed. A template that does not compile cannot be scanned by
+  Template Analyzer, PSRule, Checkov, or what-if, so every downstream IaC control
+  silently skips it. Fix the build before merging. See security.md §6.2.
+```
 
 > If using Azure DevOps, GitHub Advanced Security for Azure DevOps can provide dependency scanning, secret scanning, and CodeQL-based code scanning.
+
+### 6.2.1 The security scan is mandatory, and runs where the code review runs
+
+**HARD RULE.** The automated security scan is not advisory and not
+deploy-time-only. It runs at the *same point in the workflow as the code review*
+— on the pull request, against the PR's diff — and it blocks merge on
+error-severity findings.
+
+Two consequences worth stating plainly, because both have been got wrong:
+
+1. **Report-only is not a gate.** A scan configured to report findings without
+   failing the build is telemetry, not enforcement. Onboarding may start in
+   report-only mode to measure noise, but a repo does not count as covered until
+   its scan fails the build on error-severity findings.
+2. **Pre-deployment is too late.** A scan that first runs in a deploy stage has
+   already let the code onto the default branch. Where human PR review has been
+   replaced by automated review, the security scan and the code review are the
+   same gate and must fire together on the same artifact — otherwise the only
+   thing reading the diff for security is a model with no deterministic backstop.
 
 ### 6.3 Build provenance (recommended)
 

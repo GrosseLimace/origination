@@ -7,7 +7,7 @@ description: Trace error propagation end-to-end from database to user display, c
 
 Trace error propagation paths across architectural layers to verify failures are logged, communicated to users, and handled consistently using `style-guides/error-smells-guide.md`.
 
-> Complements `/audit-error-handling` (which checks standards compliance against `error-handling-guide.md`). This skill traces actual error flow across layers and finds broken paths.
+> Complements `/audit-error-handling` (which checks standards compliance against `error-handling.md`). This skill traces actual error flow across layers and finds broken paths.
 
 ## Workflow
 
@@ -111,5 +111,5 @@ Report findings or completed fixes by severity with file references, then summar
 
 - `style-guides/error-smells-guide.md`
 - `style-guides/refactoring-guide.md` (for E1-E7)
-- `style-guides/error-handling-guide.md` (complementary standards)
+- `style-guides/error-handling.md` (complementary standards)
 - `.claude/rules/project-config.md` (when present)

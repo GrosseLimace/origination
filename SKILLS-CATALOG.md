@@ -1,12 +1,14 @@
 # Claude Skills Catalog — Scoular Dev Standards
 
-Available Claude Code skills maintained in the [dev-standards](https://scoular.ghe.com/IT/dev-standards) repository.
+Available Claude Code skills. Shared skills now ship in the **`scoular-skills` plugin** from the Scoular Marketplace ([IT/scoular-marketplace](https://scoular.ghe.com/IT/scoular-marketplace)). The former `IT/dev-standards` repository was decommissioned on 2026-08-21.
 
 ---
 
 ## Auto-Managed Skills
 
-These skills are synced automatically from `dev-standards` via GitHub Actions. Updates arrive as PRs — no manual action needed. They use auto-detection and work across all supported project types without customization.
+These skills come from the `scoular-skills` plugin — nothing is vendored into this repo. Update them with `claude plugin update scoular-skills@scoular` (then restart Claude Code); there is no per-repo PR to merge. They use auto-detection and work across all supported project types without customization.
+
+> **Do not copy these into `.claude/skills/`.** A project-local file of the same name *shadows* the plugin's copy, silently pinning you to whatever version was copied. This repo carried 18 such shadow copies from plugin v0.16.0 until 2026-08-21.
 
 ### Foundation Skills
 
@@ -56,8 +58,7 @@ These skills were copied when the repo was created. Your team owns them and can 
 | Wrap-Up | `/wrap-up` | End a session by updating CHANGELOG, CLAUDE.md Session Context, ROADMAP, PROJECT-STRUCTURE, and SCHEMA.md when relevant | `agents-docs/` paths and any repo-specific documentation expectations |
 | Release Notes | `/release-notes` | Find missing changelog entries from git commits and pull requests, then clean up `agents-docs/CHANGELOG.md` so the history is accurate and readable | `agents-docs/CHANGELOG.md` conventions |
 | Schema Doc | `/schema-doc` | Create or refresh `agents-docs/SCHEMA.md` from migrations, SQL scripts, EF models, and other schema artifacts when no live database connection is available | schema evidence paths and `agents-docs/SCHEMA.md` conventions |
-| Sync Skills | `/sync-skills` | Pull updated skill templates and `SKILLS-CATALOG.md` from dev-standards, adding new files and features while protecting repo-specific starter-skill customizations | local skill directory layout, any repo-specific skill ownership rules, and known rename aliases |
-| Sync Style Guides | `/sync-style-guides` | Pull the latest shared style guides from dev-standards into this repo so review and implementation skills use current standards | Typically no changes needed |
+| Sync Style Guides | `/sync-style-guides` | **Repo-local skill.** Refresh `style-guides/` from the installed plugin snapshot. Run after each `/plugin update` | Sources from the plugin cache, not the network |
 | Sync Standard Permissions | `/sync-standard-permissions` | Merge standard Claude Code permissions into local settings without removing repo-specific additions | Typically no changes needed |
 
 **Repo location**: `.claude/skills/<skill-name>/SKILL.md`
@@ -66,7 +67,7 @@ These skills were copied when the repo was created. Your team owns them and can 
 
 ## Project-Local Skills
 
-These skills were built for this repo and are NOT synced from dev-standards.
+These skills were built for this repo and are not part of the `scoular-skills` plugin. They live in `.claude/skills/` and reference `style-guides/*.md` repo-relative — which is why this repo keeps a local copy of the guides, made deliberate via `SCOULAR_STYLE_GUIDES_PATH=style-guides` in `.claude/settings.json`.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
@@ -76,16 +77,25 @@ These skills were built for this repo and are NOT synced from dev-standards.
 
 ---
 
-## Installing a New Skill
+## Getting a Shared Skill
 
-To add a skill from dev-standards that is not in your repo yet:
+Shared skills are delivered by the plugin, not copied into the repo. If one is missing:
 
-1. Browse the skill in `dev-standards` (see the `starter-pack/project-root/.claude/skills/` or `sync-to-master/.claude/skills/` directories)
-2. Copy the entire `<skill-name>/` directory to the repo's `.claude/skills/<skill-name>/` directory
-3. Verify it works by starting a new Claude Code session and typing `/<skill-name>`
+1. Update the plugin: `claude plugin update scoular-skills@scoular`
+2. Restart Claude Code (updates only apply on restart)
+3. Confirm with `/plugin` or `claude plugin list`, then type `/<skill-name>`
 
-For details on skill file structure and registration, see the Claude Code documentation.
+Do **not** copy a plugin skill into `.claude/skills/` to "pin" it — that shadows the
+plugin copy and freezes it at the version you copied, with no signal that it has gone stale.
+
+## Adding a Repo-Specific Skill
+
+Only for skills genuinely unique to this repo (see the list above). Create
+`.claude/skills/<skill-name>/SKILL.md`. Before you do, check the name does not collide with
+a plugin skill — `claude plugin details scoular-skills` lists them. If a repo-specific skill
+matures into something other teams want, promote it upstream with `/promote-skill` rather
+than letting copies drift across repos.
 
 ---
 
-*This catalog is automatically synced from dev-standards. Last updated: 2026-03-30*
+*Shared skills ship via the `scoular-skills` plugin; run `/plugin` to see the installed version. Last updated: 2026-08-21*
