@@ -38,7 +38,7 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
             var isReadRequest = HttpMethods.IsGet(context.HttpContext.Request.Method)
                              || HttpMethods.IsHead(context.HttpContext.Request.Method);
 
-            // If the Entitlements DB was unreachable AND there was no last-known-good cache to fall
+            // If the TradeUnitPreferences DB was unreachable AND there was no last-known-good cache to fall
             // back on (UserEntitlementService), fail CLOSED rather than serving unfiltered data:
             // skipping the filter here would let every user see all trade units' data during the
             // outage (CWE-285). Return 503 so the client retries instead. Writes already fail closed

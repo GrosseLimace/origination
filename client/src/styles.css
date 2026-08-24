@@ -17,6 +17,49 @@
   --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
+/* App chrome metrics.
+   --app-header-h must match the rendered height of app-header (see
+   shared/components/header/header.component.html): py-5 + h-11 logo + label row.
+   --app-main-pad mirrors the padding on <main> in app.component.html (p-4 sm:p-6).
+   Panes that cannot use a flex min-h-0 chain size themselves off --app-chrome. */
+:root {
+  --app-header-h: 6.5rem;
+  --app-main-pad: 1rem;
+  --app-chrome: calc(var(--app-header-h) + 2 * var(--app-main-pad));
+}
+
+/* Fluid scale, laptop -> monitor.
+   One shared set of curves so every screen interpolates instead of snapping at a
+   breakpoint, and so the whole app grows at the same rate. All reach their max at
+   1920px and their min at or below 1366px.
+   Use as text-[var(--text-fluid-sm)], p-[var(--space-fluid-card)], etc. */
+:root {
+  /* body copy and row metadata: 13px -> 16px */
+  --text-fluid-sm: clamp(13px, calc(0.55vw + 5.5px), 16px);
+  /* row and card headings, one step above the body: 15px -> 18px */
+  --text-fluid-md: clamp(15px, calc(0.55vw + 7.5px), 18px);
+  /* card padding and list gaps: 12px -> 16px */
+  --space-fluid-card: clamp(12px, calc(0.72vw + 2.14px), 16px);
+  /* chart plot areas: holds today's laptop size, grows on a monitor */
+  --size-fluid-chart: clamp(200px, calc(7.22vw + 101.4px), 240px);
+  /* circular chart diameter: same rule */
+  --size-fluid-dial: clamp(148px, calc(5.78vw + 69px), 180px);
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --app-main-pad: 1.5rem;
+  }
+}
+
+/* Overlay stacking scale — keep new overlays on these tiers:
+   50 = dropdowns / menus / toasts · 60 = dialogs (app-dialog) ·
+   70 = confirms nested inside a dialog · 1000+ = Leaflet map overlays (bid sheet).
+   Dropdowns are plain CSS-positioned siblings with no collision detection, so a
+   menu must be placed with room to its right or it will clip - the shell is
+   overflow-hidden and there is no scrollbar to recover it. Every current menu is
+   left-anchored in a filter bar, which is why this has not bitten. */
+
 /* Base styles */
 html {
   scrollbar-gutter: stable;
@@ -24,20 +67,33 @@ html {
 
 body {
   font-family: var(--font-sans);
-  font-size: 16px;
+  /* 1rem, not a fixed 16px, so body text follows the root step-down below. */
+  font-size: 1rem;
   line-height: 1.5;
   font-weight: 400;
   @apply bg-gray-50 text-gray-900;
 }
 
-/* Scoular Typescale — in @layer base so Tailwind utility classes can override */
+/* Laptop-to-monitor density, fluid.
+   Interpolates 15px -> 16px between 1280px and 1536px viewport width instead of
+   snapping at a breakpoint. Tailwind sizes and spacing are rem-based, so this
+   makes type AND padding flow continuously across that whole range. Clamped, so
+   <=1280px stays 15px and >=1536px stays 16px exactly as before.
+   0.390625vw == 1px per 256px of width, i.e. 1px gained over 1280->1536. */
+:root {
+  font-size: clamp(15px, calc(0.390625vw + 10px), 16px);
+}
+
+/* Scoular Typescale — in @layer base so Tailwind utility classes can override.
+   Expressed in rem (identical to the original px at a 16px root) so headings
+   follow the laptop step-down instead of staying oversized. */
 @layer base {
-  h1 { font-size: 64px; font-weight: 700; line-height: 72px; }
-  h2 { font-size: 36px; font-weight: 700; line-height: 48px; }
-  h3 { font-size: 24px; font-weight: 400; line-height: 40px; }
-  h4 { font-size: 19px; font-weight: 700; line-height: 26px; }
-  h5 { font-size: 18px; font-weight: 700; line-height: 24px; letter-spacing: 0.08em; }
-  h6 { font-size: 16px; font-weight: 700; line-height: 20px; }
+  h1 { font-size: 4rem; font-weight: 700; line-height: 4.5rem; }
+  h2 { font-size: 2.25rem; font-weight: 700; line-height: 3rem; }
+  h3 { font-size: 1.5rem; font-weight: 400; line-height: 2.5rem; }
+  h4 { font-size: 1.1875rem; font-weight: 700; line-height: 1.625rem; }
+  h5 { font-size: 1.125rem; font-weight: 700; line-height: 1.5rem; letter-spacing: 0.08em; }
+  h6 { font-size: 1rem; font-weight: 700; line-height: 1.25rem; }
 }
 
 .dark body {

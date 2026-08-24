@@ -22,7 +22,7 @@ public class UserTradeUnitsController : ControllerBase
     /// Returns the trade unit codes assigned to the currently authenticated user,
     /// grouped by Azure AD group name. UserId is derived from the UPN claim
     /// (e.g. CEgr@scoular.com → CEgr). Falls back to all trade units from
-    /// dbo.CustomerTradeUnit when the Entitlements DB is unavailable.
+    /// dbo.CustomerTradeUnit when the TradeUnitPreferences DB is unavailable.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<UserTradeUnitGroupResponse>), StatusCodes.Status200OK)]

@@ -23,7 +23,7 @@ public class NotesControllerTests
     public NotesControllerTests()
     {
         _serviceMock = new Mock<INoteService>();
-        // EntitlementsDbContext and the group service are only used by the mention-catalog endpoint,
+        // TradeUnitPreferencesDbContext and the group service are only used by the mention-catalog endpoint,
         // which these tests don't exercise — neither is dereferenced by the methods under test.
         _sut = new NotesController(_serviceMock.Object, null!, new Mock<IDailyRecapGroupService>().Object,
             new Mock<ILogger<NotesController>>().Object);

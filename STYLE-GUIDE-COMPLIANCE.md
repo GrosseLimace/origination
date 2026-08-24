@@ -161,7 +161,9 @@ When the Trade Groups dropdown was switched to `getUserTradeUnits()` (Entitlemen
 - Tests: `ControllerAuthorizationTests` no longer references `TradeUnitGroupsController`; `CustomersControllerTests.GetTradeUnits_ReturnsOkWithList` deleted.
 
 ### Principle going forward
-Anything that needs the list of valid TU codes or group definitions queries the Entitlements DB via `getUserTradeUnits()` / `vw_UserTradeUnitAccess`. **Do not re-add a `dbo.TradeUnits` lookup, a `TradeUnitGroups` table, or any FK from app-DB tables to a local TU catalog.** TU codes are stored in app-DB columns (e.g. `CustomerSnapshot.TradeUnit`, `Note.TradeUnit`) as plain strings — soft references to the shared CTRM vocabulary owned by upstream systems.
+**Source moved 2026-08-18:** the sole source of truth is now the **TradeUnitPreferences** DB (`dbo.vw_UserTradeUnitPreferences`), not the Entitlements DB. Managers assign users to trade units in a separate preferences application; this app only reads. The view is column-for-column identical to the old `vw_UserTradeUnitAccess`, so the principle below is unchanged apart from the database it points at. Everything above this line describes the state at the time it was written.
+
+Anything that needs the list of valid TU codes or group definitions queries the TradeUnitPreferences DB via `getUserTradeUnits()` / `vw_UserTradeUnitPreferences`. **Do not re-add a `dbo.TradeUnits` lookup, a `TradeUnitGroups` table, or any FK from app-DB tables to a local TU catalog.** TU codes are stored in app-DB columns (e.g. `CustomerSnapshot.TradeUnit`, `Note.TradeUnit`) as plain strings — soft references to the shared CTRM vocabulary owned by upstream systems.
 
 ---
 

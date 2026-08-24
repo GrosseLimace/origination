@@ -311,8 +311,8 @@
           <p class="text-sm">No users found</p>
         </div>
       } @else {
-        <div class="overflow-auto max-h-[500px] px-4 pb-4">
-          <app-table [stickyHeader]="true">
+        <div class="px-4 pb-4">
+          <app-table [stickyHeader]="true" [maxHeight]="'min(500px, 55dvh)'">
             <app-table-header>
                 <app-table-row>
                   <app-table-head [sortable]="true" (click)="sort.handle('name')">
@@ -603,8 +603,8 @@
           <p class="text-sm">No originators found</p>
         </div>
       } @else {
-        <div class="overflow-auto max-h-[500px] px-4 pb-4">
-          <app-table [stickyHeader]="true">
+        <div class="px-4 pb-4">
+          <app-table [stickyHeader]="true" [maxHeight]="'min(500px, 55dvh)'">
             <app-table-header>
               <app-table-row>
                 <app-table-head [sortable]="true" (click)="activitySort.handle('name')">

@@ -82,7 +82,7 @@
         </div>
 
         <!-- Desktop Table View -->
-        <div class="hidden md:block max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto relative">
+        <div class="hidden md:block max-h-[calc(100dvh-var(--app-chrome)-3rem)] overflow-y-auto overflow-x-auto relative">
           <app-table [stickyHeader]="true">
             <app-table-header>
               <app-table-row>
@@ -225,7 +225,7 @@
       }
 
       <!-- Add Dialog -->
-      <app-dialog [isOpen]="showAddDialog" (close)="closeAddDialog()" size="md">
+      <app-dialog [isOpen]="showAddDialog" (close)="closeAddDialog()" size="md" [scrollBody]="true">
         <app-dialog-header>
           <app-dialog-title>Add Planting Intention</app-dialog-title>
           <app-dialog-description>Record a new planting intention for {{ customer().name }}</app-dialog-description>
@@ -357,7 +357,7 @@
       </app-dialog>
 
       <!-- Edit Dialog -->
-      <app-dialog [isOpen]="showEditDialog" (close)="closeEditDialog()" size="md">
+      <app-dialog [isOpen]="showEditDialog" (close)="closeEditDialog()" size="md" [scrollBody]="true">
         <app-dialog-header>
           <app-dialog-title>Edit Planting Intention</app-dialog-title>
           <app-dialog-description>Update planting intention for {{ customer().name }}</app-dialog-description>
@@ -481,7 +481,7 @@
       <!-- Delete Confirmation Dialog -->
       @if (showDeleteConfirm && selectedIntention) {
         <div class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="closeDeleteConfirm()">
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90vh]" (click)="$event.stopPropagation()">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90dvh]" (click)="$event.stopPropagation()">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Planting Intention?</h3>
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
               Are you sure you want to delete this planting intention? This action cannot be undone.

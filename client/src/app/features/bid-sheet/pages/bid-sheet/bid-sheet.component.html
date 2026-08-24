@@ -1,4 +1,7 @@
-    <div class="relative overflow-hidden isolate rounded-lg h-full" style="min-height: 400px;">
+    <!-- --bid-panel-w tracks the slide-in panel's own responsive width (see the panel
+         below). Overlays that dodge the panel offset themselves off this instead of
+         hardcoding the widest value, which was wrong at every width under 1024px. -->
+    <div class="relative overflow-hidden isolate rounded-lg h-full [--bid-panel-w:100%] sm:[--bid-panel-w:360px] lg:[--bid-panel-w:clamp(420px,calc(14.44vw_+_222.7px),500px)]" style="min-height: 400px;">
 
         <!-- Full-screen map -->
         <div #mapEl id="bid-locations-map" style="height: 100%; width: 100%;"></div>
@@ -16,7 +19,7 @@
         <!-- Loading overlay (map only, shifts left when panel is open) -->
         @if (isRefreshing()) {
           <div class="absolute top-0 left-0 bottom-0 z-[998] flex items-center justify-center bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm transition-all duration-300"
-               [style.right]="showPanel() ? '420px' : '0'">
+               [style.right]="showPanel() ? 'var(--bid-panel-w)' : '0'">
             <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
           </div>
         }
@@ -24,7 +27,7 @@
         @if (!addLocationMode() && !barchartMode()) {
           <!-- Floating filter bar (top-left, constrained to not overlap panel) -->
           <div #filterBar class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
-               [style.max-width]="showPanel() ? 'calc(100% - 510px)' : 'calc(100% - 80px)'">
+               [style.max-width]="showPanel() ? 'calc(100% - var(--bid-panel-w) - 90px)' : 'calc(100% - 80px)'">
             <button (click)="showFilters.set(!showFilters())" class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" [title]="showFilters() ? 'Collapse filters' : 'Expand filters'">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 @if (showFilters()) {
@@ -83,7 +86,7 @@
                 (ngModelChange)="searchQuery.set($event)"
                 (input)="onSearchInput()"
                 placeholder="Search locations..."
-                class="w-44 @4xl:w-48 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+                class="w-44 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
               />
               @if (activeTradeUnits().length > 0 || searchQuery()) {
               <button (click)="clearAllFilters()" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-scoular-red hover:bg-gray-100 dark:text-gray-400 dark:hover:text-scoular-red dark:hover:bg-gray-700 transition-colors">Clear</button>
@@ -151,7 +154,7 @@
 
           <!-- Map legend (bottom-right, shifts left when panel is open) -->
           <div class="absolute bottom-4 z-[1000] bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
-               [style.right]="showPanel() ? '452px' : '16px'">
+               [style.right]="showPanel() ? 'calc(var(--bid-panel-w) + 32px)' : '16px'">
             <div class="flex items-center gap-2 px-3 py-2 cursor-pointer" (click)="showLegend.set(!showLegend())">
               <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Key</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400">
@@ -176,12 +179,19 @@
                 <div class="w-4 h-4 rounded shrink-0" style="background:#eab308; border:1.5px solid #a16207;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Matching</span>
               </div>
+              <!-- Scoular: green fill when no reference is set, green ring once status owns the fill.
+                   One green swatch only — the ring is self-evident on the map and a second swatch
+                   read as another status colour. -->
+              <div class="flex items-center gap-2 pt-1 mt-1 border-t border-gray-200 dark:border-gray-700">
+                <div class="w-4 h-4 rounded shrink-0" style="background:#00875F; border:1.5px solid #006B4C;"></div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Scoular facility</span>
+              </div>
             </div>
             }
           </div>
 
           <!-- Slide-in bids panel (right edge) -->
-          <div class="absolute top-0 right-0 h-full w-full sm:w-[360px] lg:w-[420px] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
+          <div class="absolute top-0 right-0 h-full w-full sm:w-[var(--bid-panel-w)] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
                [style.transform]="showPanel() ? 'translateX(0)' : 'translateX(100%)'">
 
             @if (panelSelectedLocation()) {
@@ -253,7 +263,7 @@
 
               <!-- Crop / Bid rows -->
               @if (panelLocationBids().length > 0) {
-              <table class="w-full border-collapse text-sm">
+              <table class="w-full border-collapse text-[length:var(--text-fluid-sm)]">
                 <thead class="sticky top-0 z-10">
                   <tr class="bg-gray-50 dark:bg-gray-800">
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Crop</th>
@@ -277,7 +287,7 @@
                 <tbody>
                   @for (row of panelLocationBids(); track row.crop) {
                     <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <td class="px-3 py-3 text-sm font-medium text-gray-900 dark:text-white">
+                      <td class="px-3 py-3 text-[length:var(--text-fluid-sm)] font-medium text-gray-900 dark:text-white">
                         <div class="flex items-center gap-1.5">
                           <span>{{ row.crop }}</span>
                           @if (barchartEnabled && row.isFed) {
@@ -286,13 +296,13 @@
                           }
                         </div>
                       </td>
-                      <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
+                      <td class="px-1 py-3 text-[length:var(--text-fluid-md)] font-mono font-semibold text-center" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.oldStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.oldStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.oldStatus === 'beating',
                         'text-gray-900 dark:text-white': row.oldStatus === 'none'
                       }">{{ row.oldBid || '--' }}</td>
-                      <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
+                      <td class="px-1 py-3 text-[length:var(--text-fluid-md)] font-mono font-semibold text-center" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.newStatus === 'beating',
@@ -422,7 +432,9 @@
                     <tr
                       (click)="selectPanelItem(item)"
                       class="group border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors"
-                      [ngClass]="'hover:bg-gray-50 dark:hover:bg-gray-800'"
+                      [ngClass]="scoularLocationNames().has(item.name)
+                        ? 'bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-800'"
                     >
                       <td class="px-3 py-3 text-sm text-gray-900 dark:text-white">
                         <div class="flex items-center gap-1.5">
@@ -1070,8 +1082,81 @@
                             @if (printPhone().trim()) { <p>{{ printPhone().trim() }}</p> }
                           </div>
                         </div>
-                        <!-- Preview tables grouped by crop -->
-                        @if (printCropGroups().length > 0) {
+                        <!-- Preview must honour the Layout toggle, otherwise switching appears to do
+                             nothing until you actually print. Blocks/row-count come from the same
+                             computeds the print output uses. -->
+                        @if (printCropGroups().length > 0 && printLayoutStyle() === 'sideBySide') {
+                          <!-- One table per BAND of up to 3 crops. Past that, blocks get too narrow to
+                               read, so crops wrap onto a new band instead of being squeezed. Widths are
+                               based on a full band so blocks stay the same size in every band. -->
+                          @for (band of previewSideBySideBands(); track $index) {
+                            <div class="mb-3">
+                              <table style="width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;">
+                                <colgroup>
+                                  @for (block of band; track block.crop) {
+                                    <!-- Same width maths as the print output, so the preview shows an
+                                         honest picture of what fits: value columns get exactly enough
+                                         for a one-line label, names take the remainder. Keyed off the
+                                         page size, NOT band.length — a partly-full last band must
+                                         match the pages before it instead of stretching to fill. -->
+                                    <col [style.width.%]="bandColumnWidths(sideBySidePageSize(), block.columns.length).namePct" />
+                                    @for (col of block.columns; track col.key) {
+                                      <col [style.width.%]="bandColumnWidths(sideBySidePageSize(), block.columns.length).valuePct" />
+                                    }
+                                  }
+                                </colgroup>
+                                <thead>
+                                  <tr>
+                                    @for (block of band; track block.crop; let bi = $index) {
+                                      <th [attr.colspan]="1 + block.columns.length"
+                                          [style.background]="cropHeaderTint(block.crop)"
+                                          [style.border-bottom]="'3px solid ' + cropHeaderColor(block.crop)"
+                                          [style.border-left]="bi === 0 ? '' : '3px solid #111827'"
+                                          style="padding:4px 6px;text-align:center;font-weight:700;color:#1f2937;border:1px solid #d1d5db;white-space:nowrap;">{{ block.crop }}</th>
+                                    }
+                                  </tr>
+                                  <tr>
+                                    @for (block of band; track block.crop; let bi = $index) {
+                                      <th [style.border-left]="bi === 0 ? '' : '3px solid #111827'"
+                                          style="padding:4px 6px;background:#f3f4f6;border:1px solid #d1d5db;"></th>
+                                      @for (col of block.columns; track col.key) {
+                                        <th style="padding:4px 6px;text-align:center;font-weight:700;color:#1f2937;background:#f3f4f6;border:1px solid #d1d5db;white-space:nowrap;">{{ col.compactLabel }}</th>
+                                      }
+                                    }
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  @for (ri of bandRowIndexes(band); track ri) {
+                                    <tr>
+                                      @for (block of band; track block.crop; let bi = $index) {
+                                        @let row = block.rows[ri];
+                                        @if (row) {
+                                          @let isScoular = printHighlightScoularLocations() && scoularLocationNames().has(row.name);
+                                          <td [style.font-weight]="isScoular ? '700' : '500'"
+                                              [style.background]="isScoular ? '#FFD400' : '#fff'"
+                                              [style.border-left]="bi === 0 ? '' : '3px solid #111827'"
+                                              [title]="row.name"
+                                              style="padding:4px 6px;color:#1f2937;border:1px solid #e5e7eb;white-space:normal;overflow-wrap:break-word;word-break:break-word;line-height:1.3;">{{ row.name }}</td>
+                                          @for (col of block.columns; track col.key) {
+                                            <td [style.background]="isScoular ? '#FFD400' : '#fff'"
+                                                style="padding:4px 6px;text-align:center;border:1px solid #e5e7eb;font-family:'Cascadia Mono','Fira Code',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ printCellValue(row, col) }}</td>
+                                          }
+                                        } @else {
+                                          <!-- Past this crop's list: blanks keep the blocks aligned. -->
+                                          <td [style.border-left]="bi === 0 ? '' : '3px solid #111827'"
+                                              style="padding:4px 6px;border:1px solid #e5e7eb;">&nbsp;</td>
+                                          @for (col of block.columns; track col.key) {
+                                            <td style="padding:4px 6px;border:1px solid #e5e7eb;">&nbsp;</td>
+                                          }
+                                        }
+                                      }
+                                    </tr>
+                                  }
+                                </tbody>
+                              </table>
+                            </div>
+                          }
+                        } @else if (printCropGroups().length > 0) {
                           @for (group of printCropGroups(); track group.crop) {
                             <div class="mb-4">
                               <table style="width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;">
@@ -1082,10 +1167,16 @@
                                   }
                                 </colgroup>
                                 <thead>
+                                  <!-- Crop colour from the shared palette, same as the side-by-side
+                                       layout and the commodity chips elsewhere in the app. -->
                                   <tr>
-                                    <th style="padding:5px 8px;text-align:left;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ group.crop }} Basis</th>
+                                    <th [style.background]="cropHeaderTint(group.crop)"
+                                        [style.border-bottom]="'3px solid ' + cropHeaderColor(group.crop)"
+                                        style="padding:5px 8px;text-align:left;font-weight:700;color:#1f2937;border:1px solid #d1d5db;white-space:nowrap;">{{ group.crop }} Basis</th>
                                     @for (col of group.columns; track col.key) {
-                                      <th style="padding:5px 8px;text-align:center;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">
+                                      <th [style.background]="cropHeaderTint(group.crop)"
+                                          [style.border-bottom]="'3px solid ' + cropHeaderColor(group.crop)"
+                                          style="padding:5px 8px;text-align:center;color:#1f2937;border:1px solid #d1d5db;white-space:nowrap;">
                                         <div style="font-weight:600;">{{ col.label }}</div>
                                         @if (col.subLabel) { <div style="font-weight:400;opacity:0.75;font-size:9px;">{{ col.subLabel }}</div> }
                                       </th>
@@ -1096,7 +1187,7 @@
                                   @for (row of previewRowsForGroup(group); track row.name; let i = $index) {
                                     @let isScoular = printHighlightScoularLocations() && scoularLocationNames().has(row.name);
                                     <tr [style.background]="isScoular ? '#FFD400' : (i % 2 === 0 ? '#fff' : '#f9fafb')">
-                                      <td [style.font-weight]="isScoular ? '700' : '500'" style="padding:5px 8px;color:#1f2937;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.name }}</td>
+                                      <td [style.font-weight]="isScoular ? '700' : '500'" style="padding:5px 8px;color:#1f2937;border:1px solid #e5e7eb;white-space:normal;overflow-wrap:break-word;word-break:break-word;line-height:1.3;">{{ row.name }}</td>
                                       @for (col of group.columns; track col.key) {
                                         @let cellVal = printCellValue(row, col);
                                         <td style="padding:5px 8px;text-align:center;border:1px solid #e5e7eb;font-family:'Cascadia Mono','Fira Code',monospace;">
@@ -1209,6 +1300,30 @@
                           </div>
                         </div>
                       }
+                      <!-- Layout: crops across the page vs the original stacked-per-crop tables.
+                           Same data in both — only the arrangement changes. -->
+                      <div>
+                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Layout</h4>
+                        <div class="inline-flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
+                          <button type="button" (click)="printLayoutStyle.set('sideBySide')"
+                            [ngClass]="printLayoutStyle() === 'sideBySide'
+                              ? 'bg-scoular-green-accessible text-white'
+                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-3 py-1.5 text-sm font-medium transition-colors">Side by Side</button>
+                          <button type="button" (click)="printLayoutStyle.set('stacked')"
+                            [ngClass]="printLayoutStyle() === 'stacked'
+                              ? 'bg-scoular-green-accessible text-white'
+                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-3 py-1.5 text-sm font-medium border-l border-gray-300 dark:border-gray-600 transition-colors">Stacked</button>
+                        </div>
+                        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                          @if (printLayoutStyle() === 'sideBySide') {
+                            Crops across the page, each with its own locations. Best for up to ~4 crops.
+                          } @else {
+                            One table per crop down the page. Better when several month columns are selected.
+                          }
+                        </p>
+                      </div>
                       <!-- Highlight Scoular facilities -->
                       <div>
                         <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Highlight</h4>

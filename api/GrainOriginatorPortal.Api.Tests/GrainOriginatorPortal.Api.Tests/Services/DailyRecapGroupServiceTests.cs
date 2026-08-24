@@ -31,13 +31,13 @@ public class DailyRecapGroupServiceTests
 
         // Caller "mgr" is entitled to TU1 (and group 7); "sam" shares TU1, "evil" does not.
         _entitlements.Setup(e => e.GetByUserAsync("mgr", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<UserTradeUnitAccess>
+            .ReturnsAsync(new List<UserTradeUnitPreference>
             {
                 new() { UserId = "mgr", TradeUnitCode = "TU1", GroupId = 7 },
             });
         _entitlements.Setup(e => e.GetUsersByTradeUnitsAsync(
                 It.Is<IReadOnlyCollection<string>>(c => c.Contains("TU1")), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<UserTradeUnitAccess>
+            .ReturnsAsync(new List<UserTradeUnitPreference>
             {
                 new() { UserId = "mgr", TradeUnitCode = "TU1" },
                 new() { UserId = "sam", TradeUnitCode = "TU1" },
