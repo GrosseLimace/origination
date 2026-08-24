@@ -17,8 +17,9 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// EXISTS semi-join and the range is what keeps the header scan bounded. A longer lookback is therefore
 /// sliced into consecutive windows.</para>
 ///
-/// <para>The slices run concurrently, so a three-year lookback costs about one window's latency rather
-/// than three. Three parallel requests is gentle enough not to invite a 429.</para>
+/// <para>Slices run concurrently, so a multi-window lookback costs about the slowest window rather than
+/// the sum. They are not equally priced: measured against QA the most recent year is ~0.3-0.8s while each
+/// older year is ~0.8-2.6s, which is why the default lookback is deliberately narrow.</para>
 ///
 /// <para>Cache semantics match <see cref="CtrmContractReader"/>: short TTL, shared in-flight task,
 /// failures never cached. The producer screen asks for the full ticket list and the unapplied subset,
@@ -54,8 +55,12 @@ public sealed class CtrmTicketReader
     /// This producer's tickets across the configured lookback, newest window first.
     /// </summary>
     /// <remarks>
-    /// The lookback defaults to three years, matching the cutoff the ODS ticket queries already use, so
-    /// the two sources scope the same population and remain comparable.
+    /// The lookback defaults to ONE year, chosen from measurement rather than symmetry with ODS. ODS uses a
+    /// three-year cutoff, and matching it cost 5.4s per producer: the older windows are far more expensive
+    /// than the recent one because earlier-year ticket volume is enormous and the customer filter is an
+    /// EXISTS semi-join, so the header range still gets scanned. One year measures ~0.3-0.8s. Widen via
+    /// Ctrm:TicketLookbackDays when a producer needs older tickets - each extra 366 days is one more
+    /// parallel window and roughly another second.
     /// </remarks>
     public Task<CtrmReadResult<List<CtrmTicketDto>>> GetForProducerAsync(
         string scoularId, CancellationToken cancellationToken)
@@ -95,7 +100,7 @@ public sealed class CtrmTicketReader
 
     private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchAsync(string scoularId)
     {
-        var lookbackDays = Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 1095));
+        var lookbackDays = Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 365));
         var windows = BuildWindows(DateTime.Today, lookbackDays);
 
         var results = await Task.WhenAll(windows.Select(w => FetchWindowAsync(scoularId, w.From, w.To)));
