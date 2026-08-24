@@ -94,6 +94,10 @@ A flaky test — one that passes and fails without code changes — is a liabili
 - A flaky test **MUST** be **quarantined** (moved out of the gating set into a tracked, non-blocking lane) within one business day of detection, with a ticket to fix or delete it.
 - A quarantined test **MUST** have an **owner** and a **time-to-fix budget** (default: **two weeks**). At the deadline the team **MUST** either fix it, replace it with reliable coverage, or deliberately delete it. A permanently ignored flaky test is worse than no test, because it creates false confidence.
 - The usual root causes — shared state, real time/dates, unawaited asynchronous work, order dependence, real network, insufficient cleanup — **MUST** be fixed at the source, not papered over.
+- Two forms of shared state are easy to miss because the suite hides them, and both **MUST** be closed at the test:
+  - **Console encoding.** A test that captures a **child process's** output and asserts on a literal inherits the console encoding from whatever ran earlier in the same session; that setting is process-wide and nothing restores it. At a legacy code page a non-ASCII character in the expected string maps to something else on capture, so the assertion passes in a full run and fails when the file runs alone. Assert on **ASCII-only** substrings.
+  - **Ambient defaults.** A parameter whose default reads an environment variable inherits whatever the session set. A test meaning to exercise "no value supplied" **MUST** pass the parameter explicitly, including when the intended value is empty, or it silently exercises the ambient one instead.
+- A test file **MUST** be run **in isolation** as well as inside the suite before it is trusted. Both failures above hide in a full run and surface when someone runs just the file they changed, which is the normal way to check one.
 
 ---
 
@@ -254,6 +258,8 @@ public async Task ResetAsync()
 Regression testing is not a separate suite to write from scratch — it is a **discipline applied to the tiers above**.
 
 - Every fixed defect **MUST** ship with a test that **fails before the fix and passes after**. That test *is* the regression test; it lives in whichever tier reproduces the bug most cheaply (usually unit or integration).
+- "Fails before the fix" **MUST** be established for **each assertion**, not for the test file as a whole. Reverting the fix and watching the file turn red proves only that *something* in it is load-bearing. A case that passes with and without the fix is a **defect in the test**, not a caveat to record alongside it: it will go on passing after the behaviour it claims to protect is gone.
+- When a case will not fail without the fix, the usual cause is that the **fixture cannot exhibit the defect**, not that the assertion is wrong. A canary asserting an external file's contents never reach the output cannot fail while the fixture is malformed JSON, which the parser never echoes back; swap in a valid file that fails validation, which it does echo, and the same assertion becomes load-bearing.
 - The full unit + integration suite **MUST** run on every pull request, so it is by construction the regression safety net — no separate "regression run" is maintained.
 - For the user interface, intentional visual regressions are caught by **visual regression** snapshots in the E2E layer, not by asserting markup or classes.
 
@@ -313,6 +319,7 @@ The release sequence **MUST** be:
 | Post-deploy (staging slot) | Smoke, health | Blocks the swap to production |
 | Nightly / scheduled | Performance/load, full E2E matrix, Azure SQL parity run | Alerts; tracked, not merge-blocking |
 
+- A change to the CI definition itself **MUST** be verified in an environment shaped like the runner's, not on a developer machine that may already have the dependency. Widening a suite's scope is the usual trigger: a newly included file importing an uninstalled package fails at **collection**, and a collection error aborts the whole run, so the step reports zero tests rather than the subset that would still have passed.
 - Test execution time **SHOULD** be optimized once a suite grows large enough to slow the inner loop. Prefer reliable first steps: parallel execution, test splitting, dependency caching, and eliminating avoidable application startup. **Test impact analysis** (running only the tests affected by a diff) **MAY** be used when the CI platform can prove accurate dependency mapping for the repository's languages and runners.
 
 ---

@@ -25,13 +25,39 @@ A quick-lookup companion for CLI commands, naming conventions, commit standards,
 
 ## CLI Commands Quick Reference
 
+### Approved remotes
+
+Every example in this guide uses a Scoular-hosted remote, because those are the
+only remotes you may push to. What is restricted is the **host** — code **MUST
+NOT** be pushed, mirrored, or pull-requested anywhere else, including personal
+GitHub/GitLab/Bitbucket accounts and non-Scoular Azure DevOps organizations.
+
+| Host | URL pattern |
+|------|-------------|
+| GitHub Enterprise | `https://scoular.ghe.com/<org-or-user>/*` · `git@scoular.ghe.com:<org-or-user>/*` |
+| Azure DevOps | `https://dev.azure.com/sco-iaa/IAA/*` · `ssh://git@ssh.dev.azure.com/v3/sco-iaa/IAA/*` |
+
+Any org or personal user namespace on `scoular.ghe.com` is a valid remote;
+`<org-or-user>` in the examples below is whatever org or personal namespace
+owns your repo (`IT`, and others). Check before you push:
+`git remote get-url origin`. Links to `github.com` in the Reading List are
+documentation only — they are not remotes. See the **Git Repository
+Restrictions** section of the org `CLAUDE.md` for the authoritative policy.
+
+This page reflects security policy **v0.4**, which widened GHE from
+organizations to organizations and personal user namespaces. An older copy of
+that `CLAUDE.md` reads narrower, and it is the copy on your workstation that
+actually refuses a push — so if the two disagree, your copy is behind rather
+than this page being wrong. Tracked as `IT/security#112`.
+
 ### Setup and Configuration
 
 ```bash
 # Clone a repository (create a local copy)
-git clone https://github.com/YourOrg/YourRepo.git      # HTTPS
-git clone git@github.com:YourOrg/YourRepo.git           # SSH
-gh repo clone YourOrg/YourRepo                           # GitHub CLI
+# Scoular remotes only — see "Approved remotes" above. <org-or-user> is your repo's org or personal namespace.
+git clone https://scoular.ghe.com/<org-or-user>/YourRepo.git    # HTTPS (GHE)
+git clone git@scoular.ghe.com:<org-or-user>/YourRepo.git        # SSH (GHE)
+gh repo clone <org-or-user>/YourRepo                             # GitHub CLI (GHE)
 
 # Configure your identity (run once per machine)
 git config user.name "Your Name"
@@ -178,7 +204,7 @@ git log --oneline --graph --all
 git rebase -i main
 
 # Sync fork with upstream (if using forks)
-git remote add upstream https://github.com/OriginalOrg/Repo.git
+git remote add upstream https://scoular.ghe.com/<org-or-user>/OriginalRepo.git
 git fetch upstream
 git checkout main
 git merge upstream/main
