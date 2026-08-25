@@ -242,8 +242,13 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
         // Matches the ODS cutoff exactly. The extra day on the far end is headroom for clock skew
         // against the Db2 host, the same allowance the per-producer windows make.
+        // The ODS query bounds this on ONE side only - TicketBlDate >= cutoff, with no upper limit - so a
+        // forward-dated bill of lading appears there. CTRM requires both ends, so the far end reaches a
+        // week ahead rather than to today: enough for realistic forward-dating, and nearly free because the
+        // cost of a ticket query is the scan rather than the span (30 days measured at 6.1s, one day at
+        // 11.6s). A ticket dated further out than this would still show on ODS and not here.
         var from = DateTime.UtcNow.Date.AddDays(-RecentTicketDays);
-        var to = DateTime.UtcNow.Date.AddDays(1);
+        var to = DateTime.UtcNow.Date.AddDays(ForwardTicketDays);
 
         var read = await _reader.GetForProducersAsync(codes, from, to, cancellationToken);
         if (!read.Ok)
@@ -386,6 +391,16 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// parity difference in the data, but it IS a difference in the question being asked.
     /// </remarks>
     private int RecentTicketDays => Math.Max(1, ReadInt("Ctrm:RecentTicketDays", 30));
+
+    /// <summary>
+    /// Days past today the recent-ticket window reaches, to catch a forward-dated bill of lading.
+    /// </summary>
+    /// <remarks>
+    /// Exists only because CTRM requires both ends of a range and the ODS query it mirrors bounds only the
+    /// near end. Not configurable: it is a correctness allowance, not a tuning dial, and widening it eats
+    /// into the server's 366-day cap on the whole range.
+    /// </remarks>
+    private const int ForwardTicketDays = 7;
 
     private int ReadInt(string key, int fallback) =>
         int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
