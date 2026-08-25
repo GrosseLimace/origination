@@ -1,8 +1,10 @@
+using System.Globalization;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace GrainOriginatorPortal.Infrastructure.Ctrm;
@@ -29,6 +31,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
     private readonly CtrmContractReader _contractReader;
     private readonly ApplicationDbContext _appContext;
     private readonly TicketRepository _ods;
+    private readonly IConfiguration _configuration;
     private readonly CtrmProvenance _provenance;
     private readonly ILogger<CtrmTicketRepository> _logger;
 
@@ -37,6 +40,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         CtrmContractReader contractReader,
         ApplicationDbContext appContext,
         TicketRepository ods,
+        IConfiguration configuration,
         CtrmProvenance provenance,
         ILogger<CtrmTicketRepository> logger)
     {
@@ -44,6 +48,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         _contractReader = contractReader;
         _appContext = appContext;
         _ods = ods;
+        _configuration = configuration;
         _provenance = provenance;
         _logger = logger;
     }
@@ -225,7 +230,9 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// </remarks>
     public async Task<List<Ticket>> GetTodaysAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
     {
-        var codes = await ResolveScopedProducerCodesAsync(tradeUnits, cancellationToken);
+        // The ODS implementation, not a copy of it. It unions the CustomerTradeUnit snapshot with
+        // contract-derived codes, and missing that union silently drops producers from Spot Loads.
+        var codes = await _ods.ResolveSpotLoadProducerCodesAsync(tradeUnits, cancellationToken);
         if (codes.Count == 0)
         {
             _logger.LogInformation("CTRM tickets: no in-scope producers for the selected trade units.");
@@ -256,8 +263,9 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
         var beforeGate = tickets.Count;
         tickets = await ApplyStorageGateAsync(tickets, codes, cancellationToken);
-        await _ods.PopulateElevatorLocations(tickets, cancellationToken);
 
+        // Deliberately NO elevator or quality enrichment, matching ODS: Spot Loads displays neither,
+        // and skipping them drops one to three round trips per read.
         tickets = tickets.OrderByDescending(t => t.Date).ToList();
 
         _provenance.RecordTickets("ctrm", beforeGate != tickets.Count ? "OkStorageGated" : "Ok", tickets.Count);
@@ -366,31 +374,23 @@ public sealed class CtrmTicketRepository : ITicketRepository
         return _ods.GateCustomerStorageTickets(tickets, storageByCustomer);
     }
 
-    /// <summary>Days of history the recent-ticket read covers. Matches the ODS cutoff it replaces.</summary>
-    private const int RecentTicketDays = 30;
-
     /// <summary>
-    /// The ScoularIds of the active producers in scope, optionally narrowed to the selected trade units.
+    /// Days of history the recent-ticket read covers. Defaults to the ODS cutoff it replaces.
     /// </summary>
     /// <remarks>
-    /// Mirrors the ODS query and <see cref="CtrmContractRepository"/>: trade-unit selection is a narrowing
-    /// convenience, not an entitlement boundary, so selecting none means every active producer.
+    /// Configurable only because 30 days makes this unverifiable in nonprod: dev CTRM has no ticket
+    /// activity in the last 30 days for the real producer population (the same ten producers return 0 over
+    /// 30 days and 834 over a year), so Spot Loads reads empty whichever source backs it. Widening the
+    /// window is the only way to prove the path end to end without waiting for data to arrive. Leave it at
+    /// 30 in any environment whose output is being compared against ODS - a wider window here is not a
+    /// parity difference in the data, but it IS a difference in the question being asked.
     /// </remarks>
-    private async Task<List<string>> ResolveScopedProducerCodesAsync(
-        List<string>? tradeUnits, CancellationToken cancellationToken)
-    {
-        var query = _appContext.Customers
-            .AsNoTracking()
-            .Where(c => c.IsActive && c.ScoularId != null);
+    private int RecentTicketDays => Math.Max(1, ReadInt("Ctrm:RecentTicketDays", 30));
 
-        if (tradeUnits is { Count: > 0 })
-            query = query.Where(c => _appContext.CustomerTradeUnits.Any(ctu =>
-                ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits.Contains(ctu.TradeUnit)));
-
-        var codes = await query.Select(c => c.ScoularId!).ToListAsync(cancellationToken);
-
-        return [.. codes.Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
-    }
+    private int ReadInt(string key, int fallback) =>
+        int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : fallback;
     private async Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(scoularId)) return scoularId.Trim();

@@ -33,11 +33,7 @@ public class TicketRepository : ITicketRepository
         {
             // Unfiltered: every active producer in dbo.Customer. Trade unit selection is
             // a narrowing convenience, not an entitlement boundary.
-            var customerCodes = await _appContext.Customers
-                .AsNoTracking()
-                .Where(c => c.IsActive && c.ScoularId != null)
-                .Select(c => c.ScoularId!)
-                .ToListAsync(cancellationToken);
+            var customerCodes = await ResolveSpotLoadProducerCodesAsync(tradeUnits, cancellationToken);
 
             if (customerCodes.Count == 0)
             {
@@ -168,28 +164,7 @@ public class TicketRepository : ITicketRepository
         }
         else
         {
-            // Branch 1 (contract-number scope) is gone — Spot Loads discards applied tickets — but
-            // the contract-derived CUSTOMER codes still widen which producers' unapplied loads
-            // appear (a producer can have a P-contract tagged to a TU without an active
-            // CustomerTradeUnit snapshot row), so we keep deriving them to preserve identical
-            // producer scope. Only SourceContractId (which fed Branch 1) is dropped.
-            var contractCustomerCodes = await _context.Contracts
-                .AsNoTracking()
-                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
-                    && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                .Select(c => c.CtrmCustomerId!)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            var snapshotCustomerCodes = await _appContext.Customers
-                .AsNoTracking()
-                .Where(c => c.IsActive && c.ScoularId != null
-                    && _appContext.CustomerTradeUnits.Any(ctu =>
-                        ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits!.Contains(ctu.TradeUnit)))
-                .Select(c => c.ScoularId!)
-                .ToListAsync(cancellationToken);
-
-            var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
+            var customerCodes = await ResolveSpotLoadProducerCodesAsync(tradeUnits, cancellationToken);
 
             // includeStorageTickets: true — see the no-filter branch above. C-prefix storage loads
             // are surfaced in Spot Loads (gated to active storage) for parity with the customer page.
@@ -728,5 +703,46 @@ public class TicketRepository : ITicketRepository
         }
 
         await PopulateElevatorLocations(tickets, cancellationToken);
+    }
+    /// <summary>
+    /// The producer codes whose recent unapplied tickets feed Spot Loads.
+    /// </summary>
+    /// <remarks>
+    /// <para>Public because the CTRM ticket repository needs the SAME scope. Reimplementing it there
+    /// drifted immediately: the union below is easy to miss, and missing it silently drops a producer
+    /// from Spot Loads rather than failing.</para>
+    ///
+    /// <para>Two sources, unioned. The CustomerTradeUnit snapshot is the obvious one; contract-derived
+    /// codes are the subtle one, because a producer can have a P-contract tagged to a trade unit without
+    /// an active snapshot row. Dropping either narrows which producers appear.</para>
+    ///
+    /// <para>No trade units selected means every active producer: selection is a narrowing convenience,
+    /// not an entitlement boundary.</para>
+    /// </remarks>
+    public async Task<List<string>> ResolveSpotLoadProducerCodesAsync(
+        List<string>? tradeUnits, CancellationToken cancellationToken)
+    {
+        var snapshotQuery = _appContext.Customers
+            .AsNoTracking()
+            .Where(c => c.IsActive && c.ScoularId != null);
+
+        if (tradeUnits is not { Count: > 0 })
+            return await snapshotQuery.Select(c => c.ScoularId!).ToListAsync(cancellationToken);
+
+        var contractCustomerCodes = await _context.Contracts
+            .AsNoTracking()
+            .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
+                && c.TradeUnit != null && tradeUnits.Contains(c.TradeUnit))
+            .Select(c => c.CtrmCustomerId!)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var snapshotCustomerCodes = await snapshotQuery
+            .Where(c => _appContext.CustomerTradeUnits.Any(ctu =>
+                ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits.Contains(ctu.TradeUnit)))
+            .Select(c => c.ScoularId!)
+            .ToListAsync(cancellationToken);
+
+        return [.. contractCustomerCodes.Union(snapshotCustomerCodes)];
     }
 }
