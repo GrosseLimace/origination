@@ -112,9 +112,70 @@ public sealed class CtrmTicketReader
             Filter: new { contractNumbers = numbers }));
     }
 
+    /// <summary>
+    /// Tickets for a batch of producers over a single bill-of-lading window.
+    /// </summary>
+    /// <remarks>
+    /// <para>Backs the recent-unapplied read behind Spot Loads. Deliberately ONE window rather than the
+    /// sliced lookback the per-producer read uses: the cost of a ticket query is the header scan, not the
+    /// rows, so a 30-day question costs about the same few seconds as a one-day one - measured 6.1s for 76
+    /// rows across 88 producers - while three years of it is roughly a thousand pages.</para>
+    ///
+    /// <para>Chunked to the <c>customerIds</c> cap. Chunks run concurrently; each is a single page in
+    /// practice, and the page cap still applies if a window turns out to be busier than expected.</para>
+    /// </remarks>
+    public Task<CtrmReadResult<List<CtrmTicketDto>>> GetForProducersAsync(
+        IReadOnlyCollection<string> scoularIds, DateTime from, DateTime to, CancellationToken cancellationToken)
+    {
+        var codes = CtrmCustomerCodes.Normalize(scoularIds, out var dropped);
+
+        if (dropped.Count > 0)
+            _logger.LogWarning(
+                "CTRM tickets: dropped {Count} producer code(s) longer than {Max} characters before querying. " +
+                "The customerIds filter answers an internal error rather than an empty match for those, and " +
+                "would fail every producer in the same chunk. Codes: {Codes}",
+                dropped.Count, CtrmCustomerCodes.MaxLength, string.Join(", ", dropped.Take(10)));
+
+        // An empty set must never become an unfiltered query - that would scan the window for every
+        // counterparty in the library rather than returning nothing.
+        if (codes.Count == 0)
+            return Task.FromResult(new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = [] });
+
+        var span = (to.Date - from.Date).TotalDays;
+        if (span > CtrmQueries.MaxTicketRangeDays)
+            return Failed($"A bill-of-lading range of {span:F0} days exceeds the server's "
+                        + $"{CtrmQueries.MaxTicketRangeDays}-day cap; narrow the window or slice it.");
+
+        var key = $"producers:{from:yyyy-MM-dd}:{to:yyyy-MM-dd}:{codes.Count}:{StableHash(codes)}";
+        return GetCachedAsync(key, () => FetchChunkedAsync(codes, from, to));
+    }
+
     /// <summary>Drops a producer's cached read.</summary>
     public void Invalidate(string scoularId)
         => _cache.TryRemove($"customer:{scoularId?.Trim() ?? string.Empty}", out _);
+
+    /// <summary>
+    /// Order-independent hash of a producer set, for use in a cache key.
+    /// </summary>
+    /// <remarks>
+    /// FNV-1a over the sorted, upper-cased codes. The count is kept in the key beside it as a cheap guard,
+    /// because a collision would serve one trade unit's tickets to another.
+    /// </remarks>
+    private static string StableHash(IEnumerable<string> codes)
+    {
+        var hash = 2166136261u;
+        foreach (var code in codes)
+        {
+            foreach (var c in code.ToUpperInvariant())
+            {
+                hash ^= c;
+                hash *= 16777619u;
+            }
+            hash ^= (byte)',';
+            hash *= 16777619u;
+        }
+        return hash.ToString("x8", CultureInfo.InvariantCulture);
+    }
 
     // -------------------------------------------------------------------------
 
@@ -127,12 +188,16 @@ public sealed class CtrmTicketReader
         });
 
     private Task<CtrmReadResult<List<CtrmTicketDto>>> GetCachedAsync(Scope scope)
+        => GetCachedAsync(scope.CacheKey, () => FetchAsync(scope));
+
+    private Task<CtrmReadResult<List<CtrmTicketDto>>> GetCachedAsync(
+        string cacheKey, Func<Task<CtrmReadResult<List<CtrmTicketDto>>>> fetch)
     {
         var ttl = TimeSpan.FromSeconds(Math.Max(0, ReadInt("Ctrm:LiveCacheSeconds", 60)));
 
         while (true)
         {
-            if (_cache.TryGetValue(scope.CacheKey, out var existing))
+            if (_cache.TryGetValue(cacheKey, out var existing))
             {
                 // Reuse while fresh, and never keep a failed read: a transient error should not lock a
                 // producer out of the screen until the TTL happens to expire.
@@ -142,15 +207,63 @@ public sealed class CtrmTicketReader
                 if (!failed && DateTime.UtcNow - existing.CreatedUtc < ttl)
                     return existing.Read;
 
-                _cache.TryRemove(scope.CacheKey, out _);
+                _cache.TryRemove(cacheKey, out _);
             }
 
-            var entry = new CacheEntry(DateTime.UtcNow, FetchAsync(scope));
-            if (_cache.TryAdd(scope.CacheKey, entry))
+            var entry = new CacheEntry(DateTime.UtcNow, fetch());
+            if (_cache.TryAdd(cacheKey, entry))
                 return entry.Read;
 
             // Another caller won the race; loop and take theirs.
         }
+    }
+
+    /// <summary>
+    /// Fetches one window for a chunked producer set, all chunks concurrently.
+    /// </summary>
+    /// <remarks>
+    /// No window slicing here, unlike <see cref="FetchAsync"/>: the caller has already chosen a range
+    /// inside the server's cap, because the point of this read is that a narrow window is cheap.
+    /// </remarks>
+    private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchChunkedAsync(
+        List<string> codes, DateTime from, DateTime to)
+    {
+        var chunks = codes.Chunk(CtrmCustomerCodes.MaxPerCall).ToList();
+        var concurrency = Math.Clamp(ReadInt("Ctrm:PageConcurrency", 4), 1, 8);
+        using var slot = new SemaphoreSlim(concurrency, concurrency);
+
+        var results = await Task.WhenAll(chunks.Select(async chunk =>
+        {
+            await slot.WaitAsync(CancellationToken.None);
+            try
+            {
+                return await FetchWindowAsync(
+                    new Scope(
+                        CacheKey: string.Empty,
+                        Description: $"{chunk.Length} producer(s)",
+                        Document: CtrmQueries.TicketsByCustomers,
+                        Filter: new { customerIds = chunk }),
+                    from, to);
+            }
+            finally
+            {
+                slot.Release();
+            }
+        }));
+
+        // Any chunk failing makes the answer incomplete, and a short list here reads as "no spot loads"
+        // rather than as a failure.
+        var failure = results.FirstOrDefault(r => !r.Ok);
+        if (failure is not null) return failure;
+
+        var all = results.SelectMany(r => r.Value ?? []).ToList();
+
+        _logger.LogInformation(
+            "CTRM live tickets: {Count} tickets for {Producers} producer(s) over {From:yyyy-MM-dd}..{To:yyyy-MM-dd} " +
+            "in {Chunks} chunk(s).",
+            all.Count, codes.Count, from, to, chunks.Count);
+
+        return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all };
     }
 
     private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchAsync(Scope scope)

@@ -321,4 +321,35 @@ public static class CtrmQueries
           }
         }
         """;
+
+    /// <summary>
+    /// Tickets for a batch of producers over one bill-of-lading window.
+    /// Variables: <c>$customerIds</c> ([String!]), <c>$from</c>/<c>$to</c> (Date), <c>$skip</c>, <c>$take</c> (Int).
+    /// </summary>
+    /// <remarks>
+    /// <para>Backs the recent-unapplied read that Spot Loads is built on. Viable where a trade-unit-wide
+    /// ticket read is not, and the reason is worth recording: the cost of a ticket query is the header
+    /// SCAN, not the rows returned. Measured for 88 producers - one day 0 rows in 11.6s, one week 19 rows
+    /// in 6.5s, thirty days 76 rows in 6.1s. A narrow window is therefore cheap in rows while costing the
+    /// same few seconds, so a 30-day question is one request per chunk. The same query over three years is
+    /// 26,529 rows for those producers and about a thousand pages at full scale, which is why the
+    /// trade-unit-wide ticket read stays on ODS.</para>
+    ///
+    /// <para><c>customerIds</c> does NOT waive the date range the way it does for contracts - the ticket
+    /// header carries no customer, so the range is what bounds the scan. Callers must supply one, and it
+    /// cannot exceed <see cref="MaxTicketRangeDays"/>.</para>
+    /// </remarks>
+    public const string TicketsByCustomers = """
+        query ($customerIds: [String!], $from: Date, $to: Date, $skip: Int, $take: Int) {
+          tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to,
+                  customerIds: $customerIds,
+                  excludeCancelled: true, excludeConsolidated: true) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+        """ + TicketProjection + """
+            }
+          }
+        }
+        """;
 }

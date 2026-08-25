@@ -22,7 +22,7 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// </remarks>
 public class CtrmTicketReaderTests
 {
-    private const string Producer = "TESTPROD";
+    private const string Producer = "TESTPRD";
 
     /// <summary>
     /// Records every document and variable set it is asked for, and answers with one empty page.
@@ -286,5 +286,114 @@ public class CtrmTicketReaderTests
 
         Assert.False(result.Ok);
         Assert.Empty(result.Value ?? []);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ABatchedProducerReadUsesOneWindowAndTheBatchDocument()
+    {
+        // The point of this read: one narrow window instead of the sliced three-year lookback. The cost of
+        // a ticket query is the header scan, not the rows, so 30 days is one request per chunk where three
+        // years is about a thousand pages.
+        var client = new RecordingClient();
+
+        var result = await Sut(client).GetForProducersAsync(
+            [Producer], new DateTime(2026, 7, 26), new DateTime(2026, 8, 26), CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal(1, client.Calls);
+        Assert.Contains("customerIds", client.Documents[0]);
+        Assert.Contains("excludeCancelled: true", client.Documents[0]);
+        Assert.Equal("2026-07-26", client.Variables[0]["from"]);
+        Assert.Equal("2026-08-26", client.Variables[0]["to"]);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ABatchedReadRejectsAWindowWiderThanTheServerCap()
+    {
+        // Failing here beats letting the server reject it: the caller chose this range precisely because a
+        // narrow one is what makes the read affordable, so a too-wide range is a caller bug.
+        var client = new RecordingClient();
+
+        var result = await Sut(client).GetForProducersAsync(
+            [Producer], new DateTime(2024, 1, 1), new DateTime(2026, 1, 1), CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal(0, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(500, 1)]
+    [InlineData(501, 2)]
+    public async Task ABatchedReadChunksToTheCustomerIdsCap(int producers, int expectedChunks)
+    {
+        var codes = Enumerable.Range(0, producers).Select(i => $"P{i:D6}").ToList();
+        var client = new RecordingClient();
+
+        await Sut(client).GetForProducersAsync(
+            codes, new DateTime(2026, 8, 1), new DateTime(2026, 8, 26), CancellationToken.None);
+
+        Assert.Equal(expectedChunks, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ABatchedReadDropsOverLongCodesRatherThanFailingTheChunk()
+    {
+        // Same measured limit as the contract reader, from the same shared helper: 8 characters makes
+        // customerIds answer an internal error and takes the whole chunk with it.
+        var client = new RecordingClient();
+
+        var result = await Sut(client).GetForProducersAsync(
+            ["P00001", "TOOLONG8"], new DateTime(2026, 8, 1), new DateTime(2026, 8, 26), CancellationToken.None);
+
+        Assert.True(result.Ok);
+        var ids = Assert.IsAssignableFrom<IEnumerable<string>>(client.Variables[0]["customerIds"]).ToList();
+        Assert.Single(ids);
+        Assert.DoesNotContain("TOOLONG8", ids);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AnEmptyBatchedProducerSetNeverReachesTheServer()
+    {
+        var client = new RecordingClient();
+
+        var result = await Sut(client).GetForProducersAsync(
+            [], new DateTime(2026, 8, 1), new DateTime(2026, 8, 26), CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal(0, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ADifferentWindowIsADifferentBatchedRead()
+    {
+        // The window is part of the question, so it has to be part of the cache key - otherwise yesterday's
+        // answer would be served for today's.
+        var client = new RecordingClient();
+        var sut = Sut(client);
+
+        await sut.GetForProducersAsync([Producer], new DateTime(2026, 8, 1), new DateTime(2026, 8, 26), CancellationToken.None);
+        await sut.GetForProducersAsync([Producer], new DateTime(2026, 8, 2), new DateTime(2026, 8, 26), CancellationToken.None);
+
+        Assert.Equal(2, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ABatchedReadDoesNotShareACacheEntryWithThePerProducerRead()
+    {
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 30));
+
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+        await sut.GetForProducersAsync([Producer], new DateTime(2026, 8, 1), new DateTime(2026, 8, 26), CancellationToken.None);
+
+        Assert.Equal(2, client.Calls);
     }
 }

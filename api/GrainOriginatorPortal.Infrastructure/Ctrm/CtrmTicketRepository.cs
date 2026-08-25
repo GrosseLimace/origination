@@ -205,9 +205,69 @@ public sealed class CtrmTicketRepository : ITicketRepository
     public Task<List<Ticket>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
         => DelegateAsync("TradeUnitWide", _ods.GetAsync(tradeUnits, cancellationToken));
 
-    /// <summary>Delegated. Feeds preload/insights, not the producer profile.</summary>
-    public Task<List<Ticket>> GetTodaysAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
-        => DelegateAsync("Todays", _ods.GetTodaysAsync(tradeUnits, cancellationToken));
+    /// <summary>
+    /// Recent unapplied tickets across the in-scope producers. Live. Backs Spot Loads.
+    /// </summary>
+    /// <remarks>
+    /// <para>Named "Todays" for history; the ODS query it replaces uses a 30-DAY cutoff and this matches
+    /// it. Unapplied only, because Spot Loads discards applied tickets - so this asks for one window by
+    /// customer code and keeps the U/L/C rows, exactly as the ODS version does.</para>
+    ///
+    /// <para><b>Why this one is affordable when the trade-unit-wide ticket read is not.</b> The cost of a
+    /// ticket query is the header SCAN, not the rows: measured across 88 producers, one day returned 0
+    /// rows in 11.6s, thirty days returned 76 rows in 6.1s. A narrow window is therefore nearly free
+    /// compared to a wide one, and 30 days is a single request per 500-producer chunk. The same query
+    /// over three years is 26,529 rows for those producers - roughly a thousand pages at full scale -
+    /// which is why GetAsync stays on ODS.</para>
+    ///
+    /// <para>Storage tickets are included and then gated, matching ODS: C-prefix loads should appear here
+    /// exactly as they do on the producer page.</para>
+    /// </remarks>
+    public async Task<List<Ticket>> GetTodaysAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
+    {
+        var codes = await ResolveScopedProducerCodesAsync(tradeUnits, cancellationToken);
+        if (codes.Count == 0)
+        {
+            _logger.LogInformation("CTRM tickets: no in-scope producers for the selected trade units.");
+            _provenance.RecordTickets("ctrm", "NoProducersInScope", 0);
+            return [];
+        }
+
+        // Matches the ODS cutoff exactly. The extra day on the far end is headroom for clock skew
+        // against the Db2 host, the same allowance the per-producer windows make.
+        var from = DateTime.UtcNow.Date.AddDays(-RecentTicketDays);
+        var to = DateTime.UtcNow.Date.AddDays(1);
+
+        var read = await _reader.GetForProducersAsync(codes, from, to, cancellationToken);
+        if (!read.Ok)
+        {
+            _logger.LogError("CTRM recent tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
+            return [];
+        }
+
+        // Unapplied only, scoped per producer. A detail row carries its own customer code, so the set is
+        // partitioned by code rather than filtered once - a header can hold rows for several producers.
+        var tickets = new List<Ticket>();
+        foreach (var header in read.Value ?? [])
+            foreach (var code in codes)
+                tickets.AddRange(CtrmMappings.ToUnappliedForProducer(header, code));
+
+        var beforeGate = tickets.Count;
+        tickets = await ApplyStorageGateAsync(tickets, codes, cancellationToken);
+        await _ods.PopulateElevatorLocations(tickets, cancellationToken);
+
+        tickets = tickets.OrderByDescending(t => t.Date).ToList();
+
+        _provenance.RecordTickets("ctrm", beforeGate != tickets.Count ? "OkStorageGated" : "Ok", tickets.Count);
+
+        _logger.LogInformation(
+            "CTRM recent tickets: {Count} unapplied rows across {Producers} producer(s), last {Days} days.",
+            tickets.Count, codes.Count, RecentTicketDays);
+
+        return tickets;
+    }
 
     /// <summary>Delegated. CTRM exposes no farm concept.</summary>
     public Task<List<Ticket>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
@@ -273,16 +333,63 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// holds that commodity in active storage. Reused rather than reimplemented: storage is ODS-only
     /// regardless, and a second copy of the rule would be somewhere for the two paths to drift apart.
     /// </remarks>
-    private async Task<List<Ticket>> ApplyStorageGateAsync(
+    private Task<List<Ticket>> ApplyStorageGateAsync(
         List<Ticket> tickets, string scoularId, CancellationToken cancellationToken)
+        => ApplyStorageGateAsync(tickets, [scoularId], cancellationToken);
+
+    /// <remarks>
+    /// The storage lookup is only made when a C-prefix ticket is actually present, and only for the
+    /// producers in scope — it reads <c>ctrm.vw_GNTA39D1</c>, which is slow enough that a producer with no
+    /// storage should not pay for it.
+    /// </remarks>
+    private async Task<List<Ticket>> ApplyStorageGateAsync(
+        List<Ticket> tickets, IReadOnlyCollection<string> scoularIds, CancellationToken cancellationToken)
     {
         var hasStorageTickets = tickets.Exists(t =>
             t.CtrmContractNumber is { Length: > 0 } cn && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase));
 
         if (!hasStorageTickets) return tickets;
 
-        var storageByCustomer = await _ods.GetActiveStorageCommoditiesAsync([scoularId], cancellationToken);
+        // Narrowed to the producers that actually have a C-prefix ticket rather than everyone in scope.
+        // On a trade-unit-wide read that is the difference between a handful of codes and several hundred.
+        var storageCodes = tickets
+            .Where(t => t.CtrmContractNumber is { Length: > 0 } cn
+                        && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrEmpty(t.CustomerCode))
+            .Select(t => t.CustomerCode!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (storageCodes.Count == 0) return tickets;
+
+        var storageByCustomer = await _ods.GetActiveStorageCommoditiesAsync(storageCodes, cancellationToken);
         return _ods.GateCustomerStorageTickets(tickets, storageByCustomer);
+    }
+
+    /// <summary>Days of history the recent-ticket read covers. Matches the ODS cutoff it replaces.</summary>
+    private const int RecentTicketDays = 30;
+
+    /// <summary>
+    /// The ScoularIds of the active producers in scope, optionally narrowed to the selected trade units.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors the ODS query and <see cref="CtrmContractRepository"/>: trade-unit selection is a narrowing
+    /// convenience, not an entitlement boundary, so selecting none means every active producer.
+    /// </remarks>
+    private async Task<List<string>> ResolveScopedProducerCodesAsync(
+        List<string>? tradeUnits, CancellationToken cancellationToken)
+    {
+        var query = _appContext.Customers
+            .AsNoTracking()
+            .Where(c => c.IsActive && c.ScoularId != null);
+
+        if (tradeUnits is { Count: > 0 })
+            query = query.Where(c => _appContext.CustomerTradeUnits.Any(ctu =>
+                ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits.Contains(ctu.TradeUnit)));
+
+        var codes = await query.Select(c => c.ScoularId!).ToListAsync(cancellationToken);
+
+        return [.. codes.Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
     }
     private async Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
     {
