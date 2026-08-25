@@ -193,22 +193,29 @@ public sealed class CtrmContractRepository : IContractRepository
     }
 
     /// <summary>
-    /// Pricing lines for a single contract, from the window snapshot.
+    /// Pricing lines for a single contract. Delegated to ODS.
     /// </summary>
     /// <remarks>
-    /// Cannot use the live reader: this method is keyed by contract id and CTRM offers no contract-number
-    /// filter, so there is no way to know which producer to ask for. The producer screen does not use this
-    /// path — it fetches pricing lines per customer.
+    /// <para>The window snapshot used to answer this, which is why it projected pricing lines. Those
+    /// lines doubled the time and payload of every page in an eighteen-page walk (11.6s / 604KB against
+    /// 6.1s / 352KB) and that pressure made the server return intermittent HTTP 500s mid-walk, failing
+    /// the whole snapshot. So the walk went lean and this went to ODS.</para>
+    ///
+    /// <para>Cheap to give up: nothing in the UI reaches this. The client method exists with no caller -
+    /// the producer screen fetches pricing lines per CUSTOMER, which runs live on CTRM. And <c>contracts</c>
+    /// has no contract-number argument, so a live per-contract read is not available anyway.</para>
     /// </remarks>
-    public async Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken)
+    public Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken)
+        => DelegateLinesAsync("PricingLinesByContract", _ods.GetPricingLinesAsync(sourceContractId, cancellationToken));
+
+    /// <summary>Same as <see cref="DelegateAsync"/> for a pricing-line read, so the provenance header
+    /// still reports where the rows came from.</summary>
+    private async Task<List<ContractPricingLine>> DelegateLinesAsync(
+        string reason, Task<List<ContractPricingLine>> odsRead)
     {
-        var id = sourceContractId?.Trim();
-        if (string.IsNullOrEmpty(id)) return [];
-
-        var snapshot = await _snapshot.GetAsync(cancellationToken);
-        if (!snapshot.Ok) return [];
-
-        return CtrmMappings.ToPricingLines(snapshot.Contracts.Where(d => Matches(d.ContractId, id)));
+        var lines = await odsRead;
+        _provenance.RecordContracts("ods", $"delegated:{reason}", lines.Count);
+        return lines;
     }
 
     // -------------------------------------------------------------------------

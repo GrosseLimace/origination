@@ -23,10 +23,22 @@ public static class CtrmQueries
     /// Variables: <c>$from</c>, <c>$to</c> (Date!), <c>$skip</c>, <c>$take</c> (Int!).
     /// </summary>
     /// <remarks>
-    /// The date window is the ONLY filter available — there is no customerId argument and no
-    /// contractPrefixType argument, so purchase-only filtering happens after the fetch. That
-    /// limitation is why contracts are served from a cached window snapshot rather than queried
-    /// per producer.
+    /// <para>The date window is the only filter that is fast here. <c>customerIds</c> exists and would let
+    /// the pool be scoped by producer instead - matching the per-producer read's full history - but it is
+    /// not indexed the way the singular <c>customerId</c> is: ~20-25s per request regardless of list size,
+    /// and the whole population is dozens of pages. Two attempts died at the gateway (234s priced, 147s
+    /// lean). Contract date IS indexed, so the window stays until that changes.</para>
+    ///
+    /// <para><b>No pricing lines.</b> They roughly double both the time and the payload for a page -
+    /// measured 11.6s / 604KB against 6.1s / 352KB - and this walk is eighteen pages at four-way
+    /// concurrency. That pressure was making the server return an intermittent HTTP 500 mid-walk, which
+    /// fails the whole snapshot; the pages are fine one at a time. Nothing reads the collection from here
+    /// either: <c>CtrmMappings.ToContract</c> takes only the scalar price fields, and the one caller that
+    /// wanted the lines is delegated to ODS.</para>
+    ///
+    /// <para>No <c>contractPrefixType</c> argument on this query even though one exists, because the
+    /// snapshot also answers reads that want the unfiltered window; purchase-only filtering happens in
+    /// the mapping.</para>
     /// </remarks>
     public const string ContractsPage = """
         query ($from: Date!, $to: Date!, $skip: Int!, $take: Int!) {
@@ -34,25 +46,7 @@ public static class CtrmQueries
             totalCount
             pageInfo { skip take hasNextPage hasPreviousPage }
             items {
-              contractId contractPrefixType contractNumber
-              customerId customerName tradeUnit
-              commodityCode commodityDescription commodityGroup
-              contractDate startShipDate finalShipDate closedDate cropYear
-              quantity quantityUom totalValue
-              pricedQuantity openBalanceQuantity settledQuantity
-              priceTypeCode specialType customerConfirmStatus
-              marketZone basisLocation
-              hedgeMarketMonthDescription priceMarketMonthDescription
-              prices {
-                priceSequence priceQuantity priceUom
-                flatPrice basisPrice hedgePrice freightAdjustment
-                priceDate priceCurrency
-                traderInitials trader
-                priceOpenQuantity priceAppliedQuantity priceSettledQuantity
-                priceOpenWeight priceAppliedWeight priceSettledWeight
-                customerConfirmStatus brokerConfirmStatus
-                lastActivityTimestamp
-              }
+        """ + ContractCoreProjection + """
             }
           }
         }
