@@ -87,39 +87,7 @@ public static class CtrmQueries
     /// </remarks>
     public const int MaxTicketRangeDays = 366;
 
-    /// <summary>
-    /// One page of tickets over a bill-of-lading date window, with detail rows.
-    /// </summary>
-    /// <remarks>
-    /// The date range is the only filter — no customer and no contract argument — so the producer
-    /// scoping happens after the fetch, against <c>details.customerCode</c>. Same shape as the contract
-    /// window for the same reason.
-    /// </remarks>
-    public const string TicketsPage = """
-        query ($from: Date!, $to: Date!, $skip: Int!, $take: Int!) {
-          tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to) {
-            totalCount
-            pageInfo { skip take hasNextPage hasPreviousPage }
-            items {
-              ticketPrefix ticketNumber ticketSuffix ticketBLDate productCode
-              shipmentTicketNumber loadOrganizationCode unloadOrganizationCode loadElevatorCode
-              unloadQuantity loadoutQuantity
-              details {
-                ticketSequenceNumber
-                customerCode organizationCode elevatorCode gradeCode
-                contractNumber ticketType
-                ticketStatusCode ticketStatusDescription
-                appliedGrossQuantity appliedNetQuantity appliedDockQuantity appliedShrinkQuantity
-                finalSettledNetQuantity finalSettledDate ticketLastChangeDate
-                gradeFactorMoisturePercent gradeFactorTestWeightPercent gradeFactorProteinPercent
-                storageProgramCode cancelFlag priceSequence
-              }
-            }
-          }
-        }
-        """;
-
-    /// <summary>Projection used for every single-ticket lookup.</summary>
+    /// <summary>Projection shared by every ticket document, so no two can drift into different columns.</summary>
     /// <remarks>
     /// The <c>gradeFactor*</c> fields sit on the detail row here. Our ODS path reads the same values
     /// from <c>base.vw_TicketQuality</c> and joins them back by ticket id, so taking them inline
@@ -251,31 +219,59 @@ public static class CtrmQueries
     /// Variables: <c>$customerId</c> (String), <c>$from</c>/<c>$to</c> (Date), <c>$skip</c>, <c>$take</c> (Int).
     /// </summary>
     /// <remarks>
-    /// Unlike contracts, the date range stays MANDATORY here even with a customer filter, and it is still
-    /// capped at <see cref="MaxTicketRangeDays"/>. The reason is structural: the ticket header carries no
-    /// customer at all — the customer lives on the detail rows — so the filter is an EXISTS semi-join and
-    /// the date range is what keeps the header scan bounded. Callers therefore slice a longer lookback
-    /// into consecutive windows rather than asking for one wide one.
+    /// <para>Unlike contracts, the date range stays MANDATORY here even with a customer filter, and it is
+    /// still capped at <see cref="MaxTicketRangeDays"/>. The reason is structural: the ticket header carries
+    /// no customer at all - the customer lives on the detail rows - so the filter is an EXISTS semi-join and
+    /// the date range is what keeps the header scan bounded. Callers therefore slice a longer lookback into
+    /// consecutive windows rather than asking for one wide one. Waiving it needs a redesign on the API side;
+    /// it is tracked there but not delivered.</para>
+    ///
+    /// <para><c>excludeCancelled</c> and <c>excludeConsolidated</c> are opt-in server-side versions of two
+    /// filters <see cref="CtrmMappings"/> also applies row by row. The duplication is deliberate: asking the
+    /// server keeps those rows off the wire (measured 14 of 228 detail rows for one producer), while the
+    /// client-side check is what guarantees ODS parity regardless of which document fed it, since the
+    /// single-ticket and batch lookups cannot pass these arguments at all.</para>
+    ///
+    /// <para>Deliberately no <c>ticketType</c> argument, though the API now accepts one: it takes a single
+    /// value and the app shows two types (U and P), so it cannot express our filter. Measured against live
+    /// data it would also drop nothing - every detail row came back type U.</para>
     /// </remarks>
     public const string TicketsByCustomer = """
         query ($customerId: String, $from: Date, $to: Date, $skip: Int, $take: Int) {
-          tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to, customerId: $customerId) {
+          tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to, customerId: $customerId,
+                  excludeCancelled: true, excludeConsolidated: true) {
             totalCount
             pageInfo { skip take hasNextPage hasPreviousPage }
             items {
-              ticketPrefix ticketNumber ticketSuffix ticketBLDate productCode
-              shipmentTicketNumber loadOrganizationCode unloadOrganizationCode loadElevatorCode
-              unloadQuantity loadoutQuantity
-              details {
-                ticketSequenceNumber
-                customerCode organizationCode elevatorCode gradeCode
-                contractNumber ticketType
-                ticketStatusCode ticketStatusDescription
-                appliedGrossQuantity appliedNetQuantity appliedDockQuantity appliedShrinkQuantity
-                finalSettledNetQuantity finalSettledDate ticketLastChangeDate
-                gradeFactorMoisturePercent gradeFactorTestWeightPercent gradeFactorProteinPercent
-                storageProgramCode cancelFlag priceSequence
-              }
+        """ + TicketProjection + """
+            }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// Every ticket applied to a set of contract numbers, over a bill-of-lading window.
+    /// Variables: <c>$contractNumbers</c> ([String!]), <c>$from</c>/<c>$to</c> (Date), <c>$skip</c>, <c>$take</c> (Int).
+    /// </summary>
+    /// <remarks>
+    /// <para>Scopes on the contract rather than the producer, so a split load - a ticket applied to this
+    /// contract but booked under a different customer code - is included. Measured against QA that changed
+    /// nothing for the producers checked (150 rows either way, all under the same code), so this is not a
+    /// fix for a known defect; it removes the assumption that there is nothing to fix.</para>
+    ///
+    /// <para>The date range is still mandatory and still capped, for the same reason as the customer filter:
+    /// the contract number lives on the detail row too, so this is the same semi-join. One contract over a
+    /// one-year window measures ~1.7s.</para>
+    /// </remarks>
+    public const string TicketsByContractNumbers = """
+        query ($contractNumbers: [String!], $from: Date, $to: Date, $skip: Int, $take: Int) {
+          tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to,
+                  contractNumbers: $contractNumbers,
+                  excludeCancelled: true, excludeConsolidated: true) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+        """ + TicketProjection + """
             }
           }
         }

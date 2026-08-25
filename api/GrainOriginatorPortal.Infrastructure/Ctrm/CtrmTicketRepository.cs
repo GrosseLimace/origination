@@ -27,7 +27,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
 {
     private readonly CtrmTicketReader _reader;
     private readonly CtrmContractReader _contractReader;
-    private readonly CtrmTicketSnapshot _snapshot;
     private readonly ApplicationDbContext _appContext;
     private readonly TicketRepository _ods;
     private readonly CtrmProvenance _provenance;
@@ -36,7 +35,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
     public CtrmTicketRepository(
         CtrmTicketReader reader,
         CtrmContractReader contractReader,
-        CtrmTicketSnapshot snapshot,
         ApplicationDbContext appContext,
         TicketRepository ods,
         CtrmProvenance provenance,
@@ -44,7 +42,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
     {
         _reader = reader;
         _contractReader = contractReader;
-        _snapshot = snapshot;
         _appContext = appContext;
         _ods = ods;
         _provenance = provenance;
@@ -116,13 +113,21 @@ public sealed class CtrmTicketRepository : ITicketRepository
     }
 
     /// <summary>
-    /// One contract's applied tickets, filtered from the ticket window snapshot.
+    /// One contract's applied tickets, read live and scoped on the contract itself.
     /// </summary>
     /// <remarks>
-    /// Cannot use the live reader: this method is keyed by contract id, and with no contract filter on
-    /// <c>tickets</c> there is no way to know which producer to ask for. Not reached from the producer
-    /// screen — the client's Applied Tickets section filters the already-loaded producer ticket list in
-    /// the browser rather than calling the API.
+    /// <para>Uses the <c>contractNumbers</c> filter, which scopes on the contract rather than the producer
+    /// and so includes a split load - a ticket applied to this contract but booked under a different
+    /// customer code. Measured on QA that made no difference for the producers checked, so treat it as
+    /// removing an assumption rather than fixing a known defect.</para>
+    ///
+    /// <para>Previously served from the ticket window snapshot, because no contract filter existed. Reading
+    /// live drops the snapshot's configured bill-of-lading window - which silently returned nothing for a
+    /// contract whose tickets fell outside it - in favour of the reader's lookback. One contract measures
+    /// ~1.7s per window.</para>
+    ///
+    /// <para>Not reached from the producer screen: the client's Applied Tickets section filters the
+    /// already-loaded producer ticket list in the browser rather than calling the API.</para>
     /// </remarks>
     public async Task<List<Ticket>> GetAppliedByContractAsync(string sourceContractId, CancellationToken cancellationToken)
     {
@@ -133,23 +138,25 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
-        var snapshot = await _snapshot.GetAsync(cancellationToken);
-        if (!snapshot.Ok)
+        var read = await _reader.GetForContractsAsync([id], cancellationToken);
+        if (!read.Ok)
         {
-            if (snapshot.Status == CtrmReadStatus.Warming)
-                _logger.LogInformation("CTRM applied tickets: snapshot still warming — {Detail}", snapshot.Detail);
-            else
-                _logger.LogError("CTRM applied tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
-                    "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", snapshot.Status, snapshot.Detail);
-
-            _provenance.RecordTickets("ctrm", snapshot.Status.ToString(), 0);
+            _logger.LogError("CTRM applied tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
             return [];
         }
 
-        var tickets = snapshot.Tickets
+        // Mapped by contract, not by producer: a contract's applied bushels are the sum of every detail row
+        // against it, so filtering by producer here would understate a split load's total.
+        var tickets = (read.Value ?? [])
             .SelectMany(header => CtrmMappings.ToTicketsForContract(header, id))
             .OrderByDescending(t => t.Date)
             .ToList();
+
+        // ODS parity: its version of this method fills quality and elevator together. Quality arrives
+        // inline from CTRM, so only the elevator lookup is left to do.
+        await _ods.PopulateElevatorLocations(tickets, cancellationToken);
 
         _provenance.RecordTickets("ctrm", "Ok", tickets.Count);
         return tickets;
