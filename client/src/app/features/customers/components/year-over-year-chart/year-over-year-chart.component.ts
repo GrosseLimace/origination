@@ -69,11 +69,12 @@ export class YearOverYearChartComponent {
     this.totalRevenue = this.chartData.reduce((sum, d) => sum + d.revenue, 0);
   }
 
+  /** Bar height as a percentage of the plot area. Percent, not pixels, so the
+   *  chart can change height without this needing to know the pixel value. */
   getBarHeight(value: number, max: number): number {
-    if (max === 0) return 10;
-    const minHeight = 10;
-    const maxHeight = 200;
-    return Math.max(minHeight, (value / max) * maxHeight);
+    const minPercent = 5;
+    if (max === 0) return minPercent;
+    return Math.max(minPercent, (value / max) * 100);
   }
 
   formatRevenue(amount: number): string {

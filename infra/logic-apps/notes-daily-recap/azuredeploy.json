@@ -137,7 +137,7 @@
                 ]
               },
               "runAfter": {
-                "For_each_Recap_Group": [
+                "Compose_Retry_Summary": [
                   "Succeeded"
                 ]
               },
@@ -453,10 +453,120 @@
                               },
                               "type": "Http"
                             },
-                            "Record_Email_Send_Failure": {
-                              "inputs": {
-                                "name": "failedGroups",
-                                "value": "@{variables('groupName')} (email)"
+                            "If_Email_Send_Retryable": {
+                              "actions": {
+                                "HTTP_Send_Recap_Email_Retry": {
+                                  "inputs": {
+                                    "authentication": {
+                                      "audience": "https://graph.microsoft.com",
+                                      "type": "ManagedServiceIdentity"
+                                    },
+                                    "body": {
+                                      "message": {
+                                        "body": {
+                                          "content": "@{variables('emailBody')}",
+                                          "contentType": "HTML"
+                                        },
+                                        "ccRecipients": "@outputs('Compose_CC')",
+                                        "subject": "Email Origination App Daily Recap for @{variables('groupName')}",
+                                        "toRecipients": "@outputs('Compose_Email_Recipients')"
+                                      },
+                                      "saveToSentItems": true
+                                    },
+                                    "method": "POST",
+                                    "retryPolicy": {
+                                      "type": "none"
+                                    },
+                                    "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
+                                  },
+                                  "runAfter": {
+                                    "Wait_Before_Email_Retry": [
+                                      "Succeeded"
+                                    ]
+                                  },
+                                  "type": "Http"
+                                },
+                                "Record_Email_Send_Failure_After_Retry": {
+                                  "inputs": {
+                                    "name": "failedGroups",
+                                    "value": "@{variables('groupName')} (email, retried)"
+                                  },
+                                  "runAfter": {
+                                    "HTTP_Send_Recap_Email_Retry": [
+                                      "Failed",
+                                      "TimedOut"
+                                    ]
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                },
+                                "Wait_Before_Email_Retry": {
+                                  "inputs": {
+                                    "interval": {
+                                      "count": 30,
+                                      "unit": "Second"
+                                    }
+                                  },
+                                  "type": "Wait"
+                                },
+                                "Record_Email_Retry_Success": {
+                                  "inputs": {
+                                    "name": "retriedGroups",
+                                    "value": "@{variables('groupName')} (email)"
+                                  },
+                                  "runAfter": {
+                                    "HTTP_Send_Recap_Email_Retry": [
+                                      "Succeeded"
+                                    ]
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                }
+                              },
+                              "else": {
+                                "actions": {
+                                  "Record_Email_Send_Failure": {
+                                    "inputs": {
+                                      "name": "failedGroups",
+                                      "value": "@{variables('groupName')} (email)"
+                                    },
+                                    "type": "AppendToArrayVariable"
+                                  }
+                                }
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "not": {
+                                      "equals": [
+                                        "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                        400
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "not": {
+                                      "equals": [
+                                        "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                        403
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "not": {
+                                      "equals": [
+                                        "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                        404
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "not": {
+                                      "equals": [
+                                        "@outputs('HTTP_Send_Recap_Email')?['statusCode']",
+                                        413
+                                      ]
+                                    }
+                                  }
+                                ]
                               },
                               "runAfter": {
                                 "HTTP_Send_Recap_Email": [
@@ -464,7 +574,7 @@
                                   "TimedOut"
                                 ]
                               },
-                              "type": "AppendToArrayVariable"
+                              "type": "If"
                             }
                           },
                           "case": "email"
@@ -505,10 +615,126 @@
                                   },
                                   "type": "Http"
                                 },
-                                "Record_Teams_Send_Failure": {
-                                  "inputs": {
-                                    "name": "failedGroups",
-                                    "value": "@{variables('groupName')} (teams)"
+                                "If_Teams_Send_Retryable": {
+                                  "actions": {
+                                    "HTTP_Send_to_Teams_Retry": {
+                                      "inputs": {
+                                        "authentication": {
+                                          "audience": "https://graph.microsoft.com",
+                                          "type": "ManagedServiceIdentity"
+                                        },
+                                        "body": {
+                                          "message": {
+                                            "body": {
+                                              "content": "@{variables('emailBody')}",
+                                              "contentType": "HTML"
+                                            },
+                                            "ccRecipients": "@outputs('Compose_CC')",
+                                            "subject": "Teams Origination App Daily Recap for @{variables('groupName')}",
+                                            "toRecipients": [
+                                              {
+                                                "emailAddress": {
+                                                  "address": "@{item()?['TeamsChannelEmail']}"
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "saveToSentItems": true
+                                        },
+                                        "method": "POST",
+                                        "retryPolicy": {
+                                          "type": "none"
+                                        },
+                                        "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
+                                      },
+                                      "runAfter": {
+                                        "Wait_Before_Teams_Retry": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "Http"
+                                    },
+                                    "Record_Teams_Send_Failure_After_Retry": {
+                                      "inputs": {
+                                        "name": "failedGroups",
+                                        "value": "@{variables('groupName')} (teams, retried)"
+                                      },
+                                      "runAfter": {
+                                        "HTTP_Send_to_Teams_Retry": [
+                                          "Failed",
+                                          "TimedOut"
+                                        ]
+                                      },
+                                      "type": "AppendToArrayVariable"
+                                    },
+                                    "Wait_Before_Teams_Retry": {
+                                      "inputs": {
+                                        "interval": {
+                                          "count": 30,
+                                          "unit": "Second"
+                                        }
+                                      },
+                                      "type": "Wait"
+                                    },
+                                    "Record_Teams_Retry_Success": {
+                                      "inputs": {
+                                        "name": "retriedGroups",
+                                        "value": "@{variables('groupName')} (teams)"
+                                      },
+                                      "runAfter": {
+                                        "HTTP_Send_to_Teams_Retry": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "AppendToArrayVariable"
+                                    }
+                                  },
+                                  "else": {
+                                    "actions": {
+                                      "Record_Teams_Send_Failure": {
+                                        "inputs": {
+                                          "name": "failedGroups",
+                                          "value": "@{variables('groupName')} (teams)"
+                                        },
+                                        "type": "AppendToArrayVariable"
+                                      }
+                                    }
+                                  },
+                                  "expression": {
+                                    "and": [
+                                      {
+                                        "not": {
+                                          "equals": [
+                                            "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                            400
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "not": {
+                                          "equals": [
+                                            "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                            403
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "not": {
+                                          "equals": [
+                                            "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                            404
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "not": {
+                                          "equals": [
+                                            "@outputs('HTTP_Send_to_Teams')?['statusCode']",
+                                            413
+                                          ]
+                                        }
+                                      }
+                                    ]
                                   },
                                   "runAfter": {
                                     "HTTP_Send_to_Teams": [
@@ -516,7 +742,7 @@
                                       "TimedOut"
                                     ]
                                   },
-                                  "type": "AppendToArrayVariable"
+                                  "type": "If"
                                 }
                               },
                               "else": {
@@ -578,12 +804,30 @@
                       "cases": {
                         "Case_person": {
                           "actions": {
-                            "Append_to_groupMembers_Array_3": {
-                              "inputs": {
-                                "name": "groupMembers",
-                                "value": "@item()?['Email']"
+                            "Condition_Person_Is_Active": {
+                              "actions": {
+                                "Append_to_groupMembers_Array_3": {
+                                  "inputs": {
+                                    "name": "groupMembers",
+                                    "value": "@item()?['Email']"
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                }
                               },
-                              "type": "AppendToArrayVariable"
+                              "else": {
+                                "actions": {}
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "contains": [
+                                      "@coalesce(body('Select_Active_User_Ids'), createArray(toLower(item()?['MemberId'])))",
+                                      "@toLower(item()?['MemberId'])"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "type": "If"
                             }
                           },
                           "case": "person"
@@ -592,12 +836,30 @@
                           "actions": {
                             "For_each_3": {
                               "actions": {
-                                "Append_to_groupMembers_Array_2": {
-                                  "inputs": {
-                                    "name": "groupMembers",
-                                    "value": "@{item()?['UserId']}@scoular.com"
+                                "Condition_Trade_Unit_Member_Is_Active": {
+                                  "actions": {
+                                    "Append_to_groupMembers_Array_2": {
+                                      "inputs": {
+                                        "name": "groupMembers",
+                                        "value": "@{item()?['UserId']}@scoular.com"
+                                      },
+                                      "type": "AppendToArrayVariable"
+                                    }
                                   },
-                                  "type": "AppendToArrayVariable"
+                                  "else": {
+                                    "actions": {}
+                                  },
+                                  "expression": {
+                                    "and": [
+                                      {
+                                        "contains": [
+                                          "@coalesce(body('Select_Active_User_Ids'), createArray(toLower(item()?['UserId'])))",
+                                          "@toLower(item()?['UserId'])"
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "type": "If"
                                 }
                               },
                               "foreach": "@body('Get_Trade_Unit_Members')?['value']",
@@ -616,7 +878,7 @@
                                   }
                                 },
                                 "method": "get",
-                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[UserTradeUnitAssignments]'))}/items",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[vw_UserTradeUnitPreferences]'))}/items",
                                 "queries": {
                                   "$filter": "TradeUnitCode eq @{item()?['MemberId']}"
                                 }
@@ -630,12 +892,30 @@
                           "actions": {
                             "For_each_2": {
                               "actions": {
-                                "Append_to_groupMembers_Array": {
-                                  "inputs": {
-                                    "name": "groupMembers",
-                                    "value": "@{item()?['UserId']}@scoular.com"
+                                "Condition_Group_Member_Is_Active": {
+                                  "actions": {
+                                    "Append_to_groupMembers_Array": {
+                                      "inputs": {
+                                        "name": "groupMembers",
+                                        "value": "@{item()?['UserId']}@scoular.com"
+                                      },
+                                      "type": "AppendToArrayVariable"
+                                    }
                                   },
-                                  "type": "AppendToArrayVariable"
+                                  "else": {
+                                    "actions": {}
+                                  },
+                                  "expression": {
+                                    "and": [
+                                      {
+                                        "contains": [
+                                          "@coalesce(body('Select_Active_User_Ids'), createArray(toLower(item()?['UserId'])))",
+                                          "@toLower(item()?['UserId'])"
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "type": "If"
                                 }
                               },
                               "foreach": "@body('Get_Trade_Unit_Group_Members')?['value']",
@@ -654,7 +934,7 @@
                                   }
                                 },
                                 "method": "get",
-                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[UserGroupAssignments]'))}/items",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[vw_UserTradeUnitPreferences]'))}/items",
                                 "queries": {
                                   "$filter": "GroupId eq @{item()?['MemberId']}"
                                 }
@@ -766,7 +1046,7 @@
                           }
                         },
                         "method": "get",
-                        "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items/@{encodeURIComponent(encodeURIComponent(first(split(items('For_each_groupMember'),'@'))))}"
+                        "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items/@{encodeURIComponent(encodeURIComponent(first(split(items('For_each_groupMember'),'@'))))}"
                       },
                       "runAfter": {
                         "Append_to_Recipient_Array": [
@@ -1007,8 +1287,9 @@
                 }
               },
               "runAfter": {
-                "Initialize_variables": [
-                  "Succeeded"
+                "Select_Active_User_Ids": [
+                  "Succeeded",
+                  "Skipped"
                 ]
               },
               "type": "ApiConnection"
@@ -1063,11 +1344,91 @@
                   {
                     "name": "failedGroups",
                     "type": "array"
+                  },
+                  {
+                    "name": "retriedGroups",
+                    "type": "array"
                   }
                 ]
               },
               "runAfter": {},
               "type": "InitializeVariable"
+            },
+            "Get_Active_Users": {
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['sql']['connectionId']"
+                  }
+                },
+                "method": "get",
+                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items",
+                "queries": {
+                  "$filter": "IsActive eq 1",
+                  "$select": "UserId",
+                  "$top": 2000
+                }
+              },
+              "type": "ApiConnection",
+              "runAfter": {
+                "Initialize_variables": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Condition_Active_User_Cap": {
+              "actions": {
+                "Terminate_Active_User_Cap": {
+                  "inputs": {
+                    "runError": {
+                      "code": "ActiveUserCapReached",
+                      "message": "Get_Active_Users returned @{length(body('Get_Active_Users')?['value'])} rows, at or above the $top cap of 2000. The active-user list may be truncated, which would silently drop legitimate recipients from trade-unit and group expansions. Raise the cap or switch to a filtered view."
+                    },
+                    "runStatus": "Failed"
+                  },
+                  "type": "Terminate"
+                }
+              },
+              "else": {
+                "actions": {}
+              },
+              "expression": {
+                "and": [
+                  {
+                    "greaterOrEquals": [
+                      "@length(body('Get_Active_Users')?['value'])",
+                      2000
+                    ]
+                  }
+                ]
+              },
+              "runAfter": {
+                "Get_Active_Users": [
+                  "Succeeded"
+                ]
+              },
+              "type": "If"
+            },
+            "Select_Active_User_Ids": {
+              "inputs": {
+                "from": "@body('Get_Active_Users')?['value']",
+                "select": "@toLower(item()?['UserId'])"
+              },
+              "runAfter": {
+                "Condition_Active_User_Cap": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Select"
+            },
+            "Compose_Retry_Summary": {
+              "inputs": "@if(equals(length(variables('retriedGroups')), 0), 'No groups needed a retry.', concat('Recovered on retry (first send failed, resend succeeded - these may have received a duplicate): ', join(variables('retriedGroups'), ', ')))",
+              "runAfter": {
+                "For_each_Recap_Group": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Compose"
             }
           },
           "contentVersion": "1.0.0.0",

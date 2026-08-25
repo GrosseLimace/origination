@@ -11,9 +11,9 @@ namespace GrainOriginatorPortal.Api.Migrations.ApplicationDb
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // Drop the local TU catalog tables — they were superseded by the
-            // Entitlements DB view vw_UserTradeUnitAccess (groups + user access)
+            // TradeUnitPreferences DB view vw_UserTradeUnitAccess (groups + user access)
             // and direct ODS lookups (customer → TU). See database-design-issues.md
-            // "Architectural principle: Entitlements DB owns the TU/group catalog".
+            // "Architectural principle: TradeUnitPreferences DB owns the TU/group catalog".
             //
             // IF EXISTS guards make this idempotent: safe to re-run, and safe in
             // environments where these tables may have been manually dropped.

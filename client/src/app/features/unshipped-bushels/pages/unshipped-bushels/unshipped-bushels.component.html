@@ -1,5 +1,7 @@
-<div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-  <div class="max-w-[2000px] w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-8">
+<!-- <main> already constrains the width and pads the content; repeating either here
+     doubled the gutters and forced a scrollbar into a viewport that had none. -->
+<div class="bg-gray-50 dark:bg-gray-900">
+  <div class="w-full pb-8">
 
     <!-- Page Header -->
     <div class="mb-6">
@@ -185,15 +187,19 @@
 
             <!-- Expanded contract rows -->
             @if (group.expanded) {
-              <div class="border-t border-gray-100 dark:border-gray-700">
+              <!-- Scrolls rather than squashing: six columns cannot share a narrow card
+                   without the numeric ones losing their values. Crop Year gives a span
+                   to Open (bu), which carries a bushel figure plus a link icon. -->
+              <div class="border-t border-gray-100 dark:border-gray-700 overflow-x-auto">
+                <div class="min-w-[720px]">
                 <!-- Table header -->
                 <div class="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   <div class="col-span-3">Contract #</div>
                   <div class="col-span-2">Commodity</div>
-                  <div class="col-span-2">Crop Year</div>
+                  <div class="col-span-1">Crop Year</div>
                   <div class="col-span-2">Delivery End</div>
                   <div class="col-span-2 text-right">Quantity (bu)</div>
-                  <div class="col-span-1 text-right">Open (bu)</div>
+                  <div class="col-span-2 text-right">Open (bu)</div>
                 </div>
                 <!-- Contract rows -->
                 @for (contract of getFilteredContracts(group); track contract.id) {
@@ -210,7 +216,7 @@
                       <span class="text-sm text-gray-700 dark:text-gray-300">{{ contract.commodityDescription || contract.commodityCode || '—' }}</span>
                     </div>
                     <!-- Crop year -->
-                    <div class="col-span-2 flex items-center">
+                    <div class="col-span-1 flex items-center">
                       <span class="text-sm text-gray-700 dark:text-gray-300">{{ contract.cropYear || '—' }}</span>
                     </div>
                     <!-- Delivery end -->
@@ -222,7 +228,7 @@
                       <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatBushels(contract.quantity) }}</span>
                     </div>
                     <!-- Open balance -->
-                    <div class="col-span-1 flex items-center justify-end gap-1">
+                    <div class="col-span-2 flex items-center justify-end gap-1">
                       <span class="text-sm font-semibold text-amber-600 dark:text-amber-400">{{ formatBushels(contractOpenBalance(contract)) }}</span>
                       <!-- External link icon -->
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
@@ -233,6 +239,7 @@
                     </div>
                   </div>
                 }
+                </div>
               </div>
             }
           </app-card>

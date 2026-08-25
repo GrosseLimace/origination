@@ -1,6 +1,6 @@
 
     @if (isOpen() && customer()) {
-      <app-dialog [isOpen]="true" (close)="onCancel()">
+      <app-dialog [isOpen]="true" [scrollBody]="true" (close)="onCancel()">
         <app-dialog-header>
           <app-dialog-title>Edit Producer Details</app-dialog-title>
           <app-dialog-description>Update farm details and manage associations for {{ customer()!.name }}</app-dialog-description>
