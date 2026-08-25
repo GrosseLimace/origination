@@ -48,6 +48,12 @@ export class ContractsTableComponent {
   /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines
    *  section shows "Loading…" instead of disappearing when this is the case. */
   public isLoadingPricingLines = input(false);
+  /** True while /api/tickets/customer/{id} is in flight. Without this the Applied Tickets
+   *  header renders "(0)" while the fetch is still running, because getAppliedTickets()
+   *  filters a tickets input that legitimately starts empty — and "(0)" is indistinguishable
+   *  from a contract that genuinely has no applied tickets. Contracts arrive in ~2s and
+   *  tickets take three date windows, so that window is always visible. */
+  public isLoadingTickets = input(false);
   /** Emitted when the optional fulfillment columns are shown/hidden, so the page can give the
    *  contracts table full width (drop the Notes sidebar below) while expanded. */
   public expandedColumnsChange = output<boolean>();

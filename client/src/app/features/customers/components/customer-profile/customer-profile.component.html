@@ -436,7 +436,7 @@
         <div class="pb-8">
           @switch (activeTab()) {
             @case ('contracts') {
-              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()" [isLoadingPricingLines]="isLoadingPricingLines()" (expandedColumnsChange)="contractsColumnsExpanded.set($event)"></app-contracts-table>
+              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()" [isLoadingPricingLines]="isLoadingPricingLines()" [isLoadingTickets]="isLoadingUnappliedTickets()" (expandedColumnsChange)="contractsColumnsExpanded.set($event)"></app-contracts-table>
             }
             @case ('tickets') {
               <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingUnappliedTickets()" [openCrop]="openTicketCrop()"></app-tickets-table>

@@ -110,13 +110,41 @@ public sealed class CtrmContractReader
 
     // -------------------------------------------------------------------------
 
-    private static List<string> Normalize(IReadOnlyCollection<string>? codes) =>
-        [.. (codes ?? [])
+    /// <summary>
+    /// Longest customer code the <c>customerIds</c> filter tolerates.
+    /// </summary>
+    /// <remarks>
+    /// Found by bisection against live QA: 7 characters returns data, 8 returns
+    /// <c>"An internal error occurred"</c> — and it fails the WHOLE request, so one malformed code in a
+    /// chunk takes down every producer sharing it. Real ScoularIds are 5-7 characters, so this only ever
+    /// trips on bad data; the blast radius is what makes filtering better than trusting. Reported
+    /// upstream — remove this once the API answers an empty match instead of an error.
+    /// </remarks>
+    private const int MaxCustomerCodeLength = 7;
+
+    private List<string> Normalize(IReadOnlyCollection<string>? codes)
+    {
+        var cleaned = (codes ?? [])
             .Select(c => c?.Trim())
             .Where(c => !string.IsNullOrEmpty(c))
             .Select(c => c!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)];
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var tooLong = cleaned.Where(c => c.Length > MaxCustomerCodeLength).ToList();
+        if (tooLong.Count == 0) return cleaned;
+
+        // A warning, not silence: the producer really is missing from the result. Dropping beats sending,
+        // because sending loses the whole chunk instead of one row.
+        _logger.LogWarning(
+            "CTRM contracts: dropped {Count} producer code(s) longer than {Max} characters before querying. " +
+            "The customerIds filter answers an internal error rather than an empty match for those, and " +
+            "would fail every producer in the same chunk. Codes: {Codes}",
+            tooLong.Count, MaxCustomerCodeLength, string.Join(", ", tooLong.Take(10)));
+
+        return [.. cleaned.Where(c => c.Length <= MaxCustomerCodeLength)];
+    }
 
     /// <summary>
     /// Order-independent hash of a producer set, for use in a cache key.

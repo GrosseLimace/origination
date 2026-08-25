@@ -577,15 +577,17 @@
                             }
                           </span>
                           Applied Tickets
-                          @if (getAppliedTickets(contract).length > 0) {
-                            ({{ getAppliedTickets(contract).length }})
+                          @if (isLoadingTickets() && getAppliedTickets(contract).length === 0) {
+                            <span class="text-gray-400 dark:text-gray-500 italic text-sm">(Loading…)</span>
                           } @else {
-                            (0)
+                            ({{ getAppliedTickets(contract).length }})
                           }
                         </button>
 
                         @if (expandedTicketSections.has(contract.id)) {
-                          @if (getAppliedTickets(contract).length > 0) {
+                          @if (isLoadingTickets() && getAppliedTickets(contract).length === 0) {
+                            <p class="text-gray-400 dark:text-gray-500 text-sm italic px-2 pb-2">Loading applied tickets…</p>
+                          } @else if (getAppliedTickets(contract).length > 0) {
                             @for (ticket of getAppliedTickets(contract); track ticket.id) {
                               <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
                                 <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-1 sm:grid-cols-8 gap-4' : 'grid grid-cols-1 sm:grid-cols-7 gap-4'">

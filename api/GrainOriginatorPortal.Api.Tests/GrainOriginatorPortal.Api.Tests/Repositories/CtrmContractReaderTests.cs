@@ -78,7 +78,7 @@ public class CtrmContractReaderTests
                     {
                         ContractId = $"P{skip + i:D7}",
                         ContractPrefixType = "P",
-                        CustomerId = "TESTPROD",
+                        CustomerId = "TESTPRD",
                         CropYear = 2025
                     })]
                 }
@@ -109,7 +109,7 @@ public class CtrmContractReaderTests
         new(client, config ?? Config(), new Mock<ILogger<CtrmContractReader>>().Object);
 
     private static List<string> Codes(int count) =>
-        [.. Enumerable.Range(0, count).Select(i => $"PROD{i:D5}")];
+        [.. Enumerable.Range(0, count).Select(i => $"P{i:D6}")];
 
     // -------------------------------------------------------------------------
     [Fact]
@@ -133,7 +133,7 @@ public class CtrmContractReaderTests
         var client = new RecordingClient();
 
         var result = await Sut(client).GetForCropYearAsync(
-            ["PROD1", " prod1 ", "", "   ", null!], 2025, CancellationToken.None);
+            ["P00001", " p00001 ", "", "   ", null!], 2025, CancellationToken.None);
 
         Assert.True(result.Ok);
         var ids = Assert.IsAssignableFrom<IEnumerable<string>>(client.Variables[0]["customerIds"]);
@@ -273,8 +273,8 @@ public class CtrmContractReaderTests
         var client = new RecordingClient();
         var sut = Sut(client);
 
-        await sut.GetForProducerAsync("TESTPROD", CancellationToken.None);
-        await sut.GetForCropYearAsync(["TESTPROD"], 2025, CancellationToken.None);
+        await sut.GetForProducerAsync("TESTPRD", CancellationToken.None);
+        await sut.GetForCropYearAsync(["TESTPRD"], 2025, CancellationToken.None);
 
         Assert.Equal(2, client.Calls);
     }
@@ -321,5 +321,41 @@ public class CtrmContractReaderTests
         await sut.GetForCropYearAsync(Codes(1), 2025, CancellationToken.None);
 
         Assert.Equal(2, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AnOverLongProducerCodeIsDroppedRatherThanSentWithTheChunk()
+    {
+        // Measured against live QA: a customer code of 8 characters or more makes customerIds answer
+        // "An internal error occurred" instead of matching nothing — and it fails the WHOLE request, so one
+        // bad code in a chunk of 500 loses every producer in it. Real ScoularIds are 5-7 characters, so
+        // this only trips on bad data; the blast radius is what makes dropping it the safer choice.
+        var client = new RecordingClient();
+
+        var result = await Sut(client).GetForCropYearAsync(
+            ["P00001", "TOOLONG8", "P00002"], 2025, CancellationToken.None);
+
+        Assert.True(result.Ok);
+
+        var sent = Assert.IsAssignableFrom<IEnumerable<string>>(client.Variables[0]["customerIds"]).ToList();
+        Assert.Equal(2, sent.Count);
+        Assert.DoesNotContain("TOOLONG8", sent);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AProducerSetOfNothingButOverLongCodesNeverReachesTheServer()
+    {
+        // Dropping every code leaves an empty set, and an empty set must not degrade into an unfiltered
+        // query — the same trap as passing none in the first place.
+        var client = new RecordingClient();
+
+        var result = await Sut(client).GetForCropYearAsync(
+            ["WAYTOOLONG", "ALSOTOOLONG"], 2025, CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Empty(result.Value ?? []);
+        Assert.Equal(0, client.Calls);
     }
 }
