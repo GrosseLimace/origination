@@ -165,52 +165,43 @@ public static class CtrmMappings
     public const string CancelledFlag = "Y";
 
     /// <summary>
-    /// Projects a CTRM ticket into one <see cref="Ticket"/> per detail row belonging to
-    /// <paramref name="scoularId"/>.
+    /// Projects every detail row applied to one of these contracts, whoever it is booked under.
     /// </summary>
     /// <remarks>
-    /// <para><b>One ticket in, potentially several out.</b> A physical ticket can be split across many
-    /// producers — one observed case had 15 detail rows — and the header quantities describe the whole
-    /// load, not any one producer's share. Emitting the header as a single row would attribute the
-    /// entire load to whichever producer was asked about, so the detail row is the unit of projection
-    /// and the header only contributes load-level context.</para>
+    /// <para>Scoped on the contract ALONE, with no customer-code condition. That is deliberate and it is
+    /// the rule the ODS ticket query uses: a row applied to this producer's contract is this producer's
+    /// ticket, whichever customer code the detail row happens to carry. Adding a customer-code condition
+    /// here would silently drop a split load - a ticket applied to the contract but booked under a second
+    /// producer - and the contract's applied bushels would then disagree with the ticket list above it.</para>
     ///
-    /// <para>Cancelled rows are dropped. The ODS view excludes them upstream; whether CTRM does is
-    /// still unconfirmed, so this filters defensively rather than assuming parity.</para>
+    /// <para>Pass only OPEN purchase contract ids. Scoping to open purchase contracts rather than to the
+    /// customer code is what keeps sale-side and closed-contract activity off the screen: measured on one
+    /// producer, customer-code alone gave 1,525 applied tickets where the contract scope gives 280.</para>
     /// </remarks>
+    public static List<Ticket> ToAppliedForContracts(CtrmTicketDto header, ISet<string> contractIds)
+        => ToTickets(header, d =>
+        {
+            var contractNumber = d.ContractNumber?.Trim();
+            return !string.IsNullOrEmpty(contractNumber) && contractIds.Contains(contractNumber);
+        });
+
     /// <summary>
-    /// Projects the detail rows this producer should see, applying the ODS scoping rule.
+    /// Projects this producer's rows that are not applied to any purchase contract.
     /// </summary>
     /// <remarks>
-    /// <para><b>The applied side is scoped to the producer's OPEN PURCHASE contracts</b>, not merely to
-    /// their customer code. This is the rule the ODS ticket query applies, and omitting it was a real
-    /// defect: filtering on customer code alone also returns sale-contract and closed-contract tickets,
-    /// which ODS never shows. Measured on one producer, that was 1,525 applied tickets instead of 280 —
-    /// mostly sale-side activity for a customer that both buys and sells.</para>
-    ///
-    /// <para>The unapplied side keeps the customer-code scoping instead, because a U/L/C ticket has no real
-    /// contract to match against — again mirroring ODS.</para>
-    ///
-    /// <para>One known narrowing versus ODS: ODS matches the applied side by contract number ALONE, so it
-    /// can surface a split-load ticket whose own customer code differs from the producer. Our rows arrive
-    /// pre-filtered by the server on <c>details.customerCode</c>, so such a ticket would not reach us. A
-    /// check across six dev producers found no instance of it (CAMPAS 8/0, LUSAME 87/0), but that is dev
-    /// data — worth re-checking against prod before relying on it.</para>
+    /// The counterpart to <see cref="ToAppliedForContracts"/>, and the two together reproduce the ODS
+    /// query's two branches. This side DOES scope on customer code, because a U/L/C row has no real
+    /// contract to match against - the customer code is the only thing tying it to a producer.
     /// </remarks>
-    public static List<Ticket> ToTicketsForProducer(
-        CtrmTicketDto header, string scoularId, ISet<string> openPurchaseContractIds)
+    public static List<Ticket> ToUnappliedForProducer(CtrmTicketDto header, string scoularId)
         => ToTickets(header, d =>
         {
             if (!Matches(d.CustomerCode, scoularId)) return false;
 
             var contractNumber = d.ContractNumber?.Trim();
-            if (string.IsNullOrEmpty(contractNumber)) return false;
 
-            // U (unload), L (loadout) and C (customer storage) mean no real purchase contract is assigned,
-            // so these are the unapplied set and are kept on customer code alone.
-            if (IsUnappliedPrefix(contractNumber[0])) return true;
-
-            return openPurchaseContractIds.Contains(contractNumber);
+            // U (unload), L (loadout) and C (customer storage) all mean no purchase contract is assigned.
+            return !string.IsNullOrEmpty(contractNumber) && IsUnappliedPrefix(contractNumber[0]);
         });
 
     /// <summary>U, L and C mark a ticket as not yet applied to a purchase contract.</summary>
@@ -230,6 +221,21 @@ public static class CtrmMappings
     public static List<Ticket> ToTicketsForContract(CtrmTicketDto header, string sourceContractId)
         => ToTickets(header, d => Matches(d.ContractNumber, sourceContractId));
 
+    /// <summary>
+    /// Projects a CTRM ticket header into one <see cref="Ticket"/> per detail row the caller keeps.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>One ticket in, potentially several out.</b> A physical ticket can be split across many
+    /// producers - one observed case had 15 detail rows - and the header quantities describe the whole
+    /// load, not any one producer's share. Emitting the header as a single row would attribute the
+    /// entire load to whichever producer was asked about, so the detail row is the unit of projection
+    /// and the header only contributes load-level context.</para>
+    ///
+    /// <para>Three filters apply for every caller, so no scope can accidentally widen the population:
+    /// cancelled rows, ticket types the app never shows, and consolidated rows whose bushels have already
+    /// been counted under the ticket that superseded them. The server is asked to exclude the first and
+    /// third where the query supports it; these stay because not every document can pass those arguments.</para>
+    /// </remarks>
     private static List<Ticket> ToTickets(CtrmTicketDto header, Func<CtrmTicketDetailDto, bool> keep)
     {
         var blDate = NullIfSentinel(header.TicketBLDate);

@@ -53,6 +53,22 @@ public sealed class CtrmTicketRepository : ITicketRepository
     // -------------------------------------------------------------------------
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para>Two independently scoped reads, mirroring the two branches of the ODS ticket query. The
+    /// APPLIED branch is scoped by contract number with no customer condition, so a split load - a ticket
+    /// applied to this producer's contract but booked under another customer code - is included. The
+    /// UNAPPLIED branch is scoped by customer code, because a U/L/C row has no contract to match on.</para>
+    ///
+    /// <para>This replaced a single customer-scoped read that required BOTH conditions on both branches.
+    /// That version could not see a split load, which made the producer's ticket list disagree with the
+    /// applied bushels shown against the contract above it - two answers to one question from the same
+    /// screen. Measured on QA no producer actually had a split load, so this changes no visible number
+    /// today; it removes the way they could diverge unnoticed.</para>
+    ///
+    /// <para>The two reads run concurrently and are separately cached, so the extra request costs little
+    /// wall-clock. Either failing fails the whole answer: a partial list renders as a shorter ticket
+    /// history with nothing on screen to say half of it is missing.</para>
+    /// </remarks>
     public async Task<List<Ticket>> GetByCustomerAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
     {
         var code = await ResolveScoularIdAsync(customerId, scoularId, cancellationToken);
@@ -62,29 +78,46 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
-        var read = await _reader.GetForProducerAsync(code, cancellationToken);
-        if (!read.Ok)
+        // Costs no extra round trip in practice: the contract reader has almost certainly already served
+        // this producer's contract list for the screen, so this hits its cache.
+        var openPurchaseContractIds = await GetOpenPurchaseContractIdsAsync(code, cancellationToken);
+
+        var appliedRead = _reader.GetForContractsAsync([.. openPurchaseContractIds], cancellationToken);
+        var unappliedRead = _reader.GetForProducerAsync(code, cancellationToken);
+        await Task.WhenAll(appliedRead, unappliedRead);
+
+        var applied = await appliedRead;
+        var unapplied = await unappliedRead;
+
+        if (!applied.Ok || !unapplied.Ok)
         {
             // No ODS fallback: serving ODS tickets while the screen is meant to show CTRM would hide the
             // failure and invalidate any conclusion drawn about CTRM's coverage.
-            _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
-                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
-            _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
+            var failure = !applied.Ok ? applied : unapplied;
+            _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", failure.Status, failure.Detail);
+            _provenance.RecordTickets("ctrm", failure.Status.ToString(), 0);
             return [];
         }
 
-        // The applied side must be scoped to this producer's OPEN PURCHASE contracts, exactly as the ODS
-        // query does. Costs no extra round trip: the contract reader has almost certainly already served
-        // the contract list for this same producer, so this hits its cache.
-        var openPurchaseContractIds = await GetOpenPurchaseContractIdsAsync(code, cancellationToken);
+        // Keyed by id rather than concatenated. The two branches are mutually exclusive by contract-number
+        // prefix (a purchase contract id cannot start with U, L or C), so this should never collapse a row
+        // - but if that assumption ever broke, a duplicate would double-count the ticket's bushels.
+        var byId = new Dictionary<long, Ticket>();
 
-        var tickets = (read.Value ?? [])
-            .SelectMany(header => CtrmMappings.ToTicketsForProducer(header, code, openPurchaseContractIds))
-            .ToList();
+        foreach (var ticket in (applied.Value ?? [])
+                 .SelectMany(header => CtrmMappings.ToAppliedForContracts(header, openPurchaseContractIds)))
+            byId[ticket.Id] = ticket;
+
+        foreach (var ticket in (unapplied.Value ?? [])
+                 .SelectMany(header => CtrmMappings.ToUnappliedForProducer(header, code)))
+            byId[ticket.Id] = ticket;
+
+        var tickets = byId.Values.ToList();
 
         // ODS parity, both steps. The storage gate drops C-prefix tickets whose grain is no longer in
         // active storage, and the location lookup fills the elevator city the ticket views render. Both
-        // read ODS because CTRM has neither a storage entity nor place names — so matching ODS behaviour
+        // read ODS because CTRM has neither a storage entity nor place names - so matching ODS behaviour
         // REQUIRES them. They enrich and subtract from a CTRM-derived set; they never add tickets.
         var beforeGate = tickets.Count;
         tickets = await ApplyStorageGateAsync(tickets, code, cancellationToken);
@@ -95,7 +128,9 @@ public sealed class CtrmTicketRepository : ITicketRepository
         var gated = beforeGate != tickets.Count;
         _provenance.RecordTickets("ctrm", gated ? "OkStorageGated" : "Ok", tickets.Count);
 
-        _logger.LogInformation("CTRM tickets: {Count} rows for producer {ScoularId} (live).", tickets.Count, code);
+        _logger.LogInformation(
+            "CTRM tickets: {Count} rows for producer {ScoularId} (live; {Open} open contract(s)).",
+            tickets.Count, code, openPurchaseContractIds.Count);
 
         return tickets;
     }

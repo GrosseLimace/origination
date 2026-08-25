@@ -175,10 +175,10 @@ public class CtrmTicketMappingTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void ForProducer_KeepsAppliedTicketsOnlyOnOpenPurchaseContracts()
+    public void Applied_KeepsOnlyRowsOnOpenPurchaseContracts()
     {
-        // The rule the ODS query applies. Filtering on customer code alone also returns sale-contract and
-        // closed-contract tickets, which ODS never shows — measured at 1,525 applied instead of 280 on one
+        // The rule the ODS query applies. Scoping by customer code instead also returns sale-contract and
+        // closed-contract tickets, which ODS never shows - measured at 1,525 applied instead of 280 on one
         // producer that both buys and sells.
         var header = Header(
             Detail(contractNumber: "PWW227420", sequence: 1, appliedNet: 10_000m),   // open purchase -> keep
@@ -187,59 +187,50 @@ public class CtrmTicketMappingTests
 
         var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PWW227420" };
 
-        var ticket = Assert.Single(CtrmMappings.ToTicketsForProducer(header, "TATOBIN", open));
+        var ticket = Assert.Single(CtrmMappings.ToAppliedForContracts(header, open));
         Assert.Equal("PWW227420", ticket.CtrmContractNumber);
     }
 
     // -------------------------------------------------------------------------
-    [Theory]
-    [InlineData("UWW227420")]
-    [InlineData("LWW227420")]
-    [InlineData("CWW227420")]
-    public void ForProducer_KeepsUnappliedRegardlessOfTheContractSet(string contractNumber)
+    [Fact]
+    public void Applied_KeepsASplitLoadBookedUnderAnotherProducer()
     {
-        // A U/L/C ticket has no real purchase contract to match against, so it is scoped by customer code
-        // alone — again mirroring ODS. An empty contract set must not suppress these.
-        var header = Header(Detail(contractNumber: contractNumber));
+        // The reason this branch is scoped by contract and not by customer code. Both rows are applied to
+        // the same contract, so both belong to it - and the contract's applied bushels are their sum.
+        // Requiring the producer's own code here would show 30,000 in the ticket list while the contract
+        // above it reported 50,000: two answers to one question, from one screen.
+        var header = Header(
+            Detail(customerCode: "TATOBIN", contractNumber: "PWW227420", sequence: 1, appliedNet: 30_000m),
+            Detail(customerCode: "OTHERCO", contractNumber: "PWW227420", sequence: 2, appliedNet: 20_000m));
 
-        var ticket = Assert.Single(CtrmMappings.ToTicketsForProducer(
-            header, "TATOBIN", new HashSet<string>(StringComparer.OrdinalIgnoreCase)));
+        var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PWW227420" };
 
-        Assert.False(ticket.IsApplied);
+        var tickets = CtrmMappings.ToAppliedForContracts(header, open);
+
+        Assert.Equal(2, tickets.Count);
+        Assert.Equal(50_000L, tickets.Sum(t => t.AppliedDockQuantity ?? 0));
     }
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void ForProducer_WithNoOpenContracts_ShowsUnappliedOnly()
+    public void Applied_WithNoOpenContracts_KeepsNothing()
     {
-        // A producer whose contracts have all closed should still see their unapplied tickets, and none of
-        // the applied ones — not an empty list, and not everything.
+        // A producer whose contracts have all closed has no applied tickets. Verified against live data:
+        // 8 of 11 QA producers sampled were in exactly this state.
         var header = Header(
             Detail(contractNumber: "PWW227420", sequence: 1),
             Detail(contractNumber: "UWW227420", sequence: 2));
 
-        var ticket = Assert.Single(CtrmMappings.ToTicketsForProducer(
-            header, "TATOBIN", new HashSet<string>(StringComparer.OrdinalIgnoreCase)));
-
-        Assert.Equal("UWW227420", ticket.CtrmContractNumber);
+        Assert.Empty(CtrmMappings.ToAppliedForContracts(
+            header, new HashSet<string>(StringComparer.OrdinalIgnoreCase)));
     }
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void ForProducer_IgnoresAnotherProducersRows()
+    public void Applied_DropsWrongTicketTypesAndConsolidated()
     {
-        var header = Header(Detail(customerCode: "OTHERCO", contractNumber: "PWW227420"));
-        var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PWW227420" };
-
-        Assert.Empty(CtrmMappings.ToTicketsForProducer(header, "TATOBIN", open));
-    }
-
-    // -------------------------------------------------------------------------
-    [Fact]
-    public void ForProducer_DropsWrongTicketTypesAndConsolidated()
-    {
-        // ODS filters both at the ticket level; in CTRM they sit on the detail row and have no server-side
-        // argument. Without them we returned types the app never shows and double-counted consolidated bushels.
+        // ODS filters both at the ticket level; in CTRM they sit on the detail row. The server is asked to
+        // exclude consolidated rows too, but not every document can pass that argument.
         var wrongType = Detail(contractNumber: "PWW227420", sequence: 1);
         wrongType.TicketType = "S";
         var consolidated = Detail(contractNumber: "PWW227420", sequence: 2);
@@ -248,10 +239,74 @@ public class CtrmTicketMappingTests
 
         var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PWW227420" };
 
-        var ticket = Assert.Single(CtrmMappings.ToTicketsForProducer(
-            Header(wrongType, consolidated, good), "TATOBIN", open));
+        var ticket = Assert.Single(CtrmMappings.ToAppliedForContracts(
+            Header(wrongType, consolidated, good), open));
 
         Assert.Equal(42_000L, ticket.AppliedDockQuantity);
+    }
+
+    // -------------------------------------------------------------------------
+    [Theory]
+    [InlineData("UWW227420")]
+    [InlineData("LWW227420")]
+    [InlineData("CWW227420")]
+    public void Unapplied_KeepsUnloadLoadoutAndStorageRows(string contractNumber)
+    {
+        // A U/L/C row has no purchase contract to match against, so the customer code is the only thing
+        // tying it to a producer. Nothing about the contract set may suppress these.
+        var header = Header(Detail(contractNumber: contractNumber));
+
+        var ticket = Assert.Single(CtrmMappings.ToUnappliedForProducer(header, "TATOBIN"));
+
+        Assert.False(ticket.IsApplied);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void Unapplied_DropsRowsThatAreAppliedToAContract()
+    {
+        // Keeps the two branches disjoint. Overlap would double-count the ticket's bushels.
+        var header = Header(
+            Detail(contractNumber: "PWW227420", sequence: 1),
+            Detail(contractNumber: "SWW999999", sequence: 2),
+            Detail(contractNumber: "UWW227420", sequence: 3));
+
+        var ticket = Assert.Single(CtrmMappings.ToUnappliedForProducer(header, "TATOBIN"));
+        Assert.Equal("UWW227420", ticket.CtrmContractNumber);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void Unapplied_IgnoresAnotherProducersRows()
+    {
+        // The split-load allowance belongs to the applied branch only. An unapplied row has no contract
+        // linking it here, so another producer's storage must not leak onto this screen.
+        var header = Header(Detail(customerCode: "OTHERCO", contractNumber: "CWW227420"));
+
+        Assert.Empty(CtrmMappings.ToUnappliedForProducer(header, "TATOBIN"));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void TheTwoBranchesTogetherCoverEveryRowExactlyOnce()
+    {
+        // What the repository actually composes. The prefix rule makes the branches mutually exclusive, so
+        // the union must equal the sum with no row appearing twice.
+        var header = Header(
+            Detail(customerCode: "TATOBIN", contractNumber: "PWW227420", sequence: 1),   // applied
+            Detail(customerCode: "OTHERCO", contractNumber: "PWW227420", sequence: 2),   // applied, split load
+            Detail(customerCode: "TATOBIN", contractNumber: "UWW227420", sequence: 3),   // unapplied
+            Detail(customerCode: "TATOBIN", contractNumber: "CWW227420", sequence: 4),   // storage
+            Detail(customerCode: "OTHERCO", contractNumber: "CWW999999", sequence: 5));  // someone else's
+
+        var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PWW227420" };
+
+        var applied = CtrmMappings.ToAppliedForContracts(header, open);
+        var unapplied = CtrmMappings.ToUnappliedForProducer(header, "TATOBIN");
+
+        Assert.Equal(2, applied.Count);
+        Assert.Equal(2, unapplied.Count);
+        Assert.Empty(applied.Select(t => t.Id).Intersect(unapplied.Select(t => t.Id)));
     }
     // -------------------------------------------------------------------------
     [Fact]
