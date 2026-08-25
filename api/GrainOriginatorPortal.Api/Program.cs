@@ -467,7 +467,7 @@ if (app.Environment.IsDevelopment())
             using var scope = app.Services.CreateScope();
             var odsDb = scope.ServiceProvider.GetRequiredService<OriginationDbContext>();
             var appDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var entDb = scope.ServiceProvider.GetRequiredService<EntitlementsDbContext>();
+            var entDb = scope.ServiceProvider.GetRequiredService<TradeUnitPreferencesDbContext>();
             await Task.WhenAll(
                 odsDb.Database.OpenConnectionAsync(),
                 appDb.Database.OpenConnectionAsync(),

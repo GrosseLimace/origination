@@ -191,15 +191,19 @@
                   No planting data for {{ selectedPlantingYear() }}
                 </div>
               } @else {
-                <div class="flex items-end gap-2 h-[160px] lg:h-[200px]" style="padding-bottom: 4px;">
+                <div class="flex items-end gap-2 h-[var(--size-fluid-chart)]" style="padding-bottom: 4px;">
                   @for (crop of breakdown; track $index) {
                     <div class="flex flex-col items-center gap-1 flex-1 min-w-0 h-full justify-end">
                       <span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums whitespace-nowrap">{{ formatAcres(crop.acres) }}</span>
-                      <div
-                        class="w-full rounded-t-sm transition-all duration-300"
-                        [ngClass]="crop.barColor"
-                        [style.height.px]="maxAcres > 0 ? (crop.acres / maxAcres) * 155 : 0"
-                      ></div>
+                      <!-- Plot area absorbs whatever height is left after the two labels, so the
+                           bar is a share of it rather than a pixel count tuned to one size. -->
+                      <div class="w-full flex-1 min-h-0 flex items-end">
+                        <div
+                          class="w-full rounded-t-sm transition-all duration-300"
+                          [ngClass]="crop.barColor"
+                          [style.height.%]="maxAcres > 0 ? (crop.acres / maxAcres) * 100 : 0"
+                        ></div>
+                      </div>
                       <span class="text-xs text-gray-600 dark:text-gray-400 truncate w-full text-center leading-tight mt-0.5">{{ crop.name }}</span>
                     </div>
                   }
@@ -219,13 +223,12 @@
                 <div class="flex flex-col sm:flex-row items-center gap-6">
                   <!-- Donut ring -->
                   <div
-                    class="relative flex-shrink-0 rounded-full w-[120px] h-[120px] lg:w-[148px] lg:h-[148px]"
+                    class="relative flex-shrink-0 rounded-full w-[var(--size-fluid-dial)] h-[var(--size-fluid-dial)]"
                     [style.background]="cropDistributionGradient()"
                   >
                     <!-- Inner circle (donut hole) -->
                     <div
-                      class="absolute rounded-full bg-white dark:bg-gray-800 flex items-center justify-center"
-                      style="top: 37px; left: 37px; right: 37px; bottom: 37px;"
+                      class="absolute inset-[25%] rounded-full bg-white dark:bg-gray-800 flex items-center justify-center"
                     >
                       <div class="text-center">
                         <div class="text-base font-bold text-gray-900 dark:text-white">{{ breakdown.length }}</div>
@@ -234,7 +237,7 @@
                     </div>
                   </div>
                   <!-- Legend -->
-                  <div class="flex-1 space-y-2.5 overflow-auto max-h-[120px] lg:max-h-[148px]">
+                  <div class="flex-1 space-y-2.5 overflow-auto max-h-[var(--size-fluid-dial)]">
                     @for (crop of breakdown; track $index) {
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2 min-w-0">
@@ -531,7 +534,7 @@
                         <div class="absolute inset-0 flex items-end gap-0.5">
                           @for (m of timeline; track m.monthIndex) {
                             <div class="flex-1 flex items-end h-full relative group">
-                              @if (m.barHeightPx > 0) {
+                              @if (m.barHeightPct > 0) {
                                 <!-- Tooltip -->
                                 <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 hidden group-hover:block pointer-events-none">
                                   <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-2.5 py-2 whitespace-nowrap shadow-xl border border-gray-700 dark:border-gray-600">
@@ -547,7 +550,7 @@
                                 </div>
                                 <!-- Stacked bar segments -->
                                 <div class="w-full flex flex-col overflow-hidden rounded-t-sm cursor-default"
-                                     [style.height.px]="m.barHeightPx">
+                                     [style.height.%]="m.barHeightPct">
                                   @for (seg of m.segments; track $index) {
                                     <div class="w-full basis-0 transition-opacity group-hover:opacity-80"
                                          [style.flex-grow]="seg.bushels"

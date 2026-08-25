@@ -7,36 +7,36 @@ namespace GrainOriginatorPortal.Infrastructure.Repositories;
 
 public class EntitlementsRepository : IEntitlementsRepository
 {
-    private readonly EntitlementsDbContext _entitlementsContext;
+    private readonly TradeUnitPreferencesDbContext _entitlementsContext;
     private readonly OriginationDbContext _odsContext;
 
-    public EntitlementsRepository(EntitlementsDbContext entitlementsContext, OriginationDbContext odsContext)
+    public EntitlementsRepository(TradeUnitPreferencesDbContext entitlementsContext, OriginationDbContext odsContext)
     {
         _entitlementsContext = entitlementsContext;
         _odsContext = odsContext;
     }
 
-    public async Task<List<UserTradeUnitAccess>> GetByUserAsync(string userId, CancellationToken cancellationToken)
+    public async Task<List<UserTradeUnitPreference>> GetByUserAsync(string userId, CancellationToken cancellationToken)
     {
-        return await _entitlementsContext.UserTradeUnitAccess
+        return await _entitlementsContext.UserTradeUnitPreferences
             .AsNoTracking()
             .Where(u => u.UserId == userId)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<UserTradeUnitAccess>> GetAllAsync(CancellationToken cancellationToken)
+    public async Task<List<UserTradeUnitPreference>> GetAllAsync(CancellationToken cancellationToken)
     {
-        return await _entitlementsContext.UserTradeUnitAccess
+        return await _entitlementsContext.UserTradeUnitPreferences
             .AsNoTracking()
             .Where(u => u.TradeUnitCode != null && u.TradeUnitCode != "")
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<UserTradeUnitAccess>> GetUsersByTradeUnitsAsync(IReadOnlyCollection<string> tradeUnitCodes, CancellationToken cancellationToken)
+    public async Task<List<UserTradeUnitPreference>> GetUsersByTradeUnitsAsync(IReadOnlyCollection<string> tradeUnitCodes, CancellationToken cancellationToken)
     {
-        if (tradeUnitCodes.Count == 0) return new List<UserTradeUnitAccess>();
+        if (tradeUnitCodes.Count == 0) return new List<UserTradeUnitPreference>();
 
-        return await _entitlementsContext.UserTradeUnitAccess
+        return await _entitlementsContext.UserTradeUnitPreferences
             .AsNoTracking()
             .Where(u => tradeUnitCodes.Contains(u.TradeUnitCode))
             .ToListAsync(cancellationToken);
@@ -44,7 +44,7 @@ public class EntitlementsRepository : IEntitlementsRepository
 
     public async Task<List<string>> GetTradeUnitCodesForUserAsync(string userId, CancellationToken cancellationToken)
     {
-        return await _entitlementsContext.UserTradeUnitAccess
+        return await _entitlementsContext.UserTradeUnitPreferences
             .Where(u => u.UserId == userId)
             .Select(u => u.TradeUnitCode)
             .Distinct()

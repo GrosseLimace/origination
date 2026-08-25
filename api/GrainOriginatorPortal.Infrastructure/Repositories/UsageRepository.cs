@@ -16,9 +16,9 @@ public class UsageRepository : IUsageRepository
 
     private readonly ApplicationDbContext _appDb;
     private readonly OriginationDbContext _odsDb;
-    private readonly EntitlementsDbContext _entDb;
+    private readonly TradeUnitPreferencesDbContext _entDb;
 
-    public UsageRepository(ApplicationDbContext appDb, OriginationDbContext odsDb, EntitlementsDbContext entDb)
+    public UsageRepository(ApplicationDbContext appDb, OriginationDbContext odsDb, TradeUnitPreferencesDbContext entDb)
     {
         _appDb = appDb;
         _odsDb = odsDb;
@@ -808,7 +808,7 @@ public class UsageRepository : IUsageRepository
     public async Task<(int Unique, int Raw)> RefreshTradeUnitSnapshotAsync(CancellationToken cancellationToken)
     {
         // Load current entitlements and deduplicate by (UserId, TradeUnitCode)
-        var entitlements = await _entDb.UserTradeUnitAccess.ToListAsync(cancellationToken);
+        var entitlements = await _entDb.UserTradeUnitPreferences.ToListAsync(cancellationToken);
         var deduped = entitlements
             .GroupBy(e => $"{e.UserId}|{e.TradeUnitCode}".ToUpperInvariant())
             .Select(g => g.First())

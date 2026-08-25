@@ -88,10 +88,11 @@ public static class DependencyInjection
 #endif
         });
 
-        // Entitlements — read-only access for user trade-unit assignments.
-        services.AddDbContext<EntitlementsDbContext>(options =>
+        // TradeUnitPreferences — read-only access for user trade-unit assignments. Managers assign
+        // these in the separate trade-unit preferences app; this app never writes here.
+        services.AddDbContext<TradeUnitPreferencesDbContext>(options =>
         {
-            var connectionString = configuration.GetConnectionString("EntitlementsConnection");
+            var connectionString = configuration.GetConnectionString("TradeUnitPreferencesConnection");
             options.UseSqlServer(connectionString, sqlOptions =>
             {
                 sqlOptions.EnableRetryOnFailure(

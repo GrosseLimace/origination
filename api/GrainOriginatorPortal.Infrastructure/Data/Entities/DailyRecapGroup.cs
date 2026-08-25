@@ -4,7 +4,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 /// A user-configured Daily Recap group: a named set of recipients (people / trade units /
 /// trade-unit groups) plus optional CC addresses, delivered by Email or posted to a Microsoft
 /// Teams channel. The external Logic App reads these groups and re-resolves trade-unit / group
-/// members against entitlements (vw_UserTradeUnitAccess) at send time, so membership changes and
+/// members against entitlements (vw_UserTradeUnitPreferences) at send time, so membership changes and
 /// departures are reflected without the group being re-saved.
 /// </summary>
 public class DailyRecapGroup

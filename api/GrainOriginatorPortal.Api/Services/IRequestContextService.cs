@@ -18,7 +18,7 @@ public interface IRequestContextService
 
     /// <summary>
     /// The current user's short identifier — the UPN with any "@domain" stripped (e.g.
-    /// "CEgr@scoular.com" → "CEgr"). This is the key used by the Entitlements DB and per-user
+    /// "CEgr@scoular.com" → "CEgr"). This is the key used by the TradeUnitPreferences DB and per-user
     /// preference tables, which store the short form rather than the full UPN.
     /// </summary>
     string GetCurrentUserShortName();

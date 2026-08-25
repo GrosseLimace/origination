@@ -104,7 +104,7 @@ public interface IUsageRepository
     /// <summary>Upserts the per-user weekly login rollup (WeeklyLoginAggregate) for the given week.</summary>
     Task AggregateWeeklyLoginsAsync(DateOnly weekStart, CancellationToken cancellationToken);
 
-    /// <summary>Rebuilds dbo.UserTradeUnitSnapshot from the Entitlements DB. Returns (unique entries written, raw rows read).</summary>
+    /// <summary>Rebuilds dbo.UserTradeUnitSnapshot from the TradeUnitPreferences DB. Returns (unique entries written, raw rows read).</summary>
     Task<(int Unique, int Raw)> RefreshTradeUnitSnapshotAsync(CancellationToken cancellationToken);
 
     /// <summary>Deletes raw UserActivity/UserClickEvent rows older than the retention window, in

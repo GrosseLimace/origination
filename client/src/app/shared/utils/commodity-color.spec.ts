@@ -22,6 +22,25 @@ describe('commodity-color', () => {
     expect(a).toMatch(/^bg-/);
   });
 
+  // The bid sheet groups by commodity CODE and resolves each one to its Commodities.category
+  // before asking for a colour. These are the category spellings it relies on — if a key here is
+  // renamed, every bid-sheet crop silently falls back to a hashed colour instead of its own.
+  it('resolves the Commodities.category spellings the bid sheet passes in', () => {
+    expect(commodityHex('CORN')).toBe('#f59e0b');
+    expect(commodityHex('SOYBEANS')).toBe('#3b82f6');
+    expect(commodityHex('SORGHUM')).toBe('#ef4444');
+    expect(commodityHex('WHEAT')).toBe('#22c55e');
+  });
+
+  // Why that resolution matters: raw codes miss the palette entirely, and these three happen to
+  // hash to the SAME fallback colour, which printed a whole bid sheet in one shade of blue.
+  it('collides raw commodity codes onto one fallback colour', () => {
+    expect(commodityHex('YC')).toBe(commodityHex('SOR'));
+    expect(commodityHex('SOR')).toBe(commodityHex('YSB'));
+    // ...whereas their categories are three distinct colours.
+    expect(new Set([commodityHex('CORN'), commodityHex('SORGHUM'), commodityHex('SOYBEANS')]).size).toBe(3);
+  });
+
   it('does not throw on empty / null / undefined', () => {
     expect(() => commodityChipClass('')).not.toThrow();
     expect(() => commodityChipClass(null)).not.toThrow();

@@ -49,8 +49,11 @@
           </div>
         </div>
 
-        <div class="overflow-auto relative max-h-[400px] 2xl:max-h-[calc(100vh-14rem)] [&_thead_th]:!px-2 [&_tbody_td]:!px-2">
-        <app-table [stickyHeader]="true">
+        <!-- One height for every screen: the 400px floor keeps short viewports usable,
+             and taller ones get the room they actually have (was capped at 400px
+             below 1536px, which is every laptop). -->
+        <div class="relative [&_thead_th]:!px-2 [&_tbody_td]:!px-2">
+        <app-table [stickyHeader]="true" [maxHeight]="'max(400px, calc(100dvh - var(--app-chrome) - 3rem))'">
           <app-table-header>
             <app-table-row>
               <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('contractNumber')">
@@ -335,7 +338,9 @@
               @if (expandedRows.has(contract.id)) {
                 <app-table-row [class]="'bg-gray-50 dark:bg-gray-800/50 hover:!bg-gray-50 dark:hover:!bg-gray-800/50'">
                   <app-table-cell [colspan]="detailColspan()">
-                    <div class="block py-6 px-4 lg:px-6 max-w-[calc(100vw-28rem)] 2xl:max-w-none">
+                    <!-- Bounded by the profile column, not the viewport: this cell sits in a
+                         min-w-max table that can be far wider than the column it renders in. -->
+                    <div class="block py-6 px-4 lg:px-6 max-w-[100cqw]">
                       @if ((contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') || getCalculatedStatus(contract) === 'Past Due') {
                         <div class="mb-4 flex items-center gap-2 flex-wrap">
                           @if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') {
@@ -373,7 +378,7 @@
                       </div>
 
                       <!-- Three column layout: Contract identity → Pricing → Fulfillment -->
-                      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 w-full">
+                      <div class="grid grid-cols-1 @md/profile:grid-cols-2 @4xl/profile:grid-cols-3 gap-6 lg:gap-8 w-full">
                         <!-- Column 1: Contract identity -->
                         <div class="space-y-5">
                           <div class="flex flex-col">
@@ -590,7 +595,7 @@
                           } @else if (getAppliedTickets(contract).length > 0) {
                             @for (ticket of getAppliedTickets(contract); track ticket.id) {
                               <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
-                                <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-1 sm:grid-cols-8 gap-4' : 'grid grid-cols-1 sm:grid-cols-7 gap-4'">
+                                <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-2 @md/profile:grid-cols-4 @4xl/profile:grid-cols-8 gap-4' : 'grid grid-cols-2 @md/profile:grid-cols-4 @4xl/profile:grid-cols-7 gap-4'">
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Ticket Number</p>
                                     <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ticketNumber }}</p>

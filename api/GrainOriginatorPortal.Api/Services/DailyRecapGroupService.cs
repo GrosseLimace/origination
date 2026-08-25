@@ -116,7 +116,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
         if (req.Members.Count == 0) return new List<DailyRecapGroupMember>();
 
         var caller = _requestContext.GetCurrentUserShortName();
-        List<UserTradeUnitAccess> callerRows;
+        List<UserTradeUnitPreference> callerRows;
         try
         {
             callerRows = await _entitlements.GetByUserAsync(caller, cancellationToken);

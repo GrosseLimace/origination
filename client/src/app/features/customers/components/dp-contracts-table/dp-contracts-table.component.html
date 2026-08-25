@@ -39,7 +39,7 @@
 
 
     <!-- DP Groups -->
-    <div class="max-h-[calc(100vh-14rem)] overflow-y-auto space-y-2 pt-2 px-1">
+    <div class="max-h-[calc(100dvh-var(--app-chrome)-3rem)] overflow-y-auto space-y-2 pt-2 px-1">
 
       @if (groups().length === 0) {
         <p class="text-center py-6 text-sm text-gray-500 dark:text-gray-400">
@@ -155,8 +155,7 @@
 
                   <!-- Expanded: the tickets applied to this contract -->
                   @if (isContractExpanded(contract.key)) {
-                    <div class="overflow-auto" style="max-height: min(50vh, 400px);">
-                      <app-table [stickyHeader]="true">
+                      <app-table [stickyHeader]="true" [maxHeight]="'min(50vh, 400px)'">
                         <app-table-header>
                   <app-table-row>
                     <app-table-head [sortable]="true" (click)="handleSort('ticket')">
@@ -247,7 +246,6 @@
                   }
                         </app-table-body>
                       </app-table>
-                    </div>
                   }
 
                 </div>

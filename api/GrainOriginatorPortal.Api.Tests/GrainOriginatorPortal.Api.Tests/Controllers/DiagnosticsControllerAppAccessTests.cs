@@ -45,7 +45,7 @@ public class DiagnosticsControllerAppAccessTests
                 .UseInMemoryDatabase("diag-app-access-ods").Options),
             new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase("diag-app-access-app").Options),
-            new EntitlementsDbContext(new DbContextOptionsBuilder<EntitlementsDbContext>()
+            new TradeUnitPreferencesDbContext(new DbContextOptionsBuilder<TradeUnitPreferencesDbContext>()
                 .UseInMemoryDatabase("diag-app-access-ent").Options),
             new Mock<ILogger<DiagnosticsController>>().Object,
             env.Object,

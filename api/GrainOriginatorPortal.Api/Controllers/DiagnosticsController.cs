@@ -31,7 +31,7 @@ public class DiagnosticsController : ControllerBase
 {
     private readonly OriginationDbContext _context;
     private readonly ApplicationDbContext _appContext;
-    private readonly EntitlementsDbContext _entContext;
+    private readonly TradeUnitPreferencesDbContext _tuPrefContext;
     private readonly ILogger<DiagnosticsController> _logger;
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpFactory;
@@ -46,7 +46,7 @@ public class DiagnosticsController : ControllerBase
     public DiagnosticsController(
         OriginationDbContext context,
         ApplicationDbContext appContext,
-        EntitlementsDbContext entContext,
+        TradeUnitPreferencesDbContext tuPrefContext,
         ILogger<DiagnosticsController> logger,
         IWebHostEnvironment env,
         IHttpClientFactory httpFactory,
@@ -62,7 +62,7 @@ public class DiagnosticsController : ControllerBase
         _contracts = contracts;
         _context = context;
         _appContext = appContext;
-        _entContext = entContext;
+        _tuPrefContext = tuPrefContext;
         _logger = logger;
         _env = env;
         _httpFactory = httpFactory;
@@ -113,7 +113,7 @@ public class DiagnosticsController : ControllerBase
         var otherResults = await Task.WhenAll(
             TestDb(_appContext, "Origination (OriginationConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='ProducerDetails'"),
-            TestDb(_entContext, "Entitlements (EntitlementsConnection)",
+            TestDb(_tuPrefContext, "TradeUnitPreferences (TradeUnitPreferencesConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE'")
         );
 
