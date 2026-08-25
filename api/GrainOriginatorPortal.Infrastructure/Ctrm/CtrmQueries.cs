@@ -161,9 +161,18 @@ public static class CtrmQueries
     // Per-producer live reads (AB#33538 / AB#33814 / AB#33816)
     // -------------------------------------------------------------------------
 
-    /// <summary>Field list shared by every contract read, so a live per-producer query and the
-    /// window walk can never drift into projecting different columns.</summary>
-    private const string ContractProjection = """
+    /// <summary>
+    /// Every scalar field a <see cref="Data.Entities.Contract"/> reads, with no child collections.
+    /// </summary>
+    /// <remarks>
+    /// Split out from <see cref="ContractProjection"/> because the pricing lines are the expensive half.
+    /// This API resolves child collections per-field via DataLoader, so asking for <c>prices</c> costs real
+    /// time: measured on a 500-row page, 4.0s without it against 8.1s with it. Contract-list reads do not
+    /// need it - <c>CtrmMappings.ToContract</c> maps only the scalar price fields (<c>pricedQuantity</c>,
+    /// <c>priceTypeCode</c>, <c>priceMarketMonthDescription</c>) and never touches the collection - so a
+    /// list query that projected it would pay double for rows it discards.
+    /// </remarks>
+    private const string ContractCoreProjection = """
         contractId contractPrefixType contractNumber
         customerId customerName tradeUnit
         commodityCode commodityDescription commodityGroup
@@ -173,6 +182,11 @@ public static class CtrmQueries
         priceTypeCode specialType customerConfirmStatus
         marketZone basisLocation
         hedgeMarketMonthDescription priceMarketMonthDescription
+        """;
+
+    /// <summary>Field list shared by every contract read that needs pricing lines, so those reads cannot
+    /// drift into projecting different columns.</summary>
+    private const string ContractProjection = ContractCoreProjection + """
         prices {
           priceSequence priceQuantity priceUom
           flatPrice basisPrice hedgePrice freightAdjustment
@@ -184,7 +198,6 @@ public static class CtrmQueries
           lastActivityTimestamp
         }
         """;
-
     /// <summary>
     /// One producer's purchase contracts, filtered server-side, with NO date range at all.
     /// Variables: <c>$customerId</c> (String), <c>$prefix</c> (String), <c>$skip</c>, <c>$take</c> (Int).
@@ -277,4 +290,35 @@ public static class CtrmQueries
         }
         """;
 
+
+    /// <summary>
+    /// Purchase contracts for a batch of producers in one crop year, with NO date range.
+    /// Variables: <c>$customerIds</c> ([String!]), <c>$prefix</c> (String), <c>$cropYear</c> (Int),
+    /// <c>$skip</c>, <c>$take</c> (Int).
+    /// </summary>
+    /// <remarks>
+    /// <para>Backs the crop-year contract list the Build-a-List screen queries, which had to be delegated
+    /// to ODS while <c>cropYear</c> was readable but not filterable. Every predicate the ODS query applies
+    /// is now expressible server-side: producer codes, purchase-only, and the crop year.</para>
+    ///
+    /// <para><c>customerIds</c> is what makes the date range optional - the plural form waives it exactly
+    /// as the singular does, so this returns a producer's whole crop year rather than a window. It is
+    /// capped at 500 entries, so callers chunk. Note the pairing matters: <c>cropYear</c> on its own does
+    /// NOT waive the range, and narrowing a date scan by crop year costs ~20s for 27 rows.</para>
+    ///
+    /// <para>Deliberately <see cref="ContractCoreProjection"/> and not the full one. Nothing in a contract
+    /// list reads the pricing lines, and projecting them doubles the per-page cost.</para>
+    /// </remarks>
+    public const string ContractsByCustomersAndCropYear = """
+        query ($customerIds: [String!], $prefix: String, $cropYear: Int, $skip: Int, $take: Int) {
+          contracts(skip: $skip, take: $take, customerIds: $customerIds,
+                    contractPrefixType: $prefix, cropYear: $cropYear) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+        """ + ContractCoreProjection + """
+            }
+          }
+        }
+        """;
 }

@@ -215,9 +215,49 @@ public sealed class CtrmContractRepository : IContractRepository
     // Other screens — ODS, because emptying them tests nothing
     // -------------------------------------------------------------------------
 
-    /// <summary>Delegated. Crop year is a different axis from contract date, and there is no crop-year filter.</summary>
-    public Task<List<Contract>> GetByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
-        => DelegateAsync("ByCropYear", _ods.GetByCropYearAsync(cropYear, tradeUnits, cancellationToken));
+    /// <summary>
+    /// Purchase contracts for one crop year across the in-scope producers.
+    /// </summary>
+    /// <remarks>
+    /// <para>Live, and no longer delegated. This was on ODS because <c>cropYear</c> was readable but not
+    /// filterable; it is now a server-side argument, and paired with <c>customerIds</c> - which waives the
+    /// date range - every predicate the ODS query applies is expressible: producer codes, purchase-only,
+    /// and the crop year itself.</para>
+    ///
+    /// <para>No <c>onlyOpenOrRecent</c> narrowing, matching the ODS query, which returns the whole crop
+    /// year rather than the open subset. Ordering differs by necessity: ODS sorts on its surrogate id and
+    /// CTRM has none, so this falls back to the same contract-date ordering every other CTRM contract read
+    /// uses. Deterministic, just not identical.</para>
+    /// </remarks>
+    public async Task<List<Contract>> GetByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
+    {
+        var scoped = await ResolveScopedProducerCodesAsync(tradeUnits, cancellationToken);
+        if (scoped.Count == 0)
+        {
+            _logger.LogInformation("CTRM contracts: no in-scope producers for crop year {CropYear}.", cropYear);
+            _provenance.RecordContracts("ctrm", "NoProducersInScope", 0);
+            return [];
+        }
+
+        var read = await _reader.GetForCropYearAsync([.. scoped], cropYear, cancellationToken);
+        if (!read.Ok)
+        {
+            _logger.LogError("CTRM crop-year contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
+            return [];
+        }
+
+        var contracts = Map(read.Value ?? [], onlyOpenOrRecent: false);
+
+        _provenance.RecordContracts("ctrm", read.Status == CtrmReadStatus.PartialSuccess ? "OkTruncated" : "Ok", contracts.Count);
+
+        _logger.LogInformation(
+            "CTRM contracts: {Count} for crop year {CropYear} across {Producers} in-scope producer(s).",
+            contracts.Count, cropYear, scoped.Count);
+
+        return contracts;
+    }
 
     /// <summary>Delegated. CTRM exposes no farm concept.</summary>
     public Task<List<Contract>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
