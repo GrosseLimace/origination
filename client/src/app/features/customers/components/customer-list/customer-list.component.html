@@ -128,6 +128,8 @@
               <div
                 [id]="'customer-item-' + customer.id"
                 (click)="selectCustomer.emit(customer)"
+                (mouseenter)="onRowEnter(customer)"
+                (mouseleave)="onRowLeave()"
                 [class]="getCustomerItemClass(customer)"
               >
                 <!-- Row 1: Name and Acres -->

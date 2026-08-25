@@ -46,6 +46,12 @@ export class CustomerListComponent {
   public linkedProducerCustomers = input<Customer[]>([]);
   public selectCustomer = output<Customer>();
   public clearSelection = output<void>();
+  /** Emitted once the pointer has rested on a row long enough to suggest a click is coming, so the
+   *  parent can warm that producer's contracts and tickets. Dwell-gated: a pointer sweeping down the
+   *  list emits nothing, so scrolling past fifty producers costs no requests. */
+  public prefetchCustomer = output<Customer>();
+  private _hoverTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly PREFETCH_DWELL_MS = 350;
 
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
@@ -268,6 +274,7 @@ export class CustomerListComponent {
     });
 
     this.destroyRef.onDestroy(() => {
+      this.onRowLeave();
       if (this._scrollTimeoutId !== null) clearTimeout(this._scrollTimeoutId);
     });
   }
@@ -718,5 +725,20 @@ export class CustomerListComponent {
     }
     // Return original if not 10 digits
     return phone;
+  }
+
+  onRowEnter(customer: Customer): void {
+    this.onRowLeave();
+    this._hoverTimer = setTimeout(() => {
+      this._hoverTimer = null;
+      this.prefetchCustomer.emit(customer);
+    }, CustomerListComponent.PREFETCH_DWELL_MS);
+  }
+
+  onRowLeave(): void {
+    if (this._hoverTimer !== null) {
+      clearTimeout(this._hoverTimer);
+      this._hoverTimer = null;
+    }
   }
 }

@@ -532,8 +532,9 @@ public class TicketRepository : ITicketRepository
             .OrderByDescending(t => t.Date)
             .ToListAsync(cancellationToken);
 
-        // Today's path passes includeStorageTickets: false, so it returns here and never touches
-        // the slow ctrm.vw_GNTA39D1 storage scan. Storage gating mirrors the shared method exactly.
+        // Spot Loads passes includeStorageTickets: TRUE (C-prefix loads are shown there, gated), so this
+        // storage lookup DOES run on that path. Only callers that pass false skip it and return here.
+        // Storage gating mirrors the shared method exactly.
         if (!includeStorageTickets) return tickets;
 
         var storageCustomerCodes = tickets

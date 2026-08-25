@@ -6,6 +6,7 @@ using Azure.Core;
 using Azure.Identity;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace GrainOriginatorPortal.Api.Services.Ctrm;
 
@@ -126,6 +127,14 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
                 $"Network failure reaching the CTRM gateway ({ex.HttpRequestError}). APIM traffic does not need a " +
                 "custom NSG outbound rule — check private DNS resolution (10.102.1.10) and that this " +
                 "environment's APIM private endpoint is among the allowed IPs.");
+        }
+        catch (TimeoutRejectedException)
+        {
+            // The resilience pipeline's per-attempt timeout, after every retry was also too slow. Distinct
+            // from the HttpClient budget below only in which clock fired; the remediation is the same.
+            return Fail<T>(CtrmReadStatus.EgressBlocked, null, null,
+                "Every attempt to reach the CTRM gateway exceeded the per-attempt timeout. If this persists "
+                + "under light load, check private DNS resolution (10.102.1.10) and the APIM private endpoint allow-list.");
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

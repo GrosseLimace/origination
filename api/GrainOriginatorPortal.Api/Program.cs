@@ -11,6 +11,7 @@ using Microsoft.Identity.Web;
 
 // Polly namespaces
 using Polly;
+using Polly.Timeout;
 
 // Rate limiting
 using System.Threading.RateLimiting;
@@ -331,7 +332,8 @@ builder.Services.AddHttpClient("nominatim", client =>
         // Only retry on transient network/timeout failures — not 4xx
         ShouldHandle = args => ValueTask.FromResult(
             args.Outcome.Exception is HttpRequestException ||
-            args.Outcome.Exception is TaskCanceledException)
+            args.Outcome.Exception is TaskCanceledException ||
+            args.Outcome.Exception is TimeoutRejectedException)
     });
 
     // Circuit breaker: opens after 50% failure rate over 5+ requests in 30s window (§6.3)
@@ -342,6 +344,12 @@ builder.Services.AddHttpClient("nominatim", client =>
         MinimumThroughput = 5,
         BreakDuration = TimeSpan.FromSeconds(30)
     });
+
+    // Per ATTEMPT. Innermost so each retry gets its own clock. Sized to the slowest legitimate request
+    // we have measured - a 500-row contract page with pricing lines at ~12s, or a customerIds crop-year
+    // page at ~8-20s - with headroom, and well under the server's own 30s HC0045 limit so we give up
+    // at the same point it does rather than after it.
+    pipeline.AddTimeout(TimeSpan.FromSeconds(30));
 });
 
 // Microsoft Graph (app-access spike): same resilience shape as nominatim, but only 2 retries —
@@ -388,7 +396,11 @@ builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraph
     var uri = builder.Configuration.GetValue<string>("Ctrm:GraphQlUri")?.Trim();
     if (!string.IsNullOrEmpty(uri))
         client.BaseAddress = new Uri(uri);
-    client.Timeout = TimeSpan.FromSeconds(30);
+    // The OVERALL budget for one logical call, retries included. The per-attempt limit lives in the
+    // resilience pipeline below. These used to be one 30-second number, which meant a slow-but-fine
+    // attempt was retried inside a budget it had already spent - the retries could not succeed, and the
+    // producer screen saw "Timed out reaching the CTRM gateway" under load. 3 attempts x 30s + backoff.
+    client.Timeout = TimeSpan.FromSeconds(110);
 })
 .AddHttpMessageHandler<CorrelationIdOutboundHandler>()
 .AddResilienceHandler("ctrm", pipeline =>

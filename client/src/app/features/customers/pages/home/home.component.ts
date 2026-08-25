@@ -1228,33 +1228,37 @@ export class HomeComponent {
       if (contractsDone && ticketsDone && grainDone && dpDone) this._customerLoadDone.add(customerId);
     };
 
-    this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (contracts) => {
-        // The per-customer response is a LIVE read with no date window; the pool it merges into is a
-        // cached window snapshot. So on an id collision the incoming row is the fresher of the two and
-        // must WIN. This previously skipped incoming rows already present, which kept the stale pool
-        // copy and made the live read look like it had changed nothing.
-        const byId = new Map(this.contracts().map(c => [c.id, c]));
-        contracts.forEach(c => byId.set(c.id, c));
-        const merged = [...byId.values()];
-        this.contracts.set(merged);
-        this.appState.setContracts(merged);
-        this.isLoadingContracts.set(false);
-        this._loadCustomerData(customerId);
-        // Re-run auto-save now that we have the complete contract list — tickets may have
-        // arrived first and run auto-save before allCustomerContracts was populated.
-        const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
-        if (customer) this._autoSaveCommodities(customer, this.allCustomerTickets());
-        contractsDone = true;
-        markIfAllDone();
-      },
-      error: () => { this.isLoadingContracts.set(false); }
-    });
+    // A hover prefetch may already hold this producer's contracts and tickets. They are applied through
+    // the SAME functions the network path uses, so the only difference is that the click pays no round
+    // trip. Bounded by age: anything older than the server's own live cache is discarded and refetched.
+    const prefetched = this._takePrefetched(customerId);
+
+    if (prefetched?.contracts) {
+      this._applyCustomerContracts(customerId, prefetched.contracts);
+      contractsDone = true;
+      markIfAllDone();
+    } else {
+      this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (contracts) => {
+          this._applyCustomerContracts(customerId, contracts);
+          contractsDone = true;
+          markIfAllDone();
+        },
+        error: () => { this.isLoadingContracts.set(false); }
+      });
+    }
+
 
     // Per-producer ticket fetch (applied + unapplied), scoped to this customer. Replaces the old
     // eager TU-wide bulk: applied tickets are matched server-side by the customer's open contract
     // numbers, so cross-customer / split-entity applied tickets still surface here.
-    this._loadCustomerTickets(customerId, scoularId, () => { ticketsDone = true; markIfAllDone(); });
+    if (prefetched?.tickets) {
+      this._applyCustomerTickets(customerId, prefetched.tickets);
+      ticketsDone = true;
+      markIfAllDone();
+    } else {
+      this._loadCustomerTickets(customerId, scoularId, () => { ticketsDone = true; markIfAllDone(); });
+    }
 
     this.apiService.getStoredGrainByCustomer(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (grain) => {
@@ -1285,6 +1289,79 @@ export class HomeComponent {
     });
   }
 
+  /** Producers the pointer rested on, with their contracts and tickets already fetched. Consumed by the
+   *  next click on that producer; anything older than the server's live cache is discarded unused. */
+  private readonly _prefetched = new Map<number, { at: number; contracts?: Contract[]; tickets?: Ticket[] }>();
+  private readonly _prefetchInFlight = new Set<number>();
+  private static readonly PREFETCH_MAX_AGE_MS = 60_000;
+  /** Two at once keeps ahead of a reader and stays small enough not to compete with the click. */
+  private static readonly PREFETCH_MAX_IN_FLIGHT = 2;
+
+  /** Warms one producer's data on hover so the click renders from memory. Deliberately touches no
+   *  signal and no loading flag: results sit in a side map until the producer is actually selected, so a
+   *  prefetch can never repaint the screen for a producer the user is not looking at. */
+  handlePrefetchCustomer(customer: Customer): void {
+    const id = customer.id;
+    if (this.selectedCustomer()?.id === id) return;
+    if (this._customerLoadDone.has(id) || this._prefetched.has(id) || this._prefetchInFlight.has(id)) return;
+    if (this._prefetchInFlight.size >= HomeComponent.PREFETCH_MAX_IN_FLIGHT) return;
+
+    this._prefetchInFlight.add(id);
+    const scoularId = customer.scoularId ?? undefined;
+    forkJoin({
+      contracts: this.apiService.getContractsByCustomer(id, scoularId).pipe(catchError(() => of(null))),
+      tickets: this.apiService.getTicketsByCustomer(id, scoularId).pipe(catchError(() => of(null))),
+      pricing: scoularId
+        ? this.apiService.getPricingLinesByCustomer(scoularId).pipe(catchError(() => of(null)))
+        : of(null),
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(r => {
+      this._prefetchInFlight.delete(id);
+      // The user clicked before we finished; the real load has already run and owns the state.
+      if (this._customerLoadDone.has(id)) return;
+      if (r.contracts || r.tickets) {
+        this._prefetched.set(id, { at: Date.now(), contracts: r.contracts ?? undefined, tickets: r.tickets ?? undefined });
+      }
+      // Pricing lines already have a per-producer cache that the click path consults first.
+      if (scoularId && r.pricing) this._customerPricingCache.set(scoularId, r.pricing);
+    });
+  }
+
+  private _takePrefetched(customerId: number): { contracts?: Contract[]; tickets?: Ticket[] } | undefined {
+    const entry = this._prefetched.get(customerId);
+    this._prefetched.delete(customerId);
+    if (!entry || Date.now() - entry.at > HomeComponent.PREFETCH_MAX_AGE_MS) return undefined;
+    return entry;
+  }
+
+  /** Merges one producer's live contract read into the pool and re-derives the per-customer views.
+   *  The per-customer response is a LIVE read with no date window; the pool it merges into is a cached
+   *  window snapshot. So on an id collision the incoming row is the fresher of the two and must WIN. */
+  private _applyCustomerContracts(customerId: number, contracts: Contract[]): void {
+    const byId = new Map(this.contracts().map(c => [c.id, c]));
+    contracts.forEach(c => byId.set(c.id, c));
+    const merged = [...byId.values()];
+    this.contracts.set(merged);
+    this.appState.setContracts(merged);
+    this.isLoadingContracts.set(false);
+    this._loadCustomerData(customerId);
+    // Re-run auto-save now that we have the complete contract list — tickets may have arrived first
+    // and run auto-save before allCustomerContracts was populated.
+    const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
+    if (customer) this._autoSaveCommodities(customer, this.allCustomerTickets());
+  }
+
+  /** Merges one producer's ticket read into the LOCAL ticket signal and re-derives the views. */
+  private _applyCustomerTickets(customerId: number, tickets: Ticket[]): void {
+    const merged = [...this.tickets()];
+    tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
+    this.tickets.set(merged);
+    this.isLoadingUnappliedTickets.set(false);
+    this._loadCustomerData(customerId);
+    // Auto-save derives commodities from ticket ProductCodes; the edit dialog also merges
+    // contracts' CommodityCode, so the commodity set stays complete.
+    const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
+    if (customer) this._autoSaveCommodities(customer, tickets);
+  }
   /** Loads one producer's tickets (applied + unapplied) into the LOCAL ticket signal and re-filters
    *  the per-customer views. Used on producer select and on navigation-restore. Deliberately does
    *  NOT write to appState.tickets — that signal is the TU-wide cache for list/NLQ queries only;
@@ -1296,15 +1373,7 @@ export class HomeComponent {
       .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (tickets) => {
-          const merged = [...this.tickets()];
-          tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
-          this.tickets.set(merged);
-          this.isLoadingUnappliedTickets.set(false);
-          this._loadCustomerData(customerId);
-          // Auto-save derives commodities from ticket ProductCodes; the edit dialog also merges
-          // contracts' CommodityCode, so the commodity set stays complete.
-          const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
-          if (customer) this._autoSaveCommodities(customer, tickets);
+          this._applyCustomerTickets(customerId, tickets);
           onDone?.();
         },
         error: () => {

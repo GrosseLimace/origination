@@ -80,15 +80,16 @@ public class CtrmTicketReaderTests
             ?? new Dictionary<string, object?>();
     }
 
-    private static IConfiguration Config(int lookbackDays = 365, int cacheSeconds = 60) =>
+    private static IConfiguration Config(int lookbackDays = 365, int cacheSeconds = 60, int historicalMinutes = 30) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Ctrm:TicketLookbackDays"] = lookbackDays.ToString(),
-            ["Ctrm:LiveCacheSeconds"] = cacheSeconds.ToString()
+            ["Ctrm:LiveCacheSeconds"] = cacheSeconds.ToString(),
+            ["Ctrm:HistoricalTicketCacheMinutes"] = historicalMinutes.ToString()
         }).Build();
 
-    private static CtrmTicketReader Sut(ICtrmGraphQlClient client, IConfiguration? config = null) =>
-        new(client, config ?? Config(), new Mock<ILogger<CtrmTicketReader>>().Object);
+    private static CtrmTicketReader Sut(ICtrmGraphQlClient client, IConfiguration? config = null, Func<DateTime>? clock = null) =>
+        new(client, config ?? Config(), new Mock<ILogger<CtrmTicketReader>>().Object, clock);
 
     // -------------------------------------------------------------------------
     [Fact]
@@ -395,5 +396,75 @@ public class CtrmTicketReaderTests
         await sut.GetForProducersAsync([Producer], new DateTime(2026, 8, 1), new DateTime(2026, 8, 26), CancellationToken.None);
 
         Assert.Equal(2, client.Calls);
+    }
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AfterTheLiveTtl_OnlyTheWindowContainingTodayIsRefetched()
+    {
+        // The point of the per-window cache. Older windows hold tickets that rarely change and cost the
+        // most to fetch, so a repeat visit after the short outer TTL should pay for the current window only.
+        var now = new DateTime(2026, 8, 25, 12, 0, 0, DateTimeKind.Utc);
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 1095, cacheSeconds: 60), () => now);
+
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+        Assert.Equal(3, client.Calls);
+
+        now = now.AddSeconds(61);
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+
+        Assert.Equal(4, client.Calls);
+        var refetched = client.Variables[3];
+        Assert.True(DateTime.Parse((string)refetched["to"]!) > DateTime.Today.AddDays(-1),
+            "the one refetched window must be the one that contains today");
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task HistoricalWindows_RefetchAfterTheirOwnLongerTtl()
+    {
+        // Older tickets can still change - a late settlement, a consolidation - so the historical TTL is a
+        // bound on staleness, not a promise of immutability. Past it, everything goes back to CTRM.
+        var now = new DateTime(2026, 8, 25, 12, 0, 0, DateTimeKind.Utc);
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 1095, cacheSeconds: 60, historicalMinutes: 30), () => now);
+
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+        now = now.AddMinutes(31);
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+
+        Assert.Equal(6, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task WithinTheLiveTtl_NothingIsRefetched()
+    {
+        // The outer entry still coalesces: the full list and the unapplied subset arrive together.
+        var now = new DateTime(2026, 8, 25, 12, 0, 0, DateTimeKind.Utc);
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 1095, cacheSeconds: 60), () => now);
+
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+        now = now.AddSeconds(30);
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+
+        Assert.Equal(3, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Invalidate_DropsTheWindowsBeneathTheProducerToo()
+    {
+        // Otherwise a forced refresh would rebuild the outer entry from three cached windows and change
+        // nothing - the opposite of what Invalidate promises.
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 1095));
+
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+        sut.Invalidate(Producer);
+        await sut.GetForProducerAsync(Producer, CancellationToken.None);
+
+        Assert.Equal(6, client.Calls);
     }
 }

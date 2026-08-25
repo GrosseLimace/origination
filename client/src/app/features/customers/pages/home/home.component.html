@@ -13,6 +13,7 @@
       [producerDetailsMap]="producerDetailsMap()"
       [linkedProducerCustomers]="crossTradeUnitCustomers()"
       (selectCustomer)="handleSelectCustomer($event)"
+      (prefetchCustomer)="handlePrefetchCustomer($event)"
       (clearSelection)="handleClearSelection()"
     />
   </div>

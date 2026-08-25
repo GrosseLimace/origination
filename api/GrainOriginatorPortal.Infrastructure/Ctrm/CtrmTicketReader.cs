@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 
 /// <summary>
-/// Reads tickets live from CTRM - by producer or by contract - with a short shared cache.
+/// Reads tickets live from CTRM - by producer or by contract - with a two-level shared cache.
 /// </summary>
 /// <remarks>
 /// <para><b>Why this still needs date windows when contracts do not.</b> <c>tickets</c> accepts
@@ -17,13 +17,16 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// live on the detail rows - so each filter is an EXISTS semi-join and the range is what keeps the header
 /// scan bounded. A longer lookback is therefore sliced into consecutive windows.</para>
 ///
-/// <para>Slices run concurrently, so a multi-window lookback costs about the slowest window rather than
-/// the sum. Measured against QA a single window is ~1.0-1.3s warm and up to ~5.5s cold, so the
-/// three-year default costs about one window rather than three.</para>
+/// <para><b>Two cache levels, with different jobs.</b> The OUTER entry is the whole read for one
+/// producer or contract set, kept for <c>Ctrm:LiveCacheSeconds</c> - a request-coalescing device, so the
+/// full-list and unapplied-subset calls that arrive together become one read. Beneath it, each WINDOW is
+/// cached on its own, and its lifetime depends on its age: the window containing today keeps the short
+/// TTL, while a window that ended in the past is kept for <c>Ctrm:HistoricalTicketCacheMinutes</c>.
+/// Measured against QA the current-year window is ~0.3-0.8s but each older year is ~0.8-2.6s, and older
+/// tickets change rarely, so this turns a repeat visit from three requests into the one cheap one.</para>
 ///
-/// <para>Cache semantics match <see cref="CtrmContractReader"/>: short TTL, shared in-flight task,
-/// failures never cached. The producer screen asks for the full ticket list and the unapplied subset,
-/// so coalescing turns two reads into one.</para>
+/// <para>Failures are never cached at either level, and the in-flight <see cref="Task{TResult}"/> is what
+/// is stored, so late arrivals await the call already in progress rather than starting their own.</para>
 /// </remarks>
 public sealed class CtrmTicketReader
 {
@@ -33,25 +36,35 @@ public sealed class CtrmTicketReader
     /// filter is not applying.</summary>
     private const int MaxPagesPerWindow = 10;
 
+    /// <summary>How many cache inserts between sweeps of expired entries. The dictionary otherwise only
+    /// ever grows: entries expire logically but nothing removed them.</summary>
+    private const int SweepEvery = 64;
+
     private readonly ICtrmGraphQlClient _client;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmTicketReader> _logger;
+    private readonly Func<DateTime> _utcNow;
 
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private int _inserts;
 
-    private sealed record CacheEntry(DateTime CreatedUtc, Task<CtrmReadResult<List<CtrmTicketDto>>> Read);
+    private sealed record CacheEntry(DateTime ExpiresUtc, Task<CtrmReadResult<List<CtrmTicketDto>>> Read);
 
     /// <summary>Which server-side filter a read is using, for cache keys, variables and log lines.</summary>
     private sealed record Scope(string CacheKey, string Description, string Document, object Filter);
 
+    /// <param name="utcNow">Clock, injectable so the cache's time behaviour can be tested. Defaults to
+    /// <see cref="DateTime.UtcNow"/>; DI supplies the default because the type is unregistered.</param>
     public CtrmTicketReader(
         ICtrmGraphQlClient client,
         IConfiguration configuration,
-        ILogger<CtrmTicketReader> logger)
+        ILogger<CtrmTicketReader> logger,
+        Func<DateTime>? utcNow = null)
     {
         _client = client;
         _configuration = configuration;
         _logger = logger;
+        _utcNow = utcNow ?? (() => DateTime.UtcNow);
     }
 
     /// <summary>
@@ -147,12 +160,18 @@ public sealed class CtrmTicketReader
                         + $"{CtrmQueries.MaxTicketRangeDays}-day cap; narrow the window or slice it.");
 
         var key = $"producers:{from:yyyy-MM-dd}:{to:yyyy-MM-dd}:{codes.Count}:{StableHash(codes)}";
-        return GetCachedAsync(key, () => FetchChunkedAsync(codes, from, to));
+        return GetCachedAsync(key, LiveTtl(), () => FetchChunkedAsync(codes, from, to));
     }
 
-    /// <summary>Drops a producer's cached read.</summary>
+    /// <summary>Drops a producer's cached read, including every window beneath it.</summary>
     public void Invalidate(string scoularId)
-        => _cache.TryRemove($"customer:{scoularId?.Trim() ?? string.Empty}", out _);
+    {
+        var prefix = $"customer:{scoularId?.Trim() ?? string.Empty}";
+        foreach (var key in _cache.Keys)
+            if (key.Equals(prefix, StringComparison.OrdinalIgnoreCase)
+                || key.StartsWith(prefix + "|", StringComparison.OrdinalIgnoreCase))
+                _cache.TryRemove(key, out _);
+    }
 
     /// <summary>
     /// Order-independent hash of a producer set, for use in a cache key.
@@ -187,16 +206,33 @@ public sealed class CtrmTicketReader
             Value = []
         });
 
+    private TimeSpan LiveTtl() => TimeSpan.FromSeconds(Math.Max(0, ReadInt("Ctrm:LiveCacheSeconds", 60)));
+
+    /// <summary>
+    /// How long one window's rows may be reused.
+    /// </summary>
+    /// <remarks>
+    /// A window that still contains today is where new tickets land, so it keeps the short coalescing TTL.
+    /// A window that ended in the past holds tickets that can still change - a settlement, a consolidation
+    /// - but rarely, so it is kept for <c>Ctrm:HistoricalTicketCacheMinutes</c>. That bounds how stale an
+    /// older ticket's status can be on screen, and 30 minutes is the default because it is short enough
+    /// that nobody will notice and long enough to absorb a whole session of clicking around.
+    /// </remarks>
+    private TimeSpan TtlForWindow(DateTime to, DateTime today)
+        => to.Date >= today
+            ? LiveTtl()
+            : TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:HistoricalTicketCacheMinutes", 30)));
+
     private Task<CtrmReadResult<List<CtrmTicketDto>>> GetCachedAsync(Scope scope)
-        => GetCachedAsync(scope.CacheKey, () => FetchAsync(scope));
+        => GetCachedAsync(scope.CacheKey, LiveTtl(), () => FetchAsync(scope));
 
     private Task<CtrmReadResult<List<CtrmTicketDto>>> GetCachedAsync(
-        string cacheKey, Func<Task<CtrmReadResult<List<CtrmTicketDto>>>> fetch)
+        string cacheKey, TimeSpan ttl, Func<Task<CtrmReadResult<List<CtrmTicketDto>>>> fetch)
     {
-        var ttl = TimeSpan.FromSeconds(Math.Max(0, ReadInt("Ctrm:LiveCacheSeconds", 60)));
-
         while (true)
         {
+            var now = _utcNow();
+
             if (_cache.TryGetValue(cacheKey, out var existing))
             {
                 // Reuse while fresh, and never keep a failed read: a transient error should not lock a
@@ -204,18 +240,30 @@ public sealed class CtrmTicketReader
                 var failed = existing.Read.IsCompleted
                              && (!existing.Read.IsCompletedSuccessfully || !existing.Read.Result.Ok);
 
-                if (!failed && DateTime.UtcNow - existing.CreatedUtc < ttl)
+                if (!failed && now < existing.ExpiresUtc)
                     return existing.Read;
 
                 _cache.TryRemove(cacheKey, out _);
             }
 
-            var entry = new CacheEntry(DateTime.UtcNow, fetch());
+            var entry = new CacheEntry(now + ttl, fetch());
             if (_cache.TryAdd(cacheKey, entry))
+            {
+                if (Interlocked.Increment(ref _inserts) % SweepEvery == 0) SweepExpired(now);
                 return entry.Read;
+            }
 
             // Another caller won the race; loop and take theirs.
         }
+    }
+
+    /// <summary>Removes entries past their expiry. Cheap, occasional, and the only thing keeping the
+    /// dictionary from growing for the life of the process.</summary>
+    private void SweepExpired(DateTime now)
+    {
+        foreach (var pair in _cache)
+            if (pair.Value.Read.IsCompleted && now >= pair.Value.ExpiresUtc)
+                _cache.TryRemove(pair.Key, out _);
     }
 
     /// <summary>
@@ -266,12 +314,21 @@ public sealed class CtrmTicketReader
         return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all };
     }
 
+    /// <summary>
+    /// The sliced lookback for one scope, each window served from its own age-scaled cache entry.
+    /// </summary>
     private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchAsync(Scope scope)
     {
         var lookbackDays = Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 1095));
-        var windows = BuildWindows(DateTime.Today, lookbackDays);
+        var today = DateTime.Today;
+        var windows = BuildWindows(today, lookbackDays);
 
-        var results = await Task.WhenAll(windows.Select(w => FetchWindowAsync(scope, w.From, w.To)));
+        // Each window is its own cache entry beneath the scope-level one. A repeat visit after the short
+        // outer TTL therefore refetches only the window that can have changed - the one containing today.
+        var results = await Task.WhenAll(windows.Select(w => GetCachedAsync(
+            $"{scope.CacheKey}|window:{w.From:yyyy-MM-dd}:{w.To:yyyy-MM-dd}",
+            TtlForWindow(w.To, today),
+            () => FetchWindowAsync(scope, w.From, w.To))));
 
         // Any window failing makes the whole answer incomplete. Reporting the first failure rather than
         // silently returning a partial list keeps an outage from looking like a producer with no tickets.
