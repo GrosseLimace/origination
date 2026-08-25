@@ -186,7 +186,7 @@ public static class CtrmQueries
 
     /// <summary>Field list shared by every contract read that needs pricing lines, so those reads cannot
     /// drift into projecting different columns.</summary>
-    private const string ContractProjection = ContractCoreProjection + """
+    private const string ContractProjection = ContractCoreProjection + "\n" + """
         prices {
           priceSequence priceQuantity priceUom
           flatPrice basisPrice hedgePrice freightAdjustment
