@@ -261,10 +261,13 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
         // Unapplied only, scoped per producer. A detail row carries its own customer code, so the set is
         // partitioned by code rather than filtered once - a header can hold rows for several producers.
-        var tickets = new List<Ticket>();
-        foreach (var header in read.Value ?? [])
-            foreach (var code in codes)
-                tickets.AddRange(CtrmMappings.ToUnappliedForProducer(header, code));
+        // Set-based, deliberately. Calling the single-producer mapper once per code rescans every detail
+        // row once per producer, and there are several hundred producers in scope.
+        var codeSet = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+
+        var tickets = (read.Value ?? [])
+            .SelectMany(header => CtrmMappings.ToUnappliedForProducers(header, codeSet))
+            .ToList();
 
         var beforeGate = tickets.Count;
         tickets = await ApplyStorageGateAsync(tickets, codes, cancellationToken);

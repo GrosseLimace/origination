@@ -193,6 +193,23 @@ public static class CtrmMappings
     /// query's two branches. This side DOES scope on customer code, because a U/L/C row has no real
     /// contract to match against - the customer code is the only thing tying it to a producer.
     /// </remarks>
+    /// <summary>
+    /// The unapplied rows belonging to ANY of these producers, in one pass over the header.
+    /// </summary>
+    /// <remarks>
+    /// The batch counterpart to <see cref="ToUnappliedForProducer"/>. Calling the single-producer version
+    /// once per code instead rescans every detail row once per producer - with several hundred producers
+    /// in scope that is hundreds of passes over the same header to find the one code that matches.
+    /// </remarks>
+    public static List<Ticket> ToUnappliedForProducers(CtrmTicketDto header, ISet<string> scoularIds)
+        => ToTickets(header, d =>
+        {
+            var customerCode = d.CustomerCode?.Trim();
+            if (string.IsNullOrEmpty(customerCode) || !scoularIds.Contains(customerCode)) return false;
+
+            var contractNumber = d.ContractNumber?.Trim();
+            return !string.IsNullOrEmpty(contractNumber) && IsUnappliedPrefix(contractNumber[0]);
+        });
     public static List<Ticket> ToUnappliedForProducer(CtrmTicketDto header, string scoularId)
         => ToTickets(header, d =>
         {

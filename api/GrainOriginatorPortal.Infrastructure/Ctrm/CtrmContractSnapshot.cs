@@ -405,8 +405,9 @@ public sealed class CtrmContractSnapshot
         if (string.IsNullOrEmpty(fromRaw) || string.IsNullOrEmpty(toRaw))
         {
             error = "Ctrm:ContractDateFrom and Ctrm:ContractDateTo must both be set (yyyy-MM-dd). "
-                  + "There is no default: the contracts field has no customer filter, so a wide window "
-                  + "means hundreds of sequential requests per snapshot rebuild.";
+                  + "There is no default: the contract-date range is the only filter fast enough to build "
+                  + "the pool with (customerIds is not indexed), and a wide window means dozens of "
+                  + "concurrent pages per snapshot rebuild.";
             return false;
         }
 

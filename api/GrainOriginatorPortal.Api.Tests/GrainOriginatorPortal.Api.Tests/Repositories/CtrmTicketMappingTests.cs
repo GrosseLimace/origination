@@ -394,4 +394,28 @@ public class CtrmTicketMappingTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => CtrmQueries.BuildTicketBatch([]));
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void UnappliedForProducers_MatchesTheSingleProducerMapperForEveryCodeInTheSet()
+    {
+        // The batch mapper exists so a header is scanned once rather than once per producer. It has to
+        // give exactly the union of the single-producer results, or Spot Loads and the producer page
+        // would disagree about the same rows.
+        var header = Header(
+            Detail(customerCode: "TATOBIN", contractNumber: "UWW227420", sequence: 1),   // unapplied, in set
+            Detail(customerCode: "OTHERCO", contractNumber: "CWW227420", sequence: 2),   // storage, in set
+            Detail(customerCode: "TATOBIN", contractNumber: "PWW227420", sequence: 3),   // applied -> drop
+            Detail(customerCode: "NOBODY1", contractNumber: "UWW999999", sequence: 4));  // not in set -> drop
+
+        var codes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "TATOBIN", "OTHERCO" };
+
+        var batch = CtrmMappings.ToUnappliedForProducers(header, codes).Select(t => t.Id).Order().ToList();
+        var singles = codes
+            .SelectMany(c => CtrmMappings.ToUnappliedForProducer(header, c))
+            .Select(t => t.Id).Order().ToList();
+
+        Assert.Equal(2, batch.Count);
+        Assert.Equal(singles, batch);
+    }
 }
