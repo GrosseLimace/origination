@@ -2,8 +2,10 @@ export const environment = {
   production: false,
   envName: 'QA',
   bidSheetEnabled: true,
-  // "Add from BarChart" picker + fed-bid display. Off until the vendor feed is live in this environment.
-  barchartBidsEnabled: false,
+  // "Add from BarChart" picker + fed-bid display. On for QA testing. The catalog must be loaded before
+  // testers look: an empty catalog makes the picker return nothing, which reads as a broken feature
+  // rather than as missing data.
+  barchartBidsEnabled: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
   calculatorEnabled: true,
