@@ -426,7 +426,11 @@ export class ContractsTableComponent {
       this.expandedPricingSections.delete(contractId);
     } else {
       this.expandedRows.add(contractId);
-      this.usageTracking.trackContractExpand(contractId.toString());
+      // Record the source contract id (e.g. PCW227498), not the row id. The row id is an ODS surrogate on
+      // one source and a synthetic hash on the other, so a label lookup keyed on it can only ever resolve
+      // for one of them; the source id IS the label and is stable across both.
+      const expanded = this.contracts().find(c => c.id === contractId);
+      this.usageTracking.trackContractExpand(expanded?.sourceContractId ?? contractId.toString());
       // Defer scroll so the expanded content renders first
       setTimeout(() => this._scrollToContract(contractId), 0);
     }
