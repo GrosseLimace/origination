@@ -160,13 +160,15 @@ the daily bid sheets originators already send (card #559):
 
 | Style | Rows | Columns | Splitting |
 | --- | --- | --- | --- |
-| `locationsDown` | One row per location (listed ONCE, edit-grid order) | A coloured band per crop, its period columns (`O/C 26`, `N/C 27`, `May 26`) beneath; heavy rule between crops | Name column sized to the longest name (1.4–3.0in); bid columns 0.55–1.0in. If crops × periods overflow the page, CROPS split into balanced bands stacked down the page (5 crops → 3 + 2, never 4 + 1), every band at the same widths |
-| `locationsAcross` | A tinted band row per crop, then one row per period (label carries the crop colour as a left rule) | Locations (names wrap to ≤ 2 lines) | LOCATIONS split into balanced blocks of 4–8 columns (from the longest name), each block repeating the crop bands |
+| `locationsDown` ("Down") | One row per location (listed ONCE, edit-grid order) | A coloured band per crop, its period columns (`O/C 26`, `N/C 27`, `May 26`) beneath; heavy rule between crops | Fit-first: every column is measured (`textWidthIn`) to its longest header/value/name at each type size in `FONT_LADDER_PX` (12→9). `chooseFit` picks the size needing the fewest bands, then the fewest pages (`rowHeightIn` × rows vs `PAGE_HEIGHT_IN − PAGE_CHROME_IN`), then the largest — so 30 locations print smaller than 10. CROPS split into balanced bands only when the width forces it (5 crops → 3 + 2, never 4 + 1), every band at the same widths. Slack goes to bid columns (cap `MAX_VALUE_COL_IN`) then the Location column (cap `MAX_NAME_COL_IN`) |
+| `locationsAcross` ("Across") | A tinted band row per crop, then one row per period (label carries the crop colour as a left rule) | Location names as column headers, wrapping onto as many lines as they need; bids beneath never wrap | Label column measured from the widest period label; each location column its OWN natural width — its name on one header line or its widest bid, whichever is wider (`wrappedHeaderWidthIn`) — then each row's columns grow just enough to close the gap at its right edge (capped at `MAX_COLUMN_STRETCH`, so a short tail row does not balloon). Names wrap (≤ `HEADER_MAX_LINES`) only when single-line names would leave fewer than `MIN_AVG_LOCATIONS_PER_BLOCK` per block. Type size is one ladder step below the Down fit for the same sheet (`fitLocationsDown`, floor 9px) so the transposed sheet reads denser; within that: fewest header lines, then fewest rows (`packBlocks`: greedy — as many locations per row as fit at natural width, ≤ `MAX_LOCATIONS_PER_BLOCK`; a short tail row is accepted), then fewest pages, then largest type. Each block repeats the crop bands |
 
-Rules shared by both: only locations with at least one bid in a selected column print; empty cells
-are blank (never a dash); Scoular facilities are `#FFD400` with a bold name (row in *down*, column in
-*across*) when the **Highlight** toggle is on; a partial last band/block is drawn narrower, not
-stretched; each table is `page-break-inside: avoid`, and tables flow rather than one-per-page.
+Rules shared by both: bids and period labels never wrap (only Across location headers may) — the sheet is often screenshotted off the monitor and
+sent round on Teams, so type is as large as the fit allows and cell padding is tight (`CELL_PAD_*`) to
+get more locations on a page; only locations with at least one bid in a selected column print; empty
+cells are blank (never a dash); Scoular facilities are `#FFD400` with a bold name (row in *down*,
+column in *across*) when the **Highlight** toggle is on; a partial last band/block is drawn narrower,
+not stretched; each table is `page-break-inside: avoid`, and tables flow rather than one-per-page.
 Landscape letter, `@page` margin = `PRINT_GEOMETRY.PAGE_MARGIN_IN` (one constant drives both the
 CSS and the width maths).
 

@@ -12,11 +12,19 @@
  *
  * Two layouts, modelled on the daily bid sheets originators already send out (card #559):
  *   - `locationsDown`   — one Location column, then a coloured band per crop with its period
- *                         columns beneath. Locations are listed ONCE. Wide crop selections split
+ *                         columns beneath. Locations are listed ONCE. Only when even the smallest
+ *                         readable type can't fit every crop across the page do the crops split
  *                         into bands stacked down the page, each repeating the Location column.
  *   - `locationsAcross` — the transpose: crop bands with period rows down the side, locations
- *                         across the top. Locations split into blocks of 4–8 columns stacked down
- *                         the page, each repeating the row labels.
+ *                         across the top. Locations split into blocks stacked down the page, each
+ *                         repeating the row labels.
+ *
+ * Sizing is MEASURED, not fixed: every column is exactly as wide as its longest header or value
+ * needs to sit on one line at the chosen type size. The type size itself REACTS to the content:
+ * from a small ladder it is the largest size that (a) needs the fewest bands/blocks across the
+ * page and (b) keeps the whole sheet on the fewest pages — so a short sheet prints large and a
+ * dense one (many locations, crops or months) shrinks to stay on one page. Bids never wrap — the
+ * sheet is often screenshotted straight off the monitor and sent round on Teams.
  *
  * A bid is a single free-text string per (location, crop, period); cells print it verbatim.
  */
@@ -69,7 +77,8 @@ export interface PrintCell {
   bold?: boolean;
   /** Bid values: monospace so the digits line up. */
   mono?: boolean;
-  /** Names wrap; everything else is one line with an ellipsis as a last resort. */
+  /** Allow wrapping. Columns are measured so this should never actually fire; it is the safety
+   *  net for a name longer than any column can be — better a second line than clipped text. */
   wrap?: boolean;
   /** Background hex. Undefined = white. */
   bg?: string;
@@ -77,7 +86,7 @@ export interface PrintCell {
   borderLeft?: string;
   borderBottom?: string;
   colspan?: number;
-  /** Defaults to 10. */
+  /** Set on every cell by the builders (the table's chosen type size; band headers one step up). */
   fontSizePx?: number;
 }
 
@@ -87,6 +96,8 @@ export interface PrintTable {
   widthPct: number;
   /** One entry per `<col>`, in inches. Percentages are derived per renderer relative to the table. */
   colWidthsIn: number[];
+  /** The type size the table was fitted at — informational; each cell carries its own. */
+  fontPx: number;
   headerRows: PrintCell[][];
   bodyRows: PrintCell[][];
 }
@@ -112,24 +123,42 @@ export const PRINT_GEOMETRY = {
   PAGE_MARGIN_IN: 0.3,
   /** Landscape letter minus both margins. */
   PAGE_WIDTH_IN: 11 - 2 * 0.3,
-  /** Enough for a 6-char header ("O/C 26") on one line at 10px bold plus padding; never shave. */
-  MIN_VALUE_COL_IN: 0.55,
-  /** Bid columns stop growing here — a 4-char basis in a 2-inch cell just looks lost. */
-  MAX_VALUE_COL_IN: 1.0,
-  MIN_NAME_COL_IN: 1.4,
+  /** Landscape letter minus both margins. */
+  PAGE_HEIGHT_IN: 8.5 - 2 * 0.3,
+  /** Logo header + confidential footer, roughly; what is left is the body height per page. */
+  PAGE_CHROME_IN: 1.25,
+  /** Vertical gap between stacked bands/blocks. */
+  TABLE_GAP_PX: 14,
+  LINE_HEIGHT: 1.25,
+  /** Type sizes tried largest-first. Bigger is better — the sheet is screenshotted and read on
+   *  Teams — but the size that fits the content (fewest bands/blocks, fewest pages) wins. */
+  FONT_LADDER_PX: [12, 11, 10, 9] as readonly number[],
+  /** Average advance of mixed-case text as a fraction of the font size (Open Sans, measured
+   *  generously so a wide name is sized to fit rather than judged to fit and then wrap). */
+  TEXT_EM: 0.58,
+  BOLD_FACTOR: 1.08,
+  /** Monospace digits (Cascadia Mono / Fira Code). */
+  MONO_EM: 0.62,
+  /** Horizontal padding inside a cell, each side. */
+  CELL_PAD_X_PX: 4,
+  CELL_PAD_Y_PX: 3,
+  /** Left + right 1px borders. */
+  CELL_BORDER_PX: 2,
+  /** A bid column stops growing here — a 4-char basis in a 2-inch cell just looks lost. */
+  MAX_VALUE_COL_IN: 0.9,
+  /** The Location column stops absorbing slack here (measured need can still exceed it). */
   MAX_NAME_COL_IN: 3.0,
-  /** Average advance of a mixed-case name at 10px in the print font stack. */
-  NAME_CHAR_PX: 5.2,
-  /** Bold location headers in the across layout run a little wider. */
-  BOLD_CHAR_FACTOR: 1.1,
-  /** Horizontal padding + borders inside a cell. */
-  NAME_CELL_CHROME_PX: 14,
-  /** Across layout: the row-label column ("O/C 26"). */
-  LABEL_COL_IN: 1.0,
-  /** Across layout: narrowest location column we'll draw. */
-  MIN_LOC_COL_IN: 0.9,
-  MIN_LOCATIONS_PER_BLOCK: 4,
-  MAX_LOCATIONS_PER_BLOCK: 8,
+  /** Across: location names stay on ONE header line unless that would leave fewer than this many
+   *  locations per block on average — only then may names wrap (to at most HEADER_MAX_LINES). */
+  MIN_AVG_LOCATIONS_PER_BLOCK: 4,
+  /** Across: each row's columns grow just enough to close the gap at its right edge, but never past
+   *  this multiple of their natural width — a short tail row should not balloon. */
+  MAX_COLUMN_STRETCH: 1.25,
+  HEADER_MAX_LINES: 3,
+  /** Word boundaries make greedy wrapping less efficient than chars ÷ lines; allow this much slack. */
+  WRAP_SLACK: 1.15,
+  /** Across: a row holds at most this many locations, however narrow their columns. */
+  MAX_LOCATIONS_PER_BLOCK: 14,
 } as const;
 
 export const PRINT_COLORS = {
@@ -147,7 +176,6 @@ export const PRINT_COLORS = {
 } as const;
 
 const DEFAULT_FONT_PX = 10;
-const BAND_HEADER_FONT_PX = 11;
 
 // ── Small helpers ───────────────────────────────────────────────────────────────────────────────
 
@@ -168,12 +196,89 @@ export function balancedChunks<T>(items: T[], ceiling: number): T[][] {
   return chunks;
 }
 
-const longestName = (locations: PrintLocation[]): number =>
-  locations.reduce((max, l) => Math.max(max, l.name.length), 0);
+/** Width a piece of text needs to sit on one line in a cell at `fontPx`, in inches. */
+export function textWidthIn(text: string, fontPx: number, opts: { bold?: boolean; mono?: boolean } = {}): number {
+  const G = PRINT_GEOMETRY;
+  const em = opts.mono ? G.MONO_EM : G.TEXT_EM * (opts.bold ? G.BOLD_FACTOR : 1);
+  const textPx = text.length * fontPx * em;
+  return (textPx + 2 * G.CELL_PAD_X_PX + G.CELL_BORDER_PX) / G.PX_PER_IN;
+}
 
 const valueOf = (loc: PrintLocation, col: PrintColumn): string => (loc.values[col.key] ?? '').trim();
 
 const pageWidthPct = (inches: number): number => (inches / PRINT_GEOMETRY.PAGE_WIDTH_IN) * 100;
+
+const maxOf = (xs: number[]): number => xs.reduce((m, x) => Math.max(m, x), 0);
+
+/** Widest location name, measured bold (a Scoular row is bold, and it must not wrap either). */
+const widestNameIn = (locs: PrintLocation[], fontPx: number): number =>
+  maxOf(locs.map(l => textWidthIn(l.name, fontPx, { bold: true })));
+
+/**
+ * Column width a location name needs as a column HEADER set on `lines` lines: on one line, its full
+ * width; on more, the longer of its longest single word (words don't split) and its length spread
+ * over the lines with slack for ragged word breaks. Measured bold, since a Scoular header is bold.
+ */
+export function wrappedHeaderWidthIn(name: string, fontPx: number, lines = 1): number {
+  if (lines <= 1) return textWidthIn(name, fontPx, { bold: true });
+  const longestWord = maxOf(name.split(/\s+/).map(w => textWidthIn(w, fontPx, { bold: true })));
+  const perLineChars = Math.ceil((name.length / lines) * PRINT_GEOMETRY.WRAP_SLACK);
+  return Math.max(longestWord, textWidthIn('x'.repeat(perLineChars), fontPx, { bold: true }));
+}
+
+/**
+ * Pack locations into rows GREEDILY, in grid order: each row takes as many columns as fit the
+ * available width at their natural widths (and at most `maxPerBlock`). As many locations per row
+ * as possible is the point — the daily sheets read best wide — so a short tail row is accepted
+ * rather than evening the rows out. A single column wider than the page gets a row to itself.
+ */
+function packBlocks(widthsIn: number[], availIn: number, maxPerBlock: number): number[][] {
+  const blocks: number[][] = [];
+  let current: number[] = [];
+  let used = 0;
+  widthsIn.forEach((w, i) => {
+    if (current.length > 0 && (current.length >= maxPerBlock || used + w > availIn + 1e-9)) {
+      blocks.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(i);
+    used += w;
+  });
+  if (current.length > 0) blocks.push(current);
+  return blocks;
+}
+
+/** Widest bid value across the given columns, measured monospace. */
+const widestValueIn = (locs: PrintLocation[], cols: PrintColumn[], fontPx: number): number =>
+  maxOf(locs.flatMap(l => cols.map(c => textWidthIn(valueOf(l, c), fontPx, { mono: true }))));
+
+/** Height of one table row at `fontPx` with `lines` lines of text, in inches. */
+export function rowHeightIn(fontPx: number, lines = 1): number {
+  const G = PRINT_GEOMETRY;
+  return (lines * fontPx * G.LINE_HEIGHT + 2 * G.CELL_PAD_Y_PX + 1) / G.PX_PER_IN;
+}
+
+/** Pages a sheet of `heightIn` needs, given the header/footer chrome on each page. */
+export function pagesFor(heightIn: number): number {
+  const G = PRINT_GEOMETRY;
+  return Math.max(1, Math.ceil(heightIn / (G.PAGE_HEIGHT_IN - G.PAGE_CHROME_IN)));
+}
+
+/** Total height of `count` stacked tables of `eachIn`, with the gap between them. */
+const stackedHeightIn = (count: number, eachIn: number): number =>
+  count * eachIn + Math.max(0, count - 1) * (PRINT_GEOMETRY.TABLE_GAP_PX / PRINT_GEOMETRY.PX_PER_IN);
+
+/**
+ * Pick the type size for a sheet: fewest bands/blocks across the page first, then fewest pages
+ * down it, then the largest size (the ladder is largest-first, so `find` resolves the tie).
+ */
+function chooseFit<T extends { splits: number; pages: number }>(candidates: T[]): T {
+  const fewestSplits = Math.min(...candidates.map(c => c.splits));
+  const inSplit = candidates.filter(c => c.splits === fewestSplits);
+  const fewestPages = Math.min(...inSplit.map(c => c.pages));
+  return inSplit.find(c => c.pages === fewestPages)!;
+}
 
 // ── Public API ──────────────────────────────────────────────────────────────────────────────────
 
@@ -198,11 +303,14 @@ export function buildPrintLayout(input: PrintLayoutInput): PrintLayoutModel {
 /**
  * LOCATIONS DOWN — one Location column, then a coloured band per crop with its period columns.
  *
- * Column widths: the name column is sized to the longest name (within 1.4–3.0in); bid columns get
- * an equal share of what's left, between 0.55in (a one-line "O/C 26" header) and 1.0in. If the
- * selected crops × periods need more than that, the CROPS are split into balanced bands stacked
+ * Fit-first: at each step of the type ladder, the Location column is as wide as the longest name
+ * and every bid column as wide as its longest header or value. The size that keeps ALL crops on one
+ * band wins — four commodities land on one line whenever the paper allows — and among those, the
+ * size that keeps the sheet on the fewest pages, so thirty locations print smaller than ten. Only
+ * if even the smallest step overflows the width do the CROPS split into balanced bands stacked
  * down the page, every band drawn at the same widths so a partial last band lines up under the
- * ones above rather than stretching across the sheet.
+ * ones above rather than stretching across the sheet. Leftover width goes to the bid columns first
+ * (up to a cap), then to the Location column.
  */
 export function buildLocationsDown(input: Omit<PrintLayoutInput, 'style'>): PrintTable[] {
   const G = PRINT_GEOMETRY;
@@ -210,39 +318,36 @@ export function buildLocationsDown(input: Omit<PrintLayoutInput, 'style'>): Prin
   const locs = selectPrintLocations(groups, input.locations);
   if (groups.length === 0 || locs.length === 0) return [];
 
-  const periodsPerCrop = Math.max(...groups.map(g => g.columns.length));
-  const measuredNameIn = clamp(
-    (longestName(locs) * G.NAME_CHAR_PX + G.NAME_CELL_CHROME_PX) / G.PX_PER_IN,
-    G.MIN_NAME_COL_IN, G.MAX_NAME_COL_IN);
-  const availIn = G.PAGE_WIDTH_IN - measuredNameIn;
-  const maxValueCols = Math.max(1, Math.floor(availIn / G.MIN_VALUE_COL_IN));
-  const cropsPerBandCeiling = Math.max(1, Math.floor(maxValueCols / periodsPerCrop));
-  const bands = balancedChunks(groups, cropsPerBandCeiling);
+  const chosen = fitLocationsDown(groups, locs);
+  const bands = balancedChunks(groups, chosen.cropsPerBandCeiling);
 
-  // ONE set of widths for every band, derived from the fullest band. A single crop with more
-  // periods than fit is allowed below the minimum rather than dropped — it only happens past ~16
-  // periods, and a narrow column beats a missing one.
-  const bandCols = Math.max(...bands.map(b => b.reduce((n, g) => n + g.columns.length, 0)));
-  const valueIn = Math.min(G.MAX_VALUE_COL_IN, availIn / bandCols);
-  const nameIn = Math.min(G.MAX_NAME_COL_IN, G.PAGE_WIDTH_IN - valueIn * bandCols);
+  // ONE set of widths for every band, derived from the fullest band. Slack goes to the bid columns
+  // first (capped so a short basis isn't lost in a huge cell), then to the Location column.
+  const bandCols = maxOf(bands.map(b => b.reduce((n, g) => n + g.columns.length, 0)));
+  const availIn = G.PAGE_WIDTH_IN - chosen.nameIn;
+  const valueIn = clamp(availIn / bandCols, chosen.valueIn, Math.max(chosen.valueIn, G.MAX_VALUE_COL_IN));
+  const nameIn = Math.max(chosen.nameIn, Math.min(G.MAX_NAME_COL_IN, G.PAGE_WIDTH_IN - valueIn * bandCols));
+
+  const fontPx = chosen.fontPx;
+  const bandFontPx = fontPx + 1;
 
   return bands.map(band => {
     const colWidthsIn = [nameIn];
-    const bandHeader: PrintCell[] = [{ text: '', align: 'left', bg: PRINT_COLORS.headerBg }];
-    const periodHeader: PrintCell[] = [{ text: 'Location', align: 'left', bold: true, bg: PRINT_COLORS.headerBg }];
+    const bandHeader: PrintCell[] = [{ text: '', align: 'left', bg: PRINT_COLORS.headerBg, fontSizePx: bandFontPx }];
+    const periodHeader: PrintCell[] = [{ text: 'Location', align: 'left', bold: true, bg: PRINT_COLORS.headerBg, fontSizePx: fontPx }];
 
     band.forEach((group, gi) => {
       const colors = input.cropColors(group.crop);
       const divider = gi > 0 ? `3px solid ${PRINT_COLORS.heavyRule}` : undefined;
       bandHeader.push({
-        text: group.crop, align: 'center', bold: true, fontSizePx: BAND_HEADER_FONT_PX,
+        text: group.crop, align: 'center', bold: true, fontSizePx: bandFontPx,
         colspan: group.columns.length, bg: colors.tint,
         borderBottom: `3px solid ${colors.solid}`, borderLeft: divider
       });
       group.columns.forEach((col, ci) => {
         colWidthsIn.push(valueIn);
         periodHeader.push({
-          text: col.compactLabel, align: 'center', bold: true, bg: PRINT_COLORS.headerBg,
+          text: col.compactLabel, align: 'center', bold: true, bg: PRINT_COLORS.headerBg, fontSizePx: fontPx,
           borderLeft: ci === 0 ? divider : undefined
         });
       });
@@ -250,11 +355,11 @@ export function buildLocationsDown(input: Omit<PrintLayoutInput, 'style'>): Prin
 
     const bodyRows = locs.map(loc => {
       const bg = loc.isScoular ? PRINT_COLORS.scoularBg : undefined;
-      const row: PrintCell[] = [{ text: loc.name, align: 'left', wrap: true, bold: loc.isScoular, bg }];
+      const row: PrintCell[] = [{ text: loc.name, align: 'left', wrap: true, bold: loc.isScoular, bg, fontSizePx: fontPx }];
       band.forEach((group, gi) => {
         group.columns.forEach((col, ci) => {
           row.push({
-            text: valueOf(loc, col), align: 'center', mono: true, bg,
+            text: valueOf(loc, col), align: 'center', mono: true, bg, fontSizePx: fontPx,
             borderLeft: gi > 0 && ci === 0 ? `3px solid ${PRINT_COLORS.heavyRule}` : undefined
           });
         });
@@ -265,25 +370,60 @@ export function buildLocationsDown(input: Omit<PrintLayoutInput, 'style'>): Prin
     return {
       widthPct: pageWidthPct(colWidthsIn.reduce((a, b) => a + b, 0)),
       colWidthsIn,
+      fontPx,
       headerRows: [bandHeader, periodHeader],
       bodyRows
     };
   });
 }
 
+/** The Down layout's fit for a sheet: type size, measured column needs, and how the crops band. */
+function fitLocationsDown(groups: PrintCropGroup[], locs: PrintLocation[]) {
+  const G = PRINT_GEOMETRY;
+  const allCols = groups.flatMap(g => g.columns);
+  const periodsPerCrop = maxOf(groups.map(g => g.columns.length));
+
+  /** Narrowest bid column that keeps every header, value and crop band on one line. */
+  const measureValueIn = (fontPx: number): number => Math.max(
+    maxOf(allCols.map(c => textWidthIn(c.compactLabel, fontPx, { bold: true }))),
+    widestValueIn(locs, allCols, fontPx),
+    // The crop name spans its k columns; make sure it fits too.
+    maxOf(groups.map(g => textWidthIn(g.crop, fontPx + 1, { bold: true }) / g.columns.length))
+  );
+
+  const fit = (fontPx: number) => {
+    const nameIn = widestNameIn(locs, fontPx);
+    const valueIn = measureValueIn(fontPx);
+    const cropsPerBandCeiling = Math.max(1, Math.floor(Math.floor((G.PAGE_WIDTH_IN - nameIn) / valueIn) / periodsPerCrop));
+    const splits = Math.ceil(groups.length / cropsPerBandCeiling);
+    // Two header rows (crop band one step larger, then the period labels) plus one row per location.
+    const bandIn = rowHeightIn(fontPx + 1) + rowHeightIn(fontPx) + locs.length * rowHeightIn(fontPx);
+    return { fontPx, nameIn, valueIn, cropsPerBandCeiling, splits, pages: pagesFor(stackedHeightIn(splits, bandIn)) };
+  };
+
+  return chooseFit(G.FONT_LADDER_PX.map(fit));
+}
+
 /**
  * LOCATIONS ACROSS — the transpose. Row labels down the side (a tinted band row per crop, then a
  * row per period), locations across the top.
  *
- * A trade unit can have 20–30 locations, far more than fit as columns, so locations are split
- * into balanced blocks of 4–8 stacked down the page. The block size comes from the longest name
- * wrapping onto at most two header lines. Each block repeats the crop bands and row labels, so it
- * reads on its own after a page break, and every block uses the same widths.
+ * The label column is as wide as the longest period label. Every location column has ITS OWN width:
+ * exactly what its name needs on one header line, or its widest bid if that is wider — nothing is
+ * stretched to fill the page, so cells stay snug around their bids and a short sheet simply ends
+ * where its columns end. Names stay on one line; only when single-line names would leave fewer
+ * than MIN_AVG_LOCATIONS_PER_BLOCK locations per block may they wrap (to at most HEADER_MAX_LINES).
+ * When the columns cannot all fit across, rows are packed greedily — as many locations per row as
+ * fit — and stacked down the page, each repeating the crop bands and row labels so it reads on its
+ * own; every row then stretches just enough to close the gap at its right edge.
+ *
+ * Type size is ONE STEP BELOW the DOWN layout for the same sheet (floor 9px), so switching layouts
+ * never makes the text bigger and the transposed sheet reads a touch denser. Within that: fewest
+ * header lines, then fewest blocks, then fewest pages, then the largest type.
  *
  * The crop is a full-width band row rather than part of every row label ("Corn O/C 26"): it keeps
- * the label column at one inch, leaving the width for locations, and a band is what the eye
- * scans for. Period rows carry the crop's colour as a left rule so the association holds well
- * below the band.
+ * the label column narrow, leaving the width for locations, and a band is what the eye scans for.
+ * Period rows carry the crop's colour as a left rule so the association holds well below the band.
  */
 export function buildLocationsAcross(input: Omit<PrintLayoutInput, 'style'>): PrintTable[] {
   const G = PRINT_GEOMETRY;
@@ -291,21 +431,46 @@ export function buildLocationsAcross(input: Omit<PrintLayoutInput, 'style'>): Pr
   const locs = selectPrintLocations(groups, input.locations);
   if (groups.length === 0 || locs.length === 0) return [];
 
-  const availIn = G.PAGE_WIDTH_IN - G.LABEL_COL_IN;
-  const twoLineNeedIn =
-    (Math.ceil(longestName(locs) / 2) * G.NAME_CHAR_PX * G.BOLD_CHAR_FACTOR + G.NAME_CELL_CHROME_PX) / G.PX_PER_IN;
-  const fit = Math.floor(availIn / Math.max(twoLineNeedIn, G.MIN_LOC_COL_IN));
-  const ceiling = clamp(fit, G.MIN_LOCATIONS_PER_BLOCK, G.MAX_LOCATIONS_PER_BLOCK);
-  const blocks = balancedChunks(locs, ceiling);
-  const perBlock = blocks[0].length;
-  const locIn = availIn / perBlock;
+  const allCols = groups.flatMap(g => g.columns);
+  const downFontPx = fitLocationsDown(groups, locs).fontPx;
+  // One ladder step below Down (never below the ladder floor): the transposed sheet reads denser.
+  const ceilingPx = G.FONT_LADDER_PX.find(f => f < downFontPx) ?? downFontPx;
+  const fonts = G.FONT_LADDER_PX.filter(f => f <= ceilingPx);
 
-  return blocks.map(block => {
-    const colWidthsIn = [G.LABEL_COL_IN, ...block.map(() => locIn)];
+  const fitAt = (fontPx: number, lines: number) => {
+    // Label cells carry a 3px crop rule on the left; the band row spans the table so it never binds.
+    const labelIn = maxOf(allCols.map(c => textWidthIn(c.compactLabel, fontPx, { bold: true }))) + 3 / G.PX_PER_IN;
+    const widthsIn = locs.map(l => Math.max(wrappedHeaderWidthIn(l.name, fontPx, lines), widestValueIn([l], allCols, fontPx)));
+    const blocks = packBlocks(widthsIn, G.PAGE_WIDTH_IN - labelIn, G.MAX_LOCATIONS_PER_BLOCK);
+    const blockIn = rowHeightIn(fontPx, lines)
+      + groups.reduce((h, g) => h + rowHeightIn(fontPx + 1) + g.columns.length * rowHeightIn(fontPx), 0);
+    return { fontPx, lines, labelIn, widthsIn, blocks, splits: blocks.length, pages: pagesFor(stackedHeightIn(blocks.length, blockIn)) };
+  };
+
+  // Names on one line unless that leaves the blocks too thin; then allow one more line, and so on.
+  let chosen = chooseFit(fonts.map(f => fitAt(f, 1)));
+  const tooThin = (c: { splits: number }) => c.splits > 1 && locs.length / c.splits < G.MIN_AVG_LOCATIONS_PER_BLOCK;
+  for (let lines = 2; lines <= G.HEADER_MAX_LINES && tooThin(chosen); lines++) {
+    chosen = chooseFit(fonts.map(f => fitAt(f, lines)));
+  }
+
+  const { labelIn, widthsIn, fontPx } = chosen;
+  // Close the gap: each row's columns grow by just enough to reach the page edge (capped) — natural
+  // widths are the floor, never the ceiling. A full row needs only a few percent; a short tail row
+  // stops at the cap and leaves the rest of its line empty rather than ballooning.
+  const availIn = G.PAGE_WIDTH_IN - labelIn;
+  const stretchFor = (indexes: number[]) =>
+    Math.min(G.MAX_COLUMN_STRETCH, availIn / indexes.reduce((w, i) => w + widthsIn[i], 0));
+  const bandFontPx = fontPx + 1;
+
+  return chosen.blocks.map(indexes => {
+    const block = indexes.map(i => locs[i]);
+    const stretch = stretchFor(indexes);
+    const colWidthsIn = [labelIn, ...indexes.map(i => widthsIn[i] * stretch)];
     const header: PrintCell[] = [
-      { text: '', align: 'left', bg: PRINT_COLORS.headerBg },
+      { text: 'Bids', align: 'left', bold: true, bg: PRINT_COLORS.headerBg, fontSizePx: fontPx },
       ...block.map<PrintCell>(loc => ({
-        text: loc.name, align: 'center', wrap: true, bold: loc.isScoular,
+        text: loc.name, align: 'center', wrap: true, bold: loc.isScoular, fontSizePx: fontPx,
         bg: loc.isScoular ? PRINT_COLORS.scoularBg : PRINT_COLORS.headerBg
       }))
     ];
@@ -314,14 +479,14 @@ export function buildLocationsAcross(input: Omit<PrintLayoutInput, 'style'>): Pr
     for (const group of groups) {
       const colors = input.cropColors(group.crop);
       bodyRows.push([{
-        text: group.crop, align: 'left', bold: true, fontSizePx: BAND_HEADER_FONT_PX,
+        text: group.crop, align: 'left', bold: true, fontSizePx: bandFontPx,
         colspan: 1 + block.length, bg: colors.tint, borderBottom: `3px solid ${colors.solid}`
       }]);
       for (const col of group.columns) {
         bodyRows.push([
-          { text: col.compactLabel, align: 'left', bold: true, bg: PRINT_COLORS.labelBg, borderLeft: `3px solid ${colors.solid}` },
+          { text: col.compactLabel, align: 'left', bold: true, bg: PRINT_COLORS.labelBg, fontSizePx: fontPx, borderLeft: `3px solid ${colors.solid}` },
           ...block.map<PrintCell>(loc => ({
-            text: valueOf(loc, col), align: 'center', mono: true,
+            text: valueOf(loc, col), align: 'center', mono: true, fontSizePx: fontPx,
             bg: loc.isScoular ? PRINT_COLORS.scoularBg : undefined
           }))
         ]);
@@ -331,6 +496,7 @@ export function buildLocationsAcross(input: Omit<PrintLayoutInput, 'style'>): Pr
     return {
       widthPct: pageWidthPct(colWidthsIn.reduce((a, b) => a + b, 0)),
       colWidthsIn,
+      fontPx,
       headerRows: [header],
       bodyRows
     };
@@ -349,12 +515,13 @@ export function tableColWidthPcts(table: PrintTable): number[] {
  * because browsers otherwise drop cell backgrounds when printing.
  */
 export function cellStyleMap(cell: PrintCell, isHeader: boolean): Record<string, string> {
+  const G = PRINT_GEOMETRY;
   const style: Record<string, string> = {
-    'padding': '4px 6px',
+    'padding': `${G.CELL_PAD_Y_PX}px ${G.CELL_PAD_X_PX}px`,
     'border': `1px solid ${isHeader ? PRINT_COLORS.headerLine : PRINT_COLORS.gridLine}`,
     'color': PRINT_COLORS.text,
     'font-size': `${cell.fontSizePx ?? DEFAULT_FONT_PX}px`,
-    'line-height': '1.3',
+    'line-height': String(G.LINE_HEIGHT),
     'text-align': cell.align,
     'vertical-align': 'middle',
     'font-weight': cell.bold ? '700' : '500',
@@ -413,7 +580,7 @@ export function renderPrintDocument(model: PrintLayoutModel, chrome: PrintChrome
   // Tables FLOW down the page (a spacer between them, not a forced page break): a band is only as
   // tall as the location list, so several usually share a sheet. page-break-inside:avoid on each
   // table stops the browser cutting one in half.
-  const tables = model.tables.map(renderPrintTableHtml).join('<div style="height:14px;"></div>');
+  const tables = model.tables.map(renderPrintTableHtml).join(`<div style="height:${PRINT_GEOMETRY.TABLE_GAP_PX}px;"></div>`);
 
   return `<!DOCTYPE html><html><head>
       <title>Scoular Bids</title>

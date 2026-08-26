@@ -935,8 +935,8 @@
 
             <!-- Print Preview Dialog -->
             @if (showPrintDialog()) {
-              <div class="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50" (click)="closePrintDialog()">
-                <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[95vw] max-w-[1400px] max-h-[80vh] flex flex-col" (click)="$event.stopPropagation()">
+              <div class="fixed inset-0 z-[1200] flex items-start justify-center pt-[calc(var(--app-header-h)+1rem)] pb-4 bg-black/50" (click)="closePrintDialog()">
+                <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[94vw] max-w-[1540px] max-h-[calc(100vh-var(--app-header-h)-2rem)] flex flex-col" (click)="$event.stopPropagation()">
 
                   <!-- Dialog header -->
                   <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -948,8 +948,9 @@
                   <div class="flex flex-1 overflow-hidden">
 
                     <!-- Preview (left) -->
-                    <div class="flex-1 min-w-0 p-5 overflow-auto border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                      <div class="bg-white rounded-lg shadow-sm p-5" style="font-family:'Open Sans','Segoe UI',system-ui,sans-serif;color:#1a1a1a;line-height:1.5;">
+                    <div #printPreviewPane class="flex-1 min-w-0 p-5 overflow-auto border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                      <!-- The sheet is laid out at true page width and ZOOMED to fill the pane: bigger on a monitor, shrunk to fit on a laptop, identical layout either way. -->
+                      <div class="bg-white rounded-lg shadow-sm p-5 mx-auto" [style.zoom]="printPreviewZoom()" [style.width.px]="printPreviewSheetPx" style="font-family:'Open Sans','Segoe UI',system-ui,sans-serif;color:#1a1a1a;line-height:1.5;">
                         <!-- Header -->
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #00875F;">
                           <div style="display:flex;align-items:center;gap:12px;">
@@ -1104,18 +1105,18 @@
                             [ngClass]="printLayoutStyle() === 'locationsDown'
                               ? 'bg-scoular-green-accessible text-white'
                               : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                            class="px-3 py-1.5 text-sm font-medium transition-colors">Locations down</button>
+                            class="px-3 py-1.5 text-sm font-medium transition-colors">Down</button>
                           <button type="button" (click)="printLayoutStyle.set('locationsAcross')"
                             [ngClass]="printLayoutStyle() === 'locationsAcross'
                               ? 'bg-scoular-green-accessible text-white'
                               : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                            class="px-3 py-1.5 text-sm font-medium border-l border-gray-300 dark:border-gray-600 transition-colors">Locations across</button>
+                            class="px-3 py-1.5 text-sm font-medium border-l border-gray-300 dark:border-gray-600 transition-colors">Across</button>
                         </div>
                         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                           @if (printLayoutStyle() === 'locationsDown') {
-                            One table: locations down the side, crops and periods across the top. Wide crop selections split into stacked bands.
+                            Locations down the side, crops and periods across the top. Columns and type are sized to fit everything on one line; crops only split into bands when they cannot.
                           } @else {
-                            Crops and periods down the side, locations across the top in blocks of 4–8. Best for comparing many locations.
+                            Crops and periods down the side, locations across the top. Locations split into blocks only when they cannot all fit on one line.
                           }
                         </p>
                       </div>

@@ -13,7 +13,7 @@ import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodi
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { commodityHex } from '@shared/utils/commodity-color';
 import {
-  buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, renderPrintDocument, tableColWidthPcts,
+  buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
 } from '../../utils/print-layout';
 
@@ -1821,6 +1821,33 @@ export class BidSheetComponent {
 
   // ── Print dialog state ──
   showPrintDialog = signal(false);
+
+  // ── Print preview scaling ──
+  // The preview sheet is laid out at the printable page width (10.4in at 96dpi) plus its own
+  // 20px padding each side, then ZOOMED to fill whatever width the pane has. On a big monitor the
+  // sheet — type included — grows so it's easy to read; on a laptop it shrinks to fit. The layout
+  // itself never changes, so what you see is still exactly what prints.
+  readonly printPreviewSheetPx = Math.round(PRINT_GEOMETRY.PAGE_WIDTH_IN * PRINT_GEOMETRY.PX_PER_IN) + 40;
+  private readonly printPreviewPane = viewChild<ElementRef<HTMLElement>>('printPreviewPane');
+  private readonly printPreviewPaneWidth = signal(0);
+  private readonly _printPreviewResize = effect(onCleanup => {
+    const el = this.printPreviewPane()?.nativeElement;
+    if (!el) { this.printPreviewPaneWidth.set(0); return; }
+    // contentRect excludes the pane's padding, which is exactly the width the sheet may fill.
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width ?? el.clientWidth;
+      this.printPreviewPaneWidth.set(Math.round(width));
+    });
+    observer.observe(el);
+    onCleanup(() => observer.disconnect());
+  });
+  /** Zoom that fits the sheet to the pane with a little margin, bounded so it never becomes unreadably
+   *  small or blown up: 1.1× is as large as a print preview should read on a monitor. */
+  readonly printPreviewZoom = computed(() => {
+    const paneWidth = this.printPreviewPaneWidth();
+    if (paneWidth <= 0) return 1;
+    return Math.round(Math.min(1.1, Math.max(0.5, (paneWidth * 0.9) / this.printPreviewSheetPx)) * 100) / 100;
+  });
   printSelectedCrops = signal<Set<string>>(new Set());
   printSelectedMonths = signal<Set<number>>(new Set());
   readonly todayFormatted = computed(() => new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
