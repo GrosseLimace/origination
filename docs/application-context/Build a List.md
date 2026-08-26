@@ -116,7 +116,7 @@ Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/ap
   | Refine `noActiveContracts` | no contract with status `Active`/`Pending`/`Overdue` | nothing live by **status** |
   | Refine `noContractsAtAll` | `getContracts(c).length === 0` | **zero** contracts of any status — the strictest |
   None of them see ancient history: `ContractRepository` only loads contracts that are open or from `CropYear >= Today.Year - 1`, so "never contracted" is not directly answerable from this screen.
-- **"Contracted but no deliveries"** (NLQ-derived) checks delivery progress via `contract.openBalanceQuantity` from `vw_CurrentContracts` — not by walking applied tickets. A customer matches when at least one open contract has `openBalanceQuantity === quantity` (nothing shipped yet). This is the same data source the shared delivery util uses (`client/src/app/shared/utils/contract-delivery.ts`), so the filter is consistent with the Contracts table, Actionable Insights, and the Unshipped Bushels view.
+- **"Contracted but no deliveries"** (NLQ-derived) checks delivery progress via `contract.openBalanceQuantity` (CTRM through the GraphQL API on the CTRM source; `vw_CurrentContracts` on ODS) — not by walking applied tickets. A customer matches when at least one open contract has `openBalanceQuantity === quantity` (nothing shipped yet). This is the same data source the shared delivery util uses (`client/src/app/shared/utils/contract-delivery.ts`), so the filter is consistent with the Contracts table, Actionable Insights, and the Unshipped Bushels view.
 
 ## Library / Prompts
 
@@ -229,7 +229,7 @@ When `linkedFeatureActive` is on, only the producer **name** is the click target
 | --- | --- | --- |
 | Library prompts don't appear | `getQueryLibrary` failed or returned empty | Network tab; verify `dbo.QueryLibrary` has `IsActive = 1` rows |
 | Saved list doesn't show in dropdown | TU mismatch — saved list's `tradeUnits` doesn't equal current selection | `visibleSavedLists` computed |
-| Saved list re-runs and now has different rows | Underlying ODS data has changed since save (a contract closed, a customer was deactivated). `customerIds` is recomputed every load. | Expected behavior; tell the user "saved lists are dynamic, not snapshots." |
+| Saved list re-runs and now has different rows | Underlying contract/ticket data (CTRM, or ODS on that source) has changed since save (a contract closed, a customer was deactivated). `customerIds` is recomputed every load. | Expected behavior; tell the user "saved lists are dynamic, not snapshots." |
 | Linked producer shows as a separate row even though it should be inside the panel | `linkedFeatureActive` is off (no note filter, no "linked" in query) | Check active filter / queryText |
 | Manage Members says "Add" for a producer who's clearly visible | The producer is shown via a parent's expand panel; the search uses `logicallyInResultsIds` which requires the parent to be in the dedup output | Verify the parent passes the active filters |
 | Notes column missing for a customer who matches the filter | Customer matched only via bidirectional linked notes (their own notes don't pass) — when the linked panel is expanded the parent column is own-only and may be empty | Documented edge case; close the linked panel to see aggregated notes |

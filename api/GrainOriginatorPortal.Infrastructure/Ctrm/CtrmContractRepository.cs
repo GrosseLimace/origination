@@ -236,7 +236,28 @@ public sealed class CtrmContractRepository : IContractRepository
     /// CTRM has none, so this falls back to the same contract-date ordering every other CTRM contract read
     /// uses. Deterministic, just not identical.</para>
     /// </remarks>
-    public async Task<List<Contract>> GetByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
+    public Task<List<Contract>> GetByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
+    {
+        // DELEGATED TO ODS ON PURPOSE, after the live read was built and then measured against QA on
+        // 2026-08-26: contracts(customerIds:, cropYear: 2026) returned 1,846 rows, every one of them crop
+        // year 2025, with the same leading ids as the 2025 query issued moments earlier - the server handed
+        // back a cached result keyed without cropYear. The same day the identical query alternated between
+        // two different totalCounts. This read feeds the planting-coverage prompts and the dashboard's
+        // crop-year view, where another year's contracts would be silently wrong rather than visibly
+        // broken. Until the API's caching honours cropYear (reported), correct data outranks source.
+        // The live implementation is kept below, unreached, so re-enabling is a one-line change once a
+        // probe confirms 2025 and 2026 return different sets.
+        if (!UseLiveCropYearRead)
+            return DelegateAsync("ByCropYear", _ods.GetByCropYearAsync(cropYear, tradeUnits, cancellationToken));
+
+        return GetByCropYearLiveAsync(cropYear, tradeUnits, cancellationToken);
+    }
+
+    /// <summary>Flip to true only after a live probe shows cropYear 2025 and 2026 returning different
+    /// sets for the same producer list. See the note in <see cref="GetByCropYearAsync"/>.</summary>
+    private const bool UseLiveCropYearRead = false;
+
+    private async Task<List<Contract>> GetByCropYearLiveAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
     {
         var scoped = await ResolveScopedProducerCodesAsync(tradeUnits, cancellationToken);
         if (scoped.Count == 0)

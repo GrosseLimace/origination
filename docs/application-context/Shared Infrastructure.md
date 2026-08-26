@@ -50,7 +50,7 @@ The app's global state container, built on Angular signals. No NgRx, no Redux â€
 | Signal | Type | Notes |
 | --- | --- | --- |
 | `customers` | `Customer[]` | Filtered to selected trade units |
-| `contracts` | `Contract[]` | Open contracts only (from `vw_CurrentContracts`) |
+| `contracts` | `Contract[]` | Open-or-recent purchase contracts for the selected trade units. From CTRM via GraphQL when `Ctrm:Source` is `ctrm` (a cached date-window snapshot), else `vw_CurrentContracts`. See [CTRM GraphQL Data Source](./CTRM%20GraphQL%20Data%20Source.md). |
 | `tickets` | `Ticket[]` | Settled tickets (last N days, depends on screen) |
 | `todaysTickets` | `Ticket[]` | Last 30 days specifically â€” used by Insights |
 | `notes` | `Note[]` | All notes for selected TUs |
@@ -59,7 +59,7 @@ The app's global state container, built on Angular signals. No NgRx, no Redux â€
 | `savedLists` | `SavedList[]` | User's saved Build-a-List queries |
 | `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
 | `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin capacity, etc.) |
-| `pricingLines` | `ContractPricingLine[]` | Pricing breakdowns from ODS |
+| `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer â€” CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
 | `selectedTradeUnits`, `selectedGroupNames` | `string[]` | The TU selector's current state |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode â€” clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
 | `selectedCustomer` | `Customer \| null` | Driven by Home page navigation |
