@@ -55,6 +55,7 @@ flowchart LR
 | --- | --- |
 | Component | `client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts` |
 | Template | `client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.html` |
+| Print layout util (+ spec) | `client/src/app/features/bid-sheet/utils/print-layout.ts` — builds the `PrintLayoutModel` both the preview and the printed sheet render |
 | Controller | `api/GrainOriginatorPortal.Api/Controllers/BidSheetController.cs` |
 | Service methods (group: BidSheet) | `GetElevatorsAsync`, `GetBidSheetLocationsAsync`, `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `DeleteBidSheetBidsAsync`, `GetBidCropYearsAsync`, `GetBidCommoditiesAsync`, `GetBidMonthsAsync`, `GetBidSheetLocationOrderAsync`, `SetBidSheetLocationOrderAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync` |
 | ODS view | `ctrm.vw_GNP026` (elevators with lat/lon, address, TU code, group name, IsScoularFacility flag) |
@@ -70,7 +71,7 @@ flowchart LR
 **`BidSheetLocationOrders`** — Per-user persisted drag-drop order, keyed by `(UserId, TradeUnitKey)`, stored as JSON.
 
 **`BidSheetPreferences`** — Per-user, per-trade-unit:
-`CropCode?`, `Month?` (`null` = no preference, `0` = yearly, `1–12` = monthly), `CropYear?`, `CropOrder` (JSON array), `HiddenCrops` (JSON array), `SelectedMonths` (JSON array).
+`CropCode?`, `Month?` (`null` = no preference, `0` = yearly, `1–12` = monthly), `CropYear?`, `CropOrder` (JSON array), `HiddenCrops` (JSON array), `SelectedMonths` (JSON array), `PrintLayout` (JSON — see [Print / export](#print--export)).
 
 ## State and caching
 
@@ -136,8 +137,42 @@ Server-side validation lives in `BidSheetController` (TU validation via `IUserEn
 - `CropOrder` — JSON array of commodity codes for display ordering.
 - `HiddenCrops` — JSON array of dehidden commodities.
 - `SelectedMonths` — JSON array (e.g., `[3, 6, 9, 12]`).
+- `PrintLayout` — JSON blob of the print dialog's options (below). Saved per trade unit AND under the `__global__` key, so a new TU inherits the user's last layout.
 
 Persisted via `setBidSheetPreference`.
+
+## Print / export
+
+Edit Bids → **Print** opens a dialog with a live preview (left) and options (right). Printing writes a
+self-contained HTML document into `window.open('', '_blank')` and calls `print()`; the popup is
+`about:blank`, so the logo must be an absolute `window.location.origin` URL (`printLogoUrl`).
+
+**One model, two renderers.** `utils/print-layout.ts` turns the selected crops / periods / locations
+into a `PrintLayoutModel` — tables of styled cells with column widths in inches. The dialog preview
+renders that model with a generic `@for` table (`[style]="printCellStyle(cell, isHeader)"`), and
+`renderPrintDocument` serialises the same model and the same `cellStyleMap` into the popup HTML. Every
+geometry, colour and highlight decision lives once in the util, so the preview cannot drift from the
+printed sheet (the earlier dual-implementation approach is what produced squeezed, ellipsised columns).
+The util is pure and covered by `print-layout.spec.ts`.
+
+**Layouts** (`layoutStyle`, default `locationsDown`) — same data, different arrangement. Modelled on
+the daily bid sheets originators already send (card #559):
+
+| Style | Rows | Columns | Splitting |
+| --- | --- | --- | --- |
+| `locationsDown` | One row per location (listed ONCE, edit-grid order) | A coloured band per crop, its period columns (`O/C 26`, `N/C 27`, `May 26`) beneath; heavy rule between crops | Name column sized to the longest name (1.4–3.0in); bid columns 0.55–1.0in. If crops × periods overflow the page, CROPS split into balanced bands stacked down the page (5 crops → 3 + 2, never 4 + 1), every band at the same widths |
+| `locationsAcross` | A tinted band row per crop, then one row per period (label carries the crop colour as a left rule) | Locations (names wrap to ≤ 2 lines) | LOCATIONS split into balanced blocks of 4–8 columns (from the longest name), each block repeating the crop bands |
+
+Rules shared by both: only locations with at least one bid in a selected column print; empty cells
+are blank (never a dash); Scoular facilities are `#FFD400` with a bold name (row in *down*, column in
+*across*) when the **Highlight** toggle is on; a partial last band/block is drawn narrower, not
+stretched; each table is `page-break-inside: avoid`, and tables flow rather than one-per-page.
+Landscape letter, `@page` margin = `PRINT_GEOMETRY.PAGE_MARGIN_IN` (one constant drives both the
+CSS and the width maths).
+
+**Persisted options** (`PrintLayout` JSON): `{ yearlyRows: [{ enabled, offset, oldNew }], address,
+phone, highlightScoular, layoutStyle }`. `parsePrintLayoutStyle` maps the retired `sideBySide` /
+`stacked` values (and anything malformed) to the default; the next save rewrites the blob.
 
 ## Auth and feature flags
 
@@ -162,6 +197,7 @@ Persisted via `setBidSheetPreference`.
 | Delete a commodity's bids on a location | "Clear" in bid grid | `apiService.deleteBidSheetBids(locationId, commodityCode, month?)` |
 | Reorder | drag-drop in panel | `apiService.setBidSheetLocationOrder` |
 | Update filter prefs | filter bar interactions | `apiService.setBidSheetPreference` |
+| Print bids | Edit Bids → Print → Print | `confirmPrint` → `renderPrintDocument(printLayoutModel())` → `window.open` + `print()` |
 
 ## Troubleshooting
 
@@ -173,6 +209,9 @@ Persisted via `setBidSheetPreference`.
 | Drag-drop order doesn't stick across sessions | `setBidSheetLocationOrder` failed silently | Network tab; check `BidSheetLocationOrders` row exists for `(UserId, TradeUnitKey)` |
 | Sidebar link missing | `environment.bidSheetEnabled === false` for this build | `client/src/environments/environment.ts` |
 | 403 on a `/api/bidsheet/...` call | User isn't entitled to the requested TU | `UserEntitlementService.ValidateTradeUnitsOrThrowAsync` — check the user's entitlement set |
+| Printed sheet has no logo | Relative asset path inside the `about:blank` popup | `printLogoUrl` must be `window.location.origin` + path |
+| Print columns squeezed / headers ellipsised, or preview ≠ print | Widths and band split no longer come from the same builder | `utils/print-layout.ts` — `buildLocationsDown` / `buildLocationsAcross` are the only source; run `print-layout.spec.ts` |
+| Print dialog opens on "Locations down" though the user picked something else before | Persisted `layoutStyle` was a retired value (`sideBySide` / `stacked`) | `parsePrintLayoutStyle` — expected migration; the next save rewrites it |
 | Leaflet warnings about non-ESM module | Pre-existing build warning; safe to ignore unless build actually fails | Build output: `Module 'leaflet' ... is not ESM` |
 
 ## References
