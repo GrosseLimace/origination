@@ -2358,15 +2358,25 @@ export class BidSheetComponent {
             const compactLabel = row.oldNew === 'old' ? `O/C ${yy}`
               : row.oldNew === 'new' ? `N/C ${yy}`
               : String(resolved);
-            columns.push({ key: `${crop}#0#${row.id}`, crop, month: 0, year: resolved, label, compactLabel });
+            for (const pt of this.printPriceTypes()) {
+              columns.push({
+                key: `${crop}#0#${row.id}${pt ? '#' + pt : ''}`, crop, month: 0, year: resolved,
+                label: pt ? `${label} ${pt === 'cash' ? 'Cash' : 'Basis'}` : label,
+                compactLabel: pt ? `${compactLabel} ${pt === 'cash' ? 'Cash' : 'Basis'}` : compactLabel,
+                priceType: pt
+              });
+            }
           }
         } else {
           // Monthly: one column per selected month for the viewed year, headed "May (2026)".
-          columns.push({
-            key: `${crop}#${m}`, crop, month: m, year: viewedYear,
-            label: `${this.getMonthName(m)} (${viewedYear})`,
-            compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}`
-          });
+          for (const pt of this.printPriceTypes()) {
+            columns.push({
+              key: `${crop}#${m}${pt ? '#' + pt : ''}`, crop, month: m, year: viewedYear,
+              label: `${this.getMonthName(m)} (${viewedYear})${pt ? (pt === 'cash' ? ' Cash' : ' Basis') : ''}`,
+              compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}${pt ? (pt === 'cash' ? ' Cash' : ' Basis') : ''}`,
+              priceType: pt
+            });
+          }
         }
       }
       return { crop, columns };
@@ -2377,12 +2387,28 @@ export class BidSheetComponent {
    * Resolve a printed cell's bid value. For the viewed (New Crop) year we read the live edit-grid
    * value so unsaved edits print; for any other year (Old Crop) we read the saved bid from the lookup.
    */
-  printCellValue(row: EditBidsRow, col: { crop: string; month: number; year: number }): string {
+  printCellValue(row: EditBidsRow, col: { crop: string; month: number; year: number; priceType?: 'cash' | 'basis' }): string {
+    const gridKey = `${col.crop}#${col.month}`;
+    // In cash or basis mode row.bids already holds whichever price is selected, so priceType is
+    // absent and this reads exactly as it always did. Both mode sets it and splits the two apart.
+    if (col.priceType === 'basis') {
+      return col.year === this.editBidsYear()
+        ? (row.basisBids[gridKey] ?? '').trim()
+        : (this._getLatestEntry(row.name, col.year, col.crop, col.month)?.basisBid ?? '').trim();
+    }
     if (col.year === this.editBidsYear()) {
-      return (row.bids[`${col.crop}#${col.month}`] ?? '').trim();
+      return (row.bids[gridKey] ?? '').trim();
     }
     return this._getLatestBid(row.name, col.year, col.crop, col.month).trim();
   }
+
+  /**
+   * Which price columns each period prints as. Cash and basis print one column carrying the selected
+   * price; Both prints the pair, which is why this returns undefined rather than 'cash' in the single
+   * cases -- an unset priceType keeps the column keys and headers exactly as they were.
+   */
+  private readonly printPriceTypes = computed<(('cash' | 'basis') | undefined)[]>(() =>
+    this.priceMode() === 'both' ? ['cash', 'basis'] : [undefined]);
 
   printEditBids(): void {
     // Initialize period (crop/month) selection with whatever is currently visible on the edit grid.

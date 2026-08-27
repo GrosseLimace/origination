@@ -40,6 +40,9 @@ export interface PrintColumn {
   year: number;
   label: string;
   compactLabel: string;
+  /** Set only in Both mode, where each period prints as a cash column beside a basis column. Absent
+   *  in cash or basis mode, where a period is a single column carrying whichever price is selected. */
+  priceType?: 'cash' | 'basis';
 }
 
 export interface PrintCropGroup {

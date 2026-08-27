@@ -1012,6 +1012,7 @@
                         @for (col of editGridColumns(); track col.key; let colIdx = $index) {
                           <td class="px-3 py-2.5 transition-colors"
                               [ngClass]="draggingCrop() === col.crop ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
+                            <div class="flex items-start gap-1.5">
                             <input
                               type="text"
                               [attr.id]="'bid-' + rowIdx + '-' + col.key"
@@ -1022,7 +1023,7 @@
                               [readonly]="cellReadOnly(row, col.key)"
                               [title]="row.fedCells.has(col.key) ? fedCellTooltip(row, col.key) : ''"
                               placeholder="—"
-                              class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
+                              class="flex-1 min-w-0 font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="cellReadOnly(row, col.key)
                                 ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
                                 : (row.bids[col.key] !== row.originalBids[col.key]
@@ -1030,11 +1031,26 @@
                                   : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                             />
                             @if (priceMode() === 'both') {
-                              <!-- Cash sits in the input, basis reads underneath it. Blank rather than a
-                                   dash when there is no basis: most manual bids have none, and a column
-                                   of dashes is noise. -->
-                              <div class="mt-0.5 font-mono text-[11px] leading-none text-center text-gray-500 dark:text-gray-400 truncate"
-                                   [title]="row.basisBids[col.key] ? 'Basis ' + row.basisBids[col.key] : ''">{{ row.basisBids[col.key] }}</div>
+                              <!-- Basis sits beside cash rather than under it, so the two read as the pair
+                                   an originator quotes. Always read-only: the sheet stores no manual basis. -->
+                              <input
+                                type="text"
+                                [ngModel]="row.basisBids[col.key]"
+                                [ngModelOptions]="{ standalone: true }"
+                                readonly
+                                placeholder="—"
+                                [title]="row.basisBids[col.key] ? 'Basis ' + row.basisBids[col.key] : ''"
+                                class="flex-1 min-w-0 font-mono text-sm text-center rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:outline-none focus:ring-0"
+                              />
+                            }
+                            </div>
+                            @if (priceMode() === 'both') {
+                              <!-- Two bare numbers side by side are ambiguous and the header can only name
+                                   the period, so each value says what it is. -->
+                              <div class="mt-0.5 flex items-start gap-1.5">
+                                <div class="flex-1 min-w-0 text-[10px] leading-none text-center uppercase tracking-wide text-gray-400 dark:text-gray-500">Cash</div>
+                                <div class="flex-1 min-w-0 text-[10px] leading-none text-center uppercase tracking-wide text-gray-400 dark:text-gray-500">Basis</div>
+                              </div>
                             }
                           </td>
                         }
