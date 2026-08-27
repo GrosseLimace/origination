@@ -44,6 +44,12 @@ public sealed class CtrmContractReader
     private readonly ICtrmGraphQlClient _client;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmContractReader> _logger;
+    private readonly Func<DateTime> _utcNow;
+
+    /// <summary>Cache inserts between sweeps of expired entries. Without one the dictionary only grows.</summary>
+    private const int SweepEvery = 64;
+
+    private int _inserts;
 
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -70,18 +76,43 @@ public sealed class CtrmContractReader
         public bool Failed => IsCompleted
             && (!Pending.Value.IsCompletedSuccessfully || !Pending.Value.Result.Ok);
 
-        public static CacheEntry Deferred(DateTime CreatedUtc, Func<Task<CtrmReadResult<List<CtrmContractDto>>>> fetch) =>
-            new(CreatedUtc, new Lazy<Task<CtrmReadResult<List<CtrmContractDto>>>>(fetch, LazyThreadSafetyMode.ExecutionAndPublication));
+        /// <summary>
+        /// The completed result this entry REPLACED, if it replaced a good one.
+        /// </summary>
+        /// <remarks>
+        /// Stale-while-revalidate is meant to spare every caller the wait, not just the one who happened to
+        /// notice the entry had expired. Without this, that first caller got the old copy and then swapped the
+        /// in-flight refresh into the slot - so everyone arriving during the refresh found a fresh-looking,
+        /// not-yet-complete entry and blocked on it. Carrying the old task forward means they get an answer
+        /// immediately too, and only callers arriving after the refresh lands wait for nothing at all.
+        /// </remarks>
+        public Task<CtrmReadResult<List<CtrmContractDto>>>? Previous { get; init; }
+
+        /// <summary>The best answer available right now: the refreshed one if it has landed, else the copy
+        /// this entry replaced.</summary>
+        public Task<CtrmReadResult<List<CtrmContractDto>>> BestAvailable =>
+            Previous is not null && !IsCompleted ? Previous : Read;
+
+        public static CacheEntry Deferred(
+            DateTime CreatedUtc,
+            Func<Task<CtrmReadResult<List<CtrmContractDto>>>> fetch,
+            Task<CtrmReadResult<List<CtrmContractDto>>>? previous = null) =>
+            new(CreatedUtc, new Lazy<Task<CtrmReadResult<List<CtrmContractDto>>>>(fetch, LazyThreadSafetyMode.ExecutionAndPublication))
+            { Previous = previous };
     }
 
+    /// <param name="utcNow">Clock, injectable so the cache's time behaviour can be tested. Defaults to
+    /// <see cref="DateTime.UtcNow"/>; DI supplies the default because the type is unregistered.</param>
     public CtrmContractReader(
         ICtrmGraphQlClient client,
         IConfiguration configuration,
-        ILogger<CtrmContractReader> logger)
+        ILogger<CtrmContractReader> logger,
+        Func<DateTime>? utcNow = null)
     {
         _client = client;
         _configuration = configuration;
         _logger = logger;
+        _utcNow = utcNow ?? (() => DateTime.UtcNow);
     }
 
     /// <summary>
@@ -212,7 +243,7 @@ public sealed class CtrmContractReader
     {
         while (true)
         {
-            var now = DateTime.UtcNow;
+            var now = _utcNow();
 
             if (_cache.TryGetValue(cacheKey, out var existing))
             {
@@ -221,12 +252,13 @@ public sealed class CtrmContractReader
                 var failed = existing.Failed;
 
                 if (!failed && now - existing.CreatedUtc < ttl)
-                    return existing.Read;
+                    return existing.BestAvailable;
 
                 if (!failed && existing.IsCompleted && staleWhileRevalidate)
                 {
-                    // Expired but good. Start the refresh and serve the old copy to this caller.
-                    var fresh = CacheEntry.Deferred(now, fetch);
+                    // Expired but good. Start the refresh, hand this caller the old copy, and carry that copy
+                    // on the new entry so callers arriving mid-refresh are served instead of blocking.
+                    var fresh = CacheEntry.Deferred(now, fetch, previous: existing.Read);
                     if (_cache.TryUpdate(cacheKey, fresh, existing))
                     {
                         _ = fresh.Read;          // the refresh is the point; nothing else will await it
@@ -242,11 +274,41 @@ public sealed class CtrmContractReader
             // owns the entry reads it.
             var added = CacheEntry.Deferred(now, fetch);
             var actual = _cache.GetOrAdd(cacheKey, added);
-            if (ReferenceEquals(actual, added) || now - actual.CreatedUtc < ttl || !actual.Failed)
+            if (ReferenceEquals(actual, added))
+            {
+                if (Interlocked.Increment(ref _inserts) % SweepEvery == 0) SweepExpired(now);
                 return actual.Read;
+            }
+
+            if (now - actual.CreatedUtc < ttl || !actual.Failed)
+                return actual.BestAvailable;
 
             // The entry we found is a failed one past its usefulness; drop it and try again.
             _cache.TryRemove(cacheKey, out _);
+        }
+    }
+
+    /// <summary>
+    /// Removes entries nothing can still use.
+    /// </summary>
+    /// <remarks>
+    /// This dictionary had no sweep at all and grew for the life of the process. The grace period matters:
+    /// a trade-unit entry past its TTL is exactly what stale-while-revalidate serves while a refresh runs, so
+    /// evicting on expiry alone would throw away the copy that keeps Build-a-List responsive.
+    /// </remarks>
+    private void SweepExpired(DateTime now)
+    {
+        var grace = TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:TradeUnitCacheMinutes", 5)));
+        var liveTtl = LiveTtl();
+
+        foreach (var pair in _cache)
+        {
+            var age = now - pair.Value.CreatedUtc;
+            var keep = pair.Key.StartsWith("producers:", StringComparison.OrdinalIgnoreCase)
+                ? grace + grace                      // SWR-eligible: one TTL to be stale, another to be served
+                : liveTtl + grace;
+            if (pair.Value.IsCompleted && age >= keep)
+                _cache.TryRemove(pair.Key, out _);
         }
     }
 

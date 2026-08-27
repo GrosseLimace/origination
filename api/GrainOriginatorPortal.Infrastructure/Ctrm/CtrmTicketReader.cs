@@ -76,8 +76,29 @@ public sealed class CtrmTicketReader
         public bool Failed => IsCompleted
             && (!Pending.Value.IsCompletedSuccessfully || !Pending.Value.Result.Ok);
 
-        public static CacheEntry Deferred(DateTime ExpiresUtc, Func<Task<CtrmReadResult<List<CtrmTicketDto>>>> fetch) =>
-            new(ExpiresUtc, new Lazy<Task<CtrmReadResult<List<CtrmTicketDto>>>>(fetch, LazyThreadSafetyMode.ExecutionAndPublication));
+        /// <summary>
+        /// The completed result this entry REPLACED, if it replaced a good one.
+        /// </summary>
+        /// <remarks>
+        /// Stale-while-revalidate is meant to spare every caller the wait, not just the one who happened to
+        /// notice the entry had expired. Without this, that first caller got the old copy and then swapped the
+        /// in-flight refresh into the slot - so everyone arriving during the refresh found a fresh-looking,
+        /// not-yet-complete entry and blocked on it. Carrying the old task forward means they get an answer
+        /// immediately too, and only callers arriving after the refresh lands wait for nothing at all.
+        /// </remarks>
+        public Task<CtrmReadResult<List<CtrmTicketDto>>>? Previous { get; init; }
+
+        /// <summary>The best answer available right now: the refreshed one if it has landed, else the copy
+        /// this entry replaced.</summary>
+        public Task<CtrmReadResult<List<CtrmTicketDto>>> BestAvailable =>
+            Previous is not null && !IsCompleted ? Previous : Read;
+
+        public static CacheEntry Deferred(
+            DateTime ExpiresUtc,
+            Func<Task<CtrmReadResult<List<CtrmTicketDto>>>> fetch,
+            Task<CtrmReadResult<List<CtrmTicketDto>>>? previous = null) =>
+            new(ExpiresUtc, new Lazy<Task<CtrmReadResult<List<CtrmTicketDto>>>>(fetch, LazyThreadSafetyMode.ExecutionAndPublication))
+            { Previous = previous };
     }
 
     /// <summary>Which server-side filter a read is using, for cache keys, variables and log lines.</summary>
@@ -366,12 +387,13 @@ public sealed class CtrmTicketReader
                 var failed = existing.Failed;
 
                 if (!failed && now < existing.ExpiresUtc)
-                    return existing.Read;
+                    return existing.BestAvailable;
 
                 if (!failed && existing.IsCompleted && staleWhileRevalidate)
                 {
-                    // Expired but good. Start the refresh and serve the old copy to this caller.
-                    var fresh = CacheEntry.Deferred(now + ttl, fetch);
+                    // Expired but good. Start the refresh, hand this caller the old copy, and carry that copy
+                    // on the new entry so callers arriving mid-refresh are served instead of blocking.
+                    var fresh = CacheEntry.Deferred(now + ttl, fetch, previous: existing.Read);
                     if (_cache.TryUpdate(cacheKey, fresh, existing))
                     {
                         _ = fresh.Read;          // the refresh is the point; nothing else will await it
@@ -394,7 +416,7 @@ public sealed class CtrmTicketReader
             }
 
             if (now < actual.ExpiresUtc || !actual.Failed)
-                return actual.Read;
+                return actual.BestAvailable;
 
             // The entry we found is a failed one past its usefulness; drop it and try again.
             _cache.TryRemove(cacheKey, out _);
@@ -405,9 +427,20 @@ public sealed class CtrmTicketReader
     /// dictionary from growing for the life of the process.</summary>
     private void SweepExpired(DateTime now)
     {
+        // Expiry alone is the wrong eviction rule for a trade-unit window: past its TTL is precisely when
+        // stale-while-revalidate serves it while a refresh runs, so dropping it here would send Build-a-List
+        // back to waiting on a multi-page walk. Those keys get a grace period; per-producer keys do not need
+        // one, because their reads are seconds and nothing serves them stale.
+        var grace = TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:TradeUnitCacheMinutes", 5)));
+
         foreach (var pair in _cache)
-            if (pair.Value.IsCompleted && now >= pair.Value.ExpiresUtc)
+        {
+            var cutoff = pair.Key.StartsWith("producers:", StringComparison.OrdinalIgnoreCase)
+                ? pair.Value.ExpiresUtc + grace
+                : pair.Value.ExpiresUtc;
+            if (pair.Value.IsCompleted && now >= cutoff)
                 _cache.TryRemove(pair.Key, out _);
+        }
     }
 
     /// <summary>

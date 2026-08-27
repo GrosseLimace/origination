@@ -528,6 +528,71 @@ public class CtrmTicketReaderTests
 
     // -------------------------------------------------------------------------
     [Fact]
+    public async Task EveryCallerDuringARefreshIsServedTheOldCopy_NotJustTheFirst()
+    {
+        // The bug this pins: the first stale caller got the old copy, then the in-flight refresh was swapped
+        // into the slot - so everyone arriving during the refresh found a fresh-LOOKING, not-yet-complete
+        // entry and blocked on the multi-page walk. Stale-while-revalidate has to cover all of them.
+        var now = new DateTime(2026, 8, 25, 12, 0, 0, DateTimeKind.Utc);
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 366, cacheSeconds: 60), () => now);
+        var codes = Codes(5);
+
+        await sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+
+        now = now.AddSeconds(61);
+        client.HoldNextCall = true;
+        var first = sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+        Assert.True(first.IsCompleted, "first stale caller should not wait");
+
+        // Second and third arrive while the refresh is still parked at the gate.
+        var second = sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+        var third = sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+
+        Assert.True(second.IsCompleted, "a caller arriving mid-refresh blocked on it instead of getting the old copy");
+        Assert.True(third.IsCompleted, "a caller arriving mid-refresh blocked on it instead of getting the old copy");
+        Assert.True((await second).Ok);
+        Assert.True((await third).Ok);
+        Assert.Equal(2, client.Calls);   // one original + one refresh; no caller triggered another
+
+        client.Gate.SetResult();
+        await Task.Yield();
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ASweepDoesNotEvictATradeUnitWindowThatStaleWhileRevalidateStillNeeds()
+    {
+        // The sweep ran on expiry alone, which is exactly when a trade-unit window becomes SWR-eligible -
+        // dropping it there sent Build-a-List back to waiting on the walk.
+        var now = new DateTime(2026, 8, 25, 12, 0, 0, DateTimeKind.Utc);
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 366, cacheSeconds: 60), () => now);
+        var codes = Codes(5);
+
+        await sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+        Assert.Equal(1, client.Calls);
+
+        // Push past the window TTL, then churn enough distinct producer reads to trigger a sweep (every 64).
+        now = now.AddSeconds(61);
+        for (var i = 0; i < 70; i++)
+            await sut.GetForProducerAsync($"SWEEP{i:D2}", CancellationToken.None);
+        var callsAfterChurn = client.Calls;
+
+        // The trade-unit entry should still be there to serve stale.
+        client.HoldNextCall = true;
+        var stale = sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+
+        Assert.True(stale.IsCompleted, "the trade-unit window was swept away and the caller had to wait");
+        Assert.True((await stale).Ok);
+        Assert.Equal(callsAfterChurn + 1, client.Calls);   // exactly one refresh, no re-walk
+
+        client.Gate.SetResult();
+        await Task.Yield();
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
     public async Task TheTradeUnitHistoryRead_IsWarmOnceEveryWindowIsCached()
     {
         var client = new RecordingClient();
