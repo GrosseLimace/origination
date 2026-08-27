@@ -283,8 +283,13 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// </summary>
     private async Task<List<string>> ResolveTradeUnitProducerCodesAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
     {
+        // DIFFERS FROM ODS ON PURPOSE - see CtrmContractRepository.ResolveScopedProducerCodesAsync. An
+        // empty trade-unit list must not become a 16,763-producer walk.
         if (tradeUnits is not { Count: > 0 })
-            return await _ods.ResolveSpotLoadProducerCodesAsync(null, cancellationToken);
+        {
+            _logger.LogWarning("CTRM tickets: no trade units in the request (selection empty or removed by the entitlement filter) - returning nothing rather than every producer.");
+            return [];
+        }
 
         var codes = await _appContext.Customers
             .AsNoTracking()
@@ -342,6 +347,16 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// </remarks>
     public async Task<List<Ticket>> GetTodaysAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
     {
+        // DIFFERS FROM ODS ON PURPOSE - see ResolveTradeUnitProducerCodesAsync. The ODS resolver reads an
+        // empty list as every active producer; against CTRM that was measured at 34 chunks and ~90s for 43
+        // rows, triggered by the entitlement filter stripping the selected unit.
+        if (tradeUnits is not { Count: > 0 })
+        {
+            _logger.LogWarning("CTRM tickets: Spot Loads asked with no trade units (selection empty or removed by the entitlement filter) - returning nothing rather than every producer.");
+            _provenance.RecordTickets("ctrm", "NoTradeUnitsSelected", 0);
+            return [];
+        }
+
         // The ODS implementation, not a copy of it. It unions the CustomerTradeUnit snapshot with
         // contract-derived codes, and missing that union silently drops producers from Spot Loads.
         var codes = await _ods.ResolveSpotLoadProducerCodesAsync(tradeUnits, cancellationToken);

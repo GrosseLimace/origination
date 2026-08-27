@@ -382,15 +382,22 @@ public sealed class CtrmContractRepository : IContractRepository
     /// </summary>
     private async Task<HashSet<string>> ResolveScopedProducerCodesAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
     {
-        var hasTradeUnitFilter = tradeUnits is { Count: > 0 };
+        // DIFFERS FROM ODS ON PURPOSE. The ODS read treated "no trade unit" as "every active producer" -
+        // one SQL query either way. Against CTRM that is 16,763 producers in 34 chunks of a ~25s call:
+        // minutes, for a scope no trade unit legitimately has. The only way an empty list reaches here is
+        // the entitlement filter stripping every selected unit (the client never asks unscoped), and the
+        // honest answer to that is an empty list, not everyone's contracts.
+        if (tradeUnits is not { Count: > 0 })
+        {
+            _logger.LogWarning("CTRM contracts: no trade units in the request (selection empty or removed by the entitlement filter) - returning nothing rather than every producer.");
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
 
         var query = _appContext.Customers
             .AsNoTracking()
-            .Where(c => c.IsActive && c.ScoularId != null);
-
-        if (hasTradeUnitFilter)
-            query = query.Where(c => _appContext.CustomerTradeUnits.Any(ctu =>
-                ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits!.Contains(ctu.TradeUnit)));
+            .Where(c => c.IsActive && c.ScoularId != null
+                && _appContext.CustomerTradeUnits.Any(ctu =>
+                    ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits.Contains(ctu.TradeUnit)));
 
         var codes = await query.Select(c => c.ScoularId!).ToListAsync(cancellationToken);
         return new HashSet<string>(codes.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
