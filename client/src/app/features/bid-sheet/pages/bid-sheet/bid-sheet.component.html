@@ -747,6 +747,22 @@
                   </button>
                 </div>
                 <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+                <!-- Same control as the sheet header, with Both added: an originator comparing elevators
+                     wants the flat price and the basis side by side, not one flip at a time. -->
+                @if (barchartEnabled) {
+                  <div class="flex items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
+                       title="Cash is the posted flat price. Basis is cents against the futures board, so -30 is thirty under. Both shows cash with basis beneath it.">
+                    @for (m of ['cash', 'basis', 'both']; track m) {
+                      <button (click)="setPriceMode($any(m))"
+                              [class]="priceMode() === m
+                                ? 'px-2.5 py-1.5 text-sm font-medium bg-scoular-green-accessible text-white capitalize'
+                                : 'px-2.5 py-1.5 text-sm font-medium bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 capitalize'">
+                        {{ m }}
+                      </button>
+                    }
+                  </div>
+                  <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+                }
                 <div class="relative">
                   <button (click)="openMonthDropdown()"
                     class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
@@ -892,21 +908,6 @@
                 </button>
               </div>
             } @else {
-              <!-- Fed bids land on delivery months, so a grid showing only "Year" columns has nowhere to
-                   render them. Offer to add the months that actually have them. -->
-              @if (fedMonthsMissingFromGrid().length > 0) {
-                <div class="shrink-0 mx-5 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-scoular-green/30 bg-scoular-green/5 dark:bg-scoular-green/10 px-3 py-2">
-                  <span class="text-xs text-gray-700 dark:text-gray-200">
-                    BarChart has bids for
-                    {{ fedMonthsMissingFromGrid().length === 1 ? 'a month' : 'months' }}
-                    not shown here.
-                  </span>
-                  <button (click)="showFedMonthsInGrid()"
-                          class="px-2.5 py-1 rounded-md text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
-                    Show them
-                  </button>
-                </div>
-              }
               <div class="flex-1 overflow-auto">
                 <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
                   <thead>
@@ -1018,26 +1019,22 @@
                               (ngModelChange)="updateBid(rowIdx, col.key, $event)"
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                               (blur)="onBidBlur()"
-                              [readonly]="editBidsReadOnly() || row.fedCells.has(col.key)"
+                              [readonly]="cellReadOnly(row, col.key)"
                               [title]="row.fedCells.has(col.key) ? fedCellTooltip(row, col.key) : ''"
                               placeholder="—"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
-                              [ngClass]="editBidsReadOnly()
-                                ? 'border-transparent bg-transparent text-gray-700 dark:text-gray-300 cursor-default focus:ring-0 read-only:cursor-default'
-                                : (row.fedCells.has(col.key)
-                                  ? 'border-dashed border-scoular-green/40 bg-scoular-green/5 dark:bg-scoular-green/10 text-gray-700 dark:text-gray-200 cursor-default focus:ring-0'
-                                  : (row.bids[col.key] !== row.originalBids[col.key]
-                                    ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
-                                    : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'))"
+                              [ngClass]="cellReadOnly(row, col.key)
+                                ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
+                                : (row.bids[col.key] !== row.originalBids[col.key]
+                                  ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
+                                  : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                             />
-                            @if (barchartEnabled && row.fedAsOf[col.key]) {
-                              <!-- An old bid is shown, not hidden -- but it has to LOOK old, or it reads
-                                   as today's market. Amber and dated rather than silently absent. -->
-                              <div class="mt-0.5 text-[10px] leading-none text-center truncate"
-                                   [class]="row.agingCells.has(col.key)
-                                     ? 'text-scoular-yellow dark:text-scoular-yellow font-medium'
-                                     : 'text-gray-400 dark:text-gray-500'"
-                                   [title]="fedCellTooltip(row, col.key)">{{ formatAsOf(row.fedAsOf[col.key]) }}</div>
+                            @if (priceMode() === 'both') {
+                              <!-- Cash sits in the input, basis reads underneath it. Blank rather than a
+                                   dash when there is no basis: most manual bids have none, and a column
+                                   of dashes is noise. -->
+                              <div class="mt-0.5 font-mono text-[11px] leading-none text-center text-gray-500 dark:text-gray-400 truncate"
+                                   [title]="row.basisBids[col.key] ? 'Basis ' + row.basisBids[col.key] : ''">{{ row.basisBids[col.key] }}</div>
                             }
                           </td>
                         }

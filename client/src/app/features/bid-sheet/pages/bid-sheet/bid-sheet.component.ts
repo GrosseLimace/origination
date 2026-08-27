@@ -29,6 +29,8 @@ interface EditBidsRow {
   longitude?: number;
   bids: Record<string, string>;
   originalBids: Record<string, string>;
+  /** Basis value per column, shown beneath the cash input in Both mode. */
+  basisBids: Record<string, string>;
   /** Column keys whose value came from the BarChart feed. Those cells are not editable. */
   fedCells: Set<string>;
   /** Column key → when the elevator last updated that fed bid. Only set for fed cells. */
@@ -94,7 +96,17 @@ export class BidSheetComponent {
    * column, so a bid typed while basis is displayed would silently overwrite that cell's cash price
    * with a basis number. Entering basis by hand needs its own write path — until then, read-only.
    */
-  readonly editBidsReadOnly = computed(() => !this.hasIndividualTu() || this.priceMode() === 'basis');
+  readonly editBidsReadOnly = computed(() => !this.hasIndividualTu());
+
+  /**
+   * Whether a single grid cell accepts typing. Three reasons it might not, and they are all per cell
+   * rather than per grid: the whole sheet is read-only (All Producers), the cell is fed and the feed
+   * owns it, or we are showing basis -- which has nowhere to save a typed value, because a manual
+   * basis is not something the sheet stores. In Both mode the input still holds cash, so it stays live.
+   */
+  cellReadOnly(row: EditBidsRow, key: string): boolean {
+    return this.editBidsReadOnly() || row.fedCells.has(key) || this.priceMode() === 'basis';
+  }
   selectedYear = signal<number>(new Date().getFullYear());
   selectedCrop = signal<string>('');
   searchQuery = signal<string>('');
@@ -105,7 +117,7 @@ export class BidSheetComponent {
    * board and is normally negative, so "-30" reads as thirty under. Both come from the feed on the same
    * row, so switching is a display change with no refetch.
    */
-  priceMode = signal<'cash' | 'basis'>('cash');
+  priceMode = signal<'cash' | 'basis' | 'both'>('cash');
   selectedMonth = signal<number>(0); // 0=yearly, 1-12=monthly
 
   // --- Data ---
@@ -141,6 +153,7 @@ export class BidSheetComponent {
   /** Flattened view of locations — uses TU-filtered bidLocations when a TU is active, otherwise allMapLocations. */
   readonly bidEntries = computed<BidSheetEntry[]>(() => {
     const source = this.activeTradeUnits().length > 0 ? this.bidLocations() : this.allMapLocations();
+    // 'both' resolves to cash here: the map colours, side panel and print each need one number.
     const basisMode = this.priceMode() === 'basis';
     return source.flatMap(loc =>
       (loc.bids ?? []).map(bid => ({
@@ -167,6 +180,10 @@ export class BidSheetComponent {
         source: bid.source ?? 'Manual',
         barchartSymbol: basisMode ? bid.basisSymbol : bid.barchartSymbol,
         quoteAsOf: basisMode ? bid.basisQuoteAsOf : bid.quoteAsOf,
+        // Both prices travel alongside the selected one so the Edit Bids grid can show them together
+        // without re-deriving anything. Only Both mode reads these.
+        cashBid: bid.bid,
+        basisBid: bid.basisBid,
         createdBy: bid.createdBy,
         createdAt: bid.createdAt,
         modifiedBy: bid.modifiedBy,
@@ -235,47 +252,6 @@ export class BidSheetComponent {
   /** Whether the BarChart picker and fed-bid display are turned on for this environment. */
   readonly barchartEnabled = environment.barchartBidsEnabled === true;
 
-  // ---------------------------------------------------------------------------
-  // Finding fed bids
-  //
-  // The feed writes bids at a specific delivery MONTH (1-12), never at month 0. The map, panel and grid
-  // all default to month 0 ("Year"), and the bid lookup keys on the month exactly — so a user whose
-  // locations are full of BarChart bids sees an empty sheet on the default view and concludes the feed
-  // is broken. Nothing is wrong; they're looking at a period the feed never publishes.
-  //
-  // Rather than change what the screen opens with (which would override saved preferences for everyone,
-  // fed bids or not), these surface where the fed bids actually are and offer one click to go there.
-  // ---------------------------------------------------------------------------
-
-  /** Distinct crop / crop-year / delivery-month cells the feed has published, from the loaded bids. */
-  readonly fedPeriods = computed(() => {
-    const cells = new Map<string, { crop: string; year: number; month: number }>();
-    for (const e of this.bidEntries()) {
-      if (e.source !== 'Barchart' || !e.commodityCode) continue;
-      const key = `${e.commodityCode}|${e.cropYear}|${e.month}`;
-      if (!cells.has(key)) cells.set(key, { crop: e.commodityCode, year: e.cropYear, month: e.month });
-    }
-    return [...cells.values()].sort((a, b) =>
-      a.year - b.year || a.month - b.month || a.crop.localeCompare(b.crop));
-  });
-
-  /** Delivery months with fed bids for the grid's current year that aren't among its columns. */
-  readonly fedMonthsMissingFromGrid = computed(() => {
-    if (!this.barchartEnabled) return [];
-    const shown = new Set(this.editBidsMonths());
-    const year = this.editBidsYear();
-    return [...new Set(this.fedPeriods()
-      .filter(p => p.year === year && !shown.has(p.month))
-      .map(p => p.month))].sort((a, b) => a - b);
-  });
-
-  /** Adds the grid's missing fed months to its columns, going through the normal apply path. */
-  showFedMonthsInGrid(): void {
-    const missing = this.fedMonthsMissingFromGrid();
-    if (missing.length === 0) return;
-    this.pendingMonths.set([...new Set([...this.editBidsMonths(), ...missing])]);
-    this.confirmMonthSelection();
-  }
 
   /**
    * How long a fed bid can sit unchanged before the UI mutes it. This is presentation only — the feed
@@ -1027,7 +1003,7 @@ export class BidSheetComponent {
    * Switches between the cash and basis views. Only fed bids carry a basis, so a sheet of manually
    * typed bids goes largely blank in basis mode — that is the data being honest, not a fault.
    */
-  setPriceMode(mode: 'cash' | 'basis'): void {
+  setPriceMode(mode: 'cash' | 'basis' | 'both'): void {
     if (this.priceMode() === mode) return;
     this.priceMode.set(mode);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', `price-mode-${mode}`);
@@ -1676,12 +1652,14 @@ export class BidSheetComponent {
       addedNames.add(name);
       const rep = this.bidEntries().find(e => e.name === name);
       const bids: Record<string, string> = {};
+      const basisBids: Record<string, string> = {};
       const fedCells = new Set<string>();
       const fedAsOf: Record<string, string | undefined> = {};
       const agingCells = new Set<string>();
       for (const col of columns) {
         const entry = lookup.get(`${name}|${col.crop}|${year}|${col.month}`);
         bids[col.key] = entry?.bid ?? '';
+        basisBids[col.key] = entry?.basisBid ?? '';
         // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
         // months the vendor doesn't publish, and those stay fully editable.
         if (entry?.source === 'Barchart') {
@@ -1690,7 +1668,7 @@ export class BidSheetComponent {
           if (this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
         }
       }
-      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, fedCells, fedAsOf, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, fedCells, fedAsOf, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -1699,7 +1677,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, fedCells: new Set<string>(), fedAsOf: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, fedCells: new Set<string>(), fedAsOf: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // Apply saved location order (unknown names go to end)
@@ -1969,10 +1947,11 @@ export class BidSheetComponent {
   }
 
   updateBid(rowIndex: number, crop: string, value: string): void {
-    if (this.editBidsReadOnly()) return; // All Producers grid is view-only
-    // Feed-owned cells belong to BarChart. The server rejects writes to them anyway; refusing here
-    // keeps the grid from showing a pending edit that would silently vanish on the next load.
-    if (this.editBidsRows()[rowIndex]?.fedCells.has(crop)) return;
+    // Mirrors cellReadOnly: view-only grid, a feed-owned cell, or basis mode — which has nowhere to
+    // save a typed value. The server rejects writes to fed cells anyway; refusing here keeps the grid
+    // from showing a pending edit that would silently vanish on the next load.
+    const row = this.editBidsRows()[rowIndex];
+    if (!row || this.cellReadOnly(row, crop)) return;
     this.editBidsRows.update(rows => {
       const updated = [...rows];
       updated[rowIndex] = { ...updated[rowIndex], bids: { ...updated[rowIndex].bids, [crop]: value } };

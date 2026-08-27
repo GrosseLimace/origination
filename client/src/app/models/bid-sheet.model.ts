@@ -68,10 +68,13 @@ export interface BidSheetEntry {
   commodityCategory?: string;
   cropYear: number;
   month: number;
+  /** Whichever price the sheet is currently showing, so map, panel and print follow the toggle. */
   bid: string;
   source: BidSource;
   barchartSymbol?: string;
   quoteAsOf?: string;
+  /** The cash price regardless of the toggle — the Edit Bids grid needs both at once in "Both" mode. */
+  cashBid?: string;
   basisBid?: string;
   basisQuoteAsOf?: string;
   createdBy: string;
