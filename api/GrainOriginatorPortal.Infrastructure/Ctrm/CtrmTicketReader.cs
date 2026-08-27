@@ -305,6 +305,36 @@ public sealed class CtrmTicketReader
         };
     }
 
+    /// <summary>
+    /// What this reader currently holds for one producer - keys, age and state, never rows.
+    /// </summary>
+    /// <remarks>
+    /// For the timing diagnostics endpoint; see the contract reader's equivalent. Windows are listed
+    /// individually because a per-producer read is only as fast as its slowest window, and which windows
+    /// were already cached is the whole explanation for a fast or slow number.
+    /// </remarks>
+    public IReadOnlyList<string> Describe(string scoularId)
+    {
+        var code = scoularId?.Trim() ?? string.Empty;
+        var prefix = $"customer:{code}";
+        var now = _utcNow();
+
+        return
+        [
+            .. _cache
+                .Where(pair => pair.Key.Equals(prefix, StringComparison.OrdinalIgnoreCase)
+                            || pair.Key.StartsWith(prefix + "|", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(pair =>
+                {
+                    var state = !pair.Value.IsCompleted ? "in-flight" : pair.Value.Failed ? "failed" : "ok";
+                    var expiresIn = (pair.Value.ExpiresUtc - now).TotalSeconds;
+                    var label = pair.Key.Length > prefix.Length ? pair.Key[(prefix.Length + 1)..] : "scope";
+                    return $"{label}:{state}:expires in {expiresIn:F0}s";
+                })
+        ];
+    }
+
     /// <summary>Drops a producer's cached read, including every window beneath it.</summary>
     public void Invalidate(string scoularId)
     {

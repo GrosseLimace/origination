@@ -16,6 +16,9 @@ namespace GrainOriginatorPortal.Api.Middleware;
 ///
 /// <para>Non-production only. These headers describe internal data sources, and while they carry no
 /// customer data they are diagnostic detail that has no reason to reach a production response.</para>
+///
+/// <para>Also emits <c>Server-Timing</c>, which the browser surfaces natively in the Network tab. That
+/// makes every click during testing a measurement rather than only the ones someone remembers to probe.</para>
 /// </remarks>
 public sealed class CtrmProvenanceMiddleware
 {
@@ -38,6 +41,16 @@ public sealed class CtrmProvenanceMiddleware
 
             if (provenance.Tickets is { } tickets)
                 context.Response.Headers[CtrmProvenance.TicketsHeader] = tickets;
+
+            // Server-Timing puts the server-side cost of this request in the browser's Network tab, so a
+            // slow click can be attributed without opening a log or calling the diagnostics endpoint.
+            var timings = new List<string>(2);
+            if (provenance.ContractsMs is { } contractsMs)
+                timings.Add($"ctrm-contracts;dur={contractsMs}");
+            if (provenance.TicketsMs is { } ticketsMs)
+                timings.Add($"ctrm-tickets;dur={ticketsMs}");
+            if (timings.Count > 0)
+                context.Response.Headers["Server-Timing"] = string.Join(", ", timings);
 
             return Task.CompletedTask;
         });

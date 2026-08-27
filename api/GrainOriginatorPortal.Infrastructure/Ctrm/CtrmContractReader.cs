@@ -216,6 +216,31 @@ public sealed class CtrmContractReader
         return codes.Count > 0 && _cache.ContainsKey($"producers:{codes.Count}:{StableHash(codes)}");
     }
 
+    /// <summary>
+    /// What this reader currently holds for one producer - keys, age and state, never rows.
+    /// </summary>
+    /// <remarks>
+    /// For the timing diagnostics endpoint. A stage time is uninterpretable without knowing whether it was
+    /// served from cache, and inferring that from the number is guesswork.
+    /// </remarks>
+    public IReadOnlyList<string> Describe(string scoularId)
+    {
+        var code = scoularId?.Trim() ?? string.Empty;
+        var now = _utcNow();
+
+        return
+        [
+            .. new[] { ("core", CoreKey(code)), ("full", FullKey(code)) }
+                .Where(k => _cache.ContainsKey(k.Item2))
+                .Select(k =>
+                {
+                    var entry = _cache[k.Item2];
+                    var state = !entry.IsCompleted ? "in-flight" : entry.Failed ? "failed" : "ok";
+                    return $"{k.Item1}:{state}:{(now - entry.CreatedUtc).TotalSeconds:F1}s";
+                })
+        ];
+    }
+
     /// <summary>Drops a producer's cached reads - BOTH projections - so the next request goes back to CTRM.</summary>
     public void Invalidate(string scoularId)
     {

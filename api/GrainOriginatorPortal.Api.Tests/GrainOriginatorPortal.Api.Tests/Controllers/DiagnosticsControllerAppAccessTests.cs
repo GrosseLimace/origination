@@ -54,6 +54,10 @@ public class DiagnosticsControllerAppAccessTests
             _graphMock.Object,
             new Mock<ICtrmGraphQlClient>().Object,
             new Mock<IContractRepository>().Object,
+            new Mock<ITicketRepository>().Object,
+            new CtrmProvenance(),
+            new CtrmContractReader(new Mock<ICtrmGraphQlClient>().Object, config, new Mock<ILogger<CtrmContractReader>>().Object),
+            new CtrmTicketReader(new Mock<ICtrmGraphQlClient>().Object, config, new Mock<ILogger<CtrmTicketReader>>().Object),
             config);
     }
 

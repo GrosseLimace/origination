@@ -39,6 +39,10 @@ public class DiagnosticsController : ControllerBase
     private readonly IGraphDirectoryClient _graphDirectory;
     private readonly ICtrmGraphQlClient _ctrm;
     private readonly IContractRepository _contracts;
+    private readonly ITicketRepository _tickets;
+    private readonly CtrmProvenance _provenance;
+    private readonly CtrmContractReader _contractReader;
+    private readonly CtrmTicketReader _ticketReader;
     private readonly IConfiguration _config;
     private static int _isGeocoding;
 
@@ -53,10 +57,18 @@ public class DiagnosticsController : ControllerBase
         IGraphDirectoryClient graphDirectory,
         ICtrmGraphQlClient ctrm,
         IContractRepository contracts,
+        ITicketRepository tickets,
+        CtrmProvenance provenance,
+        CtrmContractReader contractReader,
+        CtrmTicketReader ticketReader,
         IConfiguration config)
     {
         _ctrm = ctrm;
         _contracts = contracts;
+        _tickets = tickets;
+        _provenance = provenance;
+        _contractReader = contractReader;
+        _ticketReader = ticketReader;
         _context = context;
         _appContext = appContext;
         _tuPrefContext = tuPrefContext;
@@ -323,6 +335,115 @@ public class DiagnosticsController : ControllerBase
     /// from the App Service is the only way to test egress from inside the VNet rather than from a
     /// workstation on VPN. These endpoints report connectivity status only — no schema, no data.
     /// </remarks>
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Times one producer's screen the way the client loads it, stage by stage. Dev/QA only.
+    /// </summary>
+    /// <remarks>
+    /// <para>Every latency decision on the CTRM path so far has rested on hand-run probes, and two of them
+    /// disagreed - one probe saw splitting a ticket window help, another saw it hurt. This exists so those
+    /// questions can be settled against the real repository stack instead: the same caching, throttling,
+    /// retry and mapping a click goes through, with a stopwatch and the provenance string per stage.</para>
+    ///
+    /// <para><c>cold=true</c> invalidates both readers for the producer first, which is the only honest way
+    /// to measure a first click - otherwise the short per-producer cache answers and everything looks fast.
+    /// Contracts and tickets run CONCURRENTLY because that is how the client fires them; measuring them in
+    /// sequence would report a wall time no user experiences.</para>
+    ///
+    /// <para>No producer data in the response beyond row counts and the code that was asked for.</para>
+    /// </remarks>
+    [HttpGet("ctrm/producer-timing")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCtrmProducerTiming(
+        [FromQuery] string scoularId,
+        [FromQuery] bool cold = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (DenyIfProduction() is { } deny) return deny;
+
+        if (string.IsNullOrWhiteSpace(scoularId))
+            return BadRequest(new { Error = "scoularId is required (the Scoular customer code, e.g. TATOBIN)." });
+
+        var code = scoularId.Trim();
+        if (code.Length > CtrmCustomerCodes.MaxLength * 2)
+            return BadRequest(new { Error = "scoularId is not a plausible customer code." });
+
+        if (cold)
+        {
+            _contractReader.Invalidate(code);
+            _ticketReader.Invalidate(code);
+        }
+
+        var stages = new List<object>();
+        var wall = System.Diagnostics.Stopwatch.StartNew();
+
+        // As the client fires them: the contract list and the ticket list at the same time.
+        var contractsWatch = System.Diagnostics.Stopwatch.StartNew();
+        var contractsTask = _contracts.GetByCustomerAsync(0, code, cancellationToken);
+        var ticketsWatch = System.Diagnostics.Stopwatch.StartNew();
+        var ticketsTask = _tickets.GetByCustomerAsync(0, code, cancellationToken);
+
+        var contractRows = await Timed(contractsTask, contractsWatch);
+        stages.Add(Stage("contracts", contractsWatch, contractRows, _provenance.Contracts));
+
+        var ticketRows = await Timed(ticketsTask, ticketsWatch);
+        stages.Add(Stage("tickets", ticketsWatch, ticketRows, _provenance.Tickets));
+
+        // Then the two that follow on screen.
+        var pacingWatch = System.Diagnostics.Stopwatch.StartNew();
+        var pacingRows = await Timed(_contracts.GetHistoricalForPacingAsync(0, cancellationToken), pacingWatch);
+        stages.Add(Stage("pacing", pacingWatch, pacingRows, _provenance.Contracts));
+
+        var linesWatch = System.Diagnostics.Stopwatch.StartNew();
+        var lineRows = await Timed(_contracts.GetPricingLinesByCustomerAsync(code, cancellationToken), linesWatch);
+        stages.Add(Stage("pricingLines", linesWatch, lineRows, _provenance.Contracts));
+
+        wall.Stop();
+
+        return Ok(new
+        {
+            ScoularId = code,
+            Cold = cold,
+            WallMs = wall.ElapsedMilliseconds,
+            Stages = stages,
+            Cache = new
+            {
+                Contracts = _contractReader.Describe(code),
+                Tickets = _ticketReader.Describe(code)
+            },
+            Failure = _provenance.Failure is { } f ? $"{f.What}:{f.Status}" : null,
+            Partial = _provenance.Partial
+        });
+    }
+
+    /// <summary>Awaits a stage, stopping its watch even when the read throws.</summary>
+    private static async Task<int> Timed<T>(Task<List<T>> read, System.Diagnostics.Stopwatch watch)
+    {
+        try
+        {
+            var rows = await read;
+            return rows.Count;
+        }
+        catch
+        {
+            // A 503 from the failure filter is a legitimate outcome to time; report it as -1 rather than
+            // failing the whole measurement.
+            return -1;
+        }
+        finally
+        {
+            watch.Stop();
+        }
+    }
+
+    private static object Stage(string name, System.Diagnostics.Stopwatch watch, int rows, string? provenance) => new
+    {
+        Name = name,
+        Ms = watch.ElapsedMilliseconds,
+        Rows = rows,
+        Provenance = provenance
+    };
+
     private IActionResult? DenyIfProduction()
         => _env.IsDevelopment() || _env.IsEnvironment("Dev") || _env.IsEnvironment("QA")
             ? null

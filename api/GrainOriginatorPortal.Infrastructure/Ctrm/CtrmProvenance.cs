@@ -66,9 +66,33 @@ public sealed class CtrmProvenance
 
     public void RecordSource(string source) => Source = source;
 
-    public void RecordContracts(string source, string outcome, int rows) => Contracts = Format(source, outcome, rows);
+    public void RecordContracts(string source, string outcome, int rows)
+    {
+        Contracts = Format(source, outcome, rows);
+        ContractsMs ??= (long)_elapsed.Elapsed.TotalMilliseconds;
+    }
 
-    public void RecordTickets(string source, string outcome, int rows) => Tickets = Format(source, outcome, rows);
+    public void RecordTickets(string source, string outcome, int rows)
+    {
+        Tickets = Format(source, outcome, rows);
+        TicketsMs ??= (long)_elapsed.Elapsed.TotalMilliseconds;
+    }
+
+    /// <summary>
+    /// Milliseconds from the start of this request to the moment each read reported its outcome.
+    /// </summary>
+    /// <remarks>
+    /// Emitted as <c>Server-Timing</c> in non-production, which puts the server cost of a click in the
+    /// browser's Network tab beside the request itself. Cruder than the diagnostics endpoint - the two reads
+    /// overlap, so these are completion points rather than durations - but it needs no separate call, so
+    /// every click during ordinary testing is measured instead of only the ones someone thinks to probe.
+    /// </remarks>
+    public long? ContractsMs { get; private set; }
+
+    /// <inheritdoc cref="ContractsMs"/>
+    public long? TicketsMs { get; private set; }
+
+    private readonly System.Diagnostics.Stopwatch _elapsed = System.Diagnostics.Stopwatch.StartNew();
 
     /// <summary>
     /// Records that a CTRM read failed. The FIRST failure is kept: it is the one that caused the rest.
