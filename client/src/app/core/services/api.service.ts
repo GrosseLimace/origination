@@ -883,7 +883,7 @@ export class ApiService {
     name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
     latitude?: number; longitude?: number;
     commodityCode: string; commodityName?: string; commodityCategory?: string;
-    cropYear: number; bid: string; month?: number;
+    cropYear: number; bid: string; basisBid?: string; month?: number;
   }>): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/bidsheet/bids/bulk`, bids)
       .pipe(catchError(e => this.handleError(e)));

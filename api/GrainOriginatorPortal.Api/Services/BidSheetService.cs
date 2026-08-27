@@ -101,6 +101,7 @@ public class BidSheetService : IBidSheetService
                 CropYear = b.CropYear,
                 Month = b.Month,
                 Bid = b.Bid,
+                BasisBid = string.IsNullOrWhiteSpace(b.BasisBid) ? null : b.BasisBid,
                 CreatedBy = user,
                 CreatedAt = now
             }).ToList()
@@ -199,7 +200,8 @@ public class BidSheetService : IBidSheetService
                 CommodityCategory = r.CommodityCategory,
                 CropYear = r.CropYear,
                 Month = r.Month,
-                Bid = r.Bid
+                Bid = r.Bid,
+                BasisBid = r.BasisBid
             }).ToList();
             await _repository.BulkUpsertBidsAsync(inputs, group.Key, user, cancellationToken);
         }

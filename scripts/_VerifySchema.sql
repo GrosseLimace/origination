@@ -573,7 +573,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260824134238_AddPriceModePreference'),
 ('20260824140609_UsePriceModeForStaleQuotes'),
 ('20260824151441_UseContractMonthForBidCells'),
-('20260827140248_UseQuoteAgeNotVendorMode');
+('20260827140248_UseQuoteAgeNotVendorMode'),
+('20260827151032_MoveManualBidsToBasisColumn');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

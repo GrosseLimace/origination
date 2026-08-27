@@ -18,4 +18,5 @@ public record BidUpsertInput
     public int CropYear { get; init; }
     public int Month { get; init; }
     public string Bid { get; init; } = string.Empty;
+    public string BasisBid { get; init; } = string.Empty;
 }

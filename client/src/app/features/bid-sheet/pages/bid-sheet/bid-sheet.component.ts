@@ -29,8 +29,9 @@ interface EditBidsRow {
   longitude?: number;
   bids: Record<string, string>;
   originalBids: Record<string, string>;
-  /** Basis value per column, shown beneath the cash input in Both mode. */
+  /** Basis value per column. Editable on manual cells: originators quote on basis as often as cash. */
   basisBids: Record<string, string>;
+  originalBasisBids: Record<string, string>;
   /** Column keys whose value came from the BarChart feed. Those cells are not editable. */
   fedCells: Set<string>;
   /** Column key → when the elevator last updated that fed bid. Only set for fed cells. */
@@ -109,7 +110,7 @@ export class BidSheetComponent {
    * basis is not something the sheet stores. In Both mode the input still holds cash, so it stays live.
    */
   cellReadOnly(row: EditBidsRow, key: string): boolean {
-    return this.editBidsReadOnly() || row.fedCells.has(key) || this.priceMode() === 'basis';
+    return this.editBidsReadOnly() || row.fedCells.has(key);
   }
   selectedYear = signal<number>(new Date().getFullYear());
   selectedCrop = signal<string>('');
@@ -1681,13 +1682,18 @@ export class BidSheetComponent {
       const rep = this.bidEntries().find(e => e.name === name);
       const bids: Record<string, string> = {};
       const basisBids: Record<string, string> = {};
+      const originalBasisBids: Record<string, string> = {};
       const fedCells = new Set<string>();
       const fedAsOf: Record<string, string | undefined> = {};
       const agingCells = new Set<string>();
       for (const col of columns) {
         const entry = lookup.get(`${name}|${col.crop}|${year}|${col.month}`);
-        bids[col.key] = entry?.bid ?? '';
+        // Each price lives in its own field whatever the toggle says. The template picks which to
+        // show; the save writes each to its own column. Reading a mode-selected value into bids is
+        // how a basis would end up filed as a cash price.
+        bids[col.key] = entry?.cashBid ?? '';
         basisBids[col.key] = entry?.basisBid ?? '';
+        originalBasisBids[col.key] = basisBids[col.key];
         // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
         // months the vendor doesn't publish, and those stay fully editable.
         if (entry?.source === 'Barchart') {
@@ -1696,7 +1702,7 @@ export class BidSheetComponent {
           if (this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
         }
       }
-      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, fedCells, fedAsOf, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, fedCells, fedAsOf, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -1705,7 +1711,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, fedCells: new Set<string>(), fedAsOf: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, fedCells: new Set<string>(), fedAsOf: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // Apply saved location order (unknown names go to end)
@@ -1990,11 +1996,22 @@ export class BidSheetComponent {
   /** Diff the current grid against the snapshot and build the upsert payload for changed cells.
    *  Reads editBidsYear() and editGridColumns() at CALL TIME — callers that navigate (year/month/crop
    *  change) must invoke a save BEFORE mutating those, so the payload reflects the cells the user edited. */
-  private _buildDirtyBids(): Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }> {
+  /** Basis counterpart of updateBid. Same ownership rule: the feed owns fed cells, users own theirs. */
+  updateBasisBid(rowIndex: number, crop: string, value: string): void {
+    const row = this.editBidsRows()[rowIndex];
+    if (!row || this.cellReadOnly(row, crop)) return;
+    this.editBidsRows.update(rows => {
+      const next = [...rows];
+      next[rowIndex] = { ...next[rowIndex], basisBids: { ...next[rowIndex].basisBids, [crop]: value } };
+      return next;
+    });
+  }
+
+  private _buildDirtyBids(): Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> {
     const year = this.editBidsYear();
     const tu = this.activeTradeUnit();
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
-    const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }> = [];
+    const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> = [];
 
     for (const row of this.editBidsRows()) {
       for (const col of this.editGridColumns()) {
@@ -2003,7 +2020,11 @@ export class BidSheetComponent {
         if (row.fedCells.has(col.key)) continue;
         const current = (row.bids[col.key] ?? '').trim();
         const original = (row.originalBids[col.key] ?? '').trim();
-        if (current !== original) {
+        const currentBasis = (row.basisBids[col.key] ?? '').trim();
+        const originalBasis = (row.originalBasisBids[col.key] ?? '').trim();
+        // Either price changing dirties the cell, and BOTH are always sent -- the upsert writes what
+        // it is given, so omitting the untouched one would blank it.
+        if (current !== original || currentBasis !== originalBasis) {
           const commodity = commodityLookup.get(col.crop);
           toCreate.push({
             name: row.name,
@@ -2017,6 +2038,7 @@ export class BidSheetComponent {
             commodityCategory: commodity?.category ?? undefined,
             cropYear: year,
             bid: current,
+            basisBid: currentBasis,
             month: col.month
           });
         }
@@ -2099,7 +2121,7 @@ export class BidSheetComponent {
    *  which feed the computed bidEntries → bidLookup that _buildEditGrid reads. Without this, navigating
    *  to another year and back rebuilds the grid from the stale cache and shows the pre-edit value until
    *  a full server refresh. Mirrors the optimistic update confirmAddLocation does for a new location. */
-  private _applyBidsToLocalCache(dirty: Array<{ name?: string; tradeUnitCode?: string; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }>): void {
+  private _applyBidsToLocalCache(dirty: Array<{ name?: string; tradeUnitCode?: string; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }>): void {
     if (dirty.length === 0) return;
     const now = new Date().toISOString();
 

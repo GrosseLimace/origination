@@ -229,9 +229,11 @@ public class BidSheetRepository : IBidSheetRepository
             if (loc == null) continue;
 
             var key = (loc.Id, (req.CommodityCode ?? "").ToUpperInvariant(), req.CropYear, req.Month);
-            if (string.IsNullOrWhiteSpace(req.Bid))
+            if (string.IsNullOrWhiteSpace(req.Bid) && string.IsNullOrWhiteSpace(req.BasisBid))
             {
-                // Empty bid = user cleared the input → delete the existing row if present.
+                // BOTH prices cleared = user emptied the cell → delete the existing row if present.
+                // Either one alone is legitimate: plenty of elevators are quoted on basis only, and
+                // deleting on an empty cash would throw the basis away with it.
                 // Feed-owned cells are read-only to users — silently ignore the clear.
                 if (bidLookup.TryGetValue(key, out var toRemove) && toRemove.Source != BidSources.Barchart)
                 {
@@ -245,6 +247,7 @@ public class BidSheetRepository : IBidSheetRepository
                 if (bid.Source == BidSources.Barchart) continue;
 
                 bid.Bid = req.Bid;
+                bid.BasisBid = string.IsNullOrWhiteSpace(req.BasisBid) ? null : req.BasisBid;
                 bid.ModifiedBy = userId;
                 bid.ModifiedAt = now;
             }
@@ -259,6 +262,7 @@ public class BidSheetRepository : IBidSheetRepository
                     CropYear = req.CropYear,
                     Month = req.Month,
                     Bid = req.Bid,
+                    BasisBid = string.IsNullOrWhiteSpace(req.BasisBid) ? null : req.BasisBid,
                     Source = BidSources.Manual,
                     CreatedBy = userId,
                     CreatedAt = now
