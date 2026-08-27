@@ -33,10 +33,17 @@ public class BarchartCurrentQuote
     /// <summary>Vendor session-day letter.</summary>
     public string? DayCode { get; set; }
 
-    /// <summary>Vendor quote mode (e.g. "i").</summary>
+    /// <summary>
+    /// How the vendor delivered this quote, per BarChart's getQuote docs: real-time ("R"), delayed ("I")
+    /// or end-of-day ("D"). Recorded for diagnostics only — it describes the delivery type, not whether
+    /// the bid is any good, so nothing filters on it. We only ever receive "i" and "d".
+    /// </summary>
     public string? QuoteMode { get; set; }
 
-    /// <summary>Vendor flag; "s" marks a settled/stale quote.</summary>
+    /// <summary>
+    /// Vendor session flag: "c" market closed, "p" pre-open, "s" settled (a final settlement price).
+    /// In practice cash grain only ever arrives as "s" or empty, so it carries no usable signal for us.
+    /// </summary>
     public string? QuoteFlag { get; set; }
 
     /// <summary>

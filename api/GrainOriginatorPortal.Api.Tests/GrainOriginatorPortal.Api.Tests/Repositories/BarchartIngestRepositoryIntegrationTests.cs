@@ -355,9 +355,9 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
               { "symbol": "ZCPZ27F-990201-15194.CM", "lastPrice": "4.47",
                 "tradeTimestamp": "REPLACE_FRESH", "mode": "i", "unitCode": "4", "code": 200 },
               { "symbol": "ZCPZ27L-990201-15194.CM", "lastPrice": "214748.3647",
-                "tradeTimestamp": "REPLACE_FRESH", "mode": "d", "unitCode": "4", "code": 200 },
+                "tradeTimestamp": "REPLACE_FRESH", "mode": "i", "unitCode": "4", "code": 200 },
               { "symbol": "ZCPZ27-990202-6916.CM", "lastPrice": "3.51",
-                "tradeTimestamp": "REPLACE_STALE", "mode": "d", "unitCode": "4", "code": 200 },
+                "tradeTimestamp": "REPLACE_STALE", "mode": "i", "unitCode": "4", "code": 200 },
               { "symbol": "ZCPZ27-990203-17523.CM", "lastPrice": "0.0025",
                 "tradeTimestamp": "REPLACE_FRESH", "mode": "i", "unitCode": "4", "code": 200 }
             ] }
@@ -389,11 +389,48 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         // The fresh, plausible price publishes -- and the sentinel does not win its cell despite being
         // the wider delivery window, which is what the ranking would otherwise have preferred.
+        // Every quote here is mode i, so each block below is the price bound or the age rule doing the
+        // work. Nothing depends on the vendor's mode flag any more.
         Assert.Equal("4.47", Assert.Single(gpcCells).Bid);
         // A 262-day-old quote is not published at all.
         Assert.Empty(siouxCells);
         // Neither is a no-bid placeholder.
         Assert.Empty(thirdCells);
+    }
+
+    // Mode reports how BarChart delivered the quote -- real-time, delayed, or end-of-day -- not whether
+    // the bid is any good. We used to block mode d believing it meant a dead record, which suppressed
+    // 1,126 perfectly good quotes under 90 days old. A recent end-of-day price must publish.
+    [Fact]
+    public async Task ApplyBids_PublishesAnEndOfDayQuote_BecauseModeIsNotAValidityFlag()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(ContractMonthInstrumentsJson);
+
+        var endOfDay = """
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPZ27-990001-990010.CM", "lastPrice": "4.47",
+                "tradeTimestamp": "REPLACE", "mode": "d", "flag": "s", "unitCode": "4", "code": 200 }
+            ] }
+            """.Replace("REPLACE", DateTime.UtcNow.AddDays(-3).ToString("yyyy-MM-ddTHH:mm:sszzz"));
+        await _sut.LoadQuotesAsync(endOfDay, BusinessDate);
+
+        _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (IT Flexible)",
+            CommodityCode = "IT_FLEX",
+            CreatedBy = "integration-test"
+        });
+        var location = NewLinkedLocation("__IT End Of Day", "990001");
+        _context.BidSheetLocations.Add(location);
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX");
+        Assert.Equal("4.47", cell.Bid);
     }
 
     // A second synthetic location, kept separate from the shared fixture so the contract-month rules can

@@ -520,14 +520,16 @@ DECLARE @winners TABLE
        -- so it gets a symmetric magnitude bound instead. Both exclude the 214748.3647 sentinel.
        AND ((i.InstrumentType = @cashType AND q.LastPrice >= @minPrice AND q.LastPrice <= @maxPrice)
          OR (i.InstrumentType = @basisType AND ABS(q.LastPrice) <= @maxPrice))
-       -- Publish live quotes at any age, and let the UI show how old they are. Age alone is a poor
-       -- test: an elevator that posts a new-crop bid and leaves it for two months is behaving normally,
-       -- and a delivery month already tells the user which period a bid covers. Measured on the feed,
-       -- age was only ever a proxy for the vendor's own mode flag -- no live (mode i) quote exceeds 90
-       -- days, while every quote past 90 days is mode d, as is every sentinel. A 7-day cutoff was
-       -- therefore hiding ~1,245 real bids to block a population that mode identifies exactly.
-       AND ISNULL(q.QuoteMode, N'i') <> N'd'
-       -- Far outer backstop only, in case mode ever stops being trustworthy.
+       -- How long the ELEVATOR has left the bid untouched is the whole staleness test. It is deliberately
+       -- generous: an elevator that posts a new-crop bid and leaves it for weeks is behaving normally,
+       -- and the delivery month already tells the user which period the bid covers. The UI mutes an
+       -- ageing bid rather than hiding it.
+       --
+       -- This used to filter on the vendor's mode flag instead, on the belief that d meant a dead record.
+       -- BarChart's getQuote docs say otherwise: mode is the quote TYPE -- real-time R, delayed I,
+       -- end-of-day D. An end-of-day price is a real price, so that rule was suppressing 1,126 quotes
+       -- under 90 days old for no reason. It was also unsafe: mode is a request parameter, so a change on
+       -- the pipeline side could return d for everything and blank the sheet. Age cannot fail that way.
        AND (q.TradeTimestamp IS NULL
             OR q.TradeTimestamp >= DATEADD(DAY, -@maxQuoteAgeDays, SYSUTCDATETIME()))
     INNER JOIN dbo.BarchartCommodityMap AS m

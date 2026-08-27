@@ -27,19 +27,26 @@ public static class BarchartFeedDefaults
     public const string Actor = "barchart-feed";
 
     /// <summary>
-    /// Far outer bound on quote age — a backstop, not the main filter.
+    /// How long a bid may go untouched by the elevator before we stop publishing it. This is the only
+    /// staleness rule; <c>apply-bids</c> can override it per call.
     ///
-    /// Publishing is gated on the vendor's own mode flag instead: <c>d</c> quotes are dead records and
-    /// never publish, <c>i</c> quotes are live and publish at any age with their age surfaced in the UI.
-    /// This started at 7 days, which turned out to be a proxy for mode and a lossy one — measured on the
-    /// feed, no live quote exceeds 90 days while every quote past 90 days is mode <c>d</c>, so the cutoff
-    /// was hiding roughly 1,245 real bids to block a population that mode identifies exactly. An elevator
-    /// that posts a new-crop bid and leaves it for two months is behaving normally, and the delivery
-    /// month already tells the user which period a bid covers.
+    /// It has been three things. First 7 days, which was far too tight — an elevator that posts a
+    /// new-crop bid and leaves it for weeks is behaving normally, and the delivery month already tells
+    /// the user which period the bid covers. Then the vendor's <c>mode</c> flag, on the belief that
+    /// <c>d</c> marked a dead record. **That was wrong.** BarChart's getQuote documentation defines mode
+    /// as the quote *type* — real-time (<c>R</c>), delayed (<c>I</c>) or end-of-day (<c>D</c>). An
+    /// end-of-day quote is a perfectly good price, so filtering on it suppressed real bids: measured on
+    /// the live feed, 1,126 quotes under 90 days old were being hidden purely for arriving as end-of-day.
     ///
-    /// Kept only in case mode ever stops being trustworthy; <c>apply-bids</c> can override it per call.
+    /// Worse, mode is also a *request* parameter, so a setting on the pipeline side or a vendor default
+    /// change could return <c>d</c> for everything and blank the entire Bid Sheet at a stroke. Age is a
+    /// property of the bid itself and cannot fail that way.
+    ///
+    /// 90 days is deliberately generous. On the live feed it is indistinguishable from the old mode rule
+    /// for linked locations — everything publishing is under 30 days old and everything it blocks is over
+    /// 330 — while no longer depending on a vendor field whose meaning is outside our control.
     /// </summary>
-    public const int MaxQuoteAgeDays = 365;
+    public const int MaxQuoteAgeDays = 90;
 
     /// <summary>
     /// Lowest price treated as a real bid. The vendor uses tiny values (observed: 0.0025) as a
