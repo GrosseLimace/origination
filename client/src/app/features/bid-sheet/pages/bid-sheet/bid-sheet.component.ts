@@ -61,8 +61,12 @@ interface BidSheetPanelItem {
   isRef: boolean;
   latitude: number | null;
   longitude: number | null;
+  /** Numeric value, used for status comparison. */
   oldBid: string;
   newBid: string;
+  /** What the panel prints -- the same value in cash or basis mode, the pair in Both. */
+  oldBidLabel?: string;
+  newBidLabel?: string;
   oldStatus?: BidStatus;
   newStatus?: BidStatus;
   status: BidStatus;
@@ -304,7 +308,8 @@ export class BidSheetComponent {
 
   // --- Panel ---
   showPanel = signal<boolean>(false);
-  showLegend = signal<boolean>(true);
+  /** The key explains the colour scheme once, then just covers the map, so it starts closed. */
+  showLegend = signal<boolean>(false);
   /** Active base map: 'street' (OpenStreetMap) or 'satellite' (Esri aerial imagery + labels). */
   mapView = signal<'street' | 'satellite'>('street');
   /** True while a base-layer switch is loading its tiles — drives a brief loading overlay so the
@@ -358,7 +363,12 @@ export class BidSheetComponent {
       const newEntry = this._getLatestEntry(name, newD.year, crop!, newD.month);
       const oldEntry = this._getLatestEntry(name, oldD.year, crop!, oldD.month);
       const fedEntry = newEntry?.source === 'Barchart' ? newEntry : (oldEntry?.source === 'Barchart' ? oldEntry : null);
-      return { crop: crop!, oldBid, newBid, oldStatus, newStatus, isFed: !!fedEntry, fedAsOf: fedEntry?.quoteAsOf };
+      return {
+        crop: crop!, oldBid, newBid, oldStatus, newStatus,
+        oldBidLabel: this._getDisplayBid(name, oldD.year, crop!, oldD.month),
+        newBidLabel: this._getDisplayBid(name, newD.year, crop!, newD.month),
+        isFed: !!fedEntry, fedAsOf: fedEntry?.quoteAsOf
+      };
     });
   });
 
@@ -1169,6 +1179,8 @@ export class BidSheetComponent {
           longitude: entryWithCoords?.longitude ?? null,
           oldBid,
           newBid,
+          oldBidLabel: this._getDisplayBid(name, oldD.year, crop, oldD.month),
+          newBidLabel: this._getDisplayBid(name, newD.year, crop, newD.month),
           oldStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(oldBid, false, oldRefBid) : 'none'),
           newStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(newBid, false, newRefBid) : 'none'),
           status: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(selectedBid, false, selectedRefBid) : 'none')

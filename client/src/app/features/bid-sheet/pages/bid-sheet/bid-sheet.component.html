@@ -319,13 +319,13 @@
                         'text-scoular-yellow dark:text-scoular-yellow': row.oldStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.oldStatus === 'beating',
                         'text-gray-900 dark:text-white': row.oldStatus === 'none'
-                      }">{{ row.oldBid || '--' }}</td>
+                      }">{{ row.oldBidLabel || row.oldBid || '--' }}</td>
                       <td class="px-1 py-3 text-[length:var(--text-fluid-md)] font-mono font-semibold text-center" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.newStatus === 'beating',
                         'text-gray-900 dark:text-white': row.newStatus === 'none'
-                      }">{{ row.newBid || '--' }}</td>
+                      }">{{ row.newBidLabel || row.newBid || '--' }}</td>
                       @if (deleteMode()) {
                       <td class="px-1 py-3 text-center">
                         @if (row.isFed) {
@@ -467,13 +467,13 @@
                         'text-scoular-yellow dark:text-scoular-yellow': item.oldStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': item.oldStatus === 'beating',
                         'text-gray-900 dark:text-white': item.oldStatus === 'none'
-                      }">{{ item.oldBid || '--' }}</td>
+                      }">{{ item.oldBidLabel || item.oldBid || '--' }}</td>
                       <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': item.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': item.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': item.newStatus === 'beating',
                         'text-gray-900 dark:text-white': item.newStatus === 'none'
-                      }">{{ item.newBid || '--' }}</td>
+                      }">{{ item.newBidLabel || item.newBid || '--' }}</td>
                     </tr>
                   }
                 </tbody>
