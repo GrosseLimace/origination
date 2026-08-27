@@ -252,6 +252,32 @@ public static class CtrmQueries
 
 
     /// <summary>
+    /// One producer's purchase contracts, any date, core fields only (no pricing lines).
+    /// Variables: <c>$customerId</c> (String), <c>$prefix</c> (String), <c>$skip</c>, <c>$take</c> (Int).
+    /// </summary>
+    /// <remarks>
+    /// <para>The trade-unit-wide contract read fans out over THIS, one call per producer, rather than using
+    /// <see cref="ContractsByCustomers"/>. Measured 2026-08-27 on QA: the singular <c>customerId</c> filter
+    /// is indexed - 48 producers in 23s at 8 concurrent, avg 1.5s, no errors - while every
+    /// <c>customerIds</c> page is a ~25s server-side scan that trips the server's own 30s limit under any
+    /// concurrent load. Until the API owner fixes the list-filter plan, hundreds of cheap indexed calls beat
+    /// a handful of scans that do not finish. <c>Ctrm:TradeUnitContractStrategy</c> switches back.</para>
+    ///
+    /// <para>Core projection because a contract LIST never reads pricing lines and they double a page.</para>
+    /// </remarks>
+    public const string ContractsByCustomerCore = """
+        query ($customerId: String, $prefix: String, $skip: Int, $take: Int) {
+          contracts(skip: $skip, take: $take, customerId: $customerId, contractPrefixType: $prefix) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+        """ + ContractCoreProjection + """
+            }
+          }
+        }
+        """;
+
+    /// <summary>
     /// Every purchase contract, any date, for a batch of producers.
     /// Variables: <c>$customerIds</c> ([String!]), <c>$prefix</c> (String), <c>$skip</c>, <c>$take</c> (Int).
     /// </summary>

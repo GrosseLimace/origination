@@ -98,11 +98,16 @@ public class CtrmContractReaderTests
             ?? new Dictionary<string, object?>();
     }
 
-    private static IConfiguration Config(int cacheSeconds = 60, int concurrency = 4) =>
+    /// <param name="strategy">Which trade-unit contract strategy to exercise. The batch tests below predate
+    /// the per-producer default and assert the customerIds shape, so they name it explicitly.</param>
+    private static IConfiguration Config(int cacheSeconds = 60, int concurrency = 4, string strategy = "customerIds") =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Ctrm:LiveCacheSeconds"] = cacheSeconds.ToString(),
-            ["Ctrm:PageConcurrency"] = concurrency.ToString()
+            ["Ctrm:PageConcurrency"] = concurrency.ToString(),
+            ["Ctrm:TradeUnitContractStrategy"] = strategy,
+            ["Ctrm:TradeUnitPerProducerConcurrency"] = "8",
+            ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0"
         }).Build();
 
     private static CtrmContractReader Sut(ICtrmGraphQlClient client, IConfiguration? config = null) =>
@@ -346,5 +351,67 @@ public class CtrmContractReaderTests
         Assert.True(result.Ok);
         Assert.Empty(result.Value ?? []);
         Assert.Equal(0, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheDefaultStrategyIsOneIndexedCallPerProducer()
+    {
+        // Measured 2026-08-27: the singular filter is indexed (~1.5s), the customerIds list is a ~25s scan
+        // that trips the server's own 30s limit under load. Hundreds of cheap calls beat scans that never
+        // finish, so per-producer is the default until the API owner fixes the list plan.
+        var client = new RecordingClient();
+
+        var result = await Sut(client, Config(strategy: "perProducer")).GetForProducersAsync(Codes(12), CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal(12, client.Calls);
+        Assert.All(client.Documents, d =>
+        {
+            Assert.Contains("customerId: $customerId", d);
+            Assert.DoesNotContain("customerIds", d);
+            Assert.DoesNotContain("prices", d);          // a contract list never reads pricing lines
+        });
+        Assert.All(client.Variables, v => Assert.Equal("P", v["prefix"]));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task EveryProducerIsAskedForExactlyOnceInThePerProducerStrategy()
+    {
+        var client = new RecordingClient();
+        var codes = Codes(40);
+
+        await Sut(client, Config(strategy: "perProducer")).GetForProducersAsync(codes, CancellationToken.None);
+
+        var asked = client.Variables.Select(v => (string)v["customerId"]!).ToList();
+        Assert.Equal(40, asked.Distinct().Count());
+        Assert.Empty(codes.Except(asked));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task OneProducerFailingTwiceFailsTheWholeReadRatherThanShorteningTheList()
+    {
+        // A silently shorter producer list is the worst outcome: Build-a-List would render it as fact.
+        var client = new RecordingClient(failWith: CtrmReadStatus.Unauthorized);
+
+        var result = await Sut(client, Config(strategy: "perProducer")).GetForProducersAsync(Codes(3), CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Empty(result.Value ?? []);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheStrategyIsConfigurableBackToTheListFilter()
+    {
+        // The list shape is one flip away for when the server can run it.
+        var client = new RecordingClient();
+
+        await Sut(client, Config(strategy: "customerIds")).GetForProducersAsync(Codes(12), CancellationToken.None);
+
+        Assert.Equal(1, client.Calls);
+        Assert.Contains("customerIds: $customerIds", client.Documents[0]);
     }
 }

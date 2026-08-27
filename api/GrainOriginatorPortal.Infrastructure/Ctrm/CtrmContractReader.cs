@@ -304,7 +304,143 @@ public sealed class CtrmContractReader
     /// rather than per-chunk. A 429 from APIM fails the whole read, so headroom matters more than the last
     /// few seconds.</para>
     /// </remarks>
-    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchForProducersAsync(List<string> codes)
+    /// <summary>Strategy name for the fan-out over the indexed singular filter (default).</summary>
+    public const string PerProducerStrategy = "perProducer";
+
+    /// <summary>Strategy name for the chunked <c>customerIds</c> list filter - the shape that should win
+    /// once the API owner fixes its plan.</summary>
+    public const string CustomerIdsStrategy = "customerIds";
+
+    /// <summary>
+    /// Full-history read for a producer set, by whichever strategy <c>Ctrm:TradeUnitContractStrategy</c> names.
+    /// </summary>
+    /// <remarks>
+    /// Default is <see cref="PerProducerStrategy"/>, and that is a measured choice, not a preference. On
+    /// 2026-08-27 against QA, a 587-producer trade unit: the <c>customerIds</c> path never completed under
+    /// load - every page a ~25s server-side scan tripping the server's own 30s limit, retries included -
+    /// while 48 singular reads finished in 23s at 8 concurrent (avg 1.5s, max 4.1s, no errors). Hundreds of
+    /// cheap indexed calls beat a handful of scans that do not finish. The list path stays one config flip
+    /// away because it is the right shape once the server can run it.
+    /// </remarks>
+    private Task<CtrmReadResult<List<CtrmContractDto>>> FetchForProducersAsync(List<string> codes)
+    {
+        var strategy = _configuration["Ctrm:TradeUnitContractStrategy"]?.Trim();
+        return string.Equals(strategy, CustomerIdsStrategy, StringComparison.OrdinalIgnoreCase)
+            ? FetchByCustomerIdsAsync(codes)
+            : FetchPerProducerAsync(codes);
+    }
+
+    /// <summary>
+    /// One indexed <c>customerId</c> read per producer, fanned out at <c>Ctrm:TradeUnitPerProducerConcurrency</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>Not behind <see cref="CtrmTradeUnitThrottle"/>: each of these is the same weight as the read a
+    /// user's click makes (indexed, ~1.5s), so the throttle that protects clicks from ~25s scans would only
+    /// slow this down for no benefit. The concurrency knob is the load dial instead.</para>
+    ///
+    /// <para>A failed producer is re-read once after a short pause before it fails the whole read. With
+    /// hundreds of calls the odds of one transient error are real, and a silently shorter producer list is
+    /// worse than an honest failure - but one retry turns most of those into successes.</para>
+    /// </remarks>
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchPerProducerAsync(List<string> codes)
+    {
+        var concurrency = Math.Clamp(ReadInt("Ctrm:TradeUnitPerProducerConcurrency", 8), 1, 16);
+        using var slot = new SemaphoreSlim(concurrency, concurrency);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        async Task<(string Code, CtrmReadResult<List<CtrmContractDto>> Read)> One(string code)
+        {
+            await slot.WaitAsync(CancellationToken.None);
+            try
+            {
+                var read = await FetchProducerCoreAsync(code);
+                if (!read.Ok)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+                    read = await FetchProducerCoreAsync(code);
+                }
+                return (code, read);
+            }
+            finally
+            {
+                slot.Release();
+            }
+        }
+
+        var results = await Task.WhenAll(codes.Select(One));
+
+        var failure = results.FirstOrDefault(r => !r.Read.Ok);
+        if (failure.Code is not null)
+            return new CtrmReadResult<List<CtrmContractDto>>
+            {
+                Status = failure.Read.Status,
+                HttpStatus = failure.Read.HttpStatus,
+                ErrorCode = failure.Read.ErrorCode,
+                Detail = $"Trade-unit contract read failed on one of {codes.Count} producer(s) after a retry: {failure.Read.Detail}",
+                Value = []
+            };
+
+        var truncated = results.Any(r => r.Read.Status == CtrmReadStatus.PartialSuccess);
+        var all = results.SelectMany(r => r.Read.Value ?? []).ToList();
+
+        _logger.LogInformation(
+            "CTRM live contracts: {Count} purchase contracts (full history) across {Producers} producer(s) via {Calls} per-producer call(s) in {Seconds}s{Truncated}.",
+            all.Count, codes.Count, codes.Count, stopwatch.Elapsed.TotalSeconds.ToString("F0"), truncated ? " - TRUNCATED" : string.Empty);
+
+        return new CtrmReadResult<List<CtrmContractDto>>
+        {
+            Status = truncated ? CtrmReadStatus.PartialSuccess : CtrmReadStatus.Ok,
+            Detail = truncated ? "At least one producer exceeded the per-producer page cap." : null,
+            Value = all
+        };
+    }
+
+    /// <summary>One producer, core projection, paged to the single-producer cap.</summary>
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchProducerCoreAsync(string code)
+    {
+        var all = new List<CtrmContractDto>();
+        var skip = 0;
+
+        for (var page = 0; page < MaxPages; page++)
+        {
+            var result = await CtrmServerTimeoutRetry.RunAsync(
+                () => _client.QueryAsync<CtrmContractsResponse>(
+                    CtrmQueries.ContractsByCustomerCore,
+                    new { customerId = code, prefix = CtrmMappings.PurchasePrefix, skip, take = PageSize },
+                    CancellationToken.None),
+                _configuration, _logger, $"contracts page skip={skip} for one producer");
+
+            if (!result.Ok)
+                return new CtrmReadResult<List<CtrmContractDto>>
+                {
+                    Status = result.Status, HttpStatus = result.HttpStatus, ErrorCode = result.ErrorCode,
+                    Detail = result.Detail, Value = []
+                };
+
+            var pageData = result.Value?.Contracts;
+            if (pageData is null)
+                return new CtrmReadResult<List<CtrmContractDto>>
+                {
+                    Status = CtrmReadStatus.Error, HttpStatus = result.HttpStatus,
+                    Detail = "CTRM returned no contracts object for a producer.", Value = []
+                };
+
+            all.AddRange(pageData.Items);
+            if (pageData.PageInfo?.HasNextPage != true)
+                return new CtrmReadResult<List<CtrmContractDto>> { Status = CtrmReadStatus.Ok, Value = all };
+
+            skip += PageSize;
+        }
+
+        return new CtrmReadResult<List<CtrmContractDto>>
+        {
+            Status = CtrmReadStatus.PartialSuccess,
+            Detail = $"Truncated after {MaxPages} pages for one producer.",
+            Value = all
+        };
+    }
+
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchByCustomerIdsAsync(List<string> codes)
     {
         var chunks = codes.Chunk(MaxCustomerIdsPerCall).ToList();
         // Its own, lower concurrency - NOT the page concurrency the cheap reads use. Every page of a
