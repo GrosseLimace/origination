@@ -94,17 +94,19 @@ public class CtrmTicketPagingTests
         }
     }
 
-    private static IConfiguration Config() =>
+    private static IConfiguration Config(int? interactivePageConcurrency = null) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Ctrm:TicketLookbackDays"] = "365",          // one window, so the test is about paging only
             ["Ctrm:LiveCacheSeconds"] = "60",
             ["Ctrm:BackgroundMaxDeferSeconds"] = "0",
-            ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0"
+            ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0",
+            ["Ctrm:InteractiveServerTimeoutRetryDelaySeconds"] = "0",
+            ["Ctrm:InteractivePageConcurrency"] = interactivePageConcurrency?.ToString()
         }).Build();
 
-    private static CtrmTicketReader Sut(ICtrmGraphQlClient client) =>
-        new(client, Config(), new Mock<ILogger<CtrmTicketReader>>().Object);
+    private static CtrmTicketReader Sut(ICtrmGraphQlClient client, IConfiguration? config = null) =>
+        new(client, config ?? Config(), new Mock<ILogger<CtrmTicketReader>>().Object);
 
     public CtrmTicketPagingTests() => CtrmTradeUnitThrottle.ResetForTests();
 
@@ -181,5 +183,28 @@ public class CtrmTicketPagingTests
         Assert.True(result.Ok);
         Assert.Equal(1, client.Calls);
         Assert.Equal(42, (result.Value ?? []).Count);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task InteractivePagesAreBoundedByTheConfiguredConcurrency()
+    {
+        // A nine-page window across three windows is twenty-seven simultaneous requests for one click, and
+        // the gateway was measured degrading at nine-way fan-out - so unbounded pages slow each other down.
+        var client = new PagingClient(totalRows: 2000) { HoldPagesAfterFirst = true };
+        var sut = Sut(client, Config(interactivePageConcurrency: 2));
+
+        var read = sut.GetForProducerAsync(Producer, CancellationToken.None);
+
+        // Page one, then at most two of the remaining three in flight together.
+        while (client.Calls < 3) await Task.Delay(10);
+        await Task.Delay(150);
+        Assert.Equal(2, client.PeakInFlight);
+        Assert.False(read.IsCompleted);
+
+        client.Gate.SetResult();
+        var result = await read;
+        Assert.True(result.Ok);
+        Assert.Equal(2000, (result.Value ?? []).Count);
     }
 }

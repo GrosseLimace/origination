@@ -261,16 +261,22 @@ public sealed class CtrmContractReader
             // background trade-unit walk stand aside for its duration.
             using var interactive = CtrmTradeUnitThrottle.Interactive();
 
-            var result = await _client.QueryAsync<CtrmContractsResponse>(
-                CtrmQueries.ContractsByCustomer,
-                new
-                {
-                    customerId = scoularId,
-                    prefix = CtrmMappings.PurchasePrefix,
-                    skip,
-                    take = PageSize
-                },
-                CancellationToken.None);
+            // Wrapped in the server-timeout retry like every other CTRM call. This one had no HC0045
+            // handling at all, so a server-side timeout here failed the producer's contract list outright
+            // even though the identical re-send would have succeeded from the server's cache.
+            var result = await CtrmServerTimeoutRetry.RunAsync(
+                () => _client.QueryAsync<CtrmContractsResponse>(
+                    CtrmQueries.ContractsByCustomer,
+                    new
+                    {
+                        customerId = scoularId,
+                        prefix = CtrmMappings.PurchasePrefix,
+                        skip,
+                        take = PageSize
+                    },
+                    CancellationToken.None),
+                _configuration, _logger, $"contracts page skip={skip} for producer {scoularId}",
+                interactive: true);
 
             if (!result.Ok)
                 return new CtrmReadResult<List<CtrmContractDto>>

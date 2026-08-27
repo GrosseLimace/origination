@@ -390,10 +390,10 @@ builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraph
     var uri = builder.Configuration.GetValue<string>("Ctrm:GraphQlUri")?.Trim();
     if (!string.IsNullOrEmpty(uri))
         client.BaseAddress = new Uri(uri);
-    // The OVERALL budget for one logical call, retries included. The per-attempt limit lives in the
-    // resilience pipeline below. These used to be one 30-second number, which meant a slow-but-fine
+    // The OVERALL budget for one logical call, retries included. The per-attempt limit is the AddTimeout
+    // strategy in the pipeline below. These used to be one 30-second number, which meant a slow-but-fine
     // attempt was retried inside a budget it had already spent - the retries could not succeed, and the
-    // producer screen saw "Timed out reaching the CTRM gateway" under load. 3 attempts x 30s + backoff.
+    // producer screen saw "Timed out reaching the CTRM gateway" under load. 3 attempts x 35s + backoff.
     client.Timeout = TimeSpan.FromSeconds(110);
 })
 .AddHttpMessageHandler<CorrelationIdOutboundHandler>()
@@ -422,6 +422,19 @@ builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraph
         MinimumThroughput = 5,
         BreakDuration = TimeSpan.FromSeconds(30)
     });
+
+    // PER-ATTEMPT limit, innermost so it wraps the individual request rather than the retry sequence.
+    // There was none: the comment on client.Timeout above claimed one but nothing enforced it, so a single
+    // hung attempt could hold a request for the whole 110-second client budget.
+    //
+    // 35 seconds, not 30, on purpose: the server's own limit is 30s and it answers HC0045 as a GraphQL
+    // error we retry deliberately (CtrmServerTimeoutRetry - the server finishes and caches the query after
+    // erroring). Timing out at 30 would abort that answer in flight and turn a recoverable server-side
+    // timeout into an opaque client abort.
+    //
+    // TimeoutRejectedException is deliberately NOT in the retry ShouldHandle above: a hung attempt should
+    // fail fast to EgressBlocked, which names the remediation, rather than being retried twice more.
+    pipeline.AddTimeout(TimeSpan.FromSeconds(35));
 });
 
 // =============================================================================

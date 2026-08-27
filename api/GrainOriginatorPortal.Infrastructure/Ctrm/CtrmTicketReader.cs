@@ -580,9 +580,24 @@ public sealed class CtrmTicketReader
 
         if (pagesToFetch > 1)
         {
-            var rest = await Task.WhenAll(
-                Enumerable.Range(1, pagesToFetch - 1)
-                    .Select(page => FetchTicketPageAsync(scope, from, to, page * PageSize)));
+            // Interactive reads are bounded. Unbounded, a nine-page window across three windows is
+            // twenty-seven simultaneous requests for one click, and the gateway was measured degrading at
+            // nine-way fan-out - so the pages would slow each other down. Background pages are already
+            // bounded by CtrmTradeUnitThrottle, so they pass through.
+            using var slot = scope.CacheKey.Length > 0
+                ? new SemaphoreSlim(Math.Clamp(ReadInt("Ctrm:InteractivePageConcurrency", 4), 1, 16))
+                : null;
+
+            async Task<CtrmReadResult<CtrmTicketsResponse>> BoundedPage(int page)
+            {
+                if (slot is null) return await FetchTicketPageAsync(scope, from, to, page * PageSize);
+
+                await slot.WaitAsync(CancellationToken.None);
+                try { return await FetchTicketPageAsync(scope, from, to, page * PageSize); }
+                finally { slot.Release(); }
+            }
+
+            var rest = await Task.WhenAll(Enumerable.Range(1, pagesToFetch - 1).Select(BoundedPage));
 
             var failed = rest.FirstOrDefault(r => !r.Ok);
             if (failed is not null) return PropagatePageFailure(failed, scope, window);
@@ -649,7 +664,8 @@ public sealed class CtrmTicketReader
                 scope.Document,
                 BuildVariables(scope.Filter, from, to, skip),
                 CancellationToken.None),
-            _configuration, _logger, $"tickets page skip={skip} for {scope.Description} {from:yyyy-MM-dd}..{to:yyyy-MM-dd}");
+            _configuration, _logger, $"tickets page skip={skip} for {scope.Description} {from:yyyy-MM-dd}..{to:yyyy-MM-dd}",
+            interactive: scope.CacheKey.Length > 0);
 
         if (scope.CacheKey.Length == 0)
             return await CtrmTradeUnitThrottle.RunAsync(_configuration, Page);

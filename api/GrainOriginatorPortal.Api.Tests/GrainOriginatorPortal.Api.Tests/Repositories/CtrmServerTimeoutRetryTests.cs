@@ -16,11 +16,13 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// </summary>
 public class CtrmServerTimeoutRetryTests
 {
-    private static IConfiguration Config(int retries = 4) =>
+    private static IConfiguration Config(int retries = 4, int? interactiveRetries = null) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Ctrm:ServerTimeoutRetries"] = retries.ToString(),
-            ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0"
+            ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0",
+            ["Ctrm:InteractiveServerTimeoutRetries"] = interactiveRetries?.ToString(),
+            ["Ctrm:InteractiveServerTimeoutRetryDelaySeconds"] = "0"
         }).Build();
 
     private static CtrmReadResult<int> Timeout() => new() { Status = CtrmReadStatus.QueryError, HttpStatus = 400, ErrorCode = "HC0045", Detail = "timeout" };
@@ -74,5 +76,44 @@ public class CtrmServerTimeoutRetryTests
         var calls = 0;
         await CtrmServerTimeoutRetry.RunAsync(() => { calls++; return Task.FromResult(Ok()); }, Config(), new Mock<ILogger>().Object, "test");
         Assert.Equal(1, calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task InteractiveReadsRetryOnceByDefault()
+    {
+        // The background budget is 4 retries x 8s. Applied to a producer click that was up to 32 seconds of
+        // Task.Delay inside the click - worse than the failure it was papering over.
+        var calls = 0;
+        var result = await CtrmServerTimeoutRetry.RunAsync(
+            () => { calls++; return Task.FromResult(Timeout()); },
+            Config(), new Mock<ILogger>().Object, "test", interactive: true);
+
+        Assert.False(result.Ok);
+        Assert.Equal(2, calls);   // one attempt + one retry
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task InteractiveRetriesAreConfiguredSeparately()
+    {
+        var calls = 0;
+        await CtrmServerTimeoutRetry.RunAsync(
+            () => { calls++; return Task.FromResult(Timeout()); },
+            Config(retries: 4, interactiveRetries: 3), new Mock<ILogger>().Object, "test", interactive: true);
+
+        Assert.Equal(4, calls);   // interactive budget applies, not the background 4x
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task BackgroundReadsKeepTheLargerBudget()
+    {
+        var calls = 0;
+        await CtrmServerTimeoutRetry.RunAsync(
+            () => { calls++; return Task.FromResult(Timeout()); },
+            Config(retries: 4, interactiveRetries: 1), new Mock<ILogger>().Object, "test");
+
+        Assert.Equal(5, calls);   // one attempt + four retries
     }
 }

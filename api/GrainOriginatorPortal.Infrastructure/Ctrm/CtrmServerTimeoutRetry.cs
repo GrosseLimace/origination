@@ -18,26 +18,39 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// <para>So: on <c>HC0045</c> only, wait and re-send the identical page, a bounded number of times. Any
 /// other failure returns at once. This is the client-side half of a server-side problem that has been
 /// reported to the API owner; when the list filter is fixed this will simply stop being exercised.</para>
+///
+/// <para><b>Interactive reads get a much smaller budget.</b> The background default (4 retries, 8s apart)
+/// is right for a walk nobody is watching, but applying it to a producer click meant up to 32 seconds of
+/// <see cref="Task.Delay"/> inside that click - far worse than the failure it was papering over. An
+/// interactive caller retries once after 3s and then reports the failure, which the UI can show.</para>
 /// </remarks>
 public static class CtrmServerTimeoutRetry
 {
     public const string ServerTimeoutCode = "HC0045";
 
+    /// <param name="interactive">True when a user is waiting on this read, which caps the retry budget at
+    /// <c>Ctrm:InteractiveServerTimeoutRetries</c> x <c>Ctrm:InteractiveServerTimeoutRetryDelaySeconds</c>
+    /// instead of the background budget.</param>
     public static async Task<CtrmReadResult<T>> RunAsync<T>(
         Func<Task<CtrmReadResult<T>>> attempt,
         IConfiguration configuration,
         ILogger logger,
-        string what)
+        string what,
+        bool interactive = false)
     {
-        var retries = Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetries", 4), 0, 10);
-        var delay = TimeSpan.FromSeconds(Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetryDelaySeconds", 8), 0, 60));
+        var retries = interactive
+            ? Math.Clamp(ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetries", 1), 0, 4)
+            : Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetries", 4), 0, 10);
+        var delay = interactive
+            ? TimeSpan.FromSeconds(Math.Clamp(ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetryDelaySeconds", 3), 0, 30))
+            : TimeSpan.FromSeconds(Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetryDelaySeconds", 8), 0, 60));
 
         var result = await attempt();
         for (var i = 1; i <= retries && IsServerTimeout(result); i++)
         {
             logger.LogWarning(
-                "CTRM server timeout ({Code}) on {What}; the server keeps working and caches the result, so retrying in {Delay}s ({Attempt}/{Max}).",
-                ServerTimeoutCode, what, delay.TotalSeconds, i, retries);
+                "CTRM server timeout ({Code}) on {What} ({Kind}); the server keeps working and caches the result, so retrying in {Delay}s ({Attempt}/{Max}).",
+                ServerTimeoutCode, what, interactive ? "interactive" : "background", delay.TotalSeconds, i, retries);
             if (delay > TimeSpan.Zero) await Task.Delay(delay);
             result = await attempt();
         }

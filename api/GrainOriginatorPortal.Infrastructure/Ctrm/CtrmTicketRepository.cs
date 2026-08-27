@@ -94,11 +94,16 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
-        // Costs no extra round trip in practice: the contract reader has almost certainly already served
-        // this producer's contract list for the screen, so this hits its cache.
-        var openPurchaseContractIds = await GetOpenPurchaseContractIdsAsync(code, cancellationToken);
+        // Both started before either is awaited. The ticket read does not depend on the contract read -
+        // the open-contract ids are only needed to CLASSIFY the rows once they are back - so awaiting the
+        // contracts first made the wall time the sum instead of the max. Usually near-free, because the
+        // client requests /contracts/customer and /tickets/customer together and the reads coalesce in the
+        // reader's cache, so the contract read has typically landed already; it is worth seconds only when
+        // the ticket request wins that race or the contract read is cold and slow.
+        var openIdsTask = GetOpenPurchaseContractIdsAsync(code, cancellationToken);
+        var readTask = _reader.GetForProducerAsync(code, cancellationToken);
 
-        var read = await _reader.GetForProducerAsync(code, cancellationToken);
+        var read = await readTask;
         if (!read.Ok)
         {
             // No ODS fallback: serving ODS tickets while the screen is meant to show CTRM would hide the
@@ -106,9 +111,14 @@ public sealed class CtrmTicketRepository : ITicketRepository
             _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
             _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
+
+            // Returning here would leave the contract task unobserved; a fault on it would then surface as
+            // an unobserved TaskException on the finalizer thread rather than in this request's log.
+            Observe(openIdsTask);
             return [];
         }
 
+        var openPurchaseContractIds = await openIdsTask;
         var headers = read.Value ?? [];
 
         // Opt-in supplement: a second, contract-scoped read that can see a ticket booked entirely under
@@ -560,6 +570,17 @@ public sealed class CtrmTicketRepository : ITicketRepository
         int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : fallback;
+    /// <summary>
+    /// Attaches a logging continuation to a task this method is abandoning, so a fault on it is reported
+    /// here instead of arriving later as an unobserved task exception.
+    /// </summary>
+    private void Observe<T>(Task<T> task) =>
+        _ = task.ContinueWith(
+            t => _logger.LogWarning(t.Exception, "CTRM: an abandoned per-producer contract read faulted."),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
     /// <summary>Reads a boolean setting; absent or unparseable means false.</summary>
     private bool ReadBool(string key) =>
         bool.TryParse(_configuration[key]?.Trim(), out var parsed) && parsed;
