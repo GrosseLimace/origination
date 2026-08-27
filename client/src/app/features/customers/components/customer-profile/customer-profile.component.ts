@@ -101,6 +101,7 @@ export class CustomerProfileComponent {
 
   public contractsLoadError = input<string | null>(null);
   public ticketsLoadError = input<string | null>(null);
+  public pricingLinesLoadError = input<string | null>(null);
 
   /** Bubbled up from the tables' Retry buttons. */
   public retryContracts = output<void>();

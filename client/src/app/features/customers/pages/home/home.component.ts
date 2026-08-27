@@ -199,6 +199,11 @@ export class HomeComponent {
 
   /** Message when the producer's TICKET read failed. See contractsLoadError. */
   readonly ticketsLoadError = signal<string | null>(null);
+
+  /** Message when the producer's PRICING-LINE read failed. Separate from the contract error because the
+   *  contract rows can be perfectly good while their prices are missing - and an empty pricing set renders
+   *  as "this contract has no priced lines", which is a wrong number rather than an absent one. */
+  readonly pricingLinesLoadError = signal<string | null>(null);
   readonly isLoadingPricingLines = signal(false);
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingDpContracts = signal(false);
@@ -1025,6 +1030,7 @@ export class HomeComponent {
     this.isLoadingUnappliedTickets.set(true);
     this.contractsLoadError.set(null);
     this.ticketsLoadError.set(null);
+    this.pricingLinesLoadError.set(null);
     this.isLoadingStoredGrain.set(true);
     this.isLoadingDpContracts.set(true);
     this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
@@ -1226,6 +1232,7 @@ export class HomeComponent {
 
           this._customerPricingCache.set(scoularId, lines);
           this._customerPricingLoadedAt.set(scoularId, Date.now());
+          this.pricingLinesLoadError.set(null);
           this.customerPricingLines.set(lines);
           this.appState.setPricingLines(lines);
         },
@@ -1244,6 +1251,7 @@ export class HomeComponent {
       this.customerPricingLines.set(cached);
       this.appState.setPricingLines(cached);
       this.isLoadingPricingLines.set(false);
+      this.pricingLinesLoadError.set(null);
 
       // Refresh behind the visible badges when the copy has aged out. No spinner, same reasoning as the
       // contract and ticket refresh: what is on screen is real, so a flicker would be a downgrade.
@@ -1267,9 +1275,10 @@ export class HomeComponent {
           this._customerPricingLoadedAt.set(scoularId, Date.now());
           this.isLoadingPricingLines.set(false);
         },
-        error: () => {
+        error: (err) => {
           this.customerPricingLines.set([]);
           this.isLoadingPricingLines.set(false);
+          this.pricingLinesLoadError.set(this._readFailureMessage(err));
         }
       });
   }

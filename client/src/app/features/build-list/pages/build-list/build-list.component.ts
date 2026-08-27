@@ -132,6 +132,23 @@ export class BuildListComponent {
     this._contractsReady();
     if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes() || this.waitingForDp()) && this.coreDataLoaded()) {
       untracked(() => {
+        // A staged query waits for data to ARRIVE. If the read that would deliver it FAILED, waiting is
+        // futile - the spinner would sit on "Processing query..." for the rest of the session, which is
+        // worse than the empty list this whole effort set out to fix: at least an empty list ends.
+        //
+        // Found by the failure drill on 2026-08-27: with CTRM unreachable, the producer screen and the
+        // dashboard both showed their error states correctly, but Build-a-List hung. The error banner
+        // lives in the results branch, and a stalled query never reaches it.
+        if (this.sourceLoadFailed()) {
+          this.waitingForTickets.set(false);
+          this.waitingForNotes.set(false);
+          this.waitingForDp.set(false);
+          this.isProcessing.set(false);
+          // Render whatever the query can answer from what did load; the banner explains the gap.
+          this._applyNlqFilter();
+          return;
+        }
+
         // Re-check if the needed data is now available
         const q = this.queryText();
         const ticketsOk = !this.nlqFilterService.queryInvolvesTickets(q) || this._ticketsReady();

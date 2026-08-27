@@ -51,6 +51,11 @@ export class ContractsTableComponent {
    *  grower's book appears empty. Null means no error. */
   public loadError = input<string | null>(null);
 
+  /** Set when the PRICING-LINE read failed while the contract rows themselves are fine. Rendered in the
+   *  pricing section rather than over the whole table: the quantities and dates on screen are correct, so
+   *  replacing them with an error would withhold good data. */
+  public pricingLoadError = input<string | null>(null);
+
   /** Asks the parent to retry the failed read. */
   public retryLoad = output<void>();
   /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines

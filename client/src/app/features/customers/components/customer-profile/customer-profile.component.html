@@ -361,7 +361,11 @@
             <!-- Contract Pace Percentage (Year-over-Year) -->
             <div class="justify-self-start w-fit">
               <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Harvest Contract Pace</h3>
-              @if (harvestPacingSummary().direction === 'none') {
+              @if (contractsLoadError() || historicalContractsFailed()) {
+                <!-- Pace compares this year against last. With either read missing, "no contract data"
+                     would read as a producer who has contracted nothing. -->
+                <p class="text-sm text-amber-700 dark:text-amber-300 py-2">Contract data unavailable — pace cannot be shown.</p>
+              } @else if (harvestPacingSummary().direction === 'none') {
                 <p class="text-sm text-gray-400 dark:text-gray-500 py-2">No contract data available.</p>
               } @else {
                 <div class="block w-full rounded-lg border p-3 text-center cursor-pointer transition-opacity hover:opacity-80 select-none"
@@ -447,7 +451,7 @@
         <div class="pb-8">
           @switch (activeTab()) {
             @case ('contracts') {
-              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()" [isLoadingPricingLines]="isLoadingPricingLines()" [isLoadingTickets]="isLoadingUnappliedTickets()" [loadError]="contractsLoadError()" (retryLoad)="retryContracts.emit()" (expandedColumnsChange)="contractsColumnsExpanded.set($event)"></app-contracts-table>
+              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()" [isLoadingPricingLines]="isLoadingPricingLines()" [isLoadingTickets]="isLoadingUnappliedTickets()" [loadError]="contractsLoadError()" [pricingLoadError]="pricingLinesLoadError()" (retryLoad)="retryContracts.emit()" (expandedColumnsChange)="contractsColumnsExpanded.set($event)"></app-contracts-table>
             }
             @case ('tickets') {
               <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingUnappliedTickets()" [loadError]="ticketsLoadError()" (retryLoad)="retryTickets.emit()" [openCrop]="openTicketCrop()"></app-tickets-table>

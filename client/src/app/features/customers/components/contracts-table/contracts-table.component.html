@@ -505,7 +505,7 @@
                       </div>
 
                       <!-- Pricing Lines Section -->
-                      @if (isLoadingPricingLines() || getPricingLinesForContract(contract).length > 0) {
+                      @if (isLoadingPricingLines() || pricingLoadError() || getPricingLinesForContract(contract).length > 0) {
                         <div class="mt-8 border-t border-gray-200 dark:border-gray-700">
                           <button
                             class="w-full flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors py-3 px-2 -mx-2 rounded-md cursor-pointer"
@@ -525,6 +525,9 @@
                             Pricing Lines
                             @if (isLoadingPricingLines()) {
                               <span class="text-gray-400 dark:text-gray-500 italic text-sm">(Loading…)</span>
+                            } @else if (pricingLoadError()) {
+                              <!-- Never "(0)" on a failed read: that reads as "this contract has no priced lines". -->
+                              <span class="text-amber-600 dark:text-amber-400 text-sm">(unavailable)</span>
                             } @else {
                               ({{ getPricingLinesForContract(contract).length }})
                             }
@@ -533,6 +536,10 @@
                           @if (expandedPricingSections.has(contract.id)) {
                             @if (isLoadingPricingLines() && getPricingLinesForContract(contract).length === 0) {
                               <p class="text-gray-400 dark:text-gray-500 text-sm italic px-2 pb-2">Loading pricing lines…</p>
+                            } @else if (pricingLoadError() && getPricingLinesForContract(contract).length === 0) {
+                              <p class="text-amber-700 dark:text-amber-300 text-sm px-2 pb-2">
+                                Pricing lines could not be loaded from CTRM, so the prices for this contract are not shown. {{ pricingLoadError() }}
+                              </p>
                             } @else {
                             <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                               <table class="w-full text-sm">
