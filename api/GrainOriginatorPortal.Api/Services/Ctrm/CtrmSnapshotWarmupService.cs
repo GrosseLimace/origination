@@ -11,7 +11,7 @@ namespace GrainOriginatorPortal.Api.Services.Ctrm;
 /// sequential pages, minutes of wall-clock. Loading that lazily would mean the first producer selection
 /// after a deploy simply hangs, which nobody testing the app would read as "warming up".</para>
 ///
-/// <para>Contracts only. A ticket snapshot used to be warmed here as well, because the API had no way to
+/// <para>Contracts first, then the trade-unit-wide ticket pool. An earlier ticket snapshot was removed because the API had no way to
 /// ask for one contract's tickets; now that <c>contractNumbers</c> exists every ticket read is live and
 /// per-producer, so pre-fetching a ticket window would be work nothing consumes.</para>
 ///
@@ -22,15 +22,18 @@ namespace GrainOriginatorPortal.Api.Services.Ctrm;
 public sealed class CtrmSnapshotWarmupService : BackgroundService
 {
     private readonly CtrmContractSnapshot _snapshot;
+    private readonly CtrmTicketPoolSnapshot _ticketPool;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmSnapshotWarmupService> _logger;
 
     public CtrmSnapshotWarmupService(
         CtrmContractSnapshot snapshot,
+        CtrmTicketPoolSnapshot ticketPool,
         IConfiguration configuration,
         ILogger<CtrmSnapshotWarmupService> logger)
     {
         _snapshot = snapshot;
+        _ticketPool = ticketPool;
         _configuration = configuration;
         _logger = logger;
     }
@@ -58,6 +61,24 @@ public sealed class CtrmSnapshotWarmupService : BackgroundService
             Report(contracts.Ok, contracts.Status.ToString(), contracts.Detail,
                 contracts.Contracts.Count, contracts.ScannedInWindow, contracts.TotalCountInWindow,
                 contracts.Truncated, stopwatch);
+
+            // Tickets AFTER contracts, deliberately. The producer screen can render without the ticket pool
+            // (it reads tickets live per producer) but Build-a-List cannot render without the contract pool,
+            // so the read more screens wait on lands first. Sequential rather than concurrent because both
+            // walks fan out at PageConcurrency and stacking them would double the load on the same gateway.
+            var ticketWatch = Stopwatch.StartNew();
+            var tickets = await _ticketPool.GetAsync(stoppingToken);
+            ticketWatch.Stop();
+            if (tickets.Ok)
+                _logger.LogInformation(
+                    "CTRM ticket pool warm-up finished in {ElapsedSeconds}s: {Count} ticket headers for {Producers} producers across {Windows} window(s){Truncated}.",
+                    ticketWatch.Elapsed.TotalSeconds.ToString("F1"), tickets.Tickets.Count, tickets.Producers, tickets.Windows,
+                    tickets.Truncated ? " - TRUNCATED" : string.Empty);
+            else
+                _logger.LogError(
+                    "CTRM ticket pool warm-up failed after {ElapsedSeconds}s [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                    ticketWatch.Elapsed.TotalSeconds.ToString("F1"), "INFRASTRUCTURE_CTRM_WARMUP", "Infrastructure",
+                    tickets.Status, tickets.Detail);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {

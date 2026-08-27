@@ -32,6 +32,8 @@ public sealed class CtrmTicketRepository : ITicketRepository
     private readonly ApplicationDbContext _appContext;
     private readonly TicketRepository _ods;
     private readonly IConfiguration _configuration;
+    private readonly CtrmContractSnapshot _contractSnapshot;
+    private readonly CtrmTicketPoolSnapshot _ticketPool;
     private readonly CtrmProvenance _provenance;
     private readonly ILogger<CtrmTicketRepository> _logger;
 
@@ -41,6 +43,8 @@ public sealed class CtrmTicketRepository : ITicketRepository
         ApplicationDbContext appContext,
         TicketRepository ods,
         IConfiguration configuration,
+        CtrmContractSnapshot contractSnapshot,
+        CtrmTicketPoolSnapshot ticketPool,
         CtrmProvenance provenance,
         ILogger<CtrmTicketRepository> logger)
     {
@@ -49,6 +53,8 @@ public sealed class CtrmTicketRepository : ITicketRepository
         _appContext = appContext;
         _ods = ods;
         _configuration = configuration;
+        _contractSnapshot = contractSnapshot;
+        _ticketPool = ticketPool;
         _provenance = provenance;
         _logger = logger;
     }
@@ -206,9 +212,114 @@ public sealed class CtrmTicketRepository : ITicketRepository
     // Other screens — ODS
     // -------------------------------------------------------------------------
 
-    /// <summary>Delegated. Trade-unit-wide, not part of the producer screen's ticket surface.</summary>
-    public Task<List<Ticket>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
-        => DelegateAsync("TradeUnitWide", _ods.GetAsync(tradeUnits, cancellationToken));
+    /// <summary>
+    /// Every ticket for the producers in the selected trade units, from the CTRM ticket pool.
+    /// </summary>
+    /// <remarks>
+    /// <para>The last contract/ticket read to leave ODS. It backs every Build-a-List prompt that mentions
+    /// tickets, deliveries, unapplied or unsettled, so it carries BOTH branches - applied tickets on the
+    /// producers' open purchase contracts, and unapplied tickets by customer code - exactly as the ODS
+    /// query did and exactly as the producer screen does. Serving only the unapplied half would have
+    /// made the delivery and settlement prompts silently wrong.</para>
+    ///
+    /// <para>Producer scope mirrors ODS line for line: with no trade unit selected, the same resolver Spot
+    /// Loads uses (snapshot membership unioned with contract-derived codes); with a selection, the
+    /// CustomerTradeUnit snapshot alone. Open purchase contracts come from the contract pool, which is a
+    /// date window - so an applied ticket on an open contract dated before that window is not matched
+    /// here. That is the pool's existing limitation, recorded there, not a new one.</para>
+    ///
+    /// <para>Served from <see cref="CtrmTicketPoolSnapshot"/> because the walk is minutes, not seconds.
+    /// While the pool is still warming this returns empty and says so in the provenance header, the same
+    /// contract the contract pool honours.</para>
+    /// </remarks>
+    public async Task<List<Ticket>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
+    {
+        var codes = await ResolveTradeUnitProducerCodesAsync(tradeUnits, cancellationToken);
+        if (codes.Count == 0)
+        {
+            _provenance.RecordTickets("ctrm", "NoProducersInScope", 0);
+            return [];
+        }
+
+        var pool = await _ticketPool.GetAsync(cancellationToken);
+        if (!pool.Ok)
+        {
+            if (pool.Status == CtrmReadStatus.Warming)
+                _logger.LogInformation("CTRM tickets: pool still warming - {Detail}", pool.Detail);
+            else
+                _logger.LogError("CTRM ticket pool unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                    "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", pool.Status, pool.Detail);
+            _provenance.RecordTickets("ctrm", pool.Status.ToString(), 0);
+            return [];
+        }
+
+        var openContractIds = await GetOpenPurchaseContractIdsForProducersAsync(codes, cancellationToken);
+        var codeSet = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+
+        // Same two-branch rule as the producer screen, keyed by id so a row cannot be counted twice.
+        var byId = new Dictionary<long, Ticket>();
+        foreach (var header in pool.Tickets)
+        {
+            foreach (var t in CtrmMappings.ToAppliedForContracts(header, openContractIds)) byId[t.Id] = t;
+            foreach (var t in CtrmMappings.ToUnappliedForProducers(header, codeSet)) byId[t.Id] = t;
+        }
+
+        var tickets = byId.Values.ToList();
+        var beforeGate = tickets.Count;
+        tickets = await ApplyStorageGateAsync(tickets, codes, cancellationToken);
+        await _ods.PopulateElevatorLocations(tickets, cancellationToken);
+        tickets = tickets.OrderByDescending(t => t.Date).ToList();
+
+        _provenance.RecordTickets("ctrm",
+            pool.Truncated ? "OkTruncated" : beforeGate != tickets.Count ? "OkStorageGated" : "Ok", tickets.Count);
+
+        _logger.LogInformation(
+            "CTRM tickets: {Count} rows for {Producers} producer(s) in {TradeUnits} trade unit(s) from the pool ({Open} open contracts).",
+            tickets.Count, codes.Count, tradeUnits?.Count ?? 0, openContractIds.Count);
+
+        return tickets;
+    }
+
+    /// <summary>
+    /// Producer codes for a trade-unit selection, mirroring the ODS read: no selection means the Spot Loads
+    /// resolver (snapshot membership unioned with contract-derived codes); a selection means the
+    /// CustomerTradeUnit snapshot alone.
+    /// </summary>
+    private async Task<List<string>> ResolveTradeUnitProducerCodesAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
+    {
+        if (tradeUnits is not { Count: > 0 })
+            return await _ods.ResolveSpotLoadProducerCodesAsync(null, cancellationToken);
+
+        var codes = await _appContext.Customers
+            .AsNoTracking()
+            .Where(c => c.IsActive && c.ScoularId != null
+                && _appContext.CustomerTradeUnits.Any(ctu =>
+                    ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits.Contains(ctu.TradeUnit)))
+            .Select(c => c.ScoularId!)
+            .ToListAsync(cancellationToken);
+
+        return [.. codes.Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>Open purchase contract ids for a producer set, from the contract pool snapshot.</summary>
+    private async Task<HashSet<string>> GetOpenPurchaseContractIdsForProducersAsync(
+        IReadOnlyCollection<string> codes, CancellationToken cancellationToken)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var snapshot = await _contractSnapshot.GetAsync(cancellationToken);
+        if (!snapshot.Ok) return ids;
+
+        var codeSet = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        foreach (var c in snapshot.Contracts)
+        {
+            if (!string.Equals(c.ContractPrefixType?.Trim(), CtrmMappings.PurchasePrefix, StringComparison.OrdinalIgnoreCase)) continue;
+            if (CtrmMappings.NullIfSentinel(c.ClosedDate) is not null) continue;
+            if (c.CustomerId is null || !codeSet.Contains(c.CustomerId.Trim())) continue;
+            var id = c.ContractId?.Trim();
+            if (!string.IsNullOrEmpty(id)) ids.Add(id);
+        }
+        return ids;
+    }
 
     /// <summary>
     /// Recent unapplied tickets across the in-scope producers. Live. Backs Spot Loads.

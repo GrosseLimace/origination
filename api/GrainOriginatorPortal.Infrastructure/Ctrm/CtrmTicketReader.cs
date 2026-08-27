@@ -163,6 +163,36 @@ public sealed class CtrmTicketReader
         return GetCachedAsync(key, LiveTtl(), () => FetchChunkedAsync(codes, from, to));
     }
 
+    /// <summary>
+    /// The same batched producer read with NO caching, for a caller that owns a longer-lived cache.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="CtrmTicketPoolSnapshot"/> holds its result for hours. Routing it through the short TTL
+    /// above would stack a 60-second cache under a 12-hour one and quietly break the snapshot's Invalidate,
+    /// which would be served the reader's copy instead of going back to CTRM. Over-long codes are dropped
+    /// and logged exactly as in <see cref="GetForProducersAsync"/>.
+    /// </remarks>
+    public Task<CtrmReadResult<List<CtrmTicketDto>>> ReadForProducersAsync(
+        IReadOnlyCollection<string> scoularIds, DateTime from, DateTime to)
+    {
+        var codes = CtrmCustomerCodes.Normalize(scoularIds, out var dropped);
+
+        if (dropped.Count > 0)
+            _logger.LogWarning(
+                "CTRM tickets: dropped {Count} producer code(s) longer than {Max} characters before querying. Codes: {Codes}",
+                dropped.Count, CtrmCustomerCodes.MaxLength, string.Join(", ", dropped.Take(10)));
+
+        if (codes.Count == 0)
+            return Task.FromResult(new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = [] });
+
+        var span = (to.Date - from.Date).TotalDays;
+        if (span > CtrmQueries.MaxTicketRangeDays)
+            return Failed($"A bill-of-lading range of {span:F0} days exceeds the server's "
+                        + $"{CtrmQueries.MaxTicketRangeDays}-day cap; narrow the window or slice it.");
+
+        return FetchChunkedAsync(codes, from, to);
+    }
+
     /// <summary>Drops a producer's cached read, including every window beneath it.</summary>
     public void Invalidate(string scoularId)
     {

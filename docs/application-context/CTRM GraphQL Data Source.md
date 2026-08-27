@@ -34,7 +34,7 @@ Files: `api/GrainOriginatorPortal.Infrastructure/Ctrm/` (repositories, readers, 
 | Spot Loads (recent unapplied, all producers) | CTRM live | `tickets(customerIds:)` over the last 30 days + 7 ahead |
 | Open-activity trade-unit lock (edit dialog, nightly sync) | via the switch | reuses the producer contract + unapplied ticket reads |
 | Trade-unit contract pool (Build-a-List, Insights, Unshipped Bushels) | CTRM **snapshot** | `contracts(contractDateFrom/To:)` — a configured date window, walked at startup and cached |
-| "Producers with unapplied tickets" prompt | **ODS** | needs a contract-number-prefix filter CTRM does not have |
+| Trade-unit-wide tickets (every prompt mentioning tickets, deliveries, unapplied, unsettled) | CTRM **ticket pool snapshot** | `tickets(customerIds:)` for every active producer over the 3-year lookback, walked in the background and cached; both applied and unapplied branches, same rule as the producer screen |
 | Farm lookups, contract by source id, per-contract pricing lines | **ODS** | no UI caller; CTRM has no farm concept / no contract-number argument |
 
 **ODS by design, on both sources.** These annotate or subtract from CTRM rows and never add one: customer master (`dbo.Customer`), the storage gate (`ctrm.vw_GNTA39D1` — CTRM has no storage entity), lb→bushel factors (`vw_GNP024`), elevator names (`MbpLocationSynonym`), producer↔trade-unit maps, DP contracts, stored grain.
@@ -67,6 +67,7 @@ CTRM has no surrogate ids, so `Contract.Id` / `Ticket.Id` are deterministic FNV-
 | Ticket window containing today | `LiveCacheSeconds` | New tickets land here |
 | Ticket windows entirely in the past | `Ctrm:HistoricalTicketCacheMinutes` (30) | Older tickets rarely change and cost the most; bounds how stale an old ticket's status can be |
 | Contract pool snapshot | `Ctrm:SnapshotMinutes` | Rebuilt in the background; serves the previous copy during a rebuild |
+| Ticket pool snapshot | `Ctrm:TicketPoolMinutes` (720) | Same pattern; warmed after the contract pool. ~240 pages for the real producer population, a few minutes at four-way concurrency |
 | Client hover prefetch | 60s, side map | Resting on a producer row fires the reads so the click renders from memory |
 
 Failures are never cached at any layer.
@@ -86,7 +87,7 @@ To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to t
 ## Known gaps (waiting on the API team)
 
 1. `customerIds` cold performance — closes the pool's date window.
-2. A contract-number-prefix or `unappliedOnly` filter on `tickets` — moves the last prompt off ODS.
+2. ~~A contract-number-prefix or `unappliedOnly` filter on `tickets`~~ — delivered as `unappliedOnly` (2026-08-27) but not used: the pool must carry applied tickets too, and for real producers the unfiltered walk is cheap enough to run in the background.
 3. The over-length `customerIds` error (7 chars works, 8 fails).
 4. Response caching that ignores `cropYear` (and possibly `tradeUnit`) — the reason the crop-year read is on ODS.
 
