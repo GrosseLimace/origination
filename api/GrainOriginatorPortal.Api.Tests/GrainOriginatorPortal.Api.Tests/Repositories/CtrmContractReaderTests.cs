@@ -448,4 +448,37 @@ public class CtrmContractReaderTests
         Assert.All(callers, r => Assert.True(r.Ok));
         Assert.Equal(1, client.Calls);
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AnOverLongCodeIsStillReadInThePerProducerStrategy()
+    {
+        // The 7-character limit is a defect in the customerIds ARGUMENT, not in the data - the singular
+        // customerId filter handles a long code fine. Normalizing (and dropping) before choosing a strategy
+        // meant an over-length producer vanished from a trade unit even on the path that could read it.
+        var client = new RecordingClient();
+
+        var result = await Sut(client, Config(strategy: "perProducer"))
+            .GetForProducersAsync(["P000001", "TOOLONG8"], CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal(2, client.Calls);
+        Assert.Equal(["P000001", "TOOLONG8"], client.Variables.Select(v => (string)v["customerId"]!).OrderBy(c => c).ToArray());
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AnOverLongCodeIsStillDroppedFromTheCustomerIdsStrategy()
+    {
+        // The flip side: on the list filter it must still be dropped, because one bad code fails the
+        // whole chunk and takes every producer sharing it down with it.
+        var client = new RecordingClient();
+
+        var result = await Sut(client, Config(strategy: "customerIds"))
+            .GetForProducersAsync(["P000001", "TOOLONG8"], CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal(1, client.Calls);
+        Assert.Equal(["P000001"], Assert.IsAssignableFrom<IEnumerable<string>>(client.Variables[0]["customerIds"]).ToArray());
+    }
 }

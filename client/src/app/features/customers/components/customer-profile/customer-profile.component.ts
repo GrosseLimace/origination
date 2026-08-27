@@ -309,7 +309,15 @@ export class CustomerProfileComponent {
       if (id == null) { this.historicalContracts.set([]); return; }
       this.apiService.getHistoricalContractsForPacing(id)
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(contracts => this.historicalContracts.set(contracts));
+        .subscribe({
+          next: contracts => this.historicalContracts.set(contracts),
+          error: () => {
+            // Keep whatever is already shown, but do not let the failure disappear into Angular's
+            // global ErrorHandler where nobody sees it.
+            this.historicalContracts.set([]);
+            this.appState.setContractsLoadFailed(true);
+          }
+        });
     });
 
     // Effect: auto-select the newest planting year when data changes.

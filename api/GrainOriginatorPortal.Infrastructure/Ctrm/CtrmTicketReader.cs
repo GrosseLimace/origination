@@ -508,7 +508,7 @@ public sealed class CtrmTicketReader
     {
         var lookbackDays = Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 1095));
         var today = DateTime.Today;
-        var windows = BuildWindows(today, lookbackDays);
+        var windows = Subdivide(BuildWindows(today, lookbackDays), ReadInt("Ctrm:InteractiveWindowSplit", 1));
 
         // Each window is its own cache entry beneath the scope-level one. A repeat visit after the short
         // outer TTL therefore refetches only the window that can have changed - the one containing today.
@@ -565,6 +565,50 @@ public sealed class CtrmTicketReader
         }
 
         return windows;
+    }
+
+    /// <summary>
+    /// Splits each window into <paramref name="parts"/> contiguous sub-windows, fetched in parallel.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Ships off (parts = 1) because the evidence conflicts.</b> A ticket read is charged by the
+    /// date scan, so narrower ranges are individually cheaper - one probe run saw a window go 3.4s to 2.3s
+    /// at 2-3 sub-windows, and worse at 6. But an independent run saw four parallel quarters do WORSE than
+    /// a single call (10.7s against 7.3s), because concurrent scans contend on the server. Splitting also
+    /// multiplies requests per click, which fights the interactive page cap. Both measurements are real;
+    /// which one applies depends on load, so this stays a dial at 1 until an A/B on
+    /// /api/diagnostics/ctrm/producer-timing shows a win under realistic conditions.</para>
+    ///
+    /// <para>Sub-windows follow the same rule as <see cref="BuildWindows"/>: inclusive on both ends, each
+    /// starting the day after the previous ends, so a ticket on a boundary date is fetched exactly once.
+    /// They keep the same cache-key shape, so the age-scaled TTL still applies per sub-window.</para>
+    /// </remarks>
+    public static List<(DateTime From, DateTime To)> Subdivide(List<(DateTime From, DateTime To)> windows, int parts)
+    {
+        parts = Math.Clamp(parts, 1, 3);
+        if (parts == 1) return windows;
+
+        var split = new List<(DateTime, DateTime)>(windows.Count * parts);
+
+        foreach (var (from, to) in windows)
+        {
+            // Inclusive on both ends, so a one-day window spans 1 day, not 0.
+            var totalDays = (int)(to - from).TotalDays + 1;
+            if (totalDays < parts * 2) { split.Add((from, to)); continue; }
+
+            var size = totalDays / parts;
+            var cursor = from;
+
+            for (var i = 0; i < parts; i++)
+            {
+                // The last part absorbs the remainder, so the union is exactly the original window.
+                var end = i == parts - 1 ? to : cursor.AddDays(size - 1);
+                split.Add((cursor, end));
+                cursor = end.AddDays(1);
+            }
+        }
+
+        return split;
     }
 
     /// <summary>

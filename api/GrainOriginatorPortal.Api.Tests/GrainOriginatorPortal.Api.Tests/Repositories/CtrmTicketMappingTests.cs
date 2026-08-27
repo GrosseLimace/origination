@@ -175,6 +175,34 @@ public class CtrmTicketMappingTests
 
     // -------------------------------------------------------------------------
     [Fact]
+    public void AppliedRows_CarryTheSyntheticContractId()
+    {
+        // The client falls back to matching a ticket to its contract on this id when the contract-number
+        // match misses. Nothing populated it on the CTRM path, so that fallback was dead code. It has to
+        // equal the id ToContract gives the same contract - both hash the trimmed contract number.
+        var ticket = Assert.Single(CtrmMappings.ToTickets(Header(Detail()), "TATOBIN"));
+
+        Assert.Equal(CtrmSyntheticId.From("PWW227420"), ticket.ContractId);
+        Assert.True(CtrmSyntheticId.IsSynthetic(ticket.ContractId!.Value));
+    }
+
+    // -------------------------------------------------------------------------
+    [Theory]
+    [InlineData("UWW000001")]   // unapplied
+    [InlineData("LWW000001")]   // loadout
+    [InlineData("CWW000001")]   // storage
+    [InlineData(null)]
+    public void NonPurchaseRows_HaveNoContractId(string? contractNumber)
+    {
+        // A U/L/C "contract number" is not a purchase contract. Hashing it would invent a link to a
+        // contract that does not exist, and the client would join a ticket to nothing.
+        var ticket = Assert.Single(CtrmMappings.ToTickets(Header(Detail(contractNumber: contractNumber)), "TATOBIN"));
+
+        Assert.Null(ticket.ContractId);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
     public void Applied_KeepsOnlyRowsOnOpenPurchaseContracts()
     {
         // The rule the ODS query applies. Scoping by customer code instead also returns sale-contract and

@@ -341,9 +341,14 @@ public sealed class CtrmTicketRepository : ITicketRepository
         return [.. codes.Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
-    /// <summary>Open purchase contract ids for a producer set, from the cached full-history contract read.
-    /// A failed contract read yields an empty set - the unapplied branch still answers, and the failure is
-    /// logged here rather than emptying the whole ticket list.</summary>
+    /// <summary>
+    /// Open purchase contract ids for a producer set, from the cached full-history contract read.
+    /// </summary>
+    /// <remarks>
+    /// A failed contract read yields an empty set so the unapplied branch still answers, but the failure is
+    /// RECORDED as well as logged: without the applied half, the delivery and unsettled prompts would
+    /// report only unapplied rows and look like a complete answer.
+    /// </remarks>
     private HashSet<string> OpenPurchaseContractIds(CtrmReadResult<List<CtrmContractDto>> contracts, IReadOnlyCollection<string> codes)
     {
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -351,6 +356,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         {
             _logger.LogError("CTRM trade-unit contracts unavailable for the applied-ticket branch [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", contracts.Status, contracts.Detail);
+            _provenance.RecordFailure("contracts", contracts.Status, contracts.Detail);
             return ids;
         }
 
@@ -458,8 +464,9 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
     /// <summary>
     /// Delegated by design: storage lives in <c>ctrm.vw_GNTA39D1</c> on ODS and CTRM has no storage
-    /// entity. Exposed for callers that gate their own ticket sets; the CTRM producer read does NOT
-    /// apply it, so C-prefix tickets show ungated there.
+    /// entity. Exposed for callers that gate their own ticket sets. Note the CTRM producer read DOES gate -
+    /// <see cref="ApplyStorageGateAsync"/> runs in <see cref="GetByCustomerAsync"/> - so C-prefix tickets
+    /// are filtered there exactly as on ODS; an earlier version of this comment said otherwise.
     /// </summary>
     public Task<Dictionary<string, HashSet<string>>> GetActiveStorageCommoditiesAsync(
         IReadOnlyCollection<string> customerCodes, CancellationToken cancellationToken)
@@ -478,6 +485,12 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// "Open" mirrors the ODS predicate: no closed date, or the Db2 min-date sentinel standing in for one.
     /// An empty set is a legitimate answer — a producer with no open contracts should show only unapplied
     /// tickets — so a failed contract read is distinguished from an empty one by the reader's status.
+    ///
+    /// A failure here is RECORDED, not just logged. Without that the endpoint answers 200 with every
+    /// applied ticket missing, which reads as "this producer has delivered nothing against their
+    /// contracts" - the exact class of silent wrongness the failure plumbing exists to prevent. It became a
+    /// realistic combination once the contract and ticket reads started running concurrently: "contracts
+    /// timed out, tickets did not" no longer implies the ticket read failed too.
     /// </remarks>
     private async Task<HashSet<string>> GetOpenPurchaseContractIdsAsync(string scoularId, CancellationToken cancellationToken)
     {
@@ -489,6 +502,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
             _logger.LogWarning(
                 "CTRM tickets: could not read {ScoularId} contracts to scope applied tickets ({Status}) — " +
                 "applied tickets will be omitted this pass.", scoularId, read.Status);
+            _provenance.RecordFailure("contracts", read.Status, read.Detail);
             return ids;
         }
 

@@ -35,18 +35,36 @@ public static class CtrmCustomerCodes
     /// </remarks>
     public static List<string> Normalize(IReadOnlyCollection<string>? codes, out List<string> dropped)
     {
-        var cleaned = (codes ?? [])
-            .Select(c => c?.Trim())
-            .Where(c => !string.IsNullOrEmpty(c))
-            .Select(c => c!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var cleaned = Clean(codes);
 
         dropped = [.. cleaned.Where(c => c.Length > MaxLength)];
 
         return dropped.Count == 0
             ? cleaned
             : [.. cleaned.Where(c => c.Length <= MaxLength)];
+    }
+
+    /// <summary>
+    /// Trims, de-duplicates and sorts a code set, keeping EVERY code.
+    /// </summary>
+    /// <remarks>
+    /// For callers that do not use the <c>customerIds</c> filter. The length limit is a defect in that
+    /// one argument, not in the data: the singular <c>customerId</c> filter handles a long code fine. The
+    /// contract reader's per-producer strategy normalized with the dropping overload before it chose a
+    /// strategy, so an over-length producer vanished from a trade unit even on the path that could have
+    /// read it. No Dev producer is affected today (all codes are 5-7 characters) - this is insurance for
+    /// production data.
+    /// </remarks>
+    public static List<string> NormalizeKeepingAll(IReadOnlyCollection<string>? codes) => Clean(codes);
+
+    private static List<string> Clean(IReadOnlyCollection<string>? codes)
+    {
+        return (codes ?? [])
+            .Select(c => c?.Trim())
+            .Where(c => !string.IsNullOrEmpty(c))
+            .Select(c => c!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

@@ -154,7 +154,10 @@ public sealed class CtrmContractReader
     public Task<CtrmReadResult<List<CtrmContractDto>>> GetForProducersAsync(
         IReadOnlyCollection<string> scoularIds, CancellationToken cancellationToken)
     {
-        var codes = Normalize(scoularIds);
+        // Keeps EVERY code: the length limit is a defect in the customerIds argument, not in the data, and
+        // the per-producer strategy uses the singular filter which handles a long code fine. The drop now
+        // happens inside FetchByCustomerIdsAsync, where it actually applies.
+        var codes = CtrmCustomerCodes.NormalizeKeepingAll(scoularIds);
 
         // An empty producer set is a legitimate question with an empty answer. It must never become an
         // unfiltered query - without customerIds the server would demand a date range and, given one,
@@ -172,7 +175,8 @@ public sealed class CtrmContractReader
     /// would not have to wait on CTRM. For diagnostics and tests.</summary>
     public bool IsWarm(IReadOnlyCollection<string> scoularIds)
     {
-        var codes = CtrmCustomerCodes.Normalize(scoularIds, out _);
+        // Same normalization as GetForProducersAsync, or the key would not match.
+        var codes = CtrmCustomerCodes.NormalizeKeepingAll(scoularIds);
         return codes.Count > 0 && _cache.ContainsKey($"producers:{codes.Count}:{StableHash(codes)}");
     }
 
@@ -545,8 +549,13 @@ public sealed class CtrmContractReader
         };
     }
 
-    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchByCustomerIdsAsync(List<string> codes)
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchByCustomerIdsAsync(List<string> allCodes)
     {
+        // The length drop belongs HERE, not at the entry point: only this filter has the 7-character limit.
+        var codes = Normalize(allCodes);
+        if (codes.Count == 0)
+            return new CtrmReadResult<List<CtrmContractDto>> { Status = CtrmReadStatus.Ok, Value = [] };
+
         var chunks = codes.Chunk(MaxCustomerIdsPerCall).ToList();
         // Its own, lower concurrency - NOT the page concurrency the cheap reads use. Every page of a
         // customerIds read is a ~25s server-side scan (measured cold on a quiet gateway: 500 codes 24.7s,

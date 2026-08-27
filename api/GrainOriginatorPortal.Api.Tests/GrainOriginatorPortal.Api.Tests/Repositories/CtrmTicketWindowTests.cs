@@ -90,4 +90,62 @@ public class CtrmTicketWindowTests
 
         Assert.Equal(Today.AddDays(-400), windows[^1].From);
     }
+
+    // -------------------------------------------------------------------------
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void SubdividedWindowsStayContiguousAndNonOverlapping(int parts)
+    {
+        // The split exists to shorten each date scan, but a gap would silently lose a day of tickets and an
+        // overlap would show a ticket twice. Same rule as BuildWindows: inclusive ends, next starts the day after.
+        var today = new DateTime(2026, 8, 27);
+        var original = CtrmTicketReader.BuildWindows(today, 1095);
+
+        var split = CtrmTicketReader.Subdivide(original, parts);
+
+        // Union is unchanged: same overall span, no gaps, no overlaps.
+        var ordered = split.OrderBy(w => w.From).ToList();
+        Assert.Equal(original.Min(w => w.From), ordered[0].From);
+        Assert.Equal(original.Max(w => w.To), ordered[^1].To);
+        for (var i = 1; i < ordered.Count; i++)
+            Assert.Equal(ordered[i - 1].To.AddDays(1), ordered[i].From);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void TheSplitIsOffByDefault()
+    {
+        // Conflicting measurements: one run saw 2-3 sub-windows help, another saw 4 parallel quarters do
+        // worse than a single call. It ships at 1 until an A/B settles it.
+        var original = CtrmTicketReader.BuildWindows(new DateTime(2026, 8, 27), 1095);
+
+        Assert.Same(original, CtrmTicketReader.Subdivide(original, 1));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void SubdividedWindowsStillCoverTodayAndTomorrow()
+    {
+        // The forward day guards against clock skew against the Db2 host; splitting must not drop it.
+        var today = new DateTime(2026, 8, 27);
+
+        var split = CtrmTicketReader.Subdivide(CtrmTicketReader.BuildWindows(today, 1095), 3);
+
+        Assert.Contains(split, w => w.To >= today.AddDays(1));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void AWindowTooShortToSplitIsLeftAlone()
+    {
+        // Slicing a 3-day window into 3 would produce single-day scans with no benefit and more requests.
+        var tiny = new List<(DateTime From, DateTime To)> { (new DateTime(2026, 8, 25), new DateTime(2026, 8, 27)) };
+
+        var split = CtrmTicketReader.Subdivide(tiny, 3);
+
+        Assert.Single(split);
+        Assert.Equal(tiny[0], split[0]);
+    }
 }

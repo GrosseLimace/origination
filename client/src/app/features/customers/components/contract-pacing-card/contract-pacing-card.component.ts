@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ThemeService } from '@core/services/theme.service';
 import { ApiService } from '@core/services/api.service';
+import { AppStateService } from '@core/services/app-state.service';
 import { Contract, HarvestWindow } from '@models';
 
 type PacingDirection = 'up' | 'down' | 'flat';
@@ -39,6 +40,7 @@ export class ContractPacingCardComponent {
 
   private readonly themeService = inject(ThemeService);
   private readonly apiService = inject(ApiService);
+  private readonly appState = inject(AppStateService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Closed historical contracts — supplied by parent OR self-fetched if parent doesn't pass them. */
@@ -57,7 +59,12 @@ export class ContractPacingCardComponent {
       }
       this.apiService.getHistoricalContractsForPacing(id)
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(contracts => this._selfFetchedHistorical.set(contracts));
+        .subscribe({
+          next: contracts => this._selfFetchedHistorical.set(contracts),
+          // Pacing compares this year against last; missing history understates the comparison rather
+          // than emptying the card, so record it and leave the card to render what it has.
+          error: () => this.appState.setContractsLoadFailed(true)
+        });
     });
   }
 

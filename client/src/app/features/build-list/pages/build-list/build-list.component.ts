@@ -1117,7 +1117,9 @@ export class BuildListComponent {
   // True when the contracts fetch failed/timed out on the last load. Lets the results area
   // distinguish "couldn't load contract data" from a genuine zero-match — a contract-aware
   // query running against a silently-empty contracts array would otherwise read as "0 producers".
-  contractsLoadFailed = signal(false);
+  // Lives on AppStateService rather than here: customer-list and the trade-unit preload hit the same
+  // reads, and three private copies of this flag meant sourceLoadFailed missed most outages.
+  readonly contractsLoadFailed = this.appState.contractsLoadFailed;
   showRefinePanel = signal(false);
   pendingRefinements = signal<RefinementFilters>({});
   appliedRefinements = signal<RefinementFilters>({});
@@ -2016,7 +2018,7 @@ export class BuildListComponent {
     // query runs while it's missing, so page load never waits on the note download)
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
+      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
@@ -2076,7 +2078,9 @@ export class BuildListComponent {
     // response actually carried tickets.
     this.apiService.getTickets(tuParam).pipe(
       timeout(60000),
-      catchError(() => of([] as Ticket[])),
+      // Flagged, not swallowed silently: this is the read behind the delivery and unapplied prompts, and
+      // an empty result from it answers those prompts with "no producers" indistinguishably from an outage.
+      catchError(() => { this.appState.setTicketsLoadFailed(true); return of([] as Ticket[]); }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;
@@ -2609,8 +2613,8 @@ export class BuildListComponent {
     const fetchingNotes = needsNotes && !this.appState.notesLoaded();
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
-      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
+      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
+      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => { this.appState.setTicketsLoadFailed(true); return of([] as Ticket[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: fetchingNotes
         ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
@@ -3072,7 +3076,9 @@ export class BuildListComponent {
     const tuKey = [...tuParam].sort().join(',');
     forkJoin({
       contracts: forkJoin(years.map(y => this.apiService.getContractsByCropYear(y, tus).pipe(
-        catchError(() => of([] as Contract[]))
+        // Flagged rather than silently empty: this feeds the planting-coverage view, where [] reads as
+        // "nobody has contracts for this crop year".
+        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })
       ))),
       estimates: tuKey
         ? forkJoin(years.map(y => this.apiService.getDashboardPlantingEstimates(tuKey, y).pipe(

@@ -112,6 +112,12 @@ public static class CtrmMappings
             .Where(d => !string.IsNullOrWhiteSpace(d.ContractId))
             .Where(d => string.Equals(d.ContractPrefixType?.Trim(), PurchasePrefix, StringComparison.OrdinalIgnoreCase))
             .SelectMany(d => d.Prices.Select(p => ToPricingLine(d, p)))
+            // Ordered, not left to the server. ODS sorts these by ContractId then PriceSequence, and the
+            // contracts table reads safeLines[0] POSITIONALLY to pick the price to badge - so the order is
+            // load-bearing, not cosmetic. Live CTRM data happens to arrive ordered by priceSequence; this
+            // makes it a guarantee rather than an observation. Ordinal to match SQL's byte ordering.
+            .OrderBy(l => l.ContractId, StringComparer.Ordinal)
+            .ThenBy(l => l.PriceSequence ?? int.MaxValue)
             .ToList();
 
     private static ContractPricingLine ToPricingLine(CtrmContractDto parent, CtrmContractPriceDto p) => new()
@@ -306,19 +312,45 @@ public static class CtrmMappings
 
                 TicketType = Clean(d.TicketType),
                 TicketStatusDescription = Clean(d.TicketStatusDescription),
-                IsActive = true
+                IsActive = true,
+
+                // Set for APPLIED rows only, to the same synthetic id CtrmMappings.ToContract gives the
+                // contract itself - both derive from the trimmed contract number, so they match by
+                // construction. This restores the client's fallback contract-to-ticket join
+                // (contracts-table.component.ts:689-692), which was dead on the CTRM path because nothing
+                // populated it. Not a parity break: the ODS TicketRepository already notes this FK "isn't
+                // reliably populated", and OdsIgnoredFields_StayUnset_ForParity does not assert it null.
+                // Unapplied rows have no contract, so they keep null.
+                ContractId = AppliedContractSyntheticId(d.ContractNumber)
 
                 // Left unset for parity: AppliedQuantity, GrossWeight, TareWeight and NetWeight are all
                 // Ignore()d on the ODS entity, so populating them from CTRM would show up as a
-                // field-population difference rather than a data difference. ContractId, CustomerId,
-                // FarmId and the SourceTicket*Id pair are ODS surrogates with no CTRM equivalent.
-                // ElevatorCity/State stay null here and are filled by the ODS elevator lookup, exactly
-                // as on the ODS path.
+                // field-population difference rather than a data difference. CustomerId, FarmId and the
+                // SourceTicket*Id pair are ODS surrogates with no CTRM equivalent. ElevatorCity/State stay
+                // null here and are filled by the ODS elevator lookup, exactly as on the ODS path.
             })
             .ToList();
     }
 
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// The contract's synthetic id for an APPLIED ticket row, or null when the row is not applied.
+    /// </summary>
+    /// <remarks>
+    /// Only purchase-prefixed numbers count. A U, L or C prefix is an unapplied/storage row - those carry
+    /// a "contract number" that is not a purchase contract, and hashing it would invent a link to a
+    /// contract that does not exist.
+    /// </remarks>
+    private static long? AppliedContractSyntheticId(string? contractNumber)
+    {
+        var number = Clean(contractNumber);
+        if (string.IsNullOrEmpty(number)) return null;
+
+        return number.StartsWith(PurchasePrefix, StringComparison.OrdinalIgnoreCase)
+            ? CtrmSyntheticId.From(number)
+            : null;
+    }
 
     /// <summary>
     /// Rewrites Db2's minimum date to null.

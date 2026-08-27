@@ -177,15 +177,20 @@ export class AppStateService {
 
   setContracts(contracts: Contract[]): void {
     this.contracts.set(contracts);
+    // A real answer clears the failure flag. Otherwise a retry that succeeds leaves the amber
+    // "could not be loaded" banner up until the user switches trade units.
+    this.contractsLoadFailed.set(false);
   }
 
   setTodaysTickets(tickets: Ticket[]): void {
     this.todaysTickets.set(tickets);
+    this.ticketsLoadFailed.set(false);
   }
 
   setTickets(tickets: Ticket[]): void {
     this.tickets.set(tickets);
     this.ticketsLoaded.set(true);
+    this.ticketsLoadFailed.set(false);
   }
 
   setPlantingIntentions(plantingIntentions: PlantingIntention[]): void {
@@ -309,6 +314,17 @@ export class AppStateService {
 
   /** Same, for the trade-unit-wide ticket read behind the delivery and unapplied prompts. */
   ticketsLoadFailed = signal(false);
+
+  /**
+   * Records the outcome of a trade-unit-wide contract read. Call it on SUCCESS too.
+   *
+   * A flag that only ever gets set leaves the "could not be loaded" banner up until the user switches
+   * trade units, long after a retry has quietly succeeded - so the screen lies in the other direction.
+   */
+  setContractsLoadFailed(failed: boolean): void { this.contractsLoadFailed.set(failed); }
+
+  /** Same for tickets. See setContractsLoadFailed. */
+  setTicketsLoadFailed(failed: boolean): void { this.ticketsLoadFailed.set(failed); }
 
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
   dashboardCache = signal<DashboardCacheEntry | null>(null);

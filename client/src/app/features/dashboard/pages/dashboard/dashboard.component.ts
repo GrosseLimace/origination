@@ -976,7 +976,14 @@ export class DashboardComponent {
       untracked(() => {
         this.apiService.getContractsByCropYear(year, tus.length > 0 ? tus : undefined)
           .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe(contracts => this._cropYearContracts.set(contracts));
+          .subscribe({
+            next: contracts => this._cropYearContracts.set(contracts),
+            error: () => {
+              // Harvest & Contracts would otherwise show last year's numbers under this year's heading.
+              this._cropYearContracts.set([]);
+              this.appStateService.setContractsLoadFailed(true);
+            }
+          });
       });
     });
 

@@ -457,7 +457,8 @@ export class CustomerListComponent {
     // emptiness check could misfire (or skip the fetch after a partial write). ticketsLoaded is only
     // true once a TU-wide set has been loaded; it's reset on TU change.
     if (this.nlqFilterService.queryInvolvesTickets(query) && !this.appStateService.ticketsLoaded()) {
-      missing['tickets'] = this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[])));
+      missing['tickets'] = this.apiService.getTickets(tuParam).pipe(
+        catchError(() => { this.appStateService.setTicketsLoadFailed(true); return of([] as Ticket[]); }));
     }
     if (this.nlqFilterService.queryInvolvesPlanting(query) && this.appStateService.plantingIntentions().length === 0) {
       missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
@@ -468,7 +469,8 @@ export class CustomerListComponent {
     // while commodity-specific prompts silently fall back to customer.commodities and
     // still return producers, making the failure look intermittent.
     if (this.nlqFilterService.queryInvolvesContracts(query) && this.appStateService.contracts().length === 0) {
-      missing['contracts'] = this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[])));
+      missing['contracts'] = this.apiService.getContracts(tuParam).pipe(
+        catchError(() => { this.appStateService.setContractsLoadFailed(true); return of([] as Contract[]); }));
     }
     // Notes (full set with bodies/authors): fetch ONLY for prompts that actually read note
     // content/authors/pinned/counts, or whose refine filters do. Recency ("not contacted",

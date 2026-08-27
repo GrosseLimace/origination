@@ -189,4 +189,42 @@ public class CtrmMappingsTests
 
         Assert.Empty(CtrmMappings.ToPricingLines([sale]));
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void PricingLines_AreOrderedByContractThenSequence()
+    {
+        // The contracts table picks the price to badge by reading safeLines[0] POSITIONALLY, so this order
+        // decides which price a producer sees. ODS sorts by ContractId then PriceSequence; live CTRM data
+        // happens to arrive sorted, which is exactly the kind of accident that breaks silently later.
+        var contracts = new List<CtrmContractDto>
+        {
+            new()
+            {
+                ContractId = "PWW000002",
+                ContractPrefixType = "P",
+                Prices = [PriceLine(2), PriceLine(0), PriceLine(1)]
+            },
+            new()
+            {
+                ContractId = "PWW000001",
+                ContractPrefixType = "P",
+                Prices = [PriceLine(1), PriceLine(0)]
+            }
+        };
+
+        var lines = CtrmMappings.ToPricingLines(contracts);
+
+        Assert.Equal(
+            [("PWW000001", 0), ("PWW000001", 1), ("PWW000002", 0), ("PWW000002", 1), ("PWW000002", 2)],
+            lines.Select(l => (l.ContractId, l.PriceSequence)).ToArray());
+    }
+
+    /// <summary>A price line carrying only what the ordering test needs.</summary>
+    private static CtrmContractPriceDto PriceLine(int sequence) => new()
+    {
+        PriceSequence = sequence,
+        PriceQuantity = 1000m,
+        FlatPrice = 5m
+    };
 }

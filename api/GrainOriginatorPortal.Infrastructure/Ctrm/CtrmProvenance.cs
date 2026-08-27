@@ -73,8 +73,19 @@ public sealed class CtrmProvenance
     /// <summary>
     /// Records that a CTRM read failed. The FIRST failure is kept: it is the one that caused the rest.
     /// </summary>
+    /// <remarks>
+    /// Guarded by <see cref="CtrmReadFailure.IsFailure"/> so a status that merely means "incomplete"
+    /// (<see cref="CtrmReadStatus.PartialSuccess"/>) or "fine" can never be promoted into a 503 by a
+    /// caller passing it in from the wrong branch. Those go to <see cref="RecordPartial"/> instead.
+    /// </remarks>
     public void RecordFailure(string what, CtrmReadStatus status, string? detail)
     {
+        if (!CtrmReadFailure.IsFailure(status))
+        {
+            if (status == CtrmReadStatus.PartialSuccess) RecordPartial();
+            return;
+        }
+
         Failure ??= new CtrmReadFailure(what, status, detail);
     }
 
