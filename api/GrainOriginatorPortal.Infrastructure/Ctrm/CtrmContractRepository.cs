@@ -102,9 +102,22 @@ public sealed class CtrmContractRepository : IContractRepository
         if (string.IsNullOrEmpty(code)) return [];
 
         var read = await _reader.GetForProducerFullAsync(code, cancellationToken);
-        if (!read.Ok) return [];
+        if (!read.Ok)
+        {
+            // Recorded, not just returned empty. This read had no provenance at all, which meant two things:
+            // the diagnostics report attributed the previous stage's outcome to it, and - far worse - a
+            // failed read blanked the pricing badges with no 503 and no record. Same class of silent
+            // wrongness as the applied-ticket hole.
+            _logger.LogError("CTRM pricing lines unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("contracts", read.Status, read.Detail);
+            return [];
+        }
 
-        return CtrmMappings.ToPricingLines((read.Value ?? []).Where(IsOpenOrRecent));
+        var lines = CtrmMappings.ToPricingLines((read.Value ?? []).Where(IsOpenOrRecent));
+        _provenance.RecordContracts("ctrm", "OkPricingLines", lines.Count);
+        return lines;
     }
 
     /// <summary>
