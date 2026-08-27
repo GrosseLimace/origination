@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { of, throwError, firstValueFrom, lastValueFrom } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { TestBed } from '@angular/core/testing';
+import { effect, signal, untracked } from '@angular/core';
 import { AppStateService } from '@core/services/app-state.service';
 
 /**
@@ -139,6 +140,85 @@ describe('CTRM failure flags — lifecycle', () => {
 
       expect(text).toMatch(/historicalContractsFailed\.set\(true\)/);
       expect(text).not.toMatch(/setContractsLoadFailed\(true\)/);
+    });
+  });
+
+  /**
+   * The staged-query hang, and why one line of it is load-bearing.
+   *
+   * Build-a-List stages a query when the data it needs has not arrived, and re-runs it from an effect when
+   * the data signals change. The guard that stops it waiting on a FAILED read only works if the failure
+   * flag is a tracked dependency of that effect. Read only inside untracked(), it cannot wake the effect -
+   * and nothing else the effect tracks changes on the failure path, because the empty-array fallback never
+   * calls setTickets. The failure drill missed this because an unroutable host fails before anyone types.
+   */
+  describe('a failure flag must WAKE the staged-query effect, not just be readable by it', () => {
+    it('a signal read only inside untracked() does not re-trigger its effect', () => {
+      // The bug, demonstrated on the primitive rather than asserted about the component.
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({});
+
+      const failed = signal(false);
+      const unrelated = signal(0);
+      let runs = 0;
+      let sawFailure = false;
+
+      TestBed.runInInjectionContext(() => {
+        effect(() => {
+          unrelated();                       // the only tracked read
+          untracked(() => { runs++; if (failed()) sawFailure = true; });
+        });
+      });
+      TestBed.tick();
+      expect(runs).toBe(1);
+
+      failed.set(true);                      // the failure lands AFTER the query was staged
+      TestBed.tick();
+
+      expect(runs).toBe(1);                  // effect never re-ran...
+      expect(sawFailure).toBe(false);        // ...so the guard never saw the failure: the hang
+    });
+
+    it('the same signal read as a dependency does re-trigger it', () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({});
+
+      const failed = signal(false);
+      let runs = 0;
+      let sawFailure = false;
+
+      TestBed.runInInjectionContext(() => {
+        effect(() => {
+          failed();                          // tracked - this is the fix
+          untracked(() => { runs++; if (failed()) sawFailure = true; });
+        });
+      });
+      TestBed.tick();
+      expect(runs).toBe(1);
+
+      failed.set(true);
+      TestBed.tick();
+
+      expect(runs).toBe(2);
+      expect(sawFailure).toBe(true);         // the guard fires, the query stops waiting
+    });
+
+    it('build-list reads sourceLoadFailed as a dependency, outside untracked', () => {
+      // Source-level because the effect itself needs the whole component to stand up. Blunt, but it fails
+      // loudly if the line is moved back inside untracked() - which is exactly how this regressed.
+      const text = readFileSync(
+        join(process.cwd(), 'src', 'app', 'features', 'build-list', 'pages', 'build-list', 'build-list.component.ts'),
+        'utf8');
+
+      const effectStart = text.indexOf('private _dataReadyEffect = effect(() => {');
+      // The CALL, not a mention of it in a comment - the comment above the line says 'untracked()'.
+      const untrackedStart = text.indexOf('untracked(() =>', effectStart);
+      expect(effectStart).toBeGreaterThan(-1);
+      expect(untrackedStart).toBeGreaterThan(effectStart);
+
+      // The tracked section is everything between the effect opening and the untracked() call.
+      const trackedSection = text.slice(effectStart, untrackedStart);
+      expect(trackedSection).toContain('this.sourceLoadFailed();');
     });
   });
 });

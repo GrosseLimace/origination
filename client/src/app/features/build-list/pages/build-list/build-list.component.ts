@@ -130,6 +130,12 @@ export class BuildListComponent {
     this._dpReady();
     this._ticketsReady();
     this._contractsReady();
+    // TRACKED, not just read inside untracked() below. The failure flags flip AFTER a query is already
+    // staged - the user types a ticket prompt while the read is in flight, and it fails a moment later.
+    // Nothing else this effect tracks changes on that path (the [] fallback never calls setTickets, so
+    // _ticketsReady stays false), so without this dependency the effect never re-runs and the query hangs
+    // on "Processing query..." exactly as it did before the guard was added.
+    this.sourceLoadFailed();
     if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes() || this.waitingForDp()) && this.coreDataLoaded()) {
       untracked(() => {
         // A staged query waits for data to ARRIVE. If the read that would deliver it FAILED, waiting is
