@@ -305,8 +305,10 @@ export class ApiService {
   /** Fetches closed historical contracts for Contract Pacing year-over-year comparison. */
   getHistoricalContractsForPacing(customerId: number): Observable<Contract[]> {
     return this._dedupe(`contracts-pacing:${customerId}`,
+      // Rethrows rather than swallowing: on the CTRM path an empty list is indistinguishable from a
+      // failed read, and the pacing card would silently show no history.
       this.http.get<Contract[]>(`${this.baseUrl}/contracts/pacing/${customerId}`)
-        .pipe(catchError(() => of([] as Contract[])))
+        .pipe(catchError(e => this.handleError(e)))
     );
   }
 
@@ -318,8 +320,10 @@ export class ApiService {
     }
     const tuKey = (tradeUnits && tradeUnits.length > 0) ? tradeUnits.slice().sort().join(',') : '';
     return this._dedupe(`contracts-by-crop-year:${cropYear}:${tuKey}`,
+      // Rethrows rather than swallowing: this feeds the planting-coverage prompts, where a failed read
+      // returning [] reads as "nobody has contracts for this crop year".
       this.http.get<Contract[]>(`${this.baseUrl}/contracts/by-crop-year/${cropYear}`, { params })
-        .pipe(catchError(() => of([] as Contract[])))
+        .pipe(catchError(e => this.handleError(e)))
     );
   }
 

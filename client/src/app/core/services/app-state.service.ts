@@ -62,10 +62,15 @@ export class AppStateService {
   // description/location (e.g. "Pratt, KS"); tradeUnitCodes is kept for code-only consumers.
   userGroups = signal<{ groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]>([]);
   userGroupsLoaded = signal(false);
+  /** True once /usertradeunits has answered with NO assignments for this user. Distinct from
+   *  `userGroupsLoaded` (deliberately left false in that case so a retry is natural). Lets the
+   *  preference restore skip re-applying a saved selection the user is no longer entitled to. */
+  noTradeUnitAssignments = signal(false);
 
   setUserGroups(groups: { groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]): void {
     this.userGroups.set(groups);
     this.userGroupsLoaded.set(true);
+    this.noTradeUnitAssignments.set(false);
   }
 
   /** Trade-unit code → description/location (e.g. "2190" → "Pratt, KS"), from the loaded groups.
@@ -291,6 +296,19 @@ export class AppStateService {
   customersLoading = signal(false);
   contractsLoading = signal(false);
   todaysTicketsLoading = signal(false);
+
+  /**
+   * Set when the trade-unit-wide CONTRACT read failed, as opposed to returning nothing.
+   *
+   * Build-a-List and Actionable Insights filter these signals in memory, so a failed read leaves them
+   * empty and every prompt answers "no producers found" - which is what happened twice during CTRM
+   * development before anyone realised the gateway had timed out. Screens must check this before showing
+   * an empty state.
+   */
+  contractsLoadFailed = signal(false);
+
+  /** Same, for the trade-unit-wide ticket read behind the delivery and unapplied prompts. */
+  ticketsLoadFailed = signal(false);
 
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
   dashboardCache = signal<DashboardCacheEntry | null>(null);

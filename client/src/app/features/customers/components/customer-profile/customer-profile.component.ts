@@ -92,6 +92,15 @@ export class CustomerProfileComponent {
   public isLoadingEstimates = input(false);
   public isLoadingContracts = input(false);
   public isLoadingUnappliedTickets = input(false);
+
+  /** Non-null when the read FAILED rather than returning nothing - forwarded to the tables so they can
+   *  say so instead of showing their empty state. */
+  public contractsLoadError = input<string | null>(null);
+  public ticketsLoadError = input<string | null>(null);
+
+  /** Bubbled up from the tables' Retry buttons. */
+  public retryContracts = output<void>();
+  public retryTickets = output<void>();
   public isLoadingPricingLines = input(false);
   public isLoadingPlanting = input(false);
   public isLoadingStoredGrain = input(false);

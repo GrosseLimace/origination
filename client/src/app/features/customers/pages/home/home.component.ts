@@ -158,9 +158,17 @@ export class HomeComponent {
   readonly commodities = signal<Commodity[]>([]);
   readonly isLoadingYieldData = signal(false);
   readonly isLoadingContracts = signal(false);
+
+  /** Message when the producer's CONTRACT read failed, as opposed to returning nothing. Kept separate
+   *  from the loading flag because "empty" and "failed" render identically otherwise, and a CTRM
+   *  timeout showing as "no contracts found" is how a grower's book appears empty. */
+  readonly contractsLoadError = signal<string | null>(null);
   /** True only while the FAST per-customer unapplied-tickets fetch is in flight. Drives the
    *  spinner on the Unapplied Tickets tab. */
   readonly isLoadingUnappliedTickets = signal(false);
+
+  /** Message when the producer's TICKET read failed. See contractsLoadError. */
+  readonly ticketsLoadError = signal<string | null>(null);
   readonly isLoadingPricingLines = signal(false);
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingDpContracts = signal(false);
@@ -983,6 +991,8 @@ export class HomeComponent {
     this.appState.selectCustomer(customer);
     this.isLoadingContracts.set(true);
     this.isLoadingUnappliedTickets.set(true);
+    this.contractsLoadError.set(null);
+    this.ticketsLoadError.set(null);
     this.isLoadingStoredGrain.set(true);
     this.isLoadingDpContracts.set(true);
     this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
@@ -1244,7 +1254,10 @@ export class HomeComponent {
           contractsDone = true;
           markIfAllDone();
         },
-        error: () => { this.isLoadingContracts.set(false); }
+        error: (err) => {
+          this.isLoadingContracts.set(false);
+          this.contractsLoadError.set(this._readFailureMessage(err));
+        }
       });
     }
 
@@ -1368,6 +1381,47 @@ export class HomeComponent {
    *  polluting it with one producer's tickets would make the customer-list/build-list NLQ guard
    *  think the full TU set is loaded. Applied tickets are matched server-side by the customer's open
    *  contract numbers, so split / cross-CustomerCode applied tickets are included. */
+  /**
+   * Turns a failed HTTP response into something an originator can act on.
+   *
+   * The API answers a failed CTRM read with a 503 and ProblemDetails carrying
+   * INFRASTRUCTURE_CTRM_UNAVAILABLE, which is the case worth naming: the data exists, we could not reach
+   * it, and retrying is the right move. Anything else gets a generic line rather than a raw status.
+   */
+  private _readFailureMessage(err: unknown): string {
+    const e = err as { status?: number; error?: { code?: string; message?: string } } | null;
+    if (e?.error?.code === 'INFRASTRUCTURE_CTRM_UNAVAILABLE')
+      return e.error.message ?? 'CTRM is temporarily unavailable. Please retry shortly.';
+    if (e?.status === 503) return 'The data source is temporarily unavailable. Please retry shortly.';
+    return 'Something went wrong loading this data. Please retry.';
+  }
+
+  /** Retries the producer's contract read after a failure, from the table's Retry button. */
+  retryCustomerContracts(): void {
+    const customer = this.selectedCustomer();
+    if (!customer) return;
+    this.contractsLoadError.set(null);
+    this.isLoadingContracts.set(true);
+    this.apiService.getContractsByCustomer(customer.id, customer.scoularId)
+      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (contracts) => this._applyCustomerContracts(customer.id, contracts),
+        error: (err) => {
+          this.isLoadingContracts.set(false);
+          this.contractsLoadError.set(this._readFailureMessage(err));
+        }
+      });
+  }
+
+  /** Retries the producer's ticket read after a failure, from the table's Retry button. */
+  retryCustomerTickets(): void {
+    const customer = this.selectedCustomer();
+    if (!customer) return;
+    this.ticketsLoadError.set(null);
+    this.isLoadingUnappliedTickets.set(true);
+    this._loadCustomerTickets(customer.id, customer.scoularId);
+  }
+
   private _loadCustomerTickets(customerId: number, scoularId: string | undefined, onDone?: () => void): void {
     this.apiService.getTicketsByCustomer(customerId, scoularId)
       .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
@@ -1376,8 +1430,9 @@ export class HomeComponent {
           this._applyCustomerTickets(customerId, tickets);
           onDone?.();
         },
-        error: () => {
+        error: (err) => {
           this.isLoadingUnappliedTickets.set(false);
+          this.ticketsLoadError.set(this._readFailureMessage(err));
         }
       });
   }

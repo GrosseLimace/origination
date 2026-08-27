@@ -45,6 +45,14 @@ export class ContractsTableComponent {
   public pricingLines = input<ContractPricingLine[]>([]);
   public customer = input.required<Customer>();
   public openContractId = input<number | null>(null);
+
+  /** Set when the contract read FAILED, as opposed to returning nothing. The two are
+   *  indistinguishable in the data, and showing "no contracts found" for a CTRM outage is how a
+   *  grower's book appears empty. Null means no error. */
+  public loadError = input<string | null>(null);
+
+  /** Asks the parent to retry the failed read. */
+  public retryLoad = output<void>();
   /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines
    *  section shows "Loading…" instead of disappearing when this is the case. */
   public isLoadingPricingLines = input(false);

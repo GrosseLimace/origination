@@ -48,6 +48,22 @@ public sealed class CtrmProvenance
     /// </remarks>
     public const string OdsIndexedSource = "ctrm+ods-index";
 
+    /// <summary>
+    /// The failed CTRM read this request hit, if any - so the API can answer 503 instead of an empty list.
+    /// </summary>
+    /// <remarks>
+    /// The repositories deliberately return an empty list on failure and never fall back to ODS. That is
+    /// right for the data path and wrong for the caller: an empty list is indistinguishable from "this
+    /// producer genuinely has no contracts", and it rendered as "no producers found" twice during
+    /// development before anyone realised CTRM had timed out. Recording the failure here lets a filter turn
+    /// it into an explicit error at the edge, without every repository method having to change its return
+    /// type or every internal caller having to handle an exception.
+    /// </remarks>
+    public CtrmReadFailure? Failure { get; private set; }
+
+    /// <summary>True when a read came back incomplete but usable - a page cap was hit.</summary>
+    public bool Partial { get; private set; }
+
     public void RecordSource(string source) => Source = source;
 
     public void RecordContracts(string source, string outcome, int rows) => Contracts = Format(source, outcome, rows);
@@ -55,8 +71,30 @@ public sealed class CtrmProvenance
     public void RecordTickets(string source, string outcome, int rows) => Tickets = Format(source, outcome, rows);
 
     /// <summary>
+    /// Records that a CTRM read failed. The FIRST failure is kept: it is the one that caused the rest.
+    /// </summary>
+    public void RecordFailure(string what, CtrmReadStatus status, string? detail)
+    {
+        Failure ??= new CtrmReadFailure(what, status, detail);
+    }
+
+    /// <summary>Records that a read succeeded but was truncated, so the answer is incomplete.</summary>
+    public void RecordPartial() => Partial = true;
+
+    /// <summary>
     /// <c>source:outcome:rowCount</c> — compact enough for a header and enough to tell an empty
     /// result apart from a failed one, which look the same on screen.
     /// </summary>
     private static string Format(string source, string outcome, int rows) => $"{source}:{outcome}:{rows}";
+}
+
+/// <summary>What failed, and enough to act on it. <paramref name="What"/> is the read - "contracts" or
+/// "tickets" - so the message can name it without leaking producer data.</summary>
+public sealed record CtrmReadFailure(string What, CtrmReadStatus Status, string? Detail)
+{
+    /// <summary>Statuses that mean "the answer is missing", as opposed to legitimately empty.</summary>
+    public static bool IsFailure(CtrmReadStatus status) => status is
+        CtrmReadStatus.NotConfigured or CtrmReadStatus.TokenFailure or CtrmReadStatus.EgressBlocked
+        or CtrmReadStatus.Unauthorized or CtrmReadStatus.Throttled or CtrmReadStatus.QueryError
+        or CtrmReadStatus.Error or CtrmReadStatus.Warming;
 }

@@ -111,6 +111,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
             _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
             _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("tickets", read.Status, read.Detail);
 
             // Returning here would leave the contract task unobserved; a fault on it would then surface as
             // an unobserved TaskException on the finalizer thread rather than in this request's log.
@@ -132,6 +133,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
                 _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                     "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", crossBooked.Status, crossBooked.Detail);
                 _provenance.RecordTickets("ctrm", crossBooked.Status.ToString(), 0);
+                _provenance.RecordFailure("tickets", crossBooked.Status, crossBooked.Detail);
                 return [];
             }
 
@@ -219,6 +221,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
             _logger.LogError("CTRM applied tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
             _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("tickets", read.Status, read.Detail);
             return [];
         }
 
@@ -279,6 +282,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
             _logger.LogError("CTRM trade-unit tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
             _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("tickets", read.Status, read.Detail);
             return [];
         }
 
@@ -302,6 +306,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         var truncated = read.Status == CtrmReadStatus.PartialSuccess;
         _provenance.RecordTickets("ctrm",
             truncated ? "OkTruncated" : beforeGate != tickets.Count ? "OkStorageGated" : "Ok", tickets.Count);
+        if (truncated) _provenance.RecordPartial();
 
         _logger.LogInformation(
             "CTRM tickets: {Count} rows for {Producers} producer(s) in {TradeUnits} trade unit(s) ({Open} open contracts){Truncated}.",
@@ -417,6 +422,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
             _logger.LogError("CTRM recent tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
             _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("tickets", read.Status, read.Detail);
             return [];
         }
 

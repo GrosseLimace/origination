@@ -1,4 +1,4 @@
-import { Component, input, effect, inject, signal } from '@angular/core';
+import { Component, input, output, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -51,6 +51,14 @@ export class TicketsTableComponent {
   public contracts = input<Contract[]>([]);
   public customer = input.required<Customer>();
   public openCrop = input<string | null>(null);
+
+  /** Set when the ticket read FAILED, as opposed to the producer having no tickets. See the same input
+   *  on contracts-table: an empty list and a failed read look identical, and at harvest that means a
+   *  grower's deliveries can read as zero. Null means no error. */
+  public loadError = input<string | null>(null);
+
+  /** Asks the parent to retry the failed read. */
+  public retryLoad = output<void>();
 
   private _conversionMap: Map<string, number> | null = null;
 

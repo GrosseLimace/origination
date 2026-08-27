@@ -72,6 +72,7 @@ public sealed class CtrmContractRepository : IContractRepository
             _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
             _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("contracts", read.Status, read.Detail);
             return [];
         }
 
@@ -124,6 +125,7 @@ public sealed class CtrmContractRepository : IContractRepository
         if (!read.Ok)
         {
             _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("contracts", read.Status, read.Detail);
             return [];
         }
 
@@ -199,6 +201,7 @@ public sealed class CtrmContractRepository : IContractRepository
             _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
             _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("contracts", read.Status, read.Detail);
             return [];
         }
 
@@ -206,6 +209,7 @@ public sealed class CtrmContractRepository : IContractRepository
 
         var truncated = read.Status == CtrmReadStatus.PartialSuccess;
         _provenance.RecordContracts("ctrm", truncated ? "OkTruncated" : "Ok", contracts.Count);
+        if (truncated) _provenance.RecordPartial();
 
         _logger.LogInformation(
             "CTRM contracts: {Count} open-or-recent for {ProducerCount} in-scope producer(s) in {TradeUnits} trade unit(s){Truncated}.",
@@ -312,12 +316,14 @@ public sealed class CtrmContractRepository : IContractRepository
             _logger.LogError("CTRM crop-year contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
                 "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
             _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
+            _provenance.RecordFailure("contracts", read.Status, read.Detail);
             return [];
         }
 
         var contracts = Map((read.Value ?? []).Where(d => d.CropYear == cropYear), onlyOpenOrRecent: false);
 
         _provenance.RecordContracts("ctrm", read.Status == CtrmReadStatus.PartialSuccess ? "OkTruncated" : "Ok", contracts.Count);
+        if (read.Status == CtrmReadStatus.PartialSuccess) _provenance.RecordPartial();
 
         _logger.LogInformation(
             "CTRM contracts: {Count} for crop year {CropYear} across {Producers} in-scope producer(s).",

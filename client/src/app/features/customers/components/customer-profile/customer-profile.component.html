@@ -447,10 +447,10 @@
         <div class="pb-8">
           @switch (activeTab()) {
             @case ('contracts') {
-              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()" [isLoadingPricingLines]="isLoadingPricingLines()" [isLoadingTickets]="isLoadingUnappliedTickets()" (expandedColumnsChange)="contractsColumnsExpanded.set($event)"></app-contracts-table>
+              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()" [isLoadingPricingLines]="isLoadingPricingLines()" [isLoadingTickets]="isLoadingUnappliedTickets()" [loadError]="contractsLoadError()" (retryLoad)="retryContracts.emit()" (expandedColumnsChange)="contractsColumnsExpanded.set($event)"></app-contracts-table>
             }
             @case ('tickets') {
-              <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingUnappliedTickets()" [openCrop]="openTicketCrop()"></app-tickets-table>
+              <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingUnappliedTickets()" [loadError]="ticketsLoadError()" (retryLoad)="retryTickets.emit()" [openCrop]="openTicketCrop()"></app-tickets-table>
             }
             @case ('planting') {
               <!-- The projected-production vs. contracted breakdown that used to sit here now lives

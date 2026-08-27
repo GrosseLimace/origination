@@ -64,6 +64,8 @@ export class DataPreloadService {
         // render as soon as their data lands rather than waiting on the slowest core query.
         this.appState.customersLoading.set(true);
         this.appState.contractsLoading.set(true);
+        this.appState.contractsLoadFailed.set(false);
+        this.appState.ticketsLoadFailed.set(false);
         this.appState.todaysTicketsLoading.set(true);
         this.appState.clearDashboardCache();
         this.appState.clearPreloadedDashboardSummary();
@@ -94,7 +96,9 @@ export class DataPreloadService {
           })
         );
         const contracts$ = this.apiService.getContracts(tradeUnits).pipe(
-          catchError(() => of([] as Contract[])),
+          // Still resolves to [] so the rest of the page loads, but the failure is RECORDED - otherwise
+          // every contract-based prompt reports "no producers found" for what is actually an outage.
+          catchError(() => { this.appState.contractsLoadFailed.set(true); return of([] as Contract[]); }),
           tap(data => {
             this.appState.setContracts(data);
             this.appState.contractsLoading.set(false);
@@ -103,7 +107,7 @@ export class DataPreloadService {
           })
         );
         const todaysTickets$ = this.apiService.getTodaysTickets(tradeUnits).pipe(
-          catchError(() => of([] as Ticket[])),
+          catchError(() => { this.appState.ticketsLoadFailed.set(true); return of([] as Ticket[]); }),
           tap(data => {
             this.appState.setTodaysTickets(data);
             this.appState.todaysTicketsLoading.set(false);

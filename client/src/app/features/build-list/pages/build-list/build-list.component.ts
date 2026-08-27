@@ -63,6 +63,12 @@ import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+
+  /** True when the trade-unit contract or ticket read FAILED, so an empty result set is an outage
+   *  rather than a genuine answer. Every empty state on this screen has to check it: a CTRM timeout
+   *  otherwise reads as "no producers found", which is indistinguishable from a real empty list. */
+  readonly sourceLoadFailed = computed(() =>
+    this.appState.contractsLoadFailed() || this.appState.ticketsLoadFailed());
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
