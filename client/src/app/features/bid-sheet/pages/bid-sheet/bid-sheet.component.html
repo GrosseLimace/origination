@@ -311,6 +311,9 @@
                           @if (barchartEnabled && row.isFed) {
                             <span class="px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
                                   [title]="row.fedAsOf ? 'From BarChart — updated ' + formatAsOf(row.fedAsOf) : 'From BarChart'">Feed</span>
+                          } @else if (barchartEnabled && (row.oldBidLabel || row.newBidLabel || row.oldBid || row.newBid)) {
+                            <span class="px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
+                                  title="Typed by hand — yours to edit, and the feed never touches it.">Manual</span>
                           }
                         </div>
                       </td>
@@ -1004,6 +1007,9 @@
                                    length the names are and whether or not they wrap. -->
                               <span class="ml-auto flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
                                     title="Linked to BarChart — its bids update on their own and can't be edited here.">Feed</span>
+                            } @else if (barchartEnabled) {
+                              <span class="ml-auto flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
+                                    title="Typed by hand — these bids are yours to edit and the feed never touches them.">Manual</span>
                             }
                           </div>
                         </td>
