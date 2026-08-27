@@ -439,7 +439,11 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 flex-shrink-0 mt-0.5">
             <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
           </svg>
-          @if (sourceLoadFailed()) {
+          @if (sourceLoadPending()) {
+            <!-- Still loading is not the same as failed, and saying so would be false: the server is
+                 still working and a retry shortly will succeed. -->
+            <p class="text-sm text-amber-700 dark:text-amber-300">Still loading contract and ticket data — the first load of a large trade unit can take a minute or two. Please retry shortly.</p>
+          } @else if (sourceLoadFailed()) {
             <!-- An outage must not read as an empty trade unit. -->
             <p class="text-sm text-amber-700 dark:text-amber-300">Contract and ticket data could not be loaded from CTRM, so this list is incomplete. Please retry shortly.</p>
           } @else {
@@ -1339,7 +1343,9 @@
                   <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                 </svg>
                 <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Producers Found</h3>
-                @if (sourceLoadFailed()) {
+                @if (sourceLoadPending()) {
+                  <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">Still loading contract and ticket data — the first load of a large trade unit can take a minute or two. Please retry shortly.</p>
+                } @else if (sourceLoadFailed()) {
                   <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">Contract and ticket data could not be loaded from CTRM, so this result is incomplete. Please retry shortly.</p>
                 } @else {
                   <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No producers matched your criteria. Try a different query or adjusting the filters.</p>

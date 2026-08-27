@@ -311,6 +311,20 @@ export class AppStateService {
   ticketsLoadFailed = signal(false);
 
   /**
+   * Set when a trade-unit read did not FAIL but had not finished in time - the client gave up waiting.
+   *
+   * Measured 2026-08-27: a cold trade-unit ticket walk is 1-2+ minutes (33,313 tickets across three
+   * windows for 587 producers; 80,219 for 1,271), while the client times out at 60s. That timeout is a
+   * client decision, not a CTRM failure - the server carries on and caches the result, so a retry a
+   * moment later succeeds. Telling the user "could not be loaded from CTRM" in that situation is simply
+   * false, and it is the message they saw during the first cold test.
+   */
+  sourceLoadPending = signal(false);
+
+  /** Records that a read timed out client-side rather than failing. See sourceLoadPending. */
+  setSourceLoadPending(pending: boolean): void { this.sourceLoadPending.set(pending); }
+
+  /**
    * Records the outcome of the TRADE-UNIT-WIDE contract read. Call it on success too.
    *
    * <b>Clear it from a tap BEFORE the catchError, never from setContracts.</b> Clearing inside the setter

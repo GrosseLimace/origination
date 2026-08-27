@@ -69,6 +69,9 @@ export class BuildListComponent {
    *  otherwise reads as "no producers found", which is indistinguishable from a real empty list. */
   readonly sourceLoadFailed = computed(() =>
     this.appState.contractsLoadFailed() || this.appState.ticketsLoadFailed());
+
+  /** A read that timed out client-side rather than failing - the data is still coming. */
+  readonly sourceLoadPending = this.appState.sourceLoadPending;
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
@@ -136,6 +139,7 @@ export class BuildListComponent {
     // _ticketsReady stays false), so without this dependency the effect never re-runs and the query hangs
     // on "Processing query..." exactly as it did before the guard was added.
     this.sourceLoadFailed();
+    this.appState.sourceLoadPending();   // tracked for the same reason: it flips after a query is staged
     if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes() || this.waitingForDp()) && this.coreDataLoaded()) {
       untracked(() => {
         // A staged query waits for data to ARRIVE. If the read that would deliver it FAILED, waiting is
@@ -145,7 +149,7 @@ export class BuildListComponent {
         // Found by the failure drill on 2026-08-27: with CTRM unreachable, the producer screen and the
         // dashboard both showed their error states correctly, but Build-a-List hung. The error banner
         // lives in the results branch, and a stalled query never reaches it.
-        if (this.sourceLoadFailed()) {
+        if (this.sourceLoadFailed() || this.appState.sourceLoadPending()) {
           this.waitingForTickets.set(false);
           this.waitingForNotes.set(false);
           this.waitingForDp.set(false);
@@ -2102,11 +2106,22 @@ export class BuildListComponent {
     // consumer (e.g. customer-list) may have populated it. Only write through to appState when the
     // response actually carried tickets.
     this.apiService.getTickets(tuParam).pipe(
-      timeout(60000),
-      tap(() => this.appState.setTicketsLoadFailed(false)),
-      // Flagged, not swallowed silently: this is the read behind the delivery and unapplied prompts, and
-      // an empty result from it answers those prompts with "no producers" indistinguishably from an outage.
-      catchError(() => { this.appState.setTicketsLoadFailed(true); return of([] as Ticket[]); }),
+      // Raised from 60s: a COLD trade-unit ticket walk measured 1-2+ minutes (33,313 tickets across three
+      // windows for 587 producers), so 60s was below the legitimate time and reported healthy first loads
+      // as failures.
+      timeout(150000),
+      tap(() => {
+        this.appState.setTicketsLoadFailed(false);
+        this.appState.setSourceLoadPending(false);
+      }),
+      // A TIMEOUT is not a failure. The server keeps working and caches the result, so a retry shortly
+      // after succeeds - which makes "could not be loaded from CTRM" a false statement. Only a real
+      // error sets the failed flag; a timeout says "still loading".
+      catchError((err) => {
+        if (err?.name === 'TimeoutError') this.appState.setSourceLoadPending(true);
+        else this.appState.setTicketsLoadFailed(true);
+        return of([] as Ticket[]);
+      }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;
