@@ -165,8 +165,10 @@ the daily bid sheets originators already send (card #559):
 
 Rules shared by both: bids and period labels never wrap (only Across location headers may) — the sheet is often screenshotted off the monitor and
 sent round on Teams, so type is as large as the fit allows and cell padding is tight (`CELL_PAD_*`) to
-get more locations on a page; only locations with at least one bid in a selected column print; empty
-cells are blank (never a dash); Scoular facilities are `#FFD400` with a bold name (row in *down*,
+get more locations on a page; only locations with at least one bid in a selected column print, and only
+crop × period columns with at least one bid at any listed location print (`selectPrintColumns` — a
+period nobody quotes yet drops off, and a crop with no populated periods drops entirely, so which
+columns appear shifts with the season without configuration); empty cells are blank (never a dash); Scoular facilities are `#FFD400` with a bold name (row in *down*,
 column in *across*) when the **Highlight** toggle is on; a partial last band/block is drawn narrower,
 not stretched; each table is `page-break-inside: avoid`, and tables flow rather than one-per-page.
 Landscape letter, `@page` margin = `PRINT_GEOMETRY.PAGE_MARGIN_IN` (one constant drives both the

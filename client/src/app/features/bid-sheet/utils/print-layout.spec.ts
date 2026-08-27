@@ -17,6 +17,7 @@ import {
   pagesFor,
   renderPrintDocument,
   rowHeightIn,
+  selectPrintColumns,
   selectPrintLocations,
   tableColWidthPcts,
   textWidthIn,
@@ -150,6 +151,45 @@ describe('selectPrintLocations', () => {
   it('ignores columns that are not selected', () => {
     const other: PrintLocation = { name: 'Other', isScoular: false, values: { 'Milo#P1': '-50' } };
     expect(selectPrintLocations(groups, [other])).toEqual([]);
+  });
+});
+
+// ── selectPrintColumns ──────────────────────────────────────────────────────────────────────────
+
+describe('selectPrintColumns', () => {
+  const groups = [realGroup('Corn', 3), realGroup('Wheat', 3), realGroup('Milo', 3)]; // O/C 26, N/C 26, May 26
+
+  it('drops a period no location quotes and keeps the rest in order', () => {
+    const locs = [
+      { name: 'A', isScoular: false, values: { 'Corn#O/C 26': '-30', 'Wheat#O/C 26': '-50', 'Milo#N/C 26': '-80' } },
+      { name: 'B', isScoular: false, values: { 'Corn#N/C 26': '-25', 'Wheat#O/C 26': '-55', 'Milo#O/C 26': '-75' } }
+    ];
+    const kept = selectPrintColumns(groups, locs);
+    expect(kept.map(g => g.crop)).toEqual(['Corn', 'Wheat', 'Milo']);
+    expect(kept.map(g => g.columns.map(c => c.compactLabel))).toEqual([
+      ['O/C 26', 'N/C 26'],   // May 26 unquoted → gone
+      ['O/C 26'],             // only O/C quoted
+      ['O/C 26', 'N/C 26']    // original period order kept even though B quotes O/C and A quotes N/C
+    ]);
+  });
+
+  it('drops a crop with no populated periods while keeping its neighbours', () => {
+    const locs = [{ name: 'A', isScoular: false, values: { 'Corn#O/C 26': '-30', 'Milo#May 26': '-70' } }];
+    const kept = selectPrintColumns(groups, locs);
+    expect(kept.map(g => g.crop)).toEqual(['Corn', 'Milo']);
+  });
+
+  it('treats whitespace-only values as empty and returns nothing for no crops or no locations', () => {
+    const blank = [{ name: 'A', isScoular: false, values: { 'Corn#O/C 26': '  ' } }];
+    expect(selectPrintColumns(groups, blank)).toEqual([]);
+    expect(selectPrintColumns([], [loc('A', groups)])).toEqual([]);
+    expect(selectPrintColumns(groups, [])).toEqual([]);
+  });
+
+  it('does not mutate the input groups', () => {
+    const locs = [{ name: 'A', isScoular: false, values: { 'Corn#O/C 26': '-30' } }];
+    selectPrintColumns(groups, locs);
+    expect(groups[0].columns).toHaveLength(3);
   });
 });
 
@@ -299,8 +339,31 @@ describe('buildLocationsDown', () => {
   it('prints an empty string, not a dash, for a missing bid', () => {
     const groups = [group('Corn', 2)];
     const partial: PrintLocation = { name: 'P', isScoular: false, values: { 'Corn#P1': '-5' } };
-    const [t] = buildLocationsDown({ groups, locations: [partial], cropColors });
+    const other: PrintLocation = { name: 'Q', isScoular: false, values: { 'Corn#P2': '-6' } }; // keeps P2 alive
+    const [t] = buildLocationsDown({ groups, locations: [partial, other], cropColors });
     expect(t.bodyRows[0].map(c => c.text)).toEqual(['P', '-5', '']);
+    expect(t.bodyRows[1].map(c => c.text)).toEqual(['Q', '', '-6']);
+  });
+
+  it('drops a period column nobody quotes, shrinking the crop band, and drops a crop with no bids at all', () => {
+    const groups = [realGroup('Corn', 3), realGroup('Wheat', 3), realGroup('Milo', 3)]; // O/C 26, N/C 26, May 26
+    const locs = [
+      { name: 'A', isScoular: false, values: { 'Corn#O/C 26': '4.10', 'Corn#N/C 26': '4.30', 'Wheat#O/C 26': '5.90' } },
+      { name: 'B', isScoular: false, values: { 'Corn#O/C 26': '4.15', 'Wheat#O/C 26': '5.95' } }
+    ];
+    const [t] = buildLocationsDown({ groups, locations: locs, cropColors });
+    // Milo has no bids → no band; Corn keeps 2 of 3 periods; Wheat keeps 1.
+    expect(t.headerRows[0].map(c => c.text)).toEqual(['', 'Corn', 'Wheat']);
+    expect(t.headerRows[0].slice(1).map(c => c.colspan)).toEqual([2, 1]);
+    expect(t.headerRows[1].map(c => c.text)).toEqual(['Location', 'O/C 26', 'N/C 26', 'O/C 26']);
+    expect(t.colWidthsIn).toHaveLength(4);
+    expect(t.bodyRows.map(r => r.map(c => c.text))).toEqual([
+      ['A', '4.10', '4.30', '5.90'],
+      ['B', '4.15', '', '5.95']
+    ]);
+    // The heavy divider still sits exactly on the first Wheat column.
+    const heavy = `3px solid ${PRINT_COLORS.heavyRule}`;
+    expect(t.bodyRows[0].map(c => c.borderLeft)).toEqual([undefined, undefined, undefined, heavy]);
   });
 
   it('returns no tables when nothing is selected or nobody has a bid', () => {
@@ -530,12 +593,25 @@ describe('buildLocationsAcross', () => {
   it('prints an empty string for a missing bid and returns nothing for empty input', () => {
     const groups = [group('Corn', 2)];
     const partial: PrintLocation = { name: 'P', isScoular: false, values: { 'Corn#P2': '-5' } };
-    const [t] = buildLocationsAcross({ groups, locations: [partial], cropColors });
-    expect(t.bodyRows[1].map(c => c.text)).toEqual(['P1', '']);
-    expect(t.bodyRows[2].map(c => c.text)).toEqual(['P2', '-5']);
+    const other: PrintLocation = { name: 'Q', isScoular: false, values: { 'Corn#P1': '-4' } }; // keeps P1 alive
+    const [t] = buildLocationsAcross({ groups, locations: [partial, other], cropColors });
+    expect(t.bodyRows[1].map(c => c.text)).toEqual(['P1', '', '-4']);
+    expect(t.bodyRows[2].map(c => c.text)).toEqual(['P2', '-5', '']);
 
     expect(buildLocationsAcross({ groups: [], locations: [partial], cropColors })).toEqual([]);
     expect(buildLocationsAcross({ groups, locations: [], cropColors })).toEqual([]);
+  });
+
+  it('drops a period row nobody quotes and a crop with no bids at all', () => {
+    const groups = [realGroup('Corn', 3), realGroup('Wheat', 3), realGroup('Milo', 3)]; // O/C 26, N/C 26, May 26
+    const locs = [
+      { name: 'A', isScoular: false, values: { 'Corn#O/C 26': '4.10', 'Corn#N/C 26': '4.30', 'Wheat#O/C 26': '5.90' } },
+      { name: 'B', isScoular: false, values: { 'Corn#O/C 26': '4.15', 'Wheat#O/C 26': '5.95' } }
+    ];
+    const [t] = buildLocationsAcross({ groups, locations: locs, cropColors });
+    // Corn band + 2 rows, Wheat band + 1 row; Milo absent entirely; May 26 absent everywhere.
+    expect(t.bodyRows.map(r => r[0].text)).toEqual(['Corn', 'O/C 26', 'N/C 26', 'Wheat', 'O/C 26']);
+    expect(t.bodyRows[2].map(c => c.text)).toEqual(['N/C 26', '4.30', '']);
   });
 });
 

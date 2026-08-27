@@ -295,6 +295,18 @@ export function selectPrintLocations(groups: PrintCropGroup[], locations: PrintL
   return locations.filter(loc => columns.some(col => valueOf(loc, col).length > 0));
 }
 
+/**
+ * Crops × periods that have at least one bid at ANY location, in their original order. A period
+ * nobody quotes yet (N/C 27 in August) drops off the sheet rather than printing as an empty column,
+ * and a crop with no populated periods drops entirely. Which columns survive shifts with the season,
+ * so this is driven by the data, never configured.
+ */
+export function selectPrintColumns(groups: PrintCropGroup[], locations: PrintLocation[]): PrintCropGroup[] {
+  return groups
+    .map(g => ({ crop: g.crop, columns: g.columns.filter(col => locations.some(loc => valueOf(loc, col).length > 0)) }))
+    .filter(g => g.columns.length > 0);
+}
+
 export function buildPrintLayout(input: PrintLayoutInput): PrintLayoutModel {
   const tables = input.style === 'locationsAcross' ? buildLocationsAcross(input) : buildLocationsDown(input);
   return { style: input.style, tables };
@@ -314,7 +326,8 @@ export function buildPrintLayout(input: PrintLayoutInput): PrintLayoutModel {
  */
 export function buildLocationsDown(input: Omit<PrintLayoutInput, 'style'>): PrintTable[] {
   const G = PRINT_GEOMETRY;
-  const groups = input.groups.filter(g => g.columns.length > 0);
+  // Columns nobody quotes drop first; then locations with nothing left to show.
+  const groups = selectPrintColumns(input.groups, input.locations);
   const locs = selectPrintLocations(groups, input.locations);
   if (groups.length === 0 || locs.length === 0) return [];
 
@@ -427,7 +440,8 @@ function fitLocationsDown(groups: PrintCropGroup[], locs: PrintLocation[]) {
  */
 export function buildLocationsAcross(input: Omit<PrintLayoutInput, 'style'>): PrintTable[] {
   const G = PRINT_GEOMETRY;
-  const groups = input.groups.filter(g => g.columns.length > 0);
+  // Columns nobody quotes drop first; then locations with nothing left to show.
+  const groups = selectPrintColumns(input.groups, input.locations);
   const locs = selectPrintLocations(groups, input.locations);
   if (groups.length === 0 || locs.length === 0) return [];
 
