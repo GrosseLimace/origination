@@ -307,7 +307,12 @@ public sealed class CtrmContractReader
     private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchForProducersAsync(List<string> codes)
     {
         var chunks = codes.Chunk(MaxCustomerIdsPerCall).ToList();
-        var concurrency = Math.Clamp(ReadInt("Ctrm:PageConcurrency", 4), 1, 8);
+        // Its own, lower concurrency - NOT the page concurrency the cheap reads use. Every page of a
+        // customerIds read is a ~25s server-side scan (measured cold on a quiet gateway: 500 codes 24.7s,
+        // 87 codes 21.8s; warm ~1s). Firing five of those at once alongside a ticket walk starved the
+        // server past our 110s client timeout, three attempts running - measured 2026-08-27 on 587
+        // producers. Two at a time finishes; more does not.
+        var concurrency = Math.Clamp(ReadInt("Ctrm:TradeUnitContractConcurrency", 2), 1, 8);
         var maxPagesPerChunk = Math.Max(1, ReadInt("Ctrm:TradeUnitContractMaxPagesPerChunk", DefaultMaxPagesPerChunk));
         using var slot = new SemaphoreSlim(concurrency, concurrency);
 

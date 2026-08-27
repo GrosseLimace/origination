@@ -185,9 +185,15 @@ public sealed class CtrmContractRepository : IContractRepository
         }
 
         var codes = scoped.ToList();
-        WarmTicketsInBackground(codes, tradeUnits);
 
         var read = await _reader.GetForProducersAsync(codes, cancellationToken);
+
+        // Tickets AFTER contracts, never alongside. The contract pages are ~25s server-side scans and the
+        // ticket walk is 100+ requests; run together they starved the contract read past the client timeout
+        // (measured 2026-08-27). The contract list is what the page is waiting on, so it goes first and the
+        // tickets warm behind it.
+        WarmTicketsInBackground(codes, tradeUnits);
+
         if (!read.Ok)
         {
             _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",

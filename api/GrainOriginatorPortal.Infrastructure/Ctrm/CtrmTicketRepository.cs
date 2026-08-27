@@ -234,12 +234,12 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
-        // Both reads at once: they are independent and both may be cold.
-        var ticketTask = _reader.GetForProducersHistoryAsync(codes, cancellationToken);
-        var contractTask = _contractReader.GetForProducersAsync(codes, cancellationToken);
-        await Task.WhenAll(ticketTask, contractTask);
-
-        var read = ticketTask.Result;
+        // Contracts first, then tickets - not together. The contract pages are ~25s server-side scans and
+        // running the ticket walk alongside them starved the contract read past the client timeout (measured
+        // 2026-08-27). Contracts are normally already cached by the home-page load, so this costs nothing
+        // warm and keeps the server sane cold.
+        var contracts = await _contractReader.GetForProducersAsync(codes, cancellationToken);
+        var read = await _reader.GetForProducersHistoryAsync(codes, cancellationToken);
         if (!read.Ok)
         {
             _logger.LogError("CTRM trade-unit tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
@@ -248,7 +248,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
-        var openContractIds = OpenPurchaseContractIds(contractTask.Result, codes);
+        var openContractIds = OpenPurchaseContractIds(contracts, codes);
         var codeSet = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
 
         // Same two-branch rule as the producer screen, keyed by id so a row cannot be counted twice.
