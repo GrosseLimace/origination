@@ -226,6 +226,10 @@ public sealed class CtrmContractReader
 
         for (var page = 0; page < MaxPages; page++)
         {
+            // Interactive: this is the producer screen's own contract read. Announcing it makes the
+            // background trade-unit walk stand aside for its duration.
+            using var interactive = CtrmTradeUnitThrottle.Interactive();
+
             var result = await _client.QueryAsync<CtrmContractsResponse>(
                 CtrmQueries.ContractsByCustomer,
                 new

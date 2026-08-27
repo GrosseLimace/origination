@@ -517,11 +517,20 @@ public sealed class CtrmTicketReader
                     CancellationToken.None),
                 _configuration, _logger, $"tickets page skip={skip} for {scope.Description} {from:yyyy-MM-dd}..{to:yyyy-MM-dd}");
 
-            // Batched (trade-unit / Spot Loads) pages go through the process-wide throttle so a walk cannot
-            // crowd out per-producer reads; per-producer pages (a populated cache key) never wait behind it.
-            var result = scope.CacheKey.Length == 0
-                ? await CtrmTradeUnitThrottle.RunAsync(_configuration, Page)
-                : await Page();
+            // Two classes of read, treated differently on purpose. A batched page (empty cache key - the
+            // trade-unit walk and Spot Loads) is background: it takes a bounded slot and yields to anything
+            // interactive. A per-producer or contract-scoped page is what a user is watching a spinner for,
+            // so it never queues, and it announces itself so the walk stands aside while it runs.
+            CtrmReadResult<CtrmTicketsResponse> result;
+            if (scope.CacheKey.Length == 0)
+            {
+                result = await CtrmTradeUnitThrottle.RunAsync(_configuration, Page);
+            }
+            else
+            {
+                using var interactive = CtrmTradeUnitThrottle.Interactive();
+                result = await Page();
+            }
 
             if (!result.Ok)
                 return new CtrmReadResult<List<CtrmTicketDto>>
