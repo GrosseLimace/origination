@@ -1222,6 +1222,22 @@ export class BidSheetComponent {
     return this.bidLookup().get(`${name}|${commodityCode}|${year}|${month}`) ?? null;
   }
 
+  /**
+   * The bid text a map pin or hover label shows. Cash and basis print the one selected price; Both
+   * prints them together, because a pin has no room for a second line and "4.98 / -30" reads the way
+   * an originator says it.
+   *
+   * Status colouring deliberately does NOT use this -- it keys off the cash value alone, because a
+   * combined string has no numeric meaning and would compare as NaN against the reference.
+   */
+  private _getDisplayBid(name: string, year: number | null, crop: string, month: number): string {
+    const primary = this._getLatestBid(name, year, crop, month);
+    if (this.priceMode() !== 'both') return primary;
+    const basis = (this._getLatestEntry(name, year, crop, month)?.basisBid ?? '').trim();
+    if (primary && basis) return `${primary} / ${basis}`;
+    return primary || basis;
+  }
+
   private _parseBid(bid: string): number | null {
     const n = parseFloat(bid);
     return isNaN(n) ? null : n;
@@ -3143,7 +3159,7 @@ export class BidSheetComponent {
         });
         const m = L.marker([lat, lng], { icon: dotIcon });
         m.on('click', () => this._selectMapLocation(locs[0]));
-        const hoverBid2 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
+        const hoverBid2 = crop ? this._getDisplayBid(locs[0].name, year, crop, month) : '';
         this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border);
         this._clusterGroup.addLayer(m);
         return;
@@ -3154,21 +3170,24 @@ export class BidSheetComponent {
         const bidItems = names
           .map(n => {
             const isNameRef = hasIndividualTu && n === refName;
+            // bidVal drives presence and status comparison and must stay numeric; bidLabel is what
+            // the pill prints, which in Both mode carries the basis alongside.
             const bidVal = this._getLatestBid(n, year, crop, month);
+            const bidLabel = this._getDisplayBid(n, year, crop, month);
             const nameIsScoular = scoularNames.has(n);
             if (isNameRef) {
               const { bg, border } = statusColors['reference'];
-              return { name: n, label: bidVal || '--', bg, border, isScoular: nameIsScoular };
+              return { name: n, label: bidLabel || '--', bg, border, isScoular: nameIsScoular };
             }
             if (!bidVal) return null;
             // No reference set means there is no comparison to colour by, so ours are simply green
             // rather than a gray "no status" pill wearing a ring.
             if (!comparingToRef && nameIsScoular) {
-              return { name: n, label: bidVal, bg: BidSheetComponent.SCOULAR_BG, border: BidSheetComponent.SCOULAR_BORDER, isScoular: true };
+              return { name: n, label: bidLabel, bg: BidSheetComponent.SCOULAR_BG, border: BidSheetComponent.SCOULAR_BORDER, isScoular: true };
             }
             const status = this._computeItemStatus(bidVal, false, refBid);
             const { bg, border } = statusColors[status] ?? statusColors['none'];
-            return { name: n, label: bidVal, bg, border, isScoular: nameIsScoular };
+            return { name: n, label: bidLabel, bg, border, isScoular: nameIsScoular };
           })
           .filter((x): x is NonNullable<typeof x> => x !== null);
 
@@ -3193,7 +3212,7 @@ export class BidSheetComponent {
           });
           const marker = L.marker([lat, lng], { icon: divIcon });
           marker.on('click', () => this._selectMapLocation(locs[0]));
-          const hoverBid3 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
+          const hoverBid3 = crop ? this._getDisplayBid(locs[0].name, year, crop, month) : '';
           this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border);
           this._clusterGroup.addLayer(marker);
           return;
@@ -3226,7 +3245,7 @@ export class BidSheetComponent {
       });
       const marker = L.marker([lat, lng], { icon: nameIcon });
       marker.on('click', () => this._selectMapLocation(locs[0]));
-      const hoverBid4 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
+      const hoverBid4 = crop ? this._getDisplayBid(locs[0].name, year, crop, month) : '';
       this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border);
       this._clusterGroup.addLayer(marker);
     });
