@@ -500,79 +500,139 @@ public sealed class CtrmTicketReader
         return windows;
     }
 
+    /// <summary>
+    /// One window's tickets: first page, then the remaining pages concurrently.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why not a simple sequential loop.</b> It was one, and it cost real time on exactly the
+    /// producers who matter most. Measured 2026-08-27 against an idle gateway: TATOBIN has 821 tickets and
+    /// its per-producer read took 13.3s, because each 500-row page waited for the one before it. The first
+    /// page reports <c>totalCount</c>, so the rest can go at once - the same two-phase pump
+    /// <see cref="CtrmContractReader"/> already used for contracts.</para>
+    ///
+    /// <para><b><c>hasNextPage</c> stays authoritative.</b> <c>totalCount</c> only decides how many pages to
+    /// REQUEST up front. If the last page fetched still reports more, the pump continues sequentially rather
+    /// than trusting the arithmetic - the two can disagree, and silently dropping a producer's tickets is the
+    /// one outcome worth an extra round trip to avoid. Equally, the loop never keeps going on a count alone,
+    /// which would spend requests on empty pages when <c>totalCount</c> counts something broader.</para>
+    /// </remarks>
     private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchWindowAsync(Scope scope, DateTime from, DateTime to, int maxPages)
     {
-        var all = new List<CtrmTicketDto>();
-        var skip = 0;
+        var window = $"{from:yyyy-MM-dd}..{to:yyyy-MM-dd}";
 
-        for (var page = 0; page < maxPages; page++)
+        var first = await FetchTicketPageAsync(scope, from, to, 0);
+        if (!first.Ok) return PropagatePageFailure(first, scope, window);
+
+        var firstPage = first.Value?.Tickets;
+        if (firstPage is null)
+            return new CtrmReadResult<List<CtrmTicketDto>>
+            {
+                Status = CtrmReadStatus.Error,
+                HttpStatus = first.HttpStatus,
+                Detail = $"CTRM returned no tickets object for {scope.Description}.",
+                Value = []
+            };
+
+        var all = new List<CtrmTicketDto>(firstPage.Items);
+        var hasMore = firstPage.PageInfo?.HasNextPage == true;
+        if (!hasMore)
+            return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all };
+
+        // How many pages the reported count implies, bounded by the cap. At least two, because the server
+        // just said there is more.
+        var pagesAvailable = (int)Math.Ceiling(firstPage.TotalCount / (double)PageSize);
+        var pagesToFetch = Math.Min(Math.Max(pagesAvailable, 2), maxPages);
+        var nextPage = 1;
+
+        if (pagesToFetch > 1)
         {
-            // Server-timeout retry: the server finishes and caches after answering HC0045, so an identical
-            // re-send a few seconds later succeeds. Deliberately not the caller's token: concurrent callers
-            // share this read, so one navigating away must not cancel the work the others are awaiting.
-            Task<CtrmReadResult<CtrmTicketsResponse>> Page() => CtrmServerTimeoutRetry.RunAsync(
-                () => _client.QueryAsync<CtrmTicketsResponse>(
-                    scope.Document,
-                    BuildVariables(scope.Filter, from, to, skip),
-                    CancellationToken.None),
-                _configuration, _logger, $"tickets page skip={skip} for {scope.Description} {from:yyyy-MM-dd}..{to:yyyy-MM-dd}");
+            var rest = await Task.WhenAll(
+                Enumerable.Range(1, pagesToFetch - 1)
+                    .Select(page => FetchTicketPageAsync(scope, from, to, page * PageSize)));
 
-            // Two classes of read, treated differently on purpose. A batched page (empty cache key - the
-            // trade-unit walk and Spot Loads) is background: it takes a bounded slot and yields to anything
-            // interactive. A per-producer or contract-scoped page is what a user is watching a spinner for,
-            // so it never queues, and it announces itself so the walk stands aside while it runs.
-            CtrmReadResult<CtrmTicketsResponse> result;
-            if (scope.CacheKey.Length == 0)
+            var failed = rest.FirstOrDefault(r => !r.Ok);
+            if (failed is not null) return PropagatePageFailure(failed, scope, window);
+
+            foreach (var page in rest)
             {
-                result = await CtrmTradeUnitThrottle.RunAsync(_configuration, Page);
-            }
-            else
-            {
-                using var interactive = CtrmTradeUnitThrottle.Interactive();
-                result = await Page();
+                var data = page.Value?.Tickets;
+                if (data is not null) all.AddRange(data.Items);
             }
 
-            if (!result.Ok)
-                return new CtrmReadResult<List<CtrmTicketDto>>
-                {
-                    Status = result.Status,
-                    HttpStatus = result.HttpStatus,
-                    ErrorCode = result.ErrorCode,
-                    Detail = $"Live ticket read failed for {scope.Description} "
-                           + $"({from:yyyy-MM-dd}..{to:yyyy-MM-dd}): {result.Detail}",
-                    Value = []
-                };
-
-            var pageData = result.Value?.Tickets;
-            if (pageData is null)
-                return new CtrmReadResult<List<CtrmTicketDto>>
-                {
-                    Status = CtrmReadStatus.Error,
-                    HttpStatus = result.HttpStatus,
-                    Detail = $"CTRM returned no tickets object for {scope.Description}.",
-                    Value = []
-                };
-
-            all.AddRange(pageData.Items);
-
-            if (pageData.PageInfo?.HasNextPage != true)
-                return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all };
-
-            skip += PageSize;
+            // Ordered by construction, so the last element is the highest skip - its verdict is the current one.
+            hasMore = rest[^1].Value?.Tickets?.PageInfo?.HasNextPage == true;
+            nextPage = pagesToFetch;
         }
 
-        _logger.LogError(
-            "CTRM live tickets TRUNCATED [{ErrorCode}] [{ErrorCategory}]: {Scope} window " +
-            "{From:yyyy-MM-dd}..{To:yyyy-MM-dd} still had more after {MaxPages} pages ({Count} rows).",
-            "INFRASTRUCTURE_CTRM_TRUNCATED", "Infrastructure", scope.Description, from, to, maxPages, all.Count);
-
-        return new CtrmReadResult<List<CtrmTicketDto>>
+        // Only entered when the count under-reported: keep going while the SERVER says there is more.
+        while (hasMore && nextPage < maxPages)
         {
-            Status = CtrmReadStatus.PartialSuccess,
-            Detail = $"Truncated after {maxPages} pages in {from:yyyy-MM-dd}..{to:yyyy-MM-dd}.",
-            Value = all
-        };
+            var extra = await FetchTicketPageAsync(scope, from, to, nextPage * PageSize);
+            if (!extra.Ok) return PropagatePageFailure(extra, scope, window);
+
+            var data = extra.Value?.Tickets;
+            if (data is null) break;
+
+            all.AddRange(data.Items);
+            hasMore = data.PageInfo?.HasNextPage == true;
+            nextPage++;
+        }
+
+        if (hasMore)
+        {
+            _logger.LogError(
+                "CTRM live tickets TRUNCATED [{ErrorCode}] [{ErrorCategory}]: {Scope} window {Window} " +
+                "still had more after {MaxPages} pages ({Count} rows).",
+                "INFRASTRUCTURE_CTRM_TRUNCATED", "Infrastructure", scope.Description, window, maxPages, all.Count);
+
+            return new CtrmReadResult<List<CtrmTicketDto>>
+            {
+                Status = CtrmReadStatus.PartialSuccess,
+                Detail = $"Truncated after {maxPages} pages in {window}.",
+                Value = all
+            };
+        }
+
+        return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all };
     }
+
+    /// <summary>
+    /// One ticket page, routed by whether a user is waiting on it or a background walk is.
+    /// </summary>
+    /// <remarks>
+    /// A batched page (empty cache key - the trade-unit walk and Spot Loads) takes a bounded background slot
+    /// and yields to interactive work. A per-producer or contract-scoped page is what a user is watching a
+    /// spinner for, so it never queues, and it announces itself so the walk stands aside while it runs. The
+    /// server-timeout retry wraps both: CTRM finishes and caches the query after answering HC0045, so an
+    /// identical re-send a few seconds later succeeds.
+    /// </remarks>
+    private async Task<CtrmReadResult<CtrmTicketsResponse>> FetchTicketPageAsync(Scope scope, DateTime from, DateTime to, int skip)
+    {
+        // Deliberately not the caller's token: concurrent callers share this read, so one navigating away
+        // must not cancel the work the others are awaiting.
+        Task<CtrmReadResult<CtrmTicketsResponse>> Page() => CtrmServerTimeoutRetry.RunAsync(
+            () => _client.QueryAsync<CtrmTicketsResponse>(
+                scope.Document,
+                BuildVariables(scope.Filter, from, to, skip),
+                CancellationToken.None),
+            _configuration, _logger, $"tickets page skip={skip} for {scope.Description} {from:yyyy-MM-dd}..{to:yyyy-MM-dd}");
+
+        if (scope.CacheKey.Length == 0)
+            return await CtrmTradeUnitThrottle.RunAsync(_configuration, Page);
+
+        using var interactive = CtrmTradeUnitThrottle.Interactive();
+        return await Page();
+    }
+
+    private CtrmReadResult<List<CtrmTicketDto>> PropagatePageFailure(
+        CtrmReadResult<CtrmTicketsResponse> failure, Scope scope, string window) => new()
+        {
+            Status = failure.Status,
+            HttpStatus = failure.HttpStatus,
+            ErrorCode = failure.ErrorCode,
+            Detail = $"Live ticket read failed for {scope.Description} ({window}): {failure.Detail}",
+            Value = []
+        };
 
     /// <summary>
     /// Combines a scope's filter argument with the window and paging arguments every ticket query takes.
