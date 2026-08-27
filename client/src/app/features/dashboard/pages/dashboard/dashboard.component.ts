@@ -978,6 +978,11 @@ export class DashboardComponent {
     effect(() => {
       const year = this.selectedPlantingYear();
       const tus = this.appStateService.selectedTradeUnits();
+
+      // Cleared on year/trade-unit change, so last year's failure does not caption this year's chart
+      // while the new read is still in flight.
+      this.cropYearLoadFailed.set(false);
+
       untracked(() => {
         this.apiService.getContractsByCropYear(year, tus.length > 0 ? tus : undefined)
           .pipe(takeUntilDestroyed(this.destroyRef))

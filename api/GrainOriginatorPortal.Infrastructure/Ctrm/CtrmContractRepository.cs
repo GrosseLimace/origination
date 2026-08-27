@@ -66,7 +66,7 @@ public sealed class CtrmContractRepository : IContractRepository
             return [];
         }
 
-        var read = await _reader.GetForProducerAsync(code, cancellationToken);
+        var read = await _reader.GetForProducerCoreAsync(code, cancellationToken);
         if (!read.Ok)
         {
             _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
@@ -89,15 +89,19 @@ public sealed class CtrmContractRepository : IContractRepository
     /// Pricing lines for every one of a producer's contracts.
     /// </summary>
     /// <remarks>
-    /// Costs no extra network call: CTRM returns pricing lines as a child collection on the contract, and
-    /// the reader's short cache means this shares the request the contract list already made.
+    /// Its OWN network call, deliberately. Pricing lines are a child collection on the contract, and
+    /// projecting them roughly doubles a contract page (8.1s against 4.0s per 500 rows), so the contract
+    /// list, the pacing card and the ticket read take a core projection without them and this is the only
+    /// caller that pays for the full one. It shares nothing with them unless a full read happens to be
+    /// cached and fresh, in which case the core callers ride on IT rather than the other way round.
+    /// The badges have their own spinner, so nothing on screen blocks on this.
     /// </remarks>
     public async Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string scoularId, CancellationToken cancellationToken)
     {
         var code = scoularId?.Trim();
         if (string.IsNullOrEmpty(code)) return [];
 
-        var read = await _reader.GetForProducerAsync(code, cancellationToken);
+        var read = await _reader.GetForProducerFullAsync(code, cancellationToken);
         if (!read.Ok) return [];
 
         return CtrmMappings.ToPricingLines((read.Value ?? []).Where(IsOpenOrRecent));
@@ -121,7 +125,7 @@ public sealed class CtrmContractRepository : IContractRepository
             return [];
         }
 
-        var read = await _reader.GetForProducerAsync(code, cancellationToken);
+        var read = await _reader.GetForProducerCoreAsync(code, cancellationToken);
         if (!read.Ok)
         {
             _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);

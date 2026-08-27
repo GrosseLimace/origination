@@ -116,21 +116,57 @@ public sealed class CtrmContractReader
     }
 
     /// <summary>
-    /// Every purchase contract CTRM holds for this producer, any date.
+    /// Every purchase contract CTRM holds for this producer, any date, WITH pricing lines.
     /// </summary>
     /// <remarks>
-    /// Concurrent callers for the same producer share one request. The supplied
+    /// <para>Only the pricing-line read needs this. Projecting <c>prices</c> roughly doubles the cost of a
+    /// contract page - measured 8.1s against 4.0s for a 500-row page, and 0.8-4.0s against 0.25-1.8s for
+    /// one producer - and a contract LIST never reads them. The contracts table, the pacing card and the
+    /// open-contract set the ticket read needs all use <see cref="GetForProducerCoreAsync"/> instead.</para>
+    ///
+    /// <para>Concurrent callers for the same producer share one request. The supplied
     /// <paramref name="cancellationToken"/> is deliberately NOT threaded into the shared fetch: one
-    /// caller navigating away would otherwise cancel the work the other two are waiting on.
+    /// caller navigating away would otherwise cancel the work the other two are waiting on.</para>
     /// </remarks>
-    public Task<CtrmReadResult<List<CtrmContractDto>>> GetForProducerAsync(
+    public Task<CtrmReadResult<List<CtrmContractDto>>> GetForProducerFullAsync(
         string scoularId, CancellationToken cancellationToken)
     {
         var code = scoularId?.Trim() ?? string.Empty;
         if (code.Length == 0) return Failed("No producer code supplied.");
 
-        return GetCachedAsync($"customer:{code}", LiveTtl(), () => FetchForProducerAsync(code));
+        return GetCachedAsync(FullKey(code), LiveTtl(), () => FetchForProducerAsync(code));
     }
+
+    /// <summary>
+    /// The same contracts without pricing lines - what every contract LIST actually needs.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Superset rule.</b> A completed, successful, still-fresh FULL entry already contains
+    /// everything core does (<c>CtrmMappings.ToContracts</c> never touches <c>Prices</c>), so it is handed
+    /// back rather than paying for a second call. An IN-FLIGHT full read is deliberately NOT awaited: it is
+    /// the expensive shape, and waiting 0.8-4.0s for it when core answers in 0.25-1.8s is the trade this
+    /// method exists to avoid. Core never satisfies full - it has no prices to give.</para>
+    ///
+    /// <para>Two cache keys per producer, one per projection. <see cref="Invalidate"/> drops both.</para>
+    /// </remarks>
+    public Task<CtrmReadResult<List<CtrmContractDto>>> GetForProducerCoreAsync(
+        string scoularId, CancellationToken cancellationToken)
+    {
+        var code = scoularId?.Trim() ?? string.Empty;
+        if (code.Length == 0) return Failed("No producer code supplied.");
+
+        if (_cache.TryGetValue(FullKey(code), out var full)
+            && full.IsCompleted
+            && !full.Failed
+            && _utcNow() - full.CreatedUtc < LiveTtl())
+            return full.Read;
+
+        return GetCachedAsync(CoreKey(code), LiveTtl(), () => FetchProducerCoreAsync(code, interactive: true));
+    }
+
+    private static string FullKey(string code) => $"customer:{code}:full";
+
+    private static string CoreKey(string code) => $"customer:{code}:core";
 
     /// <summary>
     /// Every purchase contract, any date, for a batch of producers - the trade-unit-wide read.
@@ -180,9 +216,13 @@ public sealed class CtrmContractReader
         return codes.Count > 0 && _cache.ContainsKey($"producers:{codes.Count}:{StableHash(codes)}");
     }
 
-    /// <summary>Drops a producer's cached read, so the next request goes back to CTRM.</summary>
+    /// <summary>Drops a producer's cached reads - BOTH projections - so the next request goes back to CTRM.</summary>
     public void Invalidate(string scoularId)
-        => _cache.TryRemove($"customer:{scoularId?.Trim() ?? string.Empty}", out _);
+    {
+        var code = scoularId?.Trim() ?? string.Empty;
+        _cache.TryRemove(FullKey(code), out _);
+        _cache.TryRemove(CoreKey(code), out _);
+    }
 
     // -------------------------------------------------------------------------
 
@@ -462,11 +502,11 @@ public sealed class CtrmContractReader
             await slot.WaitAsync(CancellationToken.None);
             try
             {
-                var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchProducerCoreAsync(code));
+                var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchProducerCoreAsync(code, interactive: false));
                 if (!read.Ok)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(2));
-                    read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchProducerCoreAsync(code));
+                    read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchProducerCoreAsync(code, interactive: false));
                 }
                 return (code, read);
             }
@@ -504,20 +544,28 @@ public sealed class CtrmContractReader
         };
     }
 
-    /// <summary>One producer, core projection, paged to the single-producer cap.</summary>
-    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchProducerCoreAsync(string code)
+    /// <summary>
+    /// One producer, core projection, paged to the single-producer cap.
+    /// </summary>
+    /// <param name="interactive">True when a user is waiting: announces itself so the trade-unit walk
+    /// stands aside, and takes the short retry budget. The walk itself passes false - it is already
+    /// bounded by <see cref="CtrmTradeUnitThrottle"/> and wants the patient budget.</param>
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchProducerCoreAsync(string code, bool interactive)
     {
         var all = new List<CtrmContractDto>();
         var skip = 0;
 
         for (var page = 0; page < MaxPages; page++)
         {
+            using var scope = interactive ? CtrmTradeUnitThrottle.Interactive() : null;
+
             var result = await CtrmServerTimeoutRetry.RunAsync(
                 () => _client.QueryAsync<CtrmContractsResponse>(
                     CtrmQueries.ContractsByCustomerCore,
                     new { customerId = code, prefix = CtrmMappings.PurchasePrefix, skip, take = PageSize },
                     CancellationToken.None),
-                _configuration, _logger, $"contracts page skip={skip} for one producer");
+                _configuration, _logger, $"contracts page skip={skip} for one producer",
+                interactive: interactive);
 
             if (!result.Ok)
                 return new CtrmReadResult<List<CtrmContractDto>>

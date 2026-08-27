@@ -64,6 +64,11 @@ export class ContractPacingCardComponent {
     effect(() => {
       const id = this.customerId();
       const parentSupplied = this.historicalContracts();
+
+      // Reset where the fetch STARTS, not just when one succeeds: otherwise switching from a producer
+      // whose history failed to one still loading shows the previous producer's failure for a beat.
+      this.historyLoadFailed.set(false);
+
       if (id == null || parentSupplied.length > 0) {
         this._selfFetchedHistorical.set([]);
         return;

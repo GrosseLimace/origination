@@ -67,10 +67,12 @@ Prompts and saved lists are scoped to the user's selected trade units, so the tr
 
 | Layer | TTL | Purpose |
 |---|---|---|
-| Per-producer contract/ticket read | `Ctrm:LiveCacheSeconds` (60) | Coalesces the contract list, pricing lines and pacing card into one CTRM call; the in-flight task is shared |
+| Per-producer contract read — CORE (no pricing lines) | `Ctrm:LiveCacheSeconds` (60) | Coalesces the contract list, the pacing card and the ticket read's open-contract set into ONE call; the in-flight task is shared |
+| Per-producer contract read — FULL (with pricing lines) | `Ctrm:LiveCacheSeconds` (60) | Its own entry. Prices roughly double a page (8.1s vs 4.0s per 500 rows), so only the pricing-line read pays. A completed FULL satisfies a CORE request; CORE never satisfies FULL, and an in-flight FULL is not awaited by a CORE caller |
+| Per-producer ticket read | `Ctrm:LiveCacheSeconds` (60) | One read serves both applied and unapplied — the classification is ours, not a query each |
 | Ticket window containing today | `LiveCacheSeconds` | New tickets land here |
 | Ticket windows entirely in the past | `Ctrm:HistoricalTicketCacheMinutes` (30) | Older tickets rarely change and cost the most; bounds how stale an old ticket's status can be |
-| Trade-unit contract read (per producer set) | `Ctrm:TradeUnitCacheMinutes` (5) | Stale-while-revalidate: an expired copy is served instantly while the refresh runs behind it. Nobody waits unless nothing is cached yet |
+| Trade-unit contract read (per producer set) | `Ctrm:TradeUnitCacheMinutes` (15) | Stale-while-revalidate: an expired copy is served instantly while the refresh runs behind it. Nobody waits unless nothing is cached yet |
 | Trade-unit ticket read (per producer set × window) | same per-window TTLs as above | Stale-while-revalidate too. A prompt run a minute after the last is instant; the run after sees the update |
 | Client hover prefetch | 60s, side map | Resting on a producer row fires the reads so the click renders from memory |
 
@@ -84,9 +86,23 @@ The API's own status taxonomy is handled explicitly: business validation → HTT
 
 ## Configuration
 
-Base `appsettings.json` documents every key with a `// Key` sibling. Per environment: `Source`, `GraphQlUri`, `TenantId`, `ClientId`, `Audience`, `PageSize`, `PageConcurrency`, `TradeUnitCacheMinutes` (5), `TradeUnitContractMaxPagesPerChunk` (100), `TradeUnitTicketMaxPagesPerWindow` (200), `LiveCacheSeconds`, `TicketLookbackDays` (1095), `HistoricalTicketCacheMinutes`, `RecentTicketDays` (30; Spot Loads).
+Base `appsettings.json` documents every key with a `// Key` sibling. Per environment: `Source`, `GraphQlUri`, `TenantId`, `ClientId`, `Audience`, `PageSize`, `PageConcurrency`, `TradeUnitCacheMinutes` (15), `TradeUnitContractStrategy` (`perProducer`), `TradeUnitPerProducerConcurrency` (8), `TradeUnitContractConcurrency` (2), `TradeUnitContractMaxPagesPerChunk` (100), `TradeUnitTicketMaxPagesPerWindow` (200), `TradeUnitMaxConcurrentRequests` (6), `BackgroundMaxDeferSeconds` (20), `ServerTimeoutRetries` (4) / `ServerTimeoutRetryDelaySeconds` (8), `InteractiveServerTimeoutRetries` (1) / `InteractiveServerTimeoutRetryDelaySeconds` (3), `InteractivePageConcurrency` (4), `InteractiveWindowSplit` (1 = off), `CrossBookedAppliedTickets` (false), `LiveCacheSeconds`, `TicketLookbackDays` (1095), `HistoricalTicketCacheMinutes`, `RecentTicketDays` (30; Spot Loads).
 
 To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to that environment's Key Vault, confirm APIM egress (no custom NSG rule needed), restart.
+
+## Deliberate divergences from ODS (decided, not defects)
+
+| Behaviour | Why |
+|---|---|
+| A failed read answers **503**, never 200 with an empty list | The repositories return `[]` and never fall back to ODS, so an outage and "this producer has no contracts" are the same shape in the data. A gateway timeout rendered as "no producers found" twice during development. `SurfaceCtrmFailuresAttribute` converts a recorded failure at the edge; internal callers that legitimately tolerate an empty result (the open-activity trade-unit lock) are unaffected. Truncated reads stay 200 with `X-Data-Partial`. |
+| No trade unit selected returns **empty**, where ODS returned every producer | ODS answered that in one indexed query; against CTRM it is 16,763 producers in 34 chunks of a ~25s call. The client never asks unscoped — an empty list only arrives when the entitlement filter has stripped the selection, and the honest answer to that is nothing. |
+| Trade-unit ticket pool bounded to `Ctrm:TicketLookbackDays` (1095) | ODS had no lower bound. CTRM requires a bill-of-lading range on every ticket query, capped at 366 days, so a bound is structural rather than chosen. |
+| Spot Loads reaches **+7 days** forward | The ODS query bounded only the near end. CTRM needs both, and the cost of a ticket query is the scan rather than the span, so the far end is cheap headroom for forward-dated bills of lading. A ticket dated further out shows on ODS and not here. |
+| One row per ticket DETAIL row | A header's quantities describe the whole load; collapsing a split ticket to its header would attribute another producer's bushels to whoever was asked about. |
+| `UnloadQuantity`/`LoadoutQuantity` are header values repeated on every detail row | Not a per-producer figure. `insights.component.ts:299` falls back to them and can therefore over-count a split load — flagged to the Insights owner rather than changed here. |
+| Applied ticket rows carry a synthetic `ContractId` | Restores the client's fallback contract-to-ticket join, which had no value to match on. The ODS FK is documented as "not reliably populated", so this adds a link rather than changing one. |
+| `GetAppliedByContractAsync` bounded to 1095 days | No UI caller. ODS was unbounded; same 366-day-range constraint as every other ticket read. |
+| Per-producer applied tickets come from the `customerId` read, not a second contract-scoped read | Applied vs unapplied is our own rule, so it does not need a query each, and a ticket read is charged by the date scan — a second read doubled the scans. Sampled 90 producers over a year: zero rows only the contract-scoped read could find. `Ctrm:CrossBookedAppliedTickets` restores it. |
 
 ## Known gaps (waiting on the API team)
 

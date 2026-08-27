@@ -310,6 +310,10 @@ export class CustomerProfileComponent {
     // endpoint is only hit once. ApiService also dedupes by `contracts-pacing:{id}` key.
     effect(() => {
       const id = this.customer()?.id;
+
+      // Cleared as the fetch is kicked, so a previous producer's failure never shows against this one.
+      this.historicalContractsFailed.set(false);
+
       if (id == null) { this.historicalContracts.set([]); return; }
       this.apiService.getHistoricalContractsForPacing(id)
         .pipe(takeUntilDestroyed(this.destroyRef))

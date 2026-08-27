@@ -494,7 +494,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// </remarks>
     private async Task<HashSet<string>> GetOpenPurchaseContractIdsAsync(string scoularId, CancellationToken cancellationToken)
     {
-        var read = await _contractReader.GetForProducerAsync(scoularId, cancellationToken);
+        var read = await _contractReader.GetForProducerCoreAsync(scoularId, cancellationToken);
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         if (!read.Ok)

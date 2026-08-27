@@ -46,7 +46,13 @@ public class CtrmContractReaderTests
         /// <summary>Fails only requests at a non-zero skip, to exercise a mid-walk failure.</summary>
         public bool FailLaterPagesOnly { get; init; }
 
-        public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
+        /// <summary>Holds every request until released, so a test can observe one read in flight.</summary>
+        public TaskCompletionSource Gate { get; } = new();
+
+        /// <summary>Whether <see cref="Gate"/> is honoured. Off by default so most tests run straight through.</summary>
+        public bool UseGate { get; init; }
+
+        public async Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
         {
             var map = ToMap(variables);
             lock (Documents)
@@ -59,10 +65,12 @@ public class CtrmContractReaderTests
             Assert.DoesNotContain('#', document);
 
             var skip = map.TryGetValue("skip", out var s) ? Convert.ToInt32(s) : 0;
+
+            if (UseGate) await Gate.Task;
             var shouldFail = _failWith is not null && (!FailLaterPagesOnly || skip > 0);
 
             if (shouldFail)
-                return Task.FromResult(new CtrmReadResult<T> { Status = _failWith!.Value, Detail = "stub failure" });
+                return new CtrmReadResult<T> { Status = _failWith!.Value, Detail = "stub failure" };
 
             var take = map.TryGetValue("take", out var t) ? Convert.ToInt32(t) : 500;
             var remaining = Math.Max(0, _totalPerChunk - skip);
@@ -84,12 +92,12 @@ public class CtrmContractReaderTests
                 }
             };
 
-            return Task.FromResult(new CtrmReadResult<T>
+            return new CtrmReadResult<T>
             {
                 Status = CtrmReadStatus.Ok,
                 HttpStatus = 200,
                 Value = (T)(object)response
-            });
+            };
         }
 
         private static IReadOnlyDictionary<string, object?> ToMap(object? variables) =>
@@ -267,7 +275,7 @@ public class CtrmContractReaderTests
         var client = new RecordingClient();
         var sut = Sut(client);
 
-        await sut.GetForProducerAsync("TESTPRD", CancellationToken.None);
+        await sut.GetForProducerFullAsync("TESTPRD", CancellationToken.None);
         await sut.GetForProducersAsync(["TESTPRD"], CancellationToken.None);
 
         Assert.Equal(2, client.Calls);
@@ -427,7 +435,7 @@ public class CtrmContractReaderTests
         var sut = Sut(client);
 
         var callers = await Task.WhenAll(Enumerable.Range(0, 20)
-            .Select(_ => Task.Run(() => sut.GetForProducerAsync("TESTPRD", CancellationToken.None))));
+            .Select(_ => Task.Run(() => sut.GetForProducerCoreAsync("TESTPRD", CancellationToken.None))));
 
         Assert.All(callers, r => Assert.True(r.Ok));
         Assert.Equal(1, client.Calls);
@@ -480,5 +488,134 @@ public class CtrmContractReaderTests
         Assert.True(result.Ok);
         Assert.Equal(1, client.Calls);
         Assert.Equal(["P000001"], Assert.IsAssignableFrom<IEnumerable<string>>(client.Variables[0]["customerIds"]).ToArray());
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheCoreReadDoesNotPayForPricingLines()
+    {
+        // Projecting prices roughly doubles a contract page (8.1s vs 4.0s per 500 rows; 0.8-4.0s vs
+        // 0.25-1.8s per producer) and a contract LIST never reads them.
+        var client = new RecordingClient();
+
+        await Sut(client).GetForProducerCoreAsync("TESTPRD", CancellationToken.None);
+
+        Assert.DoesNotContain("prices", client.Documents[0]);
+        Assert.Contains("customerId: $customerId", client.Documents[0]);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheFullReadStillProjectsPricingLines()
+    {
+        var client = new RecordingClient();
+
+        await Sut(client).GetForProducerFullAsync("TESTPRD", CancellationToken.None);
+
+        Assert.Contains("prices", client.Documents[0]);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task CoreAndFullAreSeparateCacheEntries()
+    {
+        // Same producer, different projections. Sharing one key would either starve the pricing lines or
+        // make every list read pay for them.
+        var client = new RecordingClient();
+        var sut = Sut(client);
+
+        await sut.GetForProducerCoreAsync("TESTPRD", CancellationToken.None);
+        await sut.GetForProducerFullAsync("TESTPRD", CancellationToken.None);
+
+        Assert.Equal(2, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ACompletedFullReadSatisfiesACoreRead()
+    {
+        // Full is a superset - ToContracts never touches Prices - so a fresh full result should be handed
+        // back rather than paying for a second call.
+        var client = new RecordingClient();
+        var sut = Sut(client);
+
+        await sut.GetForProducerFullAsync("TESTPRD", CancellationToken.None);
+        var core = await sut.GetForProducerCoreAsync("TESTPRD", CancellationToken.None);
+
+        Assert.True(core.Ok);
+        Assert.Equal(1, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AnInFlightFullReadDoesNotBlockACoreRead()
+    {
+        // The point of the split. Waiting on the expensive shape when the cheap one answers in a fraction
+        // of the time is exactly the cost this was meant to remove.
+        var client = new RecordingClient { UseGate = true };
+        var sut = Sut(client);
+
+        var full = sut.GetForProducerFullAsync("TESTPRD", CancellationToken.None);
+        while (client.Calls < 1) await Task.Delay(5);
+
+        var core = sut.GetForProducerCoreAsync("TESTPRD", CancellationToken.None);
+
+        // Core went to CTRM on its own rather than awaiting the gated full read.
+        while (client.Calls < 2) await Task.Delay(5);
+        Assert.Equal(2, client.Calls);
+
+        client.Gate.SetResult();
+        Assert.True((await core).Ok);
+        Assert.True((await full).Ok);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AFailedFullReadDoesNotSatisfyACoreRead()
+    {
+        // A failure is never a superset of anything.
+        var failing = new RecordingClient(failWith: CtrmReadStatus.EgressBlocked);
+        var sut = Sut(failing);
+
+        var full = await sut.GetForProducerFullAsync("TESTPRD", CancellationToken.None);
+        var core = await sut.GetForProducerCoreAsync("TESTPRD", CancellationToken.None);
+
+        Assert.False(full.Ok);
+        Assert.False(core.Ok);
+        Assert.Equal(2, failing.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task InvalidateDropsBothProjections()
+    {
+        var client = new RecordingClient();
+        var sut = Sut(client);
+
+        await sut.GetForProducerCoreAsync("TESTPRD", CancellationToken.None);
+        await sut.GetForProducerFullAsync("TESTPRD", CancellationToken.None);
+        Assert.Equal(2, client.Calls);
+
+        sut.Invalidate("TESTPRD");
+
+        await sut.GetForProducerCoreAsync("TESTPRD", CancellationToken.None);
+        await sut.GetForProducerFullAsync("TESTPRD", CancellationToken.None);
+        Assert.Equal(4, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ACoreReadNeverSatisfiesAFullRead()
+    {
+        // The inverse of the superset rule: core has no prices to give, so the pricing lines must still
+        // go to CTRM or the badges would silently render empty.
+        var client = new RecordingClient();
+        var sut = Sut(client);
+
+        await sut.GetForProducerCoreAsync("TESTPRD", CancellationToken.None);
+        await sut.GetForProducerFullAsync("TESTPRD", CancellationToken.None);
+
+        Assert.Equal(2, client.Calls);
+        Assert.Contains("prices", client.Documents[1]);
     }
 }
