@@ -507,12 +507,21 @@ public sealed class CtrmTicketReader
 
         for (var page = 0; page < maxPages; page++)
         {
-            var result = await _client.QueryAsync<CtrmTicketsResponse>(
-                scope.Document,
-                BuildVariables(scope.Filter, from, to, skip),
-                // Deliberately not the caller's token: concurrent callers share this read, so one
-                // navigating away must not cancel the work the others are awaiting.
-                CancellationToken.None);
+            // Server-timeout retry: the server finishes and caches after answering HC0045, so an identical
+            // re-send a few seconds later succeeds. Deliberately not the caller's token: concurrent callers
+            // share this read, so one navigating away must not cancel the work the others are awaiting.
+            Task<CtrmReadResult<CtrmTicketsResponse>> Page() => CtrmServerTimeoutRetry.RunAsync(
+                () => _client.QueryAsync<CtrmTicketsResponse>(
+                    scope.Document,
+                    BuildVariables(scope.Filter, from, to, skip),
+                    CancellationToken.None),
+                _configuration, _logger, $"tickets page skip={skip} for {scope.Description} {from:yyyy-MM-dd}..{to:yyyy-MM-dd}");
+
+            // Batched (trade-unit / Spot Loads) pages go through the process-wide throttle so a walk cannot
+            // crowd out per-producer reads; per-producer pages (a populated cache key) never wait behind it.
+            var result = scope.CacheKey.Length == 0
+                ? await CtrmTradeUnitThrottle.RunAsync(_configuration, Page)
+                : await Page();
 
             if (!result.Ok)
                 return new CtrmReadResult<List<CtrmTicketDto>>

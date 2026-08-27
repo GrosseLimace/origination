@@ -399,16 +399,22 @@ public sealed class CtrmContractReader
 
     private async Task<CtrmReadResult<CtrmPage<CtrmContractDto>>> FetchProducersPageAsync(string[] chunk, int skip)
     {
-        var result = await _client.QueryAsync<CtrmContractsResponse>(
-            CtrmQueries.ContractsByCustomers,
-            new
-            {
-                customerIds = chunk,
-                prefix = CtrmMappings.PurchasePrefix,
-                skip,
-                take = PageSize
-            },
-            CancellationToken.None);
+        // Wrapped in the server-timeout retry: a cold page here is 22-25s against a 30s server limit, and the
+        // server finishes and caches after answering HC0045, so the re-send succeeds in ~1s.
+        // Also behind the process-wide trade-unit throttle, so this walk cannot crowd out the per-producer
+        // reads a user is clicking on.
+        var result = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
+            () => _client.QueryAsync<CtrmContractsResponse>(
+                CtrmQueries.ContractsByCustomers,
+                new
+                {
+                    customerIds = chunk,
+                    prefix = CtrmMappings.PurchasePrefix,
+                    skip,
+                    take = PageSize
+                },
+                CancellationToken.None),
+            _configuration, _logger, $"contracts page skip={skip} for {chunk.Length} producer(s)"));
 
         if (!result.Ok)
             return new CtrmReadResult<CtrmPage<CtrmContractDto>>
