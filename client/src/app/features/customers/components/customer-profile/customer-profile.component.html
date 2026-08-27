@@ -390,7 +390,7 @@
           [storedGrain]="storedGrain()">
         </app-producer-insights>
 
-        <app-contract-pacing-card
+        <app-contract-pacing-card [parentHistoryLoadFailed]="historicalContractsFailed()"
           [contracts]="contracts()"
           [historicalContracts]="historicalContracts()"
           [harvestWindows]="harvestWindows()"

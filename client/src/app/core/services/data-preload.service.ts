@@ -96,9 +96,12 @@ export class DataPreloadService {
           })
         );
         const contracts$ = this.apiService.getContracts(tradeUnits).pipe(
+          // Cleared HERE, ahead of the catchError, so only a real emission clears it. Doing it inside
+          // setContracts meant the [] fallback below cleared the flag the catchError had just set.
+          tap(() => this.appState.setContractsLoadFailed(false)),
           // Still resolves to [] so the rest of the page loads, but the failure is RECORDED - otherwise
           // every contract-based prompt reports "no producers found" for what is actually an outage.
-          catchError(() => { this.appState.contractsLoadFailed.set(true); return of([] as Contract[]); }),
+          catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); }),
           tap(data => {
             this.appState.setContracts(data);
             this.appState.contractsLoading.set(false);
@@ -107,7 +110,8 @@ export class DataPreloadService {
           })
         );
         const todaysTickets$ = this.apiService.getTodaysTickets(tradeUnits).pipe(
-          catchError(() => { this.appState.ticketsLoadFailed.set(true); return of([] as Ticket[]); }),
+          tap(() => this.appState.setTicketsLoadFailed(false)),
+          catchError(() => { this.appState.setTicketsLoadFailed(true); return of([] as Ticket[]); }),
           tap(data => {
             this.appState.setTodaysTickets(data);
             this.appState.todaysTicketsLoading.set(false);

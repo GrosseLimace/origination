@@ -95,6 +95,10 @@ export class CustomerProfileComponent {
 
   /** Non-null when the read FAILED rather than returning nothing - forwarded to the tables so they can
    *  say so instead of showing their empty state. */
+  /** True when this producer's prior-year pacing history could not be read. Forwarded to the pacing
+   *  card so it can say the comparison is incomplete instead of showing it as flat. */
+  readonly historicalContractsFailed = signal(false);
+
   public contractsLoadError = input<string | null>(null);
   public ticketsLoadError = input<string | null>(null);
 
@@ -310,12 +314,13 @@ export class CustomerProfileComponent {
       this.apiService.getHistoricalContractsForPacing(id)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: contracts => this.historicalContracts.set(contracts),
+          next: contracts => { this.historicalContracts.set(contracts); this.historicalContractsFailed.set(false); },
           error: () => {
-            // Keep whatever is already shown, but do not let the failure disappear into Angular's
-            // global ErrorHandler where nobody sees it.
+            // Producer-scoped, so it stays local: the trade-unit-wide flag drives Build-a-List's banner
+            // and this read says nothing about that list. Cleared to [] rather than left stale so the
+            // pacing card cannot present another producer's history as this one's.
             this.historicalContracts.set([]);
-            this.appState.setContractsLoadFailed(true);
+            this.historicalContractsFailed.set(true);
           }
         });
     });

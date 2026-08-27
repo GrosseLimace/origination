@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { forkJoin, of, catchError, timeout } from 'rxjs';
+import { forkJoin, of, catchError, timeout, tap } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
@@ -2018,7 +2018,9 @@ export class BuildListComponent {
     // query runs while it's missing, so page load never waits on the note download)
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
+      contracts: this.apiService.getContracts(tuParam).pipe(
+        tap(() => this.appState.setContractsLoadFailed(false)),
+        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
@@ -2078,6 +2080,7 @@ export class BuildListComponent {
     // response actually carried tickets.
     this.apiService.getTickets(tuParam).pipe(
       timeout(60000),
+      tap(() => this.appState.setTicketsLoadFailed(false)),
       // Flagged, not swallowed silently: this is the read behind the delivery and unapplied prompts, and
       // an empty result from it answers those prompts with "no producers" indistinguishably from an outage.
       catchError(() => { this.appState.setTicketsLoadFailed(true); return of([] as Ticket[]); }),
@@ -2613,8 +2616,12 @@ export class BuildListComponent {
     const fetchingNotes = needsNotes && !this.appState.notesLoaded();
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
-      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => { this.appState.setTicketsLoadFailed(true); return of([] as Ticket[]); })),
+      contracts: this.apiService.getContracts(tuParam).pipe(
+        tap(() => this.appState.setContractsLoadFailed(false)),
+        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
+      tickets: this.apiService.getTickets(tuParam).pipe(
+        tap(() => this.appState.setTicketsLoadFailed(false)),
+        catchError(() => { this.appState.setTicketsLoadFailed(true); return of([] as Ticket[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: fetchingNotes
         ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))

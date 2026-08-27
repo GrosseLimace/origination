@@ -513,7 +513,12 @@
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Contracted delivery volume by month</p>
               </div>
               <div class="px-5 pt-5 pb-4">
-                @if (contractsForYear().length === 0) {
+                @if (cropYearLoadFailed()) {
+                  <!-- An outage must not read as a year with no contracts. -->
+                  <div class="flex items-center justify-center h-32 text-sm text-amber-700 dark:text-amber-300 text-center px-4">
+                    Contract data for {{ selectedPlantingYear() }} could not be loaded from CTRM, so this chart is incomplete. Please retry shortly.
+                  </div>
+                } @else if (contractsForYear().length === 0) {
                   <div class="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500 italic">No contract data for {{ selectedPlantingYear() }}</div>
                 } @else {
                   <div class="flex gap-4">

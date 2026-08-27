@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
-import { catchError, debounceTime, switchMap, map } from 'rxjs/operators';
+import { catchError, debounceTime, switchMap, map, tap } from 'rxjs/operators';
 import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
 import { Customer, SavedList, Note, NoteLastContact, ProducerDetails } from '@models';
 import { MsalService } from '@azure/msal-angular';
@@ -458,6 +458,7 @@ export class CustomerListComponent {
     // true once a TU-wide set has been loaded; it's reset on TU change.
     if (this.nlqFilterService.queryInvolvesTickets(query) && !this.appStateService.ticketsLoaded()) {
       missing['tickets'] = this.apiService.getTickets(tuParam).pipe(
+        tap(() => this.appStateService.setTicketsLoadFailed(false)),
         catchError(() => { this.appStateService.setTicketsLoadFailed(true); return of([] as Ticket[]); }));
     }
     if (this.nlqFilterService.queryInvolvesPlanting(query) && this.appStateService.plantingIntentions().length === 0) {
@@ -470,6 +471,7 @@ export class CustomerListComponent {
     // still return producers, making the failure look intermittent.
     if (this.nlqFilterService.queryInvolvesContracts(query) && this.appStateService.contracts().length === 0) {
       missing['contracts'] = this.apiService.getContracts(tuParam).pipe(
+        tap(() => this.appStateService.setContractsLoadFailed(false)),
         catchError(() => { this.appStateService.setContractsLoadFailed(true); return of([] as Contract[]); }));
     }
     // Notes (full set with bodies/authors): fetch ONLY for prompts that actually read note
