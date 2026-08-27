@@ -47,7 +47,32 @@ public sealed class CtrmContractReader
 
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
 
-    private sealed record CacheEntry(DateTime CreatedUtc, Task<CtrmReadResult<List<CtrmContractDto>>> Read);
+    /// <summary>
+    /// A cached read. Holds the fetch LAZILY, which is the whole point.
+    /// </summary>
+    /// <remarks>
+    /// The obvious version - <c>new CacheEntry(now, fetch())</c> then <c>TryAdd</c> - starts the request
+    /// before the slot is claimed, so concurrent callers that lose the race have already fired an HTTP call
+    /// nobody will read. Measured 2026-08-27: selecting a producer issues three near-simultaneous reads for
+    /// the same contract list (the contract table, the pacing card, and the open-contract set the ticket read
+    /// needs), and the log showed all three hitting CTRM. Deferring the call until a caller actually takes the
+    /// entry means the loser's factory never runs.
+    /// </remarks>
+    private sealed record CacheEntry(DateTime CreatedUtc, Lazy<Task<CtrmReadResult<List<CtrmContractDto>>>> Pending)
+    {
+        /// <summary>Starts the fetch on first access, then returns the same task to everyone after.</summary>
+        public Task<CtrmReadResult<List<CtrmContractDto>>> Read => Pending.Value;
+
+        /// <summary>Whether the fetch has run and finished - without starting it.</summary>
+        public bool IsCompleted => Pending.IsValueCreated && Pending.Value.IsCompleted;
+
+        /// <summary>Whether the fetch ran and produced something unusable - without starting it.</summary>
+        public bool Failed => IsCompleted
+            && (!Pending.Value.IsCompletedSuccessfully || !Pending.Value.Result.Ok);
+
+        public static CacheEntry Deferred(DateTime CreatedUtc, Func<Task<CtrmReadResult<List<CtrmContractDto>>>> fetch) =>
+            new(CreatedUtc, new Lazy<Task<CtrmReadResult<List<CtrmContractDto>>>>(fetch, LazyThreadSafetyMode.ExecutionAndPublication));
+    }
 
     public CtrmContractReader(
         ICtrmGraphQlClient client,
@@ -193,29 +218,35 @@ public sealed class CtrmContractReader
             {
                 // Reuse while fresh, and never keep a failed read: a transient error should not lock a
                 // producer out of the screen until the TTL happens to expire.
-                var completed = existing.Read.IsCompleted;
-                var failed = completed && (!existing.Read.IsCompletedSuccessfully || !existing.Read.Result.Ok);
+                var failed = existing.Failed;
 
                 if (!failed && now - existing.CreatedUtc < ttl)
                     return existing.Read;
 
-                if (!failed && completed && staleWhileRevalidate)
+                if (!failed && existing.IsCompleted && staleWhileRevalidate)
                 {
                     // Expired but good. Start the refresh and serve the old copy to this caller.
-                    var fresh = new CacheEntry(now, fetch());
+                    var fresh = CacheEntry.Deferred(now, fetch);
                     if (_cache.TryUpdate(cacheKey, fresh, existing))
+                    {
+                        _ = fresh.Read;          // the refresh is the point; nothing else will await it
                         return existing.Read;
+                    }
                     continue;   // someone else swapped it first; loop and take theirs
                 }
 
                 _cache.TryRemove(cacheKey, out _);
             }
 
-            var entry = new CacheEntry(now, fetch());
-            if (_cache.TryAdd(cacheKey, entry))
-                return entry.Read;
+            // GetOrAdd, not TryAdd: a loser's fetch must never start. The factory is deferred until whoever
+            // owns the entry reads it.
+            var added = CacheEntry.Deferred(now, fetch);
+            var actual = _cache.GetOrAdd(cacheKey, added);
+            if (ReferenceEquals(actual, added) || now - actual.CreatedUtc < ttl || !actual.Failed)
+                return actual.Read;
 
-            // Another thread won the race; loop and take theirs.
+            // The entry we found is a failed one past its usefulness; drop it and try again.
+            _cache.TryRemove(cacheKey, out _);
         }
     }
 

@@ -414,4 +414,38 @@ public class CtrmContractReaderTests
         Assert.Equal(1, client.Calls);
         Assert.Contains("customerIds: $customerIds", client.Documents[0]);
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task CallersArrivingTogetherForOneProducerMakeExactlyOneRequest()
+    {
+        // Selecting a producer fires three reads for the same contract list at once - the contract table, the
+        // pacing card, and the open-contract set the ticket read needs. The cache used to start the fetch
+        // BEFORE claiming its slot, so all three reached CTRM and two results were discarded; the local log
+        // showed exactly that on 2026-08-27. Twenty simultaneous callers must produce one request.
+        var client = new RecordingClient();
+        var sut = Sut(client);
+
+        var callers = await Task.WhenAll(Enumerable.Range(0, 20)
+            .Select(_ => Task.Run(() => sut.GetForProducerAsync("TESTPRD", CancellationToken.None))));
+
+        Assert.All(callers, r => Assert.True(r.Ok));
+        Assert.Equal(1, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task CallersArrivingTogetherForOneProducerSetMakeExactlyOneRequest()
+    {
+        // Same race on the trade-unit path, where a wasted call is a ~25s server-side scan.
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(strategy: "customerIds"));
+        var codes = Codes(20);
+
+        var callers = await Task.WhenAll(Enumerable.Range(0, 12)
+            .Select(_ => Task.Run(() => sut.GetForProducersAsync(codes, CancellationToken.None))));
+
+        Assert.All(callers, r => Assert.True(r.Ok));
+        Assert.Equal(1, client.Calls);
+    }
 }
