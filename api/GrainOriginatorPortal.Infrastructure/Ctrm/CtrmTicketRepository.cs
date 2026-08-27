@@ -1,4 +1,5 @@
 using System.Globalization;
+using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -32,8 +33,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
     private readonly ApplicationDbContext _appContext;
     private readonly TicketRepository _ods;
     private readonly IConfiguration _configuration;
-    private readonly CtrmContractSnapshot _contractSnapshot;
-    private readonly CtrmTicketPoolSnapshot _ticketPool;
     private readonly CtrmProvenance _provenance;
     private readonly ILogger<CtrmTicketRepository> _logger;
 
@@ -43,8 +42,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
         ApplicationDbContext appContext,
         TicketRepository ods,
         IConfiguration configuration,
-        CtrmContractSnapshot contractSnapshot,
-        CtrmTicketPoolSnapshot ticketPool,
         CtrmProvenance provenance,
         ILogger<CtrmTicketRepository> logger)
     {
@@ -53,8 +50,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
         _appContext = appContext;
         _ods = ods;
         _configuration = configuration;
-        _contractSnapshot = contractSnapshot;
-        _ticketPool = ticketPool;
         _provenance = provenance;
         _logger = logger;
     }
@@ -213,24 +208,22 @@ public sealed class CtrmTicketRepository : ITicketRepository
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Every ticket for the producers in the selected trade units, from the CTRM ticket pool.
+    /// Every ticket for the producers in the selected trade units, from CTRM.
     /// </summary>
     /// <remarks>
-    /// <para>The last contract/ticket read to leave ODS. It backs every Build-a-List prompt that mentions
-    /// tickets, deliveries, unapplied or unsettled, so it carries BOTH branches - applied tickets on the
-    /// producers' open purchase contracts, and unapplied tickets by customer code - exactly as the ODS
-    /// query did and exactly as the producer screen does. Serving only the unapplied half would have
-    /// made the delivery and settlement prompts silently wrong.</para>
+    /// <para>The ODS flow aimed at CTRM. Trade units resolve to producers in Origination (the same way the
+    /// ODS read resolved them), the producers go to <see cref="CtrmTicketReader.GetForProducersHistoryAsync"/>,
+    /// and the same two-branch rule the producer screen uses is applied: applied tickets on the producers'
+    /// open purchase contracts, plus unapplied tickets by customer code. Both branches, not just unapplied -
+    /// the delivered and unsettled prompts depend on the applied half. Then the storage gate and the
+    /// elevator lookup, as on ODS.</para>
     ///
-    /// <para>Producer scope mirrors ODS line for line: with no trade unit selected, the same resolver Spot
-    /// Loads uses (snapshot membership unioned with contract-derived codes); with a selection, the
-    /// CustomerTradeUnit snapshot alone. Open purchase contracts come from the contract pool, which is a
-    /// date window - so an applied ticket on an open contract dated before that window is not matched
-    /// here. That is the pool's existing limitation, recorded there, not a new one.</para>
+    /// <para>The open-contract set comes from the same cached full-history contract read the contract list
+    /// uses, so the two prompts cannot disagree about which contracts are open.</para>
     ///
-    /// <para>Served from <see cref="CtrmTicketPoolSnapshot"/> because the walk is minutes, not seconds.
-    /// While the pool is still warming this returns empty and says so in the provenance header, the same
-    /// contract the contract pool honours.</para>
+    /// <para>Timing: both reads are cached per producer set and served stale-while-refreshing, and the
+    /// home-page contract load kicks them off, so a prompt normally answers from memory. A cold first prompt
+    /// waits on the walk - tens of seconds for a mid-size trade unit - once per session.</para>
     /// </remarks>
     public async Task<List<Ticket>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
     {
@@ -241,24 +234,26 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
-        var pool = await _ticketPool.GetAsync(cancellationToken);
-        if (!pool.Ok)
+        // Both reads at once: they are independent and both may be cold.
+        var ticketTask = _reader.GetForProducersHistoryAsync(codes, cancellationToken);
+        var contractTask = _contractReader.GetForProducersAsync(codes, cancellationToken);
+        await Task.WhenAll(ticketTask, contractTask);
+
+        var read = ticketTask.Result;
+        if (!read.Ok)
         {
-            if (pool.Status == CtrmReadStatus.Warming)
-                _logger.LogInformation("CTRM tickets: pool still warming - {Detail}", pool.Detail);
-            else
-                _logger.LogError("CTRM ticket pool unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
-                    "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", pool.Status, pool.Detail);
-            _provenance.RecordTickets("ctrm", pool.Status.ToString(), 0);
+            _logger.LogError("CTRM trade-unit tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
             return [];
         }
 
-        var openContractIds = await GetOpenPurchaseContractIdsForProducersAsync(codes, cancellationToken);
+        var openContractIds = OpenPurchaseContractIds(contractTask.Result, codes);
         var codeSet = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
 
         // Same two-branch rule as the producer screen, keyed by id so a row cannot be counted twice.
         var byId = new Dictionary<long, Ticket>();
-        foreach (var header in pool.Tickets)
+        foreach (var header in read.Value ?? [])
         {
             foreach (var t in CtrmMappings.ToAppliedForContracts(header, openContractIds)) byId[t.Id] = t;
             foreach (var t in CtrmMappings.ToUnappliedForProducers(header, codeSet)) byId[t.Id] = t;
@@ -270,12 +265,13 @@ public sealed class CtrmTicketRepository : ITicketRepository
         await _ods.PopulateElevatorLocations(tickets, cancellationToken);
         tickets = tickets.OrderByDescending(t => t.Date).ToList();
 
+        var truncated = read.Status == CtrmReadStatus.PartialSuccess;
         _provenance.RecordTickets("ctrm",
-            pool.Truncated ? "OkTruncated" : beforeGate != tickets.Count ? "OkStorageGated" : "Ok", tickets.Count);
+            truncated ? "OkTruncated" : beforeGate != tickets.Count ? "OkStorageGated" : "Ok", tickets.Count);
 
         _logger.LogInformation(
-            "CTRM tickets: {Count} rows for {Producers} producer(s) in {TradeUnits} trade unit(s) from the pool ({Open} open contracts).",
-            tickets.Count, codes.Count, tradeUnits?.Count ?? 0, openContractIds.Count);
+            "CTRM tickets: {Count} rows for {Producers} producer(s) in {TradeUnits} trade unit(s) ({Open} open contracts){Truncated}.",
+            tickets.Count, codes.Count, tradeUnits?.Count ?? 0, openContractIds.Count, truncated ? ", TRUNCATED" : string.Empty);
 
         return tickets;
     }
@@ -301,16 +297,21 @@ public sealed class CtrmTicketRepository : ITicketRepository
         return [.. codes.Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
-    /// <summary>Open purchase contract ids for a producer set, from the contract pool snapshot.</summary>
-    private async Task<HashSet<string>> GetOpenPurchaseContractIdsForProducersAsync(
-        IReadOnlyCollection<string> codes, CancellationToken cancellationToken)
+    /// <summary>Open purchase contract ids for a producer set, from the cached full-history contract read.
+    /// A failed contract read yields an empty set - the unapplied branch still answers, and the failure is
+    /// logged here rather than emptying the whole ticket list.</summary>
+    private HashSet<string> OpenPurchaseContractIds(CtrmReadResult<List<CtrmContractDto>> contracts, IReadOnlyCollection<string> codes)
     {
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var snapshot = await _contractSnapshot.GetAsync(cancellationToken);
-        if (!snapshot.Ok) return ids;
+        if (!contracts.Ok)
+        {
+            _logger.LogError("CTRM trade-unit contracts unavailable for the applied-ticket branch [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", contracts.Status, contracts.Detail);
+            return ids;
+        }
 
         var codeSet = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
-        foreach (var c in snapshot.Contracts)
+        foreach (var c in contracts.Value ?? [])
         {
             if (!string.Equals(c.ContractPrefixType?.Trim(), CtrmMappings.PurchasePrefix, StringComparison.OrdinalIgnoreCase)) continue;
             if (CtrmMappings.NullIfSentinel(c.ClosedDate) is not null) continue;

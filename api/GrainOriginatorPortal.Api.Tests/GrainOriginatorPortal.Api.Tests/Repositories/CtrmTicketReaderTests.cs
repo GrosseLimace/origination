@@ -45,6 +45,9 @@ public class CtrmTicketReaderTests
         /// <summary>Whether <see cref="Gate"/> is honoured. Off by default so most tests run straight through.</summary>
         public bool UseGate { get; init; }
 
+        /// <summary>Parks the NEXT call only, then clears itself - for stale-while-revalidate tests.</summary>
+        public volatile bool HoldNextCall;
+
         public async Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
         {
             lock (Documents)
@@ -57,6 +60,7 @@ public class CtrmTicketReaderTests
             Assert.DoesNotContain('#', document);
 
             if (UseGate) await Gate.Task;
+            if (HoldNextCall) { HoldNextCall = false; await Gate.Task; }
 
             if (_failWith is { } status)
                 return new CtrmReadResult<T> { Status = status, Detail = "stub failure" };
@@ -467,4 +471,93 @@ public class CtrmTicketReaderTests
 
         Assert.Equal(6, client.Calls);
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheTradeUnitHistoryRead_CoversEveryWindowWithTheBatchDocument()
+    {
+        // Trade units -> producers -> their tickets over the whole lookback: three windows for three years,
+        // each carrying the full producer set, none asking for unappliedOnly (the delivered and unsettled
+        // prompts need the applied half).
+        var client = new RecordingClient();
+
+        var result = await Sut(client, Config(lookbackDays: 1095)).GetForProducersHistoryAsync(Codes(3), CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal(3, client.Calls);
+        Assert.All(client.Documents, d => Assert.Contains("customerIds: $customerIds", d));
+        Assert.All(client.Variables, v =>
+        {
+            Assert.Equal(3, Assert.IsAssignableFrom<IEnumerable<string>>(v["customerIds"]).Count());
+            Assert.False(v.ContainsKey("unappliedOnly"));
+            var from = DateTime.Parse((string)v["from"]!); var to = DateTime.Parse((string)v["to"]!);
+            Assert.True((to - from).TotalDays <= CtrmQueries.MaxTicketRangeDays);
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheTradeUnitHistoryRead_ServesTheExpiredCopyInstantlyAndRefreshesBehindIt()
+    {
+        // The contract with Build-a-List: a prompt run after the TTL must not wait on a multi-page walk that
+        // has already been answered once. The caller gets the old copy; the refresh starts; the NEXT caller
+        // sees the refreshed one.
+        var now = new DateTime(2026, 8, 25, 12, 0, 0, DateTimeKind.Utc);
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 366, cacheSeconds: 60), () => now);
+        var codes = Codes(5);
+
+        await sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+        Assert.Equal(1, client.Calls);
+
+        now = now.AddSeconds(61);
+        client.HoldNextCall = true;
+        var stale = sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+
+        // Returned without waiting on the refresh that is now parked at the gate.
+        Assert.True(stale.IsCompleted, "the expired copy must be served without awaiting the refresh");
+        Assert.True((await stale).Ok);
+        Assert.Equal(2, client.Calls);
+
+        client.Gate.SetResult();
+        await Task.Yield();
+        now = now.AddSeconds(1);
+        await sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+        Assert.Equal(2, client.Calls);   // the refresh landed; nothing else was fetched
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheTradeUnitHistoryRead_IsWarmOnceEveryWindowIsCached()
+    {
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 1095));
+        var codes = Codes(4);
+
+        Assert.False(sut.IsWarm(codes));
+        await sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+        Assert.True(sut.IsWarm(codes));
+        Assert.False(sut.IsWarm(Codes(5)));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheTradeUnitHistoryRead_SharesItsWindowsWithTheSingleWindowReadOverTheSameDates()
+    {
+        // Same producers, same window, same rows: a Spot Loads read that happens to match a history window
+        // must reuse it rather than walk it again.
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(lookbackDays: 366));
+        var codes = Codes(2);
+
+        await sut.GetForProducersHistoryAsync(codes, CancellationToken.None);
+        var from = DateTime.Parse((string)client.Variables[0]["from"]!);
+        var to = DateTime.Parse((string)client.Variables[0]["to"]!);
+        await sut.GetForProducersAsync(codes, from, to, CancellationToken.None);
+
+        Assert.Equal(1, client.Calls);
+    }
+
+    private static List<string> Codes(int count) =>
+        [.. Enumerable.Range(0, count).Select(i => $"P{i:D6}")];
 }

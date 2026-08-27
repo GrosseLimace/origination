@@ -118,8 +118,6 @@ public static class DependencyInjection
         services.AddSingleton<CtrmContractReader>();
         services.AddSingleton<CtrmTicketReader>();
 
-        services.AddSingleton<CtrmContractSnapshot>();
-        services.AddSingleton<CtrmTicketPoolSnapshot>();
 
         // Scoped: one per HTTP request, so the provenance middleware reports what THIS request's
         // repositories actually did rather than what was configured when it arrived.

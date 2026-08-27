@@ -19,40 +19,6 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 public static class CtrmQueries
 {
     /// <summary>
-    /// One page of contracts over a contract-date window, with pricing lines.
-    /// Variables: <c>$from</c>, <c>$to</c> (Date!), <c>$skip</c>, <c>$take</c> (Int!).
-    /// </summary>
-    /// <remarks>
-    /// <para>The date window is the only filter that is fast here. <c>customerIds</c> exists and would let
-    /// the pool be scoped by producer instead - matching the per-producer read's full history - but it is
-    /// not indexed the way the singular <c>customerId</c> is: ~20-25s per request regardless of list size,
-    /// and the whole population is dozens of pages. Two attempts died at the gateway (234s priced, 147s
-    /// lean). Contract date IS indexed, so the window stays until that changes.</para>
-    ///
-    /// <para><b>No pricing lines.</b> They roughly double both the time and the payload for a page -
-    /// measured 11.6s / 604KB against 6.1s / 352KB - and this walk is eighteen pages at four-way
-    /// concurrency. That pressure was making the server return an intermittent HTTP 500 mid-walk, which
-    /// fails the whole snapshot; the pages are fine one at a time. Nothing reads the collection from here
-    /// either: <c>CtrmMappings.ToContract</c> takes only the scalar price fields, and the one caller that
-    /// wanted the lines is delegated to ODS.</para>
-    ///
-    /// <para>No <c>contractPrefixType</c> argument on this query even though one exists, because the
-    /// snapshot also answers reads that want the unfiltered window; purchase-only filtering happens in
-    /// the mapping.</para>
-    /// </remarks>
-    public const string ContractsPage = """
-        query ($from: Date!, $to: Date!, $skip: Int!, $take: Int!) {
-          contracts(skip: $skip, take: $take, contractDateFrom: $from, contractDateTo: $to) {
-            totalCount
-            pageInfo { skip take hasNextPage hasPreviousPage }
-            items {
-        """ + ContractCoreProjection + """
-            }
-          }
-        }
-        """;
-
-    /// <summary>
     /// Cheapest possible probe: one contract row over the configured window. Used by the
     /// diagnostics endpoint to prove auth, egress and data access in a single call.
     /// </summary>
@@ -286,27 +252,27 @@ public static class CtrmQueries
 
 
     /// <summary>
-    /// Purchase contracts for a batch of producers in one crop year, with NO date range.
-    /// Variables: <c>$customerIds</c> ([String!]), <c>$prefix</c> (String), <c>$cropYear</c> (Int),
-    /// <c>$skip</c>, <c>$take</c> (Int).
+    /// Every purchase contract, any date, for a batch of producers.
+    /// Variables: <c>$customerIds</c> ([String!]), <c>$prefix</c> (String), <c>$skip</c>, <c>$take</c> (Int).
     /// </summary>
     /// <remarks>
-    /// <para>Backs the crop-year contract list the Build-a-List screen queries, which had to be delegated
-    /// to ODS while <c>cropYear</c> was readable but not filterable. Every predicate the ODS query applies
-    /// is now expressible server-side: producer codes, purchase-only, and the crop year.</para>
+    /// <para>The trade-unit-wide contract read, and the crop-year read beneath it: trade units resolve to
+    /// producers in Origination, the producers go here, and crop year is filtered from the result in memory.
+    /// That is the ODS flow exactly - producers in, their contracts out - with no date window, so nothing is
+    /// invisible for being dated outside one. It also means <c>cropYear</c> is no longer sent, which sidesteps
+    /// the server-cache incident of 2026-08-26 entirely.</para>
     ///
-    /// <para><c>customerIds</c> is what makes the date range optional - the plural form waives it exactly
-    /// as the singular does, so this returns a producer's whole crop year rather than a window. It is
-    /// capped at 500 entries, so callers chunk. Note the pairing matters: <c>cropYear</c> on its own does
-    /// NOT waive the range, and narrowing a date scan by crop year costs ~20s for 27 rows.</para>
+    /// <para><c>customerIds</c> waives the date range like the singular does and is capped at 500 entries, so
+    /// callers chunk. Cold cost is ~20-27s per chunk regardless of how many codes it carries (reported to the
+    /// API owner; the singular filter is ~1-2s), so this is read once per producer set in the background and
+    /// cached, never on a click.</para>
     ///
-    /// <para>Deliberately <see cref="ContractCoreProjection"/> and not the full one. Nothing in a contract
+    /// <para>Deliberately <see cref="ContractCoreProjection"/> and not the full one: nothing in a contract
     /// list reads the pricing lines, and projecting them doubles the per-page cost.</para>
     /// </remarks>
-    public const string ContractsByCustomersAndCropYear = """
-        query ($customerIds: [String!], $prefix: String, $cropYear: Int, $skip: Int, $take: Int) {
-          contracts(skip: $skip, take: $take, customerIds: $customerIds,
-                    contractPrefixType: $prefix, cropYear: $cropYear) {
+    public const string ContractsByCustomers = """
+        query ($customerIds: [String!], $prefix: String, $skip: Int, $take: Int) {
+          contracts(skip: $skip, take: $take, customerIds: $customerIds, contractPrefixType: $prefix) {
             totalCount
             pageInfo { skip take hasNextPage hasPreviousPage }
             items {

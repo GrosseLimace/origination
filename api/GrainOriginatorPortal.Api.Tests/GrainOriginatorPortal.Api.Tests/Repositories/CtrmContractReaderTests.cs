@@ -119,7 +119,7 @@ public class CtrmContractReaderTests
         // return every counterparty in the library rather than nothing.
         var client = new RecordingClient();
 
-        var result = await Sut(client).GetForCropYearAsync([], 2025, CancellationToken.None);
+        var result = await Sut(client).GetForProducersAsync([], CancellationToken.None);
 
         Assert.True(result.Ok);
         Assert.Empty(result.Value ?? []);
@@ -132,8 +132,8 @@ public class CtrmContractReaderTests
     {
         var client = new RecordingClient();
 
-        var result = await Sut(client).GetForCropYearAsync(
-            ["P00001", " p00001 ", "", "   ", null!], 2025, CancellationToken.None);
+        var result = await Sut(client).GetForProducersAsync(
+            ["P00001", " p00001 ", "", "   ", null!], CancellationToken.None);
 
         Assert.True(result.Ok);
         var ids = Assert.IsAssignableFrom<IEnumerable<string>>(client.Variables[0]["customerIds"]);
@@ -152,7 +152,7 @@ public class CtrmContractReaderTests
         // filling it multiplies a per-chunk cost that measurement showed is flat regardless of list size.
         var client = new RecordingClient();
 
-        await Sut(client).GetForCropYearAsync(Codes(producers), 2025, CancellationToken.None);
+        await Sut(client).GetForProducersAsync(Codes(producers), CancellationToken.None);
 
         Assert.Equal(expectedChunks, client.Calls);
         Assert.All(client.Variables, v =>
@@ -168,7 +168,7 @@ public class CtrmContractReaderTests
         var codes = Codes(1200);
         var client = new RecordingClient();
 
-        await Sut(client).GetForCropYearAsync(codes, 2025, CancellationToken.None);
+        await Sut(client).GetForProducersAsync(codes, CancellationToken.None);
 
         var sent = client.Variables
             .SelectMany(v => Assert.IsAssignableFrom<IEnumerable<string>>(v["customerIds"]))
@@ -181,31 +181,32 @@ public class CtrmContractReaderTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task CropYearAndPurchaseFilterGoToTheServer()
+    public async Task PurchaseFilterGoesToTheServerAndCropYearDoesNot()
     {
-        // If either fell off, the client would receive sale contracts or other crop years and filter them
-        // in the browser - or not at all.
+        // Purchase-only is a server argument so sale contracts never cross the wire. Crop year deliberately
+        // is NOT: the batch read is the producers' full history, filtered by crop year in memory, because the
+        // server's response cache once keyed cropYear out and handed back the wrong year (2026-08-26).
         var client = new RecordingClient();
 
-        await Sut(client).GetForCropYearAsync(Codes(2), 2024, CancellationToken.None);
+        await Sut(client).GetForProducersAsync(Codes(2), CancellationToken.None);
 
-        Assert.Equal(2024, Convert.ToInt32(client.Variables[0]["cropYear"]));
         Assert.Equal("P", client.Variables[0]["prefix"]);
-        Assert.Contains("cropYear: $cropYear", client.Documents[0]);
+        Assert.False(client.Variables[0].ContainsKey("cropYear"));
+        Assert.DoesNotContain("cropYear: $cropYear", client.Documents[0]);   // the FIELD is still projected; the ARGUMENT is not sent
+        Assert.DoesNotContain("contractDateFrom", client.Documents[0]);
     }
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task TheCropYearListDoesNotProjectPricingLines()
+    public async Task TheBatchListDoesNotProjectPricingLines()
     {
         // Pricing lines are the expensive half of a contract page - 8.1s against 4.0s on a 500-row page -
         // and nothing in a contract list reads them. Pinned because it is invisible if it regresses.
         var client = new RecordingClient();
 
-        await Sut(client).GetForCropYearAsync(Codes(1), 2025, CancellationToken.None);
+        await Sut(client).GetForProducersAsync(Codes(1), CancellationToken.None);
 
         Assert.DoesNotContain("prices", client.Documents[0]);
-        Assert.Contains("cropYear", client.Documents[0]);
     }
 
     // -------------------------------------------------------------------------
@@ -215,7 +216,7 @@ public class CtrmContractReaderTests
         // 1,200 rows at 500 a page is three requests for one chunk.
         var client = new RecordingClient(totalPerChunk: 1200);
 
-        var result = await Sut(client).GetForCropYearAsync(Codes(10), 2025, CancellationToken.None);
+        var result = await Sut(client).GetForProducersAsync(Codes(10), CancellationToken.None);
 
         Assert.True(result.Ok);
         Assert.Equal(1200, (result.Value ?? []).Count);
@@ -232,24 +233,12 @@ public class CtrmContractReaderTests
         var client = new RecordingClient();
         var sut = Sut(client);
 
-        await sut.GetForCropYearAsync(codes, 2025, CancellationToken.None);
-        await sut.GetForCropYearAsync([.. codes.AsEnumerable().Reverse()], 2025, CancellationToken.None);
+        await sut.GetForProducersAsync(codes, CancellationToken.None);
+        await sut.GetForProducersAsync([.. codes.AsEnumerable().Reverse()], CancellationToken.None);
 
         Assert.Equal(1, client.Calls);
     }
 
-    // -------------------------------------------------------------------------
-    [Fact]
-    public async Task ADifferentCropYearIsADifferentRead()
-    {
-        var client = new RecordingClient();
-        var sut = Sut(client);
-
-        await sut.GetForCropYearAsync(Codes(5), 2025, CancellationToken.None);
-        await sut.GetForCropYearAsync(Codes(5), 2024, CancellationToken.None);
-
-        Assert.Equal(2, client.Calls);
-    }
 
     // -------------------------------------------------------------------------
     [Fact]
@@ -260,21 +249,21 @@ public class CtrmContractReaderTests
         var client = new RecordingClient();
         var sut = Sut(client);
 
-        await sut.GetForCropYearAsync(Codes(5), 2025, CancellationToken.None);
-        await sut.GetForCropYearAsync(Codes(6), 2025, CancellationToken.None);
+        await sut.GetForProducersAsync(Codes(5), CancellationToken.None);
+        await sut.GetForProducersAsync(Codes(6), CancellationToken.None);
 
         Assert.Equal(2, client.Calls);
     }
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task TheProducerScopeAndTheCropYearScopeDoNotShareACacheEntry()
+    public async Task TheSingleProducerScopeAndTheBatchScopeDoNotShareACacheEntry()
     {
         var client = new RecordingClient();
         var sut = Sut(client);
 
         await sut.GetForProducerAsync("TESTPRD", CancellationToken.None);
-        await sut.GetForCropYearAsync(["TESTPRD"], 2025, CancellationToken.None);
+        await sut.GetForProducersAsync(["TESTPRD"], CancellationToken.None);
 
         Assert.Equal(2, client.Calls);
     }
@@ -287,7 +276,7 @@ public class CtrmContractReaderTests
         // missing, which is worse than an error.
         var client = new RecordingClient(failWith: CtrmReadStatus.Unauthorized);
 
-        var result = await Sut(client).GetForCropYearAsync(Codes(1200), 2025, CancellationToken.None);
+        var result = await Sut(client).GetForProducersAsync(Codes(1200), CancellationToken.None);
 
         Assert.False(result.Ok);
         Assert.Empty(result.Value ?? []);
@@ -304,7 +293,7 @@ public class CtrmContractReaderTests
             FailLaterPagesOnly = true
         };
 
-        var result = await Sut(client).GetForCropYearAsync(Codes(10), 2025, CancellationToken.None);
+        var result = await Sut(client).GetForProducersAsync(Codes(10), CancellationToken.None);
 
         Assert.False(result.Ok);
         Assert.Empty(result.Value ?? []);
@@ -317,8 +306,8 @@ public class CtrmContractReaderTests
         var client = new RecordingClient(failWith: CtrmReadStatus.Error);
         var sut = Sut(client, Config(cacheSeconds: 3600));
 
-        await sut.GetForCropYearAsync(Codes(1), 2025, CancellationToken.None);
-        await sut.GetForCropYearAsync(Codes(1), 2025, CancellationToken.None);
+        await sut.GetForProducersAsync(Codes(1), CancellationToken.None);
+        await sut.GetForProducersAsync(Codes(1), CancellationToken.None);
 
         Assert.Equal(2, client.Calls);
     }
@@ -333,8 +322,8 @@ public class CtrmContractReaderTests
         // this only trips on bad data; the blast radius is what makes dropping it the safer choice.
         var client = new RecordingClient();
 
-        var result = await Sut(client).GetForCropYearAsync(
-            ["P00001", "TOOLONG8", "P00002"], 2025, CancellationToken.None);
+        var result = await Sut(client).GetForProducersAsync(
+            ["P00001", "TOOLONG8", "P00002"], CancellationToken.None);
 
         Assert.True(result.Ok);
 
@@ -351,8 +340,8 @@ public class CtrmContractReaderTests
         // query — the same trap as passing none in the first place.
         var client = new RecordingClient();
 
-        var result = await Sut(client).GetForCropYearAsync(
-            ["WAYTOOLONG", "ALSOTOOLONG"], 2025, CancellationToken.None);
+        var result = await Sut(client).GetForProducersAsync(
+            ["WAYTOOLONG", "ALSOTOOLONG"], CancellationToken.None);
 
         Assert.True(result.Ok);
         Assert.Empty(result.Value ?? []);

@@ -38,7 +38,6 @@ public class DiagnosticsController : ControllerBase
     private readonly CustomerSyncService _customerSync;
     private readonly IGraphDirectoryClient _graphDirectory;
     private readonly ICtrmGraphQlClient _ctrm;
-    private readonly CtrmContractSnapshot _snapshot;
     private readonly IContractRepository _contracts;
     private readonly IConfiguration _config;
     private static int _isGeocoding;
@@ -53,12 +52,10 @@ public class DiagnosticsController : ControllerBase
         CustomerSyncService customerSync,
         IGraphDirectoryClient graphDirectory,
         ICtrmGraphQlClient ctrm,
-        CtrmContractSnapshot snapshot,
         IContractRepository contracts,
         IConfiguration config)
     {
         _ctrm = ctrm;
-        _snapshot = snapshot;
         _contracts = contracts;
         _context = context;
         _appContext = appContext;
@@ -132,7 +129,7 @@ public class DiagnosticsController : ControllerBase
     /// it would report a failure that says nothing about whether the integration works.
     ///
     /// A single-row data query proves more anyway: a valid token (auth), a reachable gateway
-    /// (egress), AND that the configured date window actually contains rows. Read the
+    /// (egress), AND that the API returns contract rows. Read the
     /// Status/Detail pair rather than the HTTP code — the client categorizes NotConfigured /
     /// TokenFailure / EgressBlocked / Unauthorized / Throttled separately because each has a
     /// different remediation.
@@ -143,12 +140,10 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfProduction() is { } deny) return deny;
 
-        // Probe the configured window so a misconfigured or empty window is visible here rather
-        // than showing up later as an empty producer screen.
-        var from = _config.GetValue<string>("Ctrm:ContractDateFrom")?.Trim();
-        var to = _config.GetValue<string>("Ctrm:ContractDateTo")?.Trim();
-        if (string.IsNullOrEmpty(from)) from = DateTime.Today.AddDays(-30).ToString("yyyy-MM-dd");
-        if (string.IsNullOrEmpty(to)) to = DateTime.Today.ToString("yyyy-MM-dd");
+        // A fixed 30-day probe window. There is no configured contract window any more - every read is
+        // scoped by producer - so this only has to be a range that reliably contains a row.
+        var from = DateTime.Today.AddDays(-30).ToString("yyyy-MM-dd");
+        var to = DateTime.Today.ToString("yyyy-MM-dd");
 
         const string document = """
             query ($from: Date!, $to: Date!) {
@@ -199,10 +194,9 @@ public class DiagnosticsController : ControllerBase
     /// including which source served it. Dev/QA only.
     /// </summary>
     /// <remarks>
-    /// This exercises the whole chain the producer screen uses — switch, snapshot, mapping, status
+    /// This exercises the whole chain the producer screen uses — switch, live reader, mapping, status
     /// calculation — rather than a raw query, so it catches the failures a connectivity probe cannot:
-    /// a window that loads but contains no rows for this producer, a truncated snapshot, or a
-    /// customer-code mismatch.
+    /// a read that succeeds but contains no rows for this producer, or a customer-code mismatch.
     ///
     /// It also makes the ODS-vs-CTRM comparison cheap: call it, flip <c>Ctrm:Source</c>, call it
     /// again, and diff. No restart is needed because the switch re-reads config per call.
@@ -218,7 +212,6 @@ public class DiagnosticsController : ControllerBase
         if (string.IsNullOrWhiteSpace(scoularId))
             return BadRequest(new { Error = "scoularId is required (the Scoular customer code, e.g. TATOBIN)." });
 
-        var snapshot = await _snapshot.GetAsync(cancellationToken);
         var contracts = await _contracts.GetByCustomerAsync(0, scoularId.Trim(), cancellationToken);
         var pricingLines = await _contracts.GetPricingLinesByCustomerAsync(scoularId.Trim(), cancellationToken);
 
@@ -226,16 +219,6 @@ public class DiagnosticsController : ControllerBase
         {
             ScoularId = scoularId.Trim(),
             ServedBy = _contracts is ContractRepositorySwitch { UsingCtrm: true } ? "ctrm" : "ods",
-            Snapshot = new
-            {
-                Status = snapshot.Status.ToString(),
-                snapshot.Detail,
-                snapshot.Window,
-                FetchedInWindow = snapshot.Contracts.Count,
-                snapshot.TotalCountInWindow,
-                snapshot.Truncated,
-                snapshot.LoadedAtUtc
-            },
             ContractCount = contracts.Count,
             PricingLineCount = pricingLines.Count,
             // Enough per contract to eyeball parity against the screen without dumping everything.

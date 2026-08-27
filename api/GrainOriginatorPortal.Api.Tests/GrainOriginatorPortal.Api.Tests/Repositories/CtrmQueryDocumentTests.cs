@@ -112,7 +112,7 @@ public class CtrmQueryDocumentTests
     {
         // ToContract reads these; losing one to a bad seam or an edit would null a column on screen
         // rather than fail, which is the harder failure to notice.
-        foreach (var document in new[] { CtrmQueries.ContractsByCustomer, CtrmQueries.ContractsByCustomersAndCropYear })
+        foreach (var document in new[] { CtrmQueries.ContractsByCustomer, CtrmQueries.ContractsByCustomers })
         {
             Assert.Contains("contractId", document);
             Assert.Contains("customerId", document);
@@ -128,7 +128,7 @@ public class CtrmQueryDocumentTests
     {
         // Pricing lines roughly double a contract page's cost, and a contract LIST never reads them.
         Assert.Contains("prices", CtrmQueries.ContractsByCustomer);
-        Assert.DoesNotContain("prices", CtrmQueries.ContractsByCustomersAndCropYear);
+        Assert.DoesNotContain("prices", CtrmQueries.ContractsByCustomers);
     }
 
     // -------------------------------------------------------------------------

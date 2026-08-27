@@ -115,12 +115,6 @@ builder.Services.AddHostedService<UsageAggregationBackgroundService>();
 builder.Services.AddSingleton<CustomerSyncService>();
 builder.Services.AddHostedService<CustomerSyncBackgroundService>();
 
-// Pre-builds the CTRM contract snapshot at startup when Ctrm:Source is 'ctrm'. Matching the ODS
-// contract population needs a date window holding 110k+ rows — hundreds of sequential pages — so
-// building it lazily would make the first producer selection after a deploy look like a hang.
-// No-ops when the CTRM path is off.
-builder.Services.AddHostedService<GrainOriginatorPortal.Api.Services.Ctrm.CtrmSnapshotWarmupService>();
-
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
 // OnAuthenticationFailed fires when the token is present but invalid (bad signature,
 // expired, wrong audience, etc.). This is more specific than SecurityAuditMiddleware's

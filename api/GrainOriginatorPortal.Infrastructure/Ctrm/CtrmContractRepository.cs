@@ -12,20 +12,23 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// Serves contract reads from CTRM.
 /// </summary>
 /// <remarks>
-/// <para><b>Two different mechanisms, for one reason.</b> Per-producer reads go straight to CTRM live via
-/// <see cref="CtrmContractReader"/>, because <c>contracts</c> now takes a <c>customerId</c> and waives the
-/// date range when it is supplied — full history, one query, no staleness. The trade-unit-wide pool still
-/// comes from <see cref="CtrmContractSnapshot"/>, because there is no equivalent for hundreds of
-/// producers at once: <c>customerIds</c> caps at 500, still demands a date range, and supplying a wide
-/// one to compensate makes the server exceed its own 30-second timeout. That was measured, not assumed.</para>
+/// <para><b>Every read is CTRM, scoped the way ODS scoped it.</b> Per-producer reads go straight to CTRM
+/// live via <see cref="CtrmContractReader.GetForProducerAsync"/> - <c>contracts(customerId:)</c> waives the
+/// date range, so that is full history in one 1-2s query. Trade-unit-wide reads (the contract list Build-a-List
+/// and Actionable Insights filter, and the crop-year list beneath the dashboard) resolve the selected trade
+/// units to their producers in Origination and go to <see cref="CtrmContractReader.GetForProducersAsync"/>,
+/// exactly as the ODS query resolved producers first and then read their contracts. No date window.</para>
 ///
-/// <para>The practical effect is that the producer screen shows live, complete data even though the bulk
-/// pool behind it is windowed — the client merges the per-producer response into that pool.</para>
+/// <para><b>Why the trade-unit read is cached and the per-producer read barely is.</b>
+/// <c>contracts(customerIds:)</c> costs ~20-27s cold per 500-producer chunk on the server side (reported to
+/// the API owner) - fine once in the background, never on a click. So the producer-set read is held per set
+/// and served stale-while-refreshing: an expired copy goes back instantly while the refresh runs behind it.
+/// The home-page contract load is what warms it, and it kicks the same producers' ticket read too.</para>
 /// </remarks>
 public sealed class CtrmContractRepository : IContractRepository
 {
     private readonly CtrmContractReader _reader;
-    private readonly CtrmContractSnapshot _snapshot;
+    private readonly CtrmTicketReader _ticketReader;
     private readonly ApplicationDbContext _appContext;
     private readonly ContractRepository _ods;
     private readonly CtrmProvenance _provenance;
@@ -33,14 +36,14 @@ public sealed class CtrmContractRepository : IContractRepository
 
     public CtrmContractRepository(
         CtrmContractReader reader,
-        CtrmContractSnapshot snapshot,
+        CtrmTicketReader ticketReader,
         ApplicationDbContext appContext,
         ContractRepository ods,
         CtrmProvenance provenance,
         ILogger<CtrmContractRepository> logger)
     {
         _reader = reader;
-        _snapshot = snapshot;
+        _ticketReader = ticketReader;
         _appContext = appContext;
         _ods = ods;
         _provenance = provenance;
@@ -156,6 +159,21 @@ public sealed class CtrmContractRepository : IContractRepository
     /// 10s. So this stays a windowed bulk read, and the producer screen gets its completeness from the live
     /// per-producer call merged in on top.
     /// </remarks>
+    /// <summary>
+    /// Every open-or-recent purchase contract for the producers in the selected trade units.
+    /// </summary>
+    /// <remarks>
+    /// <para>The ODS flow aimed at CTRM: trade units resolve to producers in Origination, the producers go to
+    /// <see cref="CtrmContractReader.GetForProducersAsync"/>, and the same "open, or crop year within the
+    /// last year" clause the ODS query applied is applied here. No date window - a producer's whole history
+    /// is in scope, exactly as it was on ODS.</para>
+    ///
+    /// <para>This is the read the home page makes when the trade-unit selection loads, so it doubles as the
+    /// warm-up for the session: the result is cached per producer set and served stale-while-refreshing to
+    /// every prompt that follows, and the same producers' TICKETS are kicked off here in the background so
+    /// the ticket prompts find them ready too. The first prompt of a session is the only one that can wait,
+    /// and only if it beats this call.</para>
+    /// </remarks>
     public async Task<List<Contract>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
     {
         var scoped = await ResolveScopedProducerCodesAsync(tradeUnits, cancellationToken);
@@ -166,30 +184,52 @@ public sealed class CtrmContractRepository : IContractRepository
             return [];
         }
 
-        var snapshot = await _snapshot.GetAsync(cancellationToken);
-        if (!snapshot.Ok)
-        {
-            if (snapshot.Status == CtrmReadStatus.Warming)
-                _logger.LogInformation("CTRM contracts: snapshot still warming — {Detail}", snapshot.Detail);
-            else
-                _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
-                    "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", snapshot.Status, snapshot.Detail);
+        var codes = scoped.ToList();
+        WarmTicketsInBackground(codes, tradeUnits);
 
-            _provenance.RecordContracts("ctrm", snapshot.Status.ToString(), 0);
+        var read = await _reader.GetForProducersAsync(codes, cancellationToken);
+        if (!read.Ok)
+        {
+            _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
             return [];
         }
 
-        var contracts = Map(
-            snapshot.Contracts.Where(d => scoped.Contains(d.CustomerId?.Trim() ?? string.Empty)),
-            onlyOpenOrRecent: true);
+        var contracts = Map(read.Value ?? [], onlyOpenOrRecent: true);
 
-        _provenance.RecordContracts("ctrm", snapshot.Truncated ? "OkTruncated" : "Ok", contracts.Count);
+        var truncated = read.Status == CtrmReadStatus.PartialSuccess;
+        _provenance.RecordContracts("ctrm", truncated ? "OkTruncated" : "Ok", contracts.Count);
 
         _logger.LogInformation(
-            "CTRM contracts: {Count} for {ProducerCount} in-scope producers (window {Window}){Truncated}.",
-            contracts.Count, scoped.Count, snapshot.Window, snapshot.Truncated ? ", TRUNCATED" : string.Empty);
+            "CTRM contracts: {Count} open-or-recent for {ProducerCount} in-scope producer(s) in {TradeUnits} trade unit(s){Truncated}.",
+            contracts.Count, scoped.Count, tradeUnits?.Count ?? 0, truncated ? ", TRUNCATED" : string.Empty);
 
         return contracts;
+    }
+
+    /// <summary>
+    /// Starts the trade-unit-wide ticket read for these producers without waiting for it.
+    /// </summary>
+    /// <remarks>
+    /// The contract list is requested the moment the trade-unit selection loads; the ticket prompts come
+    /// seconds to minutes later and want the same producers. Kicking the read here means it is normally
+    /// cached by then. The reader owns the cache and coalesces concurrent callers, so a prompt arriving
+    /// mid-walk simply awaits the walk already in progress rather than starting another.
+    /// </remarks>
+    private void WarmTicketsInBackground(List<string> codes, List<string>? tradeUnits)
+    {
+        if (_ticketReader.IsWarm(codes)) return;
+
+        var units = tradeUnits?.Count ?? 0;
+        _ = _ticketReader.GetForProducersHistoryAsync(codes, CancellationToken.None).ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+                _logger.LogWarning(t.Exception, "CTRM ticket warm-up for {Producers} producer(s) in {TradeUnits} trade unit(s) faulted.", codes.Count, units);
+            else if (t.IsCompletedSuccessfully && !t.Result.Ok)
+                _logger.LogWarning("CTRM ticket warm-up for {Producers} producer(s) in {TradeUnits} trade unit(s) did not complete: {Status} - {Detail}",
+                    codes.Count, units, t.Result.Status, t.Result.Detail);
+        }, TaskScheduler.Default);
     }
 
     /// <summary>
@@ -236,28 +276,21 @@ public sealed class CtrmContractRepository : IContractRepository
     /// CTRM has none, so this falls back to the same contract-date ordering every other CTRM contract read
     /// uses. Deterministic, just not identical.</para>
     /// </remarks>
-    public Task<List<Contract>> GetByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
-    {
-        // DELEGATED TO ODS ON PURPOSE, after the live read was built and then measured against QA on
-        // 2026-08-26: contracts(customerIds:, cropYear: 2026) returned 1,846 rows, every one of them crop
-        // year 2025, with the same leading ids as the 2025 query issued moments earlier - the server handed
-        // back a cached result keyed without cropYear. The same day the identical query alternated between
-        // two different totalCounts. This read feeds the planting-coverage prompts and the dashboard's
-        // crop-year view, where another year's contracts would be silently wrong rather than visibly
-        // broken. Until the API's caching honours cropYear (reported), correct data outranks source.
-        // The live implementation is kept below, unreached, so re-enabling is a one-line change once a
-        // probe confirms 2025 and 2026 return different sets.
-        if (!UseLiveCropYearRead)
-            return DelegateAsync("ByCropYear", _ods.GetByCropYearAsync(cropYear, tradeUnits, cancellationToken));
-
-        return GetByCropYearLiveAsync(cropYear, tradeUnits, cancellationToken);
-    }
-
-    /// <summary>Flip to true only after a live probe shows cropYear 2025 and 2026 returning different
-    /// sets for the same producer list. See the note in <see cref="GetByCropYearAsync"/>.</summary>
-    private const bool UseLiveCropYearRead = false;
-
-    private async Task<List<Contract>> GetByCropYearLiveAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
+    /// <summary>
+    /// Every purchase contract in one crop year for the producers in the selected trade units.
+    /// </summary>
+    /// <remarks>
+    /// <para>Same producer scope and same cached full-history read as <see cref="GetAsync"/>; the crop year
+    /// is filtered here, in memory. That is deliberate. On 2026-08-26 the server's response cache keyed
+    /// <c>contracts(customerIds:, cropYear:)</c> without the crop year and handed back 2025 rows for a 2026
+    /// request, which is why this read sat on ODS for a day. Not sending <c>cropYear</c> at all means that
+    /// class of fault cannot recur here, and the read shares its cache entry with the contract list instead
+    /// of paying a second ~25s cold walk per crop year.</para>
+    ///
+    /// <para>No open-or-recent clause - the ODS crop-year query had none - so closed contracts in the year
+    /// are included, which is what the planting-coverage prompts and the crop-year dashboard expect.</para>
+    /// </remarks>
+    public async Task<List<Contract>> GetByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
     {
         var scoped = await ResolveScopedProducerCodesAsync(tradeUnits, cancellationToken);
         if (scoped.Count == 0)
@@ -267,7 +300,7 @@ public sealed class CtrmContractRepository : IContractRepository
             return [];
         }
 
-        var read = await _reader.GetForCropYearAsync([.. scoped], cropYear, cancellationToken);
+        var read = await _reader.GetForProducersAsync(scoped.ToList(), cancellationToken);
         if (!read.Ok)
         {
             _logger.LogError("CTRM crop-year contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
@@ -276,7 +309,7 @@ public sealed class CtrmContractRepository : IContractRepository
             return [];
         }
 
-        var contracts = Map(read.Value ?? [], onlyOpenOrRecent: false);
+        var contracts = Map((read.Value ?? []).Where(d => d.CropYear == cropYear), onlyOpenOrRecent: false);
 
         _provenance.RecordContracts("ctrm", read.Status == CtrmReadStatus.PartialSuccess ? "OkTruncated" : "Ok", contracts.Count);
 

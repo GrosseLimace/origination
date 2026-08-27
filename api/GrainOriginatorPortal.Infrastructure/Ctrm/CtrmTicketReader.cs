@@ -36,10 +36,10 @@ public sealed class CtrmTicketReader
     /// would mean the filter is not applying.</summary>
     private const int MaxPagesPerWindow = 10;
 
-    /// <summary>Default per-window page cap for the background ticket-pool walk, where a 500-producer chunk
+    /// <summary>Default per-window page cap for the trade-unit-wide read, where a 500-producer chunk
     /// legitimately runs to tens of thousands of rows in one window. Overridable with
-    /// <c>Ctrm:TicketPoolMaxPagesPerWindow</c>.</summary>
-    private const int DefaultPoolMaxPagesPerWindow = 200;
+    /// <c>Ctrm:TradeUnitTicketMaxPagesPerWindow</c>.</summary>
+    private const int DefaultTradeUnitMaxPagesPerWindow = 200;
 
     /// <summary>How many cache inserts between sweeps of expired entries. The dictionary otherwise only
     /// ever grows: entries expire logically but nothing removed them.</summary>
@@ -169,16 +169,27 @@ public sealed class CtrmTicketReader
     }
 
     /// <summary>
-    /// The same batched producer read with NO caching, for a caller that owns a longer-lived cache.
+    /// Every ticket over the configured lookback for a batch of producers - the trade-unit-wide read.
     /// </summary>
     /// <remarks>
-    /// <see cref="CtrmTicketPoolSnapshot"/> holds its result for hours. Routing it through the short TTL
-    /// above would stack a 60-second cache under a 12-hour one and quietly break the snapshot's Invalidate,
-    /// which would be served the reader's copy instead of going back to CTRM. Over-long codes are dropped
-    /// and logged exactly as in <see cref="GetForProducersAsync"/>.
+    /// <para>This is the ODS flow aimed at CTRM: the trade units resolve to producers in Origination and the
+    /// producers come here. It backs every Build-a-List prompt that mentions tickets, deliveries, unapplied
+    /// or unsettled. The lookback is sliced into windows inside the server's cap, and each window is its own
+    /// cache entry with an age-scaled lifetime - the window containing today keeps the short TTL because
+    /// that is where new tickets land; older windows are kept for <c>Ctrm:HistoricalTicketCacheMinutes</c>.</para>
+    ///
+    /// <para><b>Nobody waits on a refresh.</b> An expired window is served as-is to the caller while a refresh
+    /// runs behind it (stale-while-revalidate), so a prompt run a minute after the last one is instant and the
+    /// run after that sees the update. A caller only waits when a window has never been read - and the
+    /// home-page contract load kicks this read for the same producers, so that is normally already done by
+    /// the time a prompt is typed.</para>
+    ///
+    /// <para>Cost: for a mid-size trade unit (300 producers) roughly 15-40 pages of 500 rows at 3-5s each,
+    /// run at the configured concurrency - tens of seconds cold, instant warm. All tickets, not
+    /// <c>unappliedOnly</c>: the delivered and unsettled prompts depend on the applied half.</para>
     /// </remarks>
-    public Task<CtrmReadResult<List<CtrmTicketDto>>> ReadForProducersAsync(
-        IReadOnlyCollection<string> scoularIds, DateTime from, DateTime to)
+    public Task<CtrmReadResult<List<CtrmTicketDto>>> GetForProducersHistoryAsync(
+        IReadOnlyCollection<string> scoularIds, CancellationToken cancellationToken)
     {
         var codes = CtrmCustomerCodes.Normalize(scoularIds, out var dropped);
 
@@ -190,13 +201,62 @@ public sealed class CtrmTicketReader
         if (codes.Count == 0)
             return Task.FromResult(new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = [] });
 
-        var span = (to.Date - from.Date).TotalDays;
-        if (span > CtrmQueries.MaxTicketRangeDays)
-            return Failed($"A bill-of-lading range of {span:F0} days exceeds the server's "
-                        + $"{CtrmQueries.MaxTicketRangeDays}-day cap; narrow the window or slice it.");
+        return FetchHistoryForProducersAsync(codes);
+    }
 
-        return FetchChunkedAsync(codes, from, to,
-            Math.Max(1, ReadInt("Ctrm:TicketPoolMaxPagesPerWindow", DefaultPoolMaxPagesPerWindow)));
+    /// <summary>True when every window for this producer set is cached (fresh, stale or in flight) - i.e. a
+    /// caller would not have to wait on CTRM. For diagnostics and tests.</summary>
+    public bool IsWarm(IReadOnlyCollection<string> scoularIds)
+    {
+        var codes = CtrmCustomerCodes.Normalize(scoularIds, out _);
+        if (codes.Count == 0) return false;
+        var setKey = $"{codes.Count}:{StableHash(codes)}";
+        return BuildWindows(DateTime.Today, Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 1095)))
+            .All(w => _cache.ContainsKey($"producers:{w.From:yyyy-MM-dd}:{w.To:yyyy-MM-dd}:{setKey}"));
+    }
+
+    private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchHistoryForProducersAsync(List<string> codes)
+    {
+        var lookbackDays = Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 1095));
+        var today = DateTime.Today;
+        var windows = BuildWindows(today, lookbackDays);
+        var maxPages = Math.Max(1, ReadInt("Ctrm:TradeUnitTicketMaxPagesPerWindow", DefaultTradeUnitMaxPagesPerWindow));
+        var setKey = $"{codes.Count}:{StableHash(codes)}";
+
+        // Same key shape as the single-window read above, so a Spot Loads window and a history window over
+        // the same producers and dates would share an entry - they are the same rows.
+        var results = await Task.WhenAll(windows.Select(w => GetCachedAsync(
+            $"producers:{w.From:yyyy-MM-dd}:{w.To:yyyy-MM-dd}:{setKey}",
+            TtlForWindow(w.To, today),
+            () => FetchChunkedAsync(codes, w.From, w.To, maxPages),
+            staleWhileRevalidate: true)));
+
+        // Any window failing makes the whole answer incomplete. Reporting the first failure rather than
+        // silently returning a partial list keeps an outage from looking like a trade unit with no tickets.
+        var failure = results.FirstOrDefault(r => !r.Ok);
+        if (failure is not null)
+            return new CtrmReadResult<List<CtrmTicketDto>>
+            {
+                Status = failure.Status,
+                HttpStatus = failure.HttpStatus,
+                ErrorCode = failure.ErrorCode,
+                Detail = failure.Detail,
+                Value = []
+            };
+
+        var truncated = results.FirstOrDefault(r => r.Status == CtrmReadStatus.PartialSuccess);
+        var all = results.SelectMany(r => r.Value ?? []).ToList();
+
+        _logger.LogInformation(
+            "CTRM live tickets: {Count} tickets for {Producers} producer(s) across {Windows} window(s) ({Days}-day lookback){Truncated}.",
+            all.Count, codes.Count, windows.Count, lookbackDays, truncated is null ? string.Empty : " - TRUNCATED");
+
+        return new CtrmReadResult<List<CtrmTicketDto>>
+        {
+            Status = truncated is null ? CtrmReadStatus.Ok : CtrmReadStatus.PartialSuccess,
+            Detail = truncated?.Detail,
+            Value = all
+        };
     }
 
     /// <summary>Drops a producer's cached read, including every window beneath it.</summary>
@@ -262,8 +322,13 @@ public sealed class CtrmTicketReader
     private Task<CtrmReadResult<List<CtrmTicketDto>>> GetCachedAsync(Scope scope)
         => GetCachedAsync(scope.CacheKey, LiveTtl(), () => FetchAsync(scope));
 
+    /// <param name="staleWhileRevalidate">When true, an EXPIRED but successful entry is handed to the
+    /// caller immediately while a refresh starts behind it. Used by the trade-unit-wide read, where a
+    /// caller must never wait on a multi-page walk that has already been answered once. Off for the
+    /// per-producer reads: those are 1-2s and the user has just asked for that producer.</param>
     private Task<CtrmReadResult<List<CtrmTicketDto>>> GetCachedAsync(
-        string cacheKey, TimeSpan ttl, Func<Task<CtrmReadResult<List<CtrmTicketDto>>>> fetch)
+        string cacheKey, TimeSpan ttl, Func<Task<CtrmReadResult<List<CtrmTicketDto>>>> fetch,
+        bool staleWhileRevalidate = false)
     {
         while (true)
         {
@@ -273,11 +338,20 @@ public sealed class CtrmTicketReader
             {
                 // Reuse while fresh, and never keep a failed read: a transient error should not lock a
                 // producer out of the screen until the TTL happens to expire.
-                var failed = existing.Read.IsCompleted
-                             && (!existing.Read.IsCompletedSuccessfully || !existing.Read.Result.Ok);
+                var completed = existing.Read.IsCompleted;
+                var failed = completed && (!existing.Read.IsCompletedSuccessfully || !existing.Read.Result.Ok);
 
                 if (!failed && now < existing.ExpiresUtc)
                     return existing.Read;
+
+                if (!failed && completed && staleWhileRevalidate)
+                {
+                    // Expired but good. Start the refresh and serve the old copy to this caller.
+                    var fresh = new CacheEntry(now + ttl, fetch());
+                    if (_cache.TryUpdate(cacheKey, fresh, existing))
+                        return existing.Read;
+                    continue;   // someone else swapped it first; loop and take theirs
+                }
 
                 _cache.TryRemove(cacheKey, out _);
             }

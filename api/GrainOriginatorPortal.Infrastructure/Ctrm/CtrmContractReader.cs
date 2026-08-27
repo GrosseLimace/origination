@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 
 /// <summary>
-/// Reads contracts live from CTRM - one producer, or a batch of producers for one crop year.
+/// Reads contracts live from CTRM - one producer, or the full history of a batch of producers.
 /// </summary>
 /// <remarks>
 /// <para><b>Why this replaces the window snapshot for per-producer reads.</b> The <c>contracts</c> field
@@ -37,9 +37,9 @@ public sealed class CtrmContractReader
     /// <summary>Server-enforced ceiling on the <c>customerIds</c> list.</summary>
     private const int MaxCustomerIdsPerCall = 500;
 
-    /// <summary>Per-chunk page cap for a batch read. A crop year for 500 producers ran to a handful of
-    /// pages in measurement; this is headroom, not a target.</summary>
-    private const int MaxPagesPerChunk = 40;
+    /// <summary>Default per-chunk page cap for a batch read - 500 producers' FULL history. Overridable
+    /// with <c>Ctrm:TradeUnitContractMaxPagesPerChunk</c>; the log says TRUNCATED when it is hit.</summary>
+    private const int DefaultMaxPagesPerChunk = 100;
 
     private readonly ICtrmGraphQlClient _client;
     private readonly IConfiguration _configuration;
@@ -73,23 +73,30 @@ public sealed class CtrmContractReader
         var code = scoularId?.Trim() ?? string.Empty;
         if (code.Length == 0) return Failed("No producer code supplied.");
 
-        return GetCachedAsync($"customer:{code}", () => FetchForProducerAsync(code));
+        return GetCachedAsync($"customer:{code}", LiveTtl(), () => FetchForProducerAsync(code));
     }
 
     /// <summary>
-    /// Purchase contracts for a batch of producers in one crop year.
+    /// Every purchase contract, any date, for a batch of producers - the trade-unit-wide read.
     /// </summary>
     /// <remarks>
-    /// <para>Backs the crop-year contract list, which was delegated to ODS while <c>cropYear</c> was
-    /// readable but not filterable. Uses <c>customerIds</c>, whose plural form waives the date range the
-    /// same way the singular does, so this is a whole crop year rather than a window.</para>
+    /// <para>This is the ODS flow aimed at CTRM: trade units resolve to producers in Origination, and the
+    /// producers come here. It backs the trade-unit-wide contract list, the crop-year list (filtered from
+    /// this result in memory) and the open-contract set the trade-unit-wide ticket read needs, so all three
+    /// share one cache entry per producer set.</para>
     ///
-    /// <para><c>customerIds</c> is capped at <see cref="MaxCustomerIdsPerCall"/>, so the producer set is
-    /// chunked and the chunks run at the configured page concurrency. Cost is roughly flat per chunk
-    /// regardless of how many codes it carries, so fuller chunks are strictly cheaper.</para>
+    /// <para><b>Cache behaviour is the feature.</b> <c>contracts(customerIds:)</c> is ~20-27s cold per chunk
+    /// (reported to the API owner) - fine in the background, unacceptable on a click. So the entry is kept
+    /// for <c>Ctrm:TradeUnitCacheMinutes</c> and, once it has expired, the NEXT caller is still served the
+    /// old copy instantly while a refresh runs behind it. The home-page contract load warms the set, so the
+    /// first prompt of a session normally finds it ready. A caller only waits when nothing is cached yet.</para>
+    ///
+    /// <para><c>customerIds</c> is capped at <see cref="MaxCustomerIdsPerCall"/>, so the set is chunked and
+    /// the chunks run at the configured page concurrency. Cost is roughly flat per chunk regardless of how
+    /// many codes it carries, so fuller chunks are strictly cheaper.</para>
     /// </remarks>
-    public Task<CtrmReadResult<List<CtrmContractDto>>> GetForCropYearAsync(
-        IReadOnlyCollection<string> scoularIds, int cropYear, CancellationToken cancellationToken)
+    public Task<CtrmReadResult<List<CtrmContractDto>>> GetForProducersAsync(
+        IReadOnlyCollection<string> scoularIds, CancellationToken cancellationToken)
     {
         var codes = Normalize(scoularIds);
 
@@ -100,8 +107,17 @@ public sealed class CtrmContractReader
             return Task.FromResult(new CtrmReadResult<List<CtrmContractDto>> { Status = CtrmReadStatus.Ok, Value = [] });
 
         // Hashed rather than joined: the key would otherwise be tens of kilobytes for a full trade unit.
-        var key = $"cropyear:{cropYear}:{codes.Count}:{StableHash(codes)}";
-        return GetCachedAsync(key, () => FetchForCropYearAsync(codes, cropYear));
+        var key = $"producers:{codes.Count}:{StableHash(codes)}";
+        var ttl = TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:TradeUnitCacheMinutes", 5)));
+        return GetCachedAsync(key, ttl, () => FetchForProducersAsync(codes), staleWhileRevalidate: true);
+    }
+
+    /// <summary>True when a producer set is already cached (fresh, stale or in flight) - i.e. a caller
+    /// would not have to wait on CTRM. For diagnostics and tests.</summary>
+    public bool IsWarm(IReadOnlyCollection<string> scoularIds)
+    {
+        var codes = CtrmCustomerCodes.Normalize(scoularIds, out _);
+        return codes.Count > 0 && _cache.ContainsKey($"producers:{codes.Count}:{StableHash(codes)}");
     }
 
     /// <summary>Drops a producer's cached read, so the next request goes back to CTRM.</summary>
@@ -159,27 +175,43 @@ public sealed class CtrmContractReader
             Value = []
         });
 
-    private Task<CtrmReadResult<List<CtrmContractDto>>> GetCachedAsync(
-        string cacheKey, Func<Task<CtrmReadResult<List<CtrmContractDto>>>> fetch)
-    {
-        var ttl = TimeSpan.FromSeconds(Math.Max(0, ReadInt("Ctrm:LiveCacheSeconds", 60)));
+    private TimeSpan LiveTtl() => TimeSpan.FromSeconds(Math.Max(0, ReadInt("Ctrm:LiveCacheSeconds", 60)));
 
+    /// <param name="staleWhileRevalidate">When true, an EXPIRED but successful entry is handed to the
+    /// caller immediately while a refresh starts behind it, so nobody waits on a slow batch read that has
+    /// already been answered once. Off for per-producer reads: those are 1-2s and the user has just asked
+    /// for that producer, so fresh is worth the wait.</param>
+    private Task<CtrmReadResult<List<CtrmContractDto>>> GetCachedAsync(
+        string cacheKey, TimeSpan ttl, Func<Task<CtrmReadResult<List<CtrmContractDto>>>> fetch,
+        bool staleWhileRevalidate = false)
+    {
         while (true)
         {
+            var now = DateTime.UtcNow;
+
             if (_cache.TryGetValue(cacheKey, out var existing))
             {
                 // Reuse while fresh, and never keep a failed read: a transient error should not lock a
                 // producer out of the screen until the TTL happens to expire.
-                var failed = existing.Read.IsCompleted
-                             && (!existing.Read.IsCompletedSuccessfully || !existing.Read.Result.Ok);
+                var completed = existing.Read.IsCompleted;
+                var failed = completed && (!existing.Read.IsCompletedSuccessfully || !existing.Read.Result.Ok);
 
-                if (!failed && DateTime.UtcNow - existing.CreatedUtc < ttl)
+                if (!failed && now - existing.CreatedUtc < ttl)
                     return existing.Read;
+
+                if (!failed && completed && staleWhileRevalidate)
+                {
+                    // Expired but good. Start the refresh and serve the old copy to this caller.
+                    var fresh = new CacheEntry(now, fetch());
+                    if (_cache.TryUpdate(cacheKey, fresh, existing))
+                        return existing.Read;
+                    continue;   // someone else swapped it first; loop and take theirs
+                }
 
                 _cache.TryRemove(cacheKey, out _);
             }
 
-            var entry = new CacheEntry(DateTime.UtcNow, fetch());
+            var entry = new CacheEntry(now, fetch());
             if (_cache.TryAdd(cacheKey, entry))
                 return entry.Read;
 
@@ -272,10 +304,11 @@ public sealed class CtrmContractReader
     /// rather than per-chunk. A 429 from APIM fails the whole read, so headroom matters more than the last
     /// few seconds.</para>
     /// </remarks>
-    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchForCropYearAsync(List<string> codes, int cropYear)
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchForProducersAsync(List<string> codes)
     {
         var chunks = codes.Chunk(MaxCustomerIdsPerCall).ToList();
         var concurrency = Math.Clamp(ReadInt("Ctrm:PageConcurrency", 4), 1, 8);
+        var maxPagesPerChunk = Math.Max(1, ReadInt("Ctrm:TradeUnitContractMaxPagesPerChunk", DefaultMaxPagesPerChunk));
         using var slot = new SemaphoreSlim(concurrency, concurrency);
 
         async Task<CtrmReadResult<CtrmPage<CtrmContractDto>>> Fetch(string[] chunk, int skip)
@@ -283,7 +316,7 @@ public sealed class CtrmContractReader
             await slot.WaitAsync(CancellationToken.None);
             try
             {
-                return await FetchCropYearPageAsync(chunk, cropYear, skip);
+                return await FetchProducersPageAsync(chunk, skip);
             }
             finally
             {
@@ -294,7 +327,7 @@ public sealed class CtrmContractReader
         var firstPages = await Task.WhenAll(chunks.Select(chunk => Fetch(chunk, 0)));
 
         var failure = firstPages.FirstOrDefault(p => !p.Ok);
-        if (failure is not null) return Propagate(failure, cropYear);
+        if (failure is not null) return Propagate(failure, codes.Count);
 
         var pages = new List<CtrmPage<CtrmContractDto>>();
         var rest = new List<Task<CtrmReadResult<CtrmPage<CtrmContractDto>>>>();
@@ -311,8 +344,8 @@ public sealed class CtrmContractReader
             if (page.PageInfo?.HasNextPage != true) continue;
 
             var pagesAvailable = (int)Math.Ceiling(page.TotalCount / (double)PageSize);
-            var pagesToFetch = Math.Min(Math.Max(pagesAvailable, 2), MaxPagesPerChunk);
-            if (pagesAvailable > MaxPagesPerChunk) truncated = true;
+            var pagesToFetch = Math.Min(Math.Max(pagesAvailable, 2), maxPagesPerChunk);
+            if (pagesAvailable > maxPagesPerChunk) truncated = true;
 
             for (var p = 1; p < pagesToFetch; p++)
                 rest.Add(Fetch(chunks[i], p * PageSize));
@@ -323,7 +356,7 @@ public sealed class CtrmContractReader
             var restPages = await Task.WhenAll(rest);
 
             failure = restPages.FirstOrDefault(p => !p.Ok);
-            if (failure is not null) return Propagate(failure, cropYear);
+            if (failure is not null) return Propagate(failure, codes.Count);
 
             pages.AddRange(restPages.Select(p => p.Value!));
         }
@@ -332,43 +365,41 @@ public sealed class CtrmContractReader
 
         if (truncated)
             _logger.LogError(
-                "CTRM crop-year contracts TRUNCATED [{ErrorCode}] [{ErrorCategory}]: crop year {CropYear} " +
-                "needed more than {MaxPages} pages in at least one chunk ({Count} rows kept).",
-                "INFRASTRUCTURE_CTRM_TRUNCATED", "Infrastructure", cropYear, MaxPagesPerChunk, all.Count);
+                "CTRM trade-unit contracts TRUNCATED [{ErrorCode}] [{ErrorCategory}]: {Producers} producer(s) " +
+                "needed more than {MaxPages} pages in at least one chunk ({Count} rows kept). Raise Ctrm:TradeUnitContractMaxPagesPerChunk.",
+                "INFRASTRUCTURE_CTRM_TRUNCATED", "Infrastructure", codes.Count, maxPagesPerChunk, all.Count);
         else
             _logger.LogInformation(
-                "CTRM live contracts: {Count} purchase contracts for crop year {CropYear} across " +
-                "{Producers} producer(s), {Chunks} chunk(s), {Pages} page(s).",
-                all.Count, cropYear, codes.Count, chunks.Count, pages.Count);
+                "CTRM live contracts: {Count} purchase contracts (full history) across {Producers} producer(s), " +
+                "{Chunks} chunk(s), {Pages} page(s).",
+                all.Count, codes.Count, chunks.Count, pages.Count);
 
         return new CtrmReadResult<List<CtrmContractDto>>
         {
             Status = truncated ? CtrmReadStatus.PartialSuccess : CtrmReadStatus.Ok,
-            Detail = truncated ? $"Truncated at {MaxPagesPerChunk} pages per chunk for crop year {cropYear}." : null,
+            Detail = truncated ? $"Truncated at {maxPagesPerChunk} pages per chunk for {codes.Count} producer(s)." : null,
             Value = all
         };
     }
 
     private static CtrmReadResult<List<CtrmContractDto>> Propagate(
-        CtrmReadResult<CtrmPage<CtrmContractDto>> failure, int cropYear) => new()
+        CtrmReadResult<CtrmPage<CtrmContractDto>> failure, int producers) => new()
         {
             Status = failure.Status,
             HttpStatus = failure.HttpStatus,
             ErrorCode = failure.ErrorCode,
-            Detail = $"Crop-year contract read failed for crop year {cropYear}: {failure.Detail}",
+            Detail = $"Trade-unit contract read failed for {producers} producer(s): {failure.Detail}",
             Value = []
         };
 
-    private async Task<CtrmReadResult<CtrmPage<CtrmContractDto>>> FetchCropYearPageAsync(
-        string[] chunk, int cropYear, int skip)
+    private async Task<CtrmReadResult<CtrmPage<CtrmContractDto>>> FetchProducersPageAsync(string[] chunk, int skip)
     {
         var result = await _client.QueryAsync<CtrmContractsResponse>(
-            CtrmQueries.ContractsByCustomersAndCropYear,
+            CtrmQueries.ContractsByCustomers,
             new
             {
                 customerIds = chunk,
                 prefix = CtrmMappings.PurchasePrefix,
-                cropYear,
                 skip,
                 take = PageSize
             },
@@ -389,7 +420,7 @@ public sealed class CtrmContractReader
             {
                 Status = CtrmReadStatus.Error,
                 HttpStatus = result.HttpStatus,
-                Detail = $"CTRM returned no contracts object for crop year {cropYear}."
+                Detail = $"CTRM returned no contracts object for a {chunk.Length}-producer chunk."
             };
 
         return new CtrmReadResult<CtrmPage<CtrmContractDto>>

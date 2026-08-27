@@ -29,21 +29,21 @@ public class ContractRepositorySwitchTests
 
         var odsRepo = new ContractRepository(ods, app, new Mock<ILogger<ContractRepository>>().Object);
 
-        var snapshot = new CtrmContractSnapshot(
-            new Mock<ICtrmGraphQlClient>().Object,
-            config,
-            new Mock<ILogger<CtrmContractSnapshot>>().Object);
-
         var provenance = new CtrmProvenance();
 
-        // Per-producer reads now go live through the reader; the snapshot only backs the trade-unit pool.
+        // Every CTRM read goes through the readers: per producer live, trade-unit-wide via the cached
+        // producer-set read.
         var reader = new CtrmContractReader(
             new Mock<ICtrmGraphQlClient>().Object,
             config,
             new Mock<ILogger<CtrmContractReader>>().Object);
+        var ticketReader = new CtrmTicketReader(
+            new Mock<ICtrmGraphQlClient>().Object,
+            config,
+            new Mock<ILogger<CtrmTicketReader>>().Object);
 
         var ctrmRepo = new CtrmContractRepository(
-            reader, snapshot, app, odsRepo, provenance, new Mock<ILogger<CtrmContractRepository>>().Object);
+            reader, ticketReader, app, odsRepo, provenance, new Mock<ILogger<CtrmContractRepository>>().Object);
 
         return new ContractRepositorySwitch(odsRepo, ctrmRepo, config, provenance);
     }

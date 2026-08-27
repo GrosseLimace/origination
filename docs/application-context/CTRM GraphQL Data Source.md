@@ -4,7 +4,7 @@
 
 ## What this is
 
-Contracts and tickets on the producer screen — and most of the contract/ticket reads behind Build-a-List and Actionable Insights — come from CTRM directly through the **Scoular.GraphQL** API (formerly DB2Connector.GraphQL, AB#33220), not from the ODS views. The ODS was measurably drifting weeks behind CTRM (a hedge roll five weeks late, ticket tails eleven weeks late, one row mixing two points in time), and CTRM is the system of record. The switch happened in August 2026.
+Every contract and ticket read — the producer screen, and everything behind Build-a-List, Actionable Insights and the crop-year dashboard — comes from CTRM directly through the **Scoular.GraphQL** API (formerly DB2Connector.GraphQL, AB#33220), not from the ODS views. The ODS was measurably drifting weeks behind CTRM (a hedge roll five weeks late, ticket tails eleven weeks late, one row mixing two points in time), and CTRM is the system of record. The switch happened in August 2026.
 
 Endpoint: `https://apiqa.scoular.com/internal/graphql` (APIM behind an Application Gateway WAF; the old `/internal/db2/graphql` path answers identically for now and is retired). Auth is Entra client-credentials; the secret is `Ctrm--ClientSecret` in Key Vault and is never in `appsettings`.
 
@@ -20,7 +20,7 @@ Controller → Service → IContractRepository / ITicketRepository
 
 `Ctrm:Source` is read on every call, so an App Service setting override flips an environment without a redeploy. Anything other than the literal `ctrm` means ODS.
 
-Files: `api/GrainOriginatorPortal.Infrastructure/Ctrm/` (repositories, readers, snapshot, mappings, `CtrmQueries.cs`), `api/GrainOriginatorPortal.Api/Services/Ctrm/CtrmGraphQlClient.cs` (HTTP, token, error taxonomy), `CtrmSnapshotWarmupService.cs` (startup warm-up).
+Files: `api/GrainOriginatorPortal.Infrastructure/Ctrm/` (repositories, readers, mappings, `CtrmQueries.cs`), `api/GrainOriginatorPortal.Api/Services/Ctrm/CtrmGraphQlClient.cs` (HTTP, token, error taxonomy).
 
 ## What comes from where (Ctrm:Source = ctrm)
 
@@ -30,11 +30,11 @@ Files: `api/GrainOriginatorPortal.Infrastructure/Ctrm/` (repositories, readers, 
 | Producer applied tickets | CTRM live | `tickets(contractNumbers:)` over the producer's OPEN purchase contracts |
 | Producer unapplied + storage tickets | CTRM live | `tickets(customerId:)` |
 | Per-contract applied tickets | CTRM live | `tickets(contractNumbers:)` (no UI caller today) |
-| Crop-year contracts (Build-a-List, Dashboard) | **ODS** (live CTRM read built but disabled) | `contracts(customerIds: cropYear:)` returned the previous query's rows for a different crop year in QA on 2026-08-26 — a server-side cache keyed without `cropYear`. Re-enable via `UseLiveCropYearRead` once a probe shows 2025 and 2026 differ. |
+| Crop-year contracts (Build-a-List, Dashboard) | CTRM | The same cached producer-set read as the trade-unit list, filtered by crop year in memory. `cropYear` is deliberately NOT sent — on 2026-08-26 the server's response cache keyed it out and returned the wrong year. |
 | Spot Loads (recent unapplied, all producers) | CTRM live | `tickets(customerIds:)` over the last 30 days + 7 ahead |
 | Open-activity trade-unit lock (edit dialog, nightly sync) | via the switch | reuses the producer contract + unapplied ticket reads |
-| Trade-unit contract pool (Build-a-List, Insights, Unshipped Bushels) | CTRM **snapshot** | `contracts(contractDateFrom/To:)` — a configured date window, walked at startup and cached |
-| Trade-unit-wide tickets (every prompt mentioning tickets, deliveries, unapplied, unsettled) | CTRM **ticket pool snapshot** | `tickets(customerIds:)` for every active producer over the 3-year lookback, walked in the background and cached; both applied and unapplied branches, same rule as the producer screen |
+| Trade-unit contracts (Build-a-List, Insights, Unshipped Bushels) | CTRM | The ODS flow: selected trade units → their producers in Origination → `contracts(customerIds:)`, full history, no date window. Cached per producer set, served stale-while-refreshing. Warmed by the home-page contract load. |
+| Trade-unit-wide tickets (every prompt mentioning tickets, deliveries, unapplied, unsettled) | CTRM | Same flow: trade units → producers → `tickets(customerIds:)` over the 3-year lookback in 366-day windows. Both applied and unapplied branches, same rule as the producer screen. Kicked off in the background by the home-page contract load. |
 | Farm lookups, contract by source id, per-contract pricing lines | **ODS** | no UI caller; CTRM has no farm concept / no contract-number argument |
 
 **ODS by design, on both sources.** These annotate or subtract from CTRM rows and never add one: customer master (`dbo.Customer`), the storage gate (`ctrm.vw_GNTA39D1` — CTRM has no storage entity), lb→bushel factors (`vw_GNP024`), elevator names (`MbpLocationSynonym`), producer↔trade-unit maps, DP contracts, stored grain.
@@ -51,13 +51,17 @@ CTRM has no surrogate ids, so `Contract.Id` / `Ticket.Id` are deterministic FNV-
 
 ## Why the shapes are what they are (measured, not assumed)
 
-- **`customerId` (singular) is indexed** and waives the date range: a producer's full history in ~1–2s. **`customerIds` (list) is not**: every shape, including with `tradeUnit`/`cropYear`, times out at 30s cold and returns in ~1s warm. This is why the pool still uses a date window instead of "all producers, all history".
+- **`customerId` (singular) is indexed** and waives the date range: a producer's full history in ~1–2s. **`customerIds` (list) on `contracts` is not**: ~20–27s cold per chunk in every shape (fixed on `tickets`, reported for `contracts`). This is why the trade-unit reads are cached and warmed in the background rather than run on a click.
 - **Ticket queries always need a date range, capped at 366 days**, because the customer lives on the detail row and the range bounds the header scan. Longer lookbacks are sliced into windows fetched in parallel. The cost is the scan, not the rows: 30 days ≈ 1 day ≈ 6s for 88 producers; three years for all producers ≈ 1,000 pages — which is why the unapplied-tickets prompt stays on ODS.
-- **Pricing lines double a contract page** (~8s vs ~4s per 500 rows). Only the per-producer read projects them; the pool and crop-year reads take the core fields.
+- **Pricing lines double a contract page** (~8s vs ~4s per 500 rows). Only the per-producer read projects them; the producer-set read takes the core fields.
 - **A customer code of 8+ characters makes `customerIds` return an internal error that fails the whole request.** `CtrmCustomerCodes` drops such codes (real ScoularIds are 5–7) and logs them. Reported to the API team.
 - **The API caches list-query results, and the key omits `cropYear` and `tradeUnit`** (measured 2026-08-26: `cropYear: 2026` returned the 2024 set issued moments earlier; `tradeUnit: 9999` returned dozens of trade units; changing `take` to 499 exposed the true answer). It is INTERMITTENT: the identical `cropYear: 2026, take: 500` request returned the correct 96 rows once and the 2024 set on a rerun minutes later, so a single passing probe proves nothing - run the pair twice. The pattern (and the same query alternating between two totals earlier that day) is consistent with a per-instance cache behind a load balancer. The key DOES include `customerId`, `customerIds`, `contractNumbers`, `contractPrefixType`, the date range, `skip`/`take` and the exclude flags — verified by pairwise probes — so every read still live is safe. Do not build on `cropYear` or `tradeUnit` until the API team confirms the fix.
 - **`excludeCancelled: true` drops cancelled ticket headers, not cancelled detail rows** (8 of 219 detail rows still carried `cancelFlag = Y`). The per-row `CancelFlag` check in `CtrmMappings` is therefore load-bearing, not redundant.
 - **No `#` comments in any query document.** The WAF reads `#` as a SQL comment and answers with an HTML 403 the API never sees. `CtrmQueryDocumentTests` enforces this and other structural properties on every document.
+
+## Trade-unit scope (measured 2026-08-27, dev)
+
+Prompts and saved lists are scoped to the user's selected trade units, so the trade-unit reads carry a trade unit's producers, not the company's: 16,763 active producers in total, but the largest trade unit (1340) has 1,271, the next tier 700–860, a typical one 150–400, and ~40 have under 50. One–three `customerIds` chunks of 500. Cold cost for a mid-size unit: contracts ~25s per chunk (server-side, see gaps); tickets ~15–40 pages of 500 at 3–5s each across the three windows. Warm: instant. With no trade unit selected the scope is every active producer (the ODS rule — "a narrowing convenience, not an entitlement boundary"), which is 34 chunks and minutes cold; the client never makes that call today.
 
 ## Caching
 
@@ -66,8 +70,8 @@ CTRM has no surrogate ids, so `Contract.Id` / `Ticket.Id` are deterministic FNV-
 | Per-producer contract/ticket read | `Ctrm:LiveCacheSeconds` (60) | Coalesces the contract list, pricing lines and pacing card into one CTRM call; the in-flight task is shared |
 | Ticket window containing today | `LiveCacheSeconds` | New tickets land here |
 | Ticket windows entirely in the past | `Ctrm:HistoricalTicketCacheMinutes` (30) | Older tickets rarely change and cost the most; bounds how stale an old ticket's status can be |
-| Contract pool snapshot | `Ctrm:SnapshotMinutes` | Rebuilt in the background; serves the previous copy during a rebuild |
-| Ticket pool snapshot | `Ctrm:TicketPoolMinutes` (720) | Same pattern; warmed after the contract pool. ~240 pages for the real producer population, a few minutes at four-way concurrency |
+| Trade-unit contract read (per producer set) | `Ctrm:TradeUnitCacheMinutes` (5) | Stale-while-revalidate: an expired copy is served instantly while the refresh runs behind it. Nobody waits unless nothing is cached yet |
+| Trade-unit ticket read (per producer set × window) | same per-window TTLs as above | Stale-while-revalidate too. A prompt run a minute after the last is instant; the run after sees the update |
 | Client hover prefetch | 60s, side map | Resting on a producer row fires the reads so the click renders from memory |
 
 Failures are never cached at any layer.
@@ -80,16 +84,17 @@ The API's own status taxonomy is handled explicitly: business validation → HTT
 
 ## Configuration
 
-Base `appsettings.json` documents every key with a `// Key` sibling. Per environment: `Source`, `GraphQlUri`, `TenantId`, `ClientId`, `Audience`, `ContractDateFrom/To` (pool window), `MaxPages` (≥ 18 for the current window), `PageConcurrency`, `SnapshotMinutes`, `LiveCacheSeconds`, `TicketLookbackDays` (1095), `HistoricalTicketCacheMinutes`, `RecentTicketDays` (30; Spot Loads).
+Base `appsettings.json` documents every key with a `// Key` sibling. Per environment: `Source`, `GraphQlUri`, `TenantId`, `ClientId`, `Audience`, `PageSize`, `PageConcurrency`, `TradeUnitCacheMinutes` (5), `TradeUnitContractMaxPagesPerChunk` (100), `TradeUnitTicketMaxPagesPerWindow` (200), `LiveCacheSeconds`, `TicketLookbackDays` (1095), `HistoricalTicketCacheMinutes`, `RecentTicketDays` (30; Spot Loads).
 
 To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to that environment's Key Vault, confirm APIM egress (no custom NSG rule needed), restart.
 
 ## Known gaps (waiting on the API team)
 
-1. `customerIds` cold performance — closes the pool's date window.
-2. ~~A contract-number-prefix or `unappliedOnly` filter on `tickets`~~ — delivered as `unappliedOnly` (2026-08-27) but not used: the pool must carry applied tickets too, and for real producers the unfiltered walk is cheap enough to run in the background.
+1. `contracts(customerIds:)` cold performance — would make the trade-unit contract read seconds instead of ~25s per chunk, and remove the only cold wait a session can hit.
+2. ~~A contract-number-prefix or `unappliedOnly` filter on `tickets`~~ — delivered as `unappliedOnly` (2026-08-27) but not used: the trade-unit read must carry applied tickets too (delivered/unsettled prompts), and for real trade units the unfiltered walk is cheap enough in the background.
 3. The over-length `customerIds` error (7 chars works, 8 fails).
-4. Response caching that ignores `cropYear` (and possibly `tradeUnit`) — the reason the crop-year read is on ODS.
+4. ~~Response caching that ignores `cropYear`~~ — fixed by the API owner 2026-08-27; moot for us anyway since `cropYear` is no longer sent.
+5. A `modifiedSince` argument on `tickets` and `contracts` — would make refreshes incremental (one or two calls) and the trade-unit reads effectively live.
 
 ## Testing notes
 

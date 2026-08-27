@@ -72,6 +72,16 @@ The app's global state container, built on Angular signals. No NgRx, no Redux �
 
 **Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearBuildListState`, `clearSelection`, `clearAll`.
 
+### `UserTradeUnitsService`
+
+`client/src/app/core/services/user-trade-units.service.ts`
+
+Owns the user's trade-unit groups and the hand-off to the **Trade Unit Preferences** app, where assignments are actually managed (this app only reads `vw_UserTradeUnitPreferences`).
+
+- `load()` — `GET /usertradeunits` → `setUserGroups`, then prunes `selectedGroupNames` / `selectedTradeUnits` to what still exists. An empty result is *not* applied, so `userGroupsLoaded` stays false and a later attempt retries. The TU selector delegates here and only owns its loading/error UI.
+- `openPreferences()` — the profile-menu entry **Trade Unit Preferences** (below Manage Groups). Opens `environment.tradeUnitPreferencesUrl` (`tradeunitprefs{-dev|-qa|}.scoular.com/my-preferences`) in a **named popup window** (falls back to a new tab), then polls `closed` and re-runs `load()` when the user closes it, so the selector reflects their changes without a reload.
+- **Why not a dialog/iframe:** the TU Prefs app sends `X-Frame-Options: DENY` + `frame-ancestors 'none'` in every environment (checked 2026-08-27). Don't re-attempt embedding without their team relaxing that policy. `noopener` is deliberately not used (it nulls the `window.open` return and breaks the close-watch); the service sets `win.opener = null` itself.
+
 ### `DataPreloadService`
 
 `client/src/app/core/services/data-preload.service.ts` (search by name if path moves).
