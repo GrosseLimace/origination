@@ -65,18 +65,28 @@ export class HomeComponent {
    *  is already correct, so there's nothing new to fetch. */
   private readonly _linkedFetchDone = new Set<number>();
   /** Customers whose contracts / tickets / pricing-lines / stored-grain have
-   *  already been fetched in this session. Re-clicking skips the four HTTP
-   *  calls in _loadCustomerContractsAndTickets — the merged data is still in
-   *  the signals from the first visit. Cleared when the user adds/removes a
-   *  contract, ticket, or storage record (none of those mutate from this page
-   *  today, so the cache is effectively read-only for the session). */
-  private readonly _customerLoadDone = new Set<number>();
+   *  already been fetched, and WHEN.
+   *
+   *  Re-clicking shows the cached rows immediately - they are still in the signals from the first visit -
+   *  and refetches in the background if they are older than {@link CUSTOMER_DATA_MAX_AGE_MS}, swapping
+   *  them when the response lands. It used to be a plain Set with no age, which meant the first click of
+   *  a session was the only one that ever hit the network: a load applied afterwards, or a contract that
+   *  closed, stayed invisible until the user changed trade units. That is the wrong default for a screen
+   *  people leave open through a harvest day.
+   *
+   *  Cleared when the user adds/removes a contract, ticket, or storage record. */
+  private readonly _customerLoadedAt = new Map<number, number>();
+
+  /** How long a producer's cached contracts/tickets are served without a refetch. Matched to the
+   *  server's own per-producer cache (Ctrm:LiveCacheSeconds, 60s): refetching sooner would usually be
+   *  answered from that cache anyway, so it would cost a round trip for the same bytes. */
+  private static readonly CUSTOMER_DATA_MAX_AGE_MS = 60_000;
   /** Per-customer planting-intentions cache. Hydrated from the first visit's
    *  fetch; kept in sync by the add/edit/delete handlers. Subsequent visits to
    *  the same producer skip the network entirely. */
   private readonly _customerPlantingCache = new Map<number, PlantingIntention[]>();
   /** Per-customer pricing-lines cache keyed by scoularId. Pricing lines are
-   *  hydrated OUTSIDE the _customerLoadDone short-circuit so that every click
+   *  hydrated OUTSIDE the _customerLoadedAt short-circuit so that every click
    *  swaps to the right producer's lines (the contracts/tickets/grain short-
    *  circuit returned early before pricing lines were restored, leaving the
    *  panel showing the prior producer's data on re-click). */
@@ -827,10 +837,10 @@ export class HomeComponent {
     // Drop the per-customer caches — TU change can include / exclude different
     // customers, and re-clicking a producer that overlaps the new TU must re-fetch
     // contracts/tickets/pricing/grain to reflect the new scope. Without this, the
-    // _customerLoadDone short-circuit would serve stale data from the prior TU.
+    // _customerLoadedAt short-circuit would serve stale data from the prior TU.
     // Notes are cleared for freshness parity: the next selection re-fetches, picking up
     // notes other users added since.
-    this._customerLoadDone.clear();
+    this._customerLoadedAt.clear();
     this._customerPricingCache.clear();
     this._customerPlantingCache.clear();
     this._customerNotesCache.clear();
@@ -1173,7 +1183,7 @@ export class HomeComponent {
   }
 
   /** Hydrate customerPricingLines for the selected producer. Always called on
-   *  every click — independent of _customerLoadDone — so re-clicking a producer
+   *  every click — independent of _customerLoadedAt — so re-clicking a producer
    *  swaps to their pricing lines instead of leaving the prior producer's lines
    *  on screen. Cache hit = instant, no network. Cache miss = single fetch then
    *  populate. */
@@ -1210,23 +1220,57 @@ export class HomeComponent {
       });
   }
 
+  /**
+   * Refetches a producer's contracts and tickets behind rows that are already on screen.
+   *
+   * Deliberately silent: no loading flags, no error state. The visible data is real - it is what the
+   * first read returned - so a failed refresh should leave it alone rather than replace a correct screen
+   * with an error. The failure is still recorded server-side (provenance) and in the log. The timestamp
+   * is only advanced when BOTH reads succeed, so a partial failure retries on the next click rather than
+   * pretending the data is fresh.
+   */
+  private _refreshCustomerContractsAndTickets(customerId: number, scoularId?: string): void {
+    forkJoin({
+      contracts: this.apiService.getContractsByCustomer(customerId, scoularId).pipe(catchError(() => of(null))),
+      tickets: this.apiService.getTicketsByCustomer(customerId, scoularId).pipe(catchError(() => of(null)))
+    })
+      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ contracts, tickets }) => {
+        // Only swap if the user is still on this producer - a refresh that lands after they have moved on
+        // would otherwise write one producer's rows into another's view.
+        if (this.selectedCustomer()?.id !== customerId) return;
+
+        if (contracts) this._applyCustomerContracts(customerId, contracts);
+        if (tickets) this._applyCustomerTickets(customerId, tickets);
+
+        if (contracts && tickets) this._customerLoadedAt.set(customerId, Date.now());
+      });
+  }
+
   private _loadCustomerContractsAndTickets(customerId: number, scoularId?: string): void {
-    // Pricing lines are handled OUTSIDE the _customerLoadDone short-circuit so
+    // Pricing lines are handled OUTSIDE the _customerLoadedAt short-circuit so
     // every click hydrates customerPricingLines for the right producer (the
     // short-circuit only covers contracts/tickets/grain). Without this,
     // re-clicking a previously-loaded producer left the panel showing the prior
     // producer's lines.
     this._loadCustomerPricingLines(scoularId);
 
-    // Already fetched this customer's data in this session — the merged signals
-    // still hold everything we got the first time. Just clear the loading flags
-    // and re-run the local merge so the UI updates with the cached data.
-    if (this._customerLoadDone.has(customerId)) {
+    // Already fetched this customer's data — the merged signals still hold it, so show that immediately
+    // rather than making the user watch a spinner for rows we already have.
+    const loadedAt = this._customerLoadedAt.get(customerId);
+    if (loadedAt !== undefined) {
       this.isLoadingContracts.set(false);
       this.isLoadingUnappliedTickets.set(false);
       this.isLoadingStoredGrain.set(false);
       this.isLoadingDpContracts.set(false);
       this._loadCustomerData(customerId);
+
+      // ...and if that copy has aged out, refresh it BEHIND the visible rows. No spinner: the screen is
+      // already populated and correct as of the first read, so a flicker would be a downgrade. The swap
+      // happens when the response lands.
+      if (Date.now() - loadedAt >= HomeComponent.CUSTOMER_DATA_MAX_AGE_MS)
+        this._refreshCustomerContractsAndTickets(customerId, scoularId);
+
       return;
     }
 
@@ -1235,7 +1279,7 @@ export class HomeComponent {
     let grainDone = false;
     let dpDone = false;
     const markIfAllDone = () => {
-      if (contractsDone && ticketsDone && grainDone && dpDone) this._customerLoadDone.add(customerId);
+      if (contractsDone && ticketsDone && grainDone && dpDone) this._customerLoadedAt.set(customerId, Date.now());
     };
 
     // A hover prefetch may already hold this producer's contracts and tickets. They are applied through
@@ -1316,7 +1360,7 @@ export class HomeComponent {
   handlePrefetchCustomer(customer: Customer): void {
     const id = customer.id;
     if (this.selectedCustomer()?.id === id) return;
-    if (this._customerLoadDone.has(id) || this._prefetched.has(id) || this._prefetchInFlight.has(id)) return;
+    if (this._customerLoadedAt.has(id) || this._prefetched.has(id) || this._prefetchInFlight.has(id)) return;
     if (this._prefetchInFlight.size >= HomeComponent.PREFETCH_MAX_IN_FLIGHT) return;
 
     this._prefetchInFlight.add(id);
@@ -1330,7 +1374,7 @@ export class HomeComponent {
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(r => {
       this._prefetchInFlight.delete(id);
       // The user clicked before we finished; the real load has already run and owns the state.
-      if (this._customerLoadDone.has(id)) return;
+      if (this._customerLoadedAt.has(id)) return;
       if (r.contracts || r.tickets) {
         this._prefetched.set(id, { at: Date.now(), contracts: r.contracts ?? undefined, tickets: r.tickets ?? undefined });
       }
