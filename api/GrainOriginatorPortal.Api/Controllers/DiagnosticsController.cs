@@ -374,6 +374,15 @@ public class DiagnosticsController : ControllerBase
             _ticketReader.Invalidate(code);
         }
 
+        // The pacing read is the one stage keyed on our surrogate Id rather than the CTRM code: it
+        // resolves the code itself from Customer, so passing 0 found nothing, recorded NoScoularId and
+        // returned an empty list after a single DB lookup - a few milliseconds of fiction in the wall time.
+        var customerId = await _appContext.Customers
+            .AsNoTracking()
+            .Where(c => c.ScoularId == code)
+            .Select(c => (long?)c.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var stages = new List<object>();
         var wall = System.Diagnostics.Stopwatch.StartNew();
 
@@ -390,9 +399,18 @@ public class DiagnosticsController : ControllerBase
         stages.Add(Stage("tickets", ticketsWatch, ticketRows, _provenance.Tickets));
 
         // Then the two that follow on screen.
-        var pacingWatch = System.Diagnostics.Stopwatch.StartNew();
-        var pacingRows = await Timed(_contracts.GetHistoricalForPacingAsync(0, cancellationToken), pacingWatch);
-        stages.Add(Stage("pacing", pacingWatch, pacingRows, _provenance.Contracts));
+        if (customerId is { } id)
+        {
+            var pacingWatch = System.Diagnostics.Stopwatch.StartNew();
+            var pacingRows = await Timed(_contracts.GetHistoricalForPacingAsync(id, cancellationToken), pacingWatch);
+            stages.Add(Stage("pacing", pacingWatch, pacingRows, _provenance.Contracts));
+        }
+        else
+        {
+            // Said plainly rather than reported as a fast zero: this producer has no Origination row, so
+            // the pacing card would not load for them either.
+            stages.Add(Stage("pacing", null, rows: -1, provenance: "not measurable: no Customer row for this code"));
+        }
 
         var linesWatch = System.Diagnostics.Stopwatch.StartNew();
         var lineRows = await Timed(_contracts.GetPricingLinesByCustomerAsync(code, cancellationToken), linesWatch);
@@ -403,6 +421,7 @@ public class DiagnosticsController : ControllerBase
         return Ok(new
         {
             ScoularId = code,
+            CustomerId = customerId,
             Cold = cold,
             WallMs = wall.ElapsedMilliseconds,
             Stages = stages,
@@ -436,10 +455,10 @@ public class DiagnosticsController : ControllerBase
         }
     }
 
-    private static object Stage(string name, System.Diagnostics.Stopwatch watch, int rows, string? provenance) => new
+    private static object Stage(string name, System.Diagnostics.Stopwatch? watch, int rows, string? provenance) => new
     {
         Name = name,
-        Ms = watch.ElapsedMilliseconds,
+        Ms = watch?.ElapsedMilliseconds,
         Rows = rows,
         Provenance = provenance
     };

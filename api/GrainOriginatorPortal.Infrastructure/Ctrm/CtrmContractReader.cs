@@ -228,17 +228,19 @@ public sealed class CtrmContractReader
         var code = scoularId?.Trim() ?? string.Empty;
         var now = _utcNow();
 
-        return
-        [
-            .. new[] { ("core", CoreKey(code)), ("full", FullKey(code)) }
-                .Where(k => _cache.ContainsKey(k.Item2))
-                .Select(k =>
-                {
-                    var entry = _cache[k.Item2];
-                    var state = !entry.IsCompleted ? "in-flight" : entry.Failed ? "failed" : "ok";
-                    return $"{k.Item1}:{state}:{(now - entry.CreatedUtc).TotalSeconds:F1}s";
-                })
-        ];
+        // TryGetValue, not ContainsKey-then-indexer: the sweep runs on other threads, so an entry can be
+        // evicted between the two and the indexer would throw inside a diagnostics call.
+        var described = new List<string>(2);
+
+        foreach (var (label, key) in new[] { ("core", CoreKey(code)), ("full", FullKey(code)) })
+        {
+            if (!_cache.TryGetValue(key, out var entry)) continue;
+
+            var state = !entry.IsCompleted ? "in-flight" : entry.Failed ? "failed" : "ok";
+            described.Add($"{label}:{state}:{(now - entry.CreatedUtc).TotalSeconds:F1}s");
+        }
+
+        return described;
     }
 
     /// <summary>Drops a producer's cached reads - BOTH projections - so the next request goes back to CTRM.</summary>
