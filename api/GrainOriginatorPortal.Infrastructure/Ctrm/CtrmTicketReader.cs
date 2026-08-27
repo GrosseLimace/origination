@@ -32,9 +32,14 @@ public sealed class CtrmTicketReader
 {
     private const int PageSize = 500;
 
-    /// <summary>Per-window page cap. A single producer exceeding this in one window would mean the
-    /// filter is not applying.</summary>
+    /// <summary>Per-window page cap for INTERACTIVE reads. A single producer exceeding this in one window
+    /// would mean the filter is not applying.</summary>
     private const int MaxPagesPerWindow = 10;
+
+    /// <summary>Default per-window page cap for the background ticket-pool walk, where a 500-producer chunk
+    /// legitimately runs to tens of thousands of rows in one window. Overridable with
+    /// <c>Ctrm:TicketPoolMaxPagesPerWindow</c>.</summary>
+    private const int DefaultPoolMaxPagesPerWindow = 200;
 
     /// <summary>How many cache inserts between sweeps of expired entries. The dictionary otherwise only
     /// ever grows: entries expire logically but nothing removed them.</summary>
@@ -160,7 +165,7 @@ public sealed class CtrmTicketReader
                         + $"{CtrmQueries.MaxTicketRangeDays}-day cap; narrow the window or slice it.");
 
         var key = $"producers:{from:yyyy-MM-dd}:{to:yyyy-MM-dd}:{codes.Count}:{StableHash(codes)}";
-        return GetCachedAsync(key, LiveTtl(), () => FetchChunkedAsync(codes, from, to));
+        return GetCachedAsync(key, LiveTtl(), () => FetchChunkedAsync(codes, from, to, MaxPagesPerWindow));
     }
 
     /// <summary>
@@ -190,7 +195,8 @@ public sealed class CtrmTicketReader
             return Failed($"A bill-of-lading range of {span:F0} days exceeds the server's "
                         + $"{CtrmQueries.MaxTicketRangeDays}-day cap; narrow the window or slice it.");
 
-        return FetchChunkedAsync(codes, from, to);
+        return FetchChunkedAsync(codes, from, to,
+            Math.Max(1, ReadInt("Ctrm:TicketPoolMaxPagesPerWindow", DefaultPoolMaxPagesPerWindow)));
     }
 
     /// <summary>Drops a producer's cached read, including every window beneath it.</summary>
@@ -304,7 +310,7 @@ public sealed class CtrmTicketReader
     /// inside the server's cap, because the point of this read is that a narrow window is cheap.
     /// </remarks>
     private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchChunkedAsync(
-        List<string> codes, DateTime from, DateTime to)
+        List<string> codes, DateTime from, DateTime to, int maxPages)
     {
         var chunks = codes.Chunk(CtrmCustomerCodes.MaxPerCall).ToList();
         var concurrency = Math.Clamp(ReadInt("Ctrm:PageConcurrency", 4), 1, 8);
@@ -321,7 +327,7 @@ public sealed class CtrmTicketReader
                         Description: $"{chunk.Length} producer(s)",
                         Document: CtrmQueries.TicketsByCustomers,
                         Filter: new { customerIds = chunk }),
-                    from, to);
+                    from, to, maxPages);
             }
             finally
             {
@@ -336,12 +342,22 @@ public sealed class CtrmTicketReader
 
         var all = results.SelectMany(r => r.Value ?? []).ToList();
 
+        // A chunk that hit its page cap is PartialSuccess with rows. That must survive the merge: the ticket
+        // pool reports itself complete or truncated on this status, and a silently complete-looking partial
+        // pool is exactly the failure mode Build-a-List cannot detect.
+        var truncated = results.FirstOrDefault(r => r.Status == CtrmReadStatus.PartialSuccess);
+
         _logger.LogInformation(
             "CTRM live tickets: {Count} tickets for {Producers} producer(s) over {From:yyyy-MM-dd}..{To:yyyy-MM-dd} " +
-            "in {Chunks} chunk(s).",
-            all.Count, codes.Count, from, to, chunks.Count);
+            "in {Chunks} chunk(s){Truncated}.",
+            all.Count, codes.Count, from, to, chunks.Count, truncated is null ? string.Empty : " - TRUNCATED");
 
-        return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all };
+        return new CtrmReadResult<List<CtrmTicketDto>>
+        {
+            Status = truncated is null ? CtrmReadStatus.Ok : CtrmReadStatus.PartialSuccess,
+            Detail = truncated?.Detail,
+            Value = all
+        };
     }
 
     /// <summary>
@@ -358,7 +374,7 @@ public sealed class CtrmTicketReader
         var results = await Task.WhenAll(windows.Select(w => GetCachedAsync(
             $"{scope.CacheKey}|window:{w.From:yyyy-MM-dd}:{w.To:yyyy-MM-dd}",
             TtlForWindow(w.To, today),
-            () => FetchWindowAsync(scope, w.From, w.To))));
+            () => FetchWindowAsync(scope, w.From, w.To, MaxPagesPerWindow))));
 
         // Any window failing makes the whole answer incomplete. Reporting the first failure rather than
         // silently returning a partial list keeps an outage from looking like a producer with no tickets.
@@ -410,12 +426,12 @@ public sealed class CtrmTicketReader
         return windows;
     }
 
-    private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchWindowAsync(Scope scope, DateTime from, DateTime to)
+    private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchWindowAsync(Scope scope, DateTime from, DateTime to, int maxPages)
     {
         var all = new List<CtrmTicketDto>();
         var skip = 0;
 
-        for (var page = 0; page < MaxPagesPerWindow; page++)
+        for (var page = 0; page < maxPages; page++)
         {
             var result = await _client.QueryAsync<CtrmTicketsResponse>(
                 scope.Document,
@@ -456,12 +472,12 @@ public sealed class CtrmTicketReader
         _logger.LogError(
             "CTRM live tickets TRUNCATED [{ErrorCode}] [{ErrorCategory}]: {Scope} window " +
             "{From:yyyy-MM-dd}..{To:yyyy-MM-dd} still had more after {MaxPages} pages ({Count} rows).",
-            "INFRASTRUCTURE_CTRM_TRUNCATED", "Infrastructure", scope.Description, from, to, MaxPagesPerWindow, all.Count);
+            "INFRASTRUCTURE_CTRM_TRUNCATED", "Infrastructure", scope.Description, from, to, maxPages, all.Count);
 
         return new CtrmReadResult<List<CtrmTicketDto>>
         {
             Status = CtrmReadStatus.PartialSuccess,
-            Detail = $"Truncated after {MaxPagesPerWindow} pages in {from:yyyy-MM-dd}..{to:yyyy-MM-dd}.",
+            Detail = $"Truncated after {maxPages} pages in {from:yyyy-MM-dd}..{to:yyyy-MM-dd}.",
             Value = all
         };
     }

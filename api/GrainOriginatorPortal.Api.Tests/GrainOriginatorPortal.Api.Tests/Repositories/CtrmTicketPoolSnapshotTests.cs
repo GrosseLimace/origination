@@ -36,8 +36,18 @@ public class CtrmTicketPoolSnapshotTests
         public int Calls => Variables.Count;
         public TaskCompletionSource Gate { get; } = new();
         public volatile bool UseGate;
+        /// <summary>How many pages the stub pretends each chunk-window holds; hasNextPage until the last.</summary>
+        public int PagesAvailable { get; init; } = 1;
         /// <summary>Completes on the first GATED call, so a test can hold a build open at a known point.</summary>
         public TaskCompletionSource Entered { get; } = new();
+
+        private static int SkipOf(object? variables)
+        {
+            var raw = variables is IReadOnlyDictionary<string, object?> dict
+                ? dict.GetValueOrDefault("skip")
+                : variables?.GetType().GetProperty("skip")?.GetValue(variables);
+            return raw is int skip ? skip : Convert.ToInt32(raw ?? 0);
+        }
 
         public async Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
         {
@@ -56,7 +66,7 @@ public class CtrmTicketPoolSnapshotTests
                 Tickets = new CtrmPage<CtrmTicketDto>
                 {
                     TotalCount = 1,
-                    PageInfo = new CtrmPageInfo { HasNextPage = false },
+                    PageInfo = new CtrmPageInfo { HasNextPage = SkipOf(variables) / 500 < PagesAvailable - 1 },
                     Items = [new CtrmTicketDto { TicketNumber = "1", TicketBLDate = new DateTime(2026, 8, 1),
                         Details = [new CtrmTicketDetailDto { CustomerCode = Producer, ContractNumber = "UWW000001", TicketType = "U", TicketSequenceNumber = 1 }] }]
                 }
@@ -65,12 +75,13 @@ public class CtrmTicketPoolSnapshotTests
         }
     }
 
-    private static IConfiguration Config(int lookbackDays = 1095, int poolMinutes = 720) =>
+    private static IConfiguration Config(int lookbackDays = 1095, int poolMinutes = 720, int poolMaxPages = 200) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Ctrm:TicketLookbackDays"] = lookbackDays.ToString(),
             ["Ctrm:TicketPoolMinutes"] = poolMinutes.ToString(),
-            ["Ctrm:PageConcurrency"] = "4"
+            ["Ctrm:PageConcurrency"] = "4",
+            ["Ctrm:TicketPoolMaxPagesPerWindow"] = poolMaxPages.ToString()
         }).Build();
 
     private static IServiceScopeFactory ScopeFactory(int producers)
@@ -228,5 +239,36 @@ public class CtrmTicketPoolSnapshotTests
 
         client.Gate.SetResult();
         Assert.True((await rebuild).Ok);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ThePoolWalkPagesPastTheInteractiveCap()
+    {
+        // A 500-producer chunk legitimately runs to tens of thousands of rows in one window. The first live
+        // warm-up stopped at the interactive cap of 10 pages per window and reported TRUNCATED; the pool must
+        // page on to its own cap instead.
+        var client = new StubClient { PagesAvailable = 15 };
+
+        var result = await Sut(client, Config(lookbackDays: 366, poolMaxPages: 200)).GetAsync(CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, result.Status);
+        Assert.False(result.Truncated);
+        Assert.Equal(15, client.Calls);
+        Assert.Equal(15, result.Tickets.Count);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task APoolCapThatIsHitIsReportedAsTruncatedNotOk()
+    {
+        var client = new StubClient { PagesAvailable = 15 };
+
+        var result = await Sut(client, Config(lookbackDays: 366, poolMaxPages: 3)).GetAsync(CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.True(result.Truncated);
+        Assert.Equal(CtrmReadStatus.PartialSuccess, result.Status);
+        Assert.Equal(3, client.Calls);
     }
 }
