@@ -593,9 +593,15 @@ USING
   AND t.CommodityCode = s.CommodityCode
   AND t.CropYear      = s.CropYear
   AND t.Month         = s.BidMonth
--- A manual cell matches here but satisfies no clause, so it is left exactly as the user typed it.
-WHEN MATCHED AND t.Source = N'Barchart'
-             AND (t.Bid <> ISNULL(s.BidText, N'')
+-- The feed takes a cell over even if a user typed in it first. Users are allowed to fill a gap the
+-- vendor does not cover, and they should be -- but the moment the elevator starts publishing that
+-- month, the vendor's number is the better one and it wins. Leaving the manual value in place read as
+-- manual-always-wins, and in practice meant a bid typed into an empty cell silently masked the feed
+-- forever: the row matched on the key, failed the Source test, and NOT MATCHED never fired.
+--
+-- Source is reassigned on takeover, so the cell becomes feed-owned and read-only from then on.
+WHEN MATCHED AND (t.Source <> N'Barchart'
+                  OR t.Bid <> ISNULL(s.BidText, N'')
                   OR ISNULL(t.BarchartSymbol, N'') <> ISNULL(s.Symbol, N'')
                   OR ISNULL(t.QuoteAsOf, N'19000101') <> ISNULL(s.QuoteAsOf, N'19000101')
                   OR ISNULL(t.BasisBid, N'') <> ISNULL(s.BasisText, N'')
@@ -603,6 +609,7 @@ WHEN MATCHED AND t.Source = N'Barchart'
                   OR ISNULL(t.BasisQuoteAsOf, N'19000101') <> ISNULL(s.BasisQuoteAsOf, N'19000101'))
     THEN UPDATE SET
         t.Bid               = ISNULL(s.BidText, N''),
+        t.Source            = N'Barchart',
         t.CommodityName     = s.CommodityName,
         t.CommodityCategory = s.CommodityCategory,
         t.BarchartSymbol    = s.Symbol,

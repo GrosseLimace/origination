@@ -206,7 +206,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ApplyBids_PicksTheWiderWindow_SkipsUnmappedCommodities_AndNeverOverwritesManualBids()
+    public async Task ApplyBids_PicksTheWiderWindow_SkipsUnmappedCommodities_AndLeavesUnrelatedManualBids()
     {
         if (!Enabled) return;
 
@@ -228,13 +228,16 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         _context.BidSheetLocations.AddRange(gpcLocation, siouxLocation);
         await _context.SaveChangesAsync();
 
-        // A hand-typed bid in the exact cell the feed would target.
+        // A hand-typed bid in a month the feed does NOT publish. It used to sit in the cell the feed
+        // targets, back when a manual value blocked the feed outright; that is now a takeover and has
+        // its own test. What matters here is that the feed leaves cells that are none of its business
+        // alone.
         _context.BidSheetLocationBids.Add(new BidSheetLocationBid
         {
             LocationId = siouxLocation.Id,
             CommodityCode = "IT_CORN",
             CropYear = 2027,
-            Month = 12,
+            Month = 3,
             Bid = "9.99",
             Source = BidSources.Manual,
             CreatedBy = "integration-test",
@@ -257,16 +260,18 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Equal(2027, gpcDecember.CropYear);
         Assert.Equal(12, gpcDecember.Month);
 
-        // The manual bid is untouched — the feed owns its own cells only.
+        // The manual bid is untouched: the feed publishes nothing for March, so it is not its cell.
+        // Scoped to that month, because Sioux now also carries the December cell the feed does own.
         var manual = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == siouxLocation.Id);
+            .SingleAsync(b => b.LocationId == siouxLocation.Id && b.Month == 3);
         Assert.Equal("9.99", manual.Bid);
         Assert.Equal(BidSources.Manual, manual.Source);
         Assert.Null(manual.QuoteAsOf);
 
         // Re-running changes nothing: no duplicate rows, no ModifiedAt churn.
+        // Three now: GPC's fed cell, Sioux's fed cell, and Sioux's untouched manual March.
         await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
-        Assert.Equal(2, await _context.BidSheetLocationBids
+        Assert.Equal(3, await _context.BidSheetLocationBids
             .CountAsync(b => b.LocationId == gpcLocation.Id || b.LocationId == siouxLocation.Id));
     }
 
@@ -396,6 +401,72 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Empty(siouxCells);
         // Neither is a no-bid placeholder.
         Assert.Empty(thirdCells);
+    }
+
+    // Users may fill a cell the vendor does not cover -- that is the point of a feed-linked location
+    // still accepting manual bids. But when the elevator starts publishing that month, the vendor's
+    // number is the better one and takes the cell over. The old rule left the manual value in place,
+    // which meant a bid typed into an empty cell silently masked the feed forever.
+    [Fact]
+    public async Task ApplyBids_TakesOverAManualCellOnceTheFeedPublishesIt()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+
+        // A user got there first, in the exact cell the feed is about to fill.
+        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
+        {
+            LocationId = location.Id,
+            CommodityCode = "IT_FLEX",
+            CropYear = 2027,
+            Month = 12,
+            Bid = "9.99",
+            Source = BidSources.Manual,
+            CreatedBy = "integration-test",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX");
+        Assert.Equal("4.47", cell.Bid);
+        // Ownership transfers with the value, so the cell is read-only from here on.
+        Assert.Equal(BidSources.Barchart, cell.Source);
+        Assert.Equal("ZCPZ27-990001-990010.CM", cell.BarchartSymbol);
+    }
+
+    // The other half of the same rule: a manual cell the feed has NO winner for is left alone. Only a
+    // cell the vendor actually publishes gets taken over.
+    [Fact]
+    public async Task ApplyBids_LeavesAManualCellTheFeedDoesNotPublish()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+
+        // A month the fixture's instruments do not cover.
+        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
+        {
+            LocationId = location.Id,
+            CommodityCode = "IT_FLEX",
+            CropYear = 2027,
+            Month = 3,
+            Bid = "9.99",
+            Source = BidSources.Manual,
+            CreatedBy = "integration-test",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 3);
+        Assert.Equal("9.99", cell.Bid);
+        Assert.Equal(BidSources.Manual, cell.Source);
     }
 
     // Mode reports how BarChart delivered the quote -- real-time, delayed, or end-of-day -- not whether
