@@ -60,20 +60,30 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para>Two independently scoped reads, mirroring the two branches of the ODS ticket query. The
-    /// APPLIED branch is scoped by contract number with no customer condition, so a split load - a ticket
-    /// applied to this producer's contract but booked under another customer code - is included. The
-    /// UNAPPLIED branch is scoped by customer code, because a U/L/C row has no contract to match on.</para>
+    /// <para><b>One read, both classifications.</b> Applied versus unapplied is OUR rule, not a server-side
+    /// query - a detail row with a purchase-contract number is applied, one without is not - so it does not
+    /// need a query each. A single <c>tickets(customerId:)</c> read returns the producer's ticket headers and
+    /// both mappings run over that one set.</para>
     ///
-    /// <para>This replaced a single customer-scoped read that required BOTH conditions on both branches.
-    /// That version could not see a split load, which made the producer's ticket list disagree with the
-    /// applied bushels shown against the contract above it - two answers to one question from the same
-    /// screen. Measured on QA no producer actually had a split load, so this changes no visible number
-    /// today; it removes the way they could diverge unnoticed.</para>
+    /// <para><b>Why that matters here more than anywhere else.</b> A ticket read is charged by the DATE SCAN,
+    /// not the rows: <c>customerId</c> on <c>tickets</c> is not indexed the way it is on <c>contracts</c>, so
+    /// the server must scan ticket headers across the window and semi-join details. Measured 2026-08-27, a
+    /// producer with NO tickets at all still costs ~3s for a 365-day window. Three years is three windows, so
+    /// a second independently scoped read doubled the scans - six instead of three - and that was the bulk of
+    /// a heavy producer's 13.8s load.</para>
     ///
-    /// <para>The two reads run concurrently and are separately cached, so the extra request costs little
-    /// wall-clock. Either failing fails the whole answer: a partial list renders as a shorter ticket
-    /// history with nothing on screen to say half of it is missing.</para>
+    /// <para><b>What the second read used to add, and why dropping it is safe.</b> It was scoped by contract
+    /// number with no customer condition, to catch a split load booked entirely under another customer code.
+    /// Note that this single read still catches split loads on any header the producer appears on at all,
+    /// because <see cref="CtrmMappings.ToAppliedForContracts"/> matches on the contract number and ignores the
+    /// booked code. The only rows it cannot see are on headers with NO detail for this producer. Sampled 90
+    /// producers in trade unit 2190 (13 with open contracts) over a full year: zero such rows, and in several
+    /// cases this read found MORE applied rows than the contract-scoped one did. Set
+    /// <c>Ctrm:CrossBookedAppliedTickets</c> to restore the supplementary read if production data differs -
+    /// the code is still here, one setting away.</para>
+    ///
+    /// <para>A failed read fails the whole answer: a partial list renders as a shorter ticket history with
+    /// nothing on screen to say half of it is missing.</para>
     /// </remarks>
     public async Task<List<Ticket>> GetByCustomerAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
     {
@@ -88,35 +98,49 @@ public sealed class CtrmTicketRepository : ITicketRepository
         // this producer's contract list for the screen, so this hits its cache.
         var openPurchaseContractIds = await GetOpenPurchaseContractIdsAsync(code, cancellationToken);
 
-        var appliedRead = _reader.GetForContractsAsync([.. openPurchaseContractIds], cancellationToken);
-        var unappliedRead = _reader.GetForProducerAsync(code, cancellationToken);
-        await Task.WhenAll(appliedRead, unappliedRead);
-
-        var applied = await appliedRead;
-        var unapplied = await unappliedRead;
-
-        if (!applied.Ok || !unapplied.Ok)
+        var read = await _reader.GetForProducerAsync(code, cancellationToken);
+        if (!read.Ok)
         {
             // No ODS fallback: serving ODS tickets while the screen is meant to show CTRM would hide the
             // failure and invalidate any conclusion drawn about CTRM's coverage.
-            var failure = !applied.Ok ? applied : unapplied;
             _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
-                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", failure.Status, failure.Detail);
-            _provenance.RecordTickets("ctrm", failure.Status.ToString(), 0);
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
             return [];
         }
 
-        // Keyed by id rather than concatenated. The two branches are mutually exclusive by contract-number
+        var headers = read.Value ?? [];
+
+        // Opt-in supplement: a second, contract-scoped read that can see a ticket booked entirely under
+        // another customer code. Off by default on measured evidence (see the remarks) because it doubles
+        // the date scans, which are the whole cost of this read.
+        if (ReadBool("Ctrm:CrossBookedAppliedTickets"))
+        {
+            var crossBooked = await _reader.GetForContractsAsync([.. openPurchaseContractIds], cancellationToken);
+            if (!crossBooked.Ok)
+            {
+                _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                    "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", crossBooked.Status, crossBooked.Detail);
+                _provenance.RecordTickets("ctrm", crossBooked.Status.ToString(), 0);
+                return [];
+            }
+
+            // Same header can arrive from both reads; the id-keyed dictionary below collapses it.
+            headers = [.. headers, .. crossBooked.Value ?? []];
+        }
+
+        // Keyed by id rather than concatenated. The two mappings are mutually exclusive by contract-number
         // prefix (a purchase contract id cannot start with U, L or C), so this should never collapse a row
         // - but if that assumption ever broke, a duplicate would double-count the ticket's bushels.
         var byId = new Dictionary<long, Ticket>();
 
-        foreach (var ticket in (applied.Value ?? [])
-                 .SelectMany(header => CtrmMappings.ToAppliedForContracts(header, openPurchaseContractIds)))
+        // Both classifications over the SAME headers. ToAppliedForContracts matches on the contract number
+        // and ignores the booked customer code, so a split load on a header this producer appears on is
+        // still picked up.
+        foreach (var ticket in headers.SelectMany(header => CtrmMappings.ToAppliedForContracts(header, openPurchaseContractIds)))
             byId[ticket.Id] = ticket;
 
-        foreach (var ticket in (unapplied.Value ?? [])
-                 .SelectMany(header => CtrmMappings.ToUnappliedForProducer(header, code)))
+        foreach (var ticket in headers.SelectMany(header => CtrmMappings.ToUnappliedForProducer(header, code)))
             byId[ticket.Id] = ticket;
 
         var tickets = byId.Values.ToList();
@@ -536,6 +560,10 @@ public sealed class CtrmTicketRepository : ITicketRepository
         int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : fallback;
+    /// <summary>Reads a boolean setting; absent or unparseable means false.</summary>
+    private bool ReadBool(string key) =>
+        bool.TryParse(_configuration[key]?.Trim(), out var parsed) && parsed;
+
     private async Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(scoularId)) return scoularId.Trim();
