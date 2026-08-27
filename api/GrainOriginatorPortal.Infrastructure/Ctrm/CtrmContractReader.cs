@@ -334,9 +334,11 @@ public sealed class CtrmContractReader
     /// One indexed <c>customerId</c> read per producer, fanned out at <c>Ctrm:TradeUnitPerProducerConcurrency</c>.
     /// </summary>
     /// <remarks>
-    /// <para>Not behind <see cref="CtrmTradeUnitThrottle"/>: each of these is the same weight as the read a
-    /// user's click makes (indexed, ~1.5s), so the throttle that protects clicks from ~25s scans would only
-    /// slow this down for no benefit. The concurrency knob is the load dial instead.</para>
+    /// <para><b>Behind <see cref="CtrmTradeUnitThrottle"/>, on evidence.</b> The first version of this was
+    /// deliberately NOT throttled, reasoning that each call is the same weight as a user's click. That was
+    /// wrong: hundreds of them back to back saturate the gateway's throughput, and the per-producer reads a
+    /// user was clicking on visibly slowed down while a walk ran. The walk is background work and a click is
+    /// not, so the walk now competes for the same bounded pool of background slots as the ticket pages.</para>
     ///
     /// <para>A failed producer is re-read once after a short pause before it fails the whole read. With
     /// hundreds of calls the odds of one transient error are real, and a silently shorter producer list is
@@ -353,11 +355,11 @@ public sealed class CtrmContractReader
             await slot.WaitAsync(CancellationToken.None);
             try
             {
-                var read = await FetchProducerCoreAsync(code);
+                var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchProducerCoreAsync(code));
                 if (!read.Ok)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(2));
-                    read = await FetchProducerCoreAsync(code);
+                    read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchProducerCoreAsync(code));
                 }
                 return (code, read);
             }
