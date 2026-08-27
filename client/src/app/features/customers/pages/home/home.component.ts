@@ -2,6 +2,7 @@ import { Component, inject, signal, computed, DestroyRef, effect, untracked } fr
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, Subject } from 'rxjs';
+import { mergeProducerRows } from './merge-producer-rows';
 import { catchError, takeUntil } from 'rxjs/operators';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
@@ -81,6 +82,20 @@ export class HomeComponent {
    *  server's own per-producer cache (Ctrm:LiveCacheSeconds, 60s): refetching sooner would usually be
    *  answered from that cache anyway, so it would cost a round trip for the same bytes. */
   private static readonly CUSTOMER_DATA_MAX_AGE_MS = 60_000;
+
+  /** The contract and ticket ids each producer's last read returned.
+   *
+   *  A refresh has to be able to make a row DISAPPEAR or CHANGE, and merging by id alone cannot:
+   *  the synthetic ticket id is built from prefix/number/suffix/BL date/product/sequence and does NOT
+   *  include the contract number or the status, so a ticket applied to a contract, settled, or cancelled
+   *  since the first read has the SAME id. Merging "only if unseen" dropped the new row and left the stale
+   *  one on screen for the session; merging by replacement still could not remove a row that had fallen
+   *  out of the result entirely. So the refresh removes exactly the ids the previous read contributed,
+   *  then merges the new rows.
+   *
+   *  Keyed on the previous ids rather than on customerCode on purpose: an applied split-load row can carry
+   *  another producer's code, so filtering by code would drop rows this producer legitimately owns. */
+  private readonly _customerRowIds = new Map<number, { contracts: Set<number>; tickets: Set<number> }>();
   /** Per-customer planting-intentions cache. Hydrated from the first visit's
    *  fetch; kept in sync by the add/edit/delete handlers. Subsequent visits to
    *  the same producer skip the network entirely. */
@@ -91,6 +106,11 @@ export class HomeComponent {
    *  circuit returned early before pricing lines were restored, leaving the
    *  panel showing the prior producer's data on re-click). */
   private readonly _customerPricingCache = new Map<string, ContractPricingLine[]>();
+
+  /** When each producer's pricing lines were read. Same 60s rule as the contracts and tickets: without an
+   *  age, a contract priced after the first click kept its UNPRICED badge for the rest of the session,
+   *  which is a wrong number on screen rather than merely an old one. */
+  private readonly _customerPricingLoadedAt = new Map<string, number>();
   /** Per-customer full-notes cache (Tier 2). Notes are no longer bulk-downloaded; the
    *  selected producer's linked group is fetched via getNotesByCustomer on selection and
    *  cached here for the session. Map.has distinguishes "fetched, zero notes" from "not
@@ -841,7 +861,9 @@ export class HomeComponent {
     // Notes are cleared for freshness parity: the next selection re-fetches, picking up
     // notes other users added since.
     this._customerLoadedAt.clear();
+    this._customerRowIds.clear();
     this._customerPricingCache.clear();
+    this._customerPricingLoadedAt.clear();
     this._customerPlantingCache.clear();
     this._customerNotesCache.clear();
     this._notesRefreshedThisSelection.clear();
@@ -1187,6 +1209,30 @@ export class HomeComponent {
    *  swaps to their pricing lines instead of leaving the prior producer's lines
    *  on screen. Cache hit = instant, no network. Cache miss = single fetch then
    *  populate. */
+  /**
+   * Refetches a producer's pricing lines behind badges already on screen.
+   *
+   * Silent, like the contract and ticket refresh: a failed refresh leaves the visible badges alone rather
+   * than blanking a correct panel. Replaces the cached set outright - a line repriced since the first read
+   * keeps its sequence, so merging by key would preserve the stale price.
+   */
+  private _refreshCustomerPricingLines(scoularId: string): void {
+    this.apiService.getPricingLinesByCustomer(scoularId)
+      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (lines) => {
+          // Only apply if the user is still on this producer.
+          if (this.selectedCustomer()?.scoularId !== scoularId) return;
+
+          this._customerPricingCache.set(scoularId, lines);
+          this._customerPricingLoadedAt.set(scoularId, Date.now());
+          this.customerPricingLines.set(lines);
+          this.appState.setPricingLines(lines);
+        },
+        error: () => { /* keep the visible badges; the failure is recorded server-side and logged */ }
+      });
+  }
+
   private _loadCustomerPricingLines(scoularId?: string): void {
     if (!scoularId) {
       this.customerPricingLines.set([]);
@@ -1198,6 +1244,13 @@ export class HomeComponent {
       this.customerPricingLines.set(cached);
       this.appState.setPricingLines(cached);
       this.isLoadingPricingLines.set(false);
+
+      // Refresh behind the visible badges when the copy has aged out. No spinner, same reasoning as the
+      // contract and ticket refresh: what is on screen is real, so a flicker would be a downgrade.
+      const loadedAt = this._customerPricingLoadedAt.get(scoularId) ?? 0;
+      if (Date.now() - loadedAt >= HomeComponent.CUSTOMER_DATA_MAX_AGE_MS)
+        this._refreshCustomerPricingLines(scoularId);
+
       return;
     }
     // Cache miss — clear any prior producer's lines so the table doesn't show
@@ -1211,6 +1264,7 @@ export class HomeComponent {
           this.customerPricingLines.set(lines);
           this.appState.setPricingLines(lines);
           this._customerPricingCache.set(scoularId, lines);
+          this._customerPricingLoadedAt.set(scoularId, Date.now());
           this.isLoadingPricingLines.set(false);
         },
         error: () => {
@@ -1240,8 +1294,8 @@ export class HomeComponent {
         // would otherwise write one producer's rows into another's view.
         if (this.selectedCustomer()?.id !== customerId) return;
 
-        if (contracts) this._applyCustomerContracts(customerId, contracts);
-        if (tickets) this._applyCustomerTickets(customerId, tickets);
+        if (contracts) this._applyCustomerContracts(customerId, contracts, /* isRefresh */ true);
+        if (tickets) this._applyCustomerTickets(customerId, tickets, /* isRefresh */ true);
 
         if (contracts && tickets) this._customerLoadedAt.set(customerId, Date.now());
       });
@@ -1379,7 +1433,10 @@ export class HomeComponent {
         this._prefetched.set(id, { at: Date.now(), contracts: r.contracts ?? undefined, tickets: r.tickets ?? undefined });
       }
       // Pricing lines already have a per-producer cache that the click path consults first.
-      if (scoularId && r.pricing) this._customerPricingCache.set(scoularId, r.pricing);
+      if (scoularId && r.pricing) {
+        this._customerPricingCache.set(scoularId, r.pricing);
+        this._customerPricingLoadedAt.set(scoularId, Date.now());
+      }
     });
   }
 
@@ -1393,10 +1450,12 @@ export class HomeComponent {
   /** Merges one producer's live contract read into the pool and re-derives the per-customer views.
    *  The per-customer response is a LIVE read with no date window; the pool it merges into is a cached
    *  window snapshot. So on an id collision the incoming row is the fresher of the two and must WIN. */
-  private _applyCustomerContracts(customerId: number, contracts: Contract[]): void {
-    const byId = new Map(this.contracts().map(c => [c.id, c]));
-    contracts.forEach(c => byId.set(c.id, c));
-    const merged = [...byId.values()];
+  private _applyCustomerContracts(customerId: number, contracts: Contract[], isRefresh = false): void {
+    // Retract-then-replace, so a refresh can drop a contract that has closed out of the list as well as
+    // update the ones still in it. See mergeProducerRows for why merging alone is not enough.
+    const merged = mergeProducerRows(
+      this.contracts(), contracts, this._customerRowIds.get(customerId)?.contracts, isRefresh);
+    this._rememberRowIds(customerId, 'contracts', contracts.map(c => c.id));
     this.contracts.set(merged);
     this.appState.setContracts(merged);
     this.isLoadingContracts.set(false);
@@ -1407,10 +1466,18 @@ export class HomeComponent {
     if (customer) this._autoSaveCommodities(customer, this.allCustomerTickets());
   }
 
-  /** Merges one producer's ticket read into the LOCAL ticket signal and re-derives the views. */
-  private _applyCustomerTickets(customerId: number, tickets: Ticket[]): void {
-    const merged = [...this.tickets()];
-    tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
+  /** Merges one producer's ticket read into the LOCAL ticket signal and re-derives the views.
+   *
+   *  Replaces on id collision rather than skipping. The old version only pushed ids it had not seen,
+   *  which meant a row already present from an earlier read - or from a TU-wide load - was never updated:
+   *  a ticket applied to a contract or settled since then kept its stale status on screen, because the
+   *  synthetic id does not change when the status does. */
+  private _applyCustomerTickets(customerId: number, tickets: Ticket[], isRefresh = false): void {
+    // Retract-then-replace. A ticket's synthetic id does not change when its status does, so replacement
+    // is what lets an applied or settled ticket stop showing as unapplied.
+    const merged = mergeProducerRows(
+      this.tickets(), tickets, this._customerRowIds.get(customerId)?.tickets, isRefresh);
+    this._rememberRowIds(customerId, 'tickets', tickets.map(t => t.id));
     this.tickets.set(merged);
     this.isLoadingUnappliedTickets.set(false);
     this._loadCustomerData(customerId);
@@ -1419,6 +1486,14 @@ export class HomeComponent {
     const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
     if (customer) this._autoSaveCommodities(customer, tickets);
   }
+  /** Records which ids a producer's read contributed, so the next refresh can retract exactly those. */
+  private _rememberRowIds(customerId: number, kind: 'contracts' | 'tickets', ids: number[]): void {
+    const entry = this._customerRowIds.get(customerId)
+      ?? { contracts: new Set<number>(), tickets: new Set<number>() };
+    entry[kind] = new Set(ids);
+    this._customerRowIds.set(customerId, entry);
+  }
+
   /** Loads one producer's tickets (applied + unapplied) into the LOCAL ticket signal and re-filters
    *  the per-customer views. Used on producer select and on navigation-restore. Deliberately does
    *  NOT write to appState.tickets — that signal is the TU-wide cache for list/NLQ queries only;

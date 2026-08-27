@@ -16,6 +16,7 @@ using Moq;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Filters;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Repositories;
@@ -52,6 +53,48 @@ public class CtrmOutageEndToEndTests
             });
     }
 
+    /// <summary>
+    /// Fails only CONTRACT documents; ticket documents succeed with an empty page.
+    /// </summary>
+    /// <remarks>
+    /// The whole point of the test that uses this. With a client that fails everything, "the contract read
+    /// failed while the ticket read succeeded" cannot be distinguished from "both failed" - which is how the
+    /// original bug survived: the applied-ticket branch swallowed a contract failure, and any test that let
+    /// the ticket read fail too would pass either way.
+    /// </remarks>
+    private sealed class ContractsOnlyFailureClient : ICtrmGraphQlClient
+    {
+        public bool IsConfigured => true;
+        public int TicketCalls { get; private set; }
+        public int ContractCalls { get; private set; }
+
+        public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
+        {
+            // Contract documents ask for contracts; ticket documents ask for tickets.
+            if (document.Contains("contracts(", StringComparison.Ordinal))
+            {
+                ContractCalls++;
+                return Task.FromResult(new CtrmReadResult<T>
+                {
+                    Status = CtrmReadStatus.EgressBlocked,
+                    Detail = "Timed out reaching the CTRM gateway."
+                });
+            }
+
+            TicketCalls++;
+            var response = new CtrmTicketsResponse
+            {
+                Tickets = new CtrmPage<CtrmTicketDto>
+                {
+                    TotalCount = 0,
+                    PageInfo = new CtrmPageInfo { HasNextPage = false },
+                    Items = []
+                }
+            };
+            return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)(object)response });
+        }
+    }
+
     private static IConfiguration Config() =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -63,12 +106,10 @@ public class CtrmOutageEndToEndTests
             ["Ctrm:BackgroundMaxDeferSeconds"] = "0"
         }).Build();
 
-    private static (CtrmContractRepository Contracts, CtrmTicketRepository Tickets, CtrmProvenance Provenance) Sut()
+    /// <summary>Readers and contexts over one client, with a producer wired to a trade unit.</summary>
+    private static (CtrmContractReader Contracts, CtrmTicketReader Tickets, ApplicationDbContext App, TicketRepository OdsTickets)
+        Readers(ICtrmGraphQlClient client, IConfiguration config)
     {
-        var config = Config();
-        var provenance = new CtrmProvenance();
-        var client = new UnreachableClient();
-
         var ods = new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
             .UseInMemoryDatabase($"outage-ods-{Guid.NewGuid()}").Options);
         var app = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -76,16 +117,27 @@ public class CtrmOutageEndToEndTests
 
         app.Customers.Add(new Customer { Id = 1, ScoularId = Producer, Name = "Test Farm", IsActive = true });
         // The trade-unit link matters: without it the trade-unit and crop-year reads resolve to no producers
-        // and return empty WITHOUT calling CTRM - correctly not a failure. Omitting it made those two tests
-        // pass through the wrong path entirely.
+        // and return empty WITHOUT calling CTRM - correctly not a failure. Omitting it made two of these
+        // tests pass through the wrong path entirely.
         app.CustomerTradeUnits.Add(new CustomerTradeUnit { Id = 1, CustomerId = 1, TradeUnit = "2190", IsActive = true });
         app.SaveChanges();
 
-        var contractReader = new CtrmContractReader(client, config, new Mock<ILogger<CtrmContractReader>>().Object);
-        var ticketReader = new CtrmTicketReader(client, config, new Mock<ILogger<CtrmTicketReader>>().Object);
+        return (
+            new CtrmContractReader(client, config, new Mock<ILogger<CtrmContractReader>>().Object),
+            new CtrmTicketReader(client, config, new Mock<ILogger<CtrmTicketReader>>().Object),
+            app,
+            new TicketRepository(ods, app, new Mock<ILogger<TicketRepository>>().Object));
+    }
 
-        var odsContracts = new ContractRepository(ods, app, new Mock<ILogger<ContractRepository>>().Object);
-        var odsTickets = new TicketRepository(ods, app, new Mock<ILogger<TicketRepository>>().Object);
+    private static (CtrmContractRepository Contracts, CtrmTicketRepository Tickets, CtrmProvenance Provenance) Sut()
+    {
+        var config = Config();
+        var provenance = new CtrmProvenance();
+
+        var (contractReader, ticketReader, app, odsTickets) = Readers(new UnreachableClient(), config);
+        var odsForContracts = new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
+            .UseInMemoryDatabase($"outage-ods2-{Guid.NewGuid()}").Options);
+        var odsContracts = new ContractRepository(odsForContracts, app, new Mock<ILogger<ContractRepository>>().Object);
 
         return (
             new CtrmContractRepository(contractReader, ticketReader, app, odsContracts, provenance,
@@ -172,14 +224,30 @@ public class CtrmOutageEndToEndTests
     [Fact]
     public async Task AContractOutageIsReportedEvenWhenTheTicketReadItselfSucceeded()
     {
-        // The applied-tickets hole: a ticket read can succeed while the contract read that scopes its
-        // applied rows fails, and the endpoint would answer 200 with every applied ticket missing.
-        var (_, tickets, provenance) = Sut();
+        // The applied-tickets hole. The ticket read succeeds; the contract read that scopes its APPLIED rows
+        // fails, so the endpoint would answer 200 with every applied ticket missing - "this producer has
+        // delivered nothing against their contracts". Running the two concurrently made this combination
+        // realistic rather than theoretical.
+        var config = Config();
+        var provenance = new CtrmProvenance();
+        var client = new ContractsOnlyFailureClient();
 
-        await tickets.GetByCustomerAsync(1, Producer, CancellationToken.None);
+        var (contractReader, ticketReader, app, odsTickets) = Readers(client, config);
+        var tickets = new CtrmTicketRepository(ticketReader, contractReader, app, odsTickets, config, provenance,
+            new Mock<ILogger<CtrmTicketRepository>>().Object);
 
+        var rows = await tickets.GetByCustomerAsync(1, Producer, CancellationToken.None);
+
+        // The ticket read genuinely ran and genuinely succeeded...
+        Assert.True(client.TicketCalls > 0, "the ticket read never happened, so this proves nothing");
+        Assert.True(client.ContractCalls > 0, "the contract read never happened, so this proves nothing");
+        Assert.Empty(rows);
+
+        // ...and the failure recorded is the CONTRACT one specifically.
         Assert.NotNull(provenance.Failure);
-        Assert.Contains(provenance.Failure!.What, new[] { "contracts", "tickets" });
+        Assert.Equal("contracts", provenance.Failure!.What);
+        Assert.Equal(CtrmReadStatus.EgressBlocked, provenance.Failure.Status);
+
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, (await RunFilter(provenance)).HttpStatusCode);
     }
 }
