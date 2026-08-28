@@ -1723,6 +1723,11 @@ export class BidSheetComponent {
         if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
         this.allMapLocations.update(locs => [...saved, ...locs]);
 
+        // The picker has done its job. Closing Edit Bids after this lands on the map showing the
+        // locations just added, which is what the user is going there to see.
+        this._leaveBarchartMode();
+        this.addLocationOrigin.set(null);
+
         this._loadAllMapLocations();
         const tus = this.activeTradeUnits();
         // Edit Bids is opened from the reload callback, not here: the grid is built from loaded bid
