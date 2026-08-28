@@ -617,6 +617,7 @@
             (focus)="onBarchartFocus($event)"
             (add)="onBarchartAdd($event)"
             (addMany)="onBarchartAddMany($event)"
+            (selectionChange)="onBarchartSelectionChange($event)"
             (close)="exitBarchartMode()"
             (detailClosed)="barchartSelectedKey.set(null)"
           />

@@ -76,6 +76,9 @@ export class BarchartPickerComponent {
   /** Several locations at once, from the list checkboxes. */
   readonly addMany = output<BarchartBulkAddRequest>();
 
+  /** Ticked keys, so the map can colour their pins to match the list. */
+  readonly selectionChange = output<ReadonlySet<string>>();
+
   readonly close = output<void>();
 
   /**
@@ -123,16 +126,19 @@ export class BarchartPickerComponent {
   }
 
   toggleSelected(locationKey: string, event?: Event): void {
-    event?.stopPropagation();   // the row itself focuses the map; the box only ticks
+    // Stops the row handler running as well, which would tick it straight back off.
+    event?.stopPropagation();
     this.selectedKeys.update(current => {
       const next = new Set(current);
       next.has(locationKey) ? next.delete(locationKey) : next.add(locationKey);
       return next;
     });
+    this.selectionChange.emit(this.selectedKeys());
   }
 
   clearSelection(): void {
     this.selectedKeys.set(new Set<string>());
+    this.selectionChange.emit(this.selectedKeys());
   }
 
   /**
@@ -283,9 +289,13 @@ export class BarchartPickerComponent {
     });
   }
 
+  /**
+   * Row click ticks the location and pans to it. It used to open the detail panel, which is a detour
+   * when the job is picking a dozen elevators; the detail is still there off the map pin.
+   */
   selectLocation(location: BarchartCatalogLocation): void {
     this.focus.emit(location);
-    this.openDetail(location.locationKey);
+    this.toggleSelected(location.locationKey);
   }
 
   openDetail(locationKey: string): void {

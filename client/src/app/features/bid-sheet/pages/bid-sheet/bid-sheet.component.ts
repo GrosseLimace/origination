@@ -484,6 +484,9 @@ export class BidSheetComponent {
   barchartSearchArea = signal<BarchartSearchArea | null>(null);
   /** Candidate clicked on the map, handed to the picker so map and panel stay in step. */
   barchartSelectedKey = signal<string | null>(null);
+
+  /** Keys ticked in the picker list. Their pins go blue so the batch is visible on the map too. */
+  barchartTickedKeys = signal<ReadonlySet<string>>(new Set<string>());
   barchartAdding = signal<boolean>(false);
   /** Candidate pins live on their own layer so they never mix with the clustered bid-sheet pins. */
   private _barchartLayer: Leaflet.LayerGroup | null = null;
@@ -1546,7 +1549,7 @@ export class BidSheetComponent {
       if (loc.latitude == null || loc.longitude == null) continue;
       const placed = loc.placements.length > 0;
       const marker = L.marker([loc.latitude, loc.longitude],
-          { icon: this._barchartPinIcon(placed, loc.locationKey === this.barchartSelectedKey()) })
+          { icon: this._barchartPinIcon(placed, loc.locationKey === this.barchartSelectedKey(), this.barchartTickedKeys().has(loc.locationKey)) })
         // Company first, matching the panel — the vendor's site name is sometimes another company's
         // name, so leading with it on a pin would misattribute the bid.
         .bindTooltip(
@@ -1563,11 +1566,13 @@ export class BidSheetComponent {
    * the one whose details are open in the panel, so it's obvious which pin the name on screen refers to.
    * Blue matches the reference-location colour the rest of the map already uses for "this is the one".
    */
-  private _barchartPinIcon(placed: boolean, selected: boolean): any {
+  private _barchartPinIcon(placed: boolean, focused: boolean, ticked = false): any {
     const L = this._L!;
-    const size = selected ? 26 : 20;
-    const border = selected ? '#1d4ed8' : '#00875F';
-    const fill = placed ? 'transparent' : (selected ? '#2563eb' : '#00A36F');
+    // Two independent states. Blue says ticked for adding; the larger size says this is the pin whose
+    // detail is open. Keeping them on different channels means a pin can be both without ambiguity.
+    const size = focused ? 26 : 20;
+    const border = ticked ? '#1d4ed8' : '#00875F';
+    const fill = placed ? 'transparent' : (ticked ? '#2563eb' : '#00A36F');
     return L.divIcon({
       className: 'custom-marker',
       html: `<div style="width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${border};background:${fill};box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>`,
@@ -1578,12 +1583,19 @@ export class BidSheetComponent {
 
   /** Re-styles the candidate pins so exactly one reads as selected, without redrawing the layer. */
   private _highlightBarchartPin(selectedKey: string | null): void {
+    const ticked = this.barchartTickedKeys();
     for (const [key, marker] of this._barchartMarkers) {
-      const selected = key === selectedKey;
-      marker.setIcon(this._barchartPinIcon(this._barchartPlacedKeys.has(key), selected));
-      // Selected pin on top, so a neighbouring pin can't sit over the one being described in the panel.
-      marker.setZIndexOffset(selected ? 1000 : 0);
+      const focused = key === selectedKey;
+      marker.setIcon(this._barchartPinIcon(this._barchartPlacedKeys.has(key), focused, ticked.has(key)));
+      // Focused pin on top, so a neighbouring pin can't sit over the one being described in the panel.
+      marker.setZIndexOffset(focused ? 1000 : 0);
     }
+  }
+
+  /** The picker's tick list changed: recolour the pins so the map matches the panel. */
+  onBarchartSelectionChange(keys: ReadonlySet<string>): void {
+    this.barchartTickedKeys.set(keys);
+    this._highlightBarchartPin(this.barchartSelectedKey());
   }
 
   private _clearBarchartPins(): void {

@@ -244,7 +244,9 @@
         <div class="divide-y divide-gray-100 dark:divide-gray-800">
           @for (loc of results(); track loc.locationKey) {
             <button (click)="selectLocation(loc)"
-                    class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                    [class]="isSelected(loc.locationKey)
+                      ? 'w-full text-left px-4 py-2.5 bg-scoular-blue/10 dark:bg-scoular-blue/20 border-l-2 border-scoular-blue transition-colors'
+                      : 'w-full text-left px-4 py-2.5 border-l-2 border-transparent hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors'">
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
                   <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ primaryName(loc) }}</p>
