@@ -136,8 +136,8 @@ public class BidSheetRepository : IBidSheetRepository
     public async Task DeleteBidsAsync(int locationId, string commodityCode, int? month, CancellationToken cancellationToken)
     {
         var query = _appContext.BidSheetLocationBids
-            // Feed-owned cells are read-only to users; only the BarChart bridge manages them.
-            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode && b.Source != BidSources.Barchart);
+            // Fed rows go too: the bridge re-creates whatever it still publishes on its next run.
+            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode);
         if (month.HasValue)
             query = query.Where(b => b.Month == month.Value);
         var bids = await query.ToListAsync(cancellationToken);
@@ -234,8 +234,9 @@ public class BidSheetRepository : IBidSheetRepository
                 // BOTH prices cleared = user emptied the cell → delete the existing row if present.
                 // Either one alone is legitimate: plenty of elevators are quoted on basis only, and
                 // deleting on an empty cash would throw the basis away with it.
-                // Feed-owned cells are read-only to users — silently ignore the clear.
-                if (bidLookup.TryGetValue(key, out var toRemove) && toRemove.Source != BidSources.Barchart)
+                // Fed cells clear too. The next bridge run re-inserts them, so this is an override
+                // that lasts until tomorrow rather than a permanent delete.
+                if (bidLookup.TryGetValue(key, out var toRemove))
                 {
                     _appContext.BidSheetLocationBids.Remove(toRemove);
                     bidLookup.Remove(key);
@@ -243,9 +244,11 @@ public class BidSheetRepository : IBidSheetRepository
             }
             else if (bidLookup.TryGetValue(key, out var bid))
             {
-                // Feed-owned cells are read-only to users — silently ignore the edit.
-                if (bid.Source == BidSources.Barchart) continue;
-
+                // A user may override a fed cell. Ownership moves with the value: the row becomes
+                // Manual so the sheet shows it as hand-typed, and the bridge's next run takes it
+                // back. That round trip is the feature -- an originator can correct a price today
+                // and the vendor reasserts tomorrow if they were wrong.
+                bid.Source = BidSources.Manual;
                 bid.Bid = req.Bid;
                 bid.BasisBid = string.IsNullOrWhiteSpace(req.BasisBid) ? null : req.BasisBid;
                 bid.ModifiedBy = userId;
@@ -426,9 +429,8 @@ public class BidSheetRepository : IBidSheetRepository
             if (existing == null) continue;
             _appContext.Entry(bid).State = EntityState.Detached; // drop the duplicate insert
             reconciled = true;
-            // If the row that won the race is feed-owned, it's read-only to users —
-            // drop the colliding insert without applying the user's value.
-            if (existing.Source == BidSources.Barchart) continue;
+            // A user write beats a fed row here too, and takes ownership with it.
+            existing.Source = BidSources.Manual;
             existing.Bid = bid.Bid;
             existing.CommodityName = bid.CommodityName;
             existing.CommodityCategory = bid.CommodityCategory;

@@ -104,13 +104,17 @@ export class BidSheetComponent {
   readonly editBidsReadOnly = computed(() => !this.hasIndividualTu());
 
   /**
-   * Whether a single grid cell accepts typing. Three reasons it might not, and they are all per cell
-   * rather than per grid: the whole sheet is read-only (All Producers), the cell is fed and the feed
-   * owns it, or we are showing basis -- which has nowhere to save a typed value, because a manual
-   * basis is not something the sheet stores. In Both mode the input still holds cash, so it stays live.
+   * Whether a single grid cell accepts typing. Only one reason it does not: the whole sheet is
+   * read-only because no individual trade unit is selected.
+   *
+   * Fed cells ARE editable. A typed value is an override that stands until the feed's next run,
+   * which takes the cell back and returns it to the vendor's number -- so an originator who knows
+   * an elevator has moved can say so today without waiting, and the feed corrects it tomorrow if
+   * they were wrong. The Feed / Manual chip is what makes the override visible: overriding flips a
+   * cell to Manual, and the next apply-bids flips it back to Feed.
    */
   cellReadOnly(row: EditBidsRow, key: string): boolean {
-    return this.editBidsReadOnly() || row.fedCells.has(key);
+    return this.editBidsReadOnly();
   }
   selectedYear = signal<number>(new Date().getFullYear());
   selectedCrop = signal<string>('');
@@ -2015,9 +2019,9 @@ export class BidSheetComponent {
 
     for (const row of this.editBidsRows()) {
       for (const col of this.editGridColumns()) {
-        // Feed-owned cells are never part of a save. updateBid already blocks editing them, so this is
-        // belt-and-braces against a fed value being echoed back as a manual write.
-        if (row.fedCells.has(col.key)) continue;
+        // Fed cells are included now: overriding one is allowed, and the save is what makes the
+        // override real. Unchanged fed cells fall out below on the value comparison, so a plain
+        // re-save does not rewrite every fed row as manual.
         const current = (row.bids[col.key] ?? '').trim();
         const original = (row.originalBids[col.key] ?? '').trim();
         const currentBasis = (row.basisBids[col.key] ?? '').trim();

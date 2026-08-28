@@ -147,10 +147,11 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         Assert.Null(await CellFor(name));
     }
 
-    // The ownership rule, from the other direction: the bridge may take a manual cell over, but a user
-    // may never write to one the feed owns. The server enforces this even if the UI ever stopped.
+    // Overriding a fed cell is allowed, and ownership moves with the value. The cell becomes Manual so
+    // the sheet shows it as hand-typed; the bridge's next run takes it back. That round trip is the
+    // point -- an originator can correct a price today and the vendor reasserts tomorrow.
     [Fact]
-    public async Task BulkUpsert_RefusesToTouchAFeedOwnedCell()
+    public async Task BulkUpsert_OverridesAFeedOwnedCellAndTakesOwnership()
     {
         if (!Enabled) return;
 
@@ -183,8 +184,8 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
 
         var cell = await CellFor(name);
         Assert.NotNull(cell);
-        Assert.Equal("4.98", cell!.Bid);
-        Assert.Equal("-30", cell.BasisBid);
-        Assert.Equal(BidSources.Barchart, cell.Source);
+        Assert.Equal("9.99", cell!.Bid);
+        Assert.Equal("99", cell.BasisBid);
+        Assert.Equal(BidSources.Manual, cell.Source);
     }
 }
