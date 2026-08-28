@@ -1555,7 +1555,10 @@ export class BidSheetComponent {
         .bindTooltip(
           `${loc.elevator || loc.locationName || loc.locationKey}${loc.city ? ' — ' + loc.city : ''}`,
           { direction: 'top' });
-      marker.on('click', () => this.barchartSelectedKey.set(loc.locationKey));
+      // Ticks the location rather than opening its detail, matching a click on its row. Routed
+      // through the picker so clicking the same pin twice unticks it -- going via a signal would not,
+      // since setting it to the value it already holds changes nothing.
+      marker.on('click', () => this._pickerRef()?.toggleSelected(loc.locationKey));
       marker.addTo(this._barchartLayer!);
       this._barchartMarkers.set(loc.locationKey, marker);
     }

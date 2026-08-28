@@ -233,11 +233,6 @@ export class BarchartPickerComponent {
       this._runSearch();
     });
 
-    // The parent tells us which pin was clicked; load that location's preview.
-    effect(() => {
-      const key = this.selectedKey();
-      if (key) this.openDetail(key);
-    });
   }
 
   onSearchInput(value: string): void {
