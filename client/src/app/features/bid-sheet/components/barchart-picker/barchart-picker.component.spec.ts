@@ -5,7 +5,7 @@ import { of, throwError } from 'rxjs';
 import { BarchartPickerComponent } from './barchart-picker.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { BarchartCatalogLocation, BarchartCatalogLocationDetail, BarchartCoverage } from '@models';
+import { BarchartCatalogLocation, BarchartCoverage } from '@models';
 
 const coverage: BarchartCoverage = {
   locationCount: 2894,
@@ -32,15 +32,6 @@ function location(overrides: Partial<BarchartCatalogLocation> = {}): BarchartCat
   };
 }
 
-function detail(overrides: Partial<BarchartCatalogLocationDetail> = {}): BarchartCatalogLocationDetail {
-  return {
-    location: location(),
-    bids: [],
-    unmappedBidCount: 0,
-    ...overrides,
-  };
-}
-
 describe('BarchartPickerComponent', () => {
   let component: BarchartPickerComponent;
   let fixture: ComponentFixture<BarchartPickerComponent>;
@@ -48,7 +39,6 @@ describe('BarchartPickerComponent', () => {
   const apiMock = {
     getBarchartCoverage: vi.fn(),
     searchBarchartLocations: vi.fn(),
-    getBarchartLocation: vi.fn(),
   };
   const toastMock = { error: vi.fn(), success: vi.fn() };
 
@@ -56,7 +46,6 @@ describe('BarchartPickerComponent', () => {
     vi.clearAllMocks();
     apiMock.getBarchartCoverage.mockReturnValue(of(coverage));
     apiMock.searchBarchartLocations.mockReturnValue(of([location()]));
-    apiMock.getBarchartLocation.mockReturnValue(of(detail()));
 
     await TestBed.configureTestingModule({
       imports: [BarchartPickerComponent],
@@ -105,46 +94,6 @@ describe('BarchartPickerComponent', () => {
     fixture.detectChanges();
 
     expect(emitted.at(-1)?.[0].locationKey).toBe('82259');
-  });
-
-  // One trade unit is unambiguous, so pre-tick it. With several, requiring a choice keeps a location
-  // from quietly landing on the wrong desk.
-  it('pre-selects the only available trade unit', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2190']);
-    fixture.detectChanges();
-
-    component.openDetail('82259');
-
-    expect([...component.chosenTus()]).toEqual(['2190']);
-  });
-
-  it('leaves trade units unticked when there is more than one', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
-    fixture.detectChanges();
-
-    component.openDetail('82259');
-
-    expect(component.chosenTus().size).toBe(0);
-    expect(component.canAdd()).toBe(false);
-  });
-
-  it('never pre-selects nor allows a trade unit the location is already on', () => {
-    apiMock.getBarchartLocation.mockReturnValue(of(detail({
-      location: location({ placements: [{ locationId: 12, tradeUnitCode: '2190', name: 'GPC Muscatine' }] }),
-    })));
-    fixture.componentRef.setInput('tradeUnits', ['2190']);
-    fixture.detectChanges();
-
-    component.openDetail('82259');
-
-    expect(component.chosenTus().size).toBe(0);
-    expect(component.alreadyOn('2190')).toBe(true);
-  });
-
-  it('defaults the saved name to company plus site', () => {
-    fixture.detectChanges();
-    component.openDetail('82259');
-    expect(component.nameOverride()).toBe('Grain Processing Corporation - GPC-MUSCATINE');
   });
 
   it('falls back through site, then the key, when the company is missing', () => {
@@ -207,50 +156,6 @@ describe('BarchartPickerComponent', () => {
     expect(component.defaultName(loc)).toBe('Grain Processing Corporation - GPC-MUSCATINE');
   });
 
-  it('emits the add request with the chosen trade units', () => {
-    const emitted: any[] = [];
-    component.add.subscribe(r => emitted.push(r));
-    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
-    fixture.detectChanges();
-    component.openDetail('82259');
-    component.toggleTu('4056');
-
-    component.confirmAdd();
-
-    expect(emitted[0]).toEqual({
-      locationKey: '82259',
-      name: 'Grain Processing Corporation - GPC-MUSCATINE',
-      tradeUnitCodes: ['4056'],
-      isScoularFacility: false,
-    });
-    expect(component.saving()).toBe(true);
-  });
-
-  // The parent owns the create call, so the button has to be released whichever way it ends —
-  // otherwise a failed add leaves the picker stuck on "Adding…".
-  it('releases the add button after a failed add and keeps the confirm step open', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2190']);
-    fixture.detectChanges();
-    component.openDetail('82259');
-    component.confirmAdd();
-
-    component.addFinished(false);
-
-    expect(component.saving()).toBe(false);
-    expect(component.detail()).not.toBeNull();
-  });
-
-  it('closes the confirm step after a successful add', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2190']);
-    fixture.detectChanges();
-    component.openDetail('82259');
-
-    component.addFinished(true);
-
-    expect(component.detail()).toBeNull();
-    expect(component.chosenTus().size).toBe(0);
-  });
-
   it('surfaces a search failure without leaving stale pins on the map', () => {
     apiMock.searchBarchartLocations.mockReturnValue(throwError(() => new Error('boom')));
     const emitted: BarchartCatalogLocation[][] = [];
@@ -273,116 +178,106 @@ describe('BarchartPickerComponent', () => {
     expect(f.componentInstance.coverageSummary()).toBe('');
   });
 
-  it('formats a delivery month for the preview', () => {
-    expect(component.monthLabel(2027, 1)).toBe('Jan 2027');
-    expect(component.monthLabel(2026, 8)).toBe('Aug 2026');
-  });
-
   // -------------------------------------------------------------------------
   // Trade-unit selector. Originators can hold a lot of desks, and the picker is opened from the map
   // with no trade unit chosen, so the list has to be searchable rather than just long.
 
-  it('searches trade units by code', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2190', '4056', '3311']);
-    fixture.detectChanges();
+  // -------------------------------------------------------------------------
+  // Bulk add. The confirm step it replaced named and classified one elevator at a time, which is a
+  // round trip per location when an originator is standing up a whole area. Names and the Scoular
+  // flag are now proposed here and corrected on Edit Bids, so both have to be proposed correctly.
 
-    component.tuSearch.set('40');
-
-    expect(component.filteredTradeUnits()).toEqual(['4056']);
+  it('marks a listing published by Scoular as one of ours', () => {
+    expect(component.isScoularListing(location({ elevator: 'Scoular Company - Kansas' }))).toBe(true);
+    // The site name alone is unreliable -- some Scoular sites are just a town.
+    expect(component.isScoularListing(location({ elevator: 'The Scoular Company', locationName: 'Corley, IA' }))).toBe(true);
   });
 
-  // Searching by where a desk is matters more than by its number — originators know "Pratt", not "2190".
-  it('searches trade units by their location description', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
-    fixture.componentRef.setInput('tradeUnitLabels', new Map([['2190', 'Pratt, KS'], ['4056', 'Hastings, NE']]));
-    fixture.detectChanges();
-
-    component.tuSearch.set('pratt');
-
-    expect(component.filteredTradeUnits()).toEqual(['2190']);
-    expect(component.tradeUnitDisplay('2190')).toBe('2190 · Pratt, KS');
+  it('leaves a competitor listing unmarked', () => {
+    expect(component.isScoularListing(location())).toBe(false);
+    expect(component.isScoularListing(location({ elevator: undefined }))).toBe(false);
   });
 
-  it('shows every trade unit when the search is empty', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
-    fixture.detectChanges();
-
-    expect(component.filteredTradeUnits()).toEqual(['2190', '4056']);
-  });
-
-  it('summarises the selection for the closed selector', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
-    fixture.componentRef.setInput('tradeUnitLabels', new Map([['2190', 'Pratt, KS']]));
-    fixture.detectChanges();
-
-    expect(component.tuSummary()).toBe('Select trade units');
-    component.toggleTu('2190');
-    expect(component.tuSummary()).toBe('2190 · Pratt, KS');
-    component.toggleTu('4056');
-    expect(component.tuSummary()).toBe('2 trade units');
-  });
-
-  // A second placement on a desk that already has this location would duplicate every fed bid, so the
-  // toggle refuses it rather than relying on the checkbox being disabled in the template.
-  it('refuses to select a trade unit the location is already on', () => {
-    apiMock.getBarchartLocation.mockReturnValue(of(detail({
-      location: location({ placements: [{ locationId: 12, tradeUnitCode: '2190', name: 'x' }] }),
-    })));
-    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
-    fixture.detectChanges();
-    component.openDetail('82259');
-
-    component.toggleTu('2190');
-
-    // 4056 is pre-selected (it's the only desk this location isn't already on), so the set isn't empty —
-    // what matters is that the already-placed 2190 never got in.
-    expect(component.chosenTus().has('2190')).toBe(false);
-    expect([...component.chosenTus()]).toEqual(['4056']);
-  });
-
-  it('clears the search when the selector is closed', () => {
-    fixture.detectChanges();
-    component.toggleTuPicker();
-    component.tuSearch.set('pratt');
-
-    component.toggleTuPicker();
-
-    expect(component.tuPickerOpen()).toBe(false);
-    expect(component.tuSearch()).toBe('');
-  });
-
-  // Scoular's own elevators come through the feed like anyone else's -- 45 listings in the catalog --
-  // and the picker used to hard-code every added location as a competitor. Salina and Pratt both went
-  // on the sheet that way before this was noticed.
-  it('ticks the Scoular flag when the vendor company name says Scoular', () => {
-    apiMock.getBarchartLocation.mockReturnValue(of(detail({
-      location: location({ elevator: 'Scoular Company - Kansas', locationName: 'Salina, KS', city: 'Salina', state: 'KS' }),
-    })));
-    fixture.componentRef.setInput('tradeUnits', ['2190']);
-    fixture.detectChanges();
-
-    component.openDetail('4087');
-
-    expect(component.isScoular()).toBe(true);
-  });
-
-  it('leaves the Scoular flag off for a competitor', () => {
-    fixture.detectChanges();
-    component.openDetail('82259');
-    expect(component.isScoular()).toBe(false);
-  });
-
-  // A suggestion, not a decision -- the user's choice is what gets emitted.
-  it('emits whatever the user set the Scoular flag to', () => {
+  it('emits every ticked location, named and classified, for the trade units in play', () => {
     const emitted: any[] = [];
-    component.add.subscribe(r => emitted.push(r));
+    component.addMany.subscribe(r => emitted.push(r));
+    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
+    fixture.detectChanges();
+
+    component.toggleSelected(location());
+    component.toggleSelected(location({ locationKey: '4087', elevator: 'Scoular Company - Kansas', locationName: 'Salina, KS', city: 'Salina', state: 'KS' }));
+    component.addSelected();
+
+    expect(emitted[0]).toEqual({
+      locations: [
+        { locationKey: '82259', name: 'Grain Processing Corporation - GPC-MUSCATINE', isScoularFacility: false },
+        { locationKey: '4087', name: 'Scoular Company - Kansas - Salina', isScoularFacility: true },
+      ],
+      tradeUnitCodes: ['2190', '4056'],
+    });
+  });
+
+  it('adds nothing when nothing is ticked', () => {
+    const emitted: any[] = [];
+    component.addMany.subscribe(r => emitted.push(r));
+    fixture.detectChanges();
+
+    component.addSelected();
+
+    expect(emitted).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Ticking is a running basket across searches. Resolving it against the current results dropped
+  // everything picked before the last pan -- silently, while the footer went on counting them.
+
+  it('keeps a ticked location when the search has moved past it', () => {
+    fixture.detectChanges();
+    const gone = location({ locationKey: '99999', elevator: 'Far Away Co-op' });
+    component.toggleSelected(gone);
+
+    // The user pans; a completely different set comes back.
+    apiMock.searchBarchartLocations.mockReturnValue(of([location()]));
+    component.onStateChange('IL');
+
+    expect(component.selectedCount()).toBe(1);
+    expect(component.offListSelected().map(l => l.locationKey)).toEqual(['99999']);
+  });
+
+  it('adds a location the search has moved past', () => {
+    const emitted: any[] = [];
+    component.addMany.subscribe(r => emitted.push(r));
     fixture.componentRef.setInput('tradeUnits', ['2190']);
     fixture.detectChanges();
-    component.openDetail('82259');
-    component.isScoular.set(true);
+    component.toggleSelected(location({ locationKey: '99999', elevator: 'Far Away Co-op' }));
 
-    component.confirmAdd();
+    apiMock.searchBarchartLocations.mockReturnValue(of([location()]));
+    component.onStateChange('IL');
+    component.addSelected();
 
-    expect(emitted[0].isScoularFacility).toBe(true);
+    expect(emitted[0].locations.map((l: any) => l.locationKey)).toEqual(['99999']);
+  });
+
+  it('does not repeat a ticked location that is still on screen', () => {
+    fixture.componentRef.setInput('searchArea', { latitude: 41.4, longitude: -91, radiusMiles: 25 });
+    fixture.detectChanges();
+
+    component.toggleSelected(location());
+
+    expect(component.selectedCount()).toBe(1);
+    expect(component.offListSelected()).toEqual([]);
+  });
+
+  it('unticks on a second click and empties the basket on clear', () => {
+    fixture.detectChanges();
+    component.toggleSelected(location());
+    component.toggleSelected(location());
+    expect(component.selectedCount()).toBe(0);
+
+    component.toggleSelected(location());
+    component.clearSelection();
+
+    expect(component.selectedCount()).toBe(0);
+    expect(component.offListSelected()).toEqual([]);
   });
 });

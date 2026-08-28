@@ -1,11 +1,11 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import {
   BarchartCatalogLocation,
-  BarchartCatalogLocationDetail,
   BarchartCoverage
 } from '@models';
 
@@ -14,16 +14,6 @@ export interface BarchartSearchArea {
   latitude: number;
   longitude: number;
   radiusMiles: number;
-}
-
-/** What the parent needs in order to create the bid sheet placements. */
-export interface BarchartAddRequest {
-  locationKey: string;
-  /** Display name to save. Defaults to the vendor's site name but the user can change it. */
-  name: string;
-  tradeUnitCodes: string[];
-  /** Mark the new row as a Scoular facility (green on the map) rather than a competitor. */
-  isScoularFacility: boolean;
 }
 
 /** Several locations added in one go from the list's checkboxes. */
@@ -44,7 +34,8 @@ export interface BarchartBulkAddRequest {
 @Component({
   selector: 'app-barchart-picker',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, NgTemplateOutlet],
+  
   templateUrl: './barchart-picker.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -55,23 +46,11 @@ export class BarchartPickerComponent {
   /** Trade units the user may add a location to. */
   readonly tradeUnits = input<string[]>([]);
 
-  /**
-   * Trade-unit code → description ("2190" → "Pratt, KS"). Used for display and search, so a user can
-   * find a desk by where it is rather than having to remember its number.
-   */
-  readonly tradeUnitLabels = input<Map<string, string>>(new Map());
-
-  /** Location key the parent wants shown as selected (e.g. the user clicked its map pin). */
-  readonly selectedKey = input<string | null>(null);
-
   /** Results, so the parent can draw them as pins on the map. */
   readonly resultsChange = output<BarchartCatalogLocation[]>();
 
   /** A location the user picked in the list — the parent flies the map to it. */
   readonly focus = output<BarchartCatalogLocation>();
-
-  /** The user confirmed an add. */
-  readonly add = output<BarchartAddRequest>();
 
   /** Several locations at once, from the list checkboxes. */
   readonly addMany = output<BarchartBulkAddRequest>();
@@ -80,12 +59,6 @@ export class BarchartPickerComponent {
   readonly selectionChange = output<ReadonlySet<string>>();
 
   readonly close = output<void>();
-
-  /**
-   * The confirm step was dismissed. The parent clears its selected key on this, so clicking the same
-   * pin again re-opens it — without this the key never changes and the effect below wouldn't re-fire.
-   */
-  readonly detailClosed = output<void>();
 
   private readonly api = inject(ApiService);
   private readonly toast = inject(ToastService);
@@ -96,21 +69,6 @@ export class BarchartPickerComponent {
   readonly results = signal<BarchartCatalogLocation[]>([]);
   readonly loading = signal(false);
   readonly coverage = signal<BarchartCoverage | null>(null);
-
-  readonly detail = signal<BarchartCatalogLocationDetail | null>(null);
-  readonly detailLoading = signal(false);
-
-  /** Trade units ticked in the confirm step. */
-  readonly chosenTus = signal<Set<string>>(new Set());
-  readonly nameOverride = signal('');
-  readonly saving = signal(false);
-
-  /**
-   * Whether to mark the new row as a Scoular facility. Scoular's own elevators come through the feed
-   * like anyone else's — 45 listings in the catalog — so this can't be hard-coded false, which is what
-   * the picker did until now: Salina and Pratt both went on as competitors.
-   */
-  readonly isScoular = signal(false);
 
   /**
    * Locations ticked in the list. Adding one at a time meant a name-and-confirm round trip per
@@ -131,6 +89,18 @@ export class BarchartPickerComponent {
 
   /** Keys only, for the parent's pin colouring. */
   readonly selectedKeys = computed<ReadonlySet<string>>(() => new Set(this.selected().keys()));
+
+  /**
+   * Ticked locations that the current search is not showing.
+   *
+   * Rendered under the results rather than dropped, because building a batch means moving the map
+   * about: without them the earlier picks disappear from the panel while the footer goes on counting
+   * them, so the user cannot check the batch before committing to it.
+   */
+  readonly offListSelected = computed(() => {
+    const shown = new Set(this.results().map(r => r.locationKey));
+    return [...this.selected().values()].filter(l => !shown.has(l.locationKey));
+  });
 
   isSelected(locationKey: string): boolean {
     return this.selected().has(locationKey);
@@ -178,35 +148,10 @@ export class BarchartPickerComponent {
     });
   }
 
-  /** Trade-unit selector state. Originators can hold a lot of desks, so it searches rather than scrolls. */
-  readonly tuPickerOpen = signal(false);
-  readonly tuSearch = signal('');
-
-  /** Trade units matching the search, already-added ones included but flagged. */
-  readonly filteredTradeUnits = computed(() => {
-    const term = this.tuSearch().trim().toLowerCase();
-    const labels = this.tradeUnitLabels();
-    return this.tradeUnits().filter(tu => {
-      if (!term) return true;
-      const label = labels.get(tu)?.toLowerCase() ?? '';
-      return tu.toLowerCase().includes(term) || label.includes(term);
-    });
-  });
-
-  /** What the closed selector says. */
-  readonly tuSummary = computed(() => {
-    const chosen = [...this.chosenTus()];
-    if (chosen.length === 0) return 'Select trade units';
-    if (chosen.length === 1) return this.tradeUnitDisplay(chosen[0]);
-    return `${chosen.length} trade units`;
-  });
-
   private _searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
   /** A typed search or a state filter searches the whole catalog; otherwise we follow the map. */
   readonly isTextSearch = computed(() => this.searchText().trim().length > 0 || !!this.stateFilter());
-
-  readonly canAdd = computed(() => this.chosenTus().size > 0 && !!this.detail() && !this.saving());
 
   /** States sorted by coverage, for the filter dropdown. */
   readonly coverageStates = computed(() => this.coverage()?.states ?? []);
@@ -294,44 +239,10 @@ export class BarchartPickerComponent {
     });
   }
 
-  /**
-   * Row click ticks the location and pans to it. It used to open the detail panel, which is a detour
-   * when the job is picking a dozen elevators; the detail is still there off the map pin.
-   */
+  /** Row click ticks the location and pans the map to it, so the pin and the row agree. */
   selectLocation(location: BarchartCatalogLocation): void {
     this.focus.emit(location);
     this.toggleSelected(location);
-  }
-
-  openDetail(locationKey: string): void {
-    if (this.detail()?.location.locationKey === locationKey) return;
-    this.detailLoading.set(true);
-    this.detail.set(null);
-    this.api.getBarchartLocation(locationKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: d => {
-        this.detailLoading.set(false);
-        this.detail.set(d);
-        this.nameOverride.set(this.defaultName(d.location));
-        // Suggested from the vendor's company name rather than decided by it — the checkbox is right
-        // there to correct, and getting it wrong silently is what we're fixing.
-        this.isScoular.set(this.looksScoular(d.location));
-        // Pre-tick the trade units this location isn't already on, but only when there's exactly one
-        // choice; with several, making the user pick avoids a location quietly landing on the wrong desk.
-        const already = new Set(d.location.placements.map(p => p.tradeUnitCode));
-        const open = this.tradeUnits().filter(t => !already.has(t));
-        this.chosenTus.set(open.length === 1 ? new Set(open) : new Set());
-      },
-      error: () => {
-        this.detailLoading.set(false);
-        this.toast.error('Could not load that location');
-      },
-    });
-  }
-
-  closeDetail(): void {
-    this.detail.set(null);
-    this.chosenTus.set(new Set());
-    this.detailClosed.emit();
   }
 
   /**
@@ -389,71 +300,6 @@ export class BarchartPickerComponent {
     const site = this.siteLabel(location);
     if (company && site) return `${company} - ${site}`;
     return company || site || `BarChart ${location.locationKey}`;
-  }
-
-  toggleTu(tu: string): void {
-    if (this.alreadyOn(tu)) return; // adding a second placement to the same desk would duplicate its bids
-    this.chosenTus.update(set => {
-      const next = new Set(set);
-      next.has(tu) ? next.delete(tu) : next.add(tu);
-      return next;
-    });
-  }
-
-  /** True when the vendor's company name says this is one of ours. */
-  looksScoular(location: BarchartCatalogLocation): boolean {
-    return /scoular/i.test(location.elevator ?? '');
-  }
-
-  /** "2190 · Pratt, KS" when we know the description, else just the code. */
-  tradeUnitDisplay(tu: string): string {
-    const label = this.tradeUnitLabels().get(tu);
-    return label ? `${tu} · ${label}` : tu;
-  }
-
-  toggleTuPicker(): void {
-    this.tuPickerOpen.update(open => !open);
-    if (!this.tuPickerOpen()) this.tuSearch.set('');
-  }
-
-  clearChosenTus(): void {
-    this.chosenTus.set(new Set());
-  }
-
-  /** True when this location is already on that trade unit — the checkbox is then disabled. */
-  alreadyOn(tu: string): boolean {
-    return (this.detail()?.location.placements ?? []).some(p => p.tradeUnitCode === tu);
-  }
-
-  confirmAdd(): void {
-    const d = this.detail();
-    if (!d || this.chosenTus().size === 0) return;
-    this.saving.set(true);
-    this.add.emit({
-      locationKey: d.location.locationKey,
-      name: this.nameOverride().trim() || this.defaultName(d.location),
-      tradeUnitCodes: [...this.chosenTus()],
-      isScoularFacility: this.isScoular(),
-    });
-  }
-
-  /** Called by the parent once the add finished, so the button un-sticks either way. */
-  addFinished(succeeded: boolean): void {
-    this.saving.set(false);
-    if (succeeded) this.closeDetail();
-  }
-
-  /** "Jan 2027" for a preview row. */
-  monthLabel(cropYear: number, month: number): string {
-    const names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${names[month] ?? month} ${cropYear}`;
-  }
-
-  formatAsOf(iso: string | undefined): string {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
   /** Under the headline: just where it is. The site name is already part of the headline. */

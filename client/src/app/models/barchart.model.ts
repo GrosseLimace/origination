@@ -46,13 +46,6 @@ export interface BarchartCatalogPlacement {
 }
 
 /** A listing plus the bids it publishes — the picker's confirm step. */
-export interface BarchartCatalogLocationDetail {
-  location: BarchartCatalogLocation;
-  bids: BarchartCatalogBid[];
-  /** Bids whose commodity has no mapping yet; these won't reach the bid sheet. */
-  unmappedBidCount: number;
-}
-
 /** One publishable bid from the catalog. */
 export interface BarchartCatalogBid {
   /** Our commodity code, or absent when the vendor commodity isn't mapped. */

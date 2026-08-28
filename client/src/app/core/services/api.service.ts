@@ -24,7 +24,6 @@ import {
   BidSheetLocation,
   BidSheetLocationBid,
   BarchartCatalogLocation,
-  BarchartCatalogLocationDetail,
   BarchartCoverage,
   BarchartLocationSearchParams,
   BarchartRefreshBidsResult,
@@ -964,15 +963,6 @@ export class ApiService {
     }
     if (params.take != null) httpParams = httpParams.set('take', String(params.take));
     return this.http.get<BarchartCatalogLocation[]>(`${this.baseUrl}/barchart/locations`, { params: httpParams })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** One catalog listing plus the bids it publishes — what the picker previews before adding. */
-  getBarchartLocation(locationKey: string, instrumentType?: string): Observable<BarchartCatalogLocationDetail> {
-    const params: any = {};
-    if (instrumentType) params.instrumentType = instrumentType;
-    return this.http.get<BarchartCatalogLocationDetail>(
-      `${this.baseUrl}/barchart/locations/${encodeURIComponent(locationKey)}`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 

@@ -12,7 +12,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { environment } from '@env/environment';
-import { BarchartPickerComponent, BarchartAddRequest, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
+import { BarchartPickerComponent, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
 import { BarchartCatalogLocation } from '@models';
 import { commodityHex } from '@shared/utils/commodity-color';
 import {
@@ -1630,61 +1630,6 @@ export class BidSheetComponent {
   }
 
   /**
-   * Creates one bid sheet location per chosen trade unit, all sharing the BarChart key — that per-TU
-   * row IS the placement record. The server prefills address and coordinates from the catalog and
-   * runs the feed bridge on each create, so bids are present the moment this returns.
-   */
-  onBarchartAdd(request: BarchartAddRequest): void {
-    if (this.barchartAdding()) return;
-    this.barchartAdding.set(true);
-    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
-
-    const creates = request.tradeUnitCodes.map(tu => this.apiService.createBidSheetLocation({
-      name: request.name,
-      tradeUnitCode: tu,
-      groupName: this._getGroupNameForTu(tu) || undefined,
-      barchartLocationKey: request.locationKey,
-      isScoularFacility: request.isScoularFacility,
-      bids: []
-    }));
-
-    forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (saved) => {
-        this.barchartAdding.set(false);
-        this._pickerRef()?.addFinished(true);
-        this.toastService.success(
-          request.tradeUnitCodes.length === 1
-            ? `Added ${request.name}`
-            : `Added ${request.name} to ${request.tradeUnitCodes.length} trade units`);
-
-        // Locations for the trade units currently being viewed can go straight into the local cache;
-        // the rest arrive with the background reload below.
-        const viewing = new Set(this.activeTradeUnits());
-        const mine = saved.filter(l => viewing.has(l.tradeUnitCode));
-        if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
-        this.allMapLocations.update(locs => [...saved, ...locs]);
-
-        // The picker has done its job. Closing Edit Bids after this lands on the map showing the
-        // locations just added, which is what the user is going there to see.
-        this._leaveBarchartMode();
-        this.addLocationOrigin.set(null);
-
-        this._loadAllMapLocations();
-        const tus = this.activeTradeUnits();
-        if (tus.length > 0) this._loadBidData(tus, undefined, 'refresh');
-      },
-      error: (err) => {
-        this.barchartAdding.set(false);
-        this._pickerRef()?.addFinished(false);
-        if (isDevMode()) console.error('[BidSheet] barchart add failed', err);
-        // A duplicate name or an already-linked trade unit comes back as a 400 with a specific
-        // message; surface it rather than a generic failure, since it tells the user what to change.
-        this.toastService.error(err?.message ? `Could not add location: ${err.message}` : 'Could not add location');
-      }
-    });
-  }
-
-  /**
    * Adds every location ticked in the picker, then opens Edit Bids on them.
    *
    * Adding one at a time meant naming and confirming each elevator before the next, which is slow
@@ -1713,7 +1658,6 @@ export class BidSheetComponent {
     forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
         this.barchartAdding.set(false);
-        this._pickerRef()?.addFinished(true);
         this._pickerRef()?.clearSelection();
         const count = request.locations.length;
         this.toastService.success(`Added ${count} location${count === 1 ? '' : 's'}`);
@@ -1740,7 +1684,6 @@ export class BidSheetComponent {
       },
       error: (err) => {
         this.barchartAdding.set(false);
-        this._pickerRef()?.addFinished(false);
         if (isDevMode()) console.error('[BidSheet] barchart bulk add failed', err);
         this.toastService.error(err?.message ? `Could not add locations: ${err.message}` : 'Could not add locations');
       }

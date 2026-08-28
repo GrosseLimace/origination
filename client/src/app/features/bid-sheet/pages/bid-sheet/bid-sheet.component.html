@@ -603,7 +603,7 @@
             <p class="text-sm font-semibold text-gray-900 dark:text-white">Pick a location from BarChart</p>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Pins are competitor locations in the feed near this view. Pan the map to look elsewhere, or search by name.
-              Hollow pins are already on a bid sheet; the blue pin is the one open in the panel.
+              Hollow pins are already on a bid sheet; blue pins are the ones you have ticked to add.
             </p>
           </div>
 
@@ -611,15 +611,11 @@
             #picker
             [searchArea]="barchartSearchArea()"
             [tradeUnits]="addLocationTus()"
-            [tradeUnitLabels]="tradeUnitDescriptions()"
-            [selectedKey]="barchartSelectedKey()"
             (resultsChange)="onBarchartResults($event)"
             (focus)="onBarchartFocus($event)"
-            (add)="onBarchartAdd($event)"
             (addMany)="onBarchartAddMany($event)"
             (selectionChange)="onBarchartSelectionChange($event)"
             (close)="exitBarchartMode()"
-            (detailClosed)="barchartSelectedKey.set(null)"
           />
         }
 
