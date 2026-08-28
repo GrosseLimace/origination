@@ -577,6 +577,34 @@ FROM candidate AS c
 WHERE c.rn = 1
 GROUP BY c.LocationId, c.CommodityCode, c.CropYear, c.BidMonth;
 
+-- Year rows. The sheet has a Year column (Month = 0) and the vendor has no year-level bid, so the
+-- nearest delivery month still open stands in for one. Without this the feed can never appear in the
+-- Year view at all, which is where hand-typed bids live -- so a fed location and a manual one could
+-- never be compared, which is the whole purpose of the screen.
+--
+-- Nearest rather than best or latest: it answers what an elevator will pay for the soonest delivery
+-- still available, it cannot be accused of cherry-picking the flattering month, and it rolls forward
+-- on its own as months elapse. Elapsed windows are already excluded above, so the lowest remaining
+-- month IS the nearest. The row keeps the source month's symbol, so the UI can say which month the
+-- year value came from rather than leaving the user to guess.
+INSERT @winners
+    (LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
+     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf)
+SELECT
+    n.LocationId, n.CommodityCode, n.CommodityName, n.CommodityCategory, n.CropYear, 0,
+    n.Symbol, n.BidText, n.QuoteAsOf, n.BasisSymbol, n.BasisText, n.BasisQuoteAsOf
+FROM
+(
+    SELECT
+        w.LocationId, w.CommodityCode, w.CommodityName, w.CommodityCategory, w.CropYear,
+        w.Symbol, w.BidText, w.QuoteAsOf, w.BasisSymbol, w.BasisText, w.BasisQuoteAsOf,
+        rn = ROW_NUMBER() OVER (PARTITION BY w.LocationId, w.CommodityCode, w.CropYear
+                                ORDER BY w.BidMonth)
+    FROM @winners AS w
+    WHERE w.BidMonth > 0
+) AS n
+WHERE n.rn = 1;
+
 DECLARE @written int = 0;
 DECLARE @pruned  int = 0;
 

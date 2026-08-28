@@ -22,6 +22,7 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// upsert's matching and delete rules are the behaviour under test. Every test rolls back.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection("Database")]
 public class BidSheetRepositoryUpsertTests : IAsyncLifetime
 {
     private ApplicationDbContext _context = null!;

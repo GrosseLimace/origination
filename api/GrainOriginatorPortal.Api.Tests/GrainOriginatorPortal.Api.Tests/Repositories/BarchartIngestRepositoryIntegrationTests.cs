@@ -21,6 +21,7 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// Every test runs inside a transaction that is rolled back, so nothing is left behind.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection("Database")]
 public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 {
     private ApplicationDbContext _context = null!;
@@ -250,7 +251,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         // GPC's December cell has no whole-month corn bid, so the wider half-month window wins (4.53,
         // Aug 22-31 spans 9 days versus 6 for the first half).
         var gpcBids = await _context.BidSheetLocationBids.AsNoTracking()
-            .Where(b => b.LocationId == gpcLocation.Id)
+            .Where(b => b.LocationId == gpcLocation.Id && b.Month > 0)
             .ToListAsync();
         var gpcDecember = Assert.Single(gpcBids);
         Assert.Equal("4.53", gpcDecember.Bid);
@@ -269,9 +270,10 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Null(manual.QuoteAsOf);
 
         // Re-running changes nothing: no duplicate rows, no ModifiedAt churn.
-        // Three now: GPC's fed cell, Sioux's fed cell, and Sioux's untouched manual March.
+        // Five now: GPC's fed cell and its Year row, Sioux's fed cell and its Year row, and Sioux's
+        // untouched manual March.
         await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
-        Assert.Equal(3, await _context.BidSheetLocationBids
+        Assert.Equal(5, await _context.BidSheetLocationBids
             .CountAsync(b => b.LocationId == gpcLocation.Id || b.LocationId == siouxLocation.Id));
     }
 
@@ -323,7 +325,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.False(await _context.BidSheetLocationBids
             .AnyAsync(b => b.LocationId == gpcLocation.Id && b.Source == BidSources.Barchart));
         var survivor = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == gpcLocation.Id);
+            .SingleAsync(b => b.LocationId == gpcLocation.Id && b.Month > 0);
         Assert.Equal("5.55", survivor.Bid);
     }
 
@@ -388,9 +390,9 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
 
-        var gpcCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == gpc.Id).ToListAsync();
-        var siouxCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == sioux.Id).ToListAsync();
-        var thirdCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == third.Id).ToListAsync();
+        var gpcCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == gpc.Id && b.Month > 0).ToListAsync();
+        var siouxCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == sioux.Id && b.Month > 0).ToListAsync();
+        var thirdCells = await _context.BidSheetLocationBids.Where(b => b.LocationId == third.Id && b.Month > 0).ToListAsync();
 
         // The fresh, plausible price publishes -- and the sentinel does not win its cell despite being
         // the wider delivery window, which is what the ranking would otherwise have preferred.
@@ -431,7 +433,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
 
         var cell = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX");
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 12);
         Assert.Equal("4.47", cell.Bid);
         // Ownership transfers with the value, so the cell is read-only from here on.
         Assert.Equal(BidSources.Barchart, cell.Source);
@@ -469,6 +471,31 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Equal(BidSources.Manual, cell.Source);
     }
 
+    // The sheet has a Year column and the vendor has no year-level bid, so the nearest delivery month
+    // still open stands in for one. Without it the feed never appears in the Year view -- which is
+    // where hand-typed bids live, so a fed and a manual location could never be compared.
+    [Fact]
+    public async Task ApplyBids_WritesAYearRowFromTheNearestOpenMonth()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        // IT_SPLIT publishes two half-month windows in December 2027; the whole-month rule picks the
+        // later half, and that same winner is what the Year row carries.
+        var december = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 12);
+        var year = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 0);
+
+        Assert.Equal(december.Bid, year.Bid);
+        // The source month travels with it via the symbol, so the UI can say where the year came from.
+        Assert.Equal(december.BarchartSymbol, year.BarchartSymbol);
+        Assert.Equal(BidSources.Barchart, year.Source);
+    }
+
     // Mode reports how BarChart delivered the quote -- real-time, delayed, or end-of-day -- not whether
     // the bid is any good. We used to block mode d believing it meant a dead record, which suppressed
     // 1,126 perfectly good quotes under 90 days old. A recent end-of-day price must publish.
@@ -500,7 +527,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
 
         var cell = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX");
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 12);
         Assert.Equal("4.47", cell.Bid);
     }
 
@@ -582,7 +609,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
 
         var cell = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX");
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 12);
 
         // August, from the Q in ZCPZ27 -- not June, where the 1 Jun - 31 Aug window begins.
         Assert.Equal(2027, cell.CropYear);
@@ -603,7 +630,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
 
         var cell = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT");
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 12);
 
         Assert.Equal(2027, cell.CropYear);
         Assert.Equal(12, cell.Month);
@@ -642,7 +669,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
 
-        var cells = await _context.BidSheetLocationBids.Where(b => b.LocationId == sioux.Id).ToListAsync();
+        var cells = await _context.BidSheetLocationBids.Where(b => b.LocationId == sioux.Id && b.Month > 0).ToListAsync();
         Assert.Equal("4.41", Assert.Single(cells).Bid);
     }
 
@@ -680,7 +707,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
 
-        var cell = await _context.BidSheetLocationBids.SingleAsync(b => b.LocationId == loc.Id);
+        var cell = await _context.BidSheetLocationBids.SingleAsync(b => b.LocationId == loc.Id && b.Month > 0);
         Assert.Equal("4.41", cell.Bid);
         // Minus sign preserved, and no trailing zeros -- an originator reads 30 under, not -30.00.
         Assert.Equal("-30", cell.BasisBid);
@@ -720,7 +747,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
 
-        var cell = await _context.BidSheetLocationBids.SingleAsync(b => b.LocationId == loc.Id);
+        var cell = await _context.BidSheetLocationBids.SingleAsync(b => b.LocationId == loc.Id && b.Month > 0);
         Assert.Equal("9.99", cell.Bid);
         Assert.Null(cell.BasisBid);
         Assert.Equal(BidSources.Manual, cell.Source);
