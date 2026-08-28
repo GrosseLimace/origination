@@ -1005,11 +1005,31 @@
                             @if (renamingRow() === row.name) {
                               <!-- Adding a batch from BarChart lands on this screen, so the vendor's
                                    name is corrected here rather than one dialog at a time. -->
-                              <input type="text" [ngModel]="renameRowDraft()" [ngModelOptions]="{ standalone: true }"
-                                     (ngModelChange)="renameRowDraft.set($event)"
-                                     (keydown.enter)="saveRenameRow(row.name)" (keydown.escape)="cancelRenameRow()"
-                                     (blur)="saveRenameRow(row.name)" autofocus
-                                     class="flex-1 min-w-0 text-sm rounded border border-scoular-green-accessible bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-2 py-1 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                              <div class="flex-1 min-w-0 relative">
+                                <input type="text" [ngModel]="renameRowDraft()" [ngModelOptions]="{ standalone: true }"
+                                       (ngModelChange)="renameRowDraft.set($event)"
+                                       (keydown.enter)="saveRenameRow(row.name)" (keydown.escape)="cancelRenameRow()"
+                                       (blur)="saveRenameRow(row.name)" autofocus
+                                       class="w-full text-sm rounded border bg-white dark:bg-gray-800 text-gray-900 dark:text-white pl-2 pr-12 py-1 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                                       [ngClass]="renameRowValid()
+                                         ? 'border-scoular-green-accessible'
+                                         : 'border-scoular-red-accessible'" />
+                                <!-- mousedown is prevented on both: the input commits on blur, so letting these
+                                     take focus first would save before the click ever ran. -->
+                                <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                                  @if (renameRowDraft()) {
+                                    <button (mousedown)="clearRenameRow($event)" (click)="clearRenameRow($event)" title="Clear"
+                                            class="p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                    </button>
+                                  }
+                                  <button (mousedown)="$event.preventDefault()" (click)="saveRenameRow(row.name)"
+                                          [disabled]="!renameRowValid()" title="Save name"
+                                          class="p-0.5 rounded text-scoular-green-accessible hover:text-scoular-green disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                  </button>
+                                </div>
+                              </div>
                             } @else {
                               <!-- The name sizes to its text rather than filling the cell, so the pencil sits
                                    against the end of the name instead of floating off at the far right. -->
@@ -1025,7 +1045,7 @@
                                      drawn to. Guessed from the publishing company when the location is added,
                                      and corrected here. -->
                                 <button (click)="toggleRowScoular(row.name, $event)" title="Mark Scoular Location"
-                                        class="shrink-0 p-1 rounded text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors">
+                                        class="ml-auto shrink-0 p-1 rounded text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors">
                                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
                                        [attr.fill]="isRowScoular(row.name) ? 'currentColor' : 'none'"
                                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1037,10 +1057,10 @@
                             @if (barchartEnabled && row.isBarchartLinked) {
                               <!-- Pinned to the right edge so the chips line up down the column, whatever
                                    length the names are and whether or not they wrap. -->
-                              <span class="ml-auto flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
+                              <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
                                     title="Linked to BarChart — its bids update on their own and can't be edited here.">Feed</span>
                             } @else if (barchartEnabled) {
-                              <span class="ml-auto flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
+                              <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
                                     title="Typed by hand — these bids are yours to edit and the feed never touches them.">Manual</span>
                             }
                           </div>

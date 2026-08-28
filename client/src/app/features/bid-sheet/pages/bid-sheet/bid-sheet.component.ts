@@ -2869,8 +2869,19 @@ export class BidSheetComponent {
     this.renameRowDraft.set('');
   }
 
+  /** A name is required: there is no sensible way to render a location without one. */
+  readonly renameRowValid = computed(() => this.renameRowDraft().trim().length > 0);
+
+  /** Empties the input so a long vendor name can be replaced without selecting it first. */
+  clearRenameRow(event?: Event): void {
+    event?.preventDefault();   // keep focus on the input; blurring it would commit the rename
+    this.renameRowDraft.set('');
+  }
+
   saveRenameRow(oldName: string): void {
     const newName = this.renameRowDraft().trim();
+    // An empty name reverts rather than saving. Blur commits, so a user who clears the box and clicks
+    // away must get the old name back instead of a nameless row.
     this.cancelRenameRow();
     if (!newName || newName === oldName) return;
 
