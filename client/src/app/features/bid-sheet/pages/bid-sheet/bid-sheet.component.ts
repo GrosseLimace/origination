@@ -1514,15 +1514,26 @@ export class BidSheetComponent {
   }
 
   exitBarchartMode(): void {
+    this._leaveBarchartMode();
+    // Return the user where they started, matching cancelAddLocation's behaviour for the manual flow.
+    const fromEditBids = this.addLocationOrigin() === 'editBids';
+    this.addLocationOrigin.set(null);
+    if (fromEditBids) this.openEditBids();
+  }
+
+  /**
+   * Tears the picker down without deciding where to go next.
+   *
+   * Split out because the two ways of leaving want different destinations. Cancelling goes back where
+   * you came from; finishing an add goes to Edit Bids for the rows you just created, and from there
+   * back to the map -- returning to the picker would drop the user into a search they are done with.
+   */
+  private _leaveBarchartMode(): void {
     this.barchartMode.set(false);
     this.barchartSelectedKey.set(null);
     this.barchartSearchArea.set(null);
     this._clearBarchartPins();
     this._refreshMapMarkers();
-    // Return the user where they started, matching cancelAddLocation's behaviour for the manual flow.
-    const fromEditBids = this.addLocationOrigin() === 'editBids';
-    this.addLocationOrigin.set(null);
-    if (fromEditBids) this.openEditBids();
   }
 
   /** Publishes the current map view as a centre + radius for the picker to search. */
@@ -1652,6 +1663,11 @@ export class BidSheetComponent {
         const mine = saved.filter(l => viewing.has(l.tradeUnitCode));
         if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
         this.allMapLocations.update(locs => [...saved, ...locs]);
+
+        // The picker has done its job. Closing Edit Bids after this lands on the map showing the
+        // locations just added, which is what the user is going there to see.
+        this._leaveBarchartMode();
+        this.addLocationOrigin.set(null);
 
         this._loadAllMapLocations();
         const tus = this.activeTradeUnits();
