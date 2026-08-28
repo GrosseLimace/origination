@@ -266,19 +266,21 @@
           }
         </div>
       }
-      @if (selectedCount() > 0) {
-        <!-- Appears only once something is ticked: until then the panel looks exactly as it did. -->
-        <div class="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 flex items-center gap-2">
-          <button (click)="addSelected()"
-                  class="flex-1 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
-            Add {{ selectedCount() }} location{{ selectedCount() === 1 ? '' : 's' }}
-          </button>
-          <button (click)="clearSelection()" title="Clear selection"
-                  class="px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-            Clear
-          </button>
-        </div>
-      }
     </div>
+    @if (selectedCount() > 0) {
+      <!-- Pinned to the panel, deliberately outside the scrolling list: with a few hundred results a
+           footer inside the list is somewhere the user has to go looking for. Appears only once
+           something is ticked, so an untouched panel looks exactly as it did before. -->
+      <div class="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 flex items-center gap-2">
+        <button (click)="addSelected()"
+                class="flex-1 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
+          Add {{ selectedCount() }} location{{ selectedCount() === 1 ? '' : 's' }}
+        </button>
+        <button (click)="clearSelection()" title="Clear selection"
+                class="px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+          Clear
+        </button>
+      </div>
+    }
   }
 </div>

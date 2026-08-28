@@ -1011,20 +1011,25 @@
                                      (blur)="saveRenameRow(row.name)" autofocus
                                      class="flex-1 min-w-0 text-sm rounded border border-scoular-green-accessible bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-2 py-1 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
                             } @else {
-                              <span class="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words" [title]="row.name">{{ row.name }}</span>
+                              <!-- The name sizes to its text rather than filling the cell, so the pencil sits
+                                   against the end of the name instead of floating off at the far right. -->
+                              <span class="min-w-0 text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words" [title]="row.name">{{ row.name }}</span>
                               @if (!editBidsReadOnly()) {
                                 <button (click)="startRenameRow(row.name, $event)" title="Rename location"
                                         class="shrink-0 p-1 rounded text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors">
                                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 </button>
-                                <!-- Guessed from the publishing company when the location was added; this is
-                                     where a wrong guess gets corrected. -->
-                                <button (click)="toggleRowScoular(row.name, $event)"
-                                        [title]="isRowScoular(row.name) ? 'A Scoular facility - click to mark as a competitor' : 'A competitor - click to mark as a Scoular facility'"
+                                <!-- A filled star means one of ours. It is guessed from the publishing company
+                                     when the location is added, and this is where a wrong guess is corrected. -->
+                                <button (click)="toggleRowScoular(row.name, $event)" title="Mark Scoular Location"
                                         [class]="isRowScoular(row.name)
-                                          ? 'shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-yellow/20 text-yellow-700 dark:text-scoular-yellow'
-                                          : 'shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400'">
-                                  Scoular
+                                          ? 'shrink-0 p-1 rounded text-scoular-yellow transition-colors'
+                                          : 'shrink-0 p-1 rounded text-gray-300 dark:text-gray-600 hover:text-scoular-yellow transition-colors'">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                                       [attr.fill]="isRowScoular(row.name) ? 'currentColor' : 'none'"
+                                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                  </svg>
                                 </button>
                               }
                             }
