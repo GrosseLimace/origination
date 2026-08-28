@@ -253,7 +253,7 @@
                   <p class="text-[11px] text-gray-500 dark:text-gray-400 truncate">{{ locationSubtitle(loc) }}</p>
                 </div>
                 <div class="flex-shrink-0 flex items-center">
-                  <input type="checkbox" (click)="toggleSelected(loc.locationKey, $event)"
+                  <input type="checkbox" (click)="toggleSelected(loc, $event)"
                          [checked]="isSelected(loc.locationKey)"
                          [attr.aria-label]="'Select ' + primaryName(loc)"
                          class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />

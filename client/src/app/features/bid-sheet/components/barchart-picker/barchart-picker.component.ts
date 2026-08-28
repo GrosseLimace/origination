@@ -117,27 +117,38 @@ export class BarchartPickerComponent {
    * elevator, which is painful when an originator is standing up a whole area at once. They tick
    * what they want, add the lot, and rename or reclassify afterwards on the Edit Bids screen.
    */
-  readonly selectedKeys = signal<ReadonlySet<string>>(new Set<string>());
+  /**
+   * Holds the whole location, not just its key.
+   *
+   * Ticking is a running basket across searches: pick a few near one town, pan somewhere else, pick
+   * a few more, add the lot. Keeping keys alone meant rebuilding the request from the CURRENT results,
+   * so anything ticked before the last search had quietly vanished from it -- the footer still counted
+   * them and the add silently dropped them.
+   */
+  readonly selected = signal<ReadonlyMap<string, BarchartCatalogLocation>>(new Map());
 
-  readonly selectedCount = computed(() => this.selectedKeys().size);
+  readonly selectedCount = computed(() => this.selected().size);
+
+  /** Keys only, for the parent's pin colouring. */
+  readonly selectedKeys = computed<ReadonlySet<string>>(() => new Set(this.selected().keys()));
 
   isSelected(locationKey: string): boolean {
-    return this.selectedKeys().has(locationKey);
+    return this.selected().has(locationKey);
   }
 
-  toggleSelected(locationKey: string, event?: Event): void {
+  toggleSelected(location: BarchartCatalogLocation, event?: Event): void {
     // Stops the row handler running as well, which would tick it straight back off.
     event?.stopPropagation();
-    this.selectedKeys.update(current => {
-      const next = new Set(current);
-      next.has(locationKey) ? next.delete(locationKey) : next.add(locationKey);
+    this.selected.update(current => {
+      const next = new Map(current);
+      next.has(location.locationKey) ? next.delete(location.locationKey) : next.set(location.locationKey, location);
       return next;
     });
     this.selectionChange.emit(this.selectedKeys());
   }
 
   clearSelection(): void {
-    this.selectedKeys.set(new Set<string>());
+    this.selected.set(new Map());
     this.selectionChange.emit(this.selectedKeys());
   }
 
@@ -154,8 +165,7 @@ export class BarchartPickerComponent {
 
   /** Emits every ticked location, named as the vendor names it and pre-classified. */
   addSelected(): void {
-    const chosen = this.selectedKeys();
-    const picked = this.results().filter(l => chosen.has(l.locationKey));
+    const picked = [...this.selected().values()];
     if (picked.length === 0) return;
 
     this.addMany.emit({
@@ -290,7 +300,7 @@ export class BarchartPickerComponent {
    */
   selectLocation(location: BarchartCatalogLocation): void {
     this.focus.emit(location);
-    this.toggleSelected(location.locationKey);
+    this.toggleSelected(location);
   }
 
   openDetail(locationKey: string): void {
