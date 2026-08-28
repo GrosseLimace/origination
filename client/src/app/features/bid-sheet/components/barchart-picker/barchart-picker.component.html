@@ -250,8 +250,11 @@
                   <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ primaryName(loc) }}</p>
                   <p class="text-[11px] text-gray-500 dark:text-gray-400 truncate">{{ locationSubtitle(loc) }}</p>
                 </div>
-                <div class="flex-shrink-0 text-right">
-                  <p class="text-[10px] text-gray-400 dark:text-gray-500">{{ loc.commodityCount }} crop{{ loc.commodityCount === 1 ? '' : 's' }}</p>
+                <div class="flex-shrink-0 flex items-center">
+                  <input type="checkbox" (click)="toggleSelected(loc.locationKey, $event)"
+                         [checked]="isSelected(loc.locationKey)"
+                         [attr.aria-label]="'Select ' + primaryName(loc)"
+                         class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
                 </div>
               </div>
               @if (loc.placements.length > 0) {
@@ -261,6 +264,19 @@
               }
             </button>
           }
+        </div>
+      }
+      @if (selectedCount() > 0) {
+        <!-- Appears only once something is ticked: until then the panel looks exactly as it did. -->
+        <div class="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 flex items-center gap-2">
+          <button (click)="addSelected()"
+                  class="flex-1 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
+            Add {{ selectedCount() }} location{{ selectedCount() === 1 ? '' : 's' }}
+          </button>
+          <button (click)="clearSelection()" title="Clear selection"
+                  class="px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            Clear
+          </button>
         </div>
       }
     </div>

@@ -12,7 +12,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { environment } from '@env/environment';
-import { BarchartPickerComponent, BarchartAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
+import { BarchartPickerComponent, BarchartAddRequest, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
 import { BarchartCatalogLocation } from '@models';
 import { commodityHex } from '@shared/utils/commodity-color';
 import {
@@ -32,7 +32,9 @@ interface EditBidsRow {
   /** Basis value per column. Editable on manual cells: originators quote on basis as often as cash. */
   basisBids: Record<string, string>;
   originalBasisBids: Record<string, string>;
-  /** Column keys whose value came from the BarChart feed. Those cells are not editable. */
+  /** Source month of a fed Year value, per column. Empty unless the column is Year and the cell fed. */
+  yearFrom: Record<string, string>;
+  /** Column keys whose value came from the BarChart feed. Those are overridable, not read-only. */
   fedCells: Set<string>;
   /** Column key → when the elevator last updated that fed bid. Only set for fed cells. */
   fedAsOf: Record<string, string | undefined>;
@@ -1249,10 +1251,38 @@ export class BidSheetComponent {
    */
   private _getDisplayBid(name: string, year: number | null, crop: string, month: number): string {
     const primary = this._getLatestBid(name, year, crop, month);
-    if (this.priceMode() !== 'both') return primary;
     const basis = (this._getLatestEntry(name, year, crop, month)?.basisBid ?? '').trim();
-    if (primary && basis) return `${primary} / ${basis}`;
-    return primary || basis;
+    const value = this.priceMode() === 'both'
+      ? (primary && basis ? `${primary} / ${basis}` : (primary || basis))
+      : primary;
+    // A fed Year value is one month standing in for a year, so it says which month.
+    const from = value ? this.yearSourceMonthFor(name, year, crop, month) : '';
+    return from ? `${value} (${from})` : value;
+  }
+
+  /** Futures month codes, in calendar order. F is January, Z is December. */
+  private static readonly MONTH_CODES = 'FGHJKMNQUVXZ';
+
+  /**
+   * Which delivery month a fed Year value was taken from, read out of the symbol the Year row kept.
+   *
+   * The feed has no year-level bid, so the Year cell borrows the nearest month still open. Showing
+   * that month is the difference between a number an originator can trust and one they cannot: a bare
+   * 4.305 in the Year column looks like an elevator's year price, when it is really their August.
+   */
+  yearSourceMonth(entry: BidSheetEntry | null): string {
+    const symbol = entry?.barchartSymbol;
+    if (!symbol) return '';
+    const match = /([FGHJKMNQUVXZ])[0-9][0-9][-FL]/.exec(symbol);
+    if (!match) return '';
+    return this.getMonthName(BidSheetComponent.MONTH_CODES.indexOf(match[1]) + 1);
+  }
+
+  /** The Year cell's source month for a given crop/period, or '' when it is not a fed Year cell. */
+  yearSourceMonthFor(name: string, year: number | null, crop: string, month: number): string {
+    if (month !== 0) return '';
+    const entry = this._getLatestEntry(name, year, crop, month);
+    return entry?.source === 'Barchart' ? this.yearSourceMonth(entry) : '';
   }
 
   private _parseBid(bid: string): number | null {
@@ -1623,6 +1653,64 @@ export class BidSheetComponent {
     });
   }
 
+  /**
+   * Adds every location ticked in the picker, then opens Edit Bids on them.
+   *
+   * Adding one at a time meant naming and confirming each elevator before the next, which is slow
+   * when standing up a whole area. Names come from the vendor and the Scoular flag is guessed from
+   * the publishing company; Edit Bids is where both get corrected, which is why it opens straight
+   * after rather than dropping the user back on the map.
+   */
+  onBarchartAddMany(request: BarchartBulkAddRequest): void {
+    if (this.barchartAdding()) return;
+    if (request.locations.length === 0 || request.tradeUnitCodes.length === 0) return;
+    this.barchartAdding.set(true);
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
+
+    // One create per location per trade unit, same call the single add uses -- so the duplicate-name
+    // and already-linked rules the server enforces still apply to every one of them.
+    const creates = request.locations.flatMap(loc =>
+      request.tradeUnitCodes.map(tu => this.apiService.createBidSheetLocation({
+        name: loc.name,
+        tradeUnitCode: tu,
+        groupName: this._getGroupNameForTu(tu) || undefined,
+        barchartLocationKey: loc.locationKey,
+        isScoularFacility: loc.isScoularFacility,
+        bids: []
+      })));
+
+    forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (saved) => {
+        this.barchartAdding.set(false);
+        this._pickerRef()?.addFinished(true);
+        this._pickerRef()?.clearSelection();
+        const count = request.locations.length;
+        this.toastService.success(`Added ${count} location${count === 1 ? '' : 's'}`);
+
+        const viewing = new Set(this.activeTradeUnits());
+        const mine = saved.filter(l => viewing.has(l.tradeUnitCode));
+        if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
+        this.allMapLocations.update(locs => [...saved, ...locs]);
+
+        this._loadAllMapLocations();
+        const tus = this.activeTradeUnits();
+        // Edit Bids is opened from the reload callback, not here: the grid is built from loaded bid
+        // data, so opening first would show the new rows empty and then repaint.
+        if (tus.length > 0) {
+          this._loadBidData(tus, () => this.openEditBids(request.locations[0]?.name), 'refresh');
+        } else {
+          this.openEditBids(request.locations[0]?.name);
+        }
+      },
+      error: (err) => {
+        this.barchartAdding.set(false);
+        this._pickerRef()?.addFinished(false);
+        if (isDevMode()) console.error('[BidSheet] barchart bulk add failed', err);
+        this.toastService.error(err?.message ? `Could not add locations: ${err.message}` : 'Could not add locations');
+      }
+    });
+  }
+
   private _getGroupNameForTu(tuCode: string): string {
     return this.appState.userGroups()
       .find(g => g.tradeUnitCodes.some(c => c.trim() === tuCode.trim()))
@@ -1687,6 +1775,7 @@ export class BidSheetComponent {
       const bids: Record<string, string> = {};
       const basisBids: Record<string, string> = {};
       const originalBasisBids: Record<string, string> = {};
+      const yearFrom: Record<string, string> = {};
       const fedCells = new Set<string>();
       const fedAsOf: Record<string, string | undefined> = {};
       const agingCells = new Set<string>();
@@ -1698,6 +1787,7 @@ export class BidSheetComponent {
         bids[col.key] = entry?.cashBid ?? '';
         basisBids[col.key] = entry?.basisBid ?? '';
         originalBasisBids[col.key] = basisBids[col.key];
+        yearFrom[col.key] = col.month === 0 && entry?.source === 'Barchart' ? this.yearSourceMonth(entry) : '';
         // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
         // months the vendor doesn't publish, and those stay fully editable.
         if (entry?.source === 'Barchart') {
@@ -1706,7 +1796,7 @@ export class BidSheetComponent {
           if (this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
         }
       }
-      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, fedCells, fedAsOf, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, yearFrom, fedCells, fedAsOf, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -1715,7 +1805,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, fedCells: new Set<string>(), fedAsOf: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, yearFrom: {}, fedCells: new Set<string>(), fedAsOf: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // Apply saved location order (unknown names go to end)
@@ -2753,6 +2843,89 @@ export class BidSheetComponent {
     const candidates = [...this.allMapLocations(), ...this.bidLocations()].filter(l => l.name === name);
     return candidates.filter(l => inView.has(l.tradeUnitCode)).sort((a, b) => a.id - b.id)[0]
         ?? candidates[0];
+  }
+
+  // -------------------------------------------------------------------------
+  // Renaming and classifying from the Edit Bids grid
+  //
+  // Adding a batch from BarChart lands here, so this is where the vendor's names get corrected and
+  // Scoular sites get confirmed. The side-panel versions below do the same job for whichever single
+  // location the panel has selected; these are row-scoped so a whole batch can be worked through.
+  // -------------------------------------------------------------------------
+
+  /** Row currently being renamed, by location name. Empty when none is. */
+  readonly renamingRow = signal('');
+  readonly renameRowDraft = signal('');
+
+  startRenameRow(name: string, event?: Event): void {
+    event?.stopPropagation();
+    if (this.editBidsReadOnly()) return;
+    this.renamingRow.set(name);
+    this.renameRowDraft.set(name);
+  }
+
+  cancelRenameRow(): void {
+    this.renamingRow.set('');
+    this.renameRowDraft.set('');
+  }
+
+  saveRenameRow(oldName: string): void {
+    const newName = this.renameRowDraft().trim();
+    this.cancelRenameRow();
+    if (!newName || newName === oldName) return;
+
+    const loc = this._findLocationByName(oldName);
+    if (!loc) return;
+    this._saveLocationFields(loc, { name: newName }, `Renamed to ${newName}`, 'Failed to rename location');
+  }
+
+  isRowScoular(name: string): boolean {
+    return !!this._findLocationByName(name)?.isScoularFacility;
+  }
+
+  toggleRowScoular(name: string, event?: Event): void {
+    event?.stopPropagation();
+    if (this.editBidsReadOnly()) return;
+    const loc = this._findLocationByName(name);
+    if (!loc) return;
+    const next = !(loc.isScoularFacility ?? false);
+    this._saveLocationFields(loc, { isScoularFacility: next },
+      next ? `${loc.name} marked as a Scoular facility` : `${loc.name} marked as a competitor`,
+      'Failed to update location');
+  }
+
+  /**
+   * Saves a change to one or two location fields, carrying the rest through unchanged.
+   *
+   * The update endpoint replaces the whole record, so every field has to be sent or it is cleared.
+   * That is easy to get wrong one call at a time, which is why both callers go through here.
+   */
+  private _saveLocationFields(
+    loc: BidSheetLocation, changes: Partial<BidSheetLocation>, successMessage: string, failureMessage: string): void {
+    this.apiService.updateBidSheetLocation(loc.id, {
+      name: loc.name,
+      address: loc.address,
+      city: loc.city,
+      state: loc.state,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      elevatorCode: loc.elevatorCode,
+      tradeUnitCode: loc.tradeUnitCode,
+      groupName: loc.groupName,
+      isScoularFacility: loc.isScoularFacility ?? false,
+      bids: [],
+      ...changes
+    } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.allMapLocations.update(locs => locs.map(l => l.id === loc.id ? { ...l, ...changes } : l));
+        this.bidLocations.update(locs => locs.map(l => l.id === loc.id ? { ...l, ...changes } : l));
+        this.toastService.success(successMessage);
+        this._loadAllMapLocations();
+        const tus = this.activeTradeUnits();
+        if (tus.length > 0) this._loadBidData(tus, () => this._buildEditGrid(this.editBidsYear()), 'refresh');
+      },
+      error: () => this.toastService.error(failureMessage)
+    });
   }
 
   saveLocationName(): void {

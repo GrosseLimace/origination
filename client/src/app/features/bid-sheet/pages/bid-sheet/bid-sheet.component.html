@@ -616,6 +616,7 @@
             (resultsChange)="onBarchartResults($event)"
             (focus)="onBarchartFocus($event)"
             (add)="onBarchartAdd($event)"
+            (addMany)="onBarchartAddMany($event)"
             (close)="exitBarchartMode()"
             (detailClosed)="barchartSelectedKey.set(null)"
           />
@@ -1001,7 +1002,32 @@
                             <!-- Wraps to a second line rather than truncating: BarChart names carry the
                                  company AND the site ("Farmers Cooperative Dorchester - Beattie"), which
                                  a single ellipsised line cuts off exactly where it stops being useful. -->
-                            <span class="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words" [title]="row.name">{{ row.name }}</span>
+                            @if (renamingRow() === row.name) {
+                              <!-- Adding a batch from BarChart lands on this screen, so the vendor's
+                                   name is corrected here rather than one dialog at a time. -->
+                              <input type="text" [ngModel]="renameRowDraft()" [ngModelOptions]="{ standalone: true }"
+                                     (ngModelChange)="renameRowDraft.set($event)"
+                                     (keydown.enter)="saveRenameRow(row.name)" (keydown.escape)="cancelRenameRow()"
+                                     (blur)="saveRenameRow(row.name)" autofocus
+                                     class="flex-1 min-w-0 text-sm rounded border border-scoular-green-accessible bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-2 py-1 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                            } @else {
+                              <span class="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words" [title]="row.name">{{ row.name }}</span>
+                              @if (!editBidsReadOnly()) {
+                                <button (click)="startRenameRow(row.name, $event)" title="Rename location"
+                                        class="shrink-0 p-1 rounded text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </button>
+                                <!-- Guessed from the publishing company when the location was added; this is
+                                     where a wrong guess gets corrected. -->
+                                <button (click)="toggleRowScoular(row.name, $event)"
+                                        [title]="isRowScoular(row.name) ? 'A Scoular facility - click to mark as a competitor' : 'A competitor - click to mark as a Scoular facility'"
+                                        [class]="isRowScoular(row.name)
+                                          ? 'shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-yellow/20 text-yellow-700 dark:text-scoular-yellow'
+                                          : 'shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400'">
+                                  Scoular
+                                </button>
+                              }
+                            }
                             @if (barchartEnabled && row.isBarchartLinked) {
                               <!-- Pinned to the right edge so the chips line up down the column, whatever
                                    length the names are and whether or not they wrap. -->
@@ -1057,6 +1083,14 @@
                               />
                             }
                             </div>
+                            @if (row.yearFrom[col.key]) {
+                              <!-- The feed has no year-level bid, so a Year cell borrows the nearest month still
+                                   open. Saying which month is the difference between a number an originator can
+                                   trust and one they cannot: a bare 4.305 here looks like a year price when it
+                                   is really that elevator's August. -->
+                              <div class="mt-0.5 text-[10px] leading-none text-center text-gray-400 dark:text-gray-500 truncate"
+                                   [title]="'The feed publishes no year bid. This is the ' + row.yearFrom[col.key] + ' bid, the nearest delivery month still open.'">from {{ row.yearFrom[col.key] }}</div>
+                            }
                             @if (priceMode() === 'both') {
                               <!-- Two bare numbers side by side are ambiguous and the header can only name
                                    the period, so each value says what it is. -->

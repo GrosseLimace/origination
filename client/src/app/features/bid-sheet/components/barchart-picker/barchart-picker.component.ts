@@ -26,6 +26,12 @@ export interface BarchartAddRequest {
   isScoularFacility: boolean;
 }
 
+/** Several locations added in one go from the list's checkboxes. */
+export interface BarchartBulkAddRequest {
+  locations: Array<{ locationKey: string; name: string; isScoularFacility: boolean }>;
+  tradeUnitCodes: string[];
+}
+
 /**
  * "Add from BarChart" picker.
  *
@@ -67,6 +73,9 @@ export class BarchartPickerComponent {
   /** The user confirmed an add. */
   readonly add = output<BarchartAddRequest>();
 
+  /** Several locations at once, from the list checkboxes. */
+  readonly addMany = output<BarchartBulkAddRequest>();
+
   readonly close = output<void>();
 
   /**
@@ -99,6 +108,59 @@ export class BarchartPickerComponent {
    * the picker did until now: Salina and Pratt both went on as competitors.
    */
   readonly isScoular = signal(false);
+
+  /**
+   * Locations ticked in the list. Adding one at a time meant a name-and-confirm round trip per
+   * elevator, which is painful when an originator is standing up a whole area at once. They tick
+   * what they want, add the lot, and rename or reclassify afterwards on the Edit Bids screen.
+   */
+  readonly selectedKeys = signal<ReadonlySet<string>>(new Set<string>());
+
+  readonly selectedCount = computed(() => this.selectedKeys().size);
+
+  isSelected(locationKey: string): boolean {
+    return this.selectedKeys().has(locationKey);
+  }
+
+  toggleSelected(locationKey: string, event?: Event): void {
+    event?.stopPropagation();   // the row itself focuses the map; the box only ticks
+    this.selectedKeys.update(current => {
+      const next = new Set(current);
+      next.has(locationKey) ? next.delete(locationKey) : next.add(locationKey);
+      return next;
+    });
+  }
+
+  clearSelection(): void {
+    this.selectedKeys.set(new Set<string>());
+  }
+
+  /**
+   * Whether a listing is one of ours. BarChart carries Scoular sites like anyone else's -- 26 of them
+   * across six naming variants (Scoular Company - Nebraska, The Scoular Company, Scoular Co - West) --
+   * and the publishing company is the reliable field: some site names carry the word and some, like
+   * "Corley, IA", do not. Checked against the live catalog, the name match has no false positives.
+   * The user can still correct it on the Edit Bids screen.
+   */
+  isScoularListing(location: BarchartCatalogLocation): boolean {
+    return (location.elevator ?? '').toLowerCase().includes('scoular');
+  }
+
+  /** Emits every ticked location, named as the vendor names it and pre-classified. */
+  addSelected(): void {
+    const chosen = this.selectedKeys();
+    const picked = this.results().filter(l => chosen.has(l.locationKey));
+    if (picked.length === 0) return;
+
+    this.addMany.emit({
+      locations: picked.map(l => ({
+        locationKey: l.locationKey,
+        name: this.defaultName(l),
+        isScoularFacility: this.isScoularListing(l)
+      })),
+      tradeUnitCodes: this.tradeUnits()
+    });
+  }
 
   /** Trade-unit selector state. Originators can hold a lot of desks, so it searches rather than scrolls. */
   readonly tuPickerOpen = signal(false);
