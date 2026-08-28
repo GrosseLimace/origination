@@ -1108,11 +1108,11 @@
                             </div>
                             @if (row.yearFrom[col.key]) {
                               <!-- The feed has no year-level bid, so a Year cell borrows the nearest month still
-                                   open. Saying which month is the difference between a number an originator can
-                                   trust and one they cannot: a bare 4.305 here looks like a year price when it
-                                   is really that elevator's August. -->
+                                   open. Naming the contract it is quoted against is what makes it comparable:
+                                   a bare 4.305 here looks like a year price, and two elevators quoting the same
+                                   month can still be quoting different boards. -->
                               <div class="mt-0.5 text-[10px] leading-none text-center text-gray-400 dark:text-gray-500 truncate"
-                                   [title]="'The feed publishes no year bid. This is the ' + row.yearFrom[col.key] + ' bid, the nearest delivery month still open.'">from {{ row.yearFrom[col.key] }}</div>
+                                   [title]="'The feed publishes no year bid. This is the nearest delivery month still open, quoted against ' + row.yearFrom[col.key] + '.'">{{ row.yearFrom[col.key] }}</div>
                             }
                             @if (priceMode() === 'both') {
                               <!-- Two bare numbers side by side are ambiguous and the header can only name

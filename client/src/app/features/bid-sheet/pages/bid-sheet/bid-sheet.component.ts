@@ -195,6 +195,7 @@ export class BidSheetComponent {
         // without re-deriving anything. Only Both mode reads these.
         cashBid: bid.bid,
         basisBid: bid.basisBid,
+        underlyingFuture: bid.underlyingFuture,
         createdBy: bid.createdBy,
         createdAt: bid.createdAt,
         modifiedBy: bid.modifiedBy,
@@ -1258,34 +1259,32 @@ export class BidSheetComponent {
     const value = this.priceMode() === 'both'
       ? (primary && basis ? `${primary} / ${basis}` : (primary || basis))
       : primary;
-    // A fed Year value is one month standing in for a year, so it says which month.
-    const from = value ? this.yearSourceMonthFor(name, year, crop, month) : '';
-    return from ? `${value} (${from})` : value;
+    // A fed Year value is one month standing in for a year, so it names the contract behind it.
+    const contract = value ? this.yearContractFor(name, year, crop, month) : '';
+    return contract ? `${value} (${contract})` : value;
   }
-
-  /** Futures month codes, in calendar order. F is January, Z is December. */
-  private static readonly MONTH_CODES = 'FGHJKMNQUVXZ';
 
   /**
-   * Which delivery month a fed Year value was taken from, read out of the symbol the Year row kept.
+   * The futures contract a fed Year value is quoted against, e.g. "ZCZ26".
    *
-   * The feed has no year-level bid, so the Year cell borrows the nearest month still open. Showing
-   * that month is the difference between a number an originator can trust and one they cannot: a bare
-   * 4.305 in the Year column looks like an elevator's year price, when it is really their August.
+   * The feed has no year-level bid, so the Year cell borrows the nearest delivery month still open.
+   * Naming the source is the difference between a number an originator can trust and one they cannot:
+   * a bare 4.305 in the Year column looks like an elevator's year price when it is really one month.
+   *
+   * It names the CONTRACT rather than the month because that is what makes two bids comparable. The
+   * contract is not always the delivery month -- Kansas City wheat delivering in January trades
+   * against the March board -- so two elevators quoting the same month can be quoting different
+   * boards, which a month label made look like a like-for-like comparison when it was not.
    */
-  yearSourceMonth(entry: BidSheetEntry | null): string {
-    const symbol = entry?.barchartSymbol;
-    if (!symbol) return '';
-    const match = /([FGHJKMNQUVXZ])[0-9][0-9][-FL]/.exec(symbol);
-    if (!match) return '';
-    return this.getMonthName(BidSheetComponent.MONTH_CODES.indexOf(match[1]) + 1);
+  yearContract(entry: BidSheetEntry | null): string {
+    return entry?.underlyingFuture?.trim() ?? '';
   }
 
-  /** The Year cell's source month for a given crop/period, or '' when it is not a fed Year cell. */
-  yearSourceMonthFor(name: string, year: number | null, crop: string, month: number): string {
+  /** The Year cell's contract for a given crop/period, or '' when it is not a fed Year cell. */
+  yearContractFor(name: string, year: number | null, crop: string, month: number): string {
     if (month !== 0) return '';
     const entry = this._getLatestEntry(name, year, crop, month);
-    return entry?.source === 'Barchart' ? this.yearSourceMonth(entry) : '';
+    return entry?.source === 'Barchart' ? this.yearContract(entry) : '';
   }
 
   private _parseBid(bid: string): number | null {
@@ -1766,7 +1765,7 @@ export class BidSheetComponent {
         bids[col.key] = entry?.cashBid ?? '';
         basisBids[col.key] = entry?.basisBid ?? '';
         originalBasisBids[col.key] = basisBids[col.key];
-        yearFrom[col.key] = col.month === 0 && entry?.source === 'Barchart' ? this.yearSourceMonth(entry) : '';
+        yearFrom[col.key] = col.month === 0 && entry?.source === 'Barchart' ? this.yearContract(entry) : '';
         // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
         // months the vendor doesn't publish, and those stay fully editable.
         if (entry?.source === 'Barchart') {

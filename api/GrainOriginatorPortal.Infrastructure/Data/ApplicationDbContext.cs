@@ -574,6 +574,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.BarchartSymbol).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.BasisBid).HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.BasisSymbol).HasMaxLength(100).IsRequired(false);
+            // Widest value seen in the catalog is 6 characters (MWOU26); 20 leaves room for a longer root.
+            entity.Property(e => e.UnderlyingFuture).HasMaxLength(20).IsRequired(false);
             entity.Property(e => e.QuoteAsOf).IsRequired(false);
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();

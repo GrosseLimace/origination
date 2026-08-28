@@ -46,6 +46,14 @@ public class BidSheetLocationBid
     /// <summary>UTC time the elevator last updated the basis bid.</summary>
     public DateTime? BasisQuoteAsOf { get; set; }
 
+    /// <summary>
+    /// The futures contract this cell's bid is quoted against, e.g. <c>ZCZ26</c> for December 2026 corn.
+    /// This is NOT the delivery month: Kansas City wheat delivering in January trades against the March
+    /// board (<c>KEBF27</c> -> <c>KEH27</c>). Originators compare bids by the contract behind them, so a
+    /// Year cell showing a price without it is not comparable to anything.
+    /// </summary>
+    public string? UnderlyingFuture { get; set; }
+
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }

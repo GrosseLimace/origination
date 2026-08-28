@@ -568,6 +568,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(20)")
                         .HasDefaultValue("Manual");
 
+                    b.Property<string>("UnderlyingFuture")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("LocationId", "CommodityCode", "CropYear", "Month")

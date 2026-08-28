@@ -30,6 +30,9 @@ public record BidSheetLocationBidResponse
 
     /// <summary>When the elevator last updated the basis bid.</summary>
     public DateTime? BasisQuoteAsOf { get; init; }
+
+    /// <summary>Futures contract the bid is quoted against, e.g. <c>ZCZ26</c>. Null on manual cells.</summary>
+    public string? UnderlyingFuture { get; init; }
     public string CreatedBy { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }
     public string? ModifiedBy { get; init; }

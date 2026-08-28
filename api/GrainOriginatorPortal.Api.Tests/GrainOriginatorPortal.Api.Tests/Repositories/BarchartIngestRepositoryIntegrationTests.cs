@@ -752,4 +752,78 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Null(cell.BasisBid);
         Assert.Equal(BidSources.Manual, cell.Source);
     }
+    // The contract a bid is quoted against is what makes two bids comparable, and it is NOT always the
+    // delivery month: Kansas City wheat delivering in January trades against the March board. The Year
+    // cell names it, so it has to reach the cell -- and reach the Year row, which is a month standing
+    // in for a year and would otherwise say nothing about which board it is priced off.
+    [Fact]
+    public async Task ApplyBids_CarriesTheContractTheBidIsQuotedAgainstOntoTheCell()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var december = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 12);
+        var year = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 0);
+
+        Assert.Equal("ZCZ27", december.UnderlyingFuture);
+        Assert.Equal("ZCZ27", year.UnderlyingFuture);
+    }
+
+    private const string ShortYearInstrumentsJson = """
+        { "status": { "code": 200 }, "results": [
+          { "symbol": "ZCPZ27-990003-990030.CM", "symbolDescription": "IT Short Year Elevator Corn (IT Short) Dec 27 Cash",
+            "elevator": "IT Short Year Elevator", "commodity": "Corn (IT Short)", "underlyingFuture": "ZCZ7",
+            "deliveryStart": "2027-10-01T00:00:00-05:00", "deliveryEnd": "2027-12-31T00:00:00-05:00",
+            "location": "IT-SHORT-YEAR", "facilityType": "Country Elevator", "address": "1 Test Road",
+            "city": "Testville", "state": "IA", "zipCode": "50001" }
+        ] }
+        """;
+
+    private const string ShortYearQuotesJson = """
+        { "status": { "code": 200 }, "results": [
+          { "symbol": "ZCPZ27-990003-990030.CM", "lastPrice": "4.61",
+            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 }
+        ] }
+        """;
+
+    // BarChart sends two year forms for the same contract -- ZCZ26 and the one-digit ZCZ6 -- and both
+    // are live in the catalog (722 of 68,000 active instruments use the short one). Two spellings of
+    // the same December on one sheet reads as two different contracts, which is exactly the confusion
+    // naming the contract is meant to remove, so the short form is expanded on the way in.
+    //
+    // The digit names the first year at or after delivery that ends in it. That rule reproduces every
+    // short-form row in the live catalog, including ZSF7 on a window starting in December 2026, where
+    // the contract is January 2027 rather than any 2026 month.
+    [Fact]
+    public async Task ApplyBids_ExpandsAOneDigitContractYearAgainstTheDeliveryYear()
+    {
+        if (!Enabled) return;
+
+        await _sut.LoadInstrumentsAsync(ShortYearInstrumentsJson);
+        await _sut.LoadQuotesAsync(ShortYearQuotesJson, BusinessDate);
+        _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (IT Short)",
+            CommodityCode = "IT_SHORT",
+            CommodityName = "Corn (IT Short)",
+            CommodityCategory = "Grains",
+            CreatedBy = "integration-test"
+        });
+        var location = NewLinkedLocation("__IT Short Year", "990003");
+        _context.BidSheetLocations.Add(location);
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SHORT" && b.Month == 12);
+
+        // The vendor said ZCZ7 against a window in 2027.
+        Assert.Equal("ZCZ27", cell.UnderlyingFuture);
+    }
 }

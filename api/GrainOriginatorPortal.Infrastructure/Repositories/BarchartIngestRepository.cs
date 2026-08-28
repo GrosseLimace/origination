@@ -466,6 +466,7 @@ DECLARE @winners TABLE
     BasisSymbol       nvarchar(100) NULL,
     BasisText         nvarchar(50)  NULL,
     BasisQuoteAsOf    datetime2     NULL,
+    UnderlyingFuture  nvarchar(20)  NULL,
     PRIMARY KEY (LocationId, CommodityCode, CropYear, BidMonth)
 );
 
@@ -486,6 +487,23 @@ DECLARE @winners TABLE
                                  THEN FORMAT(q.LastPrice, N'0.####', N'en-US')
                                  ELSE FORMAT(q.LastPrice, N'0.00##', N'en-US') END,
         QuoteAsOf         = CONVERT(datetime2, q.TradeTimestamp),
+        -- The futures contract behind the bid, e.g. ZCZ26. Taken from the vendor rather than derived:
+        -- it is not the delivery month, and the two genuinely differ (KEBF27 trades against KEH27).
+        --
+        -- The vendor sends two year forms for the same contract, ZCZ26 and the one-digit ZCZ6, so the
+        -- short one is expanded here and the sheet reads one way. The digit names the first year at or
+        -- after delivery that ends in it -- checked against every short-form row in the catalog. The
+        -- test is that the string ends in a month code followed by exactly one digit, which is
+        -- independent of how long the root is (MWO and ZWA are three characters).
+        UnderlyingFuture  = CASE
+            WHEN NULLIF(i.UnderlyingFuture, N'') IS NULL THEN NULL
+            WHEN i.DeliveryStart IS NOT NULL
+             AND PATINDEX(N'%[FGHJKMNQUVXZ][0-9]', i.UnderlyingFuture) > 0
+            THEN LEFT(i.UnderlyingFuture, LEN(i.UnderlyingFuture) - 1)
+               + RIGHT(CONVERT(nvarchar(4),
+                     YEAR(i.DeliveryStart)
+                     + ((TRY_CONVERT(int, RIGHT(i.UnderlyingFuture, 1)) - (YEAR(i.DeliveryStart) % 10) + 10) % 10)), 2)
+            ELSE i.UnderlyingFuture END,
         -- Keying off the contract month leaves at most one candidate per cell in practice, so this
         -- ordering is a backstop for the case that remains: a month the vendor splits into first-half
         -- and last-half symbols. Whole-month bids win those; then the freshest quote, then the
@@ -562,7 +580,7 @@ DECLARE @winners TABLE
 -- other side stays NULL and the sheet simply has nothing to show for that mode.
 INSERT @winners
     (LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
-     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf)
+     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture)
 SELECT
     c.LocationId, c.CommodityCode,
     MAX(c.CommodityName), MAX(c.CommodityCategory),
@@ -572,7 +590,11 @@ SELECT
     QuoteAsOf      = MAX(CASE WHEN c.PriceType = @cashType  THEN c.QuoteAsOf END),
     BasisSymbol    = MAX(CASE WHEN c.PriceType = @basisType THEN c.Symbol    END),
     BasisText      = MAX(CASE WHEN c.PriceType = @basisType THEN c.BidText   END),
-    BasisQuoteAsOf = MAX(CASE WHEN c.PriceType = @basisType THEN c.QuoteAsOf END)
+    BasisQuoteAsOf = MAX(CASE WHEN c.PriceType = @basisType THEN c.QuoteAsOf END),
+    -- Cash and basis agree on the contract in 39,095 of the 39,096 windows that carry both, so one
+    -- value per cell is safe; cash leads only so a basis-only cell still gets one.
+    UnderlyingFuture = ISNULL(MAX(CASE WHEN c.PriceType = @cashType  THEN c.UnderlyingFuture END),
+                              MAX(CASE WHEN c.PriceType = @basisType THEN c.UnderlyingFuture END))
 FROM candidate AS c
 WHERE c.rn = 1
 GROUP BY c.LocationId, c.CommodityCode, c.CropYear, c.BidMonth;
@@ -589,15 +611,15 @@ GROUP BY c.LocationId, c.CommodityCode, c.CropYear, c.BidMonth;
 -- year value came from rather than leaving the user to guess.
 INSERT @winners
     (LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
-     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf)
+     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture)
 SELECT
     n.LocationId, n.CommodityCode, n.CommodityName, n.CommodityCategory, n.CropYear, 0,
-    n.Symbol, n.BidText, n.QuoteAsOf, n.BasisSymbol, n.BasisText, n.BasisQuoteAsOf
+    n.Symbol, n.BidText, n.QuoteAsOf, n.BasisSymbol, n.BasisText, n.BasisQuoteAsOf, n.UnderlyingFuture
 FROM
 (
     SELECT
         w.LocationId, w.CommodityCode, w.CommodityName, w.CommodityCategory, w.CropYear,
-        w.Symbol, w.BidText, w.QuoteAsOf, w.BasisSymbol, w.BasisText, w.BasisQuoteAsOf,
+        w.Symbol, w.BidText, w.QuoteAsOf, w.BasisSymbol, w.BasisText, w.BasisQuoteAsOf, w.UnderlyingFuture,
         rn = ROW_NUMBER() OVER (PARTITION BY w.LocationId, w.CommodityCode, w.CropYear
                                 ORDER BY w.BidMonth)
     FROM @winners AS w
@@ -614,7 +636,7 @@ MERGE dbo.BidSheetLocationBids WITH (HOLDLOCK) AS t
 USING
 (
     SELECT LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
-           Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf
+           Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture
     FROM @winners
 ) AS s
    ON t.LocationId    = s.LocationId
@@ -634,7 +656,8 @@ WHEN MATCHED AND (t.Source <> N'Barchart'
                   OR ISNULL(t.QuoteAsOf, N'19000101') <> ISNULL(s.QuoteAsOf, N'19000101')
                   OR ISNULL(t.BasisBid, N'') <> ISNULL(s.BasisText, N'')
                   OR ISNULL(t.BasisSymbol, N'') <> ISNULL(s.BasisSymbol, N'')
-                  OR ISNULL(t.BasisQuoteAsOf, N'19000101') <> ISNULL(s.BasisQuoteAsOf, N'19000101'))
+                  OR ISNULL(t.BasisQuoteAsOf, N'19000101') <> ISNULL(s.BasisQuoteAsOf, N'19000101')
+                  OR ISNULL(t.UnderlyingFuture, N'') <> ISNULL(s.UnderlyingFuture, N''))
     THEN UPDATE SET
         t.Bid               = ISNULL(s.BidText, N''),
         t.Source            = N'Barchart',
@@ -645,18 +668,20 @@ WHEN MATCHED AND (t.Source <> N'Barchart'
         t.BasisBid          = s.BasisText,
         t.BasisSymbol       = s.BasisSymbol,
         t.BasisQuoteAsOf    = s.BasisQuoteAsOf,
+        t.UnderlyingFuture  = s.UnderlyingFuture,
         t.ModifiedBy        = @appliedBy,
         t.ModifiedAt        = SYSUTCDATETIME()
 WHEN NOT MATCHED BY TARGET THEN INSERT
 (
     LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, Month,
-    Bid, Source, BarchartSymbol, QuoteAsOf, BasisBid, BasisSymbol, BasisQuoteAsOf, CreatedBy, CreatedAt
+    Bid, Source, BarchartSymbol, QuoteAsOf, BasisBid, BasisSymbol, BasisQuoteAsOf, UnderlyingFuture,
+    CreatedBy, CreatedAt
 )
 VALUES
 (
     s.LocationId, s.CommodityCode, s.CommodityName, s.CommodityCategory, s.CropYear, s.BidMonth,
     ISNULL(s.BidText, N''), N'Barchart', s.Symbol, s.QuoteAsOf,
-    s.BasisText, s.BasisSymbol, s.BasisQuoteAsOf, @appliedBy, SYSUTCDATETIME()
+    s.BasisText, s.BasisSymbol, s.BasisQuoteAsOf, s.UnderlyingFuture, @appliedBy, SYSUTCDATETIME()
 );
 
 SET @written = @@ROWCOUNT;

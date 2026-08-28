@@ -19,6 +19,13 @@ export interface BidSheetLocationBid {
   basisSymbol?: string;
   /** When the elevator last updated the basis bid. */
   basisQuoteAsOf?: string;
+  /**
+   * Futures contract the bid is quoted against, e.g. `ZCZ26`. Absent on manual cells.
+   *
+   * Not the delivery month: Kansas City wheat delivering in January trades against the March board.
+   * Originators compare bids by the contract behind them, so this is what a Year cell names.
+   */
+  underlyingFuture?: string;
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;
@@ -77,6 +84,8 @@ export interface BidSheetEntry {
   cashBid?: string;
   basisBid?: string;
   basisQuoteAsOf?: string;
+  /** Futures contract behind the bid, e.g. `ZCZ26`. */
+  underlyingFuture?: string;
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;

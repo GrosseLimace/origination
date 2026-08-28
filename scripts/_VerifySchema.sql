@@ -236,6 +236,13 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocationBids', 'QuoteAsOf',         'datetime2',     1),
 ('dbo', 'BidSheetLocationBids', 'ModifiedBy',        'nvarchar(255)', 1),
 ('dbo', 'BidSheetLocationBids', 'Month',             'int',           0),
+-- Basis columns landed with AddBasisBidColumns and were never listed here, so the verifier has been
+-- reporting them as drift ever since. UnderlyingFuture joins them: the contract a fed bid is quoted
+-- against, which is what the Year cell names.
+('dbo', 'BidSheetLocationBids', 'BasisBid',          'nvarchar(50)',  1),
+('dbo', 'BidSheetLocationBids', 'BasisSymbol',       'nvarchar(100)', 1),
+('dbo', 'BidSheetLocationBids', 'BasisQuoteAsOf',    'datetime2',     1),
+('dbo', 'BidSheetLocationBids', 'UnderlyingFuture',  'nvarchar(20)',  1),
 -- BidSheetLocationOrders
 ('dbo', 'BidSheetLocationOrders', 'Id',           'int',           0),
 ('dbo', 'BidSheetLocationOrders', 'LocationOrder', 'nvarchar(max)', 0),
@@ -574,7 +581,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260824140609_UsePriceModeForStaleQuotes'),
 ('20260824151441_UseContractMonthForBidCells'),
 ('20260827140248_UseQuoteAgeNotVendorMode'),
-('20260827151032_MoveManualBidsToBasisColumn');
+('20260827151032_MoveManualBidsToBasisColumn'),
+('20260828173255_AddUnderlyingFutureToBidCells');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

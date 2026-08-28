@@ -38,6 +38,7 @@ public static class BidSheetMappings
         QuoteAsOf = b.QuoteAsOf,
         BasisBid = b.BasisBid,
         BasisSymbol = b.BasisSymbol,
+        UnderlyingFuture = b.UnderlyingFuture,
         BasisQuoteAsOf = b.BasisQuoteAsOf,
         CreatedBy = b.CreatedBy,
         CreatedAt = b.CreatedAt,
