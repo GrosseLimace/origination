@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -37,11 +36,10 @@ public class UserTradeUnitServiceTests
             NullLogger<UserTradeUnitService>.Instance);
     }
 
-    // #5 (CWE-285): on a TradeUnitPreferences DB outage the service must FAIL CLOSED — never fall open to
-    // the full org trade-unit list. It surfaces as a 503 rather than an empty 200 because an empty 200
-    // now means "this user has no assignments" and makes the client drop their saved selection.
+    // #5 (CWE-285): on an TradeUnitPreferences DB outage the service must FAIL CLOSED (no trade units),
+    // not fall open to the full org trade-unit list.
     [Fact]
-    public async Task GetForCurrentUserAsync_WhenEntitlementsDbThrowsSql_FailsClosedWith503()
+    public async Task GetForCurrentUserAsync_WhenEntitlementsDbThrowsSql_FailsClosedReturnsEmpty()
     {
         // Arrange — simulate a SQL outage from the entitlements lookup.
         _entitlementsMock
@@ -49,25 +47,9 @@ public class UserTradeUnitServiceTests
             .ThrowsAsync(MakeSqlException());
 
         // Act
-        var ex = await Assert.ThrowsAsync<InfrastructureException>(
-            () => _sut.GetForCurrentUserAsync(CancellationToken.None));
-
-        // Assert — distinguishable from "no assignments", and still never a populated fallback.
-        Assert.Equal("ENTITLEMENTS_DB_UNAVAILABLE", ex.ErrorCode);
-        Assert.IsType<SqlException>(ex.InnerException);
-    }
-
-    // A user with genuinely no assignments gets an empty 200 — the client treats that as "go set some
-    // up in Trade Unit Preferences", which is only safe because outages take the 503 path above.
-    [Fact]
-    public async Task GetForCurrentUserAsync_WhenUserHasNoAssignments_ReturnsEmpty()
-    {
-        _entitlementsMock
-            .Setup(e => e.GetByUserAsync("tuser", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<UserTradeUnitPreference>());
-
         var result = await _sut.GetForCurrentUserAsync(CancellationToken.None);
 
+        // Assert — empty (fail closed), never a populated "All Trade Units" fallback.
         Assert.Empty(result);
     }
 

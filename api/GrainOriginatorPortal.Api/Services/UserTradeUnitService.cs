@@ -1,4 +1,3 @@
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.Data.SqlClient;
@@ -90,21 +89,16 @@ public class UserTradeUnitService : IUserTradeUnitService
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            // Fail closed on a TradeUnitPreferences DB outage: surface a 503 rather than falling open to
-            // ALL trade unit codes (CWE-285). Previously this fell back to every active code from
-            // dbo.CustomerTradeUnit, which leaked the full org trade-unit structure to any user during a
-            // transient outage. It then returned an empty 200 — but an empty 200 now has a real meaning
-            // ("this user has no assignments": the client clears their saved selection and points them at
-            // Trade Unit Preferences), so an outage must be distinguishable: 503 lands in the client's
-            // error path ("Trade units unavailable · Retry") and leaves their saved selection alone.
+            // Fail closed on an TradeUnitPreferences DB outage: return no trade units rather than falling
+            // open to ALL trade unit codes (CWE-285). Previously this fell back to every active code
+            // from dbo.CustomerTradeUnit, which leaked the full org trade-unit structure to any user
+            // during a transient outage. Empty is consistent with the cold-outage behavior of
+            // UserEntitlementService.GetAllowedTradeUnitCodesAsync and lets the selector show an
+            // "unavailable" state instead of an unentitled list.
             _logger.LogError(ex,
-                "TradeUnitPreferences DB unavailable for user {UserId} — failing closed (503). [{ErrorCode}]",
+                "TradeUnitPreferences DB unavailable for user {UserId} — failing closed (no trade units). [{ErrorCode}]",
                 userId, "ENTITLEMENTS_DB_UNAVAILABLE");
-            throw new InfrastructureException(
-                "Trade unit assignments are temporarily unavailable. Please retry shortly.",
-                "ENTITLEMENTS_DB_UNAVAILABLE",
-                ex,
-                StatusCodes.Status503ServiceUnavailable);
+            return [];
         }
     }
 }

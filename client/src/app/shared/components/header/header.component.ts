@@ -23,7 +23,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -48,7 +47,6 @@ export class HeaderComponent {
   private readonly http = inject(HttpClient);
   private readonly destroyRef = inject(DestroyRef);
   private readonly userRoles = inject(UserRolesService);
-  private readonly userTradeUnits = inject(UserTradeUnitsService);
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
@@ -150,13 +148,6 @@ export class HeaderComponent {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
     return name.substring(0, 2).toUpperCase();
-  }
-
-  /** Trade-unit / group assignments are managed in the separate Trade Unit Preferences app.
-   *  It refuses to be iframed, so this opens it in a popup window and the service refreshes
-   *  the user's groups when that window closes. */
-  openTradeUnitPreferences(): void {
-    this.userTradeUnits.openPreferences();
   }
 
   signOut(): void {

@@ -11,35 +11,6 @@
     <span>Trade units unavailable</span>
     <button type="button" (click)="retryLoadGroups(); $event.stopPropagation()" class="underline hover:no-underline ml-1">Retry</button>
   </div>
-} @else if (noTradeUnitsAssigned()) {
-  <!-- The request worked but this user has no assignments. Send them to the app that manages
-       them; when the popup closes the service re-loads and this block disappears on its own. -->
-  <div
-    role="status"
-    [class]="stacked()
-      ? 'flex flex-col gap-2 px-3 py-3 rounded-md border border-yellow-300 dark:border-yellow-600 bg-yellow-50 dark:bg-yellow-900/30 text-sm text-yellow-800 dark:text-yellow-300'
-      : 'min-h-9 flex items-center gap-2 px-3 py-1.5 rounded-md border border-yellow-300 dark:border-yellow-600 bg-yellow-50 dark:bg-yellow-900/30 text-sm text-yellow-800 dark:text-yellow-300 flex-wrap'"
-    (click)="$event.stopPropagation()"
-  >
-    <div class="flex items-center gap-2 min-w-0">
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
-        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-      </svg>
-      <span class="font-medium">No trade units assigned</span>
-    </div>
-    <div class="flex items-center gap-3">
-      <button
-        type="button"
-        (click)="openTradeUnitPreferences()"
-        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors"
-      >
-        Set up in Trade Unit Preferences
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-        <span class="sr-only">(opens in a new window)</span>
-      </button>
-      <button type="button" (click)="retryLoadGroups()" class="text-xs underline hover:no-underline">Retry</button>
-    </div>
-  </div>
 } @else if (userGroups().length >= 1) {
   <div class="relative" (click)="$event.stopPropagation()">
     <button

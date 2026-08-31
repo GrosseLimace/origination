@@ -33,23 +33,9 @@ export class UserPreferencesService {
     ).subscribe(pref => {
       this.prefsLoaded = true;
       if (!pref) return;
-      // This GET races /usertradeunits. If the groups already came back EMPTY, the saved selection
-      // is for trade units the user no longer has — re-applying it would make the preload request
-      // them, the server would strip them to "no filter", and they'd see every producer. Skip it.
-      if (this.appState.noTradeUnitAssignments()) return;
-      // If the groups already came back populated, keep only what's still assigned (same pruning
-      // UserTradeUnitsService does when the groups land after the preference).
-      const groups = this.appState.userGroups();
-      const groupNames = groups.length
-        ? pref.selectedGroupNames.filter(g => groups.some(x => x.groupName === g))
-        : pref.selectedGroupNames;
-      const available = new Set(groups.flatMap(g => g.tradeUnitCodes));
-      const units = groups.length
-        ? pref.selectedTradeUnits.filter(u => available.has(u))
-        : pref.selectedTradeUnits;
-      if (groupNames.length) this.appState.selectedGroupNames.set(groupNames);
-      if (units.length)      this.appState.selectedTradeUnits.set(units);
-      this.appState.savePrefsToLocalStorage(groupNames, units);
+      if (pref.selectedGroupNames.length) this.appState.selectedGroupNames.set(pref.selectedGroupNames);
+      if (pref.selectedTradeUnits.length)  this.appState.selectedTradeUnits.set(pref.selectedTradeUnits);
+      this.appState.savePrefsToLocalStorage(pref.selectedGroupNames, pref.selectedTradeUnits);
     });
 
     // Save to localStorage + API whenever trade units change (debounced).
