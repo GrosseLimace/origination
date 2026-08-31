@@ -708,7 +708,13 @@ export class BidSheetComponent {
         this.isLoading.set(false);
         this.filterBids();
         this._refreshMapMarkers();
-        onLoaded?.();
+        if (onLoaded) {
+          onLoaded();
+        } else if (this.editBidsMode() && this._buildDirtyBids().length === 0) {
+          // A background refresh landed while the grid is open: true it up -- unless the user has
+          // unsaved edits, which a rebuild would eat. Those reconcile on the next save/navigation.
+          this._buildEditGrid(this.editBidsYear());
+        }
       },
       error: () => {
         // Per-TU failures are caught above, so this only fires on an unexpected pipeline error.
@@ -1790,6 +1796,13 @@ export class BidSheetComponent {
     this._editBidsSavedKeys.clear();
     this.editBidsMode.set(true);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'edit-bids-opened');
+
+    // The grid opens instantly from in-memory data and trues itself up here in the background --
+    // the job the header's Refresh button used to do by hand. No spinner (no onLoaded callback),
+    // and the pipeline only rebuilds the open grid when nothing is dirty, so a keystroke can never
+    // be eaten by data arriving underneath it.
+    const refreshTus = this.activeTradeUnits();
+    if (refreshTus.length > 0) this._loadBidData(refreshTus, undefined, 'refresh');
 
     // Focus the first crop input for the selected location
     if (focusLocation) {
