@@ -1732,8 +1732,6 @@ export class BidSheetComponent {
 
     forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
-        this.barchartAdding.set(false);
-        this._pickerRef()?.clearSelection();
         const count = request.locations.length;
         this.toastService.success(`Added ${count} location${count === 1 ? '' : 's'}`);
 
@@ -1742,20 +1740,22 @@ export class BidSheetComponent {
         if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
         this.allMapLocations.update(locs => [...saved, ...locs]);
 
-        // The picker has done its job. Closing Edit Bids after this lands on the map showing the
-        // locations just added, which is what the user is going there to see.
-        this._leaveBarchartMode();
-        this.addLocationOrigin.set(null);
-
         this._loadAllMapLocations();
-        const tus = this.activeTradeUnits();
-        // Edit Bids is opened from the reload callback, not here: the grid is built from loaded bid
-        // data, so opening first would show the new rows empty and then repaint.
-        if (tus.length > 0) {
-          this._loadBidData(tus, () => this.openEditBids(request.locations[0]?.name), 'refresh');
-        } else {
+        // The picker stays open with its button spinning until the grid is genuinely ready, then the
+        // handoff is picker -> Edit Bids in one step. Tearing the picker down first flashed the map
+        // for the length of the reload, which read as a freeze right after a long add.
+        // Edit Bids is opened from the reload callback because the grid is built from loaded bid
+        // data -- opening it first would show the new rows empty and then repaint.
+        const finish = () => {
+          this.barchartAdding.set(false);
+          this._pickerRef()?.clearSelection();
+          this._leaveBarchartMode();
+          this.addLocationOrigin.set(null);
           this.openEditBids(request.locations[0]?.name);
-        }
+        };
+        const tus = this.activeTradeUnits();
+        if (tus.length > 0) this._loadBidData(tus, finish, 'refresh');
+        else finish();
       },
       error: (err) => {
         this.barchartAdding.set(false);
@@ -3209,6 +3209,21 @@ export class BidSheetComponent {
     try {
       this._map = L.map(mapElement).setView([38.5, -98.0], 6);
 
+      // Hovering a pin swaps its icon, which REPLACES the pin's DOM element. When the pointer lands
+      // outside the new, larger element's box, that element never sees a mouseover -- so it never
+      // fires the mouseout either, and the pin sticks expanded. The map's own mousemove is the one
+      // signal that always keeps coming, so it collapses any expanded pin the pointer is not
+      // actually over; map mouseout catches the pointer leaving for an overlay or off-map.
+      this._map.on('mousemove', (e: any) => {
+        const hovered = this._hoveredMarker;
+        if (!hovered) return;
+        const el = hovered.marker.getElement?.();
+        const target = e.originalEvent?.target as Node | null;
+        if (el && target && el.contains(target)) return; // genuinely still over the pin
+        this._collapseHoveredMarker();
+      });
+      this._map.on('mouseout', () => this._collapseHoveredMarker());
+
       // Street view (default) — OpenStreetMap.
       this._streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
@@ -3611,16 +3626,22 @@ export class BidSheetComponent {
   /** Binds hover expand behavior to a marker — swaps icon on mouseover/mouseout.
    *  Tracks the currently-hovered marker and force-resets it when another marker is hovered,
    *  which prevents stuck labels when markers sit close together and setIcon() eats the mouseout. */
+  /** Collapses whichever pin is expanded, wherever the pointer went. */
+  private _collapseHoveredMarker(): void {
+    const hovered = this._hoveredMarker;
+    if (!hovered) return;
+    try {
+      hovered.marker.setIcon(hovered.resetIcon);
+      hovered.marker.setZIndexOffset(0);
+    } catch { /* marker may have been removed */ }
+    this._hoveredMarker = null;
+  }
+
   private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string): void {
     const hoverIcon = this._buildHoverIcon(name, bid, bg, border);
     marker.on('mouseover', () => {
-      // Reset any other marker that's still stuck on its hover icon (and its raised z-index)
-      if (this._hoveredMarker && this._hoveredMarker.marker !== marker) {
-        try {
-          this._hoveredMarker.marker.setIcon(this._hoveredMarker.resetIcon);
-          this._hoveredMarker.marker.setZIndexOffset(0);
-        } catch { /* marker may have been removed */ }
-      }
+      // At most one pin is ever expanded; whatever was before this one collapses first.
+      if (this._hoveredMarker?.marker !== marker) this._collapseHoveredMarker();
       marker.setIcon(hoverIcon);
       // Raise above neighbors so the expanded bid is never hidden behind an overlapping pin
       try { marker.setZIndexOffset(2000); } catch { /* ignore */ }

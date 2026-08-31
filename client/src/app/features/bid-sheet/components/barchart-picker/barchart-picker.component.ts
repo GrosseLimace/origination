@@ -46,6 +46,13 @@ export class BarchartPickerComponent {
   /** Trade units the user may add a location to. */
   readonly tradeUnits = input<string[]>([]);
 
+  /**
+   * True while the parent is creating the ticked locations and preparing Edit Bids. Each create
+   * runs the feed bridge server-side, so a big batch takes visible seconds -- without a busy state
+   * the button reads as frozen and gets clicked again.
+   */
+  readonly adding = input(false);
+
   /** Results, so the parent can draw them as pins on the map. */
   readonly resultsChange = output<BarchartCatalogLocation[]>();
 
@@ -109,6 +116,7 @@ export class BarchartPickerComponent {
   toggleSelected(location: BarchartCatalogLocation, event?: Event): void {
     // Stops the row handler running as well, which would tick it straight back off.
     event?.stopPropagation();
+    if (this.adding()) return; // the batch is already on its way to the server
     this.selected.update(current => {
       const next = new Map(current);
       next.has(location.locationKey) ? next.delete(location.locationKey) : next.set(location.locationKey, location);
@@ -135,6 +143,7 @@ export class BarchartPickerComponent {
 
   /** Emits every ticked location, named as the vendor names it and pre-classified. */
   addSelected(): void {
+    if (this.adding()) return;
     const picked = [...this.selected().values()];
     if (picked.length === 0) return;
 

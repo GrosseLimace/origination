@@ -115,12 +115,20 @@
          footer inside the list is somewhere the user has to go looking for. Appears only once
          something is ticked, so an untouched panel looks exactly as it did before. -->
     <div class="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 flex items-center gap-2">
-      <button (click)="addSelected()"
-              class="flex-1 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
-        Add {{ selectedCount() }} location{{ selectedCount() === 1 ? '' : 's' }}
+      <button (click)="addSelected()" [disabled]="adding()"
+              class="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors disabled:opacity-70 disabled:cursor-wait">
+        @if (adding()) {
+          <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Adding {{ selectedCount() }} location{{ selectedCount() === 1 ? '' : 's' }}…
+        } @else {
+          Add {{ selectedCount() }} location{{ selectedCount() === 1 ? '' : 's' }}
+        }
       </button>
-      <button (click)="clearSelection()" title="Clear selection"
-              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+      <button (click)="clearSelection()" title="Clear selection" [disabled]="adding()"
+              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50">
         Clear
       </button>
     </div>
