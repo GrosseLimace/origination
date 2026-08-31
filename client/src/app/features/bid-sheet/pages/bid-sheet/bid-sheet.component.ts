@@ -220,7 +220,6 @@ export class BidSheetComponent {
   cropYears = signal<number[]>([]);
   crops = signal<string[]>([]);
   isLoading = signal<boolean>(false);
-  isRefreshing = signal<boolean>(false);
 
   // --- Old/New year logic (data-driven, navigable) ---
   // yearOffset 0 = latest two years, -1 = shift one year earlier, etc.
@@ -547,9 +546,6 @@ export class BidSheetComponent {
 
 
   // --- Refresh timer ---
-  lastRefreshed = signal<Date>(new Date());
-  timeSinceRefresh = signal<string>('Just now');
-  private _refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   // --- Map ---
   private _map: Leaflet.Map | null = null;
@@ -733,12 +729,10 @@ export class BidSheetComponent {
       this._onTradeUnitsChanged(tus);
     });
 
-    this._startRefreshTimer();
     this._initializeMapWhenReady();
 
     this.destroyRef.onDestroy(() => {
       this._destroyMap();
-      if (this._refreshTimer) clearInterval(this._refreshTimer);
       if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
       if (this._zoomDebounceTimer) clearTimeout(this._zoomDebounceTimer);
       if (this._filterBarObserver) this._filterBarObserver.disconnect();
@@ -3173,57 +3167,8 @@ export class BidSheetComponent {
     setTimeout(finish, 2500);
   }
 
-  refreshBids(): void {
-    this.isRefreshing.set(true);
-    if (this.editBidsMode()) this.editBidsGridLoading.set(true);
-    const tus = this.activeTradeUnits();
-    if (tus.length > 0) {
-      // Refresh map locations and TU bid data in parallel
-      this._loadAllMapLocations();
-      this._loadBidData(tus, () => {
-        // If edit bids is open, rebuild the grid with the fresh data
-        if (this.editBidsMode()) {
-          this._buildEditGrid(this.editBidsYear());
-          this.editBidsGridLoading.set(false);
-        }
-        this.isRefreshing.set(false);
-        this.toastService.success('Bids refreshed');
-      });
-    } else {
-      // No TU selected — just refresh the map locations
-      this.apiService.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (locs) => {
-          this.allMapLocations.set(locs);
-          this.filterBids();
-          this._refreshMapMarkers();
-          this.isRefreshing.set(false);
-          this.toastService.success('Bids refreshed');
-        },
-        error: () => {
-          this.isRefreshing.set(false);
-          this.toastService.error('Failed to refresh');
-        }
-      });
-    }
-    this._startRefreshTimer();
-  }
-
   formatDate(date: Date): string {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
-
-  private _startRefreshTimer(): void {
-    this.lastRefreshed.set(new Date());
-    this.timeSinceRefresh.set('Just now');
-    if (this._refreshTimer) clearInterval(this._refreshTimer);
-    this._refreshTimer = setInterval(() => this._updateTimeSinceRefresh(), 10000);
-  }
-
-  private _updateTimeSinceRefresh(): void {
-    const seconds = Math.floor((new Date().getTime() - this.lastRefreshed().getTime()) / 1000);
-    if (seconds < 60) this.timeSinceRefresh.set('A few seconds ago');
-    else if (seconds < 3600) this.timeSinceRefresh.set(`${Math.floor(seconds / 60)}m ago`);
-    else this.timeSinceRefresh.set(`${Math.floor(seconds / 3600)}h ago`);
   }
 
   // =========================================================================
