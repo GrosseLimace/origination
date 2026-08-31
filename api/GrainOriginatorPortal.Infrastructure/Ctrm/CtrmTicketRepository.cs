@@ -35,7 +35,10 @@ public sealed class CtrmTicketRepository : ITicketRepository
     private readonly IConfiguration _configuration;
     private readonly CtrmProvenance _provenance;
     private readonly ILogger<CtrmTicketRepository> _logger;
+    private readonly CtrmWarmRegistry? _warmRegistry;
 
+    /// <param name="warmRegistry">Optional (absent in tests): records which producer sets the trade-unit
+    /// read serves, so <c>CtrmKeepWarmService</c> can keep their caches warm on a cadence.</param>
     public CtrmTicketRepository(
         CtrmTicketReader reader,
         CtrmContractReader contractReader,
@@ -43,7 +46,8 @@ public sealed class CtrmTicketRepository : ITicketRepository
         TicketRepository ods,
         IConfiguration configuration,
         CtrmProvenance provenance,
-        ILogger<CtrmTicketRepository> logger)
+        ILogger<CtrmTicketRepository> logger,
+        CtrmWarmRegistry? warmRegistry = null)
     {
         _reader = reader;
         _contractReader = contractReader;
@@ -52,6 +56,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         _configuration = configuration;
         _provenance = provenance;
         _logger = logger;
+        _warmRegistry = warmRegistry;
     }
 
     // -------------------------------------------------------------------------
@@ -168,7 +173,9 @@ public sealed class CtrmTicketRepository : ITicketRepository
         tickets = tickets.OrderByDescending(t => t.Date).ToList();
 
         var gated = beforeGate != tickets.Count;
-        _provenance.RecordTickets("ctrm", gated ? "OkStorageGated" : "Ok", tickets.Count);
+        _provenance.RecordTickets("ctrm",
+            read.Origin == CtrmReadOrigin.TradeUnitCache ? "OkFromTradeUnitCache" : gated ? "OkStorageGated" : "Ok",
+            tickets.Count);
 
         _logger.LogInformation(
             "CTRM tickets: {Count} rows for producer {ScoularId} (live; {Open} open contract(s)).",
@@ -270,6 +277,10 @@ public sealed class CtrmTicketRepository : ITicketRepository
             _provenance.RecordTickets("ctrm", "NoProducersInScope", 0);
             return [];
         }
+
+        // Registered BEFORE the read, so even a prompt that arrives without a prior contract load marks
+        // this set as one the keep-warm service should maintain.
+        _warmRegistry?.Touch(codes, DateTime.UtcNow);
 
         // Contracts first, then tickets - not together. The contract pages are ~25s server-side scans and
         // running the ticket walk alongside them starved the contract read past the client timeout (measured

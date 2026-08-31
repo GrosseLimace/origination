@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin, of, Subject } from 'rxjs';
+import { forkJoin, of, Subject, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
 import { catchError, takeUntil } from 'rxjs/operators';
 import { MsalService } from '@azure/msal-angular';
@@ -82,6 +82,15 @@ export class HomeComponent {
    *  server's own per-producer cache (Ctrm:LiveCacheSeconds, 60s): refetching sooner would usually be
    *  answered from that cache anyway, so it would cost a round trip for the same bytes. */
   private static readonly CUSTOMER_DATA_MAX_AGE_MS = 60_000;
+
+  /** How long after a FIRST load of a producer the silent convergence refresh fires.
+   *
+   *  The server may answer a first click instantly from the warm trade-unit cache (rows up to a few
+   *  minutes old) while it starts the live read behind the answer. This one-shot refresh re-reads once
+   *  that live read has had time to land, so anything added or closed in CTRM in the gap appears within
+   *  seconds of the click - the user never has to leave and come back. When the first answer was already
+   *  live, the refresh hits the server's 60s per-producer cache and costs one ~50ms round trip. */
+  private static readonly CLICK_CONVERGENCE_MS = 4_000;
 
   /** The contract and ticket ids each producer's last read returned.
    *
@@ -1344,6 +1353,17 @@ export class HomeComponent {
     const markIfAllDone = () => {
       if (contractsDone && ticketsDone && grainDone && dpDone) this._customerLoadedAt.set(customerId, Date.now());
     };
+
+    // One-shot convergence pass behind the first paint. The server may have answered from its warm
+    // trade-unit cache (instant, but up to a few minutes old) with the live read started behind it;
+    // re-reading once that read has landed swaps in anything that changed, silently, via the same
+    // retract-then-replace path every background refresh uses. Cancelled if the user moves on.
+    timer(HomeComponent.CLICK_CONVERGENCE_MS)
+      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.selectedCustomer()?.id !== customerId) return;
+        this._refreshCustomerContractsAndTickets(customerId, scoularId);
+      });
 
     // A hover prefetch may already hold this producer's contracts and tickets. They are applied through
     // the SAME functions the network path uses, so the only difference is that the click pays no round

@@ -53,6 +53,11 @@ public sealed class CtrmContractReader
 
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>producer code → the producer-set cache keys that contain it. Lets a per-producer read be
+    /// answered from a warm trade-unit set. Entries prune lazily when a set entry has been swept.</summary>
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _setsByProducer =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// A cached read. Holds the fetch LAZILY, which is the whole point.
     /// </summary>
@@ -161,7 +166,80 @@ public sealed class CtrmContractReader
             && _utcNow() - full.CreatedUtc < LiveTtl())
             return full.Read;
 
+        // A warm trade-unit set already holds this producer's rows (the home-page load fetched them for
+        // Build-a-List). Serving those makes the click instant; the live read is kicked behind the answer
+        // so the per-producer cache converges to live within seconds - the client re-reads shortly after
+        // and swaps in anything that changed. NEVER a substitute for a fresh per-producer cache entry,
+        // which is checked first by GetCachedAsync below only on a set miss.
+        if (!_cache.ContainsKey(CoreKey(code)) && TryServeFromProducerSet(code) is { } fromSet)
+        {
+            // Fire the live read into the per-producer cache without awaiting it. Non-interactive: nothing
+            // is watching a spinner for it, so it must not make the background walk stand aside.
+            _ = GetCachedAsync(CoreKey(code), LiveTtl(), () => FetchProducerCoreAsync(code, interactive: false));
+            return Task.FromResult(fromSet);
+        }
+
         return GetCachedAsync(CoreKey(code), LiveTtl(), () => FetchProducerCoreAsync(code, interactive: true));
+    }
+
+    /// <summary>
+    /// This producer's contracts filtered out of the youngest usable trade-unit set entry, or null when
+    /// no set qualifies and the caller should read live.
+    /// </summary>
+    /// <remarks>
+    /// Qualifying is strict, because serving the wrong thing here shows a producer someone else's idea of
+    /// their book: the entry must be COMPLETED (an in-flight refresh's <c>Previous</c> is not used - its
+    /// age is unknowable), successful, fully <see cref="CtrmReadStatus.Ok"/> (a TRUNCATED set cannot say
+    /// which producer lost rows), and younger than <c>Ctrm:ServeClickFromTradeUnitCacheMaxMinutes</c>.
+    /// The row filter is the same customerId match the server itself applies to the singular read, and the
+    /// set carries the same core projection, so the rows are byte-identical to a live core read of the
+    /// same moment. An empty result for a member producer is a legitimate hit - a producer with no
+    /// contracts - not a miss. Kill switch: <c>Ctrm:ServeClickFromTradeUnitCache</c>.
+    /// </remarks>
+    private CtrmReadResult<List<CtrmContractDto>>? TryServeFromProducerSet(string code)
+    {
+        if (!ReadBool("Ctrm:ServeClickFromTradeUnitCache", fallback: true)) return null;
+        if (!_setsByProducer.TryGetValue(code, out var setKeys) || setKeys.IsEmpty) return null;
+
+        var maxAge = TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:ServeClickFromTradeUnitCacheMaxMinutes", 15)));
+        var now = _utcNow();
+
+        CacheEntry? best = null;
+        foreach (var setKey in setKeys.Keys)
+        {
+            if (!_cache.TryGetValue(setKey, out var entry))
+            {
+                // The set entry was swept; prune the index lazily so it cannot grow stale forever.
+                setKeys.TryRemove(setKey, out _);
+                continue;
+            }
+
+            if (!entry.IsCompleted || entry.Failed) continue;
+            if (entry.Read.Result.Status != CtrmReadStatus.Ok) continue;   // PartialSuccess = truncated
+            if (now - entry.CreatedUtc > maxAge) continue;
+            if (best is null || entry.CreatedUtc > best.CreatedUtc) best = entry;
+        }
+
+        if (best is null) return null;
+
+        var rows = (best.Read.Result.Value ?? [])
+            .Where(d => string.Equals(d.CustomerId?.Trim(), code, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return new CtrmReadResult<List<CtrmContractDto>>
+        {
+            Status = CtrmReadStatus.Ok,
+            Value = rows,
+            Origin = CtrmReadOrigin.TradeUnitCache
+        };
+    }
+
+    /// <summary>Indexes a producer-set cache entry under every member code, so a per-producer read can
+    /// find the sets that contain it. Pruned lazily when a set entry has been swept.</summary>
+    private void RegisterSet(string setKey, IReadOnlyCollection<string> codes)
+    {
+        foreach (var code in codes)
+            _setsByProducer.GetOrAdd(code, _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal))[setKey] = 0;
     }
 
     private static string FullKey(string code) => $"customer:{code}:full";
@@ -203,6 +281,7 @@ public sealed class CtrmContractReader
 
         // Hashed rather than joined: the key would otherwise be tens of kilobytes for a full trade unit.
         var key = $"producers:{codes.Count}:{StableHash(codes)}";
+        RegisterSet(key, codes);
         var ttl = TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:TradeUnitCacheMinutes", 5)));
         return GetCachedAsync(key, ttl, () => FetchForProducersAsync(codes), staleWhileRevalidate: true);
     }
@@ -778,4 +857,8 @@ public sealed class CtrmContractReader
         int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : fallback;
+
+    /// <summary>Reads a boolean setting, falling back when absent or unparseable.</summary>
+    private bool ReadBool(string key, bool fallback) =>
+        bool.TryParse(_configuration[key]?.Trim(), out var parsed) ? parsed : fallback;
 }

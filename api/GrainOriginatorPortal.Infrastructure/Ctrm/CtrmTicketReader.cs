@@ -51,6 +51,12 @@ public sealed class CtrmTicketReader
     private readonly Func<DateTime> _utcNow;
 
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>producer code -> the producer-set keys ({count}:{hash}) whose window entries contain it.
+    /// Lets a per-producer read be answered from a warm trade-unit set.</summary>
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _setsByProducer =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private int _inserts;
 
     /// <summary>
@@ -131,11 +137,90 @@ public sealed class CtrmTicketReader
         var code = scoularId?.Trim() ?? string.Empty;
         if (code.Length == 0) return Failed("No producer code supplied.");
 
-        return GetCachedAsync(new Scope(
+        var scope = new Scope(
             CacheKey: $"customer:{code}",
             Description: $"producer {code}",
             Document: CtrmQueries.TicketsByCustomer,
-            Filter: new { customerId = code }));
+            Filter: new { customerId = code });
+
+        // A warm trade-unit set already holds this producer's ticket headers for every window (the
+        // home-page load walked them for Build-a-List). Serving those makes the click instant; the live
+        // read is kicked behind the answer so the per-producer cache converges to live within seconds -
+        // the client re-reads shortly after and swaps in anything that changed.
+        if (!_cache.ContainsKey(scope.CacheKey) && TryServeFromProducerSet(code) is { } fromSet)
+        {
+            _ = GetCachedAsync(scope);
+            return Task.FromResult(fromSet);
+        }
+
+        return GetCachedAsync(scope);
+    }
+
+    /// <summary>
+    /// This producer's ticket headers filtered out of a warm trade-unit set, or null when no set
+    /// qualifies for EVERY window and the caller should read live.
+    /// </summary>
+    /// <remarks>
+    /// <para>All-or-nothing across the lookback's windows: mixing a set window with a live window would
+    /// produce a list whose halves describe different moments. Each window entry must be COMPLETED (an
+    /// in-flight refresh's <c>Previous</c> is not used), successful, fully <see cref="CtrmReadStatus.Ok"/>
+    /// (a TRUNCATED chunk cannot say which producer lost rows), and not yet expired - which for the
+    /// current window means at most <c>Ctrm:TradeUnitCurrentWindowCacheMinutes</c> old, the same
+    /// freshness every Build-a-List prompt gets.</para>
+    ///
+    /// <para>The header filter is <c>details.Any(customerCode == code)</c> - the exact semi-join the
+    /// server applies to <c>tickets(customerId:)</c> - so the rows are what a live read of the same
+    /// moment would have returned, split-load detail rows included. A header applied to this producer's
+    /// contract but carrying NO detail row for them is excluded on both paths alike (the documented
+    /// cross-booked case behind <c>Ctrm:CrossBookedAppliedTickets</c>). Kill switch:
+    /// <c>Ctrm:ServeClickFromTradeUnitCache</c>, shared with the contract reader.</para>
+    /// </remarks>
+    private CtrmReadResult<List<CtrmTicketDto>>? TryServeFromProducerSet(string code)
+    {
+        if (!ReadBool("Ctrm:ServeClickFromTradeUnitCache", fallback: true)) return null;
+        if (!_setsByProducer.TryGetValue(code, out var setKeys) || setKeys.IsEmpty) return null;
+
+        var lookbackDays = Math.Max(1, ReadInt("Ctrm:TicketLookbackDays", 1095));
+        var windows = BuildWindows(DateTime.Today, lookbackDays);
+        var now = _utcNow();
+
+        foreach (var setKey in setKeys.Keys)
+        {
+            var entries = new List<CacheEntry>(windows.Count);
+            foreach (var w in windows)
+            {
+                if (!_cache.TryGetValue($"producers:{w.From:yyyy-MM-dd}:{w.To:yyyy-MM-dd}:{setKey}", out var entry))
+                    break;
+                if (!entry.IsCompleted || entry.Failed) break;
+                if (entry.Read.Result.Status != CtrmReadStatus.Ok) break;
+                if (now >= entry.ExpiresUtc) break;
+                entries.Add(entry);
+            }
+
+            if (entries.Count != windows.Count) continue;   // this set does not cover every window
+
+            var rows = entries
+                .SelectMany(e => e.Read.Result.Value ?? [])
+                .Where(h => h.Details.Any(d => string.Equals(d.CustomerCode?.Trim(), code, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            return new CtrmReadResult<List<CtrmTicketDto>>
+            {
+                Status = CtrmReadStatus.Ok,
+                Value = rows,
+                Origin = CtrmReadOrigin.TradeUnitCache
+            };
+        }
+
+        return null;
+    }
+
+    /// <summary>Indexes a producer-set key (the <c>{count}:{hash}</c> half of the window cache keys)
+    /// under every member code, so a per-producer read can find the sets that contain it.</summary>
+    private void RegisterSet(string setKey, IReadOnlyCollection<string> codes)
+    {
+        foreach (var c in codes)
+            _setsByProducer.GetOrAdd(c, _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal))[setKey] = 0;
     }
 
     /// <summary>
@@ -268,12 +353,13 @@ public sealed class CtrmTicketReader
         var windows = BuildWindows(today, lookbackDays);
         var maxPages = Math.Max(1, ReadInt("Ctrm:TradeUnitTicketMaxPagesPerWindow", DefaultTradeUnitMaxPagesPerWindow));
         var setKey = $"{codes.Count}:{StableHash(codes)}";
+        RegisterSet(setKey, codes);
 
         // Same key shape as the single-window read above, so a Spot Loads window and a history window over
         // the same producers and dates would share an entry - they are the same rows.
         var results = await Task.WhenAll(windows.Select(w => GetCachedAsync(
             $"producers:{w.From:yyyy-MM-dd}:{w.To:yyyy-MM-dd}:{setKey}",
-            TtlForWindow(w.To, today),
+            TtlForTradeUnitWindow(w.To, today),
             () => FetchChunkedAsync(codes, w.From, w.To, maxPages),
             staleWhileRevalidate: true)));
 
@@ -393,6 +479,23 @@ public sealed class CtrmTicketReader
     private TimeSpan TtlForWindow(DateTime to, DateTime today)
         => to.Date >= today
             ? LiveTtl()
+            : TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:HistoricalTicketCacheMinutes", 30)));
+
+    /// <summary>
+    /// TTL for one window of the TRADE-UNIT-WIDE history read. The current window gets its own, longer
+    /// lifetime than the per-producer one.
+    /// </summary>
+    /// <remarks>
+    /// At the per-producer 60 seconds, the current window's refresh - a full 366-day chunk scan of the
+    /// whole trade unit, 5-15 pages - re-ran roughly every minute while anyone used ticket prompts,
+    /// competing with producer clicks for the same gateway slots. The prompts this read feeds are
+    /// "who delivered / has unapplied tickets" questions, where a brand-new ticket appearing within
+    /// <c>Ctrm:TradeUnitCurrentWindowCacheMinutes</c> (default 5) is fresh enough. The producer screen is
+    /// unaffected: its own read keeps <c>Ctrm:LiveCacheSeconds</c>. Historical windows are unchanged.
+    /// </remarks>
+    private TimeSpan TtlForTradeUnitWindow(DateTime to, DateTime today)
+        => to.Date >= today
+            ? TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:TradeUnitCurrentWindowCacheMinutes", 5)))
             : TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:HistoricalTicketCacheMinutes", 30)));
 
     private Task<CtrmReadResult<List<CtrmTicketDto>>> GetCachedAsync(Scope scope)
@@ -821,4 +924,8 @@ public sealed class CtrmTicketReader
         int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : fallback;
+
+    /// <summary>Reads a boolean setting, falling back when absent or unparseable.</summary>
+    private bool ReadBool(string key, bool fallback) =>
+        bool.TryParse(_configuration[key]?.Trim(), out var parsed) ? parsed : fallback;
 }

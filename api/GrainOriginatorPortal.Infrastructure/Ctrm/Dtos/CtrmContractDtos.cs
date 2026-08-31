@@ -49,7 +49,6 @@ public sealed class CtrmContractDto
     // The Scoular customer code. Byte-identical to ODS CustomerCode / Contract.CtrmCustomerId /
     // Customer.ScoularId — one namespace, verified on TATOBIN. This is the whole join.
     public string? CustomerId { get; set; }
-    public string? CustomerName { get; set; }
     public string? TradeUnit { get; set; }
 
     public string? CommodityCode { get; set; }
@@ -105,7 +104,6 @@ public sealed class CtrmContractPriceDto
     public int? PriceSequence { get; set; }
 
     public decimal? PriceQuantity { get; set; }
-    public string? PriceUom { get; set; }
 
     public decimal? FlatPrice { get; set; }
     public decimal? BasisPrice { get; set; }
@@ -113,22 +111,12 @@ public sealed class CtrmContractPriceDto
     public decimal? FreightAdjustment { get; set; }
 
     public DateTime? PriceDate { get; set; }
-    public string? PriceCurrency { get; set; }
-
-    public string? TraderInitials { get; set; }
-    public string? Trader { get; set; }
-
-    public decimal? PriceOpenQuantity { get; set; }
-    public decimal? PriceAppliedQuantity { get; set; }
-    public decimal? PriceSettledQuantity { get; set; }
-    public decimal? PriceOpenWeight { get; set; }
-    public decimal? PriceAppliedWeight { get; set; }
-    public decimal? PriceSettledWeight { get; set; }
 
     public string? CustomerConfirmStatus { get; set; }
-    public string? BrokerConfirmStatus { get; set; }
 
-    /// <summary>CTRM's only audit timestamp on a price line. Mapped to ModifiedDate; there is no
-    /// CreatedDate equivalent.</summary>
+    /// <summary>No longer projected or mapped (nothing read it), but kept as the deserialization
+    /// vehicle for <c>CtrmDateTimeConverterTests</c>: one of these values arriving space-separated
+    /// ("2026-08-01 00:32:53") once failed an entire contracts page, and the regression test pins the
+    /// converter on the exact field where it happened.</summary>
     public DateTime? LastActivityTimestamp { get; set; }
 }

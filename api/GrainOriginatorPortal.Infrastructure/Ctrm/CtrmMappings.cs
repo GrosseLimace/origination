@@ -54,7 +54,11 @@ public static class CtrmMappings
         SourceContractId = Clean(d.ContractId),
         ContractNumber = Clean(d.ContractNumber) ?? string.Empty,
         ContractPrefixType = Clean(d.ContractPrefixType),
-        CustomerName = Clean(d.CustomerName),
+
+        // Not projected (2026-08-28 usage trace): the client Contract model has no customerName and no
+        // server logic reads it - producer names come from the customer master, keyed on CtrmCustomerId.
+        // ODS populates it, so this is a deliberate field-population difference, not a data one.
+        CustomerName = null,
 
         CommodityCode = Clean(d.CommodityCode),
         CommodityDescription = Clean(d.CommodityDescription),
@@ -124,12 +128,10 @@ public static class CtrmMappings
     {
         ContractId = Clean(parent.ContractId) ?? string.Empty,
         ContractNumber = Clean(parent.ContractNumber),
-        CustomerName = Clean(parent.CustomerName),
 
         // 0 is a real sequence number on this data, not a missing value.
         PriceSequence = p.PriceSequence,
         PriceQuantity = p.PriceQuantity,
-        PriceUom = Clean(p.PriceUom),
 
         FlatPrice = p.FlatPrice,
         BasisPrice = p.BasisPrice,
@@ -141,26 +143,14 @@ public static class CtrmMappings
         FreightAdjustment = p.FreightAdjustment,
 
         PriceDate = NullIfSentinel(p.PriceDate),
-        PriceCurrency = Clean(p.PriceCurrency),
+        CustomerConfirmStatus = Clean(p.CustomerConfirmStatus)
 
-        TraderInitials = Clean(p.TraderInitials),
-        Trader = Clean(p.Trader),
-
-        PriceOpenQuantity = p.PriceOpenQuantity,
-        PriceAppliedQuantity = p.PriceAppliedQuantity,
-        PriceSettledQuantity = p.PriceSettledQuantity,
-        PriceOpenWeight = p.PriceOpenWeight,
-        PriceAppliedWeight = p.PriceAppliedWeight,
-        PriceSettledWeight = p.PriceSettledWeight,
-
-        CustomerConfirmStatus = Clean(p.CustomerConfirmStatus),
-        BrokerConfirmStatus = Clean(p.BrokerConfirmStatus),
-
-        // No CTRM equivalent for either. ConfirmationStatus is an ODS-only rollup, and a price line
-        // carries a single lastActivityTimestamp rather than a created/modified pair.
-        ConfirmationStatus = null,
-        CreatedDate = null,
-        ModifiedDate = NullIfSentinel(p.LastActivityTimestamp)
+        // Everything else on the entity stays null on purpose. ConfirmationStatus and CreatedDate have no
+        // CTRM equivalent. CustomerName, PriceUom, PriceCurrency, TraderInitials, Trader, the
+        // open/applied/settled quantity and weight trios, BrokerConfirmStatus and ModifiedDate were
+        // projected and mapped until 2026-08-28, when a usage trace showed nothing in the client or the
+        // server reads any of them - and prices roughly double a contract page, so dead fields here cost
+        // real time on the one read that pays for the collection.
     };
 
     // -------------------------------------------------------------------------
@@ -280,14 +270,12 @@ public static class CtrmMappings
                 TicketPrefix = Clean(header.TicketPrefix),
                 TicketNumber = Clean(header.TicketNumber) ?? string.Empty,
                 TicketSuffix = Clean(header.TicketSuffix),
-                ShipmentTicketNumber = Clean(header.ShipmentTicketNumber),
 
                 // Keeps the prefix character, which IsApplied reads to classify U/L/C as unapplied.
                 CtrmContractNumber = Clean(d.ContractNumber),
 
                 OrganizationCode = Clean(d.OrganizationCode),
                 ElevatorCode = Clean(d.ElevatorCode),
-                UnloadOrganizationCode = Clean(header.UnloadOrganizationCode),
 
                 // ODS stores TicketBlDate as a string; formatted identically so any downstream string
                 // comparison or lexicographic date sort behaves the same on both paths.
@@ -296,7 +284,6 @@ public static class CtrmMappings
 
                 // Load-level, from the header — deliberately not divided among producers.
                 UnloadQuantity = header.UnloadQuantity,
-                LoadoutQuantity = header.LoadoutQuantity,
 
                 // Named for the ODS column it stands in for: AppliedDockQuantity holds ODS
                 // AppliedNetQuantity, a bigint in POUNDS. Passing pounds through unchanged preserves
@@ -328,6 +315,11 @@ public static class CtrmMappings
                 // field-population difference rather than a data difference. CustomerId, FarmId and the
                 // SourceTicket*Id pair are ODS surrogates with no CTRM equivalent. ElevatorCity/State stay
                 // null here and are filled by the ODS elevator lookup, exactly as on the ODS path.
+                //
+                // Left unset because NOTHING reads them (2026-08-28 usage trace): ShipmentTicketNumber,
+                // UnloadOrganizationCode and LoadoutQuantity are populated by ODS but rendered nowhere and
+                // read by no server logic, so they are no longer projected or mapped. If a screen ever
+                // needs one, re-add it to TicketProjection, this mapping, and the trace.
             })
             .ToList();
     }

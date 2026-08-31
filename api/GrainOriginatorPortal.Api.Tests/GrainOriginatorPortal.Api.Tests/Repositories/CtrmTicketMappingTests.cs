@@ -44,10 +44,7 @@ public class CtrmTicketMappingTests
         TicketSuffix = "",
         TicketBLDate = new DateTime(2025, 11, 19),
         ProductCode = "YC",
-        ShipmentTicketNumber = "T408279",
-        UnloadOrganizationCode = "2190",
         UnloadQuantity = 120_000m,
-        LoadoutQuantity = 0m,
         Details = details.ToList()
     };
 

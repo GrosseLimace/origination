@@ -1,6 +1,8 @@
 # CTRM GraphQL Data Source
 
-**Status:** Live in Dev/Development. QA and Production still read the ODS views until their `Ctrm` config block and Key Vault secret are added.
+**Status:** Live in Dev/Development and QA. Production still reads the ODS views until its `Ctrm` config block and Key Vault secret are added.
+
+**QA testing caveat.** QA's `GraphQlUri` is the same QA gateway Dev uses, which reads the **nonprod Db2 library, not production CTRM**. A tester comparing a producer against QA ODS is therefore comparing two different vintages of data, so a difference is not automatically a defect. What QA can validate: the right producers appear, contract and ticket counts agree between the two sources for a producer, pricing badges / quantities / elevator names / storage gating are right, and the failure states behave. What QA cannot validate: that CTRM is fresher than ODS - that only shows in production. Flip `Ctrm__Source` between `ctrm` and `ods` as an App Service setting to compare the same producer both ways without a redeploy.
 
 ## What this is
 
@@ -103,6 +105,22 @@ To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to t
 | Applied ticket rows carry a synthetic `ContractId` | Restores the client's fallback contract-to-ticket join, which had no value to match on. The ODS FK is documented as "not reliably populated", so this adds a link rather than changing one. |
 | `GetAppliedByContractAsync` bounded to 1095 days | No UI caller. ODS was unbounded; same 366-day-range constraint as every other ticket read. |
 | Per-producer applied tickets come from the `customerId` read, not a second contract-scoped read | Applied vs unapplied is our own rule, so it does not need a query each, and a ticket read is charged by the date scan — a second read doubled the scans. Sampled 90 producers over a year: zero rows only the contract-scoped read could find. `Ctrm:CrossBookedAppliedTickets` restores it. |
+
+## Keeping the trade-unit caches warm
+
+`CtrmKeepWarmService` (hosted, no-op unless `Ctrm:Source` is `ctrm`) re-runs the trade-unit contract and ticket reads for producer sets used within `Ctrm:KeepWarmForHours` (2), every `Ctrm:KeepWarmMinutes` (5). `CtrmWarmRegistry` records which sets those are - both trade-unit-wide reads touch it - capped at 32 sets, evicting the least recently used.
+
+It cannot change what any screen shows: it calls the same reads with the same documents, filters and caches, and a fresh cache short-circuits without a request, so CTRM volume is still governed by the TTLs. What it changes is *who waits* - the stale-while-revalidate refreshes happen on the clock instead of landing on whichever user prompts first after a quiet spell. A failed cycle leaves the last good copy in place and the next cycle retries. After a restart the registry is empty by design: producer sets are resolved from the Origination DB per trade unit, and replaying a persisted set could warm the wrong producers.
+
+## Serving a producer click from the warm trade-unit cache
+
+A click used to re-read a producer live even though the home-page load had already fetched that producer's rows for Build-a-List. It now serves those rows immediately (`Ctrm:ServeClickFromTradeUnitCache`, default on) and **always** starts the live read behind the answer, so the per-producer cache converges; the client also re-reads once a few seconds after the first paint, which is how something added in CTRM between the warm-up and the click appears without the user leaving the page.
+
+Qualification is strict, because serving the wrong thing here shows a producer someone else's idea of their book. The set entry must be completed (never an in-flight refresh, whose age is unknowable), successful, fully `Ok` (a TRUNCATED set cannot say which producer lost rows), and within `Ctrm:ServeClickFromTradeUnitCacheMaxMinutes` (15) for contracts or still unexpired for tickets - where the current ticket window's own TTL applies, so a click's tickets are never staler than a Build-a-List prompt's. Tickets are all-or-nothing across the lookback's windows: mixing a cached window with a live one would produce a list whose halves describe different moments. A fresh per-producer entry always wins over a set. The row filters are the same predicates the server applies (`customerId` on contracts, a `details.customerCode` semi-join on tickets), so the rows equal what a live read of that moment returned. Provenance reports `ctrm:OkFromTradeUnitCache`.
+
+## Projection scope (2026-08-28)
+
+Both projections carry only fields something actually reads, verified by a cross-layer trace (mapping, response serialization, client templates and logic, server-side rules). Ten ticket fields, `customerName`, and twelve of the twenty price fields were removed. Measured on QA, same window, alternating runs: a 194-row ticket window went from 3.83s to 1.59s for one producer and 3.16s to 2.07s for another, with identical row counts - this API resolves fields per row, so dead fields on a ticket DETAIL row cost real time. `unloadQuantity` stays because Actionable Insights uses it as a fallback quantity; `LastActivityTimestamp` stays on the DTO (not the projection) as the regression vehicle for `CtrmDateTimeConverterTests`. Re-adding a field means projecting it, mapping it, and naming a consumer.
 
 ## Known gaps (waiting on the API team)
 

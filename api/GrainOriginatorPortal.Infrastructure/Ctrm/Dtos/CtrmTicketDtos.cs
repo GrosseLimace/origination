@@ -25,13 +25,7 @@ public sealed class CtrmTicketDto
     public DateTime? TicketBLDate { get; set; }
     public string? ProductCode { get; set; }
 
-    public string? ShipmentTicketNumber { get; set; }
-    public string? LoadOrganizationCode { get; set; }
-    public string? UnloadOrganizationCode { get; set; }
-    public string? LoadElevatorCode { get; set; }
-
     public decimal? UnloadQuantity { get; set; }
-    public decimal? LoadoutQuantity { get; set; }
 
     public List<CtrmTicketDetailDto> Details { get; set; } = [];
 }
@@ -63,29 +57,21 @@ public sealed class CtrmTicketDetailDto
     public string? ContractNumber { get; set; }
 
     public string? TicketType { get; set; }
-    public string? TicketStatusCode { get; set; }
     public string? TicketStatusDescription { get; set; }
 
-    public decimal? AppliedGrossQuantity { get; set; }
+    /// <summary>ODS AppliedNetQuantity, in POUNDS. Feeds the entity's AppliedDockQuantity (named for
+    /// the ODS column it stands in for).</summary>
     public decimal? AppliedNetQuantity { get; set; }
-    public decimal? AppliedDockQuantity { get; set; }
-    public decimal? AppliedShrinkQuantity { get; set; }
 
-    public decimal? FinalSettledNetQuantity { get; set; }
     public DateTime? FinalSettledDate { get; set; }
-    public DateTime? TicketLastChangeDate { get; set; }
 
     public decimal? GradeFactorMoisturePercent { get; set; }
     public decimal? GradeFactorTestWeightPercent { get; set; }
     public decimal? GradeFactorProteinPercent { get; set; }
 
-    public string? StorageProgramCode { get; set; }
-
     /// <summary>"Y" means cancelled. The ODS view pre-excludes these; whether the CTRM
     /// <c>tickets</c> field does is still unconfirmed, so the mapper drops them defensively.</summary>
     public string? CancelFlag { get; set; }
-
-    public int? PriceSequence { get; set; }
 }
 
 /// <summary>

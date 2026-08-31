@@ -117,6 +117,7 @@ public static class DependencyInjection
         // want the same rows, so one CTRM call serves all three instead of three identical round trips.
         services.AddSingleton<CtrmContractReader>();
         services.AddSingleton<CtrmTicketReader>();
+        services.AddSingleton<CtrmWarmRegistry>();
 
 
         // Scoped: one per HTTP request, so the provenance middleware reports what THIS request's

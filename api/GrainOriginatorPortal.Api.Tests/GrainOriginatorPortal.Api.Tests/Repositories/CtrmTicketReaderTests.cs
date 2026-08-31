@@ -84,12 +84,25 @@ public class CtrmTicketReaderTests
             ?? new Dictionary<string, object?>();
     }
 
-    private static IConfiguration Config(int lookbackDays = 365, int cacheSeconds = 60, int historicalMinutes = 30) =>
+    /// <param name="tradeUnitCurrentWindowMinutes">TTL of the TRADE-UNIT read's current window, which is
+    /// deliberately longer in production (5 min) than the per-producer <paramref name="cacheSeconds"/> so
+    /// its whole-trade-unit chunk scan does not re-run every minute. Pinned to 1 here so the
+    /// stale-while-revalidate tests can expire it by advancing the clock a minute.</param>
+    private static IConfiguration Config(
+        int lookbackDays = 365,
+        int cacheSeconds = 60,
+        int historicalMinutes = 30,
+        int tradeUnitCurrentWindowMinutes = 1) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Ctrm:TicketLookbackDays"] = lookbackDays.ToString(),
             ["Ctrm:LiveCacheSeconds"] = cacheSeconds.ToString(),
-            ["Ctrm:HistoricalTicketCacheMinutes"] = historicalMinutes.ToString()
+            ["Ctrm:HistoricalTicketCacheMinutes"] = historicalMinutes.ToString(),
+            ["Ctrm:TradeUnitCurrentWindowCacheMinutes"] = tradeUnitCurrentWindowMinutes.ToString(),
+
+            // These tests are about the reader's own caching, not about the trade-unit serve path, which
+            // would otherwise answer a per-producer read from a set warmed earlier in the same test.
+            ["Ctrm:ServeClickFromTradeUnitCache"] = "false"
         }).Build();
 
     private static CtrmTicketReader Sut(ICtrmGraphQlClient client, IConfiguration? config = null, Func<DateTime>? clock = null) =>

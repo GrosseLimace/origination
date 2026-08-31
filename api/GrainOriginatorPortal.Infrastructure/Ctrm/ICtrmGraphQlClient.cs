@@ -75,6 +75,18 @@ public sealed record CtrmReadResult<T>
     public string? ErrorCode { get; init; }
 
     public T? Value { get; init; }
+
+    /// <summary>Where the rows came from when it was NOT a live fetch. <c>null</c> means live (or a
+    /// coalesced share of a live fetch); <see cref="CtrmReadOrigin.TradeUnitCache"/> means a warm
+    /// trade-unit producer-set cache answered a per-producer read instantly, with the live read
+    /// refreshing behind it. Recorded in provenance so a fast click is attributable.</summary>
+    public string? Origin { get; init; }
+}
+
+/// <summary>Values for <see cref="CtrmReadResult{T}.Origin"/>.</summary>
+public static class CtrmReadOrigin
+{
+    public const string TradeUnitCache = "tradeUnitCache";
 }
 
 /// <summary>

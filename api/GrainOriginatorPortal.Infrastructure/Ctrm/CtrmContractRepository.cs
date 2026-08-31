@@ -33,14 +33,18 @@ public sealed class CtrmContractRepository : IContractRepository
     private readonly ContractRepository _ods;
     private readonly CtrmProvenance _provenance;
     private readonly ILogger<CtrmContractRepository> _logger;
+    private readonly CtrmWarmRegistry? _warmRegistry;
 
+    /// <param name="warmRegistry">Optional (absent in tests): records which producer sets the trade-unit
+    /// read serves, so <c>CtrmKeepWarmService</c> can keep their caches warm on a cadence.</param>
     public CtrmContractRepository(
         CtrmContractReader reader,
         CtrmTicketReader ticketReader,
         ApplicationDbContext appContext,
         ContractRepository ods,
         CtrmProvenance provenance,
-        ILogger<CtrmContractRepository> logger)
+        ILogger<CtrmContractRepository> logger,
+        CtrmWarmRegistry? warmRegistry = null)
     {
         _reader = reader;
         _ticketReader = ticketReader;
@@ -48,6 +52,7 @@ public sealed class CtrmContractRepository : IContractRepository
         _ods = ods;
         _provenance = provenance;
         _logger = logger;
+        _warmRegistry = warmRegistry;
     }
 
     // -------------------------------------------------------------------------
@@ -77,10 +82,11 @@ public sealed class CtrmContractRepository : IContractRepository
         }
 
         var contracts = Map(read.Value ?? [], onlyOpenOrRecent: true);
-        _provenance.RecordContracts("ctrm", "Ok", contracts.Count);
+        var fromSet = read.Origin == CtrmReadOrigin.TradeUnitCache;
+        _provenance.RecordContracts("ctrm", fromSet ? "OkFromTradeUnitCache" : "Ok", contracts.Count);
 
-        _logger.LogInformation("CTRM contracts: {Count} for producer {ScoularId} (live, all dates).",
-            contracts.Count, code);
+        _logger.LogInformation("CTRM contracts: {Count} for producer {ScoularId} ({Source}, all dates).",
+            contracts.Count, code, fromSet ? "trade-unit cache, live refresh behind it" : "live");
 
         return contracts;
     }
@@ -155,7 +161,8 @@ public sealed class CtrmContractRepository : IContractRepository
             DateTime.Today);
 
         var ordered = contracts.OrderByDescending(c => c.ContractDate ?? DateTime.MinValue).ToList();
-        _provenance.RecordContracts("ctrm", "Ok", ordered.Count);
+        _provenance.RecordContracts("ctrm",
+            read.Origin == CtrmReadOrigin.TradeUnitCache ? "OkFromTradeUnitCache" : "Ok", ordered.Count);
 
         _logger.LogInformation(
             "CTRM pacing: {Count} closed contracts (crop year >= {Cutoff}) for producer {ScoularId} (live, all dates).",
@@ -204,6 +211,9 @@ public sealed class CtrmContractRepository : IContractRepository
         }
 
         var codes = scoped.ToList();
+
+        // Registered BEFORE the read: even a first, slow walk marks the set as one worth keeping warm.
+        _warmRegistry?.Touch(codes, DateTime.UtcNow);
 
         var read = await _reader.GetForProducersAsync(codes, cancellationToken);
 

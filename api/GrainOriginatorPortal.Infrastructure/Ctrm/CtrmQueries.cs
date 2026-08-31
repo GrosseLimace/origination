@@ -49,23 +49,33 @@ public static class CtrmQueries
 
     /// <summary>Projection shared by every ticket document, so no two can drift into different columns.</summary>
     /// <remarks>
-    /// The <c>gradeFactor*</c> fields sit on the detail row here. Our ODS path reads the same values
+    /// <para>The <c>gradeFactor*</c> fields sit on the detail row here. Our ODS path reads the same values
     /// from <c>base.vw_TicketQuality</c> and joins them back by ticket id, so taking them inline
-    /// removes a view and a join.
+    /// removes a view and a join.</para>
+    ///
+    /// <para><b>Deliberately minimal.</b> This API resolves fields per-row, so every projected field costs
+    /// real time on the detail rows - a minimal projection measured 1.4s against 2.7s for the old full one
+    /// on the same 194-row window. A 2026-08-28 usage trace dropped everything nothing reads:
+    /// header <c>shipmentTicketNumber</c>, <c>loadOrganizationCode</c>, <c>unloadOrganizationCode</c>,
+    /// <c>loadElevatorCode</c>, <c>loadoutQuantity</c>; detail <c>ticketStatusCode</c>,
+    /// <c>appliedGrossQuantity</c>, <c>appliedDockQuantity</c> (the entity's AppliedDockQuantity is fed
+    /// from <c>appliedNetQuantity</c>, in pounds, as on ODS), <c>appliedShrinkQuantity</c>,
+    /// <c>finalSettledNetQuantity</c>, <c>ticketLastChangeDate</c>, <c>storageProgramCode</c> (the storage
+    /// gate keys on customer + product + the contract-number prefix, not this),
+    /// and detail <c>priceSequence</c>. <c>unloadQuantity</c> stays: Actionable Insights reads it as a
+    /// fallback quantity. Re-adding a field means also mapping it in <see cref="CtrmMappings"/> and
+    /// proving a consumer.</para>
     /// </remarks>
     private const string TicketProjection = """
         ticketPrefix ticketNumber ticketSuffix ticketBLDate productCode
-        shipmentTicketNumber loadOrganizationCode unloadOrganizationCode loadElevatorCode
-        unloadQuantity loadoutQuantity
+        unloadQuantity
         details {
           ticketSequenceNumber
           customerCode organizationCode elevatorCode gradeCode
-          contractNumber ticketType
-          ticketStatusCode ticketStatusDescription
-          appliedGrossQuantity appliedNetQuantity appliedDockQuantity appliedShrinkQuantity
-          finalSettledNetQuantity finalSettledDate ticketLastChangeDate
+          contractNumber ticketType ticketStatusDescription
+          appliedNetQuantity finalSettledDate
           gradeFactorMoisturePercent gradeFactorTestWeightPercent gradeFactorProteinPercent
-          storageProgramCode cancelFlag priceSequence
+          cancelFlag
         }
         """;
 
@@ -134,7 +144,7 @@ public static class CtrmQueries
     /// </remarks>
     private const string ContractCoreProjection = """
         contractId contractPrefixType contractNumber
-        customerId customerName tradeUnit
+        customerId tradeUnit
         commodityCode commodityDescription commodityGroup
         contractDate startShipDate finalShipDate closedDate cropYear
         quantity quantityUom totalValue
@@ -146,16 +156,18 @@ public static class CtrmQueries
 
     /// <summary>Field list shared by every contract read that needs pricing lines, so those reads cannot
     /// drift into projecting different columns.</summary>
+    /// <remarks>
+    /// Minimal for the same reason as <see cref="TicketProjection"/>: 12 of the 20 price fields the first
+    /// version projected (uom, currency, trader, the open/applied/settled quantity and weight trios,
+    /// broker confirm, last activity) were mapped and serialized but read by nothing in the client or the
+    /// server - dropped 2026-08-28 after a usage trace. The eight left are what the pricing table and the
+    /// badge actually render.
+    /// </remarks>
     private const string ContractProjection = ContractCoreProjection + "\n" + """
         prices {
-          priceSequence priceQuantity priceUom
+          priceSequence priceQuantity
           flatPrice basisPrice hedgePrice freightAdjustment
-          priceDate priceCurrency
-          traderInitials trader
-          priceOpenQuantity priceAppliedQuantity priceSettledQuantity
-          priceOpenWeight priceAppliedWeight priceSettledWeight
-          customerConfirmStatus brokerConfirmStatus
-          lastActivityTimestamp
+          priceDate customerConfirmStatus
         }
         """;
     /// <summary>

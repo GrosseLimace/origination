@@ -115,6 +115,10 @@ builder.Services.AddHostedService<UsageAggregationBackgroundService>();
 builder.Services.AddSingleton<CustomerSyncService>();
 builder.Services.AddHostedService<CustomerSyncBackgroundService>();
 
+// Keeps the trade-unit-wide CTRM caches warm for recently-used producer sets, so Build-a-List prompts
+// never pay for a cache that expired between uses. No-op unless Ctrm:Source is 'ctrm'.
+builder.Services.AddHostedService<CtrmKeepWarmService>();
+
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
 // OnAuthenticationFailed fires when the token is present but invalid (bad signature,
 // expired, wrong audience, etc.). This is more specific than SecurityAuditMiddleware's
