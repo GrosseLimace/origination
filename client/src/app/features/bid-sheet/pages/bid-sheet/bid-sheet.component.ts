@@ -285,12 +285,16 @@ export class BidSheetComponent {
 
   /** Tooltip for a feed-owned cell: where it came from and when the elevator last changed it. */
   fedCellTooltip(row: EditBidsRow, key: string): string {
+    // The letter on the value is trade shorthand; the hover spells the board out for anyone who
+    // does not read it natively.
+    const board = row.boardChips[key] || row.yearFrom[key];
+    const quoted = board ? ` Quoted against ${this.boardDescription(board)}.` : '';
     const asOf = row.fedAsOf[key];
-    if (!asOf) return 'From BarChart. Not editable.';
+    if (!asOf) return `From BarChart.${quoted}`;
     const aging = row.agingCells.has(key)
       ? ' The elevator has not changed this bid since then.'
       : '';
-    return `From BarChart — updated ${this.formatAsOf(asOf)}.${aging} Not editable.`;
+    return `From BarChart — updated ${this.formatAsOf(asOf)}.${quoted}${aging}`;
   }
 
   /** Short, human "as of" for a vendor timestamp: today shows a time, older shows a date. */
@@ -1303,6 +1307,22 @@ export class BidSheetComponent {
   }
 
   /**
+   * Trade notation for a board inside a sheet that already names the commodity and crop year: just
+   * the month letter, appended to the value the way originators write it themselves -- "-80U" is
+   * eighty under September. This is EXACTLY the shape manual basis bids are typed in ("-40Z"), so
+   * fed and hand-typed bids read as one notation.
+   *
+   * The letter alone assumes the selected year. When the board crosses into another year -- December
+   * corn priced against the March 2027 contract -- the letter would lie, so those carry the year too:
+   * "H27". Unparseable boards return '' and the caller falls back to the full symbol.
+   */
+  boardLetter(board: string, cropYear: number | null): string {
+    const m = /^[A-Z]{2,3}([FGHJKMNQUVXZ])(\d{2})$/.exec(board?.trim() ?? '');
+    if (!m) return '';
+    return cropYear != null && cropYear % 100 === Number(m[2]) ? m[1] : `${m[1]}${m[2]}`;
+  }
+
+  /**
    * "Dec 2026 corn (ZCZ26)" -- the tooltip translation for producers who do not read board symbols.
    * Unknown roots fall back to the symbol alone rather than guessing.
    */
@@ -1344,10 +1364,15 @@ export class BidSheetComponent {
     // Every fed value names the contract it is quoted against: a Year cell because its value is one
     // month standing in for a year, a month cell because the board is what makes two bids comparable
     // at all. Manual cells stay bare -- there is no contract behind them to name.
+    //
+    // Written in trade notation, fused to the value: "-80U" the way an originator would say it, not
+    // "-80 (KEU26)". Commodity and year are already on screen; only the month is new information.
     const contract = value
       ? (month === 0 ? this.yearContractFor(name, year, crop, month) : this.cellBoardFor(name, year, crop, month))
       : '';
-    return contract ? `${value} (${contract})` : value;
+    if (!contract) return value;
+    const letter = this.boardLetter(contract, year);
+    return letter ? `${value}${letter}` : `${value} (${contract})`;
   }
 
   /**
@@ -2618,11 +2643,14 @@ export class BidSheetComponent {
     }
     if (!value) return value;
     // Same rule as the grid: every fed cell names its board on paper -- the printed sheet is what a
-    // producer holds, so the comparison context cannot live in a hover.
+    // producer holds, so the comparison context cannot live in a hover. Trade notation ("-80U"); the
+    // column header carries the full symbol the letters are read against.
     const chip = col.month === 0
       ? this.yearContractFor(row.name, col.year, col.crop, 0)
       : this.cellBoardFor(row.name, col.year, col.crop, col.month);
-    return chip ? `${value} (${chip})` : value;
+    if (!chip) return value;
+    const letter = this.boardLetter(chip, col.year);
+    return letter ? `${value}${letter}` : `${value} (${chip})`;
   }
 
   /**

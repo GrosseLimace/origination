@@ -1073,6 +1073,10 @@
                               [ngClass]="draggingCrop() === col.crop ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
                             <div class="flex items-start gap-1.5">
                             @if (priceMode() !== 'basis') {
+                            <!-- The wrapper exists for the board letter: trade notation inside the box,
+                                 right behind where the quote sits ("-80U"). It hides while the cell is
+                                 being edited so it can never read as part of what was typed. -->
+                            <div class="relative flex-1 min-w-0 group">
                             <input
                               type="text"
                               [attr.id]="'bid-' + rowIdx + '-' + col.key"
@@ -1083,17 +1087,26 @@
                               [readonly]="cellReadOnly(row, col.key)"
                               [title]="row.fedCells.has(col.key) ? fedCellTooltip(row, col.key) : ''"
                               placeholder="—"
-                              class="flex-1 min-w-0 font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
+                              class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="cellReadOnly(row, col.key)
                                 ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
                                 : (row.bids[col.key] !== row.originalBids[col.key]
                                   ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                   : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                             />
+                            @if (priceMode() === 'cash' && (row.boardChips[col.key] || row.yearFrom[col.key]); as board) {
+                              <span class="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none font-mono text-[10px] font-medium group-focus-within:opacity-0 transition-opacity"
+                                    [ngClass]="col.board && row.boardChips[col.key] && row.boardChips[col.key] !== col.board
+                                      ? 'text-amber-600 dark:text-amber-400'
+                                      : 'text-gray-400 dark:text-gray-500'">{{ boardLetter(board, editBidsYear()) || board }}</span>
+                            }
+                            </div>
                             }
                             @if (priceMode() !== 'cash') {
                               <!-- Basis sits beside cash rather than under it, so the two read as the pair
-                                   an originator quotes. Always read-only: the sheet stores no manual basis. -->
+                                   an originator quotes. The board letter rides on the basis ("-80U"), which
+                                   is the number the board denominates and the way originators write it. -->
+                              <div class="relative flex-1 min-w-0 group">
                               <input
                                 type="text"
                                 [ngModel]="row.basisBids[col.key]"
@@ -1102,37 +1115,23 @@
                                 (blur)="onBidBlur()"
                                 [readonly]="cellReadOnly(row, col.key)"
                                 placeholder="—"
-                                [title]="row.basisBids[col.key] ? 'Basis ' + row.basisBids[col.key] : ''"
-                                class="flex-1 min-w-0 font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
+                                [title]="row.fedCells.has(col.key) ? fedCellTooltip(row, col.key) : (row.basisBids[col.key] ? 'Basis ' + row.basisBids[col.key] : '')"
+                                class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                                 [ngClass]="cellReadOnly(row, col.key)
                                   ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
                                   : (row.basisBids[col.key] !== row.originalBasisBids[col.key]
                                     ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                     : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                               />
+                              @if (row.boardChips[col.key] || row.yearFrom[col.key]; as board) {
+                                <span class="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none font-mono text-[10px] font-medium group-focus-within:opacity-0 transition-opacity"
+                                      [ngClass]="col.board && row.boardChips[col.key] && row.boardChips[col.key] !== col.board
+                                        ? 'text-amber-600 dark:text-amber-400'
+                                        : 'text-gray-400 dark:text-gray-500'">{{ boardLetter(board, editBidsYear()) || board }}</span>
+                              }
+                              </div>
                             }
                             </div>
-                            @if (row.boardChips[col.key]) {
-                              <!-- Every fed cell names its board. Grey when it matches the column
-                                   header; amber when it does not, because a number against a
-                                   different board is incomparable to its neighbours at face value --
-                                   the one thing a producer scanning a column will not expect. -->
-                              @if (col.board && row.boardChips[col.key] !== col.board) {
-                                <div class="mt-0.5 text-[10px] leading-none text-center font-medium text-amber-600 dark:text-amber-400 truncate"
-                                     [title]="'Quoted against ' + boardDescription(row.boardChips[col.key]) + ' — not the ' + col.board + ' the rest of this column uses.'">&#9888; {{ row.boardChips[col.key] }}</div>
-                              } @else {
-                                <div class="mt-0.5 text-[10px] leading-none text-center text-gray-400 dark:text-gray-500 truncate"
-                                     [title]="'Quoted against ' + boardDescription(row.boardChips[col.key])">{{ row.boardChips[col.key] }}</div>
-                              }
-                            }
-                            @if (row.yearFrom[col.key]) {
-                              <!-- The feed has no year-level bid, so a Year cell borrows the nearest month still
-                                   open. Naming the contract it is quoted against is what makes it comparable:
-                                   a bare 4.305 here looks like a year price, and two elevators quoting the same
-                                   month can still be quoting different boards. -->
-                              <div class="mt-0.5 text-[10px] leading-none text-center text-gray-400 dark:text-gray-500 truncate"
-                                   [title]="'The feed publishes no year bid. This is the nearest delivery month still open, quoted against ' + row.yearFrom[col.key] + '.'">{{ row.yearFrom[col.key] }}</div>
-                            }
                             @if (priceMode() === 'both') {
                               <!-- Two bare numbers side by side are ambiguous and the header can only name
                                    the period, so each value says what it is. -->
