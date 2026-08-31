@@ -284,19 +284,6 @@ export class BidSheetComponent {
   }
 
   /** Tooltip for a feed-owned cell: where it came from and when the elevator last changed it. */
-  fedCellTooltip(row: EditBidsRow, key: string): string {
-    // The letter on the value is trade shorthand; the hover spells the board out for anyone who
-    // does not read it natively.
-    const board = row.boardChips[key] || row.yearFrom[key];
-    const quoted = board ? ` Quoted against ${this.boardDescription(board)}.` : '';
-    const asOf = row.fedAsOf[key];
-    if (!asOf) return `From BarChart.${quoted}`;
-    const aging = row.agingCells.has(key)
-      ? ' The elevator has not changed this bid since then.'
-      : '';
-    return `From BarChart — updated ${this.formatAsOf(asOf)}.${quoted}${aging}`;
-  }
-
   /** Short, human "as of" for a vendor timestamp: today shows a time, older shows a date. */
   formatAsOf(iso: string | undefined): string {
     if (!iso) return '';

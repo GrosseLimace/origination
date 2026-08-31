@@ -926,10 +926,11 @@
                             {{ col.label }}
                           </div>
                           @if (col.board) {
-                            <!-- The board every unmarked cell below is quoted against. Cells only carry
-                                 a board of their own when it differs from this one. -->
-                            <div class="mt-0.5 text-[10px] leading-none font-medium normal-case tracking-normal text-gray-400 dark:text-gray-500"
-                                 [title]="'Bids in this column are quoted against ' + boardDescription(col.board) + ' unless marked.'">{{ col.board }}</div>
+                            <!-- The board this column's bids are quoted against. Chosen by majority
+                                 across the column's fed cells (a tie breaks alphabetically, so it
+                                 never flip-flops between loads); a cell on a DIFFERENT board shows
+                                 its own symbol in amber. -->
+                            <div class="mt-0.5 text-[10px] leading-none font-medium normal-case tracking-normal text-gray-400 dark:text-gray-500">{{ col.board }}</div>
                           }
                         </th>
                       }
@@ -1085,7 +1086,6 @@
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                               (blur)="onBidBlur()"
                               [readonly]="cellReadOnly(row, col.key)"
-                              [title]="row.fedCells.has(col.key) ? fedCellTooltip(row, col.key) : ''"
                               placeholder="—"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="cellReadOnly(row, col.key)
@@ -1121,7 +1121,6 @@
                                 (blur)="onBidBlur()"
                                 [readonly]="cellReadOnly(row, col.key)"
                                 placeholder="—"
-                                [title]="row.fedCells.has(col.key) ? fedCellTooltip(row, col.key) : (row.basisBids[col.key] ? 'Basis ' + row.basisBids[col.key] : '')"
                                 class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                                 [ngClass]="cellReadOnly(row, col.key)
                                   ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
