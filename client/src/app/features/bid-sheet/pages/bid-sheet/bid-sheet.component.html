@@ -727,10 +727,11 @@
           <div class="absolute inset-0 z-[1100] bg-white dark:bg-gray-900 flex flex-col">
 
             <!-- Header -->
-            <div class="shrink-0 px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 flex items-center justify-between gap-4">
+            <div class="shrink-0 px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5">
 
-              <!-- Icon + title + year nav (left, all on one line) -->
-              <div class="flex items-center gap-3">
+              <!-- Icon + title + year nav (left). Wraps on laptop widths: crushing was clipping the
+                   Cash/Basis/Both toggle and stacking the trade-unit dropdowns. -->
+              <div class="flex flex-wrap items-center gap-3 gap-y-2.5">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible shrink-0">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -749,7 +750,7 @@
                 <!-- Same control as the sheet header, with Both added: an originator comparing elevators
                      wants the flat price and the basis side by side, not one flip at a time. -->
                 @if (barchartEnabled) {
-                  <div class="flex items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
+                  <div class="flex shrink-0 items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
                        title="Cash is the posted flat price. Basis is cents against the futures board, so -30 is thirty under. Both shows cash with basis beneath it.">
                     @for (m of ['cash', 'basis', 'both']; track m) {
                       <button (click)="setPriceMode($any(m))"
@@ -898,7 +899,7 @@
               </div>
 
               <!-- Trade unit selector + refresh (right) -->
-              <div class="flex items-center gap-2.5">
+              <div class="flex flex-wrap items-center gap-2.5 gap-y-2.5">
                 <app-trade-unit-selector [deferred]="true" (done)="applyEditBidsTuFilter()" />
                 <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
                 <button
