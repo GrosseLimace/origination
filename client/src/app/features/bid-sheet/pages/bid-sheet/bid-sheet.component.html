@@ -842,16 +842,52 @@
                   </button>
                   @if (showCropDropdown()) {
                     <div class="fixed inset-0 z-40" (click)="cancelCropSelection()"></div>
-                    <div class="absolute left-0 top-full mt-1 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
-                      <div class="py-1 max-h-56 overflow-auto">
-                        @for (crop of crops(); track crop) {
-                          <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                            <input type="checkbox" [checked]="!pendingHiddenCrops().has(crop)" (change)="toggleCropVisibility(crop)"
-                              class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                            {{ crop }}
-                          </label>
-                        }
+                    <div class="absolute left-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
+                      @if (crops().length > 0) {
+                        <div class="py-1 max-h-56 overflow-auto">
+                          @for (crop of crops(); track crop) {
+                            <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
+                              <input type="checkbox" [checked]="!pendingHiddenCrops().has(crop)" (change)="toggleCropVisibility(crop)"
+                                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
+                              {{ crop }}
+                            </label>
+                          }
+                        </div>
+                      }
+                      <!-- Adding lives here rather than behind the grid's small + button, which was easy
+                           to miss: the dropdown is already where crops are managed, and on a sheet with
+                           no crops yet it is the only thing this menu shows. A picked commodity appears
+                           in the list above, ticked, and lands on the grid with Done. -->
+                      <div class="p-2 border-t border-gray-100 dark:border-gray-700">
+                        <input
+                          type="text"
+                          [ngModel]="addCommodityQuery()"
+                          (ngModelChange)="addCommodityQuery.set($event)"
+                          placeholder="Add a commodity…"
+                          class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green placeholder-gray-400"
+                        />
                       </div>
+                      @if (addCommodityQuery().length > 0) {
+                        @if (filteredCommodities(addCommodityQuery()).length > 0) {
+                          <div class="max-h-44 overflow-y-auto py-1 border-t border-gray-100 dark:border-gray-700">
+                            @for (c of filteredCommodities(addCommodityQuery()); track c.code) {
+                              <button
+                                type="button"
+                                (mousedown)="selectEditBidCommodity(c)"
+                                class="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                [class.opacity-40]="crops().includes(c.code)"
+                              >
+                                {{ c.name }}
+                                @if (crops().includes(c.code)) {
+                                  <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">(already added)</span>
+                                }
+                              </button>
+                            }
+                          </div>
+                        } @else {
+                          <p class="px-3 py-2 text-sm text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">No crops found</p>
+                        }
+                      }
                       <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
                         <button (click)="cancelCropSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
                         <button (click)="confirmCropSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">Done</button>
@@ -934,53 +970,6 @@
                           }
                         </th>
                       }
-                      <th class="sticky top-0 z-20 px-3 py-3.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 w-12 relative">
-                        <button
-                          (click)="openAddCommodity()"
-                          title="Add commodity"
-                          class="flex items-center justify-center w-7 h-7 mx-auto rounded-lg text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M5 12h14"/><path d="M12 5v14"/>
-                          </svg>
-                        </button>
-                        @if (showAddCommoditySearch()) {
-                          <div class="fixed inset-0 z-40" (click)="closeAddCommoditySearch()"></div>
-                          <div class="absolute right-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50">
-                            <div class="p-2 border-b border-gray-100 dark:border-gray-700">
-                              <input
-                                type="text"
-                                [ngModel]="addCommodityQuery()"
-                                (ngModelChange)="addCommodityQuery.set($event)"
-                                placeholder="Search by Code or Name"
-                                autofocus
-                                class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green placeholder-gray-400"
-                              />
-                            </div>
-                            @if (filteredCommodities(addCommodityQuery()).length > 0) {
-                              <div class="max-h-56 overflow-y-auto py-1">
-                                @for (c of filteredCommodities(addCommodityQuery()); track c.code) {
-                                  <button
-                                    type="button"
-                                    (mousedown)="selectEditBidCommodity(c)"
-                                    class="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                    [class.opacity-40]="crops().includes(c.code)"
-                                  >
-                                    {{ c.name }}
-                                    @if (crops().includes(c.code)) {
-                                      <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">(already added)</span>
-                                    }
-                                  </button>
-                                }
-                              </div>
-                            } @else if (addCommodityQuery().length > 0) {
-                              <p class="px-3 py-2.5 text-sm text-gray-400 dark:text-gray-500">No crops found</p>
-                            } @else {
-                              <p class="px-3 py-2.5 text-sm text-gray-400 dark:text-gray-500">Type to search…</p>
-                            }
-                          </div>
-                        }
-                      </th>
                     </tr>
                   </thead>
                   <tbody cdkDropList (cdkDropListDropped)="onRowDrop($event)">

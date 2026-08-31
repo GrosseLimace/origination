@@ -375,7 +375,6 @@ export class BidSheetComponent {
 
   // --- Edit Bids ---
   editBidsMode = signal(false);
-  showAddCommoditySearch = signal(false);
   addCommodityQuery = signal('');
   editBidsYear = signal<number>(new Date().getFullYear());
   editBidsMonths = signal<number[]>([0]); // [0]=yearly, [4,5,6]=Apr+May+Jun
@@ -1389,22 +1388,16 @@ export class BidSheetComponent {
   // Competitor Entry CRUD
   // =========================================================================
 
-  openAddCommodity(): void {
-    this.showAddCommoditySearch.set(true);
-    this.addCommodityQuery.set('');
-  }
-
+  /**
+   * Adds a commodity from the Crops dropdown's search. The dropdown stays open on purpose: the new
+   * crop appears ticked in the list above the search box, more can be added in one visit, and Done
+   * commits the lot -- the same rhythm as ticking crops on and off.
+   */
   selectEditBidCommodity(item: { code: string; name: string }): void {
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'commodities-added', item.code);
     if (!this.crops().includes(item.code)) {
       this.crops.update(arr => [...arr, item.code].sort());
     }
-    this.showAddCommoditySearch.set(false);
-    this.addCommodityQuery.set('');
-  }
-
-  closeAddCommoditySearch(): void {
-    this.showAddCommoditySearch.set(false);
     this.addCommodityQuery.set('');
   }
 
@@ -1951,6 +1944,7 @@ export class BidSheetComponent {
   /** Opens the crop dropdown with the current hidden set staged as pending. */
   openCropDropdown(): void {
     this.pendingHiddenCrops.set(new Set(this.hiddenCrops()));
+    this.addCommodityQuery.set('');
     this.showCropDropdown.set(true);
   }
 
