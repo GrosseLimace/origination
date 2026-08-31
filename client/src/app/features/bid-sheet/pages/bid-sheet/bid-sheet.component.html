@@ -925,6 +925,12 @@
                             </span>
                             {{ col.label }}
                           </div>
+                          @if (col.board) {
+                            <!-- The board every unmarked cell below is quoted against. Cells only carry
+                                 a board of their own when it differs from this one. -->
+                            <div class="mt-0.5 text-[10px] leading-none font-medium normal-case tracking-normal text-gray-400 dark:text-gray-500"
+                                 [title]="'Bids in this column are quoted against ' + boardDescription(col.board) + ' unless marked.'">{{ col.board }}</div>
+                          }
                         </th>
                       }
                       <th class="sticky top-0 z-20 px-3 py-3.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 w-12 relative">
@@ -1106,6 +1112,19 @@
                               />
                             }
                             </div>
+                            @if (row.boardChips[col.key]) {
+                              <!-- Every fed cell names its board. Grey when it matches the column
+                                   header; amber when it does not, because a number against a
+                                   different board is incomparable to its neighbours at face value --
+                                   the one thing a producer scanning a column will not expect. -->
+                              @if (col.board && row.boardChips[col.key] !== col.board) {
+                                <div class="mt-0.5 text-[10px] leading-none text-center font-medium text-amber-600 dark:text-amber-400 truncate"
+                                     [title]="'Quoted against ' + boardDescription(row.boardChips[col.key]) + ' — not the ' + col.board + ' the rest of this column uses.'">&#9888; {{ row.boardChips[col.key] }}</div>
+                              } @else {
+                                <div class="mt-0.5 text-[10px] leading-none text-center text-gray-400 dark:text-gray-500 truncate"
+                                     [title]="'Quoted against ' + boardDescription(row.boardChips[col.key])">{{ row.boardChips[col.key] }}</div>
+                              }
+                            }
                             @if (row.yearFrom[col.key]) {
                               <!-- The feed has no year-level bid, so a Year cell borrows the nearest month still
                                    open. Naming the contract it is quoted against is what makes it comparable:
