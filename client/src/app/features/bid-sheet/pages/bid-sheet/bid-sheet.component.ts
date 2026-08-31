@@ -443,7 +443,9 @@ export class BidSheetComponent {
         key: `${crop}#${m}`,
         crop,
         month: m,
-        label: m === 0 ? `${crop} ${year}` : `${crop} ${BidSheetComponent.MONTH_NAMES[m]}`,
+        // "HRWW Dec 2026": the year on every header, so a column is self-describing even when
+        // the sheet is filtered to a different crop year than the reader assumes.
+        label: m === 0 ? `${crop} ${year}` : `${crop} ${BidSheetComponent.MONTH_NAMES[m]} ${year}`,
         // Named once here; only deviating cells repeat a board. Year columns have no consensus --
         // their value is per-location by construction, so each cell names its own contract.
         board: m === 0 ? '' : this.boardConsensus(crop, year, m)
