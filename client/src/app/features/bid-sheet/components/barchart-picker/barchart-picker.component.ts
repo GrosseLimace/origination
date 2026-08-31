@@ -117,6 +117,7 @@ export class BarchartPickerComponent {
     // Stops the row handler running as well, which would tick it straight back off.
     event?.stopPropagation();
     if (this.adding()) return; // the batch is already on its way to the server
+    if (this.alreadyOnAll(location)) return; // nothing left to add it to
     this.selected.update(current => {
       const next = new Map(current);
       next.has(location.locationKey) ? next.delete(location.locationKey) : next.set(location.locationKey, location);
@@ -139,6 +140,22 @@ export class BarchartPickerComponent {
    */
   isScoularListing(location: BarchartCatalogLocation): boolean {
     return (location.elevator ?? '').toLowerCase().includes('scoular');
+  }
+
+  /**
+   * The location's placements on the trade units CURRENTLY being added to -- the only ones that
+   * matter here. A placement on some other desk's trade unit is that desk's business: showing it
+   * read as "you can't add this" to a user on a different trade unit, which is exactly wrong.
+   */
+  alreadyOnTus(location: BarchartCatalogLocation): string[] {
+    const targets = new Set(this.tradeUnits());
+    return location.placements.filter(p => targets.has(p.tradeUnitCode)).map(p => p.tradeUnitCode);
+  }
+
+  /** Already on every trade unit in play -- adding it again can only fail, so ticking is off. */
+  alreadyOnAll(location: BarchartCatalogLocation): boolean {
+    const tus = this.tradeUnits();
+    return tus.length > 0 && this.alreadyOnTus(location).length === tus.length;
   }
 
   /** Emits every ticked location, named as the vendor names it and pre-classified. */

@@ -1629,11 +1629,16 @@ export class BidSheetComponent {
     const L = this._L;
     this._clearBarchartPins();
     this._barchartLayer = L.layerGroup().addTo(this._map);
-    this._barchartPlacedKeys = new Set(rows.filter(r => r.placements.length > 0).map(r => r.locationKey));
+    // Hollow is scoped to the trade units being added to: a placement on some other desk's trade
+    // unit must not make a pin read as unavailable here.
+    const targetTus = new Set(this.addLocationTus());
+    this._barchartPlacedKeys = new Set(rows
+      .filter(r => r.placements.some(p => targetTus.has(p.tradeUnitCode)))
+      .map(r => r.locationKey));
 
     for (const loc of rows) {
       if (loc.latitude == null || loc.longitude == null) continue;
-      const placed = loc.placements.length > 0;
+      const placed = this._barchartPlacedKeys.has(loc.locationKey);
       const marker = L.marker([loc.latitude, loc.longitude],
           { icon: this._barchartPinIcon(placed, loc.locationKey === this.barchartSelectedKey(), this.barchartTickedKeys().has(loc.locationKey)) })
         // Company first, matching the panel — the vendor's site name is sometimes another company's
@@ -1719,7 +1724,9 @@ export class BidSheetComponent {
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
 
     // One create per location per trade unit, same call the single add uses -- so the duplicate-name
-    // and already-linked rules the server enforces still apply to every one of them.
+    // and already-linked rules the server enforces still apply to every one of them. Each create
+    // carries its own failure: one location already sitting on one of the trade units must not sink
+    // the rest of the batch, which is exactly what a bare forkJoin did.
     const creates = request.locations.flatMap(loc =>
       request.tradeUnitCodes.map(tu => this.apiService.createBidSheetLocation({
         name: loc.name,
@@ -1728,12 +1735,21 @@ export class BidSheetComponent {
         barchartLocationKey: loc.locationKey,
         isScoularFacility: loc.isScoularFacility,
         bids: []
-      })));
+      }).pipe(catchError(() => of(null)))));
 
     forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (saved) => {
-        const count = request.locations.length;
-        this.toastService.success(`Added ${count} location${count === 1 ? '' : 's'}`);
+      next: (results) => {
+        const saved = results.filter((r): r is NonNullable<typeof r> => r != null);
+        const skipped = results.length - saved.length;
+        if (saved.length === 0) {
+          this.barchartAdding.set(false);
+          this.toastService.error('Could not add locations — they may already be on these trade units');
+          return;
+        }
+        const count = new Set(saved.map(l => l.name)).size;
+        this.toastService.success(
+          `Added ${count} location${count === 1 ? '' : 's'}`
+          + (skipped > 0 ? ` — ${skipped} placement${skipped === 1 ? '' : 's'} skipped (already added)` : ''));
 
         const viewing = new Set(this.activeTradeUnits());
         const mine = saved.filter(l => viewing.has(l.tradeUnitCode));

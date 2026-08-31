@@ -280,4 +280,34 @@ describe('BarchartPickerComponent', () => {
     expect(component.selectedCount()).toBe(0);
     expect(component.offListSelected()).toEqual([]);
   });
+  // -------------------------------------------------------------------------
+  // Placements only matter relative to the trade units being added to. A user on 2038 saw
+  // "Already on 2130" -- another desk's placement -- which read as "you can't add this" and was wrong.
+
+  it('names only placements on the trade units in play', () => {
+    fixture.componentRef.setInput('tradeUnits', ['2038']);
+    fixture.detectChanges();
+    const loc = location({ placements: [
+      { tradeUnitCode: '2130', locationName: 'x' } as any,
+      { tradeUnitCode: '2038', locationName: 'x' } as any,
+    ]});
+
+    expect(component.alreadyOnTus(loc)).toEqual(['2038']);
+    expect(component.alreadyOnTus(location({ placements: [{ tradeUnitCode: '2130', locationName: 'x' } as any] }))).toEqual([]);
+  });
+
+  it('refuses to tick a location already on every target trade unit', () => {
+    fixture.componentRef.setInput('tradeUnits', ['2038']);
+    fixture.detectChanges();
+    const done = location({ placements: [{ tradeUnitCode: '2038', locationName: 'x' } as any] });
+
+    component.toggleSelected(done);
+
+    expect(component.selectedCount()).toBe(0);
+    expect(component.alreadyOnAll(done)).toBe(true);
+    // Partially placed stays tickable -- the other trade units still want it.
+    fixture.componentRef.setInput('tradeUnits', ['2038', '2040']);
+    fixture.detectChanges();
+    expect(component.alreadyOnAll(done)).toBe(false);
+  });
 });
