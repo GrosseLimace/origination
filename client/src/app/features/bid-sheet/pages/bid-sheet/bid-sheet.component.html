@@ -930,7 +930,7 @@
                                  across the column's fed cells (a tie breaks alphabetically, so it
                                  never flip-flops between loads); a cell on a DIFFERENT board shows
                                  its own symbol in amber. -->
-                            <div class="mt-0.5 text-[10px] leading-none font-medium normal-case tracking-normal text-gray-400 dark:text-gray-500">{{ col.board }}</div>
+                            <div class="mt-1 text-xs leading-none font-semibold normal-case tracking-normal text-gray-500 dark:text-gray-400">{{ col.board }}</div>
                           }
                         </th>
                       }
@@ -1100,11 +1100,8 @@
                                  "centre + half the value's length" lands the symbol flush beside the
                                  number rather than parked at the far edge of the box. -->
                             @if (priceMode() === 'cash' && row.bids[col.key] && row.bids[col.key] === row.originalBids[col.key] && (row.boardChips[col.key] || row.yearFrom[col.key]); as board) {
-                              <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-xs group-focus-within:opacity-0 transition-opacity"
-                                    [style.left]="'calc(50% + ' + (row.bids[col.key].length / 2) + 'ch + 5px)'"
-                                    [ngClass]="col.board && row.boardChips[col.key] && row.boardChips[col.key] !== col.board
-                                      ? 'text-amber-600 dark:text-amber-400'
-                                      : 'text-gray-400 dark:text-gray-500'">{{ board }}</span>
+                              <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-sm text-gray-500 dark:text-gray-400 group-focus-within:opacity-0 transition-opacity"
+                                    [style.left]="'calc(50% + ' + (row.bids[col.key].length / 2) + 'ch + 5px)'">{{ board }}</span>
                             }
                             </div>
                             }
@@ -1130,11 +1127,8 @@
                               />
                               <!-- Same guards as the cash side: fed value present and untouched. -->
                               @if (row.basisBids[col.key] && row.basisBids[col.key] === row.originalBasisBids[col.key] && (row.boardChips[col.key] || row.yearFrom[col.key]); as board) {
-                                <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-xs group-focus-within:opacity-0 transition-opacity"
-                                      [style.left]="'calc(50% + ' + (row.basisBids[col.key].length / 2) + 'ch + 5px)'"
-                                      [ngClass]="col.board && row.boardChips[col.key] && row.boardChips[col.key] !== col.board
-                                        ? 'text-amber-600 dark:text-amber-400'
-                                        : 'text-gray-400 dark:text-gray-500'">{{ board }}</span>
+                                <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-sm text-gray-500 dark:text-gray-400 group-focus-within:opacity-0 transition-opacity"
+                                      [style.left]="'calc(50% + ' + (row.basisBids[col.key].length / 2) + 'ch + 5px)'">{{ board }}</span>
                               }
                               </div>
                             }
