@@ -1307,22 +1307,6 @@ export class BidSheetComponent {
   }
 
   /**
-   * Trade notation for a board inside a sheet that already names the commodity and crop year: just
-   * the month letter, appended to the value the way originators write it themselves -- "-80U" is
-   * eighty under September. This is EXACTLY the shape manual basis bids are typed in ("-40Z"), so
-   * fed and hand-typed bids read as one notation.
-   *
-   * The letter alone assumes the selected year. When the board crosses into another year -- December
-   * corn priced against the March 2027 contract -- the letter would lie, so those carry the year too:
-   * "H27". Unparseable boards return '' and the caller falls back to the full symbol.
-   */
-  boardLetter(board: string, cropYear: number | null): string {
-    const m = /^[A-Z]{2,3}([FGHJKMNQUVXZ])(\d{2})$/.exec(board?.trim() ?? '');
-    if (!m) return '';
-    return cropYear != null && cropYear % 100 === Number(m[2]) ? m[1] : `${m[1]}${m[2]}`;
-  }
-
-  /**
    * "Dec 2026 corn (ZCZ26)" -- the tooltip translation for producers who do not read board symbols.
    * Unknown roots fall back to the symbol alone rather than guessing.
    */
@@ -1365,14 +1349,13 @@ export class BidSheetComponent {
     // month standing in for a year, a month cell because the board is what makes two bids comparable
     // at all. Manual cells stay bare -- there is no contract behind them to name.
     //
-    // Written in trade notation, fused to the value: "-80U" the way an originator would say it, not
-    // "-80 (KEU26)". Commodity and year are already on screen; only the month is new information.
+    // Full symbol for now ("-80 (KEU26)"), by request: the trade-notation letter ("-80U") is the
+    // denser candidate, and the Dev feedback round decides between them. The full form also never
+    // hides a cross-exchange split -- KEU26 and ZWU26 share a letter but not a market.
     const contract = value
       ? (month === 0 ? this.yearContractFor(name, year, crop, month) : this.cellBoardFor(name, year, crop, month))
       : '';
-    if (!contract) return value;
-    const letter = this.boardLetter(contract, year);
-    return letter ? `${value}${letter}` : `${value} (${contract})`;
+    return contract ? `${value} (${contract})` : value;
   }
 
   /**
@@ -2643,14 +2626,11 @@ export class BidSheetComponent {
     }
     if (!value) return value;
     // Same rule as the grid: every fed cell names its board on paper -- the printed sheet is what a
-    // producer holds, so the comparison context cannot live in a hover. Trade notation ("-80U"); the
-    // column header carries the full symbol the letters are read against.
+    // producer holds, so the comparison context cannot live in a hover.
     const chip = col.month === 0
       ? this.yearContractFor(row.name, col.year, col.crop, 0)
       : this.cellBoardFor(row.name, col.year, col.crop, col.month);
-    if (!chip) return value;
-    const letter = this.boardLetter(chip, col.year);
-    return letter ? `${value}${letter}` : `${value} (${chip})`;
+    return chip ? `${value} (${chip})` : value;
   }
 
   /**

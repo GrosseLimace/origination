@@ -917,7 +917,7 @@
                         <th cdkDrag cdkDragLockAxis="x"
                             (cdkDragStarted)="draggingCrop.set(col.crop)"
                             (cdkDragEnded)="draggingCrop.set('')"
-                            class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 min-w-[80px] transition-colors"
+                            class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 min-w-[150px] transition-colors"
                             [ngClass]="draggingCrop() === col.crop ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800'">
                           <div class="flex items-center justify-center gap-1.5">
                             <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
@@ -1094,11 +1094,17 @@
                                   ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                   : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                             />
-                            @if (priceMode() === 'cash' && (row.boardChips[col.key] || row.yearFrom[col.key]); as board) {
-                              <span class="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none font-mono text-[10px] font-medium group-focus-within:opacity-0 transition-opacity"
+                            <!-- Only while the fed value is present and untouched: the symbol describes
+                                 the FED bid, and the moment the user types their own number it would be
+                                 mislabelling a manual bid. font-mono makes every character 1ch wide, so
+                                 "centre + half the value's length" lands the symbol flush beside the
+                                 number rather than parked at the far edge of the box. -->
+                            @if (priceMode() === 'cash' && row.bids[col.key] && row.bids[col.key] === row.originalBids[col.key] && (row.boardChips[col.key] || row.yearFrom[col.key]); as board) {
+                              <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-xs group-focus-within:opacity-0 transition-opacity"
+                                    [style.left]="'calc(50% + ' + (row.bids[col.key].length / 2) + 'ch + 5px)'"
                                     [ngClass]="col.board && row.boardChips[col.key] && row.boardChips[col.key] !== col.board
                                       ? 'text-amber-600 dark:text-amber-400'
-                                      : 'text-gray-400 dark:text-gray-500'">{{ boardLetter(board, editBidsYear()) || board }}</span>
+                                      : 'text-gray-400 dark:text-gray-500'">{{ board }}</span>
                             }
                             </div>
                             }
@@ -1123,11 +1129,13 @@
                                     ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                     : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                               />
-                              @if (row.boardChips[col.key] || row.yearFrom[col.key]; as board) {
-                                <span class="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none font-mono text-[10px] font-medium group-focus-within:opacity-0 transition-opacity"
+                              <!-- Same guards as the cash side: fed value present and untouched. -->
+                              @if (row.basisBids[col.key] && row.basisBids[col.key] === row.originalBasisBids[col.key] && (row.boardChips[col.key] || row.yearFrom[col.key]); as board) {
+                                <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-xs group-focus-within:opacity-0 transition-opacity"
+                                      [style.left]="'calc(50% + ' + (row.basisBids[col.key].length / 2) + 'ch + 5px)'"
                                       [ngClass]="col.board && row.boardChips[col.key] && row.boardChips[col.key] !== col.board
                                         ? 'text-amber-600 dark:text-amber-400'
-                                        : 'text-gray-400 dark:text-gray-500'">{{ boardLetter(board, editBidsYear()) || board }}</span>
+                                        : 'text-gray-400 dark:text-gray-500'">{{ board }}</span>
                               }
                               </div>
                             }
