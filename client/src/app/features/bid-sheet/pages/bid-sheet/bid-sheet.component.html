@@ -953,8 +953,8 @@
                         <th cdkDrag cdkDragLockAxis="x"
                             (cdkDragStarted)="draggingCrop.set(col.crop)"
                             (cdkDragEnded)="draggingCrop.set('')"
-                            class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 min-w-[150px] transition-colors"
-                            [ngClass]="draggingCrop() === col.crop ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800'">
+                            class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 transition-colors"
+                            [ngClass]="[priceMode() === 'both' ? 'min-w-[260px]' : 'min-w-[150px]', draggingCrop() === col.crop ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800']">
                           <div class="flex items-center justify-center gap-1.5">
                             <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
