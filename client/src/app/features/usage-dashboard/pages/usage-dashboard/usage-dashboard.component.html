@@ -9,6 +9,7 @@
     </div>
     <div class="flex flex-wrap items-center gap-3">
       <app-trade-unit-selector />
+      <app-manager-filter [(managerId)]="managerFilter" />
       @if (canManageExclusions()) {
         <app-excluded-users-panel (changed)="onExclusionsChanged()" />
       }

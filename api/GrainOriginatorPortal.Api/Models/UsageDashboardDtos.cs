@@ -108,6 +108,22 @@ public record AccessUsersDto
     public List<AccessUserDto> Users { get; set; } = [];
 }
 
+/// <summary>An active manager (has ≥1 active report in vw_UserManagerLookup) for the dashboard's
+/// manager filter. <see cref="UserId"/> is the short name (UPN before '@'). Unlike
+/// <see cref="AccessUsersDto"/> there is no Available flag: a TradeUnitPreferences outage fails
+/// closed as a 503, because silently widening "Manager: X" to the whole org would misrepresent
+/// the data, while the exclusion picker merely degrades to free-text entry.</summary>
+public record UsageManagerDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public int DirectReports { get; set; }
+
+    /// <summary>Everyone under this manager at any depth, excluding the manager. Directory count —
+    /// may include users who never appear on the dashboard (no app access).</summary>
+    public int TotalReports { get; set; }
+}
+
 /// <summary>Whether the caller is on the exclusion-manager allowlist — the client uses this to show
 /// or hide the exclusion gear. The endpoints enforce the same check server-side regardless.</summary>
 public record ExclusionPermissionsDto

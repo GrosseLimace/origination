@@ -24,6 +24,8 @@ public class TradeUnitPreferencesDbContext : DbContext
 
     public DbSet<TradeUnitPreferencesUser> Users => Set<TradeUnitPreferencesUser>();
 
+    public DbSet<UserManagerLookup> UserManagerLookups => Set<UserManagerLookup>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -48,6 +50,19 @@ public class TradeUnitPreferencesDbContext : DbContext
             entity.Property(e => e.UserId).HasColumnName("UserId").HasMaxLength(50);
             entity.Property(e => e.DisplayName).HasColumnName("DisplayName").HasMaxLength(200);
             entity.Property(e => e.IsActive).HasColumnName("IsActive");
+        });
+
+        modelBuilder.Entity<UserManagerLookup>(entity =>
+        {
+            entity.ToView("vw_UserManagerLookup", schema: "dbo");
+            entity.HasNoKey();
+            entity.Property(e => e.UserId).HasColumnName("UserId").HasMaxLength(50);
+            entity.Property(e => e.DisplayName).HasColumnName("DisplayName").HasMaxLength(200);
+            entity.Property(e => e.HierId).HasColumnName("HierID").HasMaxLength(100);
+            entity.Property(e => e.IsManager).HasColumnName("IsManager");
+            entity.Property(e => e.ManagerUserId).HasColumnName("ManagerUserId").HasMaxLength(50);
+            entity.Property(e => e.ManagerDisplayName).HasColumnName("ManagerDisplayName").HasMaxLength(200);
+            entity.Property(e => e.ManagerHierId).HasColumnName("ManagerHierID").HasMaxLength(100);
         });
     }
 }

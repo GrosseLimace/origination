@@ -14,7 +14,7 @@ import { makeMsalServiceMock } from '@testing/msal.mocks';
 // UserRolesService -> GET /api/me) are stubbed so the component renders in isolation.
 describe('HeaderComponent', () => {
   const themeStub = { isDarkMode: signal(false), toggleTheme: () => undefined };
-  const rolesStub = { isAdmin: signal(false), roles: signal<string[]>([]) };
+  const rolesStub = { isAdmin: signal(false), roles: signal<string[]>([]), canViewUsageDashboard: signal(false) };
 
   function baseProviders(extra: any[] = []) {
     return provideTestEnvironment({

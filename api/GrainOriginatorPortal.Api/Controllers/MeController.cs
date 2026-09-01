@@ -1,5 +1,7 @@
 using System.Security.Claims;
 
+using GrainOriginatorPortal.Api.Authorization;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 /// <summary>
@@ -14,6 +16,13 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class MeController : ControllerBase
 {
+    private readonly string[] _usageDashboardViewers;
+
+    public MeController(IConfiguration configuration)
+    {
+        _usageDashboardViewers = configuration.GetSection("UsageDashboard:Viewers").Get<string[]>() ?? [];
+    }
+
     [HttpGet]
     [ProducesResponseType(typeof(MeResponse), StatusCodes.Status200OK)]
     public ActionResult<MeResponse> Get()
@@ -30,6 +39,15 @@ public class MeController : ControllerBase
                         .Select(c => c.Value)
                         .Distinct()
                         .ToArray();
+
+        // Synthetic role for the UsageDashboard:Viewers config allowlist — lets non-admins on the
+        // list reach the (server-enforced) usage dashboard. Never comes from the token; it exists
+        // so the SPA's guard/nav can keep reading one roles array. See UsageDashboardAccess.
+        if (UsageDashboardAccess.IsAllowlisted(User, _usageDashboardViewers)
+            && !roles.Contains(UsageDashboardAccess.ViewerRole))
+        {
+            roles = [.. roles, UsageDashboardAccess.ViewerRole];
+        }
 
         var userId = User.FindFirst("preferred_username")?.Value
                      ?? User.FindFirst("upn")?.Value

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 // Project namespaces
+using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests;
@@ -60,13 +61,24 @@ public class ControllerAuthorizationTests
     }
 
     /// <summary>
-    /// Every usage-dashboard action reads or edits other people's activity data, so all of them must
-    /// carry the AdminOnly policy — the class-level [Authorize] alone would only require a sign-in.
-    /// The single exception is the telemetry endpoint, which every signed-in user posts to.
+    /// Every usage-dashboard action reads or edits other people's activity data, so all of them
+    /// must carry an explicit policy — the class-level [Authorize] alone would only require a
+    /// sign-in. Reads take the UsageDashboardViewer policy (Admin OR the UsageDashboard:Viewers
+    /// config allowlist); exclusion administration must stay strictly AdminOnly. The single
+    /// exception is the telemetry endpoint, which every signed-in user posts to.
     /// </summary>
     [Fact]
-    public void UsageDashboardController_EveryActionExceptClickEvent_RequiresAdminOnly()
+    public void UsageDashboardController_EveryActionExceptClickEvent_CarriesADashboardPolicy()
     {
+        // Exclusion administration: viewers must never gain these, so AdminOnly stays mandatory.
+        string[] adminOnlyActions =
+        [
+            nameof(UsageDashboardController.GetAccessUsers),
+            nameof(UsageDashboardController.GetExcludedUsers),
+            nameof(UsageDashboardController.AddExcludedUser),
+            nameof(UsageDashboardController.RemoveExcludedUser),
+        ];
+
         var actions = typeof(UsageDashboardController)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => !m.IsSpecialName)
@@ -77,16 +89,25 @@ public class ControllerAuthorizationTests
         var missing = actions
             .Where(m => m.Name != nameof(UsageDashboardController.TrackClickEvent))
             .Where(m => !m.GetCustomAttributes<AuthorizeAttribute>(inherit: true)
-                .Any(a => a.Policy == "AdminOnly"))
+                .Any(a => a.Policy == "AdminOnly" || a.Policy == UsageDashboardAccess.PolicyName))
             .Select(m => m.Name)
             .ToList();
 
         Assert.True(missing.Count == 0,
-            $"These usage-dashboard actions are missing [Authorize(Policy = \"AdminOnly\")]: {string.Join(", ", missing)}");
+            $"These usage-dashboard actions are missing an explicit dashboard policy: {string.Join(", ", missing)}");
 
-        // And the telemetry endpoint must NOT be admin-gated, or the UI stops reporting usage.
+        var demoted = adminOnlyActions
+            .Where(name => !actions.Single(m => m.Name == name)
+                .GetCustomAttributes<AuthorizeAttribute>(inherit: true)
+                .Any(a => a.Policy == "AdminOnly"))
+            .ToList();
+
+        Assert.True(demoted.Count == 0,
+            $"These exclusion-administration actions must stay [Authorize(Policy = \"AdminOnly\")]: {string.Join(", ", demoted)}");
+
+        // And the telemetry endpoint must NOT be policy-gated, or the UI stops reporting usage.
         var clickEvent = actions.Single(m => m.Name == nameof(UsageDashboardController.TrackClickEvent));
         Assert.DoesNotContain(clickEvent.GetCustomAttributes<AuthorizeAttribute>(inherit: true),
-            a => a.Policy == "AdminOnly");
+            a => a.Policy == "AdminOnly" || a.Policy == UsageDashboardAccess.PolicyName);
     }
 }

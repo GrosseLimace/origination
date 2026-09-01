@@ -21,6 +21,7 @@ import {
 
 import { SortIconComponent } from '../../components/sort-icon/sort-icon.component';
 import { ExcludedUsersPanelComponent } from '../../components/excluded-users-panel/excluded-users-panel.component';
+import { ManagerFilterComponent } from '../../components/manager-filter/manager-filter.component';
 import { createTableSort } from '../../utils/table-sort';
 import { tradeUnitKeySignal } from '../../utils/trade-unit-key';
 import {
@@ -36,7 +37,7 @@ type DashboardTabId = 'whos-using-it' | 'whats-doing' | 'whos-not';
   imports: [
     CommonModule, FormsModule,
     TradeUnitSelectorComponent,
-    SortIconComponent, ExcludedUsersPanelComponent,
+    SortIconComponent, ExcludedUsersPanelComponent, ManagerFilterComponent,
     TableComponent, TableHeaderComponent, TableBodyComponent,
     TableRowComponent, TableHeadComponent, TableCellComponent
   ],
@@ -63,6 +64,10 @@ export class UsageDashboardComponent {
   readonly statusFilter = signal<string>('all');
 
   readonly tradeUnitKey = tradeUnitKeySignal(this.appState);
+
+  /** Selected manager's short name, or null for everyone. Narrows every panel to that manager's
+   *  entire org subtree (server-side, via the managerId query param). */
+  readonly managerFilter = signal<string | null>(null);
 
   /** Bumped to force a reload — e.g. after the exclusion list changes, which moves every number. */
   private readonly refreshTick = signal(0);
@@ -328,8 +333,9 @@ export class UsageDashboardComponent {
       const from = this.dateFrom();
       const to = this.dateTo();
       const tuKey = this.tradeUnitKey();
+      const managerId = this.managerFilter() ?? undefined;
       this.refreshTick();
-      if (from && to) this.loadCoreData(from, to, tuKey);
+      if (from && to) this.loadCoreData(from, to, tuKey, managerId);
     });
 
     // Feature sessions also depend on the selected screen.
@@ -338,15 +344,17 @@ export class UsageDashboardComponent {
       const from = this.dateFrom();
       const to = this.dateTo();
       const tuKey = this.tradeUnitKey();
+      const managerId = this.managerFilter() ?? undefined;
       this.refreshTick();
-      if (from && to) this.loadFeatureSessions(from, to, tuKey, screen);
+      if (from && to) this.loadFeatureSessions(from, to, tuKey, managerId, screen);
     });
 
     // The weekly trend covers whole calendar weeks, so the date filter is not a dependency.
     effect(() => {
       const tuKey = this.tradeUnitKey();
+      const managerId = this.managerFilter() ?? undefined;
       this.refreshTick();
-      this.loadWeeklyTrend(tuKey);
+      this.loadWeeklyTrend(tuKey, managerId);
     });
 
     // Per-tab data loads when its tab is first shown for the current filters.
@@ -355,8 +363,9 @@ export class UsageDashboardComponent {
       const from = this.dateFrom();
       const to = this.dateTo();
       const tuKey = this.tradeUnitKey();
+      const managerId = this.managerFilter() ?? undefined;
       const tick = this.refreshTick();
-      if (from && to) this.loadTabData(tab, from, to, tuKey, `${from}|${to}|${tuKey ?? ''}|${tick}`);
+      if (from && to) this.loadTabData(tab, from, to, tuKey, managerId, `${from}|${to}|${tuKey ?? ''}|${managerId ?? ''}|${tick}`);
     });
   }
 
@@ -367,22 +376,22 @@ export class UsageDashboardComponent {
     return source.pipe(finalize(() => this.pendingCount.update(n => Math.max(0, n - 1))));
   }
 
-  private loadCoreData(from: string, to: string, tradeUnitKey?: string): void {
-    this.track(this.apiService.getUsageDashboardSummary(from, to, tradeUnitKey))
+  private loadCoreData(from: string, to: string, tradeUnitKey?: string, managerId?: string): void {
+    this.track(this.apiService.getUsageDashboardSummary(from, to, tradeUnitKey, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => this.summary.set(data),
         error: () => this.toastService.show('Failed to load summary', 'error')
       });
 
-    this.track(this.apiService.getUsageDashboardUsers(from, to, tradeUnitKey))
+    this.track(this.apiService.getUsageDashboardUsers(from, to, tradeUnitKey, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => this.users.set(data),
         error: () => this.toastService.show('Failed to load users', 'error')
       });
 
-    this.track(this.apiService.getUsageDailyActive(from, to, tradeUnitKey))
+    this.track(this.apiService.getUsageDailyActive(from, to, tradeUnitKey, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: data => this.dailyActive.set(data), error: () => {} });
   }
@@ -391,34 +400,34 @@ export class UsageDashboardComponent {
    *  forth doesn't refetch. */
   private readonly loadedTabKeys = new Map<DashboardTabId, string>();
 
-  private loadTabData(tab: DashboardTabId, from: string, to: string, tradeUnitKey: string | undefined, key: string): void {
+  private loadTabData(tab: DashboardTabId, from: string, to: string, tradeUnitKey: string | undefined, managerId: string | undefined, key: string): void {
     if (this.loadedTabKeys.get(tab) === key) return;
     this.loadedTabKeys.set(tab, key);
 
     if (tab === 'whats-doing') {
-      this.track(this.apiService.getUsageActivityBreakdown(from, to, tradeUnitKey))
+      this.track(this.apiService.getUsageActivityBreakdown(from, to, tradeUnitKey, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.activityBreakdown.set(data), error: () => {} });
 
-      this.track(this.apiService.getUsageQueryLibraryUsage(from, to, tradeUnitKey))
+      this.track(this.apiService.getUsageQueryLibraryUsage(from, to, tradeUnitKey, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.queryLibraryUsage.set(data), error: () => {} });
 
-      this.track(this.apiService.getUsageQuerySearchGaps(from, to, tradeUnitKey))
+      this.track(this.apiService.getUsageQuerySearchGaps(from, to, tradeUnitKey, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.querySearchGaps.set(data), error: () => {} });
     }
 
     if (tab === 'whos-not') {
-      this.track(this.apiService.getUsageUnderusedFeatures(from, to, tradeUnitKey))
+      this.track(this.apiService.getUsageUnderusedFeatures(from, to, tradeUnitKey, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.underusedFeatures.set(data), error: () => {} });
     }
   }
 
-  loadFeatureSessions(from: string, to: string, tradeUnitKey?: string, screen?: string): void {
+  loadFeatureSessions(from: string, to: string, tradeUnitKey?: string, managerId?: string, screen?: string): void {
     this.featureSessionsLoading.set(true);
-    this.track(this.apiService.getUsageFeatureSessions(from, to, tradeUnitKey, screen))
+    this.track(this.apiService.getUsageFeatureSessions(from, to, tradeUnitKey, managerId, screen))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => { this.featureSessions.set(data); this.featureSessionsLoading.set(false); },
@@ -426,8 +435,8 @@ export class UsageDashboardComponent {
       });
   }
 
-  loadWeeklyTrend(tradeUnitKey?: string): void {
-    this.track(this.apiService.getUsageWeeklyTrend(tradeUnitKey))
+  loadWeeklyTrend(tradeUnitKey?: string, managerId?: string): void {
+    this.track(this.apiService.getUsageWeeklyTrend(tradeUnitKey, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: data => this.weeklyTrend.set(data), error: () => {} });
   }
