@@ -276,7 +276,20 @@ export class BidSheetComponent {
     return days > BidSheetComponent.AGING_QUOTE_DAYS;
   }
 
-  /** Tooltip for a feed-owned cell: where it came from and when the elevator last changed it. */
+  /**
+   * A message worth showing a user, or '' when there isn't one.
+   *
+   * The server's validation errors are written for people ("A location named X already exists on this
+   * trade unit") and are worth surfacing. Angular's transport errors are not: "Http failure response
+   * for http://localhost:5000/api/bidsheet/bids/bulk: 500 Internal Server Error" is noise at best and
+   * embarrassing in front of an audience, so those collapse to the caller's own plain wording.
+   */
+  private _errorToast(err: unknown, fallback: string): string {
+    const message = (err as { message?: string })?.message?.trim();
+    if (!message || /^Http failure/i.test(message) || message.includes('://')) return fallback;
+    return `${fallback}: ${message}`;
+  }
+
   /** Short, human "as of" for a vendor timestamp: today shows a time, older shows a date. */
   formatAsOf(iso: string | undefined): string {
     if (!iso) return '';
@@ -695,11 +708,14 @@ export class BidSheetComponent {
         const bidCommodities = [...new Set(results.flatMap(r => r.bidCommodities))].sort();
 
         this.bidLocations.set(allLocations);
-        // Crops the user just added have no saved bids, so the server's commodity list omits them --
-        // overwriting outright made them vanish from under an open Crops dropdown. Keep them, and keep
-        // the saved column order rather than the server's alphabetical one.
-        const kept = [...this.crops()].filter(c => this.pendingAddedCrops().has(c) && !bidCommodities.includes(c));
+        // A crop the user added has no saved bids yet, so the server's commodity list omits it and
+        // overwriting outright made the column vanish. Two things vouch for such a crop: it is still
+        // staged in the open dropdown, or it was committed and therefore written into the saved column
+        // order. Checking only the former lost it the moment Done cleared the staging set.
         const savedOrder = this.cropOrderByTu().get(this.activeTradeUnitKey()) ?? [];
+        const vouched = new Set([...this.pendingAddedCrops(), ...savedOrder]);
+        const kept = [...new Set([...this.crops(), ...savedOrder])]
+          .filter(c => vouched.has(c) && !bidCommodities.includes(c));
         const merged = [...bidCommodities, ...kept];
         this.crops.set(savedOrder.length > 0
           ? [...savedOrder.filter(c => merged.includes(c)), ...merged.filter(c => !savedOrder.includes(c))]
@@ -928,9 +944,18 @@ export class BidSheetComponent {
       const cropOrderJson = perKey?.cropOrder ?? null;
       if (cropOrderJson) {
         try {
+          const savedOrder: string[] = JSON.parse(cropOrderJson);
           const orderMap = new Map(this.cropOrderByTu());
-          orderMap.set(key, JSON.parse(cropOrderJson));
+          orderMap.set(key, savedOrder);
           this.cropOrderByTu.set(orderMap);
+          // Bring back any crop the user added but has not priced yet. The server derives its commodity
+          // list from saved BIDS, so a crop with none is absent from it, and the bid load runs before
+          // this -- which is why an added-then-unused column disappeared on a page reload. The saved
+          // order is the record that the user asked for that column, so it is what restores it.
+          const known = new Set(this.crops());
+          const missing = savedOrder.filter(c => c && !known.has(c));
+          if (missing.length > 0) this.crops.update(cs => [...cs, ...missing]);
+          if (this.editBidsMode()) this._buildEditGrid(this.editBidsYear());
         } catch { /* invalid JSON — skip */ }
       }
 
@@ -1573,7 +1598,7 @@ export class BidSheetComponent {
       error: (err) => {
         this.addLocationSaving.set(false);
         if (isDevMode()) console.error('[BidSheet] add location failed', err);
-        this.toastService.error(err?.message ? `Failed to add location: ${err.message}` : 'Failed to add location');
+        this.toastService.error(this._errorToast(err, "Failed to add location"));
       }
     });
   }
@@ -1724,12 +1749,21 @@ export class BidSheetComponent {
     this._barchartPlacedKeys.clear();
   }
 
-  /** The picker asked us to centre on a candidate it listed. */
+  /**
+   * The picker asked us to centre on a candidate it listed.
+   *
+   * Pans WITHOUT changing zoom. Flying to zoom 11 shrank the search radius, which re-ran the nearby
+   * search and replaced the fifty-row list with the handful within ten miles -- so ticking a row
+   * collapsed the list under the user, and the row they had just ticked usually dropped out of the
+   * results and reappeared at the bottom under "Still selected". Keeping the zoom keeps the area the
+   * user is working, which is the whole premise of a map-first picker.
+   */
   onBarchartFocus(loc: BarchartCatalogLocation): void {
     // Also mark it selected, so picking from the list turns the same pin blue as clicking it on the map.
     this.barchartSelectedKey.set(loc.locationKey);
     if (loc.latitude == null || loc.longitude == null) return;
-    this._flyToLocation(loc.latitude, loc.longitude, 11);
+    // The current zoom, passed explicitly -- omitting it means "at least 11", which is the zoom-in.
+    this._flyToLocation(loc.latitude, loc.longitude, this._map?.getZoom());
   }
 
   /**
@@ -2312,7 +2346,7 @@ export class BidSheetComponent {
           this._autoSaveRerun = false;
           this._pendingOnDone = null;
           if (isDevMode()) console.error('[BidSheet] auto-save bids failed', err);
-          this.toastService.error(err?.message ? `Failed to save bids: ${err.message}` : 'Failed to save bids');
+          this.toastService.error(this._errorToast(err, "Failed to save bids"));
           // Deliberately NOT calling onDone — preserves the edit and aborts any pending navigation.
         }
       });
@@ -2338,15 +2372,26 @@ export class BidSheetComponent {
       // BOTH sides, or a basis-only edit never goes clean: its green highlight would never clear, every
       // later blur would re-send it, and _buildDirtyBids would never report zero again -- which silently
       // switches off the background refresh that runs when the grid is open.
+      // Everything that described the FEED's number has to go, because the cell is the user's now and
+      // the row counts as clean again the moment originalBids is updated below. Three separate stores:
+      //   boardChips  - the month-column board symbol
+      //   yearFrom    - the SAME thing for a Year column, which cellBoardFor never fills (Yearly is the
+      //                 default view, so missing this left the headline case broken)
+      //   agingCells  - the "hasn't moved in a while" mute, which would otherwise fade the value the
+      //                 user just typed, usually typed BECAUSE the fed one was stale
+      // Per cell, not per side: the upsert writes both prices and the server flips the whole row to
+      // Manual, so a basis-only edit takes the cash side with it.
       const boardChips = { ...row.boardChips };
+      const yearFrom = { ...row.yearFrom };
+      const agingCells = new Set(row.agingCells);
       for (const [colKey, val] of saved) {
         originalBids[colKey] = val.bid;
         originalBasisBids[colKey] = val.basisBid;
-        // The cell is the user's now, so drop the fed board label. It described the feed's number, and
-        // leaving it would re-attach it to a hand-typed one the moment the cell counts as clean again.
         delete boardChips[colKey];
+        delete yearFrom[colKey];
+        agingCells.delete(colKey);
       }
-      return { ...row, originalBids, originalBasisBids, boardChips };
+      return { ...row, originalBids, originalBasisBids, boardChips, yearFrom, agingCells };
     }));
   }
 
@@ -2454,7 +2499,7 @@ export class BidSheetComponent {
         error: (err) => {
           this.editBidsSaving.set(false);
           if (isDevMode()) console.error('[BidSheet] save bids failed', err);
-          this.toastService.error(err?.message ? `Failed to save bids: ${err.message}` : 'Failed to save bids');
+          this.toastService.error(this._errorToast(err, "Failed to save bids"));
         }
       });
   }
@@ -2670,16 +2715,20 @@ export class BidSheetComponent {
         } else {
           // Monthly: one column per selected month for the viewed year, headed "May (2026)".
           //
-          // The board goes in compactLabel because compactLabel is what actually prints -- the layout
-          // renderer reads only that, so a board appended to `label` never reached paper. It has to be
-          // on the sheet somewhere: print is what gets handed to a producer, and there is no hover.
+          // The board deliberately does NOT go in compactLabel, even though that is the only header the
+          // renderer prints. compactLabel is also what the fit-first sizing MEASURES: " · ZCU26" doubles
+          // a column's width, which pushes four commodities off a single band and splits the sheet in
+          // two -- the stacked layout users rejected. Paper therefore names a board only on the cells
+          // that DISAGREE with their column (see printCellValue), so a cross-exchange outlier is never
+          // silently comparable, and the common case stays as compact as the layout was tuned for.
+          // `label` keeps the full text for any future header that is not width-measured.
           const board = this.boardConsensus(crop, viewedYear, m);
           for (const pt of this.printPriceTypes()) {
             const suffix = pt ? (pt === 'cash' ? ' Cash' : ' Basis') : '';
             columns.push({
               key: `${crop}#${m}${pt ? '#' + pt : ''}`, crop, month: m, year: viewedYear,
               label: `${this.getMonthName(m)} (${viewedYear})${suffix}${board ? ' · ' + board : ''}`,
-              compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}${suffix}${board ? ' · ' + board : ''}`,
+              compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}${suffix}`,
               priceType: pt
             });
           }
@@ -3047,6 +3096,14 @@ export class BidSheetComponent {
     if (this.editBidsReadOnly()) return;
     this.renamingRow.set(name);
     this.renameRowDraft.set(name);
+    // The template's `autofocus` does nothing here -- browsers honour it at parse time, not when an
+    // element is inserted later -- so the user had to click the pencil and then click the box. Focus
+    // after the input exists, and select the text so a full replacement is one keystroke away.
+    setTimeout(() => {
+      const el = document.getElementById(`rename-row-${name}`) as HTMLInputElement | null;
+      el?.focus();
+      el?.select();
+    });
   }
 
   cancelRenameRow(): void {
@@ -3072,7 +3129,24 @@ export class BidSheetComponent {
 
     const loc = this._findLocationByName(oldName);
     if (!loc) return;
+    // Row order is persisted BY NAME, so a rename orphans the entry and the row drops to the bottom of
+    // the grid -- alarming right after renaming it. Carry the position over to the new name.
+    this._renameInSavedOrder(oldName, newName);
     this._saveLocationFields(loc, { name: newName }, `Renamed to ${newName}`, 'Failed to rename location');
+  }
+
+  /** Keeps a renamed row where the user put it, in memory and in the saved preference. */
+  private _renameInSavedOrder(oldName: string, newName: string): void {
+    const key = this.activeTradeUnitKey();
+    const order = this.locationOrderByTu().get(key);
+    if (!order || !order.includes(oldName)) return;
+    const next = order.map(n => (n === oldName ? newName : n));
+    const orderMap = new Map(this.locationOrderByTu());
+    orderMap.set(key, next);
+    this.locationOrderByTu.set(orderMap);
+    this.apiService.setBidSheetLocationOrder(key, JSON.stringify(next))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to carry row order to the new name', err); } });
   }
 
   isRowScoular(name: string): boolean {
@@ -3116,9 +3190,15 @@ export class BidSheetComponent {
         this.allMapLocations.update(locs => locs.map(l => l.id === loc.id ? { ...l, ...changes } : l));
         this.bidLocations.update(locs => locs.map(l => l.id === loc.id ? { ...l, ...changes } : l));
         this.toastService.success(successMessage);
+        // Rebuild from the cache just updated, then sync in the background with NO callback. Passing
+        // one makes the reload take ownership of the grid's loading flag, which replaces the whole
+        // table with a full-screen spinner and comes back with focus and scroll reset -- twice over,
+        // on a rename-then-star hop. The rename is already local, so there is nothing to wait for,
+        // and the open grid still trues itself up when the reload lands (see _loadBidData).
+        if (this.editBidsMode()) this._buildEditGrid(this.editBidsYear());
         this._loadAllMapLocations();
         const tus = this.activeTradeUnits();
-        if (tus.length > 0) this._loadBidData(tus, () => this._buildEditGrid(this.editBidsYear()), 'refresh');
+        if (tus.length > 0) this._loadBidData(tus, undefined, 'refresh');
       },
       error: () => this.toastService.error(failureMessage)
     });

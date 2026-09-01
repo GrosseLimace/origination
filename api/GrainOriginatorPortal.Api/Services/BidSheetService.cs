@@ -4,6 +4,7 @@ using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Exceptions;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Services;
@@ -107,7 +108,18 @@ public class BidSheetService : IBidSheetService
             }).ToList()
         };
 
-        var created = await _repository.CreateLocationAsync(location, cancellationToken);
+        BidSheetLocation created;
+        try
+        {
+            created = await _repository.CreateLocationAsync(location, cancellationToken);
+        }
+        catch (DuplicateLocationException ex)
+        {
+            // The database caught a race the pre-checks above could not: two creates for the same
+            // placement, which the parallel BarChart bulk add makes reachable. Answered as validation so
+            // it reads identically to the serialized case.
+            throw new ValidationException(nameof(request.Name), ex.Message);
+        }
         if (barchartLocation is null) return created.ToResponse();
 
         // Publish the feed's current prices immediately, so a location added from the picker shows its

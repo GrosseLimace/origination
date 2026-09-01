@@ -967,10 +967,11 @@
                               <!-- Adding a batch from BarChart lands on this screen, so the vendor's
                                    name is corrected here rather than one dialog at a time. -->
                               <div class="flex-1 min-w-0 relative">
-                                <input type="text" [ngModel]="renameRowDraft()" [ngModelOptions]="{ standalone: true }"
+                                <input type="text" [attr.id]="'rename-row-' + row.name"
+                                       [ngModel]="renameRowDraft()" [ngModelOptions]="{ standalone: true }"
                                        (ngModelChange)="renameRowDraft.set($event)"
                                        (keydown.enter)="saveRenameRow(row.name)" (keydown.escape)="cancelRenameRow()"
-                                       (blur)="saveRenameRow(row.name)" autofocus
+                                       (blur)="saveRenameRow(row.name)"
                                        class="w-full text-sm rounded border bg-white dark:bg-gray-800 text-gray-900 dark:text-white pl-2 pr-12 py-1 focus:outline-none focus:ring-2 focus:ring-scoular-green"
                                        [ngClass]="renameRowValid()
                                          ? 'border-scoular-green-accessible'
@@ -1019,7 +1020,7 @@
                               <!-- Pinned to the right edge so the chips line up down the column, whatever
                                    length the names are and whether or not they wrap. -->
                               <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
-                                    title="Linked to BarChart — its bids update on their own and can't be edited here.">Feed</span>
+                                    title="Linked to BarChart — its bids refresh on their own each night. You can still type over one; the feed reclaims that cell on its next run.">Feed</span>
                             } @else if (barchartEnabled) {
                               <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
                                     title="Typed by hand. If the feed starts publishing this location, it takes the cells over.">Manual</span>
@@ -1034,7 +1035,7 @@
                             <!-- The wrapper exists for the board letter: trade notation inside the box,
                                  right behind where the quote sits ("-80 ZCU26"). It hides while the cell is
                                  being edited so it can never read as part of what was typed. -->
-                            <div class="relative flex-1 min-w-0 group">
+                            <div class="relative flex-1 min-w-0 group overflow-hidden">
                             <input
                               type="text"
                               [attr.id]="'bid-' + rowIdx + '-' + col.key"
@@ -1067,12 +1068,18 @@
                               <!-- Basis sits beside cash rather than under it, so the two read as the pair
                                    an originator quotes. The board symbol rides on the basis, which
                                    is the number the board denominates and the way originators write it. -->
-                              <div class="relative flex-1 min-w-0 group">
+                              <div class="relative flex-1 min-w-0 group overflow-hidden">
+                              <!-- Carries the grid's cell id only in basis mode, where the cash input is
+                                   not rendered at all: without it, arrow-key navigation and the
+                                   focus-the-new-row jump after an add had nothing to look up. In Both
+                                   mode the cash input owns the id and keeps the keyboard contract. -->
                               <input
                                 type="text"
+                                [attr.id]="priceMode() === 'basis' ? 'bid-' + rowIdx + '-' + col.key : null"
                                 [ngModel]="row.basisBids[col.key]"
                                 [ngModelOptions]="{ standalone: true }"
                                 (ngModelChange)="updateBasisBid(rowIdx, col.key, $event)"
+                                (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                                 (blur)="onBidBlur()"
                                 [readonly]="cellReadOnly()"
                                 placeholder="—"

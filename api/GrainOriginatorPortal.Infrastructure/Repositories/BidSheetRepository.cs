@@ -2,6 +2,7 @@ using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Exceptions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -62,11 +63,12 @@ public class BidSheetRepository : IBidSheetRepository
         // matching the UQ_BidSheetLocations_Name_TradeUnit unique index.
         //
         // ⚠ That index exists in the Dev DATABASE but nowhere in this codebase -- no migration creates
-        // it, the model does not declare it, and scripts/_VerifySchema.sql did not expect it (now it
-        // does, so the drift is at least visible). Whether QA and PROD have it is unverified, so do not
-        // rely on it for correctness in a deployed environment. Concurrent creates of the same name are
-        // caught by ReconcileDuplicateBidInsertsAsync either way; BarChart placements additionally have
-        // UQ_BidSheetLocations_TradeUnit_BarchartKey, which IS declared and migrated.
+        // it and the model does not declare it, so whether QA and PROD have it is unverified and it
+        // cannot be relied on for correctness in a deployed environment. Declaring it needs a
+        // duplicate-name sweep of those environments first: the table predates the rule by years, and a
+        // unique index over existing duplicates fails the deploy. Concurrent creates of the same name
+        // are caught by ReconcileDuplicateBidInsertsAsync either way; BarChart placements additionally
+        // have UQ_BidSheetLocations_TradeUnit_BarchartKey, which IS declared and migrated.
         return _appContext.BidSheetLocations
             .AnyAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name == trimmed, cancellationToken);
     }
@@ -93,8 +95,21 @@ public class BidSheetRepository : IBidSheetRepository
             // A child bid collided with a concurrently-inserted one — reconcile to updates and retry.
             _logger.LogWarning(ex, "CreateBidSheetLocation hit a unique-constraint race — reconciling");
             if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
+            {
                 await _appContext.SaveChangesAsync(cancellationToken);
-            else throw;
+            }
+            else
+            {
+                // Nothing to reconcile means the LOCATION itself collided, not one of its bids — the
+                // placement already exists on this trade unit. The bulk BarChart add posts locations
+                // with no bids and fires its creates in parallel, so two for the same listing both pass
+                // the pre-check and the second lands here. Signalled distinctly so the service can
+                // answer 400 like the serialized path does, instead of a 500 the client reads as a real
+                // failure rather than "already added".
+                _appContext.Entry(location).State = EntityState.Detached;
+                throw new DuplicateLocationException(
+                    "This location is already on that trade unit.", ex);
+            }
         }
         return location;
     }

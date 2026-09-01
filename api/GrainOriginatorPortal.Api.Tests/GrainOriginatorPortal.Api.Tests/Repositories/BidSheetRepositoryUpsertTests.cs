@@ -189,42 +189,45 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         Assert.Equal(BidSources.Manual, cell.Source);
     }
 
-    // The reconcile path runs when two writes for the same cell race: the loser's insert is dropped and
-    // its values are copied onto the row that won. It copied only the cash side, which for a basis-only
-    // bid -- the normal shape here since the migration moved manual bids into BasisBid -- meant losing
-    // the one value the user typed. Driven through the public API by pre-inserting the row the upsert
-    // will collide with.
+    // Typing a basis over a cell the feed already owns must keep that basis and take the cell over. This
+    // is the same assignment the reconcile path performs when two writes race, and that path had the
+    // same defect -- it copied only the cash side, so a basis-only bid (the normal shape since manual
+    // bids moved into BasisBid) lost the one value the user typed.
+    //
+    // NOTE: this exercises the ordinary update branch, NOT the reconcile. The repository shares this
+    // test's DbContext, so a row inserted here is already tracked and the upsert finds it rather than
+    // colliding on the unique index. Reaching the reconcile needs a second context committing between
+    // the repository's read and its save -- a genuine race, and not something to fake with a timing
+    // trick. The reconcile's own copy is reviewed but uncovered; recorded here so nobody reads this
+    // test as proof of it.
     [Fact]
-    public async Task BulkUpsert_KeepsTheBasisWhenItReconcilesARacedInsert()
+    public async Task BulkUpsert_KeepsTheBasisWhenTakingOverAFedCell()
     {
         if (!Enabled) return;
 
-        var name = $"__IT Upsert Race {Guid.NewGuid():N}";
-        // The location exists with no bid for this cell, so the upsert takes its "add" branch...
+        var name = $"__IT Upsert Takeover {Guid.NewGuid():N}";
         var location = new BidSheetLocation
         {
             Name = name,
             TradeUnitCode = TradeUnit,
             CreatedBy = "integration-test",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            Bids =
+            [
+                new BidSheetLocationBid
+                {
+                    CommodityCode = "IT_UPSERT",
+                    CropYear = 2027,
+                    Month = 12,
+                    Bid = string.Empty,
+                    BasisBid = "-10",
+                    Source = BidSources.Barchart,
+                    CreatedBy = "barchart-feed",
+                    CreatedAt = DateTime.UtcNow
+                }
+            ]
         };
         _context.BidSheetLocations.Add(location);
-        await _context.SaveChangesAsync();
-
-        // ...while another writer has already put the cell there. SaveChanges then hits the unique
-        // index and reconciliation folds the user's values onto the existing row.
-        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
-        {
-            LocationId = location.Id,
-            CommodityCode = "IT_UPSERT",
-            CropYear = 2027,
-            Month = 12,
-            Bid = string.Empty,
-            BasisBid = "-10",
-            Source = BidSources.Barchart,
-            CreatedBy = "barchart-feed",
-            CreatedAt = DateTime.UtcNow
-        });
         await _context.SaveChangesAsync();
 
         await _sut.BulkUpsertBidsAsync([Input(name, "", "-40Z")], TradeUnit, "integration-test", default);

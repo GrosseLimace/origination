@@ -75,42 +75,52 @@
   <div class="flex-1 overflow-y-auto">
     @if (loading()) {
       <div class="p-4 text-sm text-gray-500 dark:text-gray-400">Searching…</div>
-    } @else {
-      @if (results().length === 0) {
-        <div class="p-4 space-y-2">
-          <p class="text-sm text-gray-600 dark:text-gray-300">No BarChart locations found.</p>
-          @if (coverage(); as c) {
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              The feed currently holds {{ c.locationCount.toLocaleString() }} locations in
-              {{ c.states.length }} states{{ topStatesLabel() }}.
-              If the location you want isn't here, add it manually instead.
-            </p>
-          }
-        </div>
-      } @else {
-        <div class="divide-y divide-gray-100 dark:divide-gray-800">
-          @for (loc of results(); track loc.locationKey) {
-            <ng-container *ngTemplateOutlet="locationRow; context: { $implicit: loc, offList: false }" />
-          }
-        </div>
-      }
-
-      <!-- Ticked, but not in what the panel is currently showing. Building a batch means panning
-           around, and without this the earlier picks simply vanish while the footer keeps counting
-           them -- so the user cannot see what they are about to add. They stay at the end of the
-           list until the batch goes in. -->
-      @if (offListSelected().length > 0) {
-        <div class="px-4 py-1.5 bg-gray-50 dark:bg-gray-800/60 border-y border-gray-200 dark:border-gray-700">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            Also selected ({{ offListSelected().length }}) — not in this view
+    } @else if (results().length === 0) {
+      <div class="p-4 space-y-2">
+        <!-- Worded for the case where a batch is already going: saying "found nothing" above a list of
+             the user's own picks reads as a fault, so this is explicit that it is THIS search that is
+             empty. -->
+        <p class="text-sm text-gray-600 dark:text-gray-300">
+          {{ selectedCount() > 0 ? 'Nothing more here.' : 'No BarChart locations found.' }}
+        </p>
+        @if (coverage(); as c) {
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            The feed currently holds {{ c.locationCount.toLocaleString() }} locations in
+            {{ c.states.length }} states{{ topStatesLabel() }}.
+            If the location you want isn't here, add it manually instead.
           </p>
-        </div>
-        <div class="divide-y divide-gray-100 dark:divide-gray-800">
-          @for (loc of offListSelected(); track loc.locationKey) {
-            <ng-container *ngTemplateOutlet="locationRow; context: { $implicit: loc, offList: true }" />
-          }
-        </div>
-      }
+        } @else {
+          <!-- Coverage is what explains an empty result, so when it failed to load say the search was
+               geographic rather than leaving the user to assume the feed is broken. -->
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            Try panning the map, searching by name, or picking a state. If the location you want isn't
+            in the feed, add it manually instead.
+          </p>
+        }
+      </div>
+    } @else {
+      <div class="divide-y divide-gray-100 dark:divide-gray-800">
+        @for (loc of results(); track loc.locationKey) {
+          <ng-container *ngTemplateOutlet="locationRow; context: { $implicit: loc, offList: false }" />
+        }
+      </div>
+    }
+
+    <!-- Ticked, but not in what the panel is currently showing. Building a batch means panning around,
+         and without this the earlier picks simply vanish while the footer keeps counting them -- so the
+         user cannot see what they are about to add. Deliberately OUTSIDE the loading branch: a search
+         in flight must not blank the basket, or the count and the list disagree for a second. -->
+    @if (offListSelected().length > 0) {
+      <div class="px-4 py-1.5 bg-gray-50 dark:bg-gray-800/60 border-y border-gray-200 dark:border-gray-700">
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Still selected ({{ offListSelected().length }}) — not in this view
+        </p>
+      </div>
+      <div class="divide-y divide-gray-100 dark:divide-gray-800">
+        @for (loc of offListSelected(); track loc.locationKey) {
+          <ng-container *ngTemplateOutlet="locationRow; context: { $implicit: loc, offList: true }" />
+        }
+      </div>
     }
   </div>
   @if (selectedCount() > 0) {
