@@ -495,15 +495,29 @@ export class BidSheetComponent {
   private _pickerRef = viewChild<BarchartPickerComponent>('picker');
 
   /**
-   * Where an added location gets placed: whatever trade units are selected, and nothing else.
+   * Where a BARCHART add places its locations: whatever trade units are selected, and nothing else.
    *
    * This used to fall back to EVERY trade unit the user could reach when nothing was selected, which
    * meant ticking three elevators on a twelve-desk book silently created thirty-six placements on
-   * other people's sheets. Browsing the BarChart catalog is deliberately unrestricted -- the picker's
-   * search is geographic and never consults this -- but writing needs a destination the user chose,
-   * so with no selection this is empty and the add says so instead of guessing.
+   * other people's sheets -- the picker creates one row per location PER trade unit, so the blast
+   * radius multiplies. Browsing the catalog is deliberately unrestricted (the picker's search is
+   * geographic and never consults this), but writing needs a destination the user chose.
    */
   readonly addLocationTus = computed(() => this.activeTradeUnits());
+
+  /**
+   * Trade units offered by the MANUAL add form's dropdown, which may fall back to the user's whole
+   * book because that flow is the opposite shape: the user picks exactly one from a list and gets one
+   * row. There is no multiplication to guard against, and no selection is a normal way to arrive at
+   * the map -- sharing addLocationTus left the dropdown with nothing to choose.
+   */
+  readonly manualAddTuChoices = computed(() => {
+    const active = this.activeTradeUnits();
+    if (active.length > 0) return active;
+    const all = new Set<string>();
+    this.appState.userGroups().forEach(g => g.tradeUnitCodes.forEach(c => all.add(c.trim())));
+    return [...all].sort();
+  });
 
   private static readonly _excludedCommodityCategories = new Set([
     'CURRENCY', 'TRANSPORTATION', 'FEED & FERT INGREDIENTS', 'FEED &FERT INGREDIENTS'
@@ -1490,7 +1504,7 @@ export class BidSheetComponent {
     this._addLocationPin = _L.marker([lat, lng], { icon: pinIcon }).addTo(this._map);
 
     // Auto-select TU if only one is available
-    const tus = this.addLocationTus();
+    const tus = this.manualAddTuChoices();
     this.newLocationTu.set(tus.length === 1 ? tus[0] : '');
 
     // Open the form (just name + Scoular star; bids are entered later in the grid)

@@ -206,7 +206,21 @@ describe('BidSheetComponent — board symbols and printed values', () => {
 
   // This used to fall back to every trade unit the user could reach, so ticking three elevators with
   // nothing selected silently created placements across the whole book.
-  it('offers no destination for an added location until one is selected', () => {
+  it('offers no BarChart destination until a trade unit is selected', () => {
+    expect(component.addLocationTus()).toEqual([]);
+  });
+
+  // The manual form is the opposite shape -- one dropdown, one row -- so it may offer the whole book.
+  // Narrowing BOTH to the selection left that dropdown with nothing to pick and no way to add a
+  // location by hand from an unfiltered map.
+  it('still offers the manual add form a trade unit to pick when none is selected', () => {
+    const appState = TestBed.inject(AppStateService) as unknown as {
+      userGroups: { set(v: unknown): void };
+    };
+    appState.userGroups.set([{ groupName: 'G', tradeUnitCodes: ['2190', '2038'] }]);
+
+    expect(component.manualAddTuChoices()).toEqual(['2038', '2190']);
+    // ...while the BarChart path stays strict.
     expect(component.addLocationTus()).toEqual([]);
   });
 
