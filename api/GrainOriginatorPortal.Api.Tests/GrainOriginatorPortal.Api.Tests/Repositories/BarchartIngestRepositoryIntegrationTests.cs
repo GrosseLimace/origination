@@ -435,9 +435,50 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         var cell = await _context.BidSheetLocationBids.AsNoTracking()
             .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 12);
         Assert.Equal("4.47", cell.Bid);
-        // Ownership transfers with the value, so the cell is read-only from here on.
+        // Ownership transfers with the value. The user can override again -- fed cells are editable --
+        // and this run would take it back a second time.
         Assert.Equal(BidSources.Barchart, cell.Source);
         Assert.Equal("ZCPZ27-990001-990010.CM", cell.BarchartSymbol);
+    }
+
+    // Takeover is total, and that is a decision rather than an oversight: when the vendor publishes only
+    // one side of a cell it had not previously owned, the other side is blanked instead of keeping a
+    // value from somewhere else -- including a basis the user had typed there. Pinned here because the
+    // SQL looks like a missing ISNULL next to the cash side, which coalesces (only because Bid is NOT
+    // NULL, where blank and NULL mean the same thing).
+    //
+    // The catalog fixture publishes cash only, so this is that case: 1 window in 39,096 on the live
+    // feed carries one side without the other.
+    [Fact]
+    public async Task ApplyBids_TakingOverAManualCellClearsABasisTheFeedDoesNotPublish()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+
+        // The user quoted this cell on basis -- which is how manual bids are normally entered.
+        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
+        {
+            LocationId = location.Id,
+            CommodityCode = "IT_FLEX",
+            CropYear = 2027,
+            Month = 12,
+            Bid = string.Empty,
+            BasisBid = "-40Z",
+            Source = BidSources.Manual,
+            CreatedBy = "integration-test",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 12);
+        Assert.Equal("4.47", cell.Bid);
+        Assert.Equal(BidSources.Barchart, cell.Source);
+        // Deliberate: the cell is wholly the vendor's now, and the vendor publishes no basis here.
+        Assert.Null(cell.BasisBid);
     }
 
     // The other half of the same rule: a manual cell the feed has NO winner for is left alone. Only a
