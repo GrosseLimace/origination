@@ -63,9 +63,15 @@ export class AppStateService {
   userGroups = signal<{ groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]>([]);
   userGroupsLoaded = signal(false);
 
+  /** True once /usertradeunits has answered with NO assignments for this user. Distinct from
+   *  `userGroupsLoaded` (deliberately left false in that case so a retry is natural). Lets the
+   *  preference restore skip re-applying a saved selection the user is no longer entitled to. */
+  noTradeUnitAssignments = signal(false);
+
   setUserGroups(groups: { groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]): void {
     this.userGroups.set(groups);
     this.userGroupsLoaded.set(true);
+    this.noTradeUnitAssignments.set(false);
   }
 
   /** Trade-unit code → description/location (e.g. "2190" → "Pratt, KS"), from the loaded groups.
