@@ -2,31 +2,32 @@
   <div class="max-w-[2000px] w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-5">
 
     <!-- Mobile Layout -->
-    <div class="flex items-center justify-between lg:hidden">
-      <div class="flex items-center gap-3">
+    <div class="flex items-center justify-between gap-3 lg:hidden">
+      <div class="flex items-center gap-2 shrink-0">
         <!-- Mobile menu button -->
         <button type="button" class="p-2 -ml-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" (click)="toggleMobileMenu()">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/>
           </svg>
         </button>
-        <!-- Scoular Logo — click to navigate home -->
-        <div class="flex flex-col items-start gap-0.5 cursor-pointer" (click)="navigate('/')">
-          <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-11 flex-shrink-0 hidden dark:block">
-          <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-11 flex-shrink-0 dark:hidden">
-          <div class="flex items-center gap-2 self-center">
-            <p class="text-sm font-semibold text-gray-500 dark:text-gray-400 tracking-wider uppercase leading-none whitespace-nowrap">Origination</p>
-            @if (envName) {
-              <span class="px-2 py-0.5 text-xs font-bold rounded-full leading-none whitespace-nowrap"
-                [class]="envName === 'Dev' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'">
-                {{ envName }}
-              </span>
-            }
-          </div>
+        <!-- Scoular lockup — click to navigate home. Smaller than desktop: at h-11 the
+             lockup is 256px wide and would crowd the name off a phone. -->
+        <div class="flex items-center cursor-pointer" (click)="navigate('/')">
+          <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-8 flex-shrink-0 hidden dark:block">
+          <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-8 flex-shrink-0 dark:hidden">
         </div>
+        <span class="hidden sm:block h-6 w-px bg-gray-300 dark:bg-gray-600 shrink-0" aria-hidden="true"></span>
+        <!-- Dropped below sm: a 390px bar is already full with menu + logo + pill + avatar. -->
+        <p class="hidden sm:block text-sm font-medium text-gray-500 dark:text-white leading-normal truncate">Origination Workbench</p>
+          @if (envName) {
+            <span class="shrink-0 px-2 py-0.5 text-xs font-bold rounded-full leading-none whitespace-nowrap"
+              [class]="envName === 'Dev' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'">
+              {{ envName }}
+            </span>
+          }
       </div>
       <!-- Profile avatar -->
-      <div class="relative" (click)="$event.stopPropagation()">
+      <div class="relative shrink-0" (click)="$event.stopPropagation()">
         <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()"
           class="flex items-center justify-center w-12 h-12 rounded-full bg-scoular-green-accessible hover:bg-scoular-green focus:outline-none focus:ring-2 focus:ring-scoular-green focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors overflow-hidden">
           @if (profilePhotoUrl()) {
@@ -41,22 +42,29 @@
 
     <!-- Desktop Layout -->
     <div class="hidden lg:block">
-      <!-- Single desktop row. Nav labels expand at 2xl, where there is room for the
-           labels below would overflow the grid and clip into the logo column -->
+      <!-- Single desktop row, three zones: Scoular lockup / app name / nav + avatar.
+           Nav labels expand at 2xl, where there is room for them. -->
       <div class="flex items-center justify-between gap-4">
-        <div class="flex items-center gap-3 shrink-0">
-          <div class="flex flex-col items-start gap-0.5 cursor-pointer" (click)="navigate('/')">
+        <!-- Scoular lockup + product name as one unit, separated by a rule. The name is
+             sentence case at font-medium (matching the nav button labels) so it reads as
+             a product name subordinate to the wordmark, not a second logo competing with
+             it. It sits beside the logo, never under it. -->
+        <div class="flex items-center gap-4 min-w-0">
+          <div class="flex items-center shrink-0 cursor-pointer" (click)="navigate('/')">
             <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-11 flex-shrink-0 hidden dark:block">
             <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-11 flex-shrink-0 dark:hidden">
-            <div class="flex items-center gap-2 self-center">
-              <p class="text-sm font-semibold text-gray-500 dark:text-gray-400 tracking-wider uppercase leading-none whitespace-nowrap">Origination</p>
-              @if (envName) {
-                <span class="px-2 py-0.5 text-xs font-bold rounded-full leading-none whitespace-nowrap"
-                  [class]="envName === 'Dev' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'">
-                  {{ envName }}
-                </span>
-              }
-            </div>
+          </div>
+          <span class="hidden xl:block h-8 w-px bg-gray-300 dark:bg-gray-600 shrink-0" aria-hidden="true"></span>
+          <div class="flex items-center gap-2 min-w-0">
+            <!-- Below xl the name is dropped rather than truncated: at 1024 the logo and
+                 nav leave only ~50px for it. The env pill stays at every width. -->
+            <p class="hidden xl:block text-[length:var(--text-fluid-brand)] font-medium text-gray-500 dark:text-white leading-normal truncate">Origination Workbench</p>
+            @if (envName) {
+              <span class="shrink-0 px-2 py-0.5 text-xs font-bold rounded-full leading-none whitespace-nowrap"
+                [class]="envName === 'Dev' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'">
+                {{ envName }}
+              </span>
+            }
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
@@ -121,10 +129,12 @@
     <div class="flex flex-col h-full">
       <!-- Drawer header -->
       <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-        <div class="flex flex-col items-start gap-0.5 cursor-pointer" (click)="mobileNavigate('/')">
-          <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-6 flex-shrink-0 hidden dark:block">
-          <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-6 flex-shrink-0 dark:hidden">
-          <p class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 tracking-widest uppercase leading-none whitespace-nowrap self-center">Origination</p>
+        <!-- Name sits beside the lockup, never under it. Tight fit: ~188px of usable
+             drawer width, so the lockup is h-5 and the name is allowed to wrap. -->
+        <div class="flex items-center gap-2 min-w-0 cursor-pointer" (click)="mobileNavigate('/')">
+          <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-5 flex-shrink-0 hidden dark:block">
+          <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-5 flex-shrink-0 dark:hidden">
+          <p class="text-[10px] font-medium text-gray-500 dark:text-white leading-tight min-w-0">Origination Workbench</p>
         </div>
         <button type="button" class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" (click)="closeMobileMenu()">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

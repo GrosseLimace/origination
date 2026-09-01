@@ -1,6 +1,8 @@
 export const environment = {
   production: true,
-  envName: 'production',
+  // Title case to match Local / Dev / QA — the original value here was lowercase
+  // 'production', which rendered an odd lowercase pill next to the title-cased ones.
+  envName: 'Production',
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
   // Daily Digest (recap groups): ON in PROD. Surfaces the /daily-digest route + the

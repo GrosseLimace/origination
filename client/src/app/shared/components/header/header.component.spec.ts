@@ -33,9 +33,9 @@ describe('HeaderComponent', () => {
   it('should render the app shell from its external template', async () => {
     await render(HeaderComponent, { providers: baseProviders() });
 
-    // The "Origination" wordmark lives in the header template — its presence proves
-    // the external templateUrl was compiled and rendered.
-    expect(screen.getAllByText('Origination').length).toBeGreaterThan(0);
+    // The "Origination Workbench" wordmark lives in the header template — its presence
+    // proves the external templateUrl was compiled and rendered.
+    expect(screen.getAllByText('Origination Workbench').length).toBeGreaterThan(0);
   });
 
   it('should sign out through MSAL when Sign out is clicked', async () => {
