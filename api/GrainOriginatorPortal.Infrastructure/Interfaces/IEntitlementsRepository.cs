@@ -22,4 +22,9 @@ public interface IEntitlementsRepository
     /// <summary>Distinct trade-unit codes a customer belongs to, from the ODS vw_CustomerTradeUnits
     /// view — used to validate per-customer access against a user's entitlements.</summary>
     Task<List<string>> GetCustomerTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken);
+
+    /// <summary>Which of the given short names are ACTIVE users in dbo.Users. Used to prove a note's
+    /// person mention names a real identity before it is persisted and mailed. Returns the ids as the
+    /// roster spells them, in a case-insensitive set — callers should test membership, not equality.</summary>
+    Task<HashSet<string>> GetActiveUserIdsAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
 }

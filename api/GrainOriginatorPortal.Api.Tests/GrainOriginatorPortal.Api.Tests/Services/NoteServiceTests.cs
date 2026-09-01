@@ -18,6 +18,7 @@ public class NoteServiceTests
     private readonly Mock<IDisplayNameLookupRepository> _displayNameMock = new();
     private readonly Mock<IRequestContextService> _requestContextMock = new();
     private readonly Mock<IDailyRecapGroupService> _groupsMock = new();
+    private readonly Mock<IEntitlementsRepository> _entitlementsMock = new();
     private readonly NoteService _sut;
 
     public NoteServiceTests()
@@ -37,6 +38,7 @@ public class NoteServiceTests
             _displayNameMock.Object,
             _requestContextMock.Object,
             _groupsMock.Object,
+            _entitlementsMock.Object,
             new Mock<ILogger<NoteService>>().Object);
     }
 

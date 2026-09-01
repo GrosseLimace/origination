@@ -5,7 +5,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data;
 
 /// <summary>
 /// Read-only DbContext for the TradeUnitPreferences database.
-/// Only maps views — no migrations or writes are performed against this context.
+/// No migrations or writes are performed against this context — every entity is keyless so a write
+/// can't be attempted by accident, including the one base table mapped here (dbo.Users).
 ///
 /// Replaced EntitlementsDbContext (2026-08-18). Trade-unit assignment moved to a dedicated
 /// application where managers add users and assign trade units; this app reads the result and never
@@ -20,6 +21,8 @@ public class TradeUnitPreferencesDbContext : DbContext
     }
 
     public DbSet<UserTradeUnitPreference> UserTradeUnitPreferences => Set<UserTradeUnitPreference>();
+
+    public DbSet<TradeUnitPreferencesUser> Users => Set<TradeUnitPreferencesUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +39,15 @@ public class TradeUnitPreferencesDbContext : DbContext
             entity.Property(e => e.AssignmentSource).HasColumnName("AssignmentSource").HasMaxLength(50);
             entity.Property(e => e.GroupId).HasColumnName("GroupId");
             entity.Property(e => e.GroupName).HasColumnName("GroupName").HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<TradeUnitPreferencesUser>(entity =>
+        {
+            entity.ToTable("Users", schema: "dbo");
+            entity.HasNoKey();
+            entity.Property(e => e.UserId).HasColumnName("UserId").HasMaxLength(50);
+            entity.Property(e => e.DisplayName).HasColumnName("DisplayName").HasMaxLength(200);
+            entity.Property(e => e.IsActive).HasColumnName("IsActive");
         });
     }
 }

@@ -60,4 +60,20 @@ public class EntitlementsRepository : IEntitlementsRepository
             .Distinct()
             .ToListAsync(cancellationToken))!;
     }
+
+    public async Task<HashSet<string>> GetActiveUserIdsAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Filtered on the ids actually asked about rather than loading the roster: a note carries a
+        // handful of mentions, and the Logic App's equivalent lookup already has to cap itself at
+        // 2000 rows to fetch the whole list.
+        var matches = await _entitlementsContext.Users
+            .AsNoTracking()
+            .Where(u => u.IsActive && userIds.Contains(u.UserId))
+            .Select(u => u.UserId)
+            .ToListAsync(cancellationToken);
+
+        return matches.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
 }
