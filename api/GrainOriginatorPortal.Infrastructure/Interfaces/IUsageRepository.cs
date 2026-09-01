@@ -24,6 +24,11 @@ public interface IUsageRepository
     Task<List<string>> GetExcludedUserIdsAsync(CancellationToken cancellationToken);
     Task<List<UserDisplayName>> GetDisplayNamesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
 
+    /// <summary>All rows of TradeUnitPreferences dbo.vw_UserManagerLookup (~1,150; one per user).
+    /// The caller caches the list and computes subtrees in memory — the two databases can't be
+    /// joined in SQL. SqlExceptions propagate for the service layer to map.</summary>
+    Task<List<UserManagerRow>> GetUserManagerLookupAsync(CancellationToken cancellationToken);
+
     // ── Excluded-users administration ──
     Task<List<ExcludedUserRow>> GetExcludedUsersAsync(CancellationToken cancellationToken);
 

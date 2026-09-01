@@ -34,6 +34,11 @@ export class UserRolesService {
   readonly roles: Signal<string[]> = this._roles.asReadonly();
   readonly isAdmin = computed(() => this._roles().includes('Admin'));
 
+  /** Usage-dashboard read access: Admin, or the synthetic UsageDashboardViewer role that
+   *  /api/me appends for people on the server's UsageDashboard:Viewers config allowlist. */
+  readonly canViewUsageDashboard = computed(() =>
+    this._roles().includes('Admin') || this._roles().includes('UsageDashboardViewer'));
+
   constructor() {
     this.msalBroadcast.inProgress$.pipe(
       filter(s => s === InteractionStatus.None),

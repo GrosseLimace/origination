@@ -53,14 +53,16 @@ export class HeaderComponent {
   // Groups (daily recap + @-mentionable in notes). On in every environment — see
   // environment.dailyDigestEnabled, which still carries the original Daily Digest name.
   readonly dailyDigestEnabled = environment.dailyDigestEnabled;
-  // Gate the Usage Dashboard nav button to users with the `Admin` app role.
-  // The check is purely against the `Admin` role claim on the user's JWT — never
-  // against group membership directly. Each environment has its own Super Users
+  // Gate the Usage Dashboard nav button to users who can actually open it: the `Admin`
+  // app role, or the server's UsageDashboard:Viewers config allowlist (surfaced by
+  // /api/me as the synthetic `UsageDashboardViewer` role). Admin itself is never checked
+  // against group membership directly — each environment has its own Super Users
   // security group (Origination App Dev / QA / Prod Super Users) that's assigned
   // the Admin role on that env's API Enterprise Application, and membership flows
-  // into the access token's roles claim. Route still re-enforces via `adminGuard`.
+  // into the access token's roles claim. Route re-enforces via `usageDashboardGuard`,
+  // and every dashboard endpoint re-enforces the same policy server-side.
   get usageDashboardEnabled(): boolean {
-    return environment.usageDashboardEnabled && this.isAdmin();
+    return environment.usageDashboardEnabled && this.userRoles.canViewUsageDashboard();
   }
 
   mobileMenuOpen = signal(false);

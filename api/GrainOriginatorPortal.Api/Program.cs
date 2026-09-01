@@ -87,6 +87,9 @@ builder.Services.AddProblemDetails();
 // Configuration in appsettings.json "AzureAd" section.
 // =============================================================================
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+// Non-admin usage-dashboard viewers, granted by short name in config because Entra role
+// assignment needs portal permissions the team doesn't hold. See UsageDashboardAccess.
+var usageDashboardViewers = builder.Configuration.GetSection("UsageDashboard:Viewers").Get<string[]>() ?? [];
 builder.Services.AddAuthorization(options =>
 {
     // RequireRole honors the identity's RoleClaimType so it works whether the
@@ -94,6 +97,12 @@ builder.Services.AddAuthorization(options =>
     // or as `ClaimTypes.Role` (mapped). Both paths resolve to the same "Admin" check.
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireRole("Admin"));
+
+    // Usage-dashboard read surface: Admin OR the UsageDashboard:Viewers allowlist.
+    // Exclusion administration stays AdminOnly (+ the ExclusionManagers allowlist).
+    options.AddPolicy(GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.PolicyName, policy =>
+        policy.RequireAssertion(ctx =>
+            GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.CanView(ctx.User, usageDashboardViewers)));
 });
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 
@@ -230,6 +239,9 @@ builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
 // Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
+// Scoped (not singleton like IAppAccessService) because it reads through the scoped
+// IUsageRepository/DbContext; the directory itself is shared via IMemoryCache.
+builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();

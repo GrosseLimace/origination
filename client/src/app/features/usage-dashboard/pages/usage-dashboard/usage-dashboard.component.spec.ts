@@ -128,6 +128,50 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
 
     expect(api.calls['weeklyTrend']).toBe(1);
   });
+
+  it('refetches every always-visible panel exactly once when the manager filter changes', () => {
+    component = build();
+
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+
+    expect(api.calls['summary']).toBe(2);
+    expect(api.calls['users']).toBe(2);
+    expect(api.calls['dailyActive']).toBe(2);
+    expect(api.calls['featureSessions']).toBe(2);
+    // Unlike the date range, the manager narrows the universe, so the weekly trend refetches too.
+    expect(api.calls['weeklyTrend']).toBe(2);
+  });
+
+  it('includes the manager in the tab dedupe key', () => {
+    component = build();
+    component.onTabChange('whats-doing');
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(1);
+
+    // A manager change invalidates the loaded tab...
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(2);
+
+    // ...but revisiting with the same manager does not refetch.
+    component.onTabChange('whos-using-it');
+    TestBed.tick();
+    component.onTabChange('whats-doing');
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(2);
+  });
+
+  it('clearing the manager filter returns to the unfiltered universe with one more fetch', () => {
+    component = build();
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+
+    component.managerFilter.set(null);
+    TestBed.tick();
+
+    expect(api.calls['users']).toBe(3); // mount, filtered, cleared
+  });
 });
 
 describe('UsageDashboardComponent — loading state', () => {

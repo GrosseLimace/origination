@@ -98,6 +98,14 @@ export interface ExclusionPermissions {
   canManage: boolean;
 }
 
+/** An active manager (≥1 active report in the org hierarchy) for the dashboard's manager filter. */
+export interface UsageManager {
+  userId: string;        // short name (UPN before '@') — the same key usage rows use
+  displayName: string;
+  directReports: number;
+  totalReports: number;  // entire subtree at any depth, excluding the manager
+}
+
 export interface QueryLibraryUsage {
   queryText: string;
   timesUsed: number;

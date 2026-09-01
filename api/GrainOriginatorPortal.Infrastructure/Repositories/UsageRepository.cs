@@ -58,6 +58,15 @@ public class UsageRepository : IUsageRepository
         return rows.Select(r => new UserDisplayName(r.UserId, r.DisplayName)).ToList();
     }
 
+    public async Task<List<UserManagerRow>> GetUserManagerLookupAsync(CancellationToken cancellationToken)
+    {
+        return await _entDb.UserManagerLookups
+            .AsNoTracking()
+            .Select(u => new UserManagerRow(
+                u.UserId, u.DisplayName, u.HierId, u.ManagerUserId, u.ManagerDisplayName, u.ManagerHierId))
+            .ToListAsync(cancellationToken);
+    }
+
     // ── Excluded-users administration ──
 
     public async Task<List<ExcludedUserRow>> GetExcludedUsersAsync(CancellationToken cancellationToken)

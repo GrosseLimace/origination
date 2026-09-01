@@ -45,3 +45,13 @@ public record FeatureUser(string FeatureCode, string UserId);
 
 /// <summary>A row of dbo.UsageDashboardExcludedUsers, for the admin management panel.</summary>
 public record ExcludedUserRow(int Id, string UserId, string? Reason, string CreatedBy, DateTime CreatedAt);
+
+/// <summary>A row of TradeUnitPreferences dbo.vw_UserManagerLookup. HierId is a materialized org
+/// path ("01.11.02"); a manager's subtree is every row whose HierId starts with theirs + ".".</summary>
+public record UserManagerRow(
+    string UserId,
+    string? DisplayName,
+    string? HierId,
+    string? ManagerUserId,
+    string? ManagerDisplayName,
+    string? ManagerHierId);
