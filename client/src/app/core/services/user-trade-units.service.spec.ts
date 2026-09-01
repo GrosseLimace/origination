@@ -29,6 +29,7 @@ describe('UserTradeUnitsService', () => {
   let dataPreload: { forceReload: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
+    sessionStorage.removeItem(UserTradeUnitsService.WATCH_MARKER_KEY);
     api = { getUserTradeUnits: vi.fn(() => of(GROUPS)) };
     const selectedTradeUnits = signal<string[]>([]);
     appState = {
@@ -55,6 +56,7 @@ describe('UserTradeUnitsService', () => {
   });
 
   afterEach(() => {
+    sessionStorage.removeItem(UserTradeUnitsService.WATCH_MARKER_KEY);
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -173,7 +175,7 @@ describe('UserTradeUnitsService', () => {
     // The pruned selection is itself a TU change, which drives the preload — no forced reload on top.
     expect(dataPreload.forceReload).not.toHaveBeenCalled();
 
-    // Watch is torn down — no further polling / reloads
+    // Polling is torn down — no further poll-driven reloads
     vi.advanceTimersByTime(5_000);
     expect(api.getUserTradeUnits).toHaveBeenCalledTimes(1);
   });
@@ -191,7 +193,10 @@ describe('UserTradeUnitsService', () => {
     expect(dataPreload.forceReload).toHaveBeenCalledTimes(1);
   });
 
-  it('scopes a user with no selection to their first group after close so data appears', () => {
+  it('selects nothing for a user who just gained their first groups — they pick group, then units', () => {
+    // Covers both the genuinely-new user and the user who left every group and rejoined (the
+    // two are indistinguishable here). Auto-selecting a group's every unit reads as the app
+    // choosing for you — the selector's prompts guide the pick instead.
     vi.useFakeTimers();
     const fakeWin = { closed: false, opener: {}, focus: vi.fn() };
     vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
@@ -200,8 +205,32 @@ describe('UserTradeUnitsService', () => {
     fakeWin.closed = true;
     vi.advanceTimersByTime(600);
 
-    expect(appState.setSelectedGroupNames).toHaveBeenCalledWith(['West']);
-    expect(appState.setTradeUnits).toHaveBeenCalledWith(['1085', '2190']);
+    expect(appState.setUserGroups).toHaveBeenCalledWith(GROUPS); // dropdowns fill in…
+    expect(appState.setSelectedGroupNames).not.toHaveBeenCalled(); // …but nothing gets picked
+    expect(appState.setTradeUnits).not.toHaveBeenCalled();
+    expect(dataPreload.forceReload).not.toHaveBeenCalled();
+  });
+
+  it('leaves an existing user whose selection was pruned away to re-pick a group and trade units', () => {
+    // They removed the group holding their selected trade units in Trade Unit Preferences.
+    // Pruning empties the selection — and it must STAY empty ("Select a Group" → "Select Trade
+    // Units"), not silently become every unit of whichever group happens to survive.
+    vi.useFakeTimers();
+    const fakeWin = { closed: false, opener: {}, focus: vi.fn() };
+    vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+    appState.userGroups.set(GROUPS);
+    appState.selectedGroupNames.set(['West']);
+    appState.selectedTradeUnits.set(['1085', '2190']);
+    const westRemoved = [GROUPS[1]]; // only East is left
+    api.getUserTradeUnits.mockReturnValue(of(westRemoved));
+
+    service.openPreferences();
+    fakeWin.closed = true;
+    vi.advanceTimersByTime(600);
+
+    expect(appState.setSelectedGroupNames).toHaveBeenCalledWith([]); // pruned, not re-picked
+    expect(appState.setTradeUnits).toHaveBeenCalledWith([]);         // pruned, not auto-filled
+    expect(appState.setTradeUnits).not.toHaveBeenCalledWith(['3000']);
     expect(dataPreload.forceReload).not.toHaveBeenCalled();
   });
 
@@ -249,7 +278,7 @@ describe('UserTradeUnitsService', () => {
     expect(dataPreload.forceReload).not.toHaveBeenCalled();
   });
 
-  it('refreshes when Origination regains focus while the window is still open, then stops after close', () => {
+  it('refreshes when Origination regains focus while the window is still open, and again after close', () => {
     vi.useFakeTimers();
     const fakeWin = { closed: false, opener: {}, focus: vi.fn() };
     vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
@@ -265,8 +294,94 @@ describe('UserTradeUnitsService', () => {
     expect(api.getUserTradeUnits).toHaveBeenCalledTimes(2);
     expect(dataPreload.forceReload).toHaveBeenCalledTimes(1); // second refresh saw no change
 
-    window.dispatchEvent(new Event('focus'));           // listener removed after close
+    // `closed` can be a lie (severed handle) — focus keeps refreshing until the deadline
+    window.dispatchEvent(new Event('focus'));
+    expect(api.getUserTradeUnits).toHaveBeenCalledTimes(3);
+  });
+
+  it('still refreshes on the real close when a severed handle reported closed from the start', () => {
+    // A popup that navigates through a Cross-Origin-Opener-Policy page loses its handle:
+    // `closed` reads true while the window is still open. The early poll-driven refresh finds
+    // nothing changed — the user hasn't done anything yet — and must NOT end the watch.
+    vi.useFakeTimers();
+    const fakeWin = { closed: true, opener: {}, focus: vi.fn() };
+    vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+    appState.userGroups.set(GROUPS);
+    appState.selectedTradeUnits.set(['1085']);
+
+    service.openPreferences();
+    vi.advanceTimersByTime(600);                        // poll believes the lie, refreshes early
+    expect(api.getUserTradeUnits).toHaveBeenCalledTimes(1);
+    expect(dataPreload.forceReload).not.toHaveBeenCalled(); // nothing changed yet
+
+    // Minutes later the user finishes in Trade Unit Preferences, really closes it, and focus
+    // returns to Origination — the surviving focus listener picks the change up.
+    const changed = [{ ...GROUPS[0], tradeUnitCodes: ['1085', '2190', '4000'] }, GROUPS[1]];
+    api.getUserTradeUnits.mockReturnValue(of(changed));
+    vi.advanceTimersByTime(120_000);
+    window.dispatchEvent(new Event('focus'));
+
     expect(api.getUserTradeUnits).toHaveBeenCalledTimes(2);
+    expect(appState.setUserGroups).toHaveBeenCalledWith(changed);
+    expect(dataPreload.forceReload).toHaveBeenCalledTimes(1); // selection unchanged → forced reload
+  });
+
+  it('retires the focus watch at the deadline', () => {
+    vi.useFakeTimers();
+    const fakeWin = { closed: true, opener: {}, focus: vi.fn() };
+    vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+    appState.userGroups.set(GROUPS);
+
+    service.openPreferences();
+    vi.advanceTimersByTime(600);
+    expect(api.getUserTradeUnits).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(31 * 60_000);                // past FOCUS_WATCH_MAX_MS
+    window.dispatchEvent(new Event('focus'));
+    expect(api.getUserTradeUnits).toHaveBeenCalledTimes(1); // watch expired — no refresh
+
+    window.dispatchEvent(new Event('focus'));           // and the listener is gone entirely
+    expect(api.getUserTradeUnits).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-arms the focus watch after a page reload while a preferences window was open', () => {
+    // The watch's listeners die with the document on reload, but the popup lives on. A fresh
+    // service instance must pick the watch back up from the sessionStorage marker so closing
+    // the popup still refreshes the groups.
+    sessionStorage.setItem(UserTradeUnitsService.WATCH_MARKER_KEY, String(Date.now() + 60_000));
+    TestBed.runInInjectionContext(() => new UserTradeUnitsService());
+
+    window.dispatchEvent(new Event('focus'));
+
+    expect(api.getUserTradeUnits).toHaveBeenCalledTimes(1);
+    expect(appState.setUserGroups).toHaveBeenCalledWith(GROUPS);
+  });
+
+  it('after a reload re-arm, the first fetch only establishes the baseline — no forced reload', () => {
+    // The page load already fetched fresh data; reacting to the first focus-refresh as a
+    // "change" would spin every loading state for nothing. The SECOND refresh, with a real
+    // baseline to compare against, reacts normally.
+    sessionStorage.setItem(UserTradeUnitsService.WATCH_MARKER_KEY, String(Date.now() + 60_000));
+    TestBed.runInInjectionContext(() => new UserTradeUnitsService());
+    appState.selectedTradeUnits.set(['1085']);
+
+    window.dispatchEvent(new Event('focus'));
+    expect(api.getUserTradeUnits).toHaveBeenCalledTimes(1);
+    expect(dataPreload.forceReload).not.toHaveBeenCalled();
+
+    const changed = [{ ...GROUPS[0], tradeUnitCodes: ['1085', '4000'] }, GROUPS[1]];
+    api.getUserTradeUnits.mockReturnValue(of(changed));
+    window.dispatchEvent(new Event('focus'));
+    expect(dataPreload.forceReload).toHaveBeenCalledTimes(1); // real change, selection unchanged
+  });
+
+  it('ignores an expired watch marker on startup', () => {
+    sessionStorage.setItem(UserTradeUnitsService.WATCH_MARKER_KEY, String(Date.now() - 1));
+    TestBed.runInInjectionContext(() => new UserTradeUnitsService());
+
+    window.dispatchEvent(new Event('focus'));
+
+    expect(api.getUserTradeUnits).not.toHaveBeenCalled();
   });
 
   it('openPreferences() twice keeps a single close-watch', () => {

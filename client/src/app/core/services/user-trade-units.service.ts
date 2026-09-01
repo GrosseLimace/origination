@@ -36,6 +36,20 @@ export class UserTradeUnitsService {
 
   static readonly WINDOW_NAME = 'scoular-trade-unit-prefs';
   private static readonly CLOSE_POLL_MS = 500;
+  /** How long after opening the preferences window focus events keep triggering a refresh. */
+  private static readonly FOCUS_WATCH_MAX_MS = 30 * 60_000;
+  /** sessionStorage marker: a preferences window was opened and its watch runs until this epoch ms. */
+  static readonly WATCH_MARKER_KEY = 'scoular-tup-watch-until';
+
+  constructor() {
+    // A page reload while the preferences window is open orphans the watch: the popup lives on,
+    // but the listeners died with the previous document. If a recent openPreferences() left its
+    // marker in this tab, re-arm the focus half (the window handle itself is unrecoverable, so
+    // there is no close-poll — the refresh fires when focus returns to Origination).
+    let watchUntil = 0;
+    try { watchUntil = Number(sessionStorage.getItem(UserTradeUnitsService.WATCH_MARKER_KEY) ?? 0); } catch { /* storage unavailable */ }
+    if (watchUntil > Date.now()) this.watchFocus(watchUntil);
+  }
 
   /**
    * Fetch the user's groups and apply them to app state.
@@ -122,23 +136,43 @@ export class UserTradeUnitsService {
    * Watch the preferences window and refresh when the user comes back. Two triggers, because
    * neither is reliable alone:
    *  - `window` focus: closing the popup (or just clicking back) returns focus to Origination.
-   *    This is the primary trigger and works even if the browser mis-reports `closed`.
-   *  - polling `win.closed` (the only cross-origin-readable property): the backup that also
-   *    tears the focus listener down once the window is really gone.
-   * Refreshes are no-ops unless the groups actually changed, so extra triggers are cheap.
+   *    This is the primary trigger and works even when the browser mis-reports `closed`.
+   *  - polling `win.closed` (the only cross-origin-readable property): the prompt trigger for
+   *    a real close, so the refresh doesn't wait for the user to click anything.
+   *
+   * `win.closed` cannot end the focus watch: if the popup navigates through a page that sends
+   * Cross-Origin-Opener-Policy (the Microsoft login redirect can), the browser severs our handle
+   * and it reports `closed: true` while the window is still on screen. Tearing the focus listener
+   * down on that lie ends the watch before the user has changed anything, and the real close then
+   * goes unnoticed. So `closed` only stops the polling; the focus listener retires itself at a
+   * deadline instead. Refreshes are no-ops unless the groups actually changed, so the extra
+   * focus-triggered fetches in the meantime are cheap.
    */
   private watchForClose(win: Window): void {
     this.stopWatching();
     this.lastGroupsKey = this.groupsKey(this.appState.userGroups());
+    const watchUntil = Date.now() + UserTradeUnitsService.FOCUS_WATCH_MAX_MS;
+    try { sessionStorage.setItem(UserTradeUnitsService.WATCH_MARKER_KEY, String(watchUntil)); } catch { /* storage unavailable */ }
 
-    this.focusHandler = () => this.refreshIfChanged();
-    window.addEventListener('focus', this.focusHandler);
+    this.watchFocus(watchUntil);
 
     this.closeWatch = setInterval(() => {
       if (!win.closed) return;
-      this.stopWatching();
+      clearInterval(this.closeWatch!);
+      this.closeWatch = null;
       this.refreshIfChanged();
     }, UserTradeUnitsService.CLOSE_POLL_MS);
+  }
+
+  private watchFocus(watchUntil: number): void {
+    this.focusHandler = () => {
+      if (Date.now() > watchUntil) {
+        this.stopWatching();
+        return;
+      }
+      this.refreshIfChanged();
+    };
+    window.addEventListener('focus', this.focusHandler);
   }
 
   private stopWatching(): void {
@@ -158,8 +192,11 @@ export class UserTradeUnitsService {
    *  - stale selections are pruned by `load()`; if that changed the selection, the normal
    *    TU-change pipeline in DataPreloadService reloads the data by itself;
    *  - if the selection is unchanged, force a full data reload (entitlements changed underneath);
-   *  - if they now have assignments but nothing selected (a brand-new user), scope them to their
-   *    first group so their producers show up right away;
+   *  - if the selection is (or was pruned to) empty, leave it empty: the selector prompts them to
+   *    pick a group and then trade units, the same flow as first sign-in or changing groups by
+   *    hand. Nothing is ever selected on the user's behalf — an earlier version scoped first-time
+   *    users to their first group with every unit selected, but rejoining after leaving all
+   *    groups looks identical to first-time setup and reads as the app choosing for you;
    *  - if they removed everything, `load()` already cleared the selection and the preload
    *    short-circuits; the selector shows the "no trade units assigned" callout.
    * Best effort: a failure keeps what we already had and is logged for diagnosis.
@@ -173,17 +210,15 @@ export class UserTradeUnitsService {
         this.refreshInFlight = false;
         const key = this.groupsKey(groups);
         if (key === this.lastGroupsKey) return; // nothing changed in Trade Unit Preferences
+        const hadBaseline = this.lastGroupsKey !== null;
         this.lastGroupsKey = key;
+        // Re-armed after a page reload: there is no pre-popup snapshot to compare against, and the
+        // page load itself already fetched fresh data — this fetch only establishes the baseline.
+        if (!hadBaseline) return;
         if (groups.length === 0) return;
 
         const selection = this.appState.selectedTradeUnits();
-        if (selection.length === 0) {
-          if (this.appState.allProducersMode()) return; // they deliberately scoped to everyone
-          const first = groups[0];
-          this.appState.setSelectedGroupNames(groups.length > 1 ? [first.groupName] : []);
-          this.appState.setTradeUnits([...first.tradeUnitCodes]); // selection change → preload
-          return;
-        }
+        if (selection.length === 0) return; // they pick a group, then trade units — never us
         if (this.selectionKey() === selectionBefore) this.dataPreload.forceReload();
       },
       error: err => {
