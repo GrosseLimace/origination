@@ -77,7 +77,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
 
     private async Task WarmActiveSetsAsync(CancellationToken stoppingToken)
     {
-        var keepFor = TimeSpan.FromHours(Math.Max(1, ReadInt("Ctrm:KeepWarmForHours", 8)));
+        var keepFor = TimeSpan.FromHours(Math.Max(1, ReadInt("Ctrm:KeepWarmForHours", 2)));
         var sets = _registry.ActiveSets(keepFor, DateTime.UtcNow);
         if (sets.Count == 0) return;
 
@@ -101,6 +101,17 @@ public sealed class CtrmKeepWarmService : BackgroundService
                 if (!tickets.Ok)
                     _logger.LogWarning("CTRM keep-warm: ticket read for {Producers} producer(s) did not complete: {Status}.",
                         codes.Count, tickets.Status);
+
+                // Spot Loads, explicitly. Its window is -RecentTicketDays/+ForwardTicketDays, which can never
+                // coincide with the 366-day history slices above, so warming those left the one read a user
+                // watches a spinner for cold on every expiry. The window comes from CtrmTicketRepository so the
+                // dates - and therefore the cache key - cannot drift from what the request itself computes.
+                var (from, to) = CtrmTicketRepository.SpotLoadWindow(
+                    CtrmTicketRepository.RecentTicketDaysFrom(_configuration));
+                var spotLoads = await _ticketReader.GetForProducersAsync(codes, from, to, CancellationToken.None);
+                if (!spotLoads.Ok)
+                    _logger.LogWarning("CTRM keep-warm: Spot Loads read for {Producers} producer(s) did not complete: {Status}.",
+                        codes.Count, spotLoads.Status);
             }
             catch (Exception ex)
             {

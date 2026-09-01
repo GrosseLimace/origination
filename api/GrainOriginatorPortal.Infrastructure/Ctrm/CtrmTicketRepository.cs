@@ -413,15 +413,35 @@ public sealed class CtrmTicketRepository : ITicketRepository
             return [];
         }
 
-        // The ODS implementation, not a copy of it. It unions the CustomerTradeUnit snapshot with
-        // contract-derived codes, and missing that union silently drops producers from Spot Loads.
-        var codes = await _ods.ResolveSpotLoadProducerCodesAsync(tradeUnits, cancellationToken);
+        // The SAME producer scope the trade-unit-wide ticket read uses, deliberately - not the ODS
+        // resolver this used to call.
+        //
+        // That resolver unions the CustomerTradeUnit snapshot with codes taken from ODS
+        // base.vw_CurrentContracts, and its comment claimed dropping the union "silently drops producers
+        // from Spot Loads". Measured 2026-08-31 against QA, it does not: the union adds 29-30 codes per
+        // trade unit (1340: 1,040 contract-derived + 1,273 snapshot = 1,302 union), and EVERY one of those
+        // extras - ADMMLI, BUNGCO, KANSGL, FCSTKAN, CITYDO - is absent from dbo.Customer entirely. They are
+        // commercial counterparties Scoular buys from, not producers. Actionable Insights builds its cards
+        // by iterating the customers it knows, so a ticket whose code matches no customer can never render:
+        // we were fetching, mapping and serialising those rows for the browser to discard.
+        //
+        // Three things follow from using the snapshot scope instead. The last ODS CONTRACT read leaves this
+        // path, which is the point of moving to CTRM. The producer set becomes stable - it no longer changes
+        // whenever a contract is retagged - so the reader's cache key (which hashes the set) stops
+        // invalidating itself. And the codes arrive trimmed, which fixes a real bug: codeSet below was built
+        // from the untrimmed list while the mapper trims before comparing, so a CHAR-padded contract-derived
+        // code silently lost its tickets.
+        var codes = await ResolveTradeUnitProducerCodesAsync(tradeUnits, cancellationToken);
         if (codes.Count == 0)
         {
             _logger.LogInformation("CTRM tickets: no in-scope producers for the selected trade units.");
             _provenance.RecordTickets("ctrm", "NoProducersInScope", 0);
             return [];
         }
+
+        // Registered so the keep-warm cycle maintains this window's cache entry - without it, Spot Loads
+        // is the one user-facing read nothing ever warms.
+        _warmRegistry?.Touch(codes, DateTime.UtcNow);
 
         // Matches the ODS cutoff exactly. The extra day on the far end is headroom for clock skew
         // against the Db2 host, the same allowance the per-producer windows make.
@@ -430,8 +450,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         // week ahead rather than to today: enough for realistic forward-dating, and nearly free because the
         // cost of a ticket query is the scan rather than the span (30 days measured at 6.1s, one day at
         // 11.6s). A ticket dated further out than this would still show on ODS and not here.
-        var from = DateTime.UtcNow.Date.AddDays(-RecentTicketDays);
-        var to = DateTime.UtcNow.Date.AddDays(ForwardTicketDays);
+        var (from, to) = SpotLoadWindow(RecentTicketDays);
 
         var read = await _reader.GetForProducersAsync(codes, from, to, cancellationToken);
         if (!read.Ok)
@@ -596,6 +615,24 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// into the server's 366-day cap on the whole range.
     /// </remarks>
     private const int ForwardTicketDays = 7;
+
+    /// <summary>
+    /// The bill-of-lading window Spot Loads reads, given the configured lookback.
+    /// </summary>
+    /// <remarks>
+    /// Shared with <c>CtrmKeepWarmService</c> on purpose. The reader's cache key embeds these dates, so a
+    /// warm-up that computed them even slightly differently would populate a key nobody reads - which is
+    /// exactly how the keep-warm cycle came to miss this window entirely (it warmed the three 366-day
+    /// history slices, whose dates can never coincide with -30/+7). One definition, one key.
+    /// </remarks>
+    public static (DateTime From, DateTime To) SpotLoadWindow(int recentTicketDays) =>
+        (DateTime.UtcNow.Date.AddDays(-Math.Max(1, recentTicketDays)),
+         DateTime.UtcNow.Date.AddDays(ForwardTicketDays));
+
+    /// <summary>The configured Spot Loads lookback, for callers outside this class.</summary>
+    public static int RecentTicketDaysFrom(IConfiguration configuration) =>
+        Math.Max(1, int.TryParse(configuration["Ctrm:RecentTicketDays"]?.Trim(),
+            NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 30);
 
     private int ReadInt(string key, int fallback) =>
         int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)

@@ -636,6 +636,126 @@ public class CtrmTicketReaderTests
         Assert.Equal(1, client.Calls);
     }
 
+    // -------------------------------------------------------------------------
+    // Spot Loads: the batched single-window read is what a user watches a spinner for, so it is scheduled
+    // and cached like an interactive read rather than like the background trade-unit walk.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TheSpotLoadsReadRunsAsInteractiveWork_NotBehindTheBackgroundThrottle()
+    {
+        // The bug this pins: the read was routed on "does this scope have a cache key", and the chunked read
+        // has none (its caller caches the whole window), so Spot Loads was treated as background work. That
+        // cost it up to Ctrm:BackgroundMaxDeferSeconds of deferral PER PAGE behind any interactive read.
+        // Observable proof: while its page is in flight, the throttle reports interactive work in flight.
+        var client = new RecordingClient { UseGate = true };
+        var sut = Sut(client);
+
+        var read = sut.GetForProducersAsync([Producer], new DateTime(2026, 8, 1), new DateTime(2026, 8, 26), CancellationToken.None);
+
+        while (client.Calls == 0) await Task.Delay(10);
+        Assert.True(CtrmTradeUnitThrottle.InteractiveInFlight,
+            "the Spot Loads page should announce itself as interactive, so the trade-unit walk stands aside");
+
+        client.Gate.SetResult();
+        await read;
+
+        Assert.False(CtrmTradeUnitThrottle.InteractiveInFlight);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheTradeUnitWalkStaysBackgroundWork()
+    {
+        // The other half of the same distinction: nobody watches the walk, so it must NOT claim interactive
+        // priority - otherwise it would make producer clicks stand aside for it.
+        var client = new RecordingClient { UseGate = true };
+        var sut = Sut(client, Config(lookbackDays: 30));
+
+        var read = sut.GetForProducersHistoryAsync([Producer], CancellationToken.None);
+
+        while (client.Calls == 0) await Task.Delay(10);
+        Assert.False(CtrmTradeUnitThrottle.InteractiveInFlight,
+            "the background walk must not present itself as interactive");
+
+        client.Gate.SetResult();
+        await read;
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheSpotLoadsWindowIsServedStale_SoNobodyWaitsOnItsRefresh()
+    {
+        // Previously this read passed LiveTtl() with no stale-while-revalidate, so on expiry the entry was
+        // dropped and whoever arrived next paid the full walk in the foreground - which, at a ~3-5s read and
+        // a 60s TTL, was nearly every visit to Actionable Insights.
+        var now = new DateTime(2026, 8, 31, 12, 0, 0, DateTimeKind.Utc);
+        var client = new RecordingClient();
+        var sut = Sut(client, Config(tradeUnitCurrentWindowMinutes: 1), () => now);
+        var from = new DateTime(2026, 8, 1);
+        var to = new DateTime(2026, 8, 26);
+
+        await sut.GetForProducersAsync([Producer], from, to, CancellationToken.None);
+        Assert.Equal(1, client.Calls);
+
+        // Expire it, then hold the refresh open. The caller must still get an answer immediately.
+        now = now.AddMinutes(2);
+        client.HoldNextCall = true;
+
+        var second = sut.GetForProducersAsync([Producer], from, to, CancellationToken.None);
+        Assert.True(second.IsCompleted, "an expired-but-good Spot Loads window must be served without waiting");
+
+        // ...and a caller arriving DURING the refresh is served too, not blocked behind it.
+        var third = sut.GetForProducersAsync([Producer], from, to, CancellationToken.None);
+        Assert.True(third.IsCompleted, "callers arriving mid-refresh must get the previous copy, not the pending one");
+
+        client.Gate.SetResult();
+        await second;
+        await third;
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheSpotLoadsWindowUsesTheTradeUnitPageCap_NotTheInteractiveOne()
+    {
+        // A 500-code chunk over a 38-day window legitimately runs past the 10-page interactive cap, and
+        // truncating there would silently shorten Spot Loads rather than report it.
+        var client = new PagingClient(totalCount: 8_000);
+        var sut = Sut(client, Config());
+
+        var result = await sut.GetForProducersAsync([Producer], new DateTime(2026, 8, 1), new DateTime(2026, 8, 26), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, result.Status);
+        Assert.Equal(16, result.Value!.Count);
+    }
+
+    /// <summary>Answers with one row per page and a total that implies more pages than the interactive cap.</summary>
+    private sealed class PagingClient : ICtrmGraphQlClient
+    {
+        private readonly int _totalCount;
+        private int _calls;
+
+        public PagingClient(int totalCount) => _totalCount = totalCount;
+
+        public bool IsConfigured => true;
+        public int Calls => Volatile.Read(ref _calls);
+
+        public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
+        {
+            var n = Interlocked.Increment(ref _calls);
+            var response = new CtrmTicketsResponse
+            {
+                Tickets = new CtrmPage<CtrmTicketDto>
+                {
+                    TotalCount = _totalCount,
+                    PageInfo = new CtrmPageInfo { HasNextPage = n < 16 },
+                    Items = [new CtrmTicketDto { TicketNumber = n.ToString() }]
+                }
+            };
+            return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)(object)response });
+        }
+    }
+
     private static List<string> Codes(int count) =>
         [.. Enumerable.Range(0, count).Select(i => $"P{i:D6}")];
 }

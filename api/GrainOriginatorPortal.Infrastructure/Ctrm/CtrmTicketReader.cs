@@ -108,7 +108,14 @@ public sealed class CtrmTicketReader
     }
 
     /// <summary>Which server-side filter a read is using, for cache keys, variables and log lines.</summary>
-    private sealed record Scope(string CacheKey, string Description, string Document, object Filter);
+    /// <param name="Interactive">Whether a user is waiting on this read, which decides how its pages are
+    /// scheduled. Previously inferred from <c>CacheKey.Length &gt; 0</c>, which quietly mis-scheduled Spot
+    /// Loads: its chunked read has no per-scope cache key (the caller caches the whole window instead), so
+    /// it was treated as background work and paid the background penalties - up to
+    /// <c>Ctrm:BackgroundMaxDeferSeconds</c> of deferral PER PAGE behind any interactive read, a slot in the
+    /// shared background budget alongside the trade-unit walk, and the patient HC0045 retry budget. An
+    /// explicit flag keeps "is anyone watching this" separate from "does this scope cache itself".</param>
+    private sealed record Scope(string CacheKey, string Description, string Document, object Filter, bool Interactive);
 
     /// <param name="utcNow">Clock, injectable so the cache's time behaviour can be tested. Defaults to
     /// <see cref="DateTime.UtcNow"/>; DI supplies the default because the type is unregistered.</param>
@@ -141,7 +148,8 @@ public sealed class CtrmTicketReader
             CacheKey: $"customer:{code}",
             Description: $"producer {code}",
             Document: CtrmQueries.TicketsByCustomer,
-            Filter: new { customerId = code });
+            Filter: new { customerId = code },
+            Interactive: true);
 
         // A warm trade-unit set already holds this producer's ticket headers for every window (the
         // home-page load walked them for Build-a-List). Serving those makes the click instant; the live
@@ -258,7 +266,8 @@ public sealed class CtrmTicketReader
             CacheKey: $"contracts:{string.Join(',', numbers)}",
             Description: numbers.Count == 1 ? $"contract {numbers[0]}" : $"{numbers.Count} contracts",
             Document: CtrmQueries.TicketsByContractNumbers,
-            Filter: new { contractNumbers = numbers }));
+            Filter: new { contractNumbers = numbers },
+            Interactive: true));
     }
 
     /// <summary>
@@ -295,8 +304,25 @@ public sealed class CtrmTicketReader
             return Failed($"A bill-of-lading range of {span:F0} days exceeds the server's "
                         + $"{CtrmQueries.MaxTicketRangeDays}-day cap; narrow the window or slice it.");
 
+        // Served like the trade-unit history read, not like a cold per-producer read:
+        //
+        // - TradeUnitCurrentWindowCacheMinutes, not LiveCacheSeconds. This is the same "recent tickets for a
+        //   whole trade unit" question the Build-a-List prompts ask, so it gets the same freshness. At 60s a
+        //   Spot Loads visit was cold nearly every time, because the read costs about as long as the TTL.
+        //
+        // - staleWhileRevalidate, so the caller NEVER waits on a refresh. The card paints from the cached
+        //   copy immediately and the rows update in place when the refresh lands seconds later. Previously
+        //   the entry was dropped on expiry and whoever arrived next paid the full walk in the foreground.
+        //
+        // - the trade-unit page cap, not the interactive one: a 500-code chunk over 38 days legitimately
+        //   returns more than 10 pages, and truncating it would silently shorten Spot Loads.
         var key = $"producers:{from:yyyy-MM-dd}:{to:yyyy-MM-dd}:{codes.Count}:{StableHash(codes)}";
-        return GetCachedAsync(key, LiveTtl(), () => FetchChunkedAsync(codes, from, to, MaxPagesPerWindow));
+        var maxPages = Math.Max(1, ReadInt("Ctrm:TradeUnitTicketMaxPagesPerWindow", DefaultTradeUnitMaxPagesPerWindow));
+        return GetCachedAsync(
+            key,
+            TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:TradeUnitCurrentWindowCacheMinutes", 5))),
+            () => FetchChunkedAsync(codes, from, to, maxPages, interactive: true),
+            staleWhileRevalidate: true);
     }
 
     /// <summary>
@@ -355,12 +381,17 @@ public sealed class CtrmTicketReader
         var setKey = $"{codes.Count}:{StableHash(codes)}";
         RegisterSet(setKey, codes);
 
-        // Same key shape as the single-window read above, so a Spot Loads window and a history window over
-        // the same producers and dates would share an entry - they are the same rows.
+        // Same key SHAPE as the single-window read above, but the two never collide in practice and it is
+        // worth being clear about why: these windows are 366-day slices ending today+1, while Spot Loads asks
+        // for -30/+7, so no From/To pair can coincide. An earlier comment here claimed they would share an
+        // entry, which led to the assumption that warming these windows warmed Spot Loads too. It does not -
+        // CtrmKeepWarmService warms the Spot Loads window explicitly.
+        //
+        // Background, unlike Spot Loads: nobody is watching this walk, so its pages yield to interactive work.
         var results = await Task.WhenAll(windows.Select(w => GetCachedAsync(
             $"producers:{w.From:yyyy-MM-dd}:{w.To:yyyy-MM-dd}:{setKey}",
             TtlForTradeUnitWindow(w.To, today),
-            () => FetchChunkedAsync(codes, w.From, w.To, maxPages),
+            () => FetchChunkedAsync(codes, w.From, w.To, maxPages, interactive: false),
             staleWhileRevalidate: true)));
 
         // Any window failing makes the whole answer incomplete. Reporting the first failure rather than
@@ -583,8 +614,12 @@ public sealed class CtrmTicketReader
     /// No window slicing here, unlike <see cref="FetchAsync"/>: the caller has already chosen a range
     /// inside the server's cap, because the point of this read is that a narrow window is cheap.
     /// </remarks>
+    /// <param name="interactive">True when a user is waiting (Spot Loads), false for the trade-unit walk.
+    /// Chunk concurrency is bounded either way by <c>Ctrm:PageConcurrency</c>; this only decides whether the
+    /// pages queue in the background budget and defer to interactive work, or run as interactive work
+    /// themselves.</param>
     private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchChunkedAsync(
-        List<string> codes, DateTime from, DateTime to, int maxPages)
+        List<string> codes, DateTime from, DateTime to, int maxPages, bool interactive)
     {
         var chunks = codes.Chunk(CtrmCustomerCodes.MaxPerCall).ToList();
         var concurrency = Math.Clamp(ReadInt("Ctrm:PageConcurrency", 4), 1, 8);
@@ -600,7 +635,8 @@ public sealed class CtrmTicketReader
                         CacheKey: string.Empty,
                         Description: $"{chunk.Length} producer(s)",
                         Document: CtrmQueries.TicketsByCustomers,
-                        Filter: new { customerIds = chunk }),
+                        Filter: new { customerIds = chunk },
+                        Interactive: interactive),
                     from, to, maxPages);
             }
             finally
@@ -794,7 +830,7 @@ public sealed class CtrmTicketReader
             // twenty-seven simultaneous requests for one click, and the gateway was measured degrading at
             // nine-way fan-out - so the pages would slow each other down. Background pages are already
             // bounded by CtrmTradeUnitThrottle, so they pass through.
-            using var slot = scope.CacheKey.Length > 0
+            using var slot = scope.Interactive
                 ? new SemaphoreSlim(Math.Clamp(ReadInt("Ctrm:InteractivePageConcurrency", 4), 1, 16))
                 : null;
 
@@ -859,11 +895,14 @@ public sealed class CtrmTicketReader
     /// One ticket page, routed by whether a user is waiting on it or a background walk is.
     /// </summary>
     /// <remarks>
-    /// A batched page (empty cache key - the trade-unit walk and Spot Loads) takes a bounded background slot
-    /// and yields to interactive work. A per-producer or contract-scoped page is what a user is watching a
-    /// spinner for, so it never queues, and it announces itself so the walk stands aside while it runs. The
-    /// server-timeout retry wraps both: CTRM finishes and caches the query after answering HC0045, so an
-    /// identical re-send a few seconds later succeeds.
+    /// <para>Routed on <see cref="Scope.Interactive"/>, not on whether the scope caches itself. A page
+    /// somebody is watching a spinner for never queues, and it announces itself so the trade-unit walk stands
+    /// aside while it runs. A background page (the walk) takes a bounded slot and yields. The server-timeout
+    /// retry wraps both, with different budgets: CTRM finishes and caches the query after answering HC0045,
+    /// so an identical re-send succeeds - but an interactive caller cannot afford to wait 4 x 8s for it.</para>
+    ///
+    /// <para>This used to key off <c>CacheKey.Length</c>, which conflated the two questions and put Spot
+    /// Loads - a read with a spinner in front of it - on the background path.</para>
     /// </remarks>
     private async Task<CtrmReadResult<CtrmTicketsResponse>> FetchTicketPageAsync(Scope scope, DateTime from, DateTime to, int skip)
     {
@@ -875,9 +914,9 @@ public sealed class CtrmTicketReader
                 BuildVariables(scope.Filter, from, to, skip),
                 CancellationToken.None),
             _configuration, _logger, $"tickets page skip={skip} for {scope.Description} {from:yyyy-MM-dd}..{to:yyyy-MM-dd}",
-            interactive: scope.CacheKey.Length > 0);
+            interactive: scope.Interactive);
 
-        if (scope.CacheKey.Length == 0)
+        if (!scope.Interactive)
             return await CtrmTradeUnitThrottle.RunAsync(_configuration, Page);
 
         using var interactive = CtrmTradeUnitThrottle.Interactive();
