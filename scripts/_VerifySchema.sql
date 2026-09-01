@@ -533,6 +533,8 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- -----------------------------------------------------------------------------
 INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'BidSheetLocationBids',        'UQ_BidSheetLocationBids_Location_Commodity_Year_Month'),
+-- Filtered unique (BarchartLocationKey IS NOT NULL): one placement of a BarChart location per trade unit.
+('dbo', 'BidSheetLocations',           'UQ_BidSheetLocations_TradeUnit_BarchartKey'),
 ('dbo', 'BidSheetLocationOrders',      'UQ_BidSheetLocationOrders_User_TradeUnitKey'),
 ('dbo', 'BidSheetPreferences',         'UQ_BidSheetPreferences_User_TradeUnitKey'),
 ('dbo', 'Commodities',                 'IX_Commodities_Code'),
@@ -582,7 +584,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260824151441_UseContractMonthForBidCells'),
 ('20260827140248_UseQuoteAgeNotVendorMode'),
 ('20260827151032_MoveManualBidsToBasisColumn'),
-('20260828173255_AddUnderlyingFutureToBidCells');
+('20260828173255_AddUnderlyingFutureToBidCells'),
+('20260901175652_AddUniqueBarchartPlacementIndex');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
@@ -813,6 +816,17 @@ INSERT INTO @Findings (SortBucket, Category, Item, Expected, Actual, Status)
     WHERE v.WinnerRank = 1
       AND EXISTS (SELECT 1 FROM dbo.BidSheetLocationBids WHERE Source = N'Barchart')
       AND (b.Id IS NULL OR b.Bid <> FORMAT(v.LastPrice, N'0.00##', N'en-US'))
+      -- A user override is not drift. Users may now type over a fed cell, which flips it to
+      -- Source='Manual' until the feed's next run reclaims it -- so the join above finds nothing and
+      -- the cell looked like a missing publish. Only cells with no row of EITHER ownership count.
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.BidSheetLocationBids AS m
+           WHERE m.LocationId    = v.LocationId
+             AND m.CommodityCode = v.CommodityCode
+             AND m.CropYear      = v.CropYear
+             AND m.Month         = v.BidMonth
+             AND m.Source        = N'Manual'
+      )
     HAVING COUNT(*) > 0
 
     UNION ALL

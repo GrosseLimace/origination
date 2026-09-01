@@ -5,10 +5,17 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 /// <summary>Values for <see cref="BidSheetLocationBid.Source"/> — who owns a bid cell.</summary>
 public static class BidSources
 {
-    /// <summary>Entered by a user; the BarChart feed never touches these rows.</summary>
+    /// <summary>
+    /// Entered by a user. Includes a cell they typed over a fed one: the override takes ownership, and
+    /// the feed reclaims it on its next run if it still publishes that cell.
+    /// </summary>
     public const string Manual = "Manual";
 
-    /// <summary>Written by the BarChart bridge; read-only to users (server-enforced).</summary>
+    /// <summary>
+    /// Written by the BarChart bridge. Editable — a user may override it, which flips the cell to
+    /// <see cref="Manual"/>. Fed cells were read-only in the first cut; that rule was dropped so an
+    /// originator can correct a wrong vendor price without waiting for the vendor.
+    /// </summary>
     public const string Barchart = "Barchart";
 }
 

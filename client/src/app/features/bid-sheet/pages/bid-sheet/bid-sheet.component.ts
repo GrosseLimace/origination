@@ -1029,7 +1029,15 @@ export class BidSheetComponent {
    *  mode 'refresh' (a reload AFTER a successful save) degrades transient failures to a soft notice
    *  instead of a red error, so a refresh hiccup never looks like the save failed. */
   private _loadBidData(tradeUnitCodes: string[], onLoaded?: () => void, mode: 'initial' | 'refresh' = 'initial'): void {
-    if (tradeUnitCodes.length === 0) return;
+    if (tradeUnitCodes.length === 0) {
+      // forkJoin over an empty array completes without emitting, so neither the loading flags nor the
+      // callback would ever be settled. Callers pass activeTradeUnits() freely, which is empty
+      // whenever nothing is selected, so this is a normal case rather than a defensive one.
+      this.isLoading.set(false);
+      this.editBidsGridLoading.set(false);
+      onLoaded?.();
+      return;
+    }
     this._loadBidData$.next({ tus: tradeUnitCodes, onLoaded, mode });
   }
 
@@ -2718,6 +2726,14 @@ export class BidSheetComponent {
     if (!value) return value;
     // Same rule as the grid: every fed cell names its board on paper -- the printed sheet is what a
     // producer holds, so the comparison context cannot live in a hover.
+    //
+    // The board describes the FED number, and for the viewed year the value above may be an unsaved
+    // override. Printing the two together stamped a hand-typed price with a board it was never quoted
+    // against; the grid guards this the same way before showing its own symbol.
+    const overridden = col.year === this.editBidsYear() && (col.priceType === 'basis'
+      ? value !== (row.originalBasisBids[gridKey] ?? '').trim()
+      : value !== (row.originalBids[gridKey] ?? '').trim());
+    if (overridden) return value;
     const chip = col.month === 0
       ? this.yearContractFor(row.name, col.year, col.crop, 0)
       : this.cellBoardFor(row.name, col.year, col.crop, col.month);

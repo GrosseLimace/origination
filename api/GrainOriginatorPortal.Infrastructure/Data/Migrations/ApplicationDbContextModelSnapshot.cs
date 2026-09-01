@@ -486,6 +486,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.HasIndex("TradeUnitCode")
                         .HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
 
+                    b.HasIndex("TradeUnitCode", "BarchartLocationKey")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_BidSheetLocations_TradeUnit_BarchartKey")
+                        .HasFilter("[BarchartLocationKey] IS NOT NULL");
+
                     b.ToTable("BidSheetLocations", "dbo");
                 });
 

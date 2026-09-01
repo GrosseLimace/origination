@@ -188,4 +188,50 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         Assert.Equal("99", cell.BasisBid);
         Assert.Equal(BidSources.Manual, cell.Source);
     }
+
+    // The reconcile path runs when two writes for the same cell race: the loser's insert is dropped and
+    // its values are copied onto the row that won. It copied only the cash side, which for a basis-only
+    // bid -- the normal shape here since the migration moved manual bids into BasisBid -- meant losing
+    // the one value the user typed. Driven through the public API by pre-inserting the row the upsert
+    // will collide with.
+    [Fact]
+    public async Task BulkUpsert_KeepsTheBasisWhenItReconcilesARacedInsert()
+    {
+        if (!Enabled) return;
+
+        var name = $"__IT Upsert Race {Guid.NewGuid():N}";
+        // The location exists with no bid for this cell, so the upsert takes its "add" branch...
+        var location = new BidSheetLocation
+        {
+            Name = name,
+            TradeUnitCode = TradeUnit,
+            CreatedBy = "integration-test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.BidSheetLocations.Add(location);
+        await _context.SaveChangesAsync();
+
+        // ...while another writer has already put the cell there. SaveChanges then hits the unique
+        // index and reconciliation folds the user's values onto the existing row.
+        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
+        {
+            LocationId = location.Id,
+            CommodityCode = "IT_UPSERT",
+            CropYear = 2027,
+            Month = 12,
+            Bid = string.Empty,
+            BasisBid = "-10",
+            Source = BidSources.Barchart,
+            CreatedBy = "barchart-feed",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        await _sut.BulkUpsertBidsAsync([Input(name, "", "-40Z")], TradeUnit, "integration-test", default);
+
+        var cell = await CellFor(name);
+        Assert.NotNull(cell);
+        Assert.Equal("-40Z", cell!.BasisBid);
+        Assert.Equal(BidSources.Manual, cell.Source);
+    }
 }

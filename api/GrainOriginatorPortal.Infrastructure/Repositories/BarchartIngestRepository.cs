@@ -665,6 +665,12 @@ WHEN MATCHED AND (t.Source <> N'Barchart'
         t.CommodityCategory = s.CommodityCategory,
         t.BarchartSymbol    = s.Symbol,
         t.QuoteAsOf         = s.QuoteAsOf,
+        -- Deliberately NOT coalesced, unlike the cash side above: on takeover the cell becomes wholly
+        -- the vendor's, so a side the vendor does not publish goes blank rather than keeping a value
+        -- from somewhere else. That includes a basis a user had typed here before the feed reached this
+        -- cell -- the trade-off accepted when the feed was allowed to take a manual cell over. The cash
+        -- side coalesces only because Bid is NOT NULL; blank and NULL mean the same thing there.
+        -- Only 1 of 39,096 windows in the catalog publishes one side without the other.
         t.BasisBid          = s.BasisText,
         t.BasisSymbol       = s.BasisSymbol,
         t.BasisQuoteAsOf    = s.BasisQuoteAsOf,

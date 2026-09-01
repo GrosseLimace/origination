@@ -553,6 +553,15 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
             // Non-unique: the same BarChart location may be placed in multiple trade units (one row per TU).
             entity.HasIndex(e => e.BarchartLocationKey).HasDatabaseName("IX_BidSheetLocations_BarchartLocationKey");
+            // One placement of a BarChart location per trade unit, enforced by the database rather than
+            // only by a read-then-write check. The bulk add fires its creates in PARALLEL, so two
+            // creates for the same pair could both pass that check and both insert -- giving a trade
+            // unit two rows for one elevator, with doubled fed bids that then shadow each other in the
+            // client's name-keyed lookup. Filtered so the many rows with no BarChart link are exempt.
+            entity.HasIndex(e => new { e.TradeUnitCode, e.BarchartLocationKey })
+                  .HasDatabaseName("UQ_BidSheetLocations_TradeUnit_BarchartKey")
+                  .IsUnique()
+                  .HasFilter("[BarchartLocationKey] IS NOT NULL");
             entity.HasMany(e => e.Bids).WithOne(b => b.Location).HasForeignKey(b => b.LocationId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -568,8 +577,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CropYear).IsRequired();
             entity.Property(e => e.Month).HasDefaultValue(0).IsRequired();
             entity.Property(e => e.Bid).HasMaxLength(50).IsRequired();
-            // Feed provenance: 'Barchart' rows are read-only to users (enforced in BidSheetRepository);
-            // the bridge proc only ever writes rows where Source='Barchart'.
+            // Feed provenance. Ownership moves with the value: a user typing over a fed cell flips it to
+            // 'Manual', and the bridge takes it back on its next run. The bridge only ever writes
+            // Source='Barchart'.
             entity.Property(e => e.Source).HasMaxLength(20).HasDefaultValue(BidSources.Manual).IsRequired();
             entity.Property(e => e.BarchartSymbol).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.BasisBid).HasMaxLength(50).IsRequired(false);

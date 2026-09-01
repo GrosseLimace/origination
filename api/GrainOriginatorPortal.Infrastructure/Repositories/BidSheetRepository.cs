@@ -58,8 +58,15 @@ public class BidSheetRepository : IBidSheetRepository
     public Task<bool> LocationNameExistsAsync(string name, string tradeUnitCode, CancellationToken cancellationToken)
     {
         var trimmed = name.Trim();
-        // String equality translates to SQL '=' under the column's (case-insensitive) collation,
-        // matching the UQ_BidSheetLocations_Name_TradeUnit unique index.
+        // String equality translates to SQL '=' under the column's (case-insensitive) collation.
+        //
+        // This is the only thing stopping two locations sharing a name on one trade unit: there is NO
+        // unique index behind it (an earlier comment here claimed one called
+        // UQ_BidSheetLocations_Name_TradeUnit, which was never created). A read-then-write check
+        // cannot survive concurrent creates, so callers that fan out in parallel rely on
+        // ReconcileDuplicateBidInsertsAsync and, for BarChart placements, on
+        // UQ_BidSheetLocations_TradeUnit_BarchartKey. Adding the name index needs a duplicate sweep of
+        // every environment first -- the table predates this rule by years.
         return _appContext.BidSheetLocations
             .AnyAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name == trimmed, cancellationToken);
     }
@@ -430,8 +437,13 @@ public class BidSheetRepository : IBidSheetRepository
             _appContext.Entry(bid).State = EntityState.Detached; // drop the duplicate insert
             reconciled = true;
             // A user write beats a fed row here too, and takes ownership with it.
+            //
+            // BasisBid travels with Bid. Most manual bids ARE a basis -- that is where the migration
+            // put them -- so copying only the cash side lost the single value the user typed and left
+            // whatever basis was on the row, possibly the feed's.
             existing.Source = BidSources.Manual;
             existing.Bid = bid.Bid;
+            existing.BasisBid = bid.BasisBid;
             existing.CommodityName = bid.CommodityName;
             existing.CommodityCategory = bid.CommodityCategory;
             existing.ModifiedBy = bid.CreatedBy;

@@ -13,10 +13,18 @@ public record BidSheetLocationBidResponse
     public int Month { get; init; }
     public string Bid { get; init; } = string.Empty;
 
-    /// <summary>Who owns this cell: <c>Manual</c> (a user typed it) or <c>Barchart</c> (fed, read-only).</summary>
+    /// <summary>
+    /// Who owns this cell: <c>Manual</c> (a user typed it) or <c>Barchart</c> (fed). Both are editable —
+    /// a user may type over a fed cell, which flips it to <c>Manual</c> until the feed's next run
+    /// reclaims it.
+    /// </summary>
     public string Source { get; init; } = "Manual";
 
-    /// <summary>Vendor symbol behind a fed cell; null on manual cells.</summary>
+    /// <summary>
+    /// Vendor symbol behind the cash bid. Retained after a user overrides a fed cell, so it may be set
+    /// on a <c>Manual</c> row and describe a value the user replaced — read it only when
+    /// <see cref="Source"/> is <c>Barchart</c>.
+    /// </summary>
     public string? BarchartSymbol { get; init; }
 
     /// <summary>When the elevator last updated a fed bid — the "as of" shown in the UI.</summary>
@@ -31,7 +39,10 @@ public record BidSheetLocationBidResponse
     /// <summary>When the elevator last updated the basis bid.</summary>
     public DateTime? BasisQuoteAsOf { get; init; }
 
-    /// <summary>Futures contract the bid is quoted against, e.g. <c>ZCZ26</c>. Null on manual cells.</summary>
+    /// <summary>
+    /// Futures contract the bid is quoted against, e.g. <c>ZCZ26</c>. Like the symbols above, it is
+    /// retained through a user override — gate on <see cref="Source"/> before showing it.
+    /// </summary>
     public string? UnderlyingFuture { get; init; }
     public string CreatedBy { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }
