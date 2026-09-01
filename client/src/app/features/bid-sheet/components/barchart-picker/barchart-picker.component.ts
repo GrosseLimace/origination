@@ -1,6 +1,6 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
@@ -208,12 +208,27 @@ export class BarchartPickerComponent {
 
     // Re-run the nearby search when the map moves, unless the user has typed — a text search is
     // catalog-wide and shouldn't be silently narrowed by wherever the map happens to sit.
+    //
+    // Reads searchArea ONLY. It used to read isTextSearch() too, which made emptying the search box
+    // or picking "All states" fire this effect AND the caller's own search: two identical requests
+    // whose responses could land out of order. The text paths now own their own searching.
     effect(() => {
       const area = this.searchArea();
-      if (this.isTextSearch() || !area) return;
+      if (!area) return;
+      if (this.isTextSearchUntracked()) return;
       this._runSearch();
     });
 
+    // The panel is destroyed abruptly when the user leaves BarChart mode, so a debounce still in
+    // flight would call into a torn-down component.
+    this.destroyRef.onDestroy(() => {
+      if (this._searchDebounce) clearTimeout(this._searchDebounce);
+    });
+  }
+
+  /** isTextSearch without registering a dependency — see the effect above. */
+  private isTextSearchUntracked(): boolean {
+    return untracked(() => this.isTextSearch());
   }
 
   onSearchInput(value: string): void {
@@ -228,11 +243,10 @@ export class BarchartPickerComponent {
   }
 
   clearSearch(): void {
+    if (this._searchDebounce) clearTimeout(this._searchDebounce); // a pending keystroke search is moot now
     this.searchText.set('');
     this.stateFilter.set('');
-    // With a map area set, clearing makes isTextSearch() false and the effect re-runs the nearby
-    // search on its own; searching here too would fire the same request twice.
-    if (!this.searchArea()) this._runSearch();
+    this._runSearch();
   }
 
   private _runSearch(): void {

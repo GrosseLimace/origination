@@ -1115,7 +1115,9 @@
                           Add Location
                         </div>
                       </td>
-                      <td [attr.colspan]="editGridColumns().length + 1"></td>
+                      <!-- The sticky Location cell above accounts for the +1; the trailing "add
+                           commodity" header cell this used to cover is gone. -->
+                      <td [attr.colspan]="editGridColumns().length"></td>
                     </tr>
                     }
                   </tbody>

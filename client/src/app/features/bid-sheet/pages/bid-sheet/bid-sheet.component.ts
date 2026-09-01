@@ -399,6 +399,12 @@ export class BidSheetComponent {
   /** Set of crop codes hidden by the user via the multi-select crop dropdown. Empty = all visible. */
   hiddenCrops = signal<Set<string>>(new Set());
   showCropDropdown = signal(false);
+  /**
+   * Commodities added in the open Crops dropdown but not yet committed with Done, so Cancel can take
+   * them back out. Also tells a background reload which crops it must not drop: a just-added crop has
+   * no bids on the server, so the server's own commodity list does not know about it yet.
+   */
+  pendingAddedCrops = signal<Set<string>>(new Set());
   editBidsSaving = signal(false); // gates ONLY the Done button; silent auto-save never touches it
   addLocationSaving = signal(false); // in-flight guard for the Add-Location "Done" button
   editBidsGridLoading = signal(false);
@@ -494,15 +500,16 @@ export class BidSheetComponent {
   private _barchartMoveTimer: ReturnType<typeof setTimeout> | null = null;
   private _pickerRef = viewChild<BarchartPickerComponent>('picker');
 
-  // TUs available for selection when adding a location.
-  // Falls back to all TUs the user has access to when no TU/group is selected.
-  readonly addLocationTus = computed(() => {
-    const active = this.activeTradeUnits();
-    if (active.length > 0) return active;
-    const all = new Set<string>();
-    this.appState.userGroups().forEach(g => g.tradeUnitCodes.forEach(c => all.add(c.trim())));
-    return [...all].sort();
-  });
+  /**
+   * Where an added location gets placed: whatever trade units are selected, and nothing else.
+   *
+   * This used to fall back to EVERY trade unit the user could reach when nothing was selected, which
+   * meant ticking three elevators on a twelve-desk book silently created thirty-six placements on
+   * other people's sheets. Browsing the BarChart catalog is deliberately unrestricted -- the picker's
+   * search is geographic and never consults this -- but writing needs a destination the user chose,
+   * so with no selection this is empty and the add says so instead of guessing.
+   */
+  readonly addLocationTus = computed(() => this.activeTradeUnits());
 
   private static readonly _excludedCommodityCategories = new Set([
     'CURRENCY', 'TRANSPORTATION', 'FEED & FERT INGREDIENTS', 'FEED &FERT INGREDIENTS'
@@ -680,7 +687,15 @@ export class BidSheetComponent {
         const bidCommodities = [...new Set(results.flatMap(r => r.bidCommodities))].sort();
 
         this.bidLocations.set(allLocations);
-        this.crops.set(bidCommodities);
+        // Crops the user just added have no saved bids, so the server's commodity list omits them --
+        // overwriting outright made them vanish from under an open Crops dropdown. Keep them, and keep
+        // the saved column order rather than the server's alphabetical one.
+        const kept = [...this.crops()].filter(c => this.pendingAddedCrops().has(c) && !bidCommodities.includes(c));
+        const savedOrder = this.cropOrderByTu().get(this.activeTradeUnitKey()) ?? [];
+        const merged = [...bidCommodities, ...kept];
+        this.crops.set(savedOrder.length > 0
+          ? [...savedOrder.filter(c => merged.includes(c)), ...merged.filter(c => !savedOrder.includes(c))]
+          : merged);
 
         // Always ensure a crop is selected (first available if current is invalid)
         if (bidCommodities.length > 0 && !bidCommodities.includes(this.selectedCrop())) {
@@ -702,6 +717,11 @@ export class BidSheetComponent {
         this.yearOffset.set(selIdx >= 0 ? selIdx - (cropYears.length - 1) : 0);
 
         this.isLoading.set(false);
+        // Cleared here rather than left to each onLoaded callback. It was set on this pipeline's own
+        // behalf (see the top of the switchMap), so this is where it comes off -- a callback that
+        // only rebuilt the grid, like the rename/Scoular-star path, otherwise stranded the grid on
+        // its spinner for the rest of the session.
+        this.editBidsGridLoading.set(false);
         this.filterBids();
         this._refreshMapMarkers();
         if (onLoaded) {
@@ -1392,11 +1412,16 @@ export class BidSheetComponent {
    * Adds a commodity from the Crops dropdown's search. The dropdown stays open on purpose: the new
    * crop appears ticked in the list above the search box, more can be added in one visit, and Done
    * commits the lot -- the same rhythm as ticking crops on and off.
+   *
+   * Appended, never re-sorted: the column order is the user's, persisted by the drag handles, and
+   * re-sorting alphabetically here silently threw it away. Staged in pendingAddedCrops so Cancel
+   * actually cancels -- it used to commit the crop regardless of which button was pressed.
    */
   selectEditBidCommodity(item: { code: string; name: string }): void {
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'commodities-added', item.code);
     if (!this.crops().includes(item.code)) {
-      this.crops.update(arr => [...arr, item.code].sort());
+      this.crops.update(arr => [...arr, item.code]);
+      this.pendingAddedCrops.update(set => new Set(set).add(item.code));
     }
     this.addCommodityQuery.set('');
   }
@@ -1719,7 +1744,13 @@ export class BidSheetComponent {
    */
   onBarchartAddMany(request: BarchartBulkAddRequest): void {
     if (this.barchartAdding()) return;
-    if (request.locations.length === 0 || request.tradeUnitCodes.length === 0) return;
+    if (request.locations.length === 0) return;
+    // No destination means nothing can be created. Said out loud rather than returning silently,
+    // which left the button looking broken.
+    if (request.tradeUnitCodes.length === 0) {
+      this.toastService.error('Select a trade unit or group first, then add these locations');
+      return;
+    }
     this.barchartAdding.set(true);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
 
@@ -1727,6 +1758,11 @@ export class BidSheetComponent {
     // and already-linked rules the server enforces still apply to every one of them. Each create
     // carries its own failure: one location already sitting on one of the trade units must not sink
     // the rest of the batch, which is exactly what a bare forkJoin did.
+    //
+    // The failure is KEPT, not discarded. A duplicate is routine and worth only a footnote, but a 403
+    // or a 500 is not -- reporting everything as "already added" made a real outage look like a
+    // no-op. 400 is the server's validation status for both duplicate rules (name-in-use and
+    // location-already-linked), so it is the one status treated as benign.
     const creates = request.locations.flatMap(loc =>
       request.tradeUnitCodes.map(tu => this.apiService.createBidSheetLocation({
         name: loc.name,
@@ -1735,49 +1771,56 @@ export class BidSheetComponent {
         barchartLocationKey: loc.locationKey,
         isScoularFacility: loc.isScoularFacility,
         bids: []
-      }).pipe(catchError(() => of(null)))));
+      }).pipe(
+        map(created => ({ created, duplicate: false, failed: false })),
+        catchError((err: unknown) => {
+          const duplicate = (err as { status?: number })?.status === 400;
+          if (!duplicate && isDevMode()) console.error('[BidSheet] barchart create failed', err);
+          return of({ created: null, duplicate, failed: !duplicate });
+        })
+      )));
 
-    forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (results) => {
-        const saved = results.filter((r): r is NonNullable<typeof r> => r != null);
-        const skipped = results.length - saved.length;
-        if (saved.length === 0) {
-          this.barchartAdding.set(false);
-          this.toastService.error('Could not add locations — they may already be on these trade units');
-          return;
-        }
-        const count = new Set(saved.map(l => l.name)).size;
-        this.toastService.success(
-          `Added ${count} location${count === 1 ? '' : 's'}`
-          + (skipped > 0 ? ` — ${skipped} placement${skipped === 1 ? '' : 's'} skipped (already added)` : ''));
+    forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(results => {
+      // Reset before the handoff, not after the reload. Tying it to the reload's callback meant a
+      // cancelled reload (switching trade unit mid-add) left this true forever, and the picker's own
+      // guards then made it permanently dead behind a spinning button.
+      this.barchartAdding.set(false);
 
-        const viewing = new Set(this.activeTradeUnits());
-        const mine = saved.filter(l => viewing.has(l.tradeUnitCode));
-        if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
-        this.allMapLocations.update(locs => [...saved, ...locs]);
+      const saved = results.map(r => r.created).filter((l): l is NonNullable<typeof l> => l != null);
+      const duplicates = results.filter(r => r.duplicate).length;
+      const failures = results.filter(r => r.failed).length;
 
-        this._loadAllMapLocations();
-        // The picker stays open with its button spinning until the grid is genuinely ready, then the
-        // handoff is picker -> Edit Bids in one step. Tearing the picker down first flashed the map
-        // for the length of the reload, which read as a freeze right after a long add.
-        // Edit Bids is opened from the reload callback because the grid is built from loaded bid
-        // data -- opening it first would show the new rows empty and then repaint.
-        const finish = () => {
-          this.barchartAdding.set(false);
-          this._pickerRef()?.clearSelection();
-          this._leaveBarchartMode();
-          this.addLocationOrigin.set(null);
-          this.openEditBids(request.locations[0]?.name);
-        };
-        const tus = this.activeTradeUnits();
-        if (tus.length > 0) this._loadBidData(tus, finish, 'refresh');
-        else finish();
-      },
-      error: (err) => {
-        this.barchartAdding.set(false);
-        if (isDevMode()) console.error('[BidSheet] barchart bulk add failed', err);
-        this.toastService.error(err?.message ? `Could not add locations: ${err.message}` : 'Could not add locations');
+      if (saved.length === 0) {
+        this.toastService.error(failures > 0
+          ? 'Could not add locations — something went wrong, please try again'
+          : 'Those locations are already on these trade units');
+        return;
       }
+
+      const count = new Set(saved.map(l => l.name)).size;
+      const notes = [
+        duplicates > 0 ? `${duplicates} already added` : '',
+        failures > 0 ? `${failures} failed` : ''
+      ].filter(Boolean).join(', ');
+      this.toastService.success(
+        `Added ${count} location${count === 1 ? '' : 's'}` + (notes ? ` — ${notes}` : ''));
+
+      const viewing = new Set(this.activeTradeUnits());
+      const mine = saved.filter(l => viewing.has(l.tradeUnitCode));
+      if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
+      this.allMapLocations.update(locs => [...saved, ...locs]);
+
+      // Hand off immediately from the cache we just updated -- Edit Bids builds from memory, so the
+      // new rows are there at once and no map flash shows between the two screens. The server sync
+      // runs behind it and the open grid trues itself up when it lands (see _loadBidData).
+      this._pickerRef()?.clearSelection();
+      this._leaveBarchartMode();
+      this.addLocationOrigin.set(null);
+      this.openEditBids(request.locations[0]?.name);
+
+      this._loadAllMapLocations();
+      const tus = this.activeTradeUnits();
+      if (tus.length > 0) this._loadBidData(tus, undefined, 'refresh');
     });
   }
 
@@ -1967,6 +2010,7 @@ export class BidSheetComponent {
   /** Opens the crop dropdown with the current hidden set staged as pending. */
   openCropDropdown(): void {
     this.pendingHiddenCrops.set(new Set(this.hiddenCrops()));
+    this.pendingAddedCrops.set(new Set());
     this.addCommodityQuery.set('');
     this.showCropDropdown.set(true);
   }
@@ -1984,11 +2028,16 @@ export class BidSheetComponent {
   /** Applies the pending crop visibility and closes the dropdown. */
   confirmCropSelection(): void {
     const changed = [...this.pendingHiddenCrops()].sort().join(',') !== [...this.hiddenCrops()].sort().join(',');
+    const added = this.pendingAddedCrops().size > 0;
     // Save edits against the CURRENT columns before hiddenCrops changes (which reshapes editGridColumns).
     this._saveDirtyBids(() => {
       this.hiddenCrops.set(new Set(this.pendingHiddenCrops()));
+      this.pendingAddedCrops.set(new Set());
       this.showCropDropdown.set(false);
       this._buildEditGrid(this.editBidsYear());
+      // A newly added crop has no bids yet, so nothing on the server remembers it. Persisting the
+      // column order is what makes it survive the next load -- without this it vanished on reopen.
+      if (added) this._saveCropOrder(this.crops());
       if (changed) {
         this._saveHiddenCrops();
         this.toastService.success('Crop selection saved');
@@ -1996,11 +2045,19 @@ export class BidSheetComponent {
     });
   }
 
-  /** Cancels pending crop changes and closes the dropdown. */
+  /** Cancels pending crop changes and closes the dropdown — including any commodity just added. */
   cancelCropSelection(): void {
     this.pendingHiddenCrops.set(new Set(this.hiddenCrops()));
+    const added = this.pendingAddedCrops();
+    if (added.size > 0) {
+      this.crops.update(arr => arr.filter(c => !added.has(c)));
+      this.pendingAddedCrops.set(new Set());
+      this._buildEditGrid(this.editBidsYear());
+    }
+    this.addCommodityQuery.set('');
     this.showCropDropdown.set(false);
   }
+
 
   /** Persists hidden crops to the preference API. */
   private _saveHiddenCrops(): void {
@@ -2273,21 +2330,32 @@ export class BidSheetComponent {
   /** Marks the saved cells clean so the "changed" highlight clears — by setting originalBids to the
    *  value that was actually SAVED (not the current input). If the user kept editing the same cell while
    *  the save was in flight, current ≠ saved, so the cell stays dirty and the re-run / next blur catches it. */
-  private _clearDirtyForSaved(dirty: Array<{ name?: string; commodityCode: string; month?: number; bid: string }>): void {
-    const savedByName = new Map<string, Map<string, string>>();
+  private _clearDirtyForSaved(dirty: Array<{ name?: string; commodityCode: string; month?: number; bid: string; basisBid: string }>): void {
+    const savedByName = new Map<string, Map<string, { bid: string; basisBid: string }>>();
     for (const b of dirty) {
       if (!b.name) continue;
       const colKey = `${b.commodityCode}#${b.month ?? 0}`;
-      const m = savedByName.get(b.name) ?? new Map<string, string>();
-      m.set(colKey, b.bid);
+      const m = savedByName.get(b.name) ?? new Map<string, { bid: string; basisBid: string }>();
+      m.set(colKey, { bid: b.bid, basisBid: b.basisBid });
       savedByName.set(b.name, m);
     }
     this.editBidsRows.update(rows => rows.map(row => {
       const saved = savedByName.get(row.name);
       if (!saved) return row;
       const originalBids = { ...row.originalBids };
-      for (const [colKey, val] of saved) originalBids[colKey] = val;
-      return { ...row, originalBids };
+      const originalBasisBids = { ...row.originalBasisBids };
+      // BOTH sides, or a basis-only edit never goes clean: its green highlight would never clear, every
+      // later blur would re-send it, and _buildDirtyBids would never report zero again -- which silently
+      // switches off the background refresh that runs when the grid is open.
+      const boardChips = { ...row.boardChips };
+      for (const [colKey, val] of saved) {
+        originalBids[colKey] = val.bid;
+        originalBasisBids[colKey] = val.basisBid;
+        // The cell is the user's now, so drop the fed board label. It described the feed's number, and
+        // leaving it would re-attach it to a hand-typed one the moment the cell counts as clean again.
+        delete boardChips[colKey];
+      }
+      return { ...row, originalBids, originalBasisBids, boardChips };
     }));
   }
 
@@ -2310,11 +2378,28 @@ export class BidSheetComponent {
           const month = d.month ?? 0;
           const idx = bids.findIndex(b => b.commodityCode === d.commodityCode && b.cropYear === d.cropYear && b.month === month);
           if (idx >= 0) {
-            bids[idx] = { ...bids[idx], bid: d.bid, commodityName: d.commodityName ?? bids[idx].commodityName, commodityCategory: d.commodityCategory ?? bids[idx].commodityCategory, modifiedAt: now };
+            // basisBid travels with bid: manual bids ARE basis for most originators, so dropping it
+            // here made a basis edit revert on any year-switch-and-back -- the exact staleness this
+            // method exists to prevent. Source becomes Manual and the fed provenance is dropped
+            // because this path only runs for a user's own edit: overriding a fed cell takes it over,
+            // and keeping Source='Barchart' left the row wearing a Feed chip and a board label that
+            // no longer described its number.
+            bids[idx] = {
+              ...bids[idx],
+              bid: d.bid,
+              basisBid: d.basisBid,
+              source: 'Manual',
+              barchartSymbol: undefined,
+              basisSymbol: undefined,
+              underlyingFuture: undefined,
+              commodityName: d.commodityName ?? bids[idx].commodityName,
+              commodityCategory: d.commodityCategory ?? bids[idx].commodityCategory,
+              modifiedAt: now
+            };
           } else {
             // Always 'Manual': this path only runs for a user's own grid edits. The feed writes
             // its cells server-side and they arrive on the next load.
-            bids.push({ id: 0, locationId: loc.id, commodityCode: d.commodityCode, commodityName: d.commodityName, commodityCategory: d.commodityCategory, cropYear: d.cropYear, month, bid: d.bid, source: 'Manual', createdBy: '', createdAt: now, modifiedAt: now });
+            bids.push({ id: 0, locationId: loc.id, commodityCode: d.commodityCode, commodityName: d.commodityName, commodityCategory: d.commodityCategory, cropYear: d.cropYear, month, bid: d.bid, basisBid: d.basisBid, source: 'Manual', createdBy: '', createdAt: now, modifiedAt: now });
           }
         }
         return { ...loc, bids };
