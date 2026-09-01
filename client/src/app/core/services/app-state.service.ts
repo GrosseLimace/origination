@@ -93,6 +93,35 @@ export class AppStateService {
   // user's saved preference always remains a real trade group, never "All Producers".
   allProducersMode = signal(false);
 
+  /**
+   * Trade group names currently in play — used to scope the commodity pickers (Organics & IP).
+   *
+   * Precedence matches the rest of the app: individually selected trade units win (a group counts
+   * if any of its codes is selected), then selected groups, then — per the selector's
+   * _computeAvailableTradeUnits — an empty selection means ALL of the user's groups, not none.
+   * Empty until userGroups loads, at which point every consumer re-filters on its own.
+   *
+   * Selecting an Organics unit alongside a conventional one is additive: both groups come back,
+   * so the organic crops show without hiding anything else.
+   */
+  readonly inScopeGroupNames = computed<readonly string[]>(() => {
+    const groups = this.userGroups();
+    const units = this.selectedTradeUnits();
+    const names = this.selectedGroupNames();
+
+    if (units.length > 0) {
+      const selected = new Set(units.map(u => u.trim()));
+      return groups
+        .filter(g => g.tradeUnitCodes.some(c => selected.has(c.trim())))
+        .map(g => g.groupName);
+    }
+    // Intersect rather than echo the names back, so a stale saved selection can't invent a group.
+    if (names.length > 0) {
+      return groups.filter(g => names.includes(g.groupName)).map(g => g.groupName);
+    }
+    return groups.map(g => g.groupName);
+  });
+
   // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
   lastScrolledCustomerId = signal<number | null>(null);
 

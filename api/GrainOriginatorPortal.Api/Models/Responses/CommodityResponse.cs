@@ -13,4 +13,9 @@ public record CommodityResponse
     public string? BaseUOM { get; init; }
     public bool IsActive { get; init; } = true;
     public bool ShowInPlantingIntentions { get; init; }
+
+    /// <summary>Null (the default) means every user sees this commodity. A value restricts it to
+    /// callers whose current trade-unit selection includes a matching trade group &mdash; see
+    /// Commodity.TradeGroupScope. The client does the filtering; this endpoint stays cacheable.</summary>
+    public string? TradeGroupScope { get; init; }
 }

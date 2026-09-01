@@ -8,4 +8,12 @@ export interface Commodity {
   tier3?: string;
   baseUOM?: string;
   isActive: boolean;
+  /** True when this row is in the curated crop list served by GET /api/commodities/planting. */
+  showInPlantingIntentions?: boolean;
+  /**
+   * Null/absent (the default, and every row bar the organics) means every user sees this
+   * commodity. A value restricts it to users whose current trade-unit selection includes a
+   * matching trade group — see scopeCommodities() in shared/utils/commodity-scope.ts.
+   */
+  tradeGroupScope?: string | null;
 }

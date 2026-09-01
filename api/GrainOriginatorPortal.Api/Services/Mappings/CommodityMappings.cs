@@ -18,6 +18,7 @@ public static class CommodityMappings
         BaseUOM = c.BaseUOM,
         IsActive = c.IsActive,
         ShowInPlantingIntentions = c.ShowInPlantingIntentions,
+        TradeGroupScope = c.TradeGroupScope,
     };
 
     public static CommodityConversionResponse ToResponse(this CommodityConversion c) => new()

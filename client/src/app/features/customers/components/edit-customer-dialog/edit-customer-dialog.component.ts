@@ -6,6 +6,8 @@ import { Customer, Contract, Ticket, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
+import { scopeCommodities } from '@shared/utils/commodity-scope';
+import { AppStateService } from '@core/services/app-state.service';
 
 @Component({
   selector: 'app-edit-customer-dialog',
@@ -25,6 +27,7 @@ import { formatPhoneProgressive } from '@shared/utils/phone';
 export class EditCustomerDialogComponent {
   private readonly apiService = inject(ApiService);
   private readonly toast = inject(ToastService);
+  private readonly appState = inject(AppStateService);
 
   public isOpen = input(false);
   public customer = input<Customer | null>(null);
@@ -221,6 +224,12 @@ export class EditCustomerDialogComponent {
 
   // Commodity lookup
   allCommodities = signal<Commodity[]>([]);
+
+  /** The commodity list minus anything scoped to a trade group the user isn't currently in
+   *  (the Organics & IP crops). Every user-facing read in this dialog goes through here, so the
+   *  full-list fallback in _loadCommoditiesFallback() is covered too. */
+  private readonly scopedCommodities = computed(() =>
+    scopeCommodities(this.allCommodities(), this.appState.inScopeGroupNames()));
   filteredCommodities = signal<Commodity[]>([]);
   showSuggestions = signal(false);
 
@@ -237,7 +246,7 @@ export class EditCustomerDialogComponent {
   readonly availableGrainGroups = computed(() => {
     const used = new Set(this.editGrainOnFarm().map(r => r.commodityGroup));
     const groups = new Set<string>();
-    for (const c of this.allCommodities()) {
+    for (const c of this.scopedCommodities()) {
       const g = this._titleCaseGroup(c.category);
       if (g && !used.has(g) && !EditCustomerDialogComponent.HIDDEN_GRAIN_GROUPS.has(g.toLowerCase())) {
         groups.add(g);
@@ -573,7 +582,7 @@ export class EditCustomerDialogComponent {
       return;
     }
     const searchTerms = this._commodityAliases[term] ?? [term];
-    this.filteredCommodities.set(this.allCommodities().filter(c => {
+    this.filteredCommodities.set(this.scopedCommodities().filter(c => {
       const name = c.name.toLowerCase();
       const code = c.code.toLowerCase();
       return searchTerms.some(t => name.includes(t) || code.includes(t))

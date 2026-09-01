@@ -9,6 +9,8 @@ import { SelectComponent } from '@shared/components/select/select.component';
 import { Customer, PlantingIntention, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
+import { AppStateService } from '@core/services/app-state.service';
+import { scopeCommodities } from '@shared/utils/commodity-scope';
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdAt';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -44,6 +46,7 @@ export class PlantingIntentionsTableComponent {
   private apiService = inject(ApiService);
   private destroyRef = inject(DestroyRef);
   private toast = inject(ToastService);
+  private appState = inject(AppStateService);
 
   public isLoading = input(false);
   public plantingIntentions = input<PlantingIntention[]>([]);
@@ -400,7 +403,13 @@ export class PlantingIntentionsTableComponent {
 
     // Suggest only the curated planting commodities; fall back to the full list if the
     // curated set hasn't loaded (e.g. transient error) so the dropdown is never blank.
-    const source = this.plantingCommodities.length > 0 ? this.plantingCommodities : this.allCommodities;
+    // Drop commodities scoped to a trade group the user isn't in (organics). Read fresh rather
+    // than cached: these are plain fields, not signals, but this runs per keystroke so it always
+    // reflects the current selection. The fallback is scoped too, so a transient curated-list
+    // failure can't leak organics into a conventional picker.
+    const inScope = this.appState.inScopeGroupNames();
+    const curated = scopeCommodities(this.plantingCommodities, inScope);
+    const source = curated.length > 0 ? curated : scopeCommodities(this.allCommodities, inScope);
     const matches: { c: Commodity; rank: number }[] = [];
     for (const c of source) {
       const name = c.name.toLowerCase();

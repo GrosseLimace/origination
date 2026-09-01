@@ -21,4 +21,12 @@ public class Commodity
     /// dropdown. Defaults false; only an approved short list is flagged. The additive-only
     /// commodity sync never resets it, so new auto-synced commodities stay hidden there.</summary>
     public bool ShowInPlantingIntentions { get; set; }
+
+    /// <summary>Restricts a curated commodity to one trade group. Null (the default, and every row
+    /// today bar the organics) means every user sees it. A value is matched as a case-insensitive
+    /// SUBSTRING of the group names from vw_UserTradeUnitPreferences, so "Organics" matches the
+    /// group "Organics &amp; IP" and survives an upstream rename. One scope per row; if a commodity
+    /// ever needs two, this becomes a join table. Like ShowInPlantingIntentions, the additive-only
+    /// commodity sync never writes it.</summary>
+    public string? TradeGroupScope { get; set; }
 }
