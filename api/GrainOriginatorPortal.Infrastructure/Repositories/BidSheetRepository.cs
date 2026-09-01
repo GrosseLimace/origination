@@ -58,15 +58,15 @@ public class BidSheetRepository : IBidSheetRepository
     public Task<bool> LocationNameExistsAsync(string name, string tradeUnitCode, CancellationToken cancellationToken)
     {
         var trimmed = name.Trim();
-        // String equality translates to SQL '=' under the column's (case-insensitive) collation.
+        // String equality translates to SQL '=' under the column's (case-insensitive) collation,
+        // matching the UQ_BidSheetLocations_Name_TradeUnit unique index.
         //
-        // This is the only thing stopping two locations sharing a name on one trade unit: there is NO
-        // unique index behind it (an earlier comment here claimed one called
-        // UQ_BidSheetLocations_Name_TradeUnit, which was never created). A read-then-write check
-        // cannot survive concurrent creates, so callers that fan out in parallel rely on
-        // ReconcileDuplicateBidInsertsAsync and, for BarChart placements, on
-        // UQ_BidSheetLocations_TradeUnit_BarchartKey. Adding the name index needs a duplicate sweep of
-        // every environment first -- the table predates this rule by years.
+        // ⚠ That index exists in the Dev DATABASE but nowhere in this codebase -- no migration creates
+        // it, the model does not declare it, and scripts/_VerifySchema.sql did not expect it (now it
+        // does, so the drift is at least visible). Whether QA and PROD have it is unverified, so do not
+        // rely on it for correctness in a deployed environment. Concurrent creates of the same name are
+        // caught by ReconcileDuplicateBidInsertsAsync either way; BarChart placements additionally have
+        // UQ_BidSheetLocations_TradeUnit_BarchartKey, which IS declared and migrated.
         return _appContext.BidSheetLocations
             .AnyAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name == trimmed, cancellationToken);
     }

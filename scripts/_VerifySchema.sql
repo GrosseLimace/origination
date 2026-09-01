@@ -535,6 +535,9 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'BidSheetLocationBids',        'UQ_BidSheetLocationBids_Location_Commodity_Year_Month'),
 -- Filtered unique (BarchartLocationKey IS NOT NULL): one placement of a BarChart location per trade unit.
 ('dbo', 'BidSheetLocations',           'UQ_BidSheetLocations_TradeUnit_BarchartKey'),
+-- Present in Dev but created by no migration and declared by no model — listed here so the drift is
+-- reported instead of invisible. Expect a Missing warning in any environment that never got it by hand.
+('dbo', 'BidSheetLocations',           'UQ_BidSheetLocations_Name_TradeUnit'),
 ('dbo', 'BidSheetLocationOrders',      'UQ_BidSheetLocationOrders_User_TradeUnitKey'),
 ('dbo', 'BidSheetPreferences',         'UQ_BidSheetPreferences_User_TradeUnitKey'),
 ('dbo', 'Commodities',                 'IX_Commodities_Code'),
