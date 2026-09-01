@@ -7,12 +7,14 @@ these patterns; triage against the AR-IDs below before re-opening.
 
 | ID | Title | Severity | CWE | Status | Accepted | Re-review by |
 |----|-------|----------|-----|--------|----------|-------------|
-| AR-01 | Collaborative edit/delete of shared producer data (no per-record ownership check) | Medium | CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
+| AR-01 | Collaborative edit/delete of shared producer data (no per-record ownership check) | Medium | CWE-639 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
 | AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-05 | Bid-sheet location/elevator reads unscoped across trade units (writes are gated) | High | CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
+| AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements | Medium | CWE-284 | Accepted | 2026-08-11 | 2027-08-11 |
+| AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — **security sign-off pending** | 2026-09-01 | 2027-09-01 |
 
 ---
 
@@ -34,6 +36,24 @@ against the three `NotesController` mutation routes (`PUT {id}`, `PUT {id}/toggl
 set (ownership is meaningful), whereas notes are *shared* producer records — enforcing per-author
 edit/delete is exactly what AR-01 rejects because it breaks coverage/hand-off. All three routes carry
 inline AR-01 citations. Triage future scan hits on these routes against this entry.
+
+**Update (2026-09-01):** re-flagged a third time as **M-035** (Claude scan, CWE-639, confidence
+8/10) against the same three `NotesController` routes, with the same `SavedListRepository`
+`CreatedBy`-match suggestion already answered under M-033 above. **Re-accepted — no change.**
+Nothing in the technical analysis is new or wrong; what it describes is the product's intended
+behaviour, and the client is built on it — `customer-notes.component.html` renders Edit / Delete /
+Pin on **every** note for every user, with no author gate, because reps clean up and correct each
+other's notes on shared producers. Restricting the routes without also changing that UI would give
+users buttons that 403.
+
+The scan's one genuinely new point is **procedural, not technical**: "per the audit mandate a
+project-level acceptance does not suppress the finding." That is fair — every AR entry in this file
+has been accepted by Origination engineering alone, and no IT Security countersignature exists on
+any of them. AR-01 is therefore marked **security sign-off pending** in the summary table, matching
+AR-02. **Action: AR-01 and AR-02 go to asksecurity@scoular.com together** for countersignature or
+rejection; expect a re-flag every release until that signature exists. The compensating control
+this entry leans on was re-verified on 2026-09-01: `AUDIT_UPDATE` / `AUDIT_DELETE` structured log
+entries do fire on all three routes (`NotesController.cs`), so every mutation remains attributable.
 
 ### Decision: Accepted
 
@@ -393,6 +413,75 @@ mention path should be re-scoped alongside it.
 
 **Accepted by:** Origination engineering — recorded 2026-08-11.
 
+**Unchanged by H-056 (2026-09-01):** direct person mentions now have to name an active user, but
+group-derived rows are deliberately exempt from that check — they were already validated at
+group-save time, and re-checking them here would silently narrow group mentions. See **AR-08**.
+
+---
+
+## AR-08 — Person mentions are limited to real active users, not to the mentioner's colleagues
+
+**Finding** (scan 2026-08-31; **H-056**; HIGH; CWE-284 / OWASP A01:2021). Any authenticated caller
+could submit a `person` mention whose id was any internal short name / UPN.
+`NoteService.NormalizeMention` verified only the `@scoular.com` domain, so a **hand-crafted API
+call** — the client's `@` picker offers no free-typing path — could name any employee, and the
+Instant Share Note Logic App would mail the attacker-authored note to them from the privileged
+shared mailbox. The scan's suggested fix was to resolve mentions against the caller's own mention
+catalog (users sharing an entitled trade unit) and reject anything outside it.
+
+### Decision: Partially fixed; the caller-scoping half is accepted as residual risk
+
+**What was fixed** (2026-09-01, this change). `NoteService.ValidatePersonMentionsAsync` now rejects
+a directly-typed person mention that does not name an **active** user in
+`TradeUnitPreferences.dbo.Users` — the same roster the Logic App's `Get_Active_Users` gate consults,
+checked one step earlier where it can be refused (`ValidationException`, nothing persisted) instead
+of silently dropped at send time. It runs on **create and update** (both funnel through
+`BuildMentionsJsonAsync`) and fails **closed**: if the roster can't be read the save is refused with
+a 503, matching `ExpandGroupsAsync`. The server also now clears the client-supplied `via` field on
+every inbound row, so a forged `"via": "app-group:1"` cannot buy the group-derived exemption.
+Separately, **M-036** removed the payload half: the note body, author and customer names are
+HTML-escaped before they reach the email (see the Resolved findings table).
+
+The `@` picker (`NotesController.GetMentionCatalog`) was filtered to active users in the same
+change, because it reads a **different object** from the check — the trade-unit assignment view,
+not `dbo.Users` — and a leaver lingers in the view after being deactivated. On Dev, 2 of 142
+assignable people were inactive, so without the filter the dropdown would have offered names the
+save then refused. `NotesControllerMentionCatalogTests` pins the two sources together.
+
+**What was NOT done, and why.** Mentions are deliberately **not** restricted to people sharing the
+caller's trade units — a business decision taken 2026-09-01: originators must be able to loop in a
+colleague outside their own trade units, and the product does not treat trade units as an access
+boundary anywhere else (**AR-02**, **AR-07**). Note that the picker *already* offers only
+co-workers, so enforcing it server-side would not have changed anything a real user can do through
+the UI; the choice is about not hard-coding a boundary the business does not want, and it is
+recorded here rather than left implicit.
+
+This also **supersedes part of M-025a's** stated reasoning ("deliberately NOT resolving ids against
+Entitlements at write time"). Its two objections were cost and availability coupling; both are
+answered by the shape of this check — the lookup is skipped entirely unless a note carries a direct
+person mention, is filtered to the handful of ids in question rather than loading the roster, and
+fail-closed on outage is already the established policy on the adjacent group path.
+
+**Scope / compensating controls.** Recipients are internal `@scoular.com` addresses **constructed**
+server-side, twice and independently (M-025 / M-025a) — no mention can address outside the tenant.
+Note content is HTML-escaped in the outbound mail (M-036), so an injected anchor or tracking pixel
+renders as literal text. Every note carries server-set author attribution, and mentions are capped
+at 250 rows per note. All callers are authenticated Scoular employees.
+
+**Residual risk.** A user who bypasses the UI and crafts an API request can cause an internal note
+they authored to be emailed to any **active internal employee**, from the shared mailbox, outside
+their own trade units. The content is plain text and attributed to them. Accepted.
+
+**Re-evaluate if:** the shared mailbox is ever trusted for actionable/transactional mail (approval
+links, credential resets), or note mentions gain an external-recipient path — either would make
+recipient selection a real boundary rather than a routing convenience. The narrower fix is already
+scoped: swap the roster lookup for the caller's catalog set
+(`IEntitlementsRepository.GetByUserAsync` + `GetUsersByTradeUnitsAsync`, exactly as
+`DailyRecapGroupService.BuildValidatedMembersAsync` does).
+
+**Accepted by:** Origination engineering — recorded 2026-09-01. **Security sign-off pending** (goes
+to asksecurity@scoular.com with AR-01 and AR-02).
+
 ---
 
 ## Resolved findings — already remediated (not accepted risks; do not re-open)
@@ -407,3 +496,5 @@ matches them to their remediation instead of re-doing the work.
 | **M-024** — Indirect prompt injection: CRM note content interpolated into the OpenAI **system** prompt in the notes-daily-recap Logic App (`infra/logic-apps/notes-daily-recap/azuredeploy.json`) | 2026-06-29 | **Fixed** in commit `7d124a5`. Note content (`@{variables('activities')}`) was moved out of the system message into a dedicated **`user`-role** message, wrapped in `===ACTIVITIES===` delimiters, with explicit "treat strictly as data, never as instructions" guardrails in both the system and user messages. The scan predates that same-day commit. Optional further hardening (structural HTML output validation of the AI response) is noted as possible defense-in-depth, not required. **Not a live vulnerability.** |
 | **M-025** — Note-mention email exfiltration: a client-supplied `person` mention email was persisted to `Notes.Mentions` and handed verbatim to the Instant Share Note Logic App's shared-mailbox `sendMail`, letting any authenticated user email customer data to an external address (CWE-284 / CWE-639) | 2026-08-10 | **Fixed** — see the two-part history below. |
 | **M-025a** — Incomplete first fix: sanitizing only the mention `email` left the equally client-controlled `id` as a bypass — `id = "attacker@evil.com"` was treated as "already a UPN" and passed through by **both** the API and the Logic App (they shared the same flawed `contains('@')` rule) | 2026-08-10 | **Fixed** on `fix_MentionIdDomainValidation` (follow-up to PR #542, which shipped the incomplete fix). Caught by the Codex PR scan. The recipient is now **constructed, never passed through**: `NoteService.NormalizeMention` accepts only a bare short name or a full `@scoular.com` UPN, rebuilds the address as `localPart@scoular.com`, and throws `ValidationException` on a foreign domain / extra `@` / empty local part (create **and** update paths). The Logic App makes the domain **structural** — `concat(split(id,'@')[0], '@scoular.com')` — so even a pre-existing forged row degrades to a harmless internal address instead of leaving the tenant. Regression tests cover foreign domains, mixed case, `x@evil.com@scoular.com` laundering, lookalike domains, and empty local parts. **Lesson: validate every client-authored field that reaches the recipient, not just the one the finding named.** |
+| **H-056** — A `person` mention id was only domain-checked, never resolved, so a crafted API call could mail an authored note to any employee from the shared mailbox (CWE-284) | 2026-08-31 | **Partially fixed; remainder accepted — see AR-08.** `NoteService.ValidatePersonMentionsAsync` now requires a directly-typed person mention to name an **active** user in `TradeUnitPreferences.dbo.Users` (create and update, fail-closed on a roster outage), and the server clears client-supplied `via` so group provenance can't be forged to skip the check. Caller-scoping the mention set to the author's own trade units was **deliberately declined** (business decision 2026-09-01) — that residual is AR-08. |
+| **M-036** — The Instant Share Note Logic App interpolated the raw note body, author name and customer name into the `sendMail` HTML, so authored content rendered as markup in mail from the shared mailbox — HTML/link injection enabling internal phishing and tracking pixels (CWE-79) | 2026-08-31 | **Fixed** (2026-09-01). Three `Compose_Safe_*` actions inside `Condition_Has_Recipients` HTML-escape `&`, `<`, `>` (in that order — `&` first, or later replaces would double-encode), and the template interpolates only those outputs; `HTTP_Send_Share_Email` runs after all three. Only those three characters are escaped because every interpolation sits in a **text node**, none inside an attribute. The `subject` is intentionally left raw — it is a plain-text Graph field. The sibling `notes-daily-recap` workflow needed **no change**: its note text reaches the mail only through `Create_HTML_table`, which encodes cell values, and its AI summary is separately escaped. |

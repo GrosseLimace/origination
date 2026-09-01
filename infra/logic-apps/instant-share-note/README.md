@@ -44,7 +44,23 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    > `attacker@scoular.com`. The API independently **rejects** person ids carrying a foreign domain on
    > write (`NoteService.NormalizeMention`); the two layers use different mechanisms on purpose, so
    > one bad assumption can't defeat both. See `SECURITY-REVIEWS/ACCEPTED-RISKS.md` (**M-025**, **M-025a**).
-6. **`HTTP_Send_Share_Email`** — sends the note (Regarding / Note / From / Created) via **Microsoft Graph
+   >
+   > **The API also requires a person mention to name an *active* user** (2026-09-01, **H-056**) —
+   > `NoteService.ValidatePersonMentionsAsync` checks the same `dbo.Users` roster `Get_Active_Users`
+   > reads here, so a forged id is refused at save instead of skipped at send. Mentions are
+   > deliberately *not* limited to the author's own trade units (**AR-08**).
+6. **`Compose_Safe_Note` / `_Author` / `_Customer`** — HTML-escape (`&` → `&amp;`, then `<`, `>`) the
+   three attacker-authorable values before they reach the email body.
+
+   > **Security (2026-09-01, M-036) — interpolate only these outputs, never the raw values.** The note
+   > body is written by any authenticated user and lands in an HTML mail from the privileged shared
+   > mailbox; unescaped, `<a href="...">Click here</a>` became a real link and `<img src=...>` a
+   > tracking pixel in trusted internal mail. **Escape `&` first** — reordering double-encodes the
+   > entities the later `replace()`s emit. Only `&`, `<`, `>` are escaped because every interpolation
+   > sits in a text node; none is inside an attribute value. The **`subject` is deliberately raw** —
+   > it is a plain-text field in the Graph payload, and escaping it would show literal `&amp;` to
+   > recipients. See `SECURITY-REVIEWS/ACCEPTED-RISKS.md` (**M-036**).
+7. **`HTTP_Send_Share_Email`** — sends the note (Regarding / Note / From / Created) via **Microsoft Graph
    `sendMail`** as the shared mailbox, to the resolved recipients. No AI summary — the raw note is shared.
    Runs with **`retryPolicy: none`** and **no chunked transfer**: Graph `sendMail` is a non-idempotent
    POST with no idempotency key, so when Graph accepts the message but the 202 is lost (client timeout,
