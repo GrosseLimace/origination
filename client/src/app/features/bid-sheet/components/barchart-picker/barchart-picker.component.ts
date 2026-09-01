@@ -291,7 +291,9 @@ export class BarchartPickerComponent {
    * Same as the displayed label, except this always carries a site or town. On screen the town sits on
    * the line below the label; a bid sheet row has no second line, and names must be unique per trade
    * unit, so a company with several town-named sites would otherwise want the same row name for all of
-   * them. It's shown in an editable field on the confirm step, so it is never a hidden rename.
+   * them. The user does not see this before the add -- the confirm step that used to show it was
+   * dropped in favour of ticking a batch -- so Edit Bids opens straight afterwards with the new rows
+   * renameable in place. That is where a vendor name gets corrected.
    */
   defaultName(location: BarchartCatalogLocation): string {
     const company = location.elevator?.trim();

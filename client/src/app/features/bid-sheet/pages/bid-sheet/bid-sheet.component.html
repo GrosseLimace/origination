@@ -933,7 +933,7 @@
                             <!-- The board this column's bids are quoted against. Chosen by majority
                                  across the column's fed cells (a tie breaks alphabetically, so it
                                  never flip-flops between loads); a cell on a DIFFERENT board shows
-                                 its own symbol in amber. -->
+                                 its own symbol too, so the disagreement is on screen. -->
                             <div class="mt-1 text-xs leading-none font-semibold normal-case tracking-normal text-gray-500 dark:text-gray-400">{{ col.board }}</div>
                           }
                         </th>
@@ -1022,7 +1022,7 @@
                                     title="Linked to BarChart — its bids update on their own and can't be edited here.">Feed</span>
                             } @else if (barchartEnabled) {
                               <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
-                                    title="Typed by hand — these bids are yours to edit and the feed never touches them.">Manual</span>
+                                    title="Typed by hand. If the feed starts publishing this location, it takes the cells over.">Manual</span>
                             }
                           </div>
                         </td>
@@ -1032,7 +1032,7 @@
                             <div class="flex items-start gap-1.5">
                             @if (priceMode() !== 'basis') {
                             <!-- The wrapper exists for the board letter: trade notation inside the box,
-                                 right behind where the quote sits ("-80U"). It hides while the cell is
+                                 right behind where the quote sits ("-80 ZCU26"). It hides while the cell is
                                  being edited so it can never read as part of what was typed. -->
                             <div class="relative flex-1 min-w-0 group">
                             <input
@@ -1042,10 +1042,11 @@
                               (ngModelChange)="updateBid(rowIdx, col.key, $event)"
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                               (blur)="onBidBlur()"
-                              [readonly]="cellReadOnly(row, col.key)"
+                              [readonly]="cellReadOnly()"
                               placeholder="—"
+                              [class.opacity-50]="row.agingCells.has(col.key)"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
-                              [ngClass]="cellReadOnly(row, col.key)
+                              [ngClass]="cellReadOnly()
                                 ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
                                 : (row.bids[col.key] !== row.originalBids[col.key]
                                   ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
@@ -1064,7 +1065,7 @@
                             }
                             @if (priceMode() !== 'cash') {
                               <!-- Basis sits beside cash rather than under it, so the two read as the pair
-                                   an originator quotes. The board letter rides on the basis ("-80U"), which
+                                   an originator quotes. The board symbol rides on the basis, which
                                    is the number the board denominates and the way originators write it. -->
                               <div class="relative flex-1 min-w-0 group">
                               <input
@@ -1073,10 +1074,11 @@
                                 [ngModelOptions]="{ standalone: true }"
                                 (ngModelChange)="updateBasisBid(rowIdx, col.key, $event)"
                                 (blur)="onBidBlur()"
-                                [readonly]="cellReadOnly(row, col.key)"
+                                [readonly]="cellReadOnly()"
                                 placeholder="—"
+                                [class.opacity-50]="row.agingCells.has(col.key)"
                                 class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
-                                [ngClass]="cellReadOnly(row, col.key)
+                                [ngClass]="cellReadOnly()
                                   ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
                                   : (row.basisBids[col.key] !== row.originalBasisBids[col.key]
                                     ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'

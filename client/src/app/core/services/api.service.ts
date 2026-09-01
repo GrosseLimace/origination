@@ -26,7 +26,6 @@ import {
   BarchartCatalogLocation,
   BarchartCoverage,
   BarchartLocationSearchParams,
-  BarchartRefreshBidsResult,
   Elevator,
   CommodityConversion,
   HarvestWindow,
@@ -972,13 +971,6 @@ export class ApiService {
       this.http.get<BarchartCoverage>(`${this.baseUrl}/barchart/coverage`)
         .pipe(catchError(e => this.handleError(e)))
     );
-  }
-
-  /** Re-publishes current feed prices onto one linked location, instead of waiting for the next run. */
-  refreshBarchartBids(locationId: number): Observable<BarchartRefreshBidsResult> {
-    return this.http.post<BarchartRefreshBidsResult>(
-      `${this.baseUrl}/barchart/locations/${locationId}/refresh-bids`, {})
-      .pipe(catchError(e => this.handleError(e)));
   }
 
   // =========================================================================

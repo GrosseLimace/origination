@@ -55,6 +55,13 @@ function loc(name: string, groups: PrintCropGroup[], value = '-30', isScoular = 
 /** A realistic seven-character basis/flat value. */
 const REAL_VALUE = '-0.4500';
 
+/** Board-symbol labels and values, e.g. "Aug 26 · ZCU26" over "-0.4500 (ZCZ26)". */
+const BOARD_LABELS = ['O/C 26 · ZCU26', 'N/C 26 · ZCZ26', 'May 26 · ZCK26', 'Jun 26 · ZCN26'];
+function boardGroup(crop: string, n: number): PrintCropGroup {
+  return { crop, columns: BOARD_LABELS.slice(0, n).map(l => col(crop, l)) };
+}
+const BOARD_VALUE = '-0.4500 (ZCZ26)';
+
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 const cropsIn = (t: PrintTable) => t.headerRows[0].length - 1;
@@ -212,6 +219,20 @@ describe('buildLocationsDown', () => {
     expect(t.bodyRows.map(r => r[0].text)).toEqual(['Alpha', 'Bravo']);
     expect(t.bodyRows[0]).toHaveLength(7);
     expect(t.bodyRows[0][1]).toMatchObject({ text: '-30', mono: true, align: 'center' });
+  });
+
+  // Board symbols made every header and value markedly wider. Column widths are clamped UP to what
+  // the content needs, so a wide-enough sheet could push the table past the page and clip on the
+  // right — silently, because nothing asserted the upper bound for this layout.
+  it('never exceeds the page width, even with board symbols in every header and value', () => {
+    const groups = Array.from({ length: 4 }, (_, i) => boardGroup(`Crop${i}`, 4));
+    const locs = Array.from({ length: 12 }, (_, i) =>
+      loc(`Farmers Cooperative Dorchester - Site ${i}`, groups, BOARD_VALUE));
+
+    for (const t of buildLocationsDown({ groups, locations: locs, cropColors })) {
+      expect(t.widthPct).toBeLessThanOrEqual(100 + 1e-6);
+      expect(sum(t.colWidthsIn)).toBeLessThanOrEqual(G.PAGE_WIDTH_IN + 1e-6);
+    }
   });
 
   it('lists each location ONCE per band, in grid order, even when a location bids only one crop', () => {
@@ -381,6 +402,19 @@ describe('buildLocationsDown', () => {
 describe('buildLocationsAcross', () => {
   const manyLocs = (count: number, groups: PrintCropGroup[], nameLen = 6) =>
     Array.from({ length: count }, (_, i) => loc(`L${String(i + 1).padStart(2, '0')}`.padEnd(nameLen, 'x'), groups));
+
+  // Companion to the Down-layout bound: Across puts locations in the columns, so a board symbol on
+  // every value widens every column rather than just a few.
+  it('never exceeds the page width with board symbols in every value', () => {
+    const groups = [boardGroup('Corn', 4), boardGroup('Soybeans', 4)];
+    const locs = Array.from({ length: 10 }, (_, i) =>
+      loc(`Farmers Cooperative Dorchester - Site ${i}`, groups, BOARD_VALUE));
+
+    for (const t of buildLocationsAcross({ groups, locations: locs, cropColors })) {
+      expect(t.widthPct).toBeLessThanOrEqual(100 + 1e-6);
+      expect(sum(t.colWidthsIn)).toBeLessThanOrEqual(G.PAGE_WIDTH_IN + 1e-6);
+    }
+  });
 
   it('puts locations across the top and a tinted band row + one row per period under each crop', () => {
     const groups = [group('Corn', 2), group('Wheat', 1)];

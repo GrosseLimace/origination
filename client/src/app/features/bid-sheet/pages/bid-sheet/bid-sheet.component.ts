@@ -36,10 +36,6 @@ interface EditBidsRow {
   yearFrom: Record<string, string>;
   /** Column key -> the board this fed cell is quoted against; '' on manual cells. */
   boardChips: Record<string, string>;
-  /** Column keys whose value came from the BarChart feed. Those are overridable, not read-only. */
-  fedCells: Set<string>;
-  /** Column key → when the elevator last updated that fed bid. Only set for fed cells. */
-  fedAsOf: Record<string, string | undefined>;
   /** Column keys whose fed bid hasn't moved in a while — shown muted so it can't read as today's price. */
   agingCells: Set<string>;
   /** True when the whole location is linked to a BarChart listing. */
@@ -98,26 +94,24 @@ export class BidSheetComponent {
   // --- Filters ---
   /** True when any TUs are active — either via individual checkboxes or group selection. Enables bid values, statuses, and reference features. */
   readonly hasIndividualTu = computed(() => this.activeTradeUnits().length > 0);
-  /** The bids grid is read-only in "All Producers" mode (no single TU to save against) — it's a
-   *  view of every location's bids for the selected year. Editing requires picking a trade unit. */
   /**
-   * The grid is view-only in All Producers, and also in basis mode: every write path targets the CASH
-   * column, so a bid typed while basis is displayed would silently overwrite that cell's cash price
-   * with a basis number. Entering basis by hand needs its own write path — until then, read-only.
+   * The grid is view-only in "All Producers" — with no single trade unit selected there is nothing to
+   * save against, so it shows every location's bids for the year and takes no input. Basis is
+   * editable now that it has its own write path (updateBasisBid).
    */
   readonly editBidsReadOnly = computed(() => !this.hasIndividualTu());
 
   /**
-   * Whether a single grid cell accepts typing. Only one reason it does not: the whole sheet is
-   * read-only because no individual trade unit is selected.
+   * Whether a grid cell accepts typing. There is only one reason it does not — the whole sheet is
+   * read-only because no individual trade unit is selected — so this is sheet-wide today. It stays a
+   * per-cell call because the template asks per cell, and a future per-cell rule lands here.
    *
-   * Fed cells ARE editable. A typed value is an override that stands until the feed's next run,
-   * which takes the cell back and returns it to the vendor's number -- so an originator who knows
-   * an elevator has moved can say so today without waiting, and the feed corrects it tomorrow if
-   * they were wrong. The Feed / Manual chip is what makes the override visible: overriding flips a
-   * cell to Manual, and the next apply-bids flips it back to Feed.
+   * Fed cells ARE editable. A typed value is an override that stands until the feed's next run, which
+   * takes the cell back and returns it to the vendor's number -- so an originator who knows an
+   * elevator has moved can say so today without waiting, and the feed corrects it tomorrow if they
+   * were wrong. The override drops the cell's board label and flips the row's chip to Manual.
    */
-  cellReadOnly(row: EditBidsRow, key: string): boolean {
+  cellReadOnly(): boolean {
     return this.editBidsReadOnly();
   }
   selectedYear = signal<number>(new Date().getFullYear());
@@ -755,6 +749,7 @@ export class BidSheetComponent {
       this._destroyMap();
       if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
       if (this._zoomDebounceTimer) clearTimeout(this._zoomDebounceTimer);
+      if (this._barchartMoveTimer) clearTimeout(this._barchartMoveTimer);
       if (this._filterBarObserver) this._filterBarObserver.disconnect();
     });
   }
@@ -1313,33 +1308,13 @@ export class BidSheetComponent {
    * The board a fed month cell is quoted against, '' on manual cells. Every fed bid shows this --
    * the business wants the contract on the number itself, so a producer never has to look away from
    * a bid to know what it is priced off. Deviation from the column consensus additionally turns the
-   * label amber, so the mismatches stay louder than the agreement.
+   * label, so a cell against a different board than its column still declares it.
    */
   cellBoardFor(name: string, year: number | null, crop: string, month: number): string {
     if (month === 0) return '';
     const entry = this._getLatestEntry(name, year, crop, month);
     if (entry?.source !== 'Barchart') return '';
     return entry.underlyingFuture?.trim() ?? '';
-  }
-
-  /**
-   * "Dec 2026 corn (ZCZ26)" -- the tooltip translation for producers who do not read board symbols.
-   * Unknown roots fall back to the symbol alone rather than guessing.
-   */
-  boardDescription(board: string): string {
-    const m = /^([A-Z]{2,3})([FGHJKMNQUVXZ])(\d{2})$/.exec(board?.trim() ?? '');
-    if (!m) return board ?? '';
-    const roots: Record<string, string> = {
-      ZC: 'corn', ZS: 'soybeans', ZW: 'Chicago wheat', KE: 'KC wheat', KW: 'spring wheat',
-      MW: 'Minneapolis wheat', ZM: 'soybean meal', ZL: 'soybean oil', ZO: 'oats', ZR: 'rough rice',
-      RS: 'canola'
-    };
-    const months: Record<string, string> = {
-      F: 'Jan', G: 'Feb', H: 'Mar', J: 'Apr', K: 'May', M: 'Jun',
-      N: 'Jul', Q: 'Aug', U: 'Sep', V: 'Oct', X: 'Nov', Z: 'Dec'
-    };
-    const root = roots[m[1]];
-    return root ? `${months[m[2]]} 20${m[3]} ${root} (${board})` : board;
   }
 
   private _getLatestEntry(name: string, year: number | null, commodityCode: string, month: number): BidSheetEntry | null {
@@ -1436,8 +1411,9 @@ export class BidSheetComponent {
 
   /**
    * Single entry point for adding a location. Asks where it should come from first, because the two
-   * sources behave differently once chosen: a BarChart location brings its own bids and keeps them
-   * read-only, a manual one is yours to type. Deciding up front beats discovering that afterwards.
+   * sources behave differently once chosen: a BarChart location arrives with the vendor's bids
+   * already on it and refreshed nightly, a manual one is yours to type. Deciding up front beats
+   * discovering that afterwards.
    *
    * With the feed turned off there's nothing to choose, so this goes straight to the manual flow —
    * the behaviour every environment had before the picker existed.
@@ -1905,8 +1881,6 @@ export class BidSheetComponent {
       const originalBasisBids: Record<string, string> = {};
       const yearFrom: Record<string, string> = {};
       const boardChips: Record<string, string> = {};
-      const fedCells = new Set<string>();
-      const fedAsOf: Record<string, string | undefined> = {};
       const agingCells = new Set<string>();
       for (const col of columns) {
         const entry = lookup.get(`${name}|${col.crop}|${year}|${col.month}`);
@@ -1919,14 +1893,10 @@ export class BidSheetComponent {
         yearFrom[col.key] = col.month === 0 && entry?.source === 'Barchart' ? this.yearContract(entry) : '';
         boardChips[col.key] = this.cellBoardFor(name, year, col.crop, col.month);
         // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
-        // months the vendor doesn't publish, and those stay fully editable.
-        if (entry?.source === 'Barchart') {
-          fedCells.add(col.key);
-          fedAsOf[col.key] = entry.quoteAsOf;
-          if (this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
-        }
+        // months the vendor doesn't publish, and those age independently.
+        if (entry?.source === 'Barchart' && this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
       }
-      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, yearFrom, boardChips, fedCells, fedAsOf, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, yearFrom, boardChips, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -1935,7 +1905,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, yearFrom: {}, boardChips: {}, fedCells: new Set<string>(), fedAsOf: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, yearFrom: {}, boardChips: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // Apply saved location order (unknown names go to end)
@@ -2220,11 +2190,10 @@ export class BidSheetComponent {
   }
 
   updateBid(rowIndex: number, crop: string, value: string): void {
-    // Mirrors cellReadOnly: view-only grid, a feed-owned cell, or basis mode — which has nowhere to
-    // save a typed value. The server rejects writes to fed cells anyway; refusing here keeps the grid
-    // from showing a pending edit that would silently vanish on the next load.
+    // Mirrors cellReadOnly, whose only reason to refuse is a view-only grid (All Producers, where
+    // there is no trade unit to save against). Fed cells and basis cells are both writable.
     const row = this.editBidsRows()[rowIndex];
-    if (!row || this.cellReadOnly(row, crop)) return;
+    if (!row || this.cellReadOnly()) return;
     this.editBidsRows.update(rows => {
       const updated = [...rows];
       updated[rowIndex] = { ...updated[rowIndex], bids: { ...updated[rowIndex].bids, [crop]: value } };
@@ -2238,7 +2207,7 @@ export class BidSheetComponent {
   /** Basis counterpart of updateBid. Same ownership rule: the feed owns fed cells, users own theirs. */
   updateBasisBid(rowIndex: number, crop: string, value: string): void {
     const row = this.editBidsRows()[rowIndex];
-    if (!row || this.cellReadOnly(row, crop)) return;
+    if (!row || this.cellReadOnly()) return;
     this.editBidsRows.update(rows => {
       const next = [...rows];
       next[rowIndex] = { ...next[rowIndex], basisBids: { ...next[rowIndex].basisBids, [crop]: value } };
@@ -2686,16 +2655,17 @@ export class BidSheetComponent {
           }
         } else {
           // Monthly: one column per selected month for the viewed year, headed "May (2026)".
-          // The header also names the board the column's bids are quoted against -- the printed sheet
-          // is what gets handed to a producer, so it has to carry the comparison context on paper.
-          // Compact labels stay board-free; the side-by-side layout has no room and the cells still
-          // mark their own deviations.
+          //
+          // The board goes in compactLabel because compactLabel is what actually prints -- the layout
+          // renderer reads only that, so a board appended to `label` never reached paper. It has to be
+          // on the sheet somewhere: print is what gets handed to a producer, and there is no hover.
           const board = this.boardConsensus(crop, viewedYear, m);
           for (const pt of this.printPriceTypes()) {
+            const suffix = pt ? (pt === 'cash' ? ' Cash' : ' Basis') : '';
             columns.push({
               key: `${crop}#${m}${pt ? '#' + pt : ''}`, crop, month: m, year: viewedYear,
-              label: `${this.getMonthName(m)} (${viewedYear})${pt ? (pt === 'cash' ? ' Cash' : ' Basis') : ''}${board ? ' · ' + board : ''}`,
-              compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}${pt ? (pt === 'cash' ? ' Cash' : ' Basis') : ''}`,
+              label: `${this.getMonthName(m)} (${viewedYear})${suffix}${board ? ' · ' + board : ''}`,
+              compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}${suffix}${board ? ' · ' + board : ''}`,
               priceType: pt
             });
           }
@@ -2724,9 +2694,7 @@ export class BidSheetComponent {
       value = this._getLatestBid(row.name, col.year, col.crop, col.month).trim();
     }
     if (!value) return value;
-    // Same rule as the grid: every fed cell names its board on paper -- the printed sheet is what a
-    // producer holds, so the comparison context cannot live in a hover.
-    //
+
     // The board describes the FED number, and for the viewed year the value above may be an unsaved
     // override. Printing the two together stamped a hand-typed price with a board it was never quoted
     // against; the grid guards this the same way before showing its own symbol.
@@ -2734,10 +2702,19 @@ export class BidSheetComponent {
       ? value !== (row.originalBasisBids[gridKey] ?? '').trim()
       : value !== (row.originalBids[gridKey] ?? '').trim());
     if (overridden) return value;
-    const chip = col.month === 0
-      ? this.yearContractFor(row.name, col.year, col.crop, 0)
-      : this.cellBoardFor(row.name, col.year, col.crop, col.month);
-    return chip ? `${value} (${chip})` : value;
+
+    // Paper says it once in the header and only repeats it on a cell that disagrees -- unlike the
+    // screen, which labels every fed bid. Print cannot afford the repetition: the values feed the
+    // fit-first column sizing, and a symbol on all of them widened columns enough to drop the whole
+    // sheet to 9px type, or overflow the page outright in Both mode. A Year column has no consensus
+    // to lean on (each location's value is its own nearest month), so those always name their own.
+    if (col.month === 0) {
+      const yearContract = this.yearContractFor(row.name, col.year, col.crop, 0);
+      return yearContract ? `${value} (${yearContract})` : value;
+    }
+    const cellBoard = this.cellBoardFor(row.name, col.year, col.crop, col.month);
+    const consensus = this.boardConsensus(col.crop, col.year, col.month);
+    return cellBoard && cellBoard !== consensus ? `${value} (${cellBoard})` : value;
   }
 
   /**
@@ -3618,7 +3595,10 @@ export class BidSheetComponent {
       } else {
         bg = '#9ca3af'; border = '#6b7280';
       }
-      const maxWidth = Math.max(80, ...names.map(n => n.length * 6 + 20));
+      // Must match _buildStackedLabel's own width maths, including its 150px cap -- the label clamps
+      // and ellipsises at that width, so sizing the icon box by an uncapped estimate left a long
+      // vendor name anchored ~110px off from the text actually drawn.
+      const maxWidth = Math.min(150, Math.max(85, ...names.map(n => n.length * 7 + 22)));
       const nameIcon = L.divIcon({
         className: 'custom-marker',
         html: this._buildStackedLabel(names, bg, border, comparingToRef),

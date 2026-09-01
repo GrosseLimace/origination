@@ -88,8 +88,3 @@ export interface BarchartLocationSearchParams {
 }
 
 /** Result of re-running the feed bridge for one bid sheet location. */
-export interface BarchartRefreshBidsResult {
-  locationId: number;
-  /** Bid cells written or removed. */
-  rowsAffected: number;
-}
