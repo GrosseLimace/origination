@@ -357,10 +357,11 @@ Vault via the existing provider). This matches the TODO already present in
 **Finding** (self-raised 2026-08-11; MEDIUM; CWE-284). A user can `@`-mention any group they can
 **see** — the ones they created plus the ones they are a member of. The API flattens that group into
 its member references and the Instant Share Note Logic App emails the note to all of them. Those
-members were validated against the **creator's** entitlement overlap when the group was saved
-(`DailyRecapGroupService.BuildValidatedMembersAsync`, fail-closed), so mentioning someone else's
-group can reach people the direct person picker would not have offered the mentioner — that picker is
-scoped to users sharing a trade unit with the caller.
+members were validated against the entitlement overlap of **whoever added them** — originally always
+the creator; since the 2026-09-02 amendment below, whichever member added them
+(`DailyRecapGroupService.BuildValidatedMembersAsync`, fail-closed). Either way it is *somebody else's*
+overlap, so mentioning someone else's group can reach people the direct person picker would not have
+offered the mentioner — that picker is scoped to users sharing a trade unit with the caller.
 
 ### Decision: Accepted
 
@@ -380,18 +381,54 @@ fail-closed entitlements call in the note-save path, which is high-frequency and
 **Scope / compensating controls.** A group the caller can neither see nor own is **rejected** at save
 (`ValidationException`, nothing persisted) — visibility is enforced server-side against the same query
 that builds the picker, so a forged group id in a crafted request does not resolve. Expansion is
-capped at 250 mention rows per note. Group membership is still entitlement-validated fail-closed at
-group-save time, and only the creator can modify a group. All recipients are `@scoular.com` by
-construction.
+capped at 250 mention rows per note. Adding a member is still entitlement-validated fail-closed at
+group-save time. All recipients are `@scoular.com` by construction.
 
 **Residual risk.** An employee can cause an internal note to be emailed to the members of a group they
 belong to but did not create, including people outside their own trade units. Accepted.
 
-**Re-evaluate if:** groups become shareable beyond their membership (e.g. an org-wide directory of
-groups), or note content becomes restricted per producer — at which point AR-02 changes too and the
-mention path should be re-scoped alongside it.
+### Amended 2026-09-02 — shared editing (any member can edit a group)
 
-**Accepted by:** Origination engineering — recorded 2026-08-11.
+An earlier version of this entry listed *"only the creator can modify a group"* among the
+compensating controls. **That is no longer true**, and the sentence has been removed above. Edit
+rights now equal visibility: anyone who can see a recap group — its creator, or a member directly or
+via a member trade unit / trade-unit group — can rename it, add and remove members, change the CC
+list, set the delivery method, and toggle the daily recap. **DELETE remains creator-only**
+(`DailyRecapGroupService.DeleteAsync` throws `ForbiddenException`; previously a non-creator's DELETE
+was a silent no-op that returned 204 and logged a misleading `AUDIT_DELETE`).
+
+**Why this does not widen the finding.** Adding a member is validated against the **editor's**
+entitlement overlap exactly as before, because only the **delta** is checked
+(`DailyRecapGroupService.BuildValidatedMembersAsync`): members already on the group pass through from
+the stored row, and only additions are vetted. So an editor can never introduce a recipient outside
+their own scope. Removing and re-adding the same person in one save is a no-op (the row never left
+the database); doing it across two saves makes the second one an addition, which is validated. Person
+recipient addresses are re-derived server-side as `{MemberId}@scoular.com` for *every* person member
+— pass-through included — so the M-025 / M-025a guarantee is unchanged, and pass-through rows keep
+their stored `MemberName` so an editor cannot relabel someone else's member.
+
+**New capabilities a member gains, ranked.** All are accepted:
+
+1. **Teams-channel redirect.** A member can switch `DeliveryMethod` to `teams` and point the group's
+   recap at a different channel. `RecapGroupRequest.Validate` still pins the destination to the
+   Scoular tenant (`*.scoular.com@*.teams.ms`), so it cannot leave the tenant, but a Scoular channel
+   can carry B2B guests. Mitigation: the `AUDIT_UPDATE` log line now records `ByCreator`,
+   `DeliveryMethod` and `TeamsChannel`, so a redirect by a non-creator is queryable.
+2. **CC widening.** A member can add any `@scoular.com` address. Low impact: the recap workflow
+   already sends one message per group with every member in `toRecipients` and the CC list in
+   `ccRecipients`, so all members already receive the union. This widens the internal recipient set,
+   not the content boundary.
+3. **Enabled toggle.** A member can start or stop the daily send — a nuisance, not a disclosure.
+   Also audit-logged with `ByCreator`.
+4. **Emptying the group.** Closed: `RecapGroupRequest.Members` now carries `[MinLength(1)]`, so a
+   group cannot be stripped to nothing and silently stop being mentionable.
+
+**Re-evaluate if:** groups become shareable beyond their membership (e.g. an org-wide directory of
+groups), note content becomes restricted per producer — at which point AR-02 changes too and the
+mention path should be re-scoped alongside it — or the Teams channel becomes a mention recipient
+rather than recap-only, which would turn capability 1 into a delivery path for note content.
+
+**Accepted by:** Origination engineering — recorded 2026-08-11, amended 2026-09-02.
 
 ---
 

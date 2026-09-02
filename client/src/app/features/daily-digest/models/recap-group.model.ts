@@ -34,10 +34,15 @@ export interface RecapGroup {
    *  The Logic App posts the recap to this channel address. */
   teamsChannelEmail?: string;
   enabled: boolean;
-  /** True when the current user created this group (editable). False for groups they only see
-   *  because they're a member — shown faded and read-only. */
+  /** True when the current user created this group. Narrower than `canEdit`: it gates the Delete
+   *  button and the "Created by" line, because deleting stays creator-only. */
   isOwner: boolean;
-  /** Creator's UPN/email. Shown on read-only (member) cards so a member can reach out. */
+  /** True when the current user may edit this group — rename it, add or remove members, change the
+   *  CC list, toggle the daily recap. Edit rights equal visibility, so every group the API returns
+   *  is editable; the policy lives on the server and the client just honours this flag. */
+  canEdit: boolean;
+  /** Creator's UPN/email. Shown on groups you didn't create, so you know who set it up and who can
+   *  delete it. */
   createdBy: string;
 }
 
