@@ -474,22 +474,18 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(10)");
 
                     b.Property<string>("TradeUnitCode")
-                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("BarchartLocationKey")
-                        .HasDatabaseName("IX_BidSheetLocations_BarchartLocationKey");
+                        .IsUnique()
+                        .HasDatabaseName("UQ_BidSheetLocations_BarchartKey")
+                        .HasFilter("[BarchartLocationKey] IS NOT NULL");
 
                     b.HasIndex("TradeUnitCode")
                         .HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
-
-                    b.HasIndex("TradeUnitCode", "BarchartLocationKey")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_BidSheetLocations_TradeUnit_BarchartKey")
-                        .HasFilter("[BarchartLocationKey] IS NOT NULL");
 
                     b.ToTable("BidSheetLocations", "dbo");
                 });

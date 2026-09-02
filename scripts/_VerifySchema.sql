@@ -219,7 +219,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocations', 'ModifiedBy',        'nvarchar(255)', 1),
 ('dbo', 'BidSheetLocations', 'Name',              'nvarchar(200)', 0),
 ('dbo', 'BidSheetLocations', 'State',             'nvarchar(10)',  1),
-('dbo', 'BidSheetLocations', 'TradeUnitCode',     'nvarchar(100)', 0),
+('dbo', 'BidSheetLocations', 'TradeUnitCode',     'nvarchar(100)', 1),
 -- BidSheetLocationBids
 ('dbo', 'BidSheetLocationBids', 'Id',                'int',           0),
 ('dbo', 'BidSheetLocationBids', 'Bid',               'nvarchar(50)',  0),
@@ -535,7 +535,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'BidSheetLocationBids',        'UQ_BidSheetLocationBids_Location_Commodity_Year_Month'),
 -- Filtered unique (BarchartLocationKey IS NOT NULL): one placement of a BarChart location per trade unit.
-('dbo', 'BidSheetLocations',           'UQ_BidSheetLocations_TradeUnit_BarchartKey'),
+('dbo', 'BidSheetLocations',           'UQ_BidSheetLocations_BarchartKey'),
 -- NOT listed: UQ_BidSheetLocations_Name_TradeUnit exists in the Dev database but is created by no
 -- migration and declared by no model, so expecting it would report a FAIL (this check has no warning
 -- severity) in every environment that is CORRECT per the repo. Declaring it properly needs a
@@ -591,7 +591,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260827151032_MoveManualBidsToBasisColumn'),
 ('20260828173255_AddUnderlyingFutureToBidCells'),
 ('20260901175652_AddUniqueBarchartPlacementIndex'),
-('20260902185607_AddSelectedYearsToBidSheetPreference');
+('20260902185607_AddSelectedYearsToBidSheetPreference'),
+('20260902194934_MakeBidSheetLocationsGlobal');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

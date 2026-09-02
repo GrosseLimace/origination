@@ -543,7 +543,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Longitude).IsRequired(false);
             entity.Property(e => e.ElevatorCode).HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.BarchartLocationKey).HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.GroupName).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.IsScoularFacility).HasDefaultValue(false).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
@@ -551,15 +551,14 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
             entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
-            // Non-unique: the same BarChart location may be placed in multiple trade units (one row per TU).
-            entity.HasIndex(e => e.BarchartLocationKey).HasDatabaseName("IX_BidSheetLocations_BarchartLocationKey");
-            // One placement of a BarChart location per trade unit, enforced by the database rather than
-            // only by a read-then-write check. The bulk add fires its creates in PARALLEL, so two
-            // creates for the same pair could both pass that check and both insert -- giving a trade
-            // unit two rows for one elevator, with doubled fed bids that then shadow each other in the
-            // client's name-keyed lookup. Filtered so the many rows with no BarChart link are exempt.
-            entity.HasIndex(e => new { e.TradeUnitCode, e.BarchartLocationKey })
-                  .HasDatabaseName("UQ_BidSheetLocations_TradeUnit_BarchartKey")
+            // ONE row per BarChart listing, company-wide. This replaced a per-trade-unit uniqueness rule:
+            // the same elevator used to be stored once per desk, so the map showed it several times over
+            // and the bridge wrote the identical fed price into every copy. Enforced by the database and
+            // not only by a read-then-write check, because the bulk add fires its creates in PARALLEL --
+            // two for the same listing could both pass that check and both insert. Filtered so the many
+            // rows with no BarChart link are exempt.
+            entity.HasIndex(e => e.BarchartLocationKey)
+                  .HasDatabaseName("UQ_BidSheetLocations_BarchartKey")
                   .IsUnique()
                   .HasFilter("[BarchartLocationKey] IS NOT NULL");
             entity.HasMany(e => e.Bids).WithOne(b => b.Location).HasForeignKey(b => b.LocationId).OnDelete(DeleteBehavior.Cascade);
