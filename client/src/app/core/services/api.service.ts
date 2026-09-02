@@ -879,7 +879,7 @@ export class ApiService {
 
   /** Bulk upserts bids (used by the edit-bids grid) */
   bulkUpsertBidSheetBids(bids: Array<{
-    name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
+    locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
     latitude?: number; longitude?: number;
     commodityCode: string; commodityName?: string; commodityCategory?: string;
     cropYear: number; bid: string; basisBid?: string; month?: number;

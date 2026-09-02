@@ -215,12 +215,13 @@ public class BidSheetService : IBidSheetService
     public async Task BulkUpsertBidsAsync(List<UpsertBidSheetBidRequest> requests, CancellationToken cancellationToken)
     {
         var user = _requestContext.GetCurrentUser();
-        // Group by trade unit and upsert each set in its own repository transaction.
-        foreach (var group in requests.GroupBy(r => r.TradeUnitCode ?? string.Empty))
+        // One transaction for the lot. This used to group by trade unit and run a batch per desk --
+        // and silently DROP any group whose trade unit was blank, so a caller that stopped sending one
+        // lost its bids behind a 204. Locations are company-wide now, so there is nothing to group by.
         {
-            if (string.IsNullOrEmpty(group.Key)) continue;
-            var inputs = group.Select(r => new BidUpsertInput
+            var inputs = requests.Select(r => new BidUpsertInput
             {
+                LocationId = r.LocationId,
                 Name = r.Name,
                 ElevatorCode = r.ElevatorCode,
                 GroupName = r.GroupName,
@@ -234,7 +235,16 @@ public class BidSheetService : IBidSheetService
                 Bid = r.Bid,
                 BasisBid = r.BasisBid
             }).ToList();
-            await _repository.BulkUpsertBidsAsync(inputs, group.Key, user, cancellationToken);
+            try
+            {
+                await _repository.BulkUpsertBidsAsync(inputs, user, cancellationToken);
+            }
+            catch (BidSheetLocationNotFoundException ex)
+            {
+                // Surfaced as validation so the user is told to refresh, rather than getting a 500 for
+                // what is almost always a stale grid pointing at a location someone else removed.
+                throw new ValidationException(nameof(UpsertBidSheetBidRequest.LocationId), ex.Message);
+            }
         }
     }
 

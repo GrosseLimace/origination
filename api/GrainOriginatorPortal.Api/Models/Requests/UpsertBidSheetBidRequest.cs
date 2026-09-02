@@ -7,6 +7,13 @@ public record UpsertBidSheetBidRequest
 {
     /// <summary>Location identity — matched by (Name + TradeUnitCode) or (ElevatorCode + TradeUnitCode). Required for bulk upsert; ignored on location-scoped create.</summary>
     [MaxLength(200)]
+    /// <summary>
+    /// The location this bid belongs to. Preferred over Name: locations are company-wide now, so a
+    /// name is no longer unique and resolving by one could land the bid on the wrong elevator.
+    /// </summary>
+    public int? LocationId { get; init; }
+
+    /// <summary>Legacy fallback for callers that have no id. Resolved company-wide.</summary>
     public string? Name { get; init; }
 
     [MaxLength(50)]

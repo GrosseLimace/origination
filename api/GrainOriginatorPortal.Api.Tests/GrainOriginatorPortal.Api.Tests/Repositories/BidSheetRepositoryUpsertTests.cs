@@ -58,15 +58,34 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         await _context.DisposeAsync();
     }
 
-    private static BidUpsertInput Input(string name, string bid, string basisBid) => new()
+    private static BidUpsertInput Input(int locationId, string bid, string basisBid) => new()
     {
-        Name = name,
+        LocationId = locationId,
         CommodityCode = "IT_UPSERT",
         CropYear = 2027,
         Month = 12,
         Bid = bid,
         BasisBid = basisBid
     };
+
+    /// <summary>
+    /// Creates the location a test writes to. The upsert used to conjure one from a name it could not
+    /// match, which is exactly the behaviour that had to go once locations became company-wide -- so
+    /// every test now has to say which row it means, the same as the app does.
+    /// </summary>
+    private async Task<int> NewLocationAsync(string name)
+    {
+        var loc = new BidSheetLocation
+        {
+            Name = name,
+            TradeUnitCode = TradeUnit,
+            CreatedBy = "integration-test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.BidSheetLocations.Add(loc);
+        await _context.SaveChangesAsync();
+        return loc.Id;
+    }
 
     private async Task<BidSheetLocationBid?> CellFor(string name) =>
         await _context.BidSheetLocationBids.AsNoTracking()
@@ -79,7 +98,8 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         if (!Enabled) return;
 
         var name = $"__IT Upsert Both {Guid.NewGuid():N}";
-        await _sut.BulkUpsertBidsAsync([Input(name, "4.98", "-30")], TradeUnit, "integration-test", default);
+        var locationId = await NewLocationAsync(name);
+        await _sut.BulkUpsertBidsAsync([Input(locationId, "4.98", "-30")], "integration-test", default);
 
         var cell = await CellFor(name);
         Assert.NotNull(cell);
@@ -95,7 +115,8 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         if (!Enabled) return;
 
         var name = $"__IT Upsert Basis {Guid.NewGuid():N}";
-        await _sut.BulkUpsertBidsAsync([Input(name, "", "-40Z")], TradeUnit, "integration-test", default);
+        var locationId = await NewLocationAsync(name);
+        await _sut.BulkUpsertBidsAsync([Input(locationId, "", "-40Z")], "integration-test", default);
 
         var cell = await CellFor(name);
         Assert.NotNull(cell);
@@ -109,7 +130,8 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         if (!Enabled) return;
 
         var name = $"__IT Upsert Cash {Guid.NewGuid():N}";
-        await _sut.BulkUpsertBidsAsync([Input(name, "4.98", "")], TradeUnit, "integration-test", default);
+        var locationId = await NewLocationAsync(name);
+        await _sut.BulkUpsertBidsAsync([Input(locationId, "4.98", "")], "integration-test", default);
 
         var cell = await CellFor(name);
         Assert.NotNull(cell);
@@ -125,8 +147,9 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         if (!Enabled) return;
 
         var name = $"__IT Upsert Clear {Guid.NewGuid():N}";
-        await _sut.BulkUpsertBidsAsync([Input(name, "4.98", "-30")], TradeUnit, "integration-test", default);
-        await _sut.BulkUpsertBidsAsync([Input(name, "", "-30")], TradeUnit, "integration-test", default);
+        var locationId = await NewLocationAsync(name);
+        await _sut.BulkUpsertBidsAsync([Input(locationId, "4.98", "-30")], "integration-test", default);
+        await _sut.BulkUpsertBidsAsync([Input(locationId, "", "-30")], "integration-test", default);
 
         var cell = await CellFor(name);
         Assert.NotNull(cell);
@@ -140,10 +163,11 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         if (!Enabled) return;
 
         var name = $"__IT Upsert Delete {Guid.NewGuid():N}";
-        await _sut.BulkUpsertBidsAsync([Input(name, "4.98", "-30")], TradeUnit, "integration-test", default);
+        var locationId = await NewLocationAsync(name);
+        await _sut.BulkUpsertBidsAsync([Input(locationId, "4.98", "-30")], "integration-test", default);
         Assert.NotNull(await CellFor(name));
 
-        await _sut.BulkUpsertBidsAsync([Input(name, "", "")], TradeUnit, "integration-test", default);
+        await _sut.BulkUpsertBidsAsync([Input(locationId, "", "")], "integration-test", default);
         Assert.Null(await CellFor(name));
     }
 
@@ -180,7 +204,7 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         _context.BidSheetLocations.Add(location);
         await _context.SaveChangesAsync();
 
-        await _sut.BulkUpsertBidsAsync([Input(name, "9.99", "99")], TradeUnit, "integration-test", default);
+        await _sut.BulkUpsertBidsAsync([Input(location.Id, "9.99", "99")], "integration-test", default);
 
         var cell = await CellFor(name);
         Assert.NotNull(cell);
@@ -230,7 +254,7 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         _context.BidSheetLocations.Add(location);
         await _context.SaveChangesAsync();
 
-        await _sut.BulkUpsertBidsAsync([Input(name, "", "-40Z")], TradeUnit, "integration-test", default);
+        await _sut.BulkUpsertBidsAsync([Input(location.Id, "", "-40Z")], "integration-test", default);
 
         var cell = await CellFor(name);
         Assert.NotNull(cell);

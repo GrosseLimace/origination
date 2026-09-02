@@ -22,6 +22,11 @@ import {
 
 interface EditBidsRow {
   name: string;
+  /**
+   * The location this row is. Sent with every saved bid so the server writes to the row the user is
+   * actually looking at -- locations are company-wide now, so a name no longer identifies one.
+   */
+  locationId?: number;
   type: 'elevator' | 'entry';
   elevatorCode?: string;
   tradeUnitCode?: string;
@@ -2049,7 +2054,7 @@ export class BidSheetComponent {
         // months the vendor doesn't publish, and those age independently.
         if (entry?.source === 'Barchart' && this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
       }
-      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, yearFrom, boardChips, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ name, locationId: rep?.locationId, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, yearFrom, boardChips, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -2058,7 +2063,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, yearFrom: {}, boardChips: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ name: loc.name, locationId: loc.id, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, yearFrom: {}, boardChips: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // Apply saved location order (unknown names go to end)
@@ -2437,10 +2442,10 @@ export class BidSheetComponent {
     });
   }
 
-  private _buildDirtyBids(): Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> {
+  private _buildDirtyBids(): Array<{ locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> {
     const tu = this.activeTradeUnit();
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
-    const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> = [];
+    const toCreate: Array<{ locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> = [];
 
     for (const row of this.editBidsRows()) {
       for (const col of this.editGridColumns()) {
@@ -2456,6 +2461,7 @@ export class BidSheetComponent {
         if (current !== original || currentBasis !== originalBasis) {
           const commodity = commodityLookup.get(col.crop);
           toCreate.push({
+            locationId: row.locationId,
             name: row.name,
             latitude: row.latitude,
             longitude: row.longitude,

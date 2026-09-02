@@ -34,7 +34,13 @@ public interface IBidSheetRepository
     Task<BidSheetLocation?> UpdateLocationAsync(int id, BidSheetLocation location, CancellationToken cancellationToken);
     Task DeleteLocationAsync(int id, CancellationToken cancellationToken);
     Task DeleteBidsAsync(int locationId, string commodityCode, int? month, CancellationToken cancellationToken);
-    Task BulkUpsertBidsAsync(IEnumerable<BidUpsertInput> requests, string tradeUnitCode, string userId, CancellationToken cancellationToken);
+    /// <summary>
+    /// Writes bid cells. Each input names its location by id; a name is accepted as a fallback and
+    /// resolved company-wide. An input that resolves to nothing is rejected rather than silently
+    /// creating a location -- that implicit-create path was safe only while a trade unit made the
+    /// name lookup deterministic.
+    /// </summary>
+    Task BulkUpsertBidsAsync(IEnumerable<BidUpsertInput> requests, string userId, CancellationToken cancellationToken);
     Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken);
     Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken);
     Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken);

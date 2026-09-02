@@ -171,65 +171,70 @@ public class BidSheetRepository : IBidSheetRepository
         }
     }
 
-    public async Task BulkUpsertBidsAsync(IEnumerable<BidUpsertInput> requests, string tradeUnitCode, string userId, CancellationToken cancellationToken)
+    public async Task BulkUpsertBidsAsync(IEnumerable<BidUpsertInput> requests, string userId, CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
         var requestList = requests.ToList();
 
-        // Batch-load all locations for the trade unit (1 query instead of N)
-        var allLocations = await _appContext.BidSheetLocations
-            .Where(l => l.TradeUnitCode == tradeUnitCode)
+        // Resolve every input to a location BEFORE writing anything, and refuse the whole batch if any
+        // of them cannot be placed.
+        //
+        // This used to load one trade unit's locations, match on elevator code then on name, and CREATE
+        // a location when it found none. That was safe only because the trade unit made the name lookup
+        // deterministic and a unique (Name, TradeUnitCode) index made it unique. Locations are
+        // company-wide now: the same match would reach across the whole company, and a typo would
+        // quietly fork a new global row that everyone then sees. So the id is what counts, a name is a
+        // fallback for callers that have none, and an input that resolves to nothing is an error rather
+        // than an invention.
+        var wantedIds = requestList.Where(r => r.LocationId.HasValue)
+                                   .Select(r => r.LocationId!.Value)
+                                   .ToHashSet();
+        var wantedNames = requestList.Where(r => !r.LocationId.HasValue && !string.IsNullOrWhiteSpace(r.Name))
+                                     .Select(r => r.Name!.Trim())
+                                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var wantedElevators = requestList.Where(r => !r.LocationId.HasValue && !string.IsNullOrWhiteSpace(r.ElevatorCode))
+                                         .Select(r => r.ElevatorCode!)
+                                         .ToHashSet();
+
+        var candidates = await _appContext.BidSheetLocations
+            .Where(l => wantedIds.Contains(l.Id)
+                     || wantedNames.Contains(l.Name)
+                     || (l.ElevatorCode != null && wantedElevators.Contains(l.ElevatorCode)))
             .ToListAsync(cancellationToken);
 
+        var byId = candidates.ToDictionary(l => l.Id);
         var byElevator = new Dictionary<string, BidSheetLocation>();
-        foreach (var l in allLocations.Where(l => !string.IsNullOrEmpty(l.ElevatorCode)))
+        foreach (var l in candidates.Where(l => !string.IsNullOrEmpty(l.ElevatorCode)))
             byElevator.TryAdd(l.ElevatorCode!, l);
+        // Lowest id wins a name tie, so the choice is at least stable rather than arbitrary.
         var byName = new Dictionary<string, BidSheetLocation>(StringComparer.OrdinalIgnoreCase);
-        foreach (var l in allLocations)
+        foreach (var l in candidates.OrderBy(l => l.Id))
             byName.TryAdd(l.Name.Trim(), l);
 
-        // First pass: create any missing locations in batch
-        var newLocations = new List<BidSheetLocation>();
-        foreach (var req in requestList)
+        BidSheetLocation? Resolve(BidUpsertInput req)
         {
-            BidSheetLocation? loc = null;
-            if (!string.IsNullOrEmpty(req.ElevatorCode))
-                byElevator.TryGetValue(req.ElevatorCode, out loc);
-            if (loc == null && !string.IsNullOrEmpty(req.Name))
-                byName.TryGetValue(req.Name.Trim(), out loc);
-
-            if (loc == null)
-            {
-                var name = (req.Name ?? req.ElevatorCode ?? string.Empty).Trim();
-                // Check if we already queued a new location with this name
-                if (!byName.TryGetValue(name, out loc))
-                {
-                    loc = new BidSheetLocation
-                    {
-                        Name = name,
-                        ElevatorCode = req.ElevatorCode,
-                        TradeUnitCode = tradeUnitCode,
-                        GroupName = req.GroupName,
-                        Latitude = req.Latitude,
-                        Longitude = req.Longitude,
-                        CreatedBy = userId,
-                        CreatedAt = now
-                    };
-                    _appContext.BidSheetLocations.Add(loc);
-                    newLocations.Add(loc);
-                    byName[name] = loc;
-                    if (!string.IsNullOrEmpty(req.ElevatorCode))
-                        byElevator[req.ElevatorCode] = loc;
-                }
-            }
+            if (req.LocationId.HasValue) return byId.GetValueOrDefault(req.LocationId.Value);
+            if (!string.IsNullOrEmpty(req.ElevatorCode) && byElevator.TryGetValue(req.ElevatorCode, out var byElev))
+                return byElev;
+            if (!string.IsNullOrWhiteSpace(req.Name) && byName.TryGetValue(req.Name.Trim(), out var byNm))
+                return byNm;
+            return null;
         }
 
-        // Single SaveChanges to persist all new locations and get their IDs
-        if (newLocations.Count > 0)
-            await _appContext.SaveChangesAsync(cancellationToken);
+        // Loud, not silent. A dropped bid is invisible: the save reports success and the value simply
+        // is not there the next time the user looks.
+        var unresolved = requestList.Where(r => Resolve(r) is null).ToList();
+        if (unresolved.Count > 0)
+        {
+            var first = unresolved[0];
+            var which = first.LocationId.HasValue ? $"id {first.LocationId}" : $"named {first.Name}";
+            throw new BidSheetLocationNotFoundException(
+                $"Could not find the location for {unresolved.Count} bid(s); the first is {which}. "
+                + "Refresh the sheet and try again.");
+        }
 
         // Batch-load all existing bids for the affected locations (1 query instead of N)
-        var locationIds = allLocations.Concat(newLocations).Select(l => l.Id).ToHashSet();
+        var locationIds = candidates.Select(l => l.Id).ToHashSet();
         var existingBids = await _appContext.BidSheetLocationBids
             .Where(b => locationIds.Contains(b.LocationId))
             .ToListAsync(cancellationToken);
@@ -243,12 +248,8 @@ public class BidSheetRepository : IBidSheetRepository
         // Second pass: upsert bids using in-memory lookups (0 queries)
         foreach (var req in requestList)
         {
-            BidSheetLocation? loc = null;
-            if (!string.IsNullOrEmpty(req.ElevatorCode))
-                byElevator.TryGetValue(req.ElevatorCode, out loc);
-            if (loc == null && !string.IsNullOrEmpty(req.Name))
-                byName.TryGetValue(req.Name.Trim(), out loc);
-            if (loc == null) continue;
+            // Never null: the guard above rejected the batch if anything failed to resolve.
+            var loc = Resolve(req)!;
 
             var key = (loc.Id, (req.CommodityCode ?? "").ToUpperInvariant(), req.CropYear, req.Month);
             if (string.IsNullOrWhiteSpace(req.Bid) && string.IsNullOrWhiteSpace(req.BasisBid))
