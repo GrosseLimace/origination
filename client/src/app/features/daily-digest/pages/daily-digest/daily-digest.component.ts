@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, OnIni
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import {
@@ -25,8 +26,9 @@ type MemberTab = 'people' | 'trade-units' | 'groups';
  * via entitlements, gathers notes for the resolved producer set, and emails
  * the digest. This component is configuration-only.
  *
- * Persisted via /api/dailyrecapgroups. The user manages the groups they created and
- * additionally sees groups they're a member of, shown faded and read-only.
+ * Persisted via /api/dailyrecapgroups. Edit rights equal visibility: the page lists the groups the
+ * user created plus ones they are a member of, and all of them are editable. Only DELETE is
+ * creator-only.
  */
 @Component({
   selector: 'app-daily-digest',
@@ -46,6 +48,7 @@ type MemberTab = 'people' | 'trade-units' | 'groups';
 export class DailyDigestComponent implements OnInit {
   private readonly apiService = inject(ApiService);
   private readonly toast = inject(ToastService);
+  private readonly msalService = inject(MsalService);
   private readonly destroyRef = inject(DestroyRef);
 
   // ── Catalogs fetched from /api/entitlements/catalog ─────────────────────
@@ -295,7 +298,7 @@ export class DailyDigestComponent implements OnInit {
   }
 
   protected openEditDialog(group: RecapGroup): void {
-    if (!group.isOwner) return;   // member-only groups are read-only
+    if (!group.canEdit) return;   // server owns the policy; today every visible group is editable
     this.formName.set(group.name);
     this.formDeliveryMethod.set(group.deliveryMethod);
     this.formMembers.set([...group.members]);
@@ -322,7 +325,7 @@ export class DailyDigestComponent implements OnInit {
   });
 
   protected requestDeleteGroup(group: RecapGroup): void {
-    if (!group.isOwner) return;   // member-only groups are read-only
+    if (!group.isOwner) return;   // deleting a group stays creator-only
     this.pendingDeleteId.set(group.id);
     this.deleteDialogOpen.set(true);
   }
@@ -351,7 +354,7 @@ export class DailyDigestComponent implements OnInit {
   }
 
   protected toggleGroupEnabled(group: RecapGroup): void {
-    if (!group.isOwner) return;   // member-only groups are read-only
+    if (!group.canEdit) return;   // any member may start or stop the daily recap
     const next = !group.enabled;
     // Optimistic flip; revert on failure.
     this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: next } : g));
@@ -366,6 +369,56 @@ export class DailyDigestComponent implements OnInit {
       });
   }
 
+  // ── Self-removal confirmation ───────────────────────────────────────────
+  // Any member can edit a group, which includes removing the very member row that grants them
+  // access. That's allowed — leaving a group is legitimate — but it shouldn't be a surprise, so a
+  // save that would drop the caller's own access asks first.
+  protected readonly selfRemovalDialogOpen = signal(false);
+
+  /** The caller's UPN prefix, matching a `person` member's id. */
+  private _callerShortName(): string {
+    const account = this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0]
+      ?? null;
+    const username = account?.username ?? '';
+    return (username.includes('@') ? username.split('@')[0] : username).toLowerCase();
+  }
+
+  /** Whether the given member set still grants the caller access to the group. The catalog the
+   *  picker already loaded IS the caller's own scope — its `tradeUnits` are the trade units the
+   *  caller is entitled to and its `groups` are the groups the caller belongs to — so no extra
+   *  request is needed. */
+  private _retainsAccess(members: RecapMember[]): boolean {
+    const me = this._callerShortName();
+    const myTuCodes = new Set(this.availableTradeUnits().map(t => t.id.toLowerCase()));
+    const myGroupIds = new Set(this.availableTradeUnitGroups().map(g => g.id.toLowerCase()));
+    return members.some(m => {
+      const id = m.id.toLowerCase();
+      if (m.type === 'person') return !!me && id === me;
+      if (m.type === 'trade-unit') return myTuCodes.has(id);
+      return myGroupIds.has(id);
+    });
+  }
+
+  /** True when saving the open form would lock the caller out of the group they're editing. The
+   *  creator is never at risk — their access comes from CreatedBy, not from a member row. */
+  private _wouldRemoveOwnAccess(): boolean {
+    const editingId = this.editingGroupId();
+    if (!editingId) return false;
+    const group = this.groups().find(g => g.id === editingId);
+    if (!group || group.isOwner) return false;
+    return this._retainsAccess(group.members) && !this._retainsAccess(this.formMembers());
+  }
+
+  protected cancelSelfRemoval(): void {
+    this.selfRemovalDialogOpen.set(false);
+  }
+
+  protected confirmSelfRemoval(): void {
+    this.selfRemovalDialogOpen.set(false);
+    this._performSave();
+  }
+
   protected saveGroup(): void {
     if (!this.canSubmit() || this.saving()) return;
     // Flush any CC address typed but not yet committed with Enter / the Add button,
@@ -374,7 +427,19 @@ export class DailyDigestComponent implements OnInit {
     // save rather than silently dropping it.
     this.addCc();
     if (this.newCcEmail().trim()) return;
+    if (this._wouldRemoveOwnAccess()) {
+      this.selfRemovalDialogOpen.set(true);
+      return;
+    }
+    this._performSave();
+  }
+
+  private _performSave(): void {
     const editingId = this.editingGroupId();
+    // Computed before the request, while the form and the cached group still hold the pre-save
+    // state: a group the caller just removed themselves from is no longer theirs to list, so drop
+    // it rather than replacing it with a card the next refresh would take away anyway.
+    const leaving = this._wouldRemoveOwnAccess();
     const request: RecapGroupSaveRequest = {
       name: this.formName().trim(),
       deliveryMethod: this.formDeliveryMethod(),
@@ -393,12 +458,16 @@ export class DailyDigestComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: saved => {
-          this.groups.update(list =>
-            editingId
-              ? list.map(g => g.id === saved.id ? saved : g)
-              : [...list, saved]);
+          this.groups.update(list => {
+            if (!editingId) return [...list, saved];
+            if (leaving) return list.filter(g => g.id !== saved.id);
+            return list.map(g => g.id === saved.id ? saved : g);
+          });
           this.saving.set(false);
-          this.toast.success(editingId ? 'Group updated.' : 'Group created.');
+          this.toast.success(
+            !editingId ? 'Group created.'
+              : leaving ? `You're no longer a member of ${saved.name}.`
+                : 'Group updated.');
           this.closeDialog();
         },
         error: () => {

@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
 /// <summary>Create/update payload for a group. Members are references the Logic App re-resolves at
-/// send time (person UPN / trade-unit code / trade-unit-group id).</summary>
+/// send time (person UPN prefix / trade-unit code / trade-unit-group id).</summary>
 public record RecapGroupRequest : IValidatableObject
 {
     [Required]
@@ -26,6 +26,7 @@ public record RecapGroupRequest : IValidatableObject
     [StringLength(256)]
     public string? TeamsChannelEmail { get; init; }
 
+    [MinLength(1, ErrorMessage = "A recap group needs at least one member.")]
     [MaxLength(500, ErrorMessage = "A recap group cannot have more than 500 members.")]
     public List<RecapGroupMemberRequest> Members { get; init; } = [];
 
@@ -81,7 +82,8 @@ public record RecapGroupMemberRequest
     [AllowedValues("person", "trade-unit", "trade-unit-group", ErrorMessage = "Type must be 'person', 'trade-unit', or 'trade-unit-group'.")]
     public required string Type { get; init; }
 
-    /// <summary>Entitlements id: UPN (person), TU code (trade-unit), group name (trade-unit-group).</summary>
+    /// <summary>Entitlements id: UPN PREFIX (person, e.g. "jdoe" not "jdoe@scoular.com"), TU code
+    /// (trade-unit), entitlements GroupId as a string (trade-unit-group).</summary>
     [Required]
     [StringLength(256)]
     public required string Id { get; init; }

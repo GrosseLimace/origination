@@ -140,8 +140,9 @@ export class ApiService {
   }
 
   // ---------------------------------------------------------------------------
-  // Daily Recap Groups (Daily Digest) — creator-owned CRUD. The server uses an
-  // int PK; the frontend model carries id as a string, so map across the boundary.
+  // Daily Recap Groups (Daily Digest). Any member may edit a group, not just its creator; only
+  // DELETE is creator-only. The server uses an int PK; the frontend model carries id as a string,
+  // so map across the boundary.
   // ---------------------------------------------------------------------------
 
   /** Shapes a server RecapGroupDto into the frontend RecapGroup (int id -> string). */
@@ -156,8 +157,10 @@ export class ApiService {
       ccList: dto.ccList ?? [],
       teamsChannelEmail: dto.teamsChannelEmail,
       enabled: dto.enabled,
-      // Created groups come back from create/update without these flags → default to owner.
+      // Both flags are server-computed on every response now, including create/update. The `?? true`
+      // fallbacks only cover a response shape older than this client.
       isOwner: dto.isOwner ?? true,
+      canEdit: dto.canEdit ?? true,
       createdBy: dto.createdBy ?? '',
     };
   }
