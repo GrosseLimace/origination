@@ -84,8 +84,12 @@ describe('BidSheetComponent — board symbols and printed values', () => {
   });
 
   /** Puts locations in the map cache, which bidEntries reads when no trade unit is active. */
+  // Both, because they hold the same thing now: locations are company-wide, so what the map shows and
+  // what the sheet works from are one list. They stay separate signals because a SHEET will pull them
+  // apart again -- bidLocations becoming the sheet, allMapLocations staying everything.
   function seed(...locs: BidSheetLocation[]): void {
     component.allMapLocations.set(locs);
+    component.bidLocations.set(locs);
   }
 
   // ── the column's board ────────────────────────────────────────────────────────────────────────
@@ -202,26 +206,34 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(component.printCellValue(row('A', 'YC#2026#8', '') as never, { crop: 'YC', month: 8, year: 2026 })).toBe('');
   });
 
-  // ── where an added location lands ────────────────────────────────────────────────────────────
+  // -- the sheet is no longer scoped by trade unit ---------------------------------------------
+  // Adding a location used to need a destination desk, and the BarChart picker created one row per
+  // desk selected. A location belongs to nobody now, so there is nothing to choose and nothing to
+  // multiply -- both of those computeds are gone, and adding needs only a name and a place.
 
-  // This used to fall back to every trade unit the user could reach, so ticking three elevators with
-  // nothing selected silently created placements across the whole book.
-  it('offers no BarChart destination until a trade unit is selected', () => {
-    expect(component.addLocationTus()).toEqual([]);
+  it('needs only a name and coordinates to add a location by hand', () => {
+    component.newLocationName.set('Kansas West');
+    component.newLocationLat.set(38.5);
+    component.newLocationLng.set(-98.0);
+
+    expect(component.canSaveLocation()).toBe(true);
+
+    // A name alone is not enough -- the map click is what gives it a place.
+    component.newLocationLat.set(null);
+    expect(component.canSaveLocation()).toBe(false);
   });
 
-  // The manual form is the opposite shape -- one dropdown, one row -- so it may offer the whole book.
-  // Narrowing BOTH to the selection left that dropdown with nothing to pick and no way to add a
-  // location by hand from an unfiltered map.
-  it('still offers the manual add form a trade unit to pick when none is selected', () => {
-    const appState = TestBed.inject(AppStateService) as unknown as {
-      userGroups: { set(v: unknown): void };
-    };
-    appState.userGroups.set([{ groupName: 'G', tradeUnitCodes: ['2190', '2038'] }]);
+  it('never locks the grid', () => {
+    // The grid used to go read-only whenever no single trade unit was selected, because a bid had to
+    // be saved against a desk. A bid names its own location now, so there is always somewhere to save.
+    expect(component.cellReadOnly()).toBe(false);
+  });
 
-    expect(component.manualAddTuChoices()).toEqual(['2038', '2190']);
-    // ...while the BarChart path stays strict.
-    expect(component.addLocationTus()).toEqual([]);
+  it('saves every screen setting under one key per user', () => {
+    // Was the sorted list of selected trade units, so each desk kept its own arrangement -- and an
+    // empty selection produced an empty key, which every save path silently discarded.
+    expect(component.preferenceKey()).toBe('__global__');
+    expect(component.preferenceKey()).not.toBe('');
   });
 
   // ── saving marks a cell clean ────────────────────────────────────────────────────────────────

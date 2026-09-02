@@ -10,7 +10,6 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
-import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { environment } from '@env/environment';
 import { BarchartPickerComponent, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
 import { BarchartCatalogLocation } from '@models';
@@ -84,7 +83,7 @@ const FILTER_BAR_WRAP_WIDTH = 1050;
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
-  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, CdkDropList, CdkDrag, CdkDragHandle, BarchartPickerComponent],
+  imports: [CommonModule, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, BarchartPickerComponent],
   templateUrl: './bid-sheet.component.html',
   styleUrl: './bid-sheet.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -97,19 +96,16 @@ export class BidSheetComponent {
   private readonly usageTracking = inject(UsageTrackingService);
 
   // --- Filters ---
-  /** True when any TUs are active — either via individual checkboxes or group selection. Enables bid values, statuses, and reference features. */
-  readonly hasIndividualTu = computed(() => this.activeTradeUnits().length > 0);
   /**
-   * The grid is view-only in "All Producers" — with no single trade unit selected there is nothing to
-   * save against, so it shows every location's bids for the year and takes no input. Basis is
-   * editable now that it has its own write path (updateBasisBid).
-   */
-  readonly editBidsReadOnly = computed(() => !this.hasIndividualTu());
-
-  /**
-   * Whether a grid cell accepts typing. There is only one reason it does not — the whole sheet is
-   * read-only because no individual trade unit is selected — so this is sheet-wide today. It stays a
-   * per-cell call because the template asks per cell, and a future per-cell rule lands here.
+   * Whether a grid cell accepts typing.
+   *
+   * Nothing makes it read-only any more. The grid used to lock whenever no single trade unit was
+   * selected, because a bid had to be saved against a desk and "All Producers" had no desk to save
+   * to. Locations are company-wide now and a bid names its own location, so there is always something
+   * to save to.
+   *
+   * Kept as a per-cell call because the template asks per cell, and a future per-cell rule -- a sheet
+   * you only have read access to, say -- lands here rather than in twenty template bindings.
    *
    * Fed cells ARE editable. A typed value is an override that stands until the feed's next run, which
    * takes the cell back and returns it to the vendor's number -- so an originator who knows an
@@ -117,7 +113,7 @@ export class BidSheetComponent {
    * were wrong. The override drops the cell's board label and flips the row's chip to Manual.
    */
   cellReadOnly(): boolean {
-    return this.editBidsReadOnly();
+    return false;
   }
   selectedYear = signal<number>(new Date().getFullYear());
   selectedCrop = signal<string>('');
@@ -133,8 +129,6 @@ export class BidSheetComponent {
   selectedMonth = signal<number>(0); // 0=yearly, 1-12=monthly
 
   // --- Data ---
-  allElevators = signal<Elevator[]>([]);           // ALL elevators from ODS (loaded once)
-  tradeUnitElevators = signal<Elevator[]>([]);     // Filtered to selected trade unit
   allMapLocations = signal<BidSheetLocation[]>([]); // ALL locations across all TUs (for map)
   bidLocations = signal<BidSheetLocation[]>([]);
   /** Set of location IDs that are marked as Scoular facilities — used for row highlighting in edit bids grid and print. */
@@ -162,9 +156,15 @@ export class BidSheetComponent {
     if (!name) return false;
     return this.allMapLocations().some(l => l.name === name && l.isScoularFacility);
   });
-  /** Flattened view of locations — uses TU-filtered bidLocations when a TU is active, otherwise allMapLocations. */
+  /**
+   * Flattened view of every location and its bids.
+   *
+   * bidLocations used to hold the selected desks' locations and allMapLocations everything, and this
+   * chose between them. They are the same list now. The distinction survives because it is what a
+   * SHEET will restore: bidLocations becomes the sheet's locations and the map keeps everything.
+   */
   readonly bidEntries = computed<BidSheetEntry[]>(() => {
-    const source = this.activeTradeUnits().length > 0 ? this.bidLocations() : this.allMapLocations();
+    const source = this.bidLocations();
     // 'both' resolves to cash here: the map colours, side panel and print each need one number.
     const basisMode = this.priceMode() === 'basis';
     return source.flatMap(loc =>
@@ -491,7 +491,7 @@ export class BidSheetComponent {
     const hidden = this.hiddenCrops();
     let result = [...this.crops()].filter(c => !hidden.has(c));
     // Apply saved crop column order (unknown crops go to end)
-    const savedOrder = this.cropOrderByTu().get(this.activeTradeUnitKey());
+    const savedOrder = this.cropOrderByTu().get(this.preferenceKey());
     if (savedOrder && savedOrder.length > 0) {
       const orderMap = new Map(savedOrder.map((code, idx) => [code, idx]));
       result.sort((a, b) => {
@@ -583,7 +583,6 @@ export class BidSheetComponent {
   /** "Where should this location come from?" chooser, shown before either add flow starts. */
   showAddSourceChoice = signal<boolean>(false);
   /** Trade-unit code → description, so the picker's selector can be searched by location too. */
-  readonly tradeUnitDescriptions = this.appState.tradeUnitDescriptions;
   /** Map centre the picker searches around. Updated as the user pans. */
   barchartSearchArea = signal<BarchartSearchArea | null>(null);
   /** Candidate clicked on the map, handed to the picker so map and panel stay in step. */
@@ -606,25 +605,12 @@ export class BidSheetComponent {
    *
    * This used to fall back to EVERY trade unit the user could reach when nothing was selected, which
    * meant ticking three elevators on a twelve-desk book silently created thirty-six placements on
-   * other people's sheets -- the picker creates one row per location PER trade unit, so the blast
-   * radius multiplies. Browsing the catalog is deliberately unrestricted (the picker's search is
-   * geographic and never consults this), but writing needs a destination the user chose.
+   * other people's sheets.
+   *
+   * Both of those computeds are gone with trade-unit scoping: adding a location creates ONE row that
+   * everybody can see, so there is no destination to choose and nothing to multiply. The picker's
+   * bulk add went from N locations x M desks to N rows.
    */
-  readonly addLocationTus = computed(() => this.activeTradeUnits());
-
-  /**
-   * Trade units offered by the MANUAL add form's dropdown, which may fall back to the user's whole
-   * book because that flow is the opposite shape: the user picks exactly one from a list and gets one
-   * row. There is no multiplication to guard against, and no selection is a normal way to arrive at
-   * the map -- sharing addLocationTus left the dropdown with nothing to choose.
-   */
-  readonly manualAddTuChoices = computed(() => {
-    const active = this.activeTradeUnits();
-    if (active.length > 0) return active;
-    const all = new Set<string>();
-    this.appState.userGroups().forEach(g => g.tradeUnitCodes.forEach(c => all.add(c.trim())));
-    return [...all].sort();
-  });
 
   private static readonly _excludedCommodityCategories = new Set([
     'CURRENCY', 'TRANSPORTATION', 'FEED & FERT INGREDIENTS', 'FEED &FERT INGREDIENTS'
@@ -684,42 +670,25 @@ export class BidSheetComponent {
   // switching spinner / drop the old base only once the new tiles are actually painted.
   private _satelliteImageryLayer: Leaflet.TileLayer | null = null;
   private _isMapInitialized = false;
-  private _lastTuSet = '';
   private _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private _zoomDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** Emits to cancel the previous _loadBidData subscription when TU selection changes rapidly. */
-  private readonly _loadBidData$ = new Subject<{ tus: string[]; onLoaded?: () => void; mode: 'initial' | 'refresh' }>();
 
   // Geocode cache removed — coordinates now come from API (dbo.ElevatorCoordinates)
 
-  // --- Active trade units (TU codes to display on map) ---
-  // Individual TU selections take precedence; group selection is the fallback when none are checked.
-  readonly activeTradeUnits = computed(() => {
-    const selectedUnits = this.appState.selectedTradeUnits();
-    if (selectedUnits.length > 0) return selectedUnits.map(c => c.trim());
-
-    const selectedGroups = this.appState.selectedGroupNames();
-    const allGroups = this.appState.userGroups();
-    const codes = new Set<string>();
-    for (const g of allGroups) {
-      if (selectedGroups.includes(g.groupName)) {
-        g.tradeUnitCodes.forEach(c => codes.add(c.trim()));
-      }
-    }
-    return [...codes];
-  });
-
-  // Primary TU for bid data — first individual selection, then first in group
-  readonly activeTradeUnit = computed(() => {
-    const units = this.appState.selectedTradeUnits();
-    if (units.length > 0) return units[0];
-    return this.activeTradeUnits()[0] ?? '';
-  });
-
-  /** Sorted, comma-joined key for the current TU selection. Used as the reference lookup key.
-   *  E.g. "2040" or "2040,2050" — same key regardless of whether TUs came from group or individual checkboxes. */
-  readonly activeTradeUnitKey = computed(() => [...this.activeTradeUnits()].sort().join(','));
+  /**
+   * The key everything on this screen is saved under: crop order, hidden crops, selected months and
+   * years, print layout, row order.
+   *
+   * It used to be the sorted list of selected trade units, so each desk kept its own arrangement. The
+   * bid sheet is not scoped by trade unit any more, so there is one arrangement per user and it lives
+   * under the key the codebase already reserved for exactly that.
+   *
+   * A constant rather than an inlined literal because it is about to become the SHEET key, and every
+   * save and load path has to move together when it does -- a save writing one key while a load reads
+   * another loses the user's layout in silence.
+   */
+  readonly preferenceKey = computed(() => BidSheetComponent.GLOBAL_PREF_KEY);
 
   constructor() {
     // Keep the map in step with the BarChart panel: whichever listing is open shows as a blue pin, so
@@ -759,114 +728,6 @@ export class BidSheetComponent {
       error: () => {}
     });
 
-    // switchMap pipeline: cancels the previous _loadBidData request when TU selection changes rapidly.
-    // Each trade unit's fetch retries transient failures, then degrades to null (caught) so ONE
-    // trade unit hiccupping can't sink the whole reload. A 'refresh' load (run after a successful
-    // save) never shows the red "failed" error — the save already committed; at worst a soft notice.
-    this._loadBidData$.pipe(
-      switchMap(({ tus, onLoaded, mode }) => {
-        this.isLoading.set(true);
-        // Set edit grid loading here (inside switchMap) so it survives cancellation of
-        // the previous request. The previous onLoaded callback will never fire, but this
-        // new emission takes ownership of the loading state.
-        if (onLoaded && this.editBidsMode()) this.editBidsGridLoading.set(true);
-        return forkJoin(
-          tus.map(tu => forkJoin({
-            locations: this.apiService.getBidSheetLocations(tu),
-            cropYears: this.apiService.getBidCropYears(tu),
-            bidCommodities: this.apiService.getBidCommodities(tu)
-          }).pipe(
-            // GETs are idempotent — give a transient blip a couple of quiet retries before giving up.
-            retry({ count: 2, delay: () => timer(400) }),
-            catchError(() => of(null))
-          ))
-        ).pipe(map(perTu => ({ perTu, onLoaded, mode })));
-      }),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe({
-      next: ({ perTu, onLoaded, mode }) => {
-        // If any trade unit failed (even after retries), don't replace the screen with a partial
-        // set (that would drop a TU's locations). Keep what's shown — optimistic local updates
-        // already reflect the just-saved change — and surface only a soft notice, never a red error.
-        if (perTu.some(r => r == null)) {
-          this.isLoading.set(false);
-          this.editBidsGridLoading.set(false);
-          onLoaded?.();
-          if (mode === 'refresh') this.toastService.info('Your changes were saved — some bid data couldn’t be refreshed. Pull to refresh if needed.');
-          else this.toastService.error('Failed to load bid data');
-          return;
-        }
-        const results = perTu as NonNullable<(typeof perTu)[number]>[];
-        const allLocations = results.flatMap(r => r.locations);
-        let cropYears = [...new Set(results.flatMap(r => r.cropYears))].sort((a, b) => a - b);
-        const bidCommodities = [...new Set(results.flatMap(r => r.bidCommodities))].sort();
-
-        this.bidLocations.set(allLocations);
-        // A crop the user added has no saved bids yet, so the server's commodity list omits it and
-        // overwriting outright made the column vanish. Two things vouch for such a crop: it is still
-        // staged in the open dropdown, or it was committed and therefore written into the saved column
-        // order. Checking only the former lost it the moment Done cleared the staging set.
-        const savedOrder = this.cropOrderByTu().get(this.activeTradeUnitKey()) ?? [];
-        const vouched = new Set([...this.pendingAddedCrops(), ...savedOrder]);
-        const kept = [...new Set([...this.crops(), ...savedOrder])]
-          .filter(c => vouched.has(c) && !bidCommodities.includes(c));
-        const merged = [...bidCommodities, ...kept];
-        this.crops.set(savedOrder.length > 0
-          ? [...savedOrder.filter(c => merged.includes(c)), ...merged.filter(c => !savedOrder.includes(c))]
-          : merged);
-
-        // Always ensure a crop is selected (first available if current is invalid)
-        if (bidCommodities.length > 0 && !bidCommodities.includes(this.selectedCrop())) {
-          this.selectedCrop.set(bidCommodities[0]);
-        }
-
-        const currentYear = new Date().getFullYear();
-        if (cropYears.length === 0) cropYears = [currentYear];
-        this.cropYears.set(cropYears);
-        if (!cropYears.includes(this.selectedYear())) {
-          this.selectedYear.set(cropYears.includes(currentYear) ? currentYear : cropYears[cropYears.length - 1]);
-        }
-        // Anchor the old/new comparison window to the SELECTED year so the panel's "prior" column is
-        // always selectedYear-1 — not the second-latest year. Previously this reset yearOffset to 0
-        // (= latest two years); when the selected year wasn't the latest (e.g. 2026 with 2027 bids
-        // present), the "prior" column collided with the selected year and both showed the same year
-        // with the same bid after a refresh/Done.
-        const selIdx = cropYears.indexOf(this.selectedYear());
-        this.yearOffset.set(selIdx >= 0 ? selIdx - (cropYears.length - 1) : 0);
-
-        this.isLoading.set(false);
-        // Cleared here rather than left to each onLoaded callback. It was set on this pipeline's own
-        // behalf (see the top of the switchMap), so this is where it comes off -- a callback that
-        // only rebuilt the grid, like the rename/Scoular-star path, otherwise stranded the grid on
-        // its spinner for the rest of the session.
-        this.editBidsGridLoading.set(false);
-        this.filterBids();
-        this._refreshMapMarkers();
-        if (onLoaded) {
-          onLoaded();
-        } else if (this.editBidsMode() && this._buildDirtyBids().length === 0) {
-          // A background refresh landed while the grid is open: true it up -- unless the user has
-          // unsaved edits, which a rebuild would eat. Those reconcile on the next save/navigation.
-          this._buildEditGrid();
-        }
-      },
-      error: () => {
-        // Per-TU failures are caught above, so this only fires on an unexpected pipeline error.
-        this.isLoading.set(false);
-        this.editBidsGridLoading.set(false);
-        this.toastService.error('Failed to load bid data');
-      }
-    });
-
-    // React to trade unit / group changes — skip if same set (prevents re-zoom on nav back)
-    effect(() => {
-      const tus = this.activeTradeUnits();
-      const key = [...tus].sort().join(',');
-      if (key === this._lastTuSet) return;
-      this._lastTuSet = key;
-      this._onTradeUnitsChanged(tus);
-    });
-
     this._initializeMapWhenReady();
 
     this.destroyRef.onDestroy(() => {
@@ -881,27 +742,45 @@ export class BidSheetComponent {
   // =========================================================================
   // Data Loading
 
-  private _loadAllMapLocations(): void {
+  /**
+   * Loads every bid sheet location, with its bids, in one call.
+   *
+   * This is the ONLY load now. There used to be a second, per-trade-unit path that fetched each
+   * desk's locations plus its crop and crop-year lists as three calls apiece, with retries and
+   * partial-failure handling -- all of which existed to answer "what may this desk see". Nothing is
+   * scoped by desk any more, and this endpoint was already unscoped, so the whole pipeline went and
+   * the crop and year lists are derived from the payload that just arrived.
+   */
+  private _loadAllMapLocations(onLoaded?: () => void): void {
     this.apiService.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (locs) => {
         this.allMapLocations.set(locs);
-        if (this.activeTradeUnits().length === 0) {
-          this._applyAllProducersFilters();
-          this.filterBids();
-        }
+        this.bidLocations.set(locs);
+        this._applyBidFilterSources();
+        this.filterBids();
         this._refreshMapMarkers();
+        this.isLoading.set(false);
+        this.editBidsGridLoading.set(false);
+        if (this.editBidsMode() && this._buildDirtyBids().length === 0) this._buildEditGrid();
+        onLoaded?.();
       },
-      error: () => this.toastService.error('Failed to load map locations')
+      error: () => {
+        this.isLoading.set(false);
+        this.editBidsGridLoading.set(false);
+        this.toastService.error('Failed to load bid sheet locations');
+      }
     });
   }
 
   /**
-   * "All Producers" mode has no trade unit, so the per-TU bid load (which fills crops/cropYears)
-   * is skipped. Derive the crop + crop-year lists from every location's bids (allMapLocations) so
-   * the same crop / year / month filters and the old/new comparison work across all producers.
-   * Defaults the selected crop/year to a valid value so the comparison shows bids.
+   * Derives the crop and crop-year filter lists from the bids that were just loaded, and defaults the
+   * selection to something that actually has data.
+   *
+   * These used to come from two per-trade-unit endpoints. Deriving them from the payload is a call
+   * the screen no longer has to make, and it cannot disagree with what is on the map -- the old pair
+   * could, whenever a desk's list and the map's locations were fetched a moment apart.
    */
-  private _applyAllProducersFilters(): void {
+  private _applyBidFilterSources(): void {
     const bids = this.allMapLocations().flatMap(l => l.bids ?? []);
     const crops = [...new Set(bids.map(b => b.commodityCode).filter((c): c is string => !!c))].sort();
     const years = [...new Set(bids.map(b => b.cropYear).filter((y): y is number => y != null))].sort((a, b) => a - b);
@@ -918,63 +797,30 @@ export class BidSheetComponent {
 
   // =========================================================================
 
-  private _onTradeUnitsChanged(tus: string[]): void {
-    if (tus.length > 0) {
-      // If a TU is selected but no group, auto-select the parent group
-      if (this.appState.selectedGroupNames().length === 0) {
-        const groups = this.appState.userGroups();
-        const matchingGroup = groups.find(g => g.tradeUnitCodes.some(c => tus.includes(c.trim())));
-        if (matchingGroup) {
-          this.appState.setSelectedGroupNames([matchingGroup.groupName]);
+  /**
+   * Loads the saved row order.
+   *
+   * Note there is no early return for "nothing selected" here any more. There used to be, and it
+   * meant the order was never even attempted without a trade unit -- so in the old All Producers mode
+   * a saved arrangement silently did not apply. With one key per user there is always a key to ask
+   * for, and no state in which asking is wrong.
+   */
+  private _loadLocationOrder(): void {
+    const key = this.preferenceKey();
+    this.apiService.getBidSheetLocationOrder(key).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: result => {
+        const orderMap = new Map(this.locationOrderByTu());
+        if (result?.locationOrder) {
+          try { orderMap.set(key, JSON.parse(result.locationOrder)); }
+          catch { orderMap.delete(key); }
+        } else {
+          orderMap.delete(key);
         }
-      }
-      // Filter all elevators to any of the active TU codes (kept for add-location / reference lookup)
-      const tuSet = new Set(tus);
-      const tuElevators = this.allElevators().filter(e => tuSet.has((e.tradeUnitCode ?? '').trim()));
-      this.tradeUnitElevators.set(tuElevators);
-      // Load bid data and references for all active TUs
-      if (this.editBidsMode()) this.editBidsGridLoading.set(true);
-      this._loadBidData(tus, () => {
-        this._zoomToBidLocations();
-        // Apply saved crop preference after bid data loads (so we know available crops)
-        this._loadPreference(tus);
-        // If edit bids is open, rebuild the grid with new data
-        if (this.editBidsMode()) {
-          this._buildEditGrid();
-          this.editBidsGridLoading.set(false);
-        }
-      });
-      this._loadLocationOrder(tus);
-    } else {
-      this.tradeUnitElevators.set([]);
-      this.bidLocations.set([]);
-      this.locationOrderByTu.set(new Map());
-      this.selectedBasis.set('all');
-      // All Producers: derive crop/year filters from every location's bids so they still work
-      // (allMapLocations may already be loaded; if not, _loadAllMapLocations re-applies on arrival).
-      this._applyAllProducersFilters();
-      this.filterBids();
-      this._refreshMapMarkers();
-      // Reset map to US overview
-      if (this._map) this._map.setView([38.5, -98.0], 5);
-    }
-  }
-
-  private _loadLocationOrder(tus: string[]): void {
-    if (tus.length === 0) return;
-    const key = [...tus].sort().join(',');
-    this.apiService.getBidSheetLocationOrder(key).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(result => {
-      const orderMap = new Map(this.locationOrderByTu());
-      if (result?.locationOrder) {
-        try { orderMap.set(key, JSON.parse(result.locationOrder)); }
-        catch { orderMap.delete(key); }
-      } else {
-        orderMap.delete(key);
-      }
-      this.locationOrderByTu.set(orderMap);
-      if (this.editBidsMode()) {
-        this._buildEditGrid();
-      }
+        this.locationOrderByTu.set(orderMap);
+        if (this.editBidsMode()) this._buildEditGrid();
+      },
+      // Was unhandled, so a failure here killed the subscription and left the order silently unapplied.
+      error: (err) => { if (isDevMode()) console.warn('Failed to load saved row order', err); }
     });
   }
 
@@ -1109,7 +955,7 @@ export class BidSheetComponent {
     const cropCode = this.selectedCrop() || null;
     const month = this.selectedMonth();
     const cropYear = this.selectedYear() || null;
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     // Cash/basis rides along with crop, month and year: it's the same kind of choice, and having it
     // reset on every visit would be its own small annoyance.
     const priceMode = this.priceMode();
@@ -1166,22 +1012,6 @@ export class BidSheetComponent {
       // fitBounds with right padding ensures bounds fit in the visible area (excluding the panel)
       this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 80], maxZoom: 12 });
     }
-  }
-
-  /** Triggers bid data load via switchMap — automatically cancels any previous in-flight request.
-   *  mode 'refresh' (a reload AFTER a successful save) degrades transient failures to a soft notice
-   *  instead of a red error, so a refresh hiccup never looks like the save failed. */
-  private _loadBidData(tradeUnitCodes: string[], onLoaded?: () => void, mode: 'initial' | 'refresh' = 'initial'): void {
-    if (tradeUnitCodes.length === 0) {
-      // forkJoin over an empty array completes without emitting, so neither the loading flags nor the
-      // callback would ever be settled. Callers pass activeTradeUnits() freely, which is empty
-      // whenever nothing is selected, so this is a normal case rather than a defensive one.
-      this.isLoading.set(false);
-      this.editBidsGridLoading.set(false);
-      onLoaded?.();
-      return;
-    }
-    this._loadBidData$.next({ tus: tradeUnitCodes, onLoaded, mode });
   }
 
   // =========================================================================
@@ -1281,10 +1111,15 @@ export class BidSheetComponent {
   }
 
   filterBids(): void {
-    const hasTu = this.activeTradeUnits().length > 0;
+    // Everything is in scope now, so the panel filter prunes map pins in every case. It used to
+    // only prune when a trade unit was selected, which quietly left every pin on the map in All
+    // Producers while the panel list narrowed.
+    const hasTu = true;
     // Comparison/status applies for a single TU AND for All Producers (view-only) — both derive
     // crop-year data, so the reference/beating/matching logic runs identically; only editing differs.
-    const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
+    // Was "a trade unit is selected, OR we are in All Producers with data" -- both branches are
+    // now the only branch, so bid values, statuses and reference comparison always render.
+    const hasIndividualTu = true;
     const basis = this.selectedBasis();
 
     let items: BidSheetPanelItem[] = [];
@@ -1567,7 +1402,6 @@ export class BidSheetComponent {
    * the behaviour every environment had before the picker existed.
    */
   startAddLocation(origin: 'editBids' | 'map'): void {
-    if (origin === 'editBids' && this.editBidsReadOnly()) return; // view-only grid has no add row
     this.addLocationOrigin.set(origin === 'editBids' ? 'editBids' : null);
     if (!this.barchartEnabled) { this._startManualAdd(); return; }
     this.showAddSourceChoice.set(true);
@@ -1638,8 +1472,6 @@ export class BidSheetComponent {
     this._addLocationPin = _L.marker([lat, lng], { icon: pinIcon }).addTo(this._map);
 
     // Auto-select TU if only one is available
-    const tus = this.manualAddTuChoices();
-    this.newLocationTu.set(tus.length === 1 ? tus[0] : '');
 
     // Open the form (just name + Scoular star; bids are entered later in the grid)
     this.showAddLocationForm.set(true);
@@ -1647,23 +1479,21 @@ export class BidSheetComponent {
 
   canSaveLocation = computed(() => {
     const name = this.newLocationName().trim();
-    const tu = this.newLocationTu();
     const hasCoords = this.newLocationLat() !== null;
-    // Bids are entered afterward in the Edit Bids grid, so creating a location only needs a
-    // name, a trade unit, and the coordinates picked on the map.
-    return !!name && !!tu && hasCoords;
+    // Bids are entered afterward in the Edit Bids grid, so creating a location needs only a name and
+    // the coordinates picked on the map. It used to need a trade unit too -- the desk the row would
+    // belong to -- and a location belongs to nobody now.
+    return !!name && hasCoords;
   });
 
   confirmAddLocation(): void {
     if (this.addLocationSaving()) return; // guard against a double-click firing two creates
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
     const name = this.newLocationName().trim();
-    const tu = this.newLocationTu();
     const lat = this.newLocationLat();
     const lng = this.newLocationLng();
 
     if (!name) { this.toastService.error('Enter a location name'); return; }
-    if (!tu) { this.toastService.error('Select a trade unit'); return; }
 
     this.addLocationSaving.set(true);
     // Create the location with NO bids — bids are entered next in the Edit Bids grid.
@@ -1671,8 +1501,6 @@ export class BidSheetComponent {
       name,
       latitude: lat ?? undefined,
       longitude: lng ?? undefined,
-      tradeUnitCode: tu,
-      groupName: this._getGroupNameForTu(tu) || undefined,
       isScoularFacility: this.newLocationIsScoular(),
       bids: []
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1699,10 +1527,6 @@ export class BidSheetComponent {
         // editBidsGridLoading on (see _loadBidData) and show a grid spinner that the success path
         // doesn't clear. The load's own success path already runs filterBids() + _refreshMapMarkers().
         this._loadAllMapLocations();
-        const tus = this.activeTradeUnits();
-        if (tus.length > 0) {
-          this._loadBidData(tus, undefined, 'refresh');
-        }
       },
       error: (err) => {
         this.addLocationSaving.set(false);
@@ -1786,11 +1610,11 @@ export class BidSheetComponent {
     const L = this._L;
     this._clearBarchartPins();
     this._barchartLayer = L.layerGroup().addTo(this._map);
-    // Hollow is scoped to the trade units being added to: a placement on some other desk's trade
-    // unit must not make a pin read as unavailable here.
-    const targetTus = new Set(this.addLocationTus());
+    // Hollow means the elevator is already on the sheet. It used to mean "already on one of the desks
+    // I am adding to", because the same listing was stored once per desk; there is one row per
+    // elevator now, so any placement at all is THE placement.
     this._barchartPlacedKeys = new Set(rows
-      .filter(r => r.placements.some(p => targetTus.has(p.tradeUnitCode)))
+      .filter(r => r.placements.length > 0)
       .map(r => r.locationKey));
 
     for (const loc of rows) {
@@ -1946,9 +1770,9 @@ export class BidSheetComponent {
       this.toastService.success(
         `Added ${count} location${count === 1 ? '' : 's'}` + (notes ? ` — ${notes}` : ''));
 
-      const viewing = new Set(this.activeTradeUnits());
-      const mine = saved.filter(l => viewing.has(l.tradeUnitCode));
-      if (mine.length > 0) this.bidLocations.update(locs => [...mine, ...locs]);
+      // One list. This used to split the new rows into "on a desk I am viewing" and "everything
+      // else", because a location belonged to a desk and only some of them were mine to see.
+      this.bidLocations.update(locs => [...saved, ...locs]);
       this.allMapLocations.update(locs => [...saved, ...locs]);
 
       // Hand off immediately from the cache we just updated -- Edit Bids builds from memory, so the
@@ -1960,8 +1784,6 @@ export class BidSheetComponent {
       this.openEditBids(request.locations[0]?.name);
 
       this._loadAllMapLocations();
-      const tus = this.activeTradeUnits();
-      if (tus.length > 0) this._loadBidData(tus, undefined, 'refresh');
     });
   }
 
@@ -1997,8 +1819,7 @@ export class BidSheetComponent {
     // the job the header's Refresh button used to do by hand. No spinner (no onLoaded callback),
     // and the pipeline only rebuilds the open grid when nothing is dirty, so a keystroke can never
     // be eaten by data arriving underneath it.
-    const refreshTus = this.activeTradeUnits();
-    if (refreshTus.length > 0) this._loadBidData(refreshTus, undefined, 'refresh');
+    this._loadAllMapLocations();
 
     // Focus the first crop input for the selected location
     if (focusLocation) {
@@ -2067,7 +1888,7 @@ export class BidSheetComponent {
     }
 
     // Apply saved location order (unknown names go to end)
-    const savedOrder = this.locationOrderByTu().get(this.activeTradeUnitKey());
+    const savedOrder = this.locationOrderByTu().get(this.preferenceKey());
     if (savedOrder && savedOrder.length > 0) {
       const orderMap = new Map(savedOrder.map((name, idx) => [name, idx]));
       rows.sort((a, b) => {
@@ -2090,7 +1911,7 @@ export class BidSheetComponent {
     });
 
     // Persist the new order
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     if (!key) return;
     const names = this.editBidsRows().map(r => r.name);
     const orderMap = new Map(this.locationOrderByTu());
@@ -2129,7 +1950,7 @@ export class BidSheetComponent {
     this.crops.set([...visible, ...hidden]);
 
     // Persist the new order
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     if (!key) return;
     const orderedCrops = this.crops();
     const orderMap = new Map(this.cropOrderByTu());
@@ -2213,7 +2034,7 @@ export class BidSheetComponent {
 
   /** Persists the Edit Bids year selection, so it survives a reload and the add-location round trip. */
   private _saveSelectedYears(years: number[]): void {
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     if (!key) return;
     this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), selectedYears: JSON.stringify(years) })
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -2222,28 +2043,12 @@ export class BidSheetComponent {
 
   /** Persists hidden crops to the preference API. */
   private _saveHiddenCrops(): void {
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     if (!key) return;
     const hidden = [...this.hiddenCrops()];
     this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), hiddenCrops: JSON.stringify(hidden) })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save hidden crops', err); } });
-  }
-
-  applyEditBidsTuFilter(): void {
-    const tus = this.activeTradeUnits();
-    if (tus.length === 0) return;
-    // Save edits for the current TU set first (rows still carry the pre-switch tradeUnitCode), then reload.
-    this._saveDirtyBids(() => {
-      this.editBidsGridLoading.set(true);
-      this._loadLocationOrder(tus);
-      this._loadBidData(tus, () => {
-        this._buildEditGrid();
-        this.editBidsGridLoading.set(false);
-        this.filterBids();
-        this._refreshMapMarkers();
-      });
-    });
   }
 
   /**
@@ -2371,7 +2176,7 @@ export class BidSheetComponent {
 
   /** Persists the crop column order for the active TU (mirrors the grid's column-drag persistence). */
   private _saveCropOrder(orderedCrops: string[]): void {
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     if (!key) return;
     const orderMap = new Map(this.cropOrderByTu());
     orderMap.set(key, orderedCrops);
@@ -2388,7 +2193,7 @@ export class BidSheetComponent {
   }
 
   private _saveSelectedMonths(): void {
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     if (!key) return;
     this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), selectedMonths: JSON.stringify(this.editBidsMonths()) })
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -2443,7 +2248,6 @@ export class BidSheetComponent {
   }
 
   private _buildDirtyBids(): Array<{ locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> {
-    const tu = this.activeTradeUnit();
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
     const toCreate: Array<{ locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> = [];
 
@@ -2466,8 +2270,7 @@ export class BidSheetComponent {
             latitude: row.latitude,
             longitude: row.longitude,
             elevatorCode: row.elevatorCode,
-            tradeUnitCode: row.tradeUnitCode || tu,
-            groupName: this._getGroupNameForTu(row.tradeUnitCode || tu) || undefined,
+            tradeUnitCode: row.tradeUnitCode,
             commodityCode: col.crop,
             commodityName: commodity?.name,
             commodityCategory: commodity?.category ?? undefined,
@@ -2647,7 +2450,6 @@ export class BidSheetComponent {
 
   /** Fired when a bid input loses focus — silently saves any changed cells. */
   onBidBlur(): void {
-    if (this.editBidsReadOnly()) return; // view-only: never auto-save
     this._saveDirtyBids();
   }
 
@@ -2697,7 +2499,7 @@ export class BidSheetComponent {
   private _finishEditBids(): void {
     this._closeEditBids();
     // 'refresh': a hiccup in this post-save reload is shown softly, never as a save failure.
-    this._loadBidData(this.activeTradeUnits(), undefined, 'refresh');
+    this._loadAllMapLocations();
   }
 
   /** Footer "Close": there is no discard anymore — everything auto-saves on blur/navigation.
@@ -3039,7 +2841,7 @@ export class BidSheetComponent {
     const cropCode = this.selectedCrop() || null;
     const month = this.selectedMonth();
     const cropYear = this.selectedYear() || null;
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     if (key) {
       this.apiService.setBidSheetPreference({ tradeUnitKey: key, cropCode, month, cropYear, printLayout: layout })
         .pipe(takeUntilDestroyed(this.destroyRef))
@@ -3166,12 +2968,12 @@ export class BidSheetComponent {
   }
 
   confirmDeleteLocation(): void {
-    if (this.editBidsReadOnly()) return; // read-only in All Producers — no deletes
     const name = this.panelSelectedLocation();
     if (!name) return;
     const loc = this._findLocationByName(name);
     if (!loc) return;
-    const tu = loc.tradeUnitCode ?? this.activeTradeUnit();
+    // Provenance only -- kept so the row keeps saying which desk introduced it.
+    const tu = loc.tradeUnitCode ?? undefined;
 
     this.apiService.deleteBidSheetLocation(loc.id, tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
@@ -3204,13 +3006,13 @@ export class BidSheetComponent {
   }
 
   confirmDeleteCrop(): void {
-    if (this.editBidsReadOnly()) return; // read-only in All Producers — no deletes
     const crop = this.pendingDeleteCrop();
     const name = this.panelSelectedLocation();
     if (!crop || !name) return;
     const loc = this._findLocationByName(name);
     if (!loc) return;
-    const tu = loc.tradeUnitCode ?? this.activeTradeUnit();
+    // Provenance only -- kept so the row keeps saying which desk introduced it.
+    const tu = loc.tradeUnitCode ?? undefined;
 
     this.apiService.deleteBidSheetBids(loc.id, crop, tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
@@ -3255,14 +3057,18 @@ export class BidSheetComponent {
    *
    * Prefers a row in the trade units currently in view, lowest id first so repeat actions are stable.
    * Falls back to any match, which preserves the old behaviour for the case where the panel is showing
-   * something outside the current selection — mutations are gated on a trade unit being selected
-   * (editBidsReadOnly), so in practice the scoped branch is the one that runs.
+   * one row per elevator, so a name that matches twice means two genuinely different places that
+   * happen to share a name -- lowest id wins, which is at least stable.
+   *
+   * This used to prefer a row inside the selected trade units, and its own comment noted that the
+   * unscoped fallback was tolerable only because mutations were gated behind a trade unit being
+   * selected. That gate is gone, so prefer the id where you have one: renaming and the Scoular
+   * toggle both do.
    */
   private _findLocationByName(name: string): BidSheetLocation | undefined {
-    const inView = new Set(this.activeTradeUnits());
-    const candidates = [...this.allMapLocations(), ...this.bidLocations()].filter(l => l.name === name);
-    return candidates.filter(l => inView.has(l.tradeUnitCode)).sort((a, b) => a.id - b.id)[0]
-        ?? candidates[0];
+    return this.allMapLocations()
+      .filter(l => l.name === name)
+      .sort((a, b) => a.id - b.id)[0];
   }
 
   // -------------------------------------------------------------------------
@@ -3279,7 +3085,6 @@ export class BidSheetComponent {
 
   startRenameRow(name: string, event?: Event): void {
     event?.stopPropagation();
-    if (this.editBidsReadOnly()) return;
     this.renamingRow.set(name);
     this.renameRowDraft.set(name);
     // The template's `autofocus` does nothing here -- browsers honour it at parse time, not when an
@@ -3323,7 +3128,7 @@ export class BidSheetComponent {
 
   /** Keeps a renamed row where the user put it, in memory and in the saved preference. */
   private _renameInSavedOrder(oldName: string, newName: string): void {
-    const key = this.activeTradeUnitKey();
+    const key = this.preferenceKey();
     const order = this.locationOrderByTu().get(key);
     if (!order || !order.includes(oldName)) return;
     const next = order.map(n => (n === oldName ? newName : n));
@@ -3341,7 +3146,6 @@ export class BidSheetComponent {
 
   toggleRowScoular(name: string, event?: Event): void {
     event?.stopPropagation();
-    if (this.editBidsReadOnly()) return;
     const loc = this._findLocationByName(name);
     if (!loc) return;
     const next = !(loc.isScoularFacility ?? false);
@@ -3383,15 +3187,13 @@ export class BidSheetComponent {
         // and the open grid still trues itself up when the reload lands (see _loadBidData).
         if (this.editBidsMode()) this._buildEditGrid();
         this._loadAllMapLocations();
-        const tus = this.activeTradeUnits();
-        if (tus.length > 0) this._loadBidData(tus, undefined, 'refresh');
+        this._loadAllMapLocations();
       },
       error: () => this.toastService.error(failureMessage)
     });
   }
 
   saveLocationName(): void {
-    if (this.editBidsReadOnly()) return; // read-only in All Producers
     const newName = this.editLocationNameValue().trim();
     const oldName = this.panelSelectedLocation();
     if (!newName || newName === oldName) {
@@ -3422,15 +3224,12 @@ export class BidSheetComponent {
         this.toastService.success(`Location renamed to ${newName}`);
         // Reload data to reflect the change
         this._loadAllMapLocations();
-        const tus = this.activeTradeUnits();
-        if (tus.length > 0) this._loadBidData(tus);
       },
       error: () => this.toastService.error('Failed to rename location')
     });
   }
 
   toggleLocationScoularStatus(): void {
-    if (this.editBidsReadOnly()) return; // read-only in All Producers
     const name = this.panelSelectedLocation();
     if (!name) return;
     const loc = this._findLocationByName(name);
@@ -3668,13 +3467,13 @@ export class BidSheetComponent {
     // Keep map clean during add-location mode, and while the BarChart picker owns the map
     if (this.addLocationMode() || this.barchartMode()) return;
 
-    const activeTus = this.activeTradeUnits();
-    const hasTu = activeTus.length > 0;
+    // Every location is in scope. The old pair asked which desks were selected so pins outside them
+    // could be greyed and the panel filter could prune -- see the comment where hasTu is used.
+    const hasTu = true;
     const zoom = this._map.getZoom();
     const month = this.selectedMonth();
 
     const locKey = (lat: number, lng: number) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
-    const activeTuSet = new Set(activeTus);
     const crop = this.selectedCrop();
     const year = this.selectedYear();
 
@@ -3717,7 +3516,9 @@ export class BidSheetComponent {
     const panelNames = new Set(this.filteredBidItems().map(i => i.name));
 
     // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
-    const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
+    // Was "a trade unit is selected, OR we are in All Producers with data" -- both branches are
+    // now the only branch, so bid values, statuses and reference comparison always render.
+    const hasIndividualTu = true;
 
     // Pass 1: decide which coordinate groups actually render a marker (apply the skip filters once)
     // and capture the per-group flags the draw pass needs.
@@ -3727,7 +3528,8 @@ export class BidSheetComponent {
       if (searchQ && !locs.some(l => l.name.toLowerCase().includes(searchQ))) continue;
       const names = locs.map(l => l.name);
       // In All Producers (no TU filter) every location is "in scope"; with a TU, only its locations are.
-      const isActiveTu = activeTuSet.size === 0 || locs.some(l => activeTuSet.has(l.tradeUnitCode ?? ''));
+      // Every location is in scope now that nothing is desk-filtered.
+      const isActiveTu = true;
       const isRef = !!(hasIndividualTu && refName && names.includes(refName));
       const isPanelOpen = !!(panelOpenName && names.includes(panelOpenName));
       // When filters are active, only show locations that appear in the panel
