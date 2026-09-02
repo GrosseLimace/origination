@@ -69,7 +69,8 @@
       "tags": {
         "Application": "Origination",
         "Environment": "[parameters('environmentTag')]",
-        "IaC": "True"
+        "IaC": "True",
+        "Team": "Full Stack Development"
       },
       "properties": {
         "displayName": "[parameters('sqlConnectionName')]",
