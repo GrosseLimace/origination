@@ -121,11 +121,13 @@ public class BarchartCatalogService : IBarchartCatalogService
     public async Task<BarchartRefreshBidsResponse?> RefreshBidsAsync(
         int locationId, CancellationToken cancellationToken = default)
     {
-        // Authorize against the location's PERSISTED trade unit, never a client-supplied one — same rule
-        // as every other Bid Sheet mutation (AR-05).
-        var storedTradeUnit = await _bidSheet.GetLocationTradeUnitCodeAsync(locationId, cancellationToken);
-        if (string.IsNullOrEmpty(storedTradeUnit)) return null;
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([storedTradeUnit], cancellationToken);
+        // Open to any signed-in user, like the other non-destructive bid sheet operations. This used to
+        // authorize against the location's persisted trade unit, which stopped meaning anything when
+        // locations became company-wide. Re-publishing the vendor's own prices onto a shared row is not
+        // destructive: it is idempotent, it writes only what the feed already says, and the nightly run
+        // does the same thing unattended. Still returns null for a location that is not there.
+        var createdBy = await _bidSheet.GetLocationCreatedByAsync(locationId, cancellationToken);
+        if (string.IsNullOrEmpty(createdBy)) return null;
 
         var rows = await _ingest.ApplyBidsToBidSheetAsync(
             locationId, DefaultInstrumentType, FeedActor, cancellationToken: cancellationToken);

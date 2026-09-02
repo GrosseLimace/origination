@@ -11,7 +11,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
-| AR-05 | Bid-sheet location/elevator reads unscoped across trade units (writes are gated) | High | CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
+| AR-05 | Bid-sheet locations and bids are company-wide; destructive ops restricted to creator/Admin | High | CWE-284 | Accepted — **awaiting countersign** | 2026-09-02 | 2027-09-02 |
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
 
 ---
@@ -279,36 +279,73 @@ city/state) and fetch full contact detail only for a producer the rep actually o
 
 ---
 
-## AR-05 — Bid-sheet location/elevator reads unscoped across trade units
+## AR-05 — Bid-sheet locations and bids are company-wide, with only destructive actions restricted
 
-**Finding** (scan 2026-06-23; HIGH; CWE-284). `GET /api/bidsheet/locations` and
-`GET /api/bidsheet/elevators` become unscoped when the `tradeUnitCode` query parameter is omitted:
-`BidSheetController` only validates entitlements when the parameter is present, and the service then
-returns every location (with its full `Bids` collection) / every elevator across all trade units. Any
-authenticated user can read bid-sheet data outside their assigned trade units by omitting the filter.
+**Superseded 2026-09-02.** The original finding (scan 2026-06-23; HIGH; CWE-284) was that
+`GET /api/bidsheet/locations` and `GET /api/bidsheet/elevators` return every trade unit's data when the
+`tradeUnitCode` parameter is omitted. That was accepted on the grounds that *"the authorization
+boundary that matters for bid sheets is mutation, and that is enforced"* — every write validated the
+caller's trade-unit entitlement.
 
-### Decision: Accepted
+**That rationale is no longer true, and this entry is rewritten rather than re-accepted.**
 
-**Rationale.** Cross-trade-unit *visibility* of bid-sheet locations and bids is **intended** — the
-frontend deliberately loads all locations for the map view, and reps benefit from seeing the wider
-bid picture. The authorization boundary that matters for bid sheets is **mutation**, and that is
-enforced: every write path validates the caller's trade-unit entitlement —
-`POST/PUT/DELETE /locations`, `DELETE /locations/{id}/bids/...`, `POST /bids/bulk`, and the
-`cropyears` / `commodities` / `bidmonths` / `location-order` endpoints all call
-`ValidateTradeUnitsOrThrowAsync`. A user can only **edit** trade units they are entitled to; the
-broad read is a deliberate product decision, not financial/PII data.
+### What changed
 
-**Scope / compensating controls.** Authenticated Scoular employees only; the unscoped path is
-**read-only**; all bid-sheet mutations are entitlement-gated; data is internal bid info (no PII).
+The bid sheet was remodelled so that a location is a **company-wide** record rather than a per-desk
+one. Previously the same elevator was stored once per trade unit — one row per desk, each with its own
+bids — and every mutation was authorized against the row's persisted `TradeUnitCode`
+(`BidSheetService.AuthorizeLocationByStoredTradeUnitAsync`, the AR-05-era IDOR fix).
 
-**Residual risk.** An employee can read bid-sheet locations/bids outside their trade units. Accepted
-as intended visibility.
+There is now **one row per elevator and one shared set of bids**, so there is no per-row trade unit
+left to authorize against. Trade-unit scoping has been removed from the Bid Sheet screen entirely;
+`TradeUnitCode` survives on the row only as provenance (which desk first added it) and nothing reads it
+to decide what a user may see or change.
 
-**Re-evaluate if:** bid pricing becomes competitively sensitive *between* trade units such that a
-read boundary is required. At that point, scope the omitted-parameter path to the caller's allowed
-trade units (derive server-side via `IUserEntitlementService`) instead of returning all.
+### Decision: Accepted, with destructive operations newly restricted
 
-**Accepted by:** Origination engineering — recorded 2026-06-23.
+**Rationale.** Shared visibility was always intended, and is now the explicit product model: everyone
+sees every location and every bid, and users curate what they care about into their own sheets. What
+changed is the *blast radius of a write*. Previously a bad or careless edit damaged one desk's copy;
+now one row serves everybody.
+
+Mutations are therefore split by kind:
+
+- **Open to any authenticated user** — entering and overriding bids, renaming a location, re-siting it,
+  and the Scoular flag. These are shared-record edits, consistent with AR-01's position that bid sheet
+  records are shared rather than owned, and they match how originators actually work: whoever is looking
+  at a bid is the person best placed to correct it. A wrong value is visible, correctable, and
+  reclaimed by the feed on its next run.
+- **Restricted to the row's creator or an Admin** — deleting a location, and deleting every bid for a
+  commodity on it. These are destructive, irreversible from the UI, and now remove the elevator and its
+  whole bid history from *every* user's sheet at once. Enforced by
+  `BidSheetService.AuthorizeDestructiveLocationChangeAsync`, which reads the persisted `CreatedBy` and
+  throws `ForbiddenException` (a real 403 — a 404 would tell the user the row vanished and send them
+  hunting a bug that isn't there).
+
+**Scope / compensating controls.** Authenticated Scoular employees only. Data is internal competitor
+bid information — no PII, no financial account data. Destructive actions are creator-or-Admin and carry
+a UI confirmation stating how many sheets hold the location. Feed-owned cells are reclaimed by the
+nightly bridge, so an incorrect override to a fed bid self-heals within a day. The pre-remodel state of
+every table is preserved in `dbo.*_PreGlobal` snapshots.
+
+**Residual risk — larger than before, and stated plainly.**
+1. Any authenticated employee can change any bid on any location company-wide. There is no audit trail
+   of *who* changed a bid beyond `ModifiedBy` on the row, and no undo in the UI.
+2. Bids auto-save on blur with no confirmation. Two users editing the same cell will each keep their
+   own value locally and **neither is told they overwrote the other**. A concurrency answer
+   (last-write-wins with an indicator, or a version token) is an open item for the sheets phase.
+3. A hand-typed bid on a location the feed does not publish has no self-healing path — it persists
+   until someone notices.
+
+**Re-evaluate if:** bid pricing becomes competitively sensitive *between* desks (which would require a
+read boundary and undo this model); or if concurrent-edit collisions prove to happen in practice; or if
+the sheets phase introduces membership, at which point mutation could reasonably be scoped to "a
+location on a sheet you belong to" instead of being fully open.
+
+**Status: awaiting IT Security countersign** (asksecurity@scoular.com), alongside AR-02. The feature is
+Dev-only and gated behind `environment.barchartBidsEnabled`; it must not reach PROD without sign-off.
+
+**Rewritten by:** Origination engineering — 2026-09-02. Supersedes the 2026-06-23 acceptance.
 
 ---
 

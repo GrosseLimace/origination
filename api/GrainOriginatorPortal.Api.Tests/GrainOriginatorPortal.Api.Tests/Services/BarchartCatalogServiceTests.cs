@@ -152,7 +152,7 @@ public class BarchartCatalogServiceTests
     [Fact]
     public async Task RefreshBidsAsync_UnknownLocation_ReturnsNullWithoutRunningBridge()
     {
-        _bidSheet.GetLocationTradeUnitCodeAsync(99, Arg.Any<CancellationToken>()).Returns((string?)null);
+        _bidSheet.GetLocationCreatedByAsync(99, Arg.Any<CancellationToken>()).Returns((string?)null);
 
         var result = await _sut.RefreshBidsAsync(99, CancellationToken.None);
 
@@ -162,12 +162,14 @@ public class BarchartCatalogServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // Entitlement is checked against the row's PERSISTED trade unit (AR-05), and the bridge is scoped
-    // to that one location.
+    // The bridge must be scoped to the one location. It used to also validate the row's trade unit,
+    // which stopped meaning anything when locations became company-wide -- and re-publishing the
+    // vendor's own prices is not destructive, so it is open to any signed-in user now. What still
+    // matters is that a real row was found and the bridge was not handed a null filter.
     [Fact]
-    public async Task RefreshBidsAsync_ValidatesStoredTradeUnit_AndScopesBridgeToLocation()
+    public async Task RefreshBidsAsync_ScopesBridgeToTheLocation_WithoutTradeUnitEntitlement()
     {
-        _bidSheet.GetLocationTradeUnitCodeAsync(12, Arg.Any<CancellationToken>()).Returns("2190");
+        _bidSheet.GetLocationCreatedByAsync(12, Arg.Any<CancellationToken>()).Returns("someone@scoular.com");
         _ingest.ApplyBidsToBidSheetAsync(12, "bidCash", "barchart-feed", Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(6);
 
         var result = await _sut.RefreshBidsAsync(12, CancellationToken.None);
@@ -175,8 +177,9 @@ public class BarchartCatalogServiceTests
         Assert.NotNull(result);
         Assert.Equal(6, result!.RowsAffected);
         Assert.Equal(12, result.LocationId);
-        await _entitlements.Received(1).ValidateTradeUnitsOrThrowAsync(
-            Arg.Is<IReadOnlyCollection<string>>(t => t.Single() == "2190"), Arg.Any<CancellationToken>());
+        // Not the caller's row, and still allowed -- the point of the change.
+        await _entitlements.DidNotReceive().ValidateTradeUnitsOrThrowAsync(
+            Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------

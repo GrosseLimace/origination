@@ -14,9 +14,12 @@ public interface IBidSheetRepository
     Task<List<ElevatorCache>> GetElevatorsAsync(string? tradeUnitCode, CancellationToken cancellationToken);
     Task<List<BidSheetLocation>> GetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken);
     Task<List<BidSheetLocation>> GetAllLocationsAsync(CancellationToken cancellationToken);
-    /// <summary>The persisted TradeUnitCode of a location, or null if it doesn't exist. Used to
-    /// authorize mutations against the row's actual trade unit (not a client-supplied value).</summary>
-    Task<string?> GetLocationTradeUnitCodeAsync(int id, CancellationToken cancellationToken);
+    /// <summary>
+    /// The persisted CreatedBy of a location, or null if it doesn't exist. Authorizes the two
+    /// destructive operations against who actually made the row, rather than against a value the
+    /// caller supplied.
+    /// </summary>
+    Task<string?> GetLocationCreatedByAsync(int id, CancellationToken cancellationToken);
     /// <summary>True if a location with this name already exists in the trade unit (matches the
     /// unique (Name, TradeUnitCode) index). Lets the service surface a friendly duplicate-name error.</summary>
     Task<bool> LocationNameExistsAsync(string name, string tradeUnitCode, CancellationToken cancellationToken);

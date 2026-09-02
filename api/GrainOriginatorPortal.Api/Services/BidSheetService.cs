@@ -32,16 +32,35 @@ public class BidSheetService : IBidSheetService
         _barchartIngest = barchartIngest;
     }
 
-    /// <summary>Authorizes a mutation against the target location's PERSISTED trade unit (not a
-    /// client-supplied value), closing the IDOR where a caller passes a TU they're entitled to but
-    /// targets a location id in a different TU. Returns false if the location doesn't exist (so the
-    /// caller can surface a 404/no-op); throws ForbiddenException if the caller isn't entitled to
-    /// the row's trade unit.</summary>
-    private async Task<bool> AuthorizeLocationByStoredTradeUnitAsync(int locationId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Authorizes a DESTRUCTIVE change to a location: only whoever created it, or an Admin.
+    ///
+    /// This replaced a check against the row's persisted trade unit, which stopped meaning anything
+    /// when locations became company-wide -- there is no desk left to check, and without a
+    /// replacement these endpoints would have had no authorization beyond being signed in.
+    ///
+    /// Only DESTRUCTIVE operations are gated. Entering bids, renaming and marking Scoular stay open
+    /// to any signed-in user, which matches how originators work and matches AR-01's position that
+    /// bid sheet records are shared rather than owned. Deleting is different in kind: one row now
+    /// serves everybody, so a delete takes the elevator and its whole bid history away from every
+    /// sheet at once, and there is no undo.
+    ///
+    /// Returns false when the location does not exist, so the caller can no-op rather than leak that
+    /// through an exception. Throws ForbiddenException -- a real 403, not a 404 -- when the row
+    /// exists and the caller simply may not destroy it.
+    /// </summary>
+    private async Task<bool> AuthorizeDestructiveLocationChangeAsync(int locationId, CancellationToken cancellationToken)
     {
-        var storedTradeUnit = await _repository.GetLocationTradeUnitCodeAsync(locationId, cancellationToken);
-        if (string.IsNullOrEmpty(storedTradeUnit)) return false;
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([storedTradeUnit], cancellationToken);
+        var createdBy = await _repository.GetLocationCreatedByAsync(locationId, cancellationToken);
+        if (string.IsNullOrEmpty(createdBy)) return false;
+        if (_requestContext.IsAdmin()) return true;
+
+        var caller = _requestContext.GetCurrentUser();
+        if (!string.Equals(createdBy, caller, StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenException(
+                "Only the person who added this location, or an administrator, can remove it. "
+              + "It is shared, so removing it would take it off everyone's sheet.");
+
         return true;
     }
 
@@ -156,9 +175,9 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task<BidSheetLocationResponse?> UpdateLocationAsync(int id, CreateBidSheetLocationRequest request, CancellationToken cancellationToken)
     {
-        // Authorize against the location's stored trade unit, not request.TradeUnitCode (AR-05 fix).
-        if (!await AuthorizeLocationByStoredTradeUnitAsync(id, cancellationToken))
-            return null;
+        // Open to any signed-in user: renaming, re-siting and the Scoular flag are shared-record
+        // edits, not destructive ones. The repository returns null for a row that is not there, which
+        // the controller turns into a 404.
 
         var location = new BidSheetLocation
         {
@@ -179,16 +198,16 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task DeleteLocationAsync(int id, CancellationToken cancellationToken)
     {
-        // Authorize against the location's stored trade unit (not a client value); no-op if missing.
-        if (!await AuthorizeLocationByStoredTradeUnitAsync(id, cancellationToken)) return;
+        // Destructive and company-wide: creator or Admin only.
+        if (!await AuthorizeDestructiveLocationChangeAsync(id, cancellationToken)) return;
         await _repository.DeleteLocationAsync(id, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task DeleteBidsAsync(int locationId, string commodityCode, int? month, CancellationToken cancellationToken)
     {
-        // Authorize against the parent location's stored trade unit (not a client value); no-op if missing.
-        if (!await AuthorizeLocationByStoredTradeUnitAsync(locationId, cancellationToken)) return;
+        // Wipes every bid for a commodity on a shared location: creator or Admin only.
+        if (!await AuthorizeDestructiveLocationChangeAsync(locationId, cancellationToken)) return;
         await _repository.DeleteBidsAsync(locationId, commodityCode, month, cancellationToken);
     }
 
