@@ -12,6 +12,9 @@ public record BidSheetPreferenceResponse
     public string? CropOrder { get; init; }
     public string? HiddenCrops { get; init; }
     public string? SelectedMonths { get; init; }
+
+    /// <summary>JSON array of crop years shown in the Edit Bids grid.</summary>
+    public string? SelectedYears { get; init; }
     public string? PrintLayout { get; init; }
     public string? PriceMode { get; init; }
     public DateTime ModifiedAt { get; init; }

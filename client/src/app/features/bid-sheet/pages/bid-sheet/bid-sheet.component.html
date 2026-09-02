@@ -716,14 +716,40 @@
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                 </svg>
                 <h4 class="text-xl font-bold text-gray-900 dark:text-white">Edit Bids</h4>
-                <div class="flex items-center gap-1 ml-2">
-                  <button (click)="prevEditYear()" class="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                <!-- Years. Replaces the old ‹ 2026 › stepper: one control instead of two governing the
+                     same concept, and it covers what the arrows did (pick 2027 rather than step to it).
+                     Same staged Cancel/Done shape as Months and Crops. -->
+                <div class="relative ml-2">
+                  <button (click)="openYearDropdown()"
+                    class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
+                    <span class="font-medium tabular-nums">{{ editBidsYearsLabel() }}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
-                  <span class="text-lg font-bold text-gray-700 dark:text-gray-300 tabular-nums px-1">{{ editBidsYear() }}</span>
-                  <button (click)="nextEditYear()" class="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                  </button>
+                  @if (showYearDropdown()) {
+                    <div class="fixed inset-0 z-40" (click)="cancelYearSelection()"></div>
+                    <div class="absolute left-0 top-full mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
+                      <div class="py-1 max-h-56 overflow-auto">
+                        @for (y of editBidsYearChoices(); track y) {
+                          <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                                 [ngClass]="yearAtLimit(y) ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'">
+                            <input type="checkbox" [checked]="pendingYears().includes(y)" (change)="toggleEditYear(y)"
+                              [disabled]="yearAtLimit(y)"
+                              class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer disabled:cursor-not-allowed" />
+                            <span class="tabular-nums">{{ y }}</span>
+                          </label>
+                        }
+                      </div>
+                      <!-- Stated rather than left to be discovered by a checkbox that quietly does
+                           nothing: columns are crops x months x years, and Both mode doubles the inputs. -->
+                      <p class="px-3 pb-1 text-[10px] leading-tight text-gray-400 dark:text-gray-500">
+                        Up to {{ maxEditBidsYears }} years at once.
+                      </p>
+                      <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
+                        <button (click)="cancelYearSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                        <button (click)="confirmYearSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">Done</button>
+                      </div>
+                    </div>
+                  }
                 </div>
                 <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
                 <!-- Same control as the sheet header, with Both added: an originator comparing elevators
@@ -914,6 +940,19 @@
               <div class="flex-1 overflow-auto">
                 <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
                   <thead>
+                    <!-- Year band, only with several years selected. Columns run crop -> month -> year,
+                         so each band is one contiguous run and this row says which year the pair of
+                         columns beneath it belongs to -- the column headers themselves drop the year in
+                         multi-year mode, because it will not fit twice in a bid column's width. -->
+                    @if (editGridYearBands().length > 1) {
+                      <tr class="bg-gray-100 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
+                        <th class="sticky top-0 left-0 z-30 px-4 py-1.5 border-r border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/80"></th>
+                        @for (band of editGridYearBands(); track $index) {
+                          <th [attr.colspan]="band.span"
+                              class="sticky top-0 z-20 px-2 py-1.5 text-center text-xs font-bold tabular-nums text-gray-500 dark:text-gray-400 border-b border-l border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/80">{{ band.year }}</th>
+                        }
+                      </tr>
+                    }
                     <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onCropColumnDrop($event)"
                         class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
                       <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[240px] lg:min-w-[340px]">Location</th>

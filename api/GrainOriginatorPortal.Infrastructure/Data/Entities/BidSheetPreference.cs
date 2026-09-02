@@ -11,6 +11,9 @@ public class BidSheetPreference
     public string? CropOrder { get; set; } // JSON array of crop codes, e.g. ["CORN","WHEAT"]
     public string? HiddenCrops { get; set; } // JSON array of deselected crop codes, e.g. ["MILO"]
     public string? SelectedMonths { get; set; } // JSON array of selected months, e.g. [4,5,6] or [0] for yearly
+
+    /// <summary>JSON array of the crop years shown in the Edit Bids grid, e.g. [2026,2027].</summary>
+    public string? SelectedYears { get; set; }
     public string? PrintLayout { get; set; }
     /// <summary>Which price the sheet was last showing: "cash" or "basis". Null = never chosen.</summary>
     public string? PriceMode { get; set; } // JSON: print/export layout — { yearColumns:[{label,offset}], address, phone, highlightScoular }

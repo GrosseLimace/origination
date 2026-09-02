@@ -666,6 +666,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<string>("SelectedMonths")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("SelectedYears")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("TradeUnitKey")
                         .IsRequired()
                         .HasMaxLength(500)

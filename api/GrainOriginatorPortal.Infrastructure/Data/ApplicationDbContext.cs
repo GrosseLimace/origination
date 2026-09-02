@@ -620,6 +620,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CropOrder).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedYears).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.PrintLayout).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.PriceMode).HasMaxLength(10).IsRequired(false);
             entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();

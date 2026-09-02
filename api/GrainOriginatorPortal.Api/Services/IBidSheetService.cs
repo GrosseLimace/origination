@@ -26,6 +26,6 @@ public interface IBidSheetService
 
     Task<BidSheetPreferenceResponse?> GetPreferenceAsync(string tradeUnitKey, CancellationToken cancellationToken);
     Task SetPreferenceAsync(string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder,
-        string? hiddenCrops, string? selectedMonths, string? printLayout, string? priceMode,
+        string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
         CancellationToken cancellationToken);
 }

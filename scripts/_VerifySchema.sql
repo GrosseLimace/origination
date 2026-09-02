@@ -259,6 +259,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetPreferences', 'Month',          'int',           1),
 ('dbo', 'BidSheetPreferences', 'PrintLayout',    'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedMonths', 'nvarchar(max)', 1),
+('dbo', 'BidSheetPreferences', 'SelectedYears',  'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'TradeUnitKey',   'nvarchar(500)', 0),
 ('dbo', 'BidSheetPreferences', 'UserId',         'nvarchar(256)', 0),
 -- Commodities
@@ -589,7 +590,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260827140248_UseQuoteAgeNotVendorMode'),
 ('20260827151032_MoveManualBidsToBasisColumn'),
 ('20260828173255_AddUnderlyingFutureToBidCells'),
-('20260901175652_AddUniqueBarchartPlacementIndex');
+('20260901175652_AddUniqueBarchartPlacementIndex'),
+('20260902185607_AddSelectedYearsToBidSheetPreference');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

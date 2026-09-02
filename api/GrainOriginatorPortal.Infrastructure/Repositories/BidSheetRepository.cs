@@ -385,7 +385,7 @@ public class BidSheetRepository : IBidSheetRepository
     }
 
     public async Task SetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear,
-        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? printLayout, string? priceMode,
+        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
         CancellationToken cancellationToken)
     {
         var existing = await _appContext.BidSheetPreferences
@@ -399,6 +399,7 @@ public class BidSheetRepository : IBidSheetRepository
             if (cropOrder is not null) existing.CropOrder = cropOrder;
             if (hiddenCrops is not null) existing.HiddenCrops = hiddenCrops;
             if (selectedMonths is not null) existing.SelectedMonths = selectedMonths;
+            if (selectedYears is not null) existing.SelectedYears = selectedYears;
             if (printLayout is not null) existing.PrintLayout = printLayout;
             if (priceMode is not null) existing.PriceMode = priceMode;
             existing.ModifiedAt = DateTime.UtcNow;
@@ -415,6 +416,7 @@ public class BidSheetRepository : IBidSheetRepository
                 CropOrder = cropOrder,
                 HiddenCrops = hiddenCrops,
                 SelectedMonths = selectedMonths,
+                SelectedYears = selectedYears,
                 PrintLayout = printLayout,
                 PriceMode = priceMode,
                 ModifiedAt = DateTime.UtcNow

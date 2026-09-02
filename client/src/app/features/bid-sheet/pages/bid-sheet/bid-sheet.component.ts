@@ -382,7 +382,66 @@ export class BidSheetComponent {
   // --- Edit Bids ---
   editBidsMode = signal(false);
   addCommodityQuery = signal('');
-  editBidsYear = signal<number>(new Date().getFullYear());
+
+  /**
+   * Identity of one grid cell within a row: crop + crop year + month.
+   *
+   * Every column-keyed store on EditBidsRow uses this, and it is reconstructed from two OTHER data
+   * shapes -- the save payload (_clearDirtyForSaved) and a print column (printCellValue) -- neither of
+   * which the compiler can check against the column set. It lives in one place for that reason: print
+   * reads grid rows with a key it builds itself, and a mismatch does not throw, it returns undefined,
+   * which the print layout then treats as an empty column and DROPS. The failure mode is columns
+   * quietly vanishing from a producer's sheet.
+   */
+  private _colKey(crop: string, year: number, month: number): string {
+    return `${crop}#${year}#${month}`;
+  }
+
+  /**
+   * Crop years shown in the grid, in column order. Canonical -- mirrors editBidsMonths.
+   *
+   * Multi-year exists so old crop and new crop can be entered and compared without stepping the year
+   * and losing your place. Every selected year is editable; the server has always taken CropYear per
+   * bid, and the client already holds every year's bids, so this is a display and keying concern only.
+   */
+  readonly editBidsYears = signal<number[]>([new Date().getFullYear()]);
+
+  /**
+   * The primary year: the first selected. Kept as a computed so the many single-year readers that only
+   * need "which year is this grid anchored to" (print offsets, the panel hand-off) keep working while
+   * the cell-level paths key off each column's own year.
+   */
+  readonly editBidsYear = computed(() => this.editBidsYears()[0] ?? new Date().getFullYear());
+
+  /** Staged year selection, applied on Done. */
+  readonly pendingYears = signal<number[]>([]);
+  readonly showYearDropdown = signal(false);
+
+  /**
+   * Ceiling on selected years. Columns are crops x months x years and Both mode renders two inputs per
+   * cell, so six crops x four months x three years is already 144 inputs a row -- and _buildEditGrid
+   * rebuilds all of them on a price-mode toggle, a crop change, a rename and a star click.
+   */
+  static readonly MAX_EDIT_BIDS_YEARS = 3;
+  readonly maxEditBidsYears = BidSheetComponent.MAX_EDIT_BIDS_YEARS;
+
+  /** "2026" for one year, "3 Years" for several -- never a comma list; the toolbar has no room. */
+  readonly editBidsYearsLabel = computed(() => {
+    const years = this.editBidsYears();
+    return years.length === 1 ? String(years[0]) : `${years.length} Years`;
+  });
+
+  /**
+   * Years offered by the picker: every year the trade unit has bids for, plus one beyond the latest.
+   * Without that extra year there would be no way to enter the first bid of a new crop year here.
+   */
+  readonly editBidsYearChoices = computed(() => {
+    const known = this.cropYears();
+    const base = known.length > 0 ? [...known] : [this.selectedYear() || new Date().getFullYear()];
+    const next = Math.max(...base) + 1;
+    return [...new Set([...base, next])].sort((a, b) => a - b);
+  });
+
   editBidsMonths = signal<number[]>([0]); // [0]=yearly, [4,5,6]=Apr+May+Jun
 
   /** Label shown on the month-selector button.
@@ -442,26 +501,56 @@ export class BidSheetComponent {
   /** Month name abbreviations for column labels. */
   private static readonly MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  /** Grid column definitions: in yearly mode columns = crops, in monthly mode columns = crop x month pairs. */
+  /**
+   * Grid columns: crop × month × year.
+   *
+   * Nested crop → month → year on purpose, so the SAME month from each selected year lands side by
+   * side ("Sep 26 | Sep 27 | Dec 26 | Dec 27"). Year-over-year is the comparison originators are
+   * making, and grouping by year instead would put Sep-26 and Sep-27 at opposite ends of a crop block.
+   * Crop stays outermost so onCropColumnDrop can keep moving a whole crop as one block.
+   */
   readonly editGridColumns = computed(() => {
     const months = this.editBidsMonths();
     const crops = this.editBidsCrops();
-    const year = this.editBidsYear();
-    // Cross-product of crops × selected months, in the user's chosen month order (editBidsMonths is the
-    // canonical order — defaults to Yearly first, reorderable via the print dialog's Months list).
+    const years = this.editBidsYears();
+    const multiYear = years.length > 1;
+    // editBidsMonths is the canonical month order (Yearly first by default, reorderable via the print
+    // dialog's Months list); editBidsYears is the canonical year order.
     return crops.flatMap(crop =>
-      months.map(m => ({
-        key: `${crop}#${m}`,
-        crop,
-        month: m,
-        // "HRWW Dec 2026": the year on every header, so a column is self-describing even when
-        // the sheet is filtered to a different crop year than the reader assumes.
-        label: m === 0 ? `${crop} ${year}` : `${crop} ${BidSheetComponent.MONTH_NAMES[m]} ${year}`,
-        // Named once here; only deviating cells repeat a board. Year columns have no consensus --
-        // their value is per-location by construction, so each cell names its own contract.
-        board: m === 0 ? '' : this.boardConsensus(crop, year, m)
-      }))
+      months.flatMap(m =>
+        years.map(year => ({
+          key: this._colKey(crop, year, m),
+          crop,
+          month: m,
+          year,
+          // With one year the header carries it, as before. With several, the year band row above the
+          // headers carries it instead -- repeating it per column would trip over itself in the width
+          // a bid column has.
+          label: multiYear
+            ? (m === 0 ? crop : `${crop} ${BidSheetComponent.MONTH_NAMES[m]}`)
+            : (m === 0 ? `${crop} ${year}` : `${crop} ${BidSheetComponent.MONTH_NAMES[m]} ${year}`),
+          // Named once here; only deviating cells repeat a board. Year columns have no consensus --
+          // their value is per-location by construction, so each cell names its own contract.
+          board: m === 0 ? '' : this.boardConsensus(crop, year, m)
+        }))
+      )
     );
+  });
+
+  /**
+   * Column index → the year band above it, for the extra header row. One entry per contiguous run of
+   * the same year, so a run of N columns yields one cell spanning N.
+   */
+  readonly editGridYearBands = computed(() => {
+    const columns = this.editGridColumns();
+    if (this.editBidsYears().length < 2) return [];
+    const bands: Array<{ year: number; span: number }> = [];
+    for (const col of columns) {
+      const last = bands[bands.length - 1];
+      if (last && last.year === col.year) last.span++;
+      else bands.push({ year: col.year, span: 1 });
+    }
+    return bands;
   });
 
   // --- Commodities lookup ---
@@ -753,7 +842,7 @@ export class BidSheetComponent {
         } else if (this.editBidsMode() && this._buildDirtyBids().length === 0) {
           // A background refresh landed while the grid is open: true it up -- unless the user has
           // unsaved edits, which a rebuild would eat. Those reconcile on the next save/navigation.
-          this._buildEditGrid(this.editBidsYear());
+          this._buildEditGrid();
         }
       },
       error: () => {
@@ -846,7 +935,7 @@ export class BidSheetComponent {
         this._loadPreference(tus);
         // If edit bids is open, rebuild the grid with new data
         if (this.editBidsMode()) {
-          this._buildEditGrid(this.editBidsYear());
+          this._buildEditGrid();
           this.editBidsGridLoading.set(false);
         }
       });
@@ -879,7 +968,7 @@ export class BidSheetComponent {
       }
       this.locationOrderByTu.set(orderMap);
       if (this.editBidsMode()) {
-        this._buildEditGrid(this.editBidsYear());
+        this._buildEditGrid();
       }
     });
   }
@@ -940,6 +1029,21 @@ export class BidSheetComponent {
         catch { this.editBidsMonths.set([0]); }
       }
 
+      // Apply the Edit Bids year selection. Sanitized rather than trusted, like the print layout is:
+      // malformed persisted data must not leave the grid with zero columns or hundreds of them.
+      const selectedYearsJson = perKey?.selectedYears ?? null;
+      if (selectedYearsJson) {
+        try {
+          const parsed: unknown = JSON.parse(selectedYearsJson);
+          const years = Array.isArray(parsed)
+            ? [...new Set(parsed.map(y => Math.trunc(Number(y))).filter(y => y >= 1900 && y <= 2999))]
+                .sort((a, b) => a - b)
+                .slice(0, BidSheetComponent.MAX_EDIT_BIDS_YEARS)
+            : [];
+          if (years.length > 0) this.editBidsYears.set(years);
+        } catch { /* invalid JSON — keep whatever openEditBids seeded */ }
+      }
+
       // Apply crop column order if available
       const cropOrderJson = perKey?.cropOrder ?? null;
       if (cropOrderJson) {
@@ -955,7 +1059,7 @@ export class BidSheetComponent {
           const known = new Set(this.crops());
           const missing = savedOrder.filter(c => c && !known.has(c));
           if (missing.length > 0) this.crops.update(cs => [...cs, ...missing]);
-          if (this.editBidsMode()) this._buildEditGrid(this.editBidsYear());
+          if (this.editBidsMode()) this._buildEditGrid();
         } catch { /* invalid JSON — skip */ }
       }
 
@@ -1005,12 +1109,12 @@ export class BidSheetComponent {
     // reset on every visit would be its own small annoyance.
     const priceMode = this.priceMode();
     if (key) {
-      this.apiService.setBidSheetPreference(key, cropCode, month, cropYear, undefined, undefined, undefined, undefined, priceMode)
+      this.apiService.setBidSheetPreference({ tradeUnitKey: key, cropCode, month, cropYear, priceMode })
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save per-TU bid sheet preference', err); } });
     }
     // Always save globally so choices carry over to new TU/group selections
-    this.apiService.setBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, undefined, undefined, undefined, undefined, priceMode)
+    this.apiService.setBidSheetPreference({ tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, priceMode })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save global bid sheet preference', err); } });
   }
@@ -1088,7 +1192,7 @@ export class BidSheetComponent {
     this.priceMode.set(mode);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', `price-mode-${mode}`);
     this.onFilterChange();
-    if (this.editBidsMode()) this._buildEditGrid(this.editBidsYear());
+    if (this.editBidsMode()) this._buildEditGrid();
   }
 
   onFilterChange(): void {
@@ -1871,13 +1975,15 @@ export class BidSheetComponent {
     // Focus target for the grid: an explicit name (e.g. a just-added location) or, by default, the
     // panel's selected location. Passing it as an argument avoids forcing the panel into detail mode.
     const focusLocation = focusLocationName ?? this.panelSelectedLocation();
-    // Sync year with the panel; keep persisted month selection if it exists, otherwise use panel's month
-    this.editBidsYear.set(year);
+    // Sync with the panel only when the grid is on a single year. A multi-year selection is the user's
+    // deliberate arrangement, and openEditBids runs on every re-entry -- including the add-location
+    // round trip -- so re-seeding unconditionally would silently collapse their columns back to one.
+    if (this.editBidsYears().length <= 1) this.editBidsYears.set([year]);
     if (this.editBidsMonths().length === 1 && this.editBidsMonths()[0] === 0 && this.selectedMonth() > 0) {
       // No persisted multi-month — initialize from the panel's single month
       this.editBidsMonths.set([this.selectedMonth()]);
     }
-    this._buildEditGrid(year);
+    this._buildEditGrid();
     this._editBidsSavedKeys.clear();
     this.editBidsMode.set(true);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'edit-bids-opened');
@@ -1905,15 +2011,14 @@ export class BidSheetComponent {
     }
   }
 
-  prevEditYear(): void {
-    this.onEditBidsYearChange(this.editBidsYear() - 1);
-  }
-
-  nextEditYear(): void {
-    this.onEditBidsYearChange(this.editBidsYear() + 1);
-  }
-
-  private _buildEditGrid(year: number): void {
+  /**
+   * Rebuilds every grid row from the loaded bids.
+   *
+   * Takes no year: each column carries its own, and bidLookup already holds every year the trade unit
+   * has. It used to take one, which only worked because callers set editBidsYear first -- a second
+   * source of truth that would now silently resolve one year's cells under another year's headers.
+   */
+  private _buildEditGrid(): void {
     const lookup = this.bidLookup();
     const columns = this.editGridColumns();
     const rows: EditBidsRow[] = [];
@@ -1931,7 +2036,7 @@ export class BidSheetComponent {
       const boardChips: Record<string, string> = {};
       const agingCells = new Set<string>();
       for (const col of columns) {
-        const entry = lookup.get(`${name}|${col.crop}|${year}|${col.month}`);
+        const entry = lookup.get(`${name}|${col.crop}|${col.year}|${col.month}`);
         // Each price lives in its own field whatever the toggle says. The template picks which to
         // show; the save writes each to its own column. Reading a mode-selected value into bids is
         // how a basis would end up filed as a cash price.
@@ -1939,7 +2044,7 @@ export class BidSheetComponent {
         basisBids[col.key] = entry?.basisBid ?? '';
         originalBasisBids[col.key] = basisBids[col.key];
         yearFrom[col.key] = col.month === 0 && entry?.source === 'Barchart' ? this.yearContract(entry) : '';
-        boardChips[col.key] = this.cellBoardFor(name, year, col.crop, col.month);
+        boardChips[col.key] = this.cellBoardFor(name, col.year, col.crop, col.month);
         // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
         // months the vendor doesn't publish, and those age independently.
         if (entry?.source === 'Barchart' && this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
@@ -1996,7 +2101,9 @@ export class BidSheetComponent {
   }
 
   /** Called when a crop column header is dragged to a new position in the edit grid.
-   *  In monthly mode (crop×month columns), moving one column moves ALL columns for that crop as a group. */
+   *  Moving one column moves ALL of that crop's columns as a group — every month and, when several
+   *  years are selected, every year too. Crop is the outermost nesting, so a crop is always one
+   *  contiguous run and reordering stays a crop-level operation whatever is selected beneath it. */
   onCropColumnDrop(event: CdkDragDrop<string[]>): void {
     if (event.previousIndex === event.currentIndex) return;
 
@@ -2025,7 +2132,7 @@ export class BidSheetComponent {
     this.cropOrderByTu.set(orderMap);
 
     // Save via preference (cropOrder only — don't overwrite crop/month/year)
-    this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, JSON.stringify(orderedCrops))
+    this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), cropOrder: JSON.stringify(orderedCrops) })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.toastService.success('Crop order saved'),
@@ -2060,7 +2167,7 @@ export class BidSheetComponent {
       this.hiddenCrops.set(new Set(this.pendingHiddenCrops()));
       this.pendingAddedCrops.set(new Set());
       this.showCropDropdown.set(false);
-      this._buildEditGrid(this.editBidsYear());
+      this._buildEditGrid();
       // A newly added crop has no bids yet, so nothing on the server remembers it. Persisting the
       // column order is what makes it survive the next load -- without this it vanished on reopen.
       if (added) this._saveCropOrder(this.crops());
@@ -2078,19 +2185,42 @@ export class BidSheetComponent {
     if (added.size > 0) {
       this.crops.update(arr => arr.filter(c => !added.has(c)));
       this.pendingAddedCrops.set(new Set());
-      this._buildEditGrid(this.editBidsYear());
+      this._buildEditGrid();
     }
     this.addCommodityQuery.set('');
     this.showCropDropdown.set(false);
   }
 
 
+  /**
+   * The panel fields every preference write has to carry, because the server assigns crop/month/year
+   * unconditionally while only writing the JSON columns it is handed -- omit them and saving a crop
+   * order would blank the panel's selection.
+   */
+  private _panelPrefFields(key: string) {
+    return {
+      tradeUnitKey: key,
+      cropCode: this.selectedCrop() || null,
+      month: this.selectedMonth(),
+      cropYear: this.selectedYear() || null
+    };
+  }
+
+  /** Persists the Edit Bids year selection, so it survives a reload and the add-location round trip. */
+  private _saveSelectedYears(years: number[]): void {
+    const key = this.activeTradeUnitKey();
+    if (!key) return;
+    this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), selectedYears: JSON.stringify(years) })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save selected years', err); } });
+  }
+
   /** Persists hidden crops to the preference API. */
   private _saveHiddenCrops(): void {
     const key = this.activeTradeUnitKey();
     if (!key) return;
     const hidden = [...this.hiddenCrops()];
-    this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, undefined, JSON.stringify(hidden))
+    this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), hiddenCrops: JSON.stringify(hidden) })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save hidden crops', err); } });
   }
@@ -2103,7 +2233,7 @@ export class BidSheetComponent {
       this.editBidsGridLoading.set(true);
       this._loadLocationOrder(tus);
       this._loadBidData(tus, () => {
-        this._buildEditGrid(this.editBidsYear());
+        this._buildEditGrid();
         this.editBidsGridLoading.set(false);
         this.filterBids();
         this._refreshMapMarkers();
@@ -2111,17 +2241,61 @@ export class BidSheetComponent {
     });
   }
 
-  onEditBidsYearChange(year: number): void {
-    // Save edits for the CURRENT year first (cropYear is captured from editBidsYear()),
-    // then switch the year and rebuild. On save error the year does not change and edits are kept.
+  /**
+   * Applies a new year selection. Flushes unsaved edits FIRST: the column set is about to change
+   * shape, and _buildDirtyBids diffs against the columns that exist at call time, so an un-blurred
+   * edit in a year being removed would be diffed against a column that no longer exists and lost.
+   * On save error the selection does not change and the edit survives.
+   */
+  private _applyYearSelection(years: number[]): void {
     this._saveDirtyBids(() => {
-      this.editBidsYear.set(year);
+      this.editBidsYears.set(years);
       this.editBidsGridLoading.set(true);
       requestAnimationFrame(() => {
-        this._buildEditGrid(year);
+        this._buildEditGrid();
         this.editBidsGridLoading.set(false);
       });
     });
+  }
+
+  /** Opens the year dropdown with the current selection staged as pending. */
+  openYearDropdown(): void {
+    this.pendingYears.set([...this.editBidsYears()]);
+    this.showYearDropdown.set(true);
+  }
+
+  /** Stages a year on or off. Refuses to leave nothing selected, and caps the count. */
+  toggleEditYear(year: number): void {
+    this.pendingYears.update(years => {
+      if (years.includes(year)) {
+        // A grid with no years has no columns at all, so the last one cannot be removed.
+        return years.length === 1 ? years : years.filter(y => y !== year);
+      }
+      if (years.length >= BidSheetComponent.MAX_EDIT_BIDS_YEARS) return years;
+      return [...years, year].sort((a, b) => a - b);
+    });
+  }
+
+  /** True when ticking this year would exceed the cap, so the checkbox can disable rather than no-op. */
+  yearAtLimit(year: number): boolean {
+    const pending = this.pendingYears();
+    return !pending.includes(year) && pending.length >= BidSheetComponent.MAX_EDIT_BIDS_YEARS;
+  }
+
+  /** Applies the staged years and closes. */
+  confirmYearSelection(): void {
+    const years = [...this.pendingYears()].sort((a, b) => a - b);
+    const changed = years.join(',') !== this.editBidsYears().join(',');
+    this.showYearDropdown.set(false);
+    if (!changed) return;
+    this._applyYearSelection(years);
+    this._saveSelectedYears(years);
+  }
+
+  /** Discards the staged years and closes. */
+  cancelYearSelection(): void {
+    this.pendingYears.set([...this.editBidsYears()]);
+    this.showYearDropdown.set(false);
   }
 
   /** Opens the month dropdown with the current selection staged as pending. */
@@ -2157,7 +2331,7 @@ export class BidSheetComponent {
       // Selecting months (re)applies the default order (Yearly first); drag in the print dialog customizes it.
       this.editBidsMonths.set(this._defaultMonthOrder(this.pendingMonths()));
       this.showMonthDropdown.set(false);
-      this._buildEditGrid(this.editBidsYear());
+      this._buildEditGrid();
       if (changed) {
         this._saveSelectedMonths();
         this.toastService.success('Month selection saved');
@@ -2197,7 +2371,7 @@ export class BidSheetComponent {
     const orderMap = new Map(this.cropOrderByTu());
     orderMap.set(key, orderedCrops);
     this.cropOrderByTu.set(orderMap);
-    this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, JSON.stringify(orderedCrops))
+    this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), cropOrder: JSON.stringify(orderedCrops) })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save crop order', err); } });
   }
@@ -2211,7 +2385,7 @@ export class BidSheetComponent {
   private _saveSelectedMonths(): void {
     const key = this.activeTradeUnitKey();
     if (!key) return;
-    this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, undefined, undefined, JSON.stringify(this.editBidsMonths()))
+    this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), selectedMonths: JSON.stringify(this.editBidsMonths()) })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save selected months', err); } });
   }
@@ -2264,7 +2438,6 @@ export class BidSheetComponent {
   }
 
   private _buildDirtyBids(): Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> {
-    const year = this.editBidsYear();
     const tu = this.activeTradeUnit();
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
     const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> = [];
@@ -2292,7 +2465,7 @@ export class BidSheetComponent {
             commodityCode: col.crop,
             commodityName: commodity?.name,
             commodityCategory: commodity?.category ?? undefined,
-            cropYear: year,
+            cropYear: col.year,
             bid: current,
             basisBid: currentBasis,
             month: col.month
@@ -2355,11 +2528,15 @@ export class BidSheetComponent {
   /** Marks the saved cells clean so the "changed" highlight clears — by setting originalBids to the
    *  value that was actually SAVED (not the current input). If the user kept editing the same cell while
    *  the save was in flight, current ≠ saved, so the cell stays dirty and the re-run / next blur catches it. */
-  private _clearDirtyForSaved(dirty: Array<{ name?: string; commodityCode: string; month?: number; bid: string; basisBid: string }>): void {
+  private _clearDirtyForSaved(dirty: Array<{ name?: string; commodityCode: string; cropYear: number; month?: number; bid: string; basisBid: string }>): void {
     const savedByName = new Map<string, Map<string, { bid: string; basisBid: string }>>();
     for (const b of dirty) {
       if (!b.name) continue;
-      const colKey = `${b.commodityCode}#${b.month ?? 0}`;
+      // The year is part of the identity. Without it, saving 2026 corn would mark the 2027 corn cell
+      // clean too: its highlight would clear, its board symbol and aging mute would be deleted, and
+      // _buildDirtyBids would stop reporting it -- which also re-arms the background refresh that is
+      // gated on a clean grid, so the rebuild would land on top of the still-unsaved edit.
+      const colKey = this._colKey(b.commodityCode, b.cropYear, b.month ?? 0);
       const m = savedByName.get(b.name) ?? new Map<string, { bid: string; basisBid: string }>();
       m.set(colKey, { bid: b.bid, basisBid: b.basisBid });
       savedByName.set(b.name, m);
@@ -2739,19 +2916,22 @@ export class BidSheetComponent {
   });
 
   /**
-   * Resolve a printed cell's bid value. For the viewed (New Crop) year we read the live edit-grid
-   * value so unsaved edits print; for any other year (Old Crop) we read the saved bid from the lookup.
+   * Resolve a printed cell's bid value. A year the GRID is showing reads the live edit-grid value, so
+   * unsaved edits print; any other year reads the saved bid from the lookup. That test is now
+   * "is this year on screen", not "is this the one viewed year" -- with several years in the grid,
+   * several of print's columns are live.
    */
   printCellValue(row: EditBidsRow, col: { crop: string; month: number; year: number; priceType?: 'cash' | 'basis' }): string {
-    const gridKey = `${col.crop}#${col.month}`;
+    const gridKey = this._colKey(col.crop, col.year, col.month);
+    const live = this.editBidsYears().includes(col.year);
     // In cash or basis mode row.bids already holds whichever price is selected, so priceType is
     // absent and this reads exactly as it always did. Both mode sets it and splits the two apart.
     let value: string;
     if (col.priceType === 'basis') {
-      value = col.year === this.editBidsYear()
+      value = live
         ? (row.basisBids[gridKey] ?? '').trim()
         : (this._getLatestEntry(row.name, col.year, col.crop, col.month)?.basisBid ?? '').trim();
-    } else if (col.year === this.editBidsYear()) {
+    } else if (live) {
       value = (row.bids[gridKey] ?? '').trim();
     } else {
       value = this._getLatestBid(row.name, col.year, col.crop, col.month).trim();
@@ -2761,7 +2941,7 @@ export class BidSheetComponent {
     // The board describes the FED number, and for the viewed year the value above may be an unsaved
     // override. Printing the two together stamped a hand-typed price with a board it was never quoted
     // against; the grid guards this the same way before showing its own symbol.
-    const overridden = col.year === this.editBidsYear() && (col.priceType === 'basis'
+    const overridden = live && (col.priceType === 'basis'
       ? value !== (row.originalBasisBids[gridKey] ?? '').trim()
       : value !== (row.originalBids[gridKey] ?? '').trim());
     if (overridden) return value;
@@ -2855,11 +3035,11 @@ export class BidSheetComponent {
     const cropYear = this.selectedYear() || null;
     const key = this.activeTradeUnitKey();
     if (key) {
-      this.apiService.setBidSheetPreference(key, cropCode, month, cropYear, undefined, undefined, undefined, layout)
+      this.apiService.setBidSheetPreference({ tradeUnitKey: key, cropCode, month, cropYear, printLayout: layout })
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save per-TU print layout', err); } });
     }
-    this.apiService.setBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, undefined, undefined, undefined, layout)
+    this.apiService.setBidSheetPreference({ tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, printLayout: layout })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save global print layout', err); } });
   }
@@ -3195,7 +3375,7 @@ export class BidSheetComponent {
         // table with a full-screen spinner and comes back with focus and scroll reset -- twice over,
         // on a rename-then-star hop. The rename is already local, so there is nothing to wait for,
         // and the open grid still trues itself up when the reload lands (see _loadBidData).
-        if (this.editBidsMode()) this._buildEditGrid(this.editBidsYear());
+        if (this.editBidsMode()) this._buildEditGrid();
         this._loadAllMapLocations();
         const tus = this.activeTradeUnits();
         if (tus.length > 0) this._loadBidData(tus, undefined, 'refresh');

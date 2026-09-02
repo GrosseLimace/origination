@@ -251,8 +251,8 @@ public class BidSheetService : IBidSheetService
 
     /// <inheritdoc />
     public Task SetPreferenceAsync(string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder,
-        string? hiddenCrops, string? selectedMonths, string? printLayout, string? priceMode,
+        string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
         CancellationToken cancellationToken) =>
         _repository.SetPreferenceAsync(_requestContext.GetCurrentUser(), tradeUnitKey, cropCode, month, cropYear,
-            cropOrder, hiddenCrops, selectedMonths, printLayout, priceMode, cancellationToken);
+            cropOrder, hiddenCrops, selectedMonths, selectedYears, printLayout, priceMode, cancellationToken);
 }

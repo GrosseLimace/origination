@@ -109,3 +109,22 @@ export interface Elevator {
   latitude?: number;
   longitude?: number;
 }
+
+/**
+ * One bid sheet preference write. Every field except the key is optional and `undefined` means
+ * "leave alone" — except cropCode/month/cropYear, which the server assigns unconditionally, so a
+ * caller saving anything at all must still send the panel's current crop/month/year.
+ */
+export interface BidSheetPreferenceUpdate {
+  tradeUnitKey: string;
+  cropCode: string | null;
+  month: number | null;
+  cropYear: number | null;
+  cropOrder?: string | null;
+  hiddenCrops?: string | null;
+  selectedMonths?: string | null;
+  /** JSON array of the crop years shown in the Edit Bids grid, e.g. `[2026,2027]`. */
+  selectedYears?: string | null;
+  printLayout?: string | null;
+  priceMode?: string | null;
+}

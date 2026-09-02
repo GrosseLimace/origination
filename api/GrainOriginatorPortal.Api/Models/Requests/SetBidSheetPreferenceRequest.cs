@@ -15,6 +15,9 @@ public record SetBidSheetPreferenceRequest
     public string? CropOrder { get; init; }
     public string? HiddenCrops { get; init; }
     public string? SelectedMonths { get; init; }
+
+    /// <summary>JSON array of crop years shown in the Edit Bids grid. Null leaves the stored value alone.</summary>
+    public string? SelectedYears { get; init; }
     public string? PrintLayout { get; init; }
 
     [MaxLength(10)]

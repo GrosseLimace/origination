@@ -87,6 +87,7 @@ public static class BidSheetMappings
         CropOrder = p.CropOrder,
         HiddenCrops = p.HiddenCrops,
         SelectedMonths = p.SelectedMonths,
+        SelectedYears = p.SelectedYears,
         PrintLayout = p.PrintLayout,
         PriceMode = p.PriceMode,
         ModifiedAt = p.ModifiedAt,

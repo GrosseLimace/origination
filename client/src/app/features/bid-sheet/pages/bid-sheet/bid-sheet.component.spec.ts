@@ -164,21 +164,21 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       location('Rolled', [bid({ locationId: 2, underlyingFuture: 'ZCZ26' })]),
       location('Also', [bid({ locationId: 3, underlyingFuture: 'ZCU26' })]),
     );
-    component.editBidsYear.set(2026);
+    component.editBidsYears.set([2026]);
     const col = { crop: 'YC', month: 8, year: 2026 };
 
     // On the column's own board the header already says it -- repeating it on every cell is what
     // widened the columns enough to shrink the whole printed sheet.
-    expect(component.printCellValue(row('Majority', 'YC#8', '4.98') as never, col)).toBe('4.98');
-    expect(component.printCellValue(row('Rolled', 'YC#8', '5.02') as never, col)).toBe('5.02 (ZCZ26)');
+    expect(component.printCellValue(row('Majority', 'YC#2026#8', '4.98') as never, col)).toBe('4.98');
+    expect(component.printCellValue(row('Rolled', 'YC#2026#8', '5.02') as never, col)).toBe('5.02 (ZCZ26)');
   });
 
   it('prints the contract on every fed Year cell, which has no column board to lean on', () => {
     seed(location('A', [bid({ month: 0, underlyingFuture: 'ZCZ26' })]));
-    component.editBidsYear.set(2026);
+    component.editBidsYears.set([2026]);
 
     const printed = component.printCellValue(
-      row('A', 'YC#0', '4.30') as never, { crop: 'YC', month: 0, year: 2026 });
+      row('A', 'YC#2026#0', '4.30') as never, { crop: 'YC', month: 0, year: 2026 });
 
     expect(printed).toBe('4.30 (ZCZ26)');
   });
@@ -187,8 +187,8 @@ describe('BidSheetComponent — board symbols and printed values', () => {
   // Together they stamped a hand-typed price with a board it was never quoted against.
   it('does not print a board on an unsaved override', () => {
     seed(location('A', [bid({ underlyingFuture: 'ZCU26' })]));
-    component.editBidsYear.set(2026);
-    const dirty = { ...row('A', 'YC#8', '9.99'), originalBids: { 'YC#8': '4.98' } };
+    component.editBidsYears.set([2026]);
+    const dirty = { ...row('A', 'YC#2026#8', '9.99'), originalBids: { 'YC#2026#8': '4.98' } };
 
     const printed = component.printCellValue(dirty as never, { crop: 'YC', month: 8, year: 2026 });
 
@@ -197,9 +197,9 @@ describe('BidSheetComponent — board symbols and printed values', () => {
 
   it('leaves an empty cell empty rather than printing a bare board', () => {
     seed(location('A', [bid()]));
-    component.editBidsYear.set(2026);
+    component.editBidsYears.set([2026]);
 
-    expect(component.printCellValue(row('A', 'YC#8', '') as never, { crop: 'YC', month: 8, year: 2026 })).toBe('');
+    expect(component.printCellValue(row('A', 'YC#2026#8', '') as never, { crop: 'YC', month: 8, year: 2026 })).toBe('');
   });
 
   // ── where an added location lands ────────────────────────────────────────────────────────────
@@ -240,25 +240,25 @@ describe('BidSheetComponent — board symbols and printed values', () => {
 
   it('marks a saved basis edit clean, not just a cash one', () => {
     const dirtyRow = {
-      ...row('A', 'YC#8', '4.98'),
-      basisBids: { 'YC#8': '-40Z' }, originalBasisBids: { 'YC#8': '-30' },
+      ...row('A', 'YC#2026#8', '4.98'),
+      basisBids: { 'YC#2026#8': '-40Z' }, originalBasisBids: { 'YC#2026#8': '-30' },
     };
 
     const [saved] = markSaved([dirtyRow], [
-      { name: 'A', commodityCode: 'YC', month: 8, bid: '4.98', basisBid: '-40Z' },
+      { name: 'A', commodityCode: 'YC', cropYear: 2026, month: 8, bid: '4.98', basisBid: '-40Z' },
     ]) as Array<{ originalBids: Record<string, string>; originalBasisBids: Record<string, string> }>;
 
-    expect(saved.originalBasisBids['YC#8']).toBe('-40Z');
-    expect(saved.originalBids['YC#8']).toBe('4.98');
+    expect(saved.originalBasisBids['YC#2026#8']).toBe('-40Z');
+    expect(saved.originalBids['YC#2026#8']).toBe('4.98');
   });
 
   it('drops the board symbol from a cell the user has taken over', () => {
-    const [saved] = markSaved([row('A', 'YC#8', '9.99')], [
-      { name: 'A', commodityCode: 'YC', month: 8, bid: '9.99', basisBid: '' },
+    const [saved] = markSaved([row('A', 'YC#2026#8', '9.99')], [
+      { name: 'A', commodityCode: 'YC', cropYear: 2026, month: 8, bid: '9.99', basisBid: '' },
     ]) as Array<{ boardChips: Record<string, string> }>;
 
     // Left in place, it re-attached to the hand-typed number the moment the cell counted as clean.
-    expect(saved.boardChips['YC#8']).toBeUndefined();
+    expect(saved.boardChips['YC#2026#8']).toBeUndefined();
   });
 
   // Without this the grid rebuilt from a cache that still held the pre-edit basis, so switching year
@@ -275,5 +275,102 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     // Ownership moves with the value, so the row stops reading as fed.
     expect(cached.source).toBe('Manual');
     expect(cached.underlyingFuture).toBeUndefined();
+  });
+  // ── multiple crop years at once ──────────────────────────────────────────────────────────────
+  // The grid used to show one year, stepped with arrows, so entering old crop against new crop meant
+  // navigating away and back. Every selected year is editable, which means every cell has to carry its
+  // own year through the save.
+
+  it('lays columns out crop then month then year, so the same month is adjacent across years', () => {
+    component.crops.set(['YC']);
+    component.editBidsYears.set([2026, 2027]);
+    component.editBidsMonths.set([9, 12]);
+
+    const keys = component.editGridColumns().map(c => c.key);
+
+    // Sep-26 beside Sep-27 -- year-over-year is the comparison, so the years sit together.
+    expect(keys).toEqual(['YC#2026#9', 'YC#2027#9', 'YC#2026#12', 'YC#2027#12']);
+    expect(component.editGridColumns().map(c => c.year)).toEqual([2026, 2027, 2026, 2027]);
+  });
+
+  it('bands contiguous runs of a year for the header row', () => {
+    component.crops.set(['YC']);
+    component.editBidsYears.set([2026, 2027]);
+    component.editBidsMonths.set([9, 12]);
+
+    // Four columns alternating year => four bands of one, one per column.
+    expect(component.editGridYearBands()).toEqual([
+      { year: 2026, span: 1 }, { year: 2027, span: 1 },
+      { year: 2026, span: 1 }, { year: 2027, span: 1 },
+    ]);
+    // A single year needs no band row at all.
+    component.editBidsYears.set([2026]);
+    expect(component.editGridYearBands()).toEqual([]);
+  });
+
+  it('saves a cell against its own column year, not the primary one', () => {
+    component.crops.set(['YC']);
+    component.editBidsYears.set([2026, 2027]);
+    component.editBidsMonths.set([9]);
+    component.editBidsRows.set([{
+      ...row('A', 'YC#2027#9', '5.55'),
+      originalBids: { 'YC#2027#9': '' },
+    }] as never);
+
+    const dirty = (component as unknown as { _buildDirtyBids(): Array<{ cropYear: number; bid: string }> })._buildDirtyBids();
+
+    expect(dirty).toHaveLength(1);
+    expect(dirty[0].cropYear).toBe(2027);
+    expect(dirty[0].bid).toBe('5.55');
+  });
+
+  // The sharpest edge in the whole change: the clean-up keys off the save payload, and dropping the
+  // year from that key marks the OTHER year's twin clean -- clearing its highlight and board symbol,
+  // and re-arming the background refresh that is gated on a clean grid, which would then rebuild over
+  // an edit the user has not saved.
+  it('marking one year clean leaves the other year dirty', () => {
+    const both = {
+      ...row('A', 'YC#2026#9', '4.98'),
+      bids: { 'YC#2026#9': '4.98', 'YC#2027#9': '9.99' },
+      originalBids: { 'YC#2026#9': '4.00', 'YC#2027#9': '5.00' },
+      boardChips: { 'YC#2026#9': 'ZCU26', 'YC#2027#9': 'ZCU27' },
+    };
+
+    const [saved] = markSaved([both], [
+      { name: 'A', commodityCode: 'YC', cropYear: 2026, month: 9, bid: '4.98', basisBid: '' },
+    ]) as Array<{ originalBids: Record<string, string>; boardChips: Record<string, string> }>;
+
+    expect(saved.originalBids['YC#2026#9']).toBe('4.98');   // saved year went clean
+    expect(saved.originalBids['YC#2027#9']).toBe('5.00');   // the other year did NOT
+    expect(saved.boardChips['YC#2026#9']).toBeUndefined();
+    expect(saved.boardChips['YC#2027#9']).toBe('ZCU27');
+  });
+
+  it('collapses the picker label and refuses to exceed the year cap or empty the grid', () => {
+    component.editBidsYears.set([2026]);
+    expect(component.editBidsYearsLabel()).toBe('2026');
+    component.editBidsYears.set([2026, 2027]);
+    expect(component.editBidsYearsLabel()).toBe('2 Years');
+
+    component.openYearDropdown();
+    component.toggleEditYear(2028);
+    expect(component.pendingYears()).toEqual([2026, 2027, 2028]);
+
+    // At the cap, a fourth is refused rather than silently dropping one.
+    component.toggleEditYear(2029);
+    expect(component.pendingYears()).toEqual([2026, 2027, 2028]);
+    expect(component.yearAtLimit(2029)).toBe(true);
+
+    // The last year cannot be removed -- a grid with no years has no columns.
+    component.pendingYears.set([2026]);
+    component.toggleEditYear(2026);
+    expect(component.pendingYears()).toEqual([2026]);
+  });
+
+  it('offers the years with bids plus one beyond, so a new crop year can be started', () => {
+    component.cropYears.set([2025, 2026]);
+
+    // The extra year beyond the latest is what makes the first 2027 bid enterable here at all.
+    expect(component.editBidsYearChoices()).toEqual([2025, 2026, 2027]);
   });
 });
