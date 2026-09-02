@@ -388,7 +388,7 @@ export class BidSheetComponent {
     // so the picker never goes blank.
     // Drop commodities scoped to a trade group the user isn't in (organics). Applied to the
     // fallback too, or a failed curated fetch would leak them into a conventional picker.
-    const inScope = this.appState.inScopeGroupNames();
+    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
     const curated = scopeCommodities(this.plantingCommodities(), inScope);
     const source = curated.length > 0 ? curated : scopeCommodities(this.allCommodities(), inScope);
     for (const c of source) {

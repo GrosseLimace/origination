@@ -89,7 +89,7 @@ export class CheckCalculatorComponent implements OnInit {
     const query = (this.items()[idx]?.commodity ?? '').trim().toLowerCase();
     // Hide commodities scoped to a trade group the user isn't in (organics). Covers the
     // full-list fallback too, since it lands in the same signal.
-    const list = scopeCommodities(this.commodityOptions(), this.appState.inScopeGroupNames());
+    const list = scopeCommodities(this.commodityOptions(), { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() });
     const matches = query
       ? list.filter(c => c.code.toLowerCase().includes(query) || c.name.toLowerCase().includes(query))
       : list;
