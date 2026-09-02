@@ -407,7 +407,7 @@ export class PlantingIntentionsTableComponent {
     // than cached: these are plain fields, not signals, but this runs per keystroke so it always
     // reflects the current selection. The fallback is scoped too, so a transient curated-list
     // failure can't leak organics into a conventional picker.
-    const inScope = this.appState.inScopeGroupNames();
+    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
     const curated = scopeCommodities(this.plantingCommodities, inScope);
     const source = curated.length > 0 ? curated : scopeCommodities(this.allCommodities, inScope);
     const matches: { c: Commodity; rank: number }[] = [];

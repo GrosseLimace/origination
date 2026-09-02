@@ -18,4 +18,9 @@ public record CommodityResponse
     /// callers whose current trade-unit selection includes a matching trade group &mdash; see
     /// Commodity.TradeGroupScope. The client does the filtering; this endpoint stays cacheable.</summary>
     public string? TradeGroupScope { get; init; }
+
+    /// <summary>Comma-separated trade unit codes this commodity is restricted to, or null for no
+    /// unit restriction. Matched by EXACT membership client-side, never as a substring &mdash; see
+    /// Commodity.TradeUnitScope. OR-combined with TradeGroupScope.</summary>
+    public string? TradeUnitScope { get; init; }
 }

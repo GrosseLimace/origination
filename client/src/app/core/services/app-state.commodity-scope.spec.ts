@@ -74,3 +74,54 @@ describe('AppStateService.inScopeGroupNames', () => {
     expect(state.inScopeGroupNames()).toEqual(['Organics & IP']);
   });
 });
+
+/**
+ * inScopeTradeUnitCodes is the unit-level counterpart. It exists because inScopeGroupNames
+ * collapses a selected unit up to its group name, which loses the granularity needed to scope
+ * commodities to 2090/2291/2295 — only half of the Organics & IP units.
+ */
+describe('AppStateService.inScopeTradeUnitCodes', () => {
+  let state: AppStateService;
+
+  beforeEach(() => {
+    localStorage.clear();
+    TestBed.configureTestingModule({});
+    state = TestBed.inject(AppStateService);
+  });
+
+  it('is empty until the groups load', () => {
+    expect(state.inScopeTradeUnitCodes()).toEqual([]);
+  });
+
+  it('treats an empty selection as ALL of the user units', () => {
+    state.setUserGroups([CORN_BELT, ORGANICS]);
+    expect(state.inScopeTradeUnitCodes()).toEqual([...CORN_BELT.tradeUnitCodes, ...ORGANICS.tradeUnitCodes]);
+  });
+
+  it('expands a selected group to its member codes', () => {
+    state.setUserGroups([CORN_BELT, ORGANICS]);
+    state.setSelectedGroupNames(['Organics & IP']);
+    expect(state.inScopeTradeUnitCodes()).toEqual(ORGANICS.tradeUnitCodes);
+  });
+
+  it('keeps individual unit identity rather than collapsing to the group', () => {
+    // The whole point: 2090 and 2080 are both Organics, but must be distinguishable here.
+    state.setUserGroups([CORN_BELT, ORGANICS]);
+    state.setTradeUnits(['2090']);
+    expect(state.inScopeTradeUnitCodes()).toEqual(['2090']);
+    expect(state.inScopeGroupNames()).toEqual(['Organics & IP']);
+  });
+
+  it('lets explicit units win over a selected group', () => {
+    state.setUserGroups([CORN_BELT, ORGANICS]);
+    state.setSelectedGroupNames(['Organics & IP']);
+    state.setTradeUnits(['2115']);
+    expect(state.inScopeTradeUnitCodes()).toEqual(['2115']);
+  });
+
+  it('trims whitespace around persisted codes', () => {
+    state.setUserGroups([CORN_BELT, ORGANICS]);
+    state.setTradeUnits([' 2291 ']);
+    expect(state.inScopeTradeUnitCodes()).toEqual(['2291']);
+  });
+});

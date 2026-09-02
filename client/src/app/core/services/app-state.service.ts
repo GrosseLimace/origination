@@ -128,6 +128,31 @@ export class AppStateService {
     return groups.map(g => g.groupName);
   });
 
+  /**
+   * Trade unit codes currently in play — the unit-level counterpart to inScopeGroupNames, used to
+   * scope commodities restricted to specific units rather than a whole group.
+   *
+   * Precedence is identical: explicit units win, then selected groups expanded to their member
+   * codes, then — nothing selected means ALL of the user's units, not none. Kept separate from
+   * inScopeGroupNames rather than derived from it because that computed deliberately collapses
+   * units up to their group name, which loses exactly the granularity this needs: selecting 2080
+   * and selecting 2291 both yield 'Organics & IP'.
+   */
+  readonly inScopeTradeUnitCodes = computed<readonly string[]>(() => {
+    const groups = this.userGroups();
+    const units = this.selectedTradeUnits();
+    const names = this.selectedGroupNames();
+
+    if (units.length > 0) return units.map(u => u.trim()).filter(Boolean);
+    if (names.length > 0) {
+      return groups
+        .filter(g => names.includes(g.groupName))
+        .flatMap(g => g.tradeUnitCodes.map(c => c.trim()))
+        .filter(Boolean);
+    }
+    return groups.flatMap(g => g.tradeUnitCodes.map(c => c.trim())).filter(Boolean);
+  });
+
   // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
   lastScrolledCustomerId = signal<number | null>(null);
 

@@ -229,7 +229,7 @@ export class EditCustomerDialogComponent {
    *  (the Organics & IP crops). Every user-facing read in this dialog goes through here, so the
    *  full-list fallback in _loadCommoditiesFallback() is covered too. */
   private readonly scopedCommodities = computed(() =>
-    scopeCommodities(this.allCommodities(), this.appState.inScopeGroupNames()));
+    scopeCommodities(this.allCommodities(), { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() }));
   filteredCommodities = signal<Commodity[]>([]);
   showSuggestions = signal(false);
 

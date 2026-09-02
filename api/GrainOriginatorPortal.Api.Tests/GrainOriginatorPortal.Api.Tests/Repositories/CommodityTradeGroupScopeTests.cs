@@ -23,6 +23,9 @@ public class CommodityTradeGroupScopeTests
     /// <summary>The four organic codes, exactly as the AddCommodityTradeGroupScope migration seeds them.</summary>
     private static readonly string[] OrganicCodes = ["HRWO", "WHTO", "YCO", "YSBO"];
 
+    /// <summary>The four grades restricted to units 2090/2291/2295 by AddCommodityTradeUnitScope.</summary>
+    private static readonly string[] UnitScopedCodes = ["DNGS", "DOSB", "HEC", "YWC"];
+
     private static ApplicationDbContext NewContext()
     {
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -39,6 +42,14 @@ public class CommodityTradeGroupScopeTests
         db.Commodities.Add(new Commodity { Id = id++, Code = "WHTO", Name = "ORGANIC WHEAT", Category = "WHEAT", IsActive = true, ShowInPlantingIntentions = true, TradeGroupScope = "Organics" });
         db.Commodities.Add(new Commodity { Id = id++, Code = "YCO", Name = "ORGANIC YELLOW CORN", Category = "CORN", IsActive = true, ShowInPlantingIntentions = true, TradeGroupScope = "Organics" });
         db.Commodities.Add(new Commodity { Id = id++, Code = "YSBO", Name = "ORGANIC SOYBEANS", Category = "SOYBEANS", IsActive = true, ShowInPlantingIntentions = true, TradeGroupScope = "Organics" });
+
+        // Unit-scoped: curated, but restricted to three of the six Organics & IP units.
+        foreach (var (code, name, cat) in new[] {
+            ("DNGS", "DEHULLED NON-GMO SOYBEANS", "SOYBEANS"),
+            ("DOSB", "DEHULLED ORGANIC SOYBEANS", "SOYBEANS"),
+            ("HEC",  "HARD ENDOSPERM CORN",       "CORN"),
+            ("YWC",  "WAXY CORN",                 "CORN") })
+            db.Commodities.Add(new Commodity { Id = id++, Code = code, Name = name, Category = cat, IsActive = true, ShowInPlantingIntentions = true, TradeUnitScope = "2090,2291,2295" });
 
         // Uncurated noise that must stay out of the planting list regardless of scope.
         db.Commodities.Add(new Commodity { Id = id++, Code = "SORO", Name = "ORGANIC SORGHUM", Category = "SORGHUM", IsActive = true, ShowInPlantingIntentions = false });
@@ -60,8 +71,8 @@ public class CommodityTradeGroupScopeTests
 
         var result = await Repo(db).GetPlantingAsync(CancellationToken.None);
 
-        // 12 conventional + 4 organic. Scoping is the client's job, not the repository's.
-        Assert.Equal(16, result.Count);
+        // 12 conventional + 4 organic + 4 unit-scoped. Scoping is the client's job, not the repository's.
+        Assert.Equal(20, result.Count);
         foreach (var code in OrganicCodes)
             Assert.Contains(result, c => c.Code == code);
     }
@@ -86,9 +97,10 @@ public class CommodityTradeGroupScopeTests
         var result = await Repo(db).GetPlantingAsync(CancellationToken.None);
 
         // The regression that matters: this change must be invisible to conventional originators.
-        var conventional = result.Where(c => !OrganicCodes.Contains(c.Code)).ToList();
+        var conventional = result.Where(c => !OrganicCodes.Contains(c.Code) && !UnitScopedCodes.Contains(c.Code)).ToList();
         Assert.Equal(12, conventional.Count);
         Assert.All(conventional, c => Assert.Null(c.TradeGroupScope));
+        Assert.All(conventional, c => Assert.Null(c.TradeUnitScope));
     }
 
     [Fact]
@@ -132,5 +144,44 @@ public class CommodityTradeGroupScopeTests
         var category = db.Commodities.Single(c => c.Code == code).Category;
 
         Assert.Equal(crop, category, ignoreCase: true);
+    }
+
+    [Fact]
+    public async Task GetPlantingAsync_serves_unit_scoped_rows_too_without_filtering()
+    {
+        using var db = NewContext();
+
+        var result = await Repo(db).GetPlantingAsync(CancellationToken.None);
+
+        // Same contract as the group scope: the repository never filters. It cannot -- the server
+        // only knows the caller's entitlements, never what they currently have selected.
+        foreach (var code in UnitScopedCodes)
+            Assert.Contains(result, c => c.Code == code);
+    }
+
+    [Fact]
+    public async Task Unit_scoped_rows_carry_the_three_target_units_and_no_group_scope()
+    {
+        using var db = NewContext();
+
+        var rows = (await Repo(db).GetPlantingAsync(CancellationToken.None))
+            .Where(c => UnitScopedCodes.Contains(c.Code)).ToList();
+
+        Assert.Equal(4, rows.Count);
+        // Group scope stays null: these are additive to what the Organics group already grants,
+        // and the two columns OR together rather than intersecting.
+        Assert.All(rows, c => Assert.Null(c.TradeGroupScope));
+        Assert.All(rows, c => Assert.Equal("2090,2291,2295", c.TradeUnitScope));
+    }
+
+    [Fact]
+    public void ToResponse_carries_TradeUnitScope_to_the_client()
+    {
+        // Without this the client has nothing to match units on and the rows reach everyone.
+        var scoped = new Commodity { Code = "DNGS", Name = "DEHULLED NON-GMO SOYBEANS", TradeUnitScope = "2090,2291,2295" }.ToResponse();
+        var unscoped = new Commodity { Code = "YC", Name = "YELLOW CORN" }.ToResponse();
+
+        Assert.Equal("2090,2291,2295", scoped.TradeUnitScope);
+        Assert.Null(unscoped.TradeUnitScope);
     }
 }

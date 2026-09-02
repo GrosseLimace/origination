@@ -16,4 +16,10 @@ export interface Commodity {
    * matching trade group — see scopeCommodities() in shared/utils/commodity-scope.ts.
    */
   tradeGroupScope?: string | null;
+  /**
+   * Comma-separated trade unit codes this commodity is restricted to (e.g. "2090,2291,2295"), or
+   * null/absent for no unit restriction. Matched by EXACT membership, never substring — "209" must
+   * not match 2090. OR-combined with tradeGroupScope.
+   */
+  tradeUnitScope?: string | null;
 }
