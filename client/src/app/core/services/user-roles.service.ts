@@ -39,6 +39,12 @@ export class UserRolesService {
   readonly canViewUsageDashboard = computed(() =>
     this._roles().includes('Admin') || this._roles().includes('UsageDashboardViewer'));
 
+  /** Whether to offer the usage-dashboard manager dropdown. Note this is NOT implied by `isAdmin`:
+   *  an Admin who isn't on the server's UsageDashboard:ViewAll list is scoped to their own org
+   *  subtree, same as anyone else. Presentation only — the server re-derives the scope from config
+   *  on every request, so hiding or showing this control cannot change what data comes back. */
+  readonly canViewAllUsage = computed(() => this._roles().includes('UsageDashboardViewAll'));
+
   constructor() {
     this.msalBroadcast.inProgress$.pipe(
       filter(s => s === InteractionStatus.None),

@@ -90,6 +90,13 @@ builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
 // Non-admin usage-dashboard viewers, granted by short name in config because Entra role
 // assignment needs portal permissions the team doesn't hold. See UsageDashboardAccess.
 var usageDashboardViewers = builder.Configuration.GetSection("UsageDashboard:Viewers").Get<string[]>() ?? [];
+// Who may read the WHOLE org and pick any manager. Everyone else who can open the dashboard —
+// Admin role included — is scoped to their own org subtree. Kept separate from Viewers on purpose:
+// every Viewers name is already an Admin in QA/PROD, so deriving this from the Admin role would
+// leave nobody scoped there. Defaults to empty, which scopes everyone rather than opening up.
+var usageDashboardViewAll = builder.Configuration.GetSection("UsageDashboard:ViewAll").Get<string[]>() ?? [];
+builder.Services.AddSingleton(
+    new GrainOriginatorPortal.Api.Authorization.UsageDashboardViewAllList(usageDashboardViewAll));
 builder.Services.AddAuthorization(options =>
 {
     // RequireRole honors the identity's RoleClaimType so it works whether the

@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -33,20 +34,55 @@ public class UsageDashboardService : IUsageDashboardService
     private readonly IManagerDirectoryService _managerDirectory;
     private readonly IMemoryCache _cache;
     private readonly UsageUniverseCacheState _cacheState;
+    private readonly IRequestContextService _requestContext;
+    private readonly UsageDashboardViewAllList _viewAll;
 
     public UsageDashboardService(
         IUsageRepository repo,
         IAppAccessService appAccess,
         IManagerDirectoryService managerDirectory,
         IMemoryCache cache,
-        UsageUniverseCacheState cacheState)
+        UsageUniverseCacheState cacheState,
+        IRequestContextService requestContext,
+        UsageDashboardViewAllList viewAll)
     {
         _repo = repo;
         _appAccess = appAccess;
         _managerDirectory = managerDirectory;
         _cache = cache;
         _cacheState = cacheState;
+        _requestContext = requestContext;
+        _viewAll = viewAll;
     }
+
+    /// <summary>Whether the caller may read the whole org and choose an arbitrary manager.</summary>
+    private bool CallerCanViewAll()
+        => _viewAll.ShortNames.Contains(_requestContext.GetCurrentUserShortName(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The manager whose subtree this request may actually see — NOT necessarily the one the client
+    /// asked for.
+    /// <para>
+    /// On the <c>UsageDashboard:ViewAll</c> list the requested value passes through untouched, null
+    /// included, so those few people keep the pick-any dropdown and the whole-org default. Everyone
+    /// else is pinned to their OWN short name and the requested value is discarded rather than
+    /// rejected — a scoped user has no dropdown, so a <c>managerId</c> arriving from them is either
+    /// a stale bookmark or someone probing the query string, and neither deserves an error page.
+    /// </para><para>
+    /// THIS IS THE ONLY ENFORCEMENT POINT, and deliberately so. Every read funnels through
+    /// <see cref="GetUserIdSetAsync"/>, so scoping cannot be forgotten on a future endpoint the way
+    /// it could if each of the nine controller actions had to remember to apply it. The per-user
+    /// drill-down inherits the restriction for free: <see cref="GetUserDetailAsync"/> already
+    /// refuses a userId outside the resolved set, so it needs no separate check.
+    /// </para><para>
+    /// A caller who manages nobody resolves to an EMPTY universe, never the whole org:
+    /// <c>GetSubtreeUserIdsAsync</c> returns null for a non-manager and
+    /// <see cref="ResolveUserIdSetAsync"/> turns null into an empty set. Fail-closed by
+    /// construction — the client explains that empty state rather than rendering bare zeros.
+    /// </para>
+    /// </summary>
+    private string? ResolveEffectiveManagerId(string? requestedManagerId)
+        => CallerCanViewAll() ? requestedManagerId : _requestContext.GetCurrentUserShortName();
 
     /// <summary>
     /// Display labels for the features the dashboard reports on. Iterated to build the
@@ -126,11 +162,16 @@ public class UsageDashboardService : IUsageDashboardService
     /// </summary>
     private async Task<HashSet<string>> GetUserIdSetAsync(string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
-        var cacheKey = $"usage-dash:universe:{_cacheState.Generation}:{NormalizeTradeUnitKey(tradeUnitKey)}:{NormalizeManagerKey(managerId)}";
+        // Resolve BEFORE the cache key is built. The key must describe the universe actually
+        // returned, not the one that was asked for — keying on the requested value would let a
+        // scoped manager's result be served from (or into) another user's cache entry.
+        var effectiveManagerId = ResolveEffectiveManagerId(managerId);
+
+        var cacheKey = $"usage-dash:universe:{_cacheState.Generation}:{NormalizeTradeUnitKey(tradeUnitKey)}:{NormalizeManagerKey(effectiveManagerId)}";
         if (_cache.TryGetValue(cacheKey, out HashSet<string>? cached) && cached is not null)
             return cached;
 
-        var set = await ResolveUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
+        var set = await ResolveUserIdSetAsync(tradeUnitKey, effectiveManagerId, cancellationToken);
 
         // The shared IMemoryCache is registered with a SizeLimit, so every entry must declare a size.
         _cache.Set(cacheKey, set, new MemoryCacheEntryOptions
@@ -719,7 +760,13 @@ public class UsageDashboardService : IUsageDashboardService
 
     /// <inheritdoc />
     public Task<List<UsageManagerDto>> GetManagersAsync(CancellationToken cancellationToken)
-        => _managerDirectory.GetManagersAsync(cancellationToken);
+        // Empty for a scoped caller. Their dropdown is hidden, so they have no use for the roster —
+        // and this list is the company org chart (every manager's name and short name), which is
+        // not something to hand out just because someone can open the dashboard. Returning empty
+        // rather than 403 keeps the client's "no matching managers" path working if it ever asks.
+        => CallerCanViewAll()
+            ? _managerDirectory.GetManagersAsync(cancellationToken)
+            : Task.FromResult(new List<UsageManagerDto>());
 
     // ─────────────────────────────────────────────────────────────────────────
     // Per-user drill-down

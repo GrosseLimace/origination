@@ -8,6 +8,7 @@ import { Observable, finalize } from 'rxjs';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
+import { UserRolesService } from '@core/services/user-roles.service';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import {
   TableComponent, TableHeaderComponent, TableBodyComponent,
@@ -49,6 +50,7 @@ export class UsageDashboardComponent {
   private readonly apiService = inject(ApiService);
   readonly appState = inject(AppStateService);
   private readonly toastService = inject(ToastService);
+  private readonly userRoles = inject(UserRolesService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
 
@@ -76,6 +78,10 @@ export class UsageDashboardComponent {
    *  else. Display-only convenience: the server enforces the same allowlist on the endpoints. */
   readonly canManageExclusions = signal(false);
 
+  /** Whether to show the manager dropdown, the page subtitle, and the whole org. False means the
+   *  server has scoped this session to the user's own subtree; see UserRolesService.canViewAllUsage. */
+  readonly canViewAllUsage = this.userRoles.canViewAllUsage;
+
   // ── Data ──
   readonly summary = signal<UsageDashboardSummary | null>(null);
   readonly users = signal<UsageDashboardUser[]>([]);
@@ -97,6 +103,11 @@ export class UsageDashboardComponent {
    */
   private readonly pendingCount = signal(0);
   readonly loading = computed(() => this.pendingCount() > 0);
+
+  /** A scoped user who manages nobody resolves to an empty universe server-side, which would
+   *  otherwise render as a wall of zeros with no explanation. Real state, not an error. */
+  readonly scopedToNobody = computed(() =>
+    !this.canViewAllUsage() && !this.loading() && (this.summary()?.totalUsers ?? 0) === 0);
 
   // ── Formatters (shared with the per-user drill-down) ──
   readonly formatTimeSpent = formatTimeSpent;

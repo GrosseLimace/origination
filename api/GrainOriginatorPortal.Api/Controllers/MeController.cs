@@ -17,10 +17,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class MeController : ControllerBase
 {
     private readonly string[] _usageDashboardViewers;
+    private readonly string[] _usageDashboardViewAll;
 
     public MeController(IConfiguration configuration)
     {
         _usageDashboardViewers = configuration.GetSection("UsageDashboard:Viewers").Get<string[]>() ?? [];
+        _usageDashboardViewAll = configuration.GetSection("UsageDashboard:ViewAll").Get<string[]>() ?? [];
     }
 
     [HttpGet]
@@ -47,6 +49,16 @@ public class MeController : ControllerBase
             && !roles.Contains(UsageDashboardAccess.ViewerRole))
         {
             roles = [.. roles, UsageDashboardAccess.ViewerRole];
+        }
+
+        // Synthetic role for the UsageDashboard:ViewAll list. Purely presentational — it tells the
+        // SPA whether to render the manager dropdown. The server never reads it back: scoping is
+        // re-derived from config on every request in UsageDashboardService, so forging this role
+        // client-side changes the menu and nothing else.
+        if (UsageDashboardAccess.CanViewAll(User, _usageDashboardViewAll)
+            && !roles.Contains(UsageDashboardAccess.ViewAllRole))
+        {
+            roles = [.. roles, UsageDashboardAccess.ViewAllRole];
         }
 
         var userId = User.FindFirst("preferred_username")?.Value

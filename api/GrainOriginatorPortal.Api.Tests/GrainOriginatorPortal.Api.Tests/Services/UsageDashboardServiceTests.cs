@@ -5,6 +5,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Moq;
 
 // Project namespaces
+using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
@@ -22,8 +23,14 @@ public class UsageDashboardServiceTests
     private readonly Mock<IUsageRepository> _repoMock = new();
     private readonly Mock<IAppAccessService> _appAccessMock = new();
     private readonly Mock<IManagerDirectoryService> _managerDirectoryMock = new();
+    private readonly Mock<IRequestContextService> _requestContextMock = new();
     private readonly UsageUniverseCacheState _cacheState = new();
     private readonly UsageDashboardService _sut;
+
+    /// <summary>The signed-in caller for every test. The default <see cref="_sut"/> puts this name on
+    /// the ViewAll list, so the manager-filter tests below exercise pick-any as they always have;
+    /// <see cref="CreateScopedSut"/> takes it off, which is the self-scoped path.</summary>
+    private const string Caller = "CEgr";
 
     private static readonly DateOnly From = new(2026, 7, 1);
     private static readonly DateOnly To = new(2026, 7, 20);
@@ -58,16 +65,28 @@ public class UsageDashboardServiceTests
         _sut = CreateSut();
     }
 
-    /// <summary>Builds the service, seeding the DB-backed exclusion list
-    /// (dbo.UsageDashboardExcludedUsers) via the repo mock.</summary>
+    /// <summary>Builds the service as a ViewAll caller — they may pick any manager and default to the
+    /// whole org. Seeds the DB-backed exclusion list (dbo.UsageDashboardExcludedUsers) via the repo
+    /// mock.</summary>
     private UsageDashboardService CreateSut(params string[] excludeUsers)
+        => CreateSut(new UsageDashboardViewAllList([Caller]), excludeUsers);
+
+    /// <summary>Builds the service as a SCOPED caller — nobody is on the ViewAll list, so the caller
+    /// is pinned to their own org subtree and any requested managerId is discarded.</summary>
+    private UsageDashboardService CreateScopedSut(params string[] excludeUsers)
+        => CreateSut(UsageDashboardViewAllList.Empty, excludeUsers);
+
+    private UsageDashboardService CreateSut(UsageDashboardViewAllList viewAll, params string[] excludeUsers)
     {
         _repoMock.Setup(r => r.GetExcludedUserIdsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(excludeUsers.ToList());
+        _requestContextMock.Setup(r => r.GetCurrentUserShortName()).Returns(Caller);
         // A real cache (not a mock) so the memoization tests exercise the actual code path. The app's
         // cache is registered with a SizeLimit; setting one here proves entries declare their size.
         var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-        return new UsageDashboardService(_repoMock.Object, _appAccessMock.Object, _managerDirectoryMock.Object, cache, _cacheState);
+        return new UsageDashboardService(
+            _repoMock.Object, _appAccessMock.Object, _managerDirectoryMock.Object, cache, _cacheState,
+            _requestContextMock.Object, viewAll);
     }
 
     private void SetupSubtree(string managerId, params string[] subtreeUserIds)
@@ -264,6 +283,153 @@ public class UsageDashboardServiceTests
         Assert.Equal(2, users.Count);
         Assert.Contains(users, u => u.UserId == "CEgr");
         Assert.Contains(users, u => u.UserId == "AUser");
+    }
+
+    // ── Self-scoping (UsageDashboard:ViewAll) ────────────────────────────────
+    //
+    // A caller who is NOT on the ViewAll list may only ever see their own org subtree. The
+    // enforcement lives in one place — ResolveEffectiveManagerId, called by GetUserIdSetAsync,
+    // which every read funnels through — so these tests pin the funnel rather than each endpoint.
+
+    [Fact]
+    public async Task ScopedCaller_RequestedManagerId_IsIgnored_InFavourOfTheirOwn()
+    {
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree(Caller, Caller, "MyReport");
+        // The manager they asked for. If the request were honoured this user would come back.
+        SetupSubtree("OtherMgr", "SomeoneElse");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "OtherMgr", status: null, CancellationToken.None);
+
+        Assert.Equal(2, users.Count);
+        Assert.Contains(users, u => u.UserId == Caller);
+        Assert.Contains(users, u => u.UserId == "MyReport");
+        Assert.DoesNotContain(users, u => u.UserId == "SomeoneElse");
+    }
+
+    [Fact]
+    public async Task ScopedCaller_SeesOnlyReportsWhoActuallyHaveAppAccess()
+    {
+        // The requirement is the INTERSECTION: someone who reports to me but has no access to the
+        // application is not an app user and has no adoption to measure, so they must not be listed.
+        // Same rule the pick-any path has always applied, asserted here for the scoped path too.
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReportWithAccess");
+        SetupSubtree(Caller, Caller, "MyReportWithAccess", "MyReportNoAccess");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+
+        Assert.Equal(2, users.Count);
+        Assert.Contains(users, u => u.UserId == Caller);
+        Assert.Contains(users, u => u.UserId == "MyReportWithAccess");
+        Assert.DoesNotContain(users, u => u.UserId == "MyReportNoAccess");
+    }
+
+    [Fact]
+    public async Task ScopedCaller_SeesThemselves_NotJustTheirReports()
+    {
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReport");
+        SetupSubtree(Caller, Caller, "MyReport");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+
+        Assert.Contains(users, u => u.UserId == Caller);
+    }
+
+    [Fact]
+    public async Task ScopedCaller_NoManagerRequested_StillGetsOwnSubtree_NotTheWholeOrg()
+    {
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree(Caller, Caller, "MyReport");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+
+        Assert.Equal(2, users.Count);
+        Assert.DoesNotContain(users, u => u.UserId == "SomeoneElse");
+    }
+
+    [Fact]
+    public async Task ScopedCaller_WhoManagesNobody_GetsAnEmptyUniverse_NotTheWholeOrg()
+    {
+        // The regression that matters most: GetSubtreeUserIdsAsync returns null for a non-manager,
+        // and null must not be read as "no filter".
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "SomeoneElse");
+        _managerDirectoryMock
+            .Setup(m => m.GetSubtreeUserIdsAsync(Caller, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((HashSet<string>?)null);
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+
+        Assert.Empty(users);
+    }
+
+    [Fact]
+    public async Task ScopedCaller_CannotDrillIntoSomeoneOutsideTheirSubtree()
+    {
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree(Caller, Caller, "MyReport");
+
+        var outside = await sut.GetUserDetailAsync("SomeoneElse", From, To, tradeUnitKey: null, CancellationToken.None);
+
+        // Returning null (→ 404) rather than throwing is itself the evidence the gate fired: the
+        // allowedIds check sits before any per-user repo read, and none of those reads are mocked in
+        // this suite, so reaching them would surface as a NullReferenceException instead. The
+        // in-subtree case is deliberately not asserted here — it would need the whole detail
+        // pipeline stubbed and would add no authorization coverage.
+        Assert.Null(outside);
+        _repoMock.Verify(
+            r => r.GetSessionDurationsForUserAsync("SomeoneElse", It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ScopedCaller_DoesNotReceiveTheManagerRoster()
+    {
+        var sut = CreateScopedSut();
+
+        var managers = await sut.GetManagersAsync(CancellationToken.None);
+
+        Assert.Empty(managers);
+        _managerDirectoryMock.Verify(
+            m => m.GetManagersAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ViewAllCaller_KeepsPickAny_AndTheWholeOrgByDefault()
+    {
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree("OtherMgr", "SomeoneElse");
+
+        var all = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+        var picked = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "OtherMgr", status: null, CancellationToken.None);
+
+        Assert.Equal(3, all.Count);
+        Assert.Single(picked);
+        Assert.Contains(picked, u => u.UserId == "SomeoneElse");
+    }
+
+    [Fact]
+    public async Task ScopedAndViewAllCallers_DoNotShareACacheEntry_ForTheSameRequestedManager()
+    {
+        // The universe cache key is built from the EFFECTIVE manager, not the requested one. Keyed on
+        // the request instead, a scoped caller asking for "OtherMgr" could be served that manager's
+        // universe from a ViewAll caller's earlier lookup.
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree(Caller, Caller, "MyReport");
+        SetupSubtree("OtherMgr", "SomeoneElse");
+
+        var asViewAll = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "OtherMgr", status: null, CancellationToken.None);
+
+        var scoped = CreateScopedSut();
+        var asScoped = await scoped.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "OtherMgr", status: null, CancellationToken.None);
+
+        Assert.Contains(asViewAll, u => u.UserId == "SomeoneElse");
+        Assert.DoesNotContain(asScoped, u => u.UserId == "SomeoneElse");
     }
 
     [Fact]
