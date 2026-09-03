@@ -2972,10 +2972,10 @@ export class BidSheetComponent {
     if (!name) return;
     const loc = this._findLocationByName(name);
     if (!loc) return;
-    // Provenance only -- kept so the row keeps saying which desk introduced it.
-    const tu = loc.tradeUnitCode ?? undefined;
-
-    this.apiService.deleteBidSheetLocation(loc.id, tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    // No trade unit sent. The one on the row is provenance -- whichever desk first added the
+    // location -- and sending it 403'd anyone deleting a location a different desk introduced.
+    // The server authorizes on the persisted CreatedBy instead: creator or Admin.
+    this.apiService.deleteBidSheetLocation(loc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.bidLocations.update(locs => locs.filter(l => l.id !== loc.id));
         this.allMapLocations.update(locs => locs.filter(l => l.id !== loc.id));
@@ -3011,10 +3011,8 @@ export class BidSheetComponent {
     if (!crop || !name) return;
     const loc = this._findLocationByName(name);
     if (!loc) return;
-    // Provenance only -- kept so the row keeps saying which desk introduced it.
-    const tu = loc.tradeUnitCode ?? undefined;
-
-    this.apiService.deleteBidSheetBids(loc.id, crop, tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    // No trade unit sent -- see confirmDeleteLocation above.
+    this.apiService.deleteBidSheetBids(loc.id, crop).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         // Remove bids locally from both caches
         this.bidLocations.update(locs => locs.map(l =>

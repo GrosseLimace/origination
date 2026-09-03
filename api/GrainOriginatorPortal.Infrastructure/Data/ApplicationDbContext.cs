@@ -35,6 +35,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
     public DbSet<BidSheetLocationOrder> BidSheetLocationOrders => Set<BidSheetLocationOrder>();
     public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
+    public DbSet<BidSheet> BidSheets => Set<BidSheet>();
+    public DbSet<BidSheetShare> BidSheetShares => Set<BidSheetShare>();
+    public DbSet<BidSheetLocationLink> BidSheetLocationLinks => Set<BidSheetLocationLink>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
     public DbSet<HarvestWindow> HarvestWindows => Set<HarvestWindow>();
     public DbSet<UserActivity> UserActivities => Set<UserActivity>();
@@ -975,6 +978,73 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.RecapGroupId).IsRequired();
             entity.Property(e => e.Email).HasMaxLength(256).IsRequired();
             entity.HasIndex(e => e.RecapGroupId).HasDatabaseName("IX_DailyRecapGroupCcEmails_RecapGroupId");
+        });
+
+        modelBuilder.Entity<BidSheet>(entity =>
+        {
+            entity.ToTable("BidSheets", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.OwnerUserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.CropOrder).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedYears).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ModifiedAt).IsRequired(false);
+            entity.HasIndex(e => e.OwnerUserId).HasDatabaseName("IX_BidSheets_OwnerUserId");
+            // One name per owner. Neither precedent constrains this and both suffer for it -- two
+            // groups called "West Team" are indistinguishable in a picker that resolves by id.
+            entity.HasIndex(e => new { e.OwnerUserId, e.Name })
+                  .HasDatabaseName("UQ_BidSheets_Owner_Name")
+                  .IsUnique();
+            entity.HasMany(e => e.Shares).WithOne(sh => sh.BidSheet).HasForeignKey(sh => sh.BidSheetId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(e => e.Locations).WithOne(l => l.BidSheet).HasForeignKey(l => l.BidSheetId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BidSheetShare>(entity =>
+        {
+            entity.ToTable("BidSheetShares", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.BidSheetId).IsRequired();
+            entity.Property(e => e.MemberUserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.MemberName).HasMaxLength(256).IsRequired(false);
+            entity.Property(e => e.SharedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.SharedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.HasIndex(e => e.MemberUserId).HasDatabaseName("IX_BidSheetShares_MemberUserId");
+            // Sharing with the same person twice is a no-op, not a second row. DailyRecapGroupMembers
+            // allows the duplicate and shows the person twice in its list.
+            entity.HasIndex(e => new { e.BidSheetId, e.MemberUserId })
+                  .HasDatabaseName("UQ_BidSheetShares_Sheet_Member")
+                  .IsUnique();
+        });
+
+        modelBuilder.Entity<BidSheetLocationLink>(entity =>
+        {
+            entity.ToTable("BidSheetLocationLinks", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.BidSheetId).IsRequired();
+            entity.Property(e => e.BidSheetLocationId).IsRequired();
+            entity.Property(e => e.SortOrder).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.AddedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.AddedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            // A location appears on a sheet once. The old JSON-array order had no such guard, so a
+            // double-add put the same row on screen twice.
+            entity.HasIndex(e => new { e.BidSheetId, e.BidSheetLocationId })
+                  .HasDatabaseName("UQ_BidSheetLocationLinks_Sheet_Location")
+                  .IsUnique();
+            // RESTRICT, not cascade. The location delete path clears these links explicitly, after the
+            // user has been shown how many sheets hold the elevator. Restricting means any OTHER path
+            // that tries to remove a location fails loudly instead of quietly emptying someone's sheet.
+            entity.HasOne(e => e.Location)
+                  .WithMany()
+                  .HasForeignKey(e => e.BidSheetLocationId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<UsageDashboardExcludedUser>(entity =>

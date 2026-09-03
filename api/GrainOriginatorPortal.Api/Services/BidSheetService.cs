@@ -284,4 +284,188 @@ public class BidSheetService : IBidSheetService
         CancellationToken cancellationToken) =>
         _repository.SetPreferenceAsync(_requestContext.GetCurrentUser(), tradeUnitKey, cropCode, month, cropYear,
             cropOrder, hiddenCrops, selectedMonths, selectedYears, printLayout, priceMode, cancellationToken);
+
+    // =============================================================================================
+    // Sheets
+    // =============================================================================================
+
+    /// <summary>
+    /// Loads a sheet the caller may READ, or throws.
+    ///
+    /// The distinction between 404 and 403 is deliberate. The DailyRecapGroup precedent folds both
+    /// into "row not found", which tells a genuine outsider the same story as a deleted sheet -- and
+    /// tells a member whose share was just revoked that their work disappeared. Asking whether the
+    /// row exists costs one indexed count and makes both messages true.
+    /// </summary>
+    private async Task<Infrastructure.Data.Entities.BidSheet> RequireVisibleSheetAsync(int sheetId, CancellationToken cancellationToken)
+    {
+        var user = _requestContext.GetCurrentUserShortName();
+        var sheet = await _repository.GetVisibleSheetAsync(sheetId, user, cancellationToken);
+        if (sheet != null) return sheet;
+
+        if (await _repository.SheetExistsAsync(sheetId, cancellationToken))
+            throw new ForbiddenException("This bid sheet has not been shared with you.");
+
+        throw new NotFoundException("Bid sheet", sheetId);
+    }
+
+    /// <summary>
+    /// Loads a sheet the caller OWNS, or throws.
+    ///
+    /// Rename, reshare and delete are owner-only. A member deleting the owner's sheet out from under
+    /// them is the wrong default, and a member reshuffling who else can see it is worse -- both would
+    /// be invisible to the owner until they next opened the picker.
+    /// </summary>
+    private async Task RequireSheetOwnerAsync(int sheetId, CancellationToken cancellationToken)
+    {
+        var owner = await _repository.GetSheetOwnerAsync(sheetId, cancellationToken);
+        if (owner == null) throw new NotFoundException("Bid sheet", sheetId);
+
+        var user = _requestContext.GetCurrentUserShortName();
+        if (!string.Equals(owner, user, StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenException("Only the person who created this bid sheet can rename, reshare, or delete it.");
+    }
+
+    /// <summary>Re-reads a sheet after a write so the client gets the full, ordered shape back rather
+    /// than having to reload. Cheap: it is the same query the screen already runs on open.</summary>
+    private async Task<BidSheetResponse> ReloadSheetAsync(int sheetId, CancellationToken cancellationToken)
+    {
+        var user = _requestContext.GetCurrentUserShortName();
+        var sheet = await _repository.GetVisibleSheetAsync(sheetId, user, cancellationToken)
+            ?? throw new NotFoundException("Bid sheet", sheetId);
+        return sheet.ToResponse(user);
+    }
+
+    /// <inheritdoc />
+    public async Task<List<BidSheetResponse>> GetSheetsAsync(CancellationToken cancellationToken)
+    {
+        var user = _requestContext.GetCurrentUserShortName();
+        var sheets = await _repository.GetVisibleSheetsAsync(user, cancellationToken);
+        return sheets.Select(s => s.ToResponse(user)).ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> GetSheetAsync(int sheetId, CancellationToken cancellationToken)
+    {
+        var sheet = await RequireVisibleSheetAsync(sheetId, cancellationToken);
+        return sheet.ToResponse(_requestContext.GetCurrentUserShortName());
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> CreateSheetAsync(BidSheetRequest request, CancellationToken cancellationToken)
+    {
+        var user = _requestContext.GetCurrentUserShortName();
+        var name = request.Name.Trim();
+
+        if (await _repository.SheetNameExistsAsync(user, name, null, cancellationToken))
+            throw new BusinessException($"You already have a bid sheet called \"{name}\".", "DUPLICATE_BID_SHEET_NAME");
+
+        var sheet = await _repository.CreateSheetAsync(new Infrastructure.Data.Entities.BidSheet
+        {
+            Name = name,
+            OwnerUserId = user,
+            CreatedBy = user,
+            CreatedAt = DateTime.UtcNow,
+        }, cancellationToken);
+
+        return sheet.ToResponse(user);
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> RenameSheetAsync(int sheetId, BidSheetRequest request, CancellationToken cancellationToken)
+    {
+        await RequireSheetOwnerAsync(sheetId, cancellationToken);
+
+        var user = _requestContext.GetCurrentUserShortName();
+        var name = request.Name.Trim();
+
+        if (await _repository.SheetNameExistsAsync(user, name, sheetId, cancellationToken))
+            throw new BusinessException($"You already have a bid sheet called \"{name}\".", "DUPLICATE_BID_SHEET_NAME");
+
+        _ = await _repository.RenameSheetAsync(sheetId, name, user, cancellationToken)
+            ?? throw new NotFoundException("Bid sheet", sheetId);
+
+        return await ReloadSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> SetSheetLayoutAsync(int sheetId, BidSheetLayoutRequest request, CancellationToken cancellationToken)
+    {
+        // Any member. The layout is not a personal preference here -- it IS the shared view, which is
+        // the point of sharing a sheet rather than a list of names.
+        await RequireVisibleSheetAsync(sheetId, cancellationToken);
+
+        var user = _requestContext.GetCurrentUserShortName();
+        _ = await _repository.SetSheetLayoutAsync(sheetId, request.CropOrder, request.HiddenCrops,
+                request.SelectedMonths, request.SelectedYears, user, cancellationToken)
+            ?? throw new NotFoundException("Bid sheet", sheetId);
+
+        return await ReloadSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteSheetAsync(int sheetId, CancellationToken cancellationToken)
+    {
+        await RequireSheetOwnerAsync(sheetId, cancellationToken);
+        await _repository.DeleteSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> SetSheetSharesAsync(int sheetId, BidSheetSharesRequest request, CancellationToken cancellationToken)
+    {
+        await RequireSheetOwnerAsync(sheetId, cancellationToken);
+
+        var user = _requestContext.GetCurrentUserShortName();
+        var now = DateTime.UtcNow;
+        var shares = request.Members
+            .Where(m => !string.IsNullOrWhiteSpace(m.UserId))
+            .Select(m => new Infrastructure.Data.Entities.BidSheetShare
+            {
+                MemberUserId = m.UserId.Trim(),
+                MemberName = string.IsNullOrWhiteSpace(m.Name) ? null : m.Name.Trim(),
+                SharedBy = user,
+                SharedAt = now,
+            })
+            .ToList();
+
+        _ = await _repository.SetSheetSharesAsync(sheetId, shares, cancellationToken)
+            ?? throw new NotFoundException("Bid sheet", sheetId);
+
+        return await ReloadSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> AddSheetLocationAsync(int sheetId, AddBidSheetLocationRequest request, CancellationToken cancellationToken)
+    {
+        await RequireVisibleSheetAsync(sheetId, cancellationToken);
+
+        // The location has to already exist. Adding to a sheet is a membership change, not a create --
+        // the picker and the manual-add form own creating locations, and letting this path create one
+        // implicitly is exactly the hole that was just closed in the bulk bid upsert.
+        var location = await _repository.GetLocationAsync(request.LocationId, cancellationToken)
+            ?? throw new NotFoundException("Bid sheet location", request.LocationId);
+
+        await _repository.AddSheetLocationAsync(sheetId, location.Id, _requestContext.GetCurrentUserShortName(), cancellationToken);
+        return await ReloadSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> RemoveSheetLocationAsync(int sheetId, int locationId, CancellationToken cancellationToken)
+    {
+        await RequireVisibleSheetAsync(sheetId, cancellationToken);
+        await _repository.RemoveSheetLocationAsync(sheetId, locationId, cancellationToken);
+        return await ReloadSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> SetSheetLocationOrderAsync(int sheetId, BidSheetLocationOrderRequest request, CancellationToken cancellationToken)
+    {
+        await RequireVisibleSheetAsync(sheetId, cancellationToken);
+        await _repository.SetSheetLocationOrderAsync(sheetId, request.LocationIds, cancellationToken);
+        return await ReloadSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<int> CountSheetsHoldingLocationAsync(int locationId, CancellationToken cancellationToken)
+        => _repository.CountSheetsHoldingLocationAsync(locationId, cancellationToken);
 }

@@ -92,4 +92,47 @@ public static class BidSheetMappings
         PriceMode = p.PriceMode,
         ModifiedAt = p.ModifiedAt,
     };
+
+    /// <summary>
+    /// A sheet with its shares and, in row order, the locations behind its links.
+    ///
+    /// <paramref name="callerUserId"/> decides <c>IsOwner</c>. It is passed rather than read from the
+    /// entity so the mapping stays a pure function of what it is given, matching every other mapping
+    /// here; the service is the only place that knows who is asking.
+    /// </summary>
+    public static BidSheetResponse ToResponse(this BidSheet s, string callerUserId) => new()
+    {
+        Id = s.Id,
+        Name = s.Name,
+        OwnerUserId = s.OwnerUserId,
+        IsOwner = string.Equals(s.OwnerUserId, callerUserId, StringComparison.OrdinalIgnoreCase),
+        CropOrder = s.CropOrder,
+        HiddenCrops = s.HiddenCrops,
+        SelectedMonths = s.SelectedMonths,
+        SelectedYears = s.SelectedYears,
+        CreatedBy = s.CreatedBy,
+        CreatedAt = s.CreatedAt,
+        ModifiedBy = s.ModifiedBy,
+        ModifiedAt = s.ModifiedAt,
+        Shares = s.Shares
+            .OrderBy(sh => sh.MemberName ?? sh.MemberUserId, StringComparer.OrdinalIgnoreCase)
+            .Select(sh => sh.ToResponse())
+            .ToList(),
+        // Order again here rather than trusting the include: a sheet built in memory (a fresh create,
+        // a test) has no ordering applied, and a row order that only holds when it came from SQL is
+        // the kind of thing that works until it quietly does not.
+        Locations = s.Locations
+            .OrderBy(l => l.SortOrder)
+            .Where(l => l.Location != null)
+            .Select(l => l.Location!.ToResponse())
+            .ToList(),
+    };
+
+    public static BidSheetShareResponse ToResponse(this BidSheetShare sh) => new()
+    {
+        UserId = sh.MemberUserId,
+        Name = sh.MemberName,
+        SharedBy = sh.SharedBy,
+        SharedAt = sh.SharedAt,
+    };
 }

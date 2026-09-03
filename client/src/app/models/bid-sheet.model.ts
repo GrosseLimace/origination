@@ -128,3 +128,64 @@ export interface BidSheetPreferenceUpdate {
   printLayout?: string | null;
   priceMode?: string | null;
 }
+
+/**
+ * A named, shareable working set of locations — what replaced the trade unit as the thing that
+ * decides which elevators the screen shows.
+ *
+ * Locations themselves are company-wide, so a sheet is not a permission boundary. It is the handful
+ * of elevators one originator actually compares, in the order and with the columns they want, which
+ * is what the trade-unit filter used to approximate badly.
+ *
+ * Everyone on a sheet can edit its contents and its columns. Only the owner can rename it, change who
+ * it is shared with, or delete it — the client keys those three off `isOwner`.
+ */
+export interface BidSheet {
+  id: number;
+  name: string;
+  /** Short UPN of the owner, e.g. `CEgr`. */
+  ownerUserId: string;
+  /** True when the signed-in user owns this sheet. Gates rename, share and delete. */
+  isOwner: boolean;
+
+  // Column layout, shared with everyone on the sheet. JSON strings, matching BidSheetPreference.
+  /** JSON array of crop codes in display order, e.g. `["HRWW","YC"]`. */
+  cropOrder?: string;
+  /** JSON array of crop codes hidden from the grid. */
+  hiddenCrops?: string;
+  /** JSON array of months, where `0` is the Year column. */
+  selectedMonths?: string;
+  /** JSON array of crop years, e.g. `[2026,2027]`. */
+  selectedYears?: string;
+
+  createdBy: string;
+  createdAt: string;
+  modifiedBy?: string;
+  modifiedAt?: string;
+
+  shares: BidSheetShare[];
+  /** Locations on the sheet, already in row order. */
+  locations: BidSheetLocation[];
+}
+
+/** One person a sheet is shared with. They get full edit rights on its contents. */
+export interface BidSheetShare {
+  /** Short UPN, e.g. `JDoe`. */
+  userId: string;
+  /** Display name captured when shared, so the list reads without a directory lookup. */
+  name?: string;
+  sharedBy: string;
+  sharedAt: string;
+}
+
+/**
+ * A partial column-layout save. Every field is optional and omitting one leaves the stored value
+ * alone — the screen saves crop order, hidden crops, months and years on four separate interactions,
+ * and sending the whole layout each time would let a stale client reset a colleague's view.
+ */
+export interface BidSheetLayoutUpdate {
+  cropOrder?: string | null;
+  hiddenCrops?: string | null;
+  selectedMonths?: string | null;
+  selectedYears?: string | null;
+}

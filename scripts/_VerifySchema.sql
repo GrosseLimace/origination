@@ -81,7 +81,7 @@ DECLARE @Findings TABLE (
 );
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (35)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (38)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'BarchartApiCallAudit'),
@@ -90,9 +90,12 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'BarchartInstrument'),
 ('dbo', 'BarchartQuoteSnapshot'),
 ('dbo', 'BidSheetLocationBids'),
+('dbo', 'BidSheetLocationLinks'),
 ('dbo', 'BidSheetLocationOrders'),
 ('dbo', 'BidSheetLocations'),
 ('dbo', 'BidSheetPreferences'),
+('dbo', 'BidSheets'),
+('dbo', 'BidSheetShares'),
 ('dbo', 'Commodities'),
 ('dbo', 'Customer'),
 ('dbo', 'CustomerCommodity'),
@@ -243,6 +246,32 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocationBids', 'BasisSymbol',       'nvarchar(100)', 1),
 ('dbo', 'BidSheetLocationBids', 'BasisQuoteAsOf',    'datetime2',     1),
 ('dbo', 'BidSheetLocationBids', 'UnderlyingFuture',  'nvarchar(20)',  1),
+-- BidSheets
+('dbo', 'BidSheets', 'Id',             'int',           0),
+('dbo', 'BidSheets', 'CreatedAt',      'datetime2',     0),
+('dbo', 'BidSheets', 'CreatedBy',      'nvarchar(255)', 0),
+('dbo', 'BidSheets', 'CropOrder',      'nvarchar(max)', 1),
+('dbo', 'BidSheets', 'HiddenCrops',    'nvarchar(max)', 1),
+('dbo', 'BidSheets', 'ModifiedAt',     'datetime2',     1),
+('dbo', 'BidSheets', 'ModifiedBy',     'nvarchar(255)', 1),
+('dbo', 'BidSheets', 'Name',           'nvarchar(200)', 0),
+('dbo', 'BidSheets', 'OwnerUserId',    'nvarchar(256)', 0),
+('dbo', 'BidSheets', 'SelectedMonths', 'nvarchar(max)', 1),
+('dbo', 'BidSheets', 'SelectedYears',  'nvarchar(max)', 1),
+-- BidSheetShares
+('dbo', 'BidSheetShares', 'Id',           'int',           0),
+('dbo', 'BidSheetShares', 'BidSheetId',   'int',           0),
+('dbo', 'BidSheetShares', 'MemberName',   'nvarchar(256)', 1),
+('dbo', 'BidSheetShares', 'MemberUserId', 'nvarchar(256)', 0),
+('dbo', 'BidSheetShares', 'SharedAt',     'datetime2',     0),
+('dbo', 'BidSheetShares', 'SharedBy',     'nvarchar(255)', 0),
+-- BidSheetLocationLinks
+('dbo', 'BidSheetLocationLinks', 'Id',                 'int',           0),
+('dbo', 'BidSheetLocationLinks', 'AddedAt',            'datetime2',     0),
+('dbo', 'BidSheetLocationLinks', 'AddedBy',            'nvarchar(255)', 0),
+('dbo', 'BidSheetLocationLinks', 'BidSheetId',         'int',           0),
+('dbo', 'BidSheetLocationLinks', 'BidSheetLocationId', 'int',           0),
+('dbo', 'BidSheetLocationLinks', 'SortOrder',          'int',           0),
 -- BidSheetLocationOrders
 ('dbo', 'BidSheetLocationOrders', 'Id',           'int',           0),
 ('dbo', 'BidSheetLocationOrders', 'LocationOrder', 'nvarchar(max)', 0),
@@ -527,7 +556,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- (no rows)
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (15)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (20)
 -- EF Core auto-names single-property unique indexes as IX_<table>_<column>;
 -- this project uses explicit names (IX_*/UQ_*) for most indexes.
 -- (NON-unique indexes such as IX_*_Timestamp are intentionally NOT listed.)
@@ -542,6 +571,10 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 -- duplicate-name sweep of QA and PROD first; see the note in BidSheetRepository.LocationNameExistsAsync.
 ('dbo', 'BidSheetLocationOrders',      'UQ_BidSheetLocationOrders_User_TradeUnitKey'),
 ('dbo', 'BidSheetPreferences',         'UQ_BidSheetPreferences_User_TradeUnitKey'),
+-- Sheets: the three UNIQUE constraints the DailyRecapGroup family it copies does not have.
+('dbo', 'BidSheets',                   'UQ_BidSheets_Owner_Name'),
+('dbo', 'BidSheetShares',              'UQ_BidSheetShares_Sheet_Member'),
+('dbo', 'BidSheetLocationLinks',       'UQ_BidSheetLocationLinks_Sheet_Location'),
 ('dbo', 'Commodities',                 'IX_Commodities_Code'),
 ('dbo', 'CustomerCommodity',           'UQ_CustomerCommodity_Customer_Commodity'),
 ('dbo', 'CustomerLink',                'UQ_CustomerLink_From_To'),
@@ -557,7 +590,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (26; see KNOWN PRE-EXISTING GAPS in the header)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (34; see KNOWN PRE-EXISTING GAPS in the header)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Migrations (MigrationId) VALUES
 ('20260310202402_AddESignEnrollment'),
@@ -592,7 +625,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260828173255_AddUnderlyingFutureToBidCells'),
 ('20260901175652_AddUniqueBarchartPlacementIndex'),
 ('20260902185607_AddSelectedYearsToBidSheetPreference'),
-('20260902194934_MakeBidSheetLocationsGlobal');
+('20260902194934_MakeBidSheetLocationsGlobal'),
+('20260903124434_AddBidSheets');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

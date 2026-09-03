@@ -11,7 +11,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
-| AR-05 | Bid-sheet locations and bids are company-wide; destructive ops restricted to creator/Admin | High | CWE-284 | Accepted — **awaiting countersign** | 2026-09-02 | 2027-09-02 |
+| AR-05 | Bid-sheet locations and bids are company-wide; destructive ops restricted to creator/Admin | High | CWE-284 | Accepted — **awaiting countersign** (amended 2026-09-03) | 2026-09-02 | 2027-09-02 |
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
 
 ---
@@ -341,6 +341,49 @@ every table is preserved in `dbo.*_PreGlobal` snapshots.
 read boundary and undo this model); or if concurrent-edit collisions prove to happen in practice; or if
 the sheets phase introduces membership, at which point mutation could reasonably be scoped to "a
 location on a sheet you belong to" instead of being fully open.
+
+### Addendum — the sheets phase, 2026-09-03
+
+The "re-evaluate if" clause above named the sheets phase specifically, so here is what it changed.
+**The decision is unchanged**; two facts about the authorization surface are not.
+
+**1. Sheets are a new authorization boundary, but not over bids.** `dbo.BidSheets` /
+`BidSheetShares` / `BidSheetLocationLinks` give a sheet an owner and a share list. Reading or editing a
+sheet requires being its owner or on its share list; renaming, resharing and deleting one are
+owner-only (`BidSheetService.RequireVisibleSheetAsync` / `RequireSheetOwnerAsync`, both checking
+persisted values, both returning a real 403 rather than a 404 for a genuine outsider).
+
+Mutation of **bids and locations was deliberately NOT scoped to sheet membership.** The clause above
+offered that as an option; it was not taken, because a location is company-wide and appears on many
+sheets at once, so "a location on a sheet you belong to" is satisfied by almost every user for almost
+every location — it would read as a control while enforcing nearly nothing. Residual risk 1 stands
+unchanged: any authenticated employee can change any bid.
+
+**2. The two destructive endpoints no longer call `ValidateTradeUnitsOrThrowAsync`.**
+`DELETE /bidsheet/locations/{id}` and `DELETE /bidsheet/locations/{id}/bids/{commodity}` used to
+validate the caller against a `tradeUnitCode` the **caller supplied in the query string**. Post-remodel
+the client could only supply the row's provenance trade unit — the desk that first added the
+location — which is very often not the caller's. The check therefore denied legitimate deletes while
+adding nothing against an attacker, who chose the value being checked. It has been removed; the
+creator-or-Admin guard on the persisted `CreatedBy` is now the sole and actual authorization on both
+endpoints. **This is a narrowing of a check that was decorative, not the removal of a real one**, but
+it is a reduction in the surface as written and is recorded here rather than left to a diff.
+
+**3. Deleting a location clears its sheet links.** The link FK is `RESTRICT`, so no other code path can
+empty a colleague's sheet as a side effect; the delete path clears links explicitly, after the UI has
+shown the caller how many sheets hold the elevator
+(`GET /bidsheet/locations/{id}/sheet-count`). Residual risk: that count is the only warning, and the
+delete is still irreversible from the UI.
+
+**4. Residual risk 2 (concurrent edits) is unchanged and now applies to more than bids.** A sheet's
+shared column layout and row order are last-write-wins with no indicator, so two members rearranging
+the same sheet will silently overwrite each other. Lower stakes than a bid — a layout is re-set in
+seconds — but the same missing mechanism.
+
+**Countersign note:** this addendum changes what is being signed off. It is part of the same pending
+request to asksecurity@scoular.com, not a separate one.
+
+**Amended by:** Origination engineering — 2026-09-03.
 
 **Status: awaiting IT Security countersign** (asksecurity@scoular.com), alongside AR-02. The feature is
 Dev-only and gated behind `environment.barchartBidsEnabled`; it must not reach PROD without sign-off.

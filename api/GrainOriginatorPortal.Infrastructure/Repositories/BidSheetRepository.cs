@@ -148,11 +148,21 @@ public class BidSheetRepository : IBidSheetRepository
     public async Task DeleteLocationAsync(int id, CancellationToken cancellationToken)
     {
         var existing = await _appContext.BidSheetLocations.FindAsync([id], cancellationToken);
-        if (existing != null)
-        {
-            _appContext.BidSheetLocations.Remove(existing);
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
+        if (existing == null) return;
+
+        // Take it off every sheet that holds it, in the same transaction as the delete.
+        //
+        // The link FK is RESTRICT on purpose, so no other code path can empty somebody else's sheet
+        // as a side effect. This path is the one place that is allowed to, and only because the user
+        // was shown the sheet count and confirmed. Doing it explicitly here rather than by cascade
+        // keeps that intent readable: a cascade would make every future delete silent.
+        var links = await _appContext.BidSheetLocationLinks
+            .Where(l => l.BidSheetLocationId == id)
+            .ToListAsync(cancellationToken);
+        if (links.Count > 0) _appContext.BidSheetLocationLinks.RemoveRange(links);
+
+        _appContext.BidSheetLocations.Remove(existing);
+        await _appContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task DeleteBidsAsync(int locationId, string commodityCode, int? month, CancellationToken cancellationToken)
@@ -468,5 +478,214 @@ public class BidSheetRepository : IBidSheetRepository
             existing.ModifiedAt = DateTime.UtcNow;
         }
         return reconciled;
+    }
+
+    // =============================================================================================
+    // Sheets
+    // =============================================================================================
+
+    /// <summary>
+    /// Owner OR shared-with. This one predicate is the whole visibility rule; every sheet read goes
+    /// through it so there is no second place to keep in step.
+    /// </summary>
+    private static IQueryable<BidSheet> VisibleTo(IQueryable<BidSheet> query, string userId) =>
+        query.Where(s => s.OwnerUserId == userId || s.Shares.Any(sh => sh.MemberUserId == userId));
+
+    /// <summary>Shares, links, and the location behind each link with its bids -- everything the
+    /// screen needs to render a sheet without a second round trip.</summary>
+    private static IQueryable<BidSheet> WithContents(IQueryable<BidSheet> query) =>
+        query.Include(s => s.Shares)
+             .Include(s => s.Locations.OrderBy(l => l.SortOrder))
+                 .ThenInclude(l => l.Location!)
+                     .ThenInclude(loc => loc.Bids);
+
+    public async Task<List<BidSheet>> GetVisibleSheetsAsync(string userId, CancellationToken cancellationToken)
+    {
+        return await WithContents(VisibleTo(_appContext.BidSheets.AsNoTracking(), userId))
+            .OrderBy(s => s.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<BidSheet?> GetVisibleSheetAsync(int sheetId, string userId, CancellationToken cancellationToken)
+    {
+        return await WithContents(VisibleTo(_appContext.BidSheets.AsNoTracking(), userId))
+            .FirstOrDefaultAsync(s => s.Id == sheetId, cancellationToken);
+    }
+
+    public async Task<bool> SheetExistsAsync(int sheetId, CancellationToken cancellationToken)
+    {
+        return await _appContext.BidSheets.AsNoTracking().AnyAsync(s => s.Id == sheetId, cancellationToken);
+    }
+
+    public async Task<bool> SheetNameExistsAsync(string ownerUserId, string name, int? excludeSheetId, CancellationToken cancellationToken)
+    {
+        var trimmed = (name ?? string.Empty).Trim();
+        return await _appContext.BidSheets
+            .AsNoTracking()
+            .AnyAsync(s => s.OwnerUserId == ownerUserId
+                        && s.Name == trimmed
+                        && (excludeSheetId == null || s.Id != excludeSheetId), cancellationToken);
+    }
+
+    public async Task<BidSheet> CreateSheetAsync(BidSheet sheet, CancellationToken cancellationToken)
+    {
+        _appContext.BidSheets.Add(sheet);
+        await _appContext.SaveChangesAsync(cancellationToken);
+        return sheet;
+    }
+
+    public async Task<BidSheet?> RenameSheetAsync(int sheetId, string name, string modifiedBy, CancellationToken cancellationToken)
+    {
+        var sheet = await _appContext.BidSheets.FirstOrDefaultAsync(s => s.Id == sheetId, cancellationToken);
+        if (sheet == null) return null;
+        sheet.Name = name.Trim();
+        sheet.ModifiedBy = modifiedBy;
+        sheet.ModifiedAt = DateTime.UtcNow;
+        await _appContext.SaveChangesAsync(cancellationToken);
+        return sheet;
+    }
+
+    public async Task<BidSheet?> SetSheetLayoutAsync(int sheetId, string? cropOrder, string? hiddenCrops,
+        string? selectedMonths, string? selectedYears, string modifiedBy, CancellationToken cancellationToken)
+    {
+        var sheet = await _appContext.BidSheets.FirstOrDefaultAsync(s => s.Id == sheetId, cancellationToken);
+        if (sheet == null) return null;
+
+        // null means "not sent". The screen saves crop order, hidden crops, months and years on four
+        // separate interactions and must not blank the other three each time.
+        if (cropOrder != null) sheet.CropOrder = cropOrder;
+        if (hiddenCrops != null) sheet.HiddenCrops = hiddenCrops;
+        if (selectedMonths != null) sheet.SelectedMonths = selectedMonths;
+        if (selectedYears != null) sheet.SelectedYears = selectedYears;
+
+        sheet.ModifiedBy = modifiedBy;
+        sheet.ModifiedAt = DateTime.UtcNow;
+        await _appContext.SaveChangesAsync(cancellationToken);
+        return sheet;
+    }
+
+    public async Task DeleteSheetAsync(int sheetId, CancellationToken cancellationToken)
+    {
+        var sheet = await _appContext.BidSheets.FirstOrDefaultAsync(s => s.Id == sheetId, cancellationToken);
+        if (sheet == null) return;
+        // Cascade takes the shares and the location links. The locations are company-wide; they stay.
+        _appContext.BidSheets.Remove(sheet);
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<string?> GetSheetOwnerAsync(int sheetId, CancellationToken cancellationToken)
+    {
+        return await _appContext.BidSheets
+            .AsNoTracking()
+            .Where(s => s.Id == sheetId)
+            .Select(s => s.OwnerUserId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<BidSheet?> SetSheetSharesAsync(int sheetId, List<BidSheetShare> shares, CancellationToken cancellationToken)
+    {
+        var sheet = await _appContext.BidSheets
+            .Include(s => s.Shares)
+            .FirstOrDefaultAsync(s => s.Id == sheetId, cancellationToken);
+        if (sheet == null) return null;
+
+        // Sharing a sheet with its own owner is a no-op, not a row -- the owner already sees it, and
+        // storing it would make the list read as if they had been invited to a sheet they created.
+        // De-duplicate case-insensitively too, so "cegr" and "CEgr" do not both hit the unique index.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { sheet.OwnerUserId };
+        var kept = new List<BidSheetShare>();
+        foreach (var share in shares)
+        {
+            if (string.IsNullOrWhiteSpace(share.MemberUserId)) continue;
+            if (!seen.Add(share.MemberUserId.Trim())) continue;
+            share.BidSheetId = sheetId;
+            kept.Add(share);
+        }
+
+        _appContext.BidSheetShares.RemoveRange(sheet.Shares);
+        sheet.Shares = kept;
+        await _appContext.SaveChangesAsync(cancellationToken);
+        return sheet;
+    }
+
+    public async Task<BidSheetLocationLink> AddSheetLocationAsync(int sheetId, int locationId, string addedBy, CancellationToken cancellationToken)
+    {
+        var existing = await _appContext.BidSheetLocationLinks
+            .FirstOrDefaultAsync(l => l.BidSheetId == sheetId && l.BidSheetLocationId == locationId, cancellationToken);
+        if (existing != null) return existing;
+
+        var nextOrder = await _appContext.BidSheetLocationLinks
+            .Where(l => l.BidSheetId == sheetId)
+            .Select(l => (int?)l.SortOrder)
+            .MaxAsync(cancellationToken) ?? -1;
+
+        var link = new BidSheetLocationLink
+        {
+            BidSheetId = sheetId,
+            BidSheetLocationId = locationId,
+            SortOrder = nextOrder + 1,
+            AddedBy = addedBy,
+            AddedAt = DateTime.UtcNow
+        };
+        _appContext.BidSheetLocationLinks.Add(link);
+
+        try
+        {
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Two people added the same elevator between the check above and this write. That is the
+            // outcome they both wanted, so return the row that won instead of surfacing an error.
+            _appContext.Entry(link).State = EntityState.Detached;
+            var winner = await _appContext.BidSheetLocationLinks
+                .FirstOrDefaultAsync(l => l.BidSheetId == sheetId && l.BidSheetLocationId == locationId, cancellationToken);
+            if (winner == null) throw;
+            return winner;
+        }
+
+        return link;
+    }
+
+    public async Task RemoveSheetLocationAsync(int sheetId, int locationId, CancellationToken cancellationToken)
+    {
+        var link = await _appContext.BidSheetLocationLinks
+            .FirstOrDefaultAsync(l => l.BidSheetId == sheetId && l.BidSheetLocationId == locationId, cancellationToken);
+        if (link == null) return;
+        _appContext.BidSheetLocationLinks.Remove(link);
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetSheetLocationOrderAsync(int sheetId, IReadOnlyList<int> orderedLocationIds, CancellationToken cancellationToken)
+    {
+        var links = await _appContext.BidSheetLocationLinks
+            .Where(l => l.BidSheetId == sheetId)
+            .ToListAsync(cancellationToken);
+        if (links.Count == 0) return;
+
+        var position = new Dictionary<int, int>();
+        for (var i = 0; i < orderedLocationIds.Count; i++)
+            position.TryAdd(orderedLocationIds[i], i);
+
+        // Anything the client did not mention keeps its relative order AFTER everything it did. A
+        // client that loaded before a colleague added a row would otherwise renumber that row to the
+        // front on the next drag; the old per-user JSON order dropped unknown ids entirely.
+        var next = orderedLocationIds.Count;
+        foreach (var link in links.OrderBy(l => l.SortOrder))
+        {
+            link.SortOrder = position.TryGetValue(link.BidSheetLocationId, out var at) ? at : next++;
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> CountSheetsHoldingLocationAsync(int locationId, CancellationToken cancellationToken)
+    {
+        return await _appContext.BidSheetLocationLinks
+            .AsNoTracking()
+            .Where(l => l.BidSheetLocationId == locationId)
+            .Select(l => l.BidSheetId)
+            .Distinct()
+            .CountAsync(cancellationToken);
     }
 }

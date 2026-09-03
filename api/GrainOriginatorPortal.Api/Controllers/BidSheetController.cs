@@ -76,9 +76,13 @@ public class BidSheetController : ControllerBase
     /// <summary>Deletes a bid sheet location and all its bids.</summary>
     [HttpDelete("locations/{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> DeleteLocation(int id, [FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> DeleteLocation(int id, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        // No trade-unit entitlement check. It used to be here, but the trade unit on a location is
+        // provenance now -- it names whichever desk first added the row, which is very often NOT the
+        // caller. Validating it would 403 an originator for deleting a location somebody else added,
+        // while the caller has to send the value it checks. Authorization moved into the service:
+        // creator or Admin, checked against the persisted CreatedBy.
         await _service.DeleteLocationAsync(id, cancellationToken);
         return NoContent();
     }
@@ -86,9 +90,10 @@ public class BidSheetController : ControllerBase
     /// <summary>Deletes all bids for a specific commodity on a location.</summary>
     [HttpDelete("locations/{id:int}/bids/{commodityCode}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> DeleteBids(int id, string commodityCode, [FromQuery] string tradeUnitCode, [FromQuery] int? month = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> DeleteBids(int id, string commodityCode, [FromQuery] int? month = null, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        // Authorization is the service guard (creator or Admin), not the row's provenance trade unit
+        // -- see DeleteLocation above.
         await _service.DeleteBidsAsync(id, commodityCode, month, cancellationToken);
         return NoContent();
     }
@@ -210,4 +215,94 @@ public class BidSheetController : ControllerBase
         await _service.SetPreferenceAsync(request.TradeUnitKey, request.CropCode, request.Month, request.CropYear, request.CropOrder, request.HiddenCrops, request.SelectedMonths, request.SelectedYears, request.PrintLayout, request.PriceMode, cancellationToken);
         return NoContent();
     }
+
+    // -------------------------------------------------------------------------
+    // Sheets
+    //
+    // A sheet is a named, shareable working set of locations -- what replaced the trade unit as the
+    // thing that decides what the screen shows. No trade-unit entitlement checks anywhere below:
+    // locations are company-wide, and the authorization boundary is the sheet itself (owner or
+    // shared-with), enforced in the service against persisted values.
+    // -------------------------------------------------------------------------
+
+    /// <summary>Gets the sheets the current user owns or has been shared on.</summary>
+    [HttpGet("sheets")]
+    [ProducesResponseType(typeof(List<BidSheetResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<BidSheetResponse>>> GetSheets(CancellationToken cancellationToken = default)
+        => Ok(await _service.GetSheetsAsync(cancellationToken));
+
+    /// <summary>Gets one sheet with its shares and locations. 403 if it exists but is not shared with you.</summary>
+    [HttpGet("sheets/{sheetId:int}")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<BidSheetResponse>> GetSheet(int sheetId, CancellationToken cancellationToken = default)
+        => Ok(await _service.GetSheetAsync(sheetId, cancellationToken));
+
+    /// <summary>Creates an empty sheet owned by the current user.</summary>
+    [HttpPost("sheets")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BidSheetResponse>> CreateSheet([FromBody] BidSheetRequest request, CancellationToken cancellationToken = default)
+    {
+        var created = await _service.CreateSheetAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetSheet), new { sheetId = created.Id }, created);
+    }
+
+    /// <summary>Renames a sheet. Owner only.</summary>
+    [HttpPut("sheets/{sheetId:int}")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<BidSheetResponse>> RenameSheet(int sheetId, [FromBody] BidSheetRequest request, CancellationToken cancellationToken = default)
+        => Ok(await _service.RenameSheetAsync(sheetId, request, cancellationToken));
+
+    /// <summary>Deletes a sheet, its shares and its location links. Owner only. The locations survive.</summary>
+    [HttpDelete("sheets/{sheetId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> DeleteSheet(int sheetId, CancellationToken cancellationToken = default)
+    {
+        await _service.DeleteSheetAsync(sheetId, cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>Replaces who a sheet is shared with. Owner only. An empty list unshares it.</summary>
+    [HttpPut("sheets/{sheetId:int}/shares")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<BidSheetResponse>> SetSheetShares(int sheetId, [FromBody] BidSheetSharesRequest request, CancellationToken cancellationToken = default)
+        => Ok(await _service.SetSheetSharesAsync(sheetId, request, cancellationToken));
+
+    /// <summary>Saves the sheet's shared column layout. Any member.</summary>
+    [HttpPut("sheets/{sheetId:int}/layout")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BidSheetResponse>> SetSheetLayout(int sheetId, [FromBody] BidSheetLayoutRequest request, CancellationToken cancellationToken = default)
+        => Ok(await _service.SetSheetLayoutAsync(sheetId, request, cancellationToken));
+
+    /// <summary>Puts an existing location on the sheet. Idempotent. Any member.</summary>
+    [HttpPost("sheets/{sheetId:int}/locations")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BidSheetResponse>> AddSheetLocation(int sheetId, [FromBody] AddBidSheetLocationRequest request, CancellationToken cancellationToken = default)
+        => Ok(await _service.AddSheetLocationAsync(sheetId, request, cancellationToken));
+
+    /// <summary>Takes a location off the sheet. The location itself is untouched. Any member.</summary>
+    [HttpDelete("sheets/{sheetId:int}/locations/{locationId:int}")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BidSheetResponse>> RemoveSheetLocation(int sheetId, int locationId, CancellationToken cancellationToken = default)
+        => Ok(await _service.RemoveSheetLocationAsync(sheetId, locationId, cancellationToken));
+
+    /// <summary>Saves the shared row order for the sheet. Any member.</summary>
+    [HttpPut("sheets/{sheetId:int}/location-order")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BidSheetResponse>> SetSheetLocationOrder(int sheetId, [FromBody] BidSheetLocationOrderRequest request, CancellationToken cancellationToken = default)
+        => Ok(await _service.SetSheetLocationOrderAsync(sheetId, request, cancellationToken));
+
+    /// <summary>
+    /// How many sheets hold this location. The delete confirmation says the number out loud, because
+    /// a location is company-wide now and deleting one takes it off everybody else's sheet too.
+    /// </summary>
+    [HttpGet("locations/{id:int}/sheet-count")]
+    [ProducesResponseType(typeof(int), StatusCodes.Status200OK)]
+    public async Task<ActionResult<int>> GetLocationSheetCount(int id, CancellationToken cancellationToken = default)
+        => Ok(await _service.CountSheetsHoldingLocationAsync(id, cancellationToken));
 }

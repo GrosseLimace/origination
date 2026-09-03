@@ -20,7 +20,9 @@ import {
   DashboardSummary,
   ContractPricingLine,
   RefinementFilters,
+  BidSheet,
   BidSheetEntry,
+  BidSheetLayoutUpdate,
   BidSheetLocation,
   BidSheetLocationBid,
   BidSheetPreferenceUpdate,
@@ -866,14 +868,14 @@ export class ApiService {
   }
 
   /** Deletes a bid sheet location and all its bids */
-  deleteBidSheetLocation(id: number, tradeUnitCode: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${id}?tradeUnitCode=${encodeURIComponent(tradeUnitCode)}`)
+  deleteBidSheetLocation(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${id}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Deletes all bids for a specific commodity on a location */
-  deleteBidSheetBids(locationId: number, commodityCode: string, tradeUnitCode: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${locationId}/bids/${encodeURIComponent(commodityCode)}?tradeUnitCode=${encodeURIComponent(tradeUnitCode)}`)
+  deleteBidSheetBids(locationId: number, commodityCode: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${locationId}/bids/${encodeURIComponent(commodityCode)}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -945,6 +947,87 @@ export class ApiService {
    */
   setBidSheetPreference(pref: BidSheetPreferenceUpdate): Observable<void> {
     return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, pref)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // =========================================================================
+  // Sheets — the named, shareable working sets of locations
+  //
+  // Every write returns the whole sheet back, already ordered, so the caller never has to reload to
+  // stay in step with a colleague who changed it a moment ago.
+  // =========================================================================
+
+  /** Sheets the signed-in user owns or has been shared on. */
+  getBidSheets(): Observable<BidSheet[]> {
+    return this.http.get<BidSheet[]>(`${this.baseUrl}/bidsheet/sheets`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** One sheet with its shares and locations. 403 if it exists but is not shared with you. */
+  getBidSheet(sheetId: number): Observable<BidSheet> {
+    return this.http.get<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Creates an empty sheet owned by the signed-in user. 409 if they already have one by that name. */
+  createBidSheet(name: string): Observable<BidSheet> {
+    return this.http.post<BidSheet>(`${this.baseUrl}/bidsheet/sheets`, { name })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Renames a sheet. Owner only. */
+  renameBidSheet(sheetId: number, name: string): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`, { name })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Deletes a sheet. Owner only. The locations on it are company-wide and survive. */
+  deleteBidSheet(sheetId: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Replaces who a sheet is shared with. Owner only. An empty list unshares it. */
+  setBidSheetShares(sheetId: number, members: Array<{ userId: string; name?: string }>): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/shares`, { members })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Saves part of the shared column layout. Omitted fields keep their stored value. */
+  setBidSheetLayout(sheetId: number, layout: BidSheetLayoutUpdate): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/layout`, layout)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Puts an existing location on the sheet. Idempotent. Any member. */
+  addBidSheetLocation(sheetId: number, locationId: number): Observable<BidSheet> {
+    return this.http.post<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations`, { locationId })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Takes a location off the sheet. The location itself is untouched — that is deleteBidSheetLocation. */
+  removeBidSheetLocation(sheetId: number, locationId: number): Observable<BidSheet> {
+    return this.http.delete<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/${locationId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * Saves the shared row order for a sheet. Any member; the order is shared, not per-user.
+   *
+   * Named apart from setBidSheetLocationOrder above, which is the per-user, per-trade-unit JSON
+   * order this replaces. Both exist only until the screen is fully moved onto sheets.
+   */
+  setBidSheetRowOrder(sheetId: number, locationIds: number[]): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/location-order`, { locationIds })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * How many sheets hold this location. Deleting a location is company-wide now, so the confirmation
+   * says the number out loud before it takes the elevator off everybody else's sheet.
+   */
+  getBidSheetLocationSheetCount(locationId: number): Observable<number> {
+    return this.http.get<number>(`${this.baseUrl}/bidsheet/locations/${locationId}/sheet-count`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
