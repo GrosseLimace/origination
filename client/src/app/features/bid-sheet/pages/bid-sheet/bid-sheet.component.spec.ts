@@ -480,3 +480,105 @@ describe('BidSheetComponent — filter dropdown sources', () => {
     expect(component.filterableYears()).toEqual([...component.filterableYears()].sort((a, b) => a - b));
   });
 });
+
+/**
+ * A catalog (not-yet-added) location can now be the map's comparison reference, not just an added
+ * one -- clicking a BarChart pin nobody has added yet should still recolor the rest of the sheet's
+ * bids as beating/matching/none, the same as clicking an added pin already does. That fallback
+ * (_referenceBid / _hasReference) touches the exact comparison logic this file's own docstring says
+ * was audited and fixed once already, so it gets its own direct coverage rather than trusting the
+ * map-rendering path (which needs a real Leaflet instance) to exercise it incidentally.
+ */
+describe('BidSheetComponent — catalog location as comparison reference', () => {
+  let component: BidSheetComponent;
+  let getBarchartLocationDetail: (key: string) => ReturnType<typeof of>;
+
+  beforeEach(() => {
+    getBarchartLocationDetail = (key: string) => of({
+      location: {
+        locationKey: key, elevator: 'Competitor Co', instrumentCount: 1, commodityCount: 1, placements: [],
+      },
+      bids: [
+        { commodityCode: 'YC', vendorCommodity: 'Corn', cropYear: 2026, month: 8, price: 4.50, symbol: 'ZCU26', isMapped: true },
+      ],
+      unmappedBidCount: 0,
+    });
+
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+      getBarchartLocationDetail: (key: string) => getBarchartLocationDetail(key),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    // One added location, priced higher than the catalog reference set up below (5.00 vs 4.50), so
+    // it should read as "beating" once the reference is in play.
+    const loc = location('Elevator A', [bid({ locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 8, bid: '5.00' })]);
+    component.allMapLocations.set([loc]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [loc],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+    component.selectedCrop.set('YC');
+    component.selectedYear.set(2026);
+    component.selectedMonth.set(8);
+  });
+
+  it('sets the catalog key as reference and clears any added-location reference', () => {
+    component.selectedLocationName.set('Some Added Location');
+
+    component.toggleCatalogReference('CATKEY1');
+
+    expect(component.catalogReferenceKey()).toBe('CATKEY1');
+    expect(component.selectedLocationName()).toBe('');
+  });
+
+  it('toggles the same key off on a second call', () => {
+    component.toggleCatalogReference('CATKEY1');
+    component.toggleCatalogReference('CATKEY1');
+
+    expect(component.catalogReferenceKey()).toBeNull();
+  });
+
+  it('recolors an added location\'s bid against the catalog reference once its detail is cached', () => {
+    component.toggleCatalogReference('CATKEY1'); // fetches + caches CATKEY1's detail (mocked above)
+    component.filterBids();
+
+    const item = component.filteredBidItems().find(i => i.type === 'entry' && i.name === 'Elevator A');
+    expect(item).toBeDefined();
+    // 5.00 (Elevator A) > 4.50 (the catalog reference) → beating.
+    expect((item as { status?: string })?.status).toBe('beating');
+  });
+
+  it('does not compare anything when the catalog reference has no bid for the selected period', () => {
+    getBarchartLocationDetail = () => of({
+      location: { locationKey: 'CATKEY2', elevator: 'Empty Co', instrumentCount: 0, commodityCount: 0, placements: [] },
+      bids: [],
+      unmappedBidCount: 0,
+    });
+
+    component.toggleCatalogReference('CATKEY2');
+    component.filterBids();
+
+    const item = component.filteredBidItems().find(i => i.type === 'entry' && i.name === 'Elevator A');
+    expect((item as { status?: string })?.status).toBe('none');
+  });
+});

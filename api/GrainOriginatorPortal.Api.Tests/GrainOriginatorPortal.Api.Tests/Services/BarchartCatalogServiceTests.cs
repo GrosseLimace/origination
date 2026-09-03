@@ -99,6 +99,47 @@ public class BarchartCatalogServiceTests
     }
 
     // -------------------------------------------------------------------------
+    // The bid sheet map's catalog layer shows a real price pill instead of a plain dot once the map's
+    // crop/year/month filters are in play. That price comes from a batched second query, priced only
+    // when all three are given together -- CommodityCode alone (the picker's own use) must not fetch
+    // prices, and a location the batch has nothing for must come back with no price at all.
+    [Fact]
+    public async Task SearchLocationsAsync_WithFullPeriod_AttachesMatchedBidPrice()
+    {
+        _catalog.SearchLocationsAsync(
+                null, null, "YC", null, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([Summary("priced"), Summary("unpriced")]);
+        _catalog.GetMatchedBidPricesAsync(
+                Arg.Is<IReadOnlyCollection<string>>(k => k.Contains("priced") && k.Contains("unpriced")),
+                "YC", 2026, 8, Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, decimal> { ["priced"] = 4.98m });
+
+        var results = await _sut.SearchLocationsAsync(
+            new BarchartLocationSearchRequest { CommodityCode = "YC", CropYear = 2026, Month = 8 },
+            CancellationToken.None);
+
+        Assert.Equal(4.98m, results.Single(r => r.LocationKey == "priced").MatchedBidPrice);
+        Assert.Null(results.Single(r => r.LocationKey == "unpriced").MatchedBidPrice);
+    }
+
+    // -------------------------------------------------------------------------
+    // CropYear/Month alone, without a CommodityCode, name no single bid to price -- the picker's plain
+    // commodity-only search must not pay for a lookup that has nothing to key on.
+    [Fact]
+    public async Task SearchLocationsAsync_WithoutCommodityCode_SkipsThePriceLookup()
+    {
+        _catalog.SearchLocationsAsync(
+                null, null, null, null, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([Summary("82259")]);
+
+        await _sut.SearchLocationsAsync(
+            new BarchartLocationSearchRequest { CropYear = 2026, Month = 8 }, CancellationToken.None);
+
+        await _catalog.DidNotReceive().GetMatchedBidPricesAsync(
+            Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    // -------------------------------------------------------------------------
     // Nearest first: an originator scanning a map expects the closest competitor at the top.
     [Fact]
     public async Task SearchLocationsAsync_Geographic_SortsNearestFirst()

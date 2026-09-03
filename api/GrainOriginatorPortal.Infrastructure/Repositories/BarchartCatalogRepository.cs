@@ -83,6 +83,48 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
             .FirstOrDefaultAsync(l => l.LocationKey == locationKey, cancellationToken);
 
     /// <inheritdoc />
+    public async Task<Dictionary<string, decimal>> GetMatchedBidPricesAsync(
+        IReadOnlyCollection<string> locationKeys, string commodityCode, int cropYear, int month,
+        CancellationToken cancellationToken = default)
+    {
+        if (locationKeys.Count == 0) return [];
+        var today = DateTime.UtcNow.Date;
+
+        // Same shape as GetBidPreviewAsync's per-location join, batched across every key the caller
+        // asked about in one round trip instead of one per pin.
+        var rows = await _appContext.BarchartInstruments
+            .AsNoTracking()
+            .Where(i => locationKeys.Contains(i.LocationKey)
+                     && i.IsActive
+                     && !i.IsTest
+                     && i.DeliveryStart != null
+                     && i.DeliveryStart.Value.Year == cropYear
+                     && i.DeliveryStart.Value.Month == month
+                     && (i.DeliveryEnd == null || i.DeliveryEnd >= today)
+                     && _appContext.BarchartCommodityMaps
+                        .Any(m => m.BarchartCommodity == i.Commodity && m.IsActive && m.CommodityCode == commodityCode))
+            .Select(i => new
+            {
+                i.LocationKey,
+                Price = _appContext.BarchartCurrentQuotes
+                    .Where(q => q.Symbol == i.Symbol)
+                    .Select(q => (decimal?)q.LastPrice)
+                    .FirstOrDefault()
+            })
+            .Where(x => x.Price != null)
+            .ToListAsync(cancellationToken);
+
+        // One price per location: a site publishing this exact commodity/period through more than one
+        // instrument is an edge case the map pin has no room to show twice, so first-found wins.
+        var result = new Dictionary<string, decimal>();
+        foreach (var row in rows)
+        {
+            if (!result.ContainsKey(row.LocationKey)) result[row.LocationKey] = row.Price!.Value;
+        }
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task<List<BarchartBidPreview>> GetBidPreviewAsync(
         string locationKey, string? instrumentType, CancellationToken cancellationToken = default)
     {

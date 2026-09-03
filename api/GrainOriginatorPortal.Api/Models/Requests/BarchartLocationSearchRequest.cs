@@ -20,6 +20,19 @@ public record BarchartLocationSearchRequest
     [MaxLength(50)]
     public string? CommodityCode { get; init; }
 
+    /// <summary>
+    /// Delivery year/month to price CommodityCode against. Only meaningful together with
+    /// CommodityCode and each other; supplied alone, they're ignored. When all three are given, each
+    /// result that publishes a matching bid carries it as <see cref="Responses.BarchartCatalogLocationResponse.MatchedBidPrice"/>
+    /// -- the bid sheet map's catalog layer uses this to show a real price pill instead of a plain dot
+    /// once the map's own crop/year/month filters are in play.
+    /// </summary>
+    public int? CropYear { get; init; }
+
+    /// <summary>Delivery month, 1-12. See <see cref="CropYear"/>.</summary>
+    [Range(1, 12)]
+    public int? Month { get; init; }
+
     /// <summary>Map-centre latitude. Requires <see cref="Longitude"/>; pairs with <see cref="RadiusMiles"/>.</summary>
     [Range(-90, 90)]
     public double? Latitude { get; init; }

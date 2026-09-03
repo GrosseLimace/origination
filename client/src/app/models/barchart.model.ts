@@ -34,6 +34,10 @@ export interface BarchartCatalogLocation {
   distanceMiles?: number;
   /** Trade units this location is already on, so the picker can show it as already added. */
   placements: BarchartCatalogPlacement[];
+  /** This location's price for the search's commodityCode/cropYear/month, when the search asked for
+   *  one and this location has one. Absent both when the search didn't ask and when it did but this
+   *  location has nothing published for that exact period. */
+  matchedBidPrice?: number;
 }
 
 /** Where a catalog listing already sits on the bid sheet. */
@@ -81,6 +85,10 @@ export interface BarchartLocationSearchParams {
   search?: string;
   state?: string;
   commodityCode?: string;
+  /** Delivery year/month to price commodityCode against. Only meaningful together with
+   *  commodityCode and each other -- see BarchartCatalogLocation.matchedBidPrice. */
+  cropYear?: number;
+  month?: number;
   latitude?: number;
   longitude?: number;
   radiusMiles?: number;

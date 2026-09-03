@@ -36,6 +36,14 @@ public record BarchartCatalogLocationResponse
 
     /// <summary>Trade units this location is already on, so the picker can show "already added" state.</summary>
     public List<BarchartCatalogPlacementResponse> Placements { get; init; } = [];
+
+    /// <summary>
+    /// This location's price for the search's CommodityCode/CropYear/Month, when the search asked for
+    /// one and this location has one. Null either because the search didn't ask (no crop/period filter
+    /// in play) or because this specific location has nothing published for that exact period -- the
+    /// two look the same on the wire and the caller already knows which one it asked for.
+    /// </summary>
+    public decimal? MatchedBidPrice { get; init; }
 }
 
 /// <summary>Where a catalog listing already sits on the Bid Sheet.</summary>

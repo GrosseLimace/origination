@@ -85,6 +85,23 @@ public class BarchartCatalogService : IBarchartCatalogService
 
         await AttachPlacementsAsync(results, cancellationToken);
 
+        // Priced AFTER the geographic re-sort/take, not before: this only needs to cover the page
+        // actually being returned, not the over-selected intermediate set the bounding box asked for.
+        if (!string.IsNullOrWhiteSpace(request.CommodityCode) && request.CropYear.HasValue && request.Month.HasValue)
+        {
+            var prices = await _catalog.GetMatchedBidPricesAsync(
+                results.Select(r => r.LocationKey).ToList(),
+                request.CommodityCode, request.CropYear.Value, request.Month.Value, cancellationToken);
+            if (prices.Count > 0)
+            {
+                for (var i = 0; i < results.Count; i++)
+                {
+                    if (prices.TryGetValue(results[i].LocationKey, out var price))
+                        results[i] = results[i] with { MatchedBidPrice = price };
+                }
+            }
+        }
+
         // Zero-result searches tell us which coverage users actually want, which is the input to widening
         // the vendor pull. Logged as a plain metric; the search term is user-typed text, not sensitive.
         if (results.Count == 0)

@@ -450,16 +450,17 @@ export class BidSheetComponent {
       this._getLatestBid(name, newD.year, crop!, newD.month) ||
       this._getLatestBid(name, oldD.year, crop!, oldD.month));
 
-    // Reference comparison — color-code each crop row vs the session reference (selectedLocationName)
+    // Reference comparison — color-code each crop row vs the session reference, whichever kind
+    // (an added location via selectedLocationName, or a catalog listing via catalogReferenceKey).
     const refName = this.selectedLocationName();
-    const isRef = refName === name;
+    const isRef = !!refName && refName === name;
 
     return cropSet.map(crop => {
       const oldBid = this._getLatestBid(name, oldD.year, crop!, oldD.month);
       const newBid = this._getLatestBid(name, newD.year, crop!, newD.month);
       // Get reference bid for this crop (if any). If reference doesn't have this crop → leave white (status 'none').
-      const oldRefBid = refName && !isRef ? this._parseBid(this._getLatestBid(refName, oldD.year, crop!, oldD.month)) : null;
-      const newRefBid = refName && !isRef ? this._parseBid(this._getLatestBid(refName, newD.year, crop!, newD.month)) : null;
+      const oldRefBid = this._hasReference() && !isRef ? this._referenceBid(oldD.year, crop!, oldD.month) : null;
+      const newRefBid = this._hasReference() && !isRef ? this._referenceBid(newD.year, crop!, newD.month) : null;
       const oldStatus = isRef ? 'reference' : this._computeItemStatus(oldBid, false, oldRefBid);
       const newStatus = isRef ? 'reference' : this._computeItemStatus(newBid, false, newRefBid);
       // Feed provenance for the displayed periods, so the panel can say where a number came from and
@@ -710,6 +711,19 @@ export class BidSheetComponent {
   readonly catalogDetailLoading = signal<boolean>(false);
   readonly catalogDetail = signal<BarchartCatalogLocationDetail | null>(null);
   readonly catalogDetailAdding = signal<boolean>(false);
+
+  /**
+   * The catalog (not-yet-added) location currently set as the comparison reference, mutually
+   * exclusive with selectedLocationName (an ADDED location's reference). Kept as its own signal
+   * rather than overloading selectedLocationName: that one is a NAME matched against bidLocations()
+   * everywhere it's read (panel rows, _findLocationByName, ...), and a catalog listing's key isn't a
+   * name in that sense -- reusing it would make every one of those lookups silently miss.
+   */
+  readonly catalogReferenceKey = signal<string | null>(null);
+  /** Detail responses already fetched, by location key -- lets the reference comparison resolve a
+   *  catalog reference's bid for any period without a new fetch each time the filters change, and
+   *  the click-to-detail popup reuse whatever a prior click already has. */
+  private readonly _catalogDetailCache = new Map<string, BarchartCatalogLocationDetail>();
 
   /**
    * Where a BARCHART add places its locations: whatever trade units are selected, and nothing else.
@@ -1389,12 +1403,14 @@ export class BidSheetComponent {
     }
     this.onFilterChange();
     this._savePreference();
+    this._loadCatalogLocations(); // year is part of the matched-bid-price period
   }
 
   onMonthDropdownChange(month: number): void {
     this.selectedMonth.set(month);
     this.onFilterChange();
     this._savePreference();
+    this._loadCatalogLocations(); // month is part of the matched-bid-price period
   }
 
   shiftYearsBack(): void {
@@ -1409,6 +1425,7 @@ export class BidSheetComponent {
       }
       this.onFilterChange();
       this._savePreference();
+      this._loadCatalogLocations();
       return;
     }
     // Yearly mode: shift the year offset
@@ -1417,6 +1434,7 @@ export class BidSheetComponent {
       const yr = this.newYear();
       if (yr) this.selectedYear.set(yr);
       this.onFilterChange();
+      this._loadCatalogLocations();
     }
   }
 
@@ -1432,6 +1450,7 @@ export class BidSheetComponent {
       }
       this.onFilterChange();
       this._savePreference();
+      this._loadCatalogLocations();
       return;
     }
     if (this.canShiftYearsForward()) {
@@ -1439,6 +1458,7 @@ export class BidSheetComponent {
       const yr = this.newYear();
       if (yr) this.selectedYear.set(yr);
       this.onFilterChange();
+      this._loadCatalogLocations();
     }
   }
 
@@ -1493,17 +1513,20 @@ export class BidSheetComponent {
       const oldD = this.oldDisplay();
       const newD = this.newDisplay();
 
-      // Compute reference bids per period for status comparison
+      // Compute reference bids per period for status comparison. _referenceBid resolves whichever
+      // kind of reference is set -- an added location (via bidLookup) or a catalog one (via its
+      // cached detail, once hovered or clicked) -- so every other row's color follows either kind
+      // the same way.
       const refName = this.selectedLocationName();
       const selectedYr = this.selectedYear();
       const month = this.selectedMonth();
       let oldRefBid: number | null = null;
       let newRefBid: number | null = null;
       let selectedRefBid: number | null = null;
-      if (hasIndividualTu && refName) {
-        oldRefBid = this._parseBid(this._getLatestBid(refName, oldD.year, crop, oldD.month));
-        newRefBid = this._parseBid(this._getLatestBid(refName, newD.year, crop, newD.month));
-        selectedRefBid = this._parseBid(this._getLatestBid(refName, selectedYr, crop, month));
+      if (hasIndividualTu && this._hasReference()) {
+        oldRefBid = this._referenceBid(oldD.year, crop, oldD.month);
+        newRefBid = this._referenceBid(newD.year, crop, newD.month);
+        selectedRefBid = this._referenceBid(selectedYr, crop, month);
       }
 
       // Add location entries — filter by crop if one is selected
@@ -1998,10 +2021,18 @@ export class BidSheetComponent {
     const area = this._currentViewArea();
     if (!area) return;
     const gen = ++this._catalogLoadGen;
+    const crop = this.selectedCrop() || undefined;
+    const month = this.selectedMonth();
+    // The "Year" column (month 0) is a materialized cell the feed bridge resolves onto an ADDED
+    // location's own board once ingested -- there is no calendar month to price a not-yet-added
+    // listing against, so catalog pins fall back to a plain dot in Year view, same as with no crop
+    // selected. Only a real 1-12 month names a single instrument this endpoint can price.
+    const period = crop && month > 0 ? { cropYear: this.selectedYear(), month } : {};
     this.apiService.searchBarchartLocations({
       latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles, take: 5000,
-      commodityCode: this.selectedCrop() || undefined,
-      search: this.searchQuery().trim() || undefined
+      commodityCode: crop,
+      search: this.searchQuery().trim() || undefined,
+      ...period
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (rows) => {
         if (gen !== this._catalogLoadGen) return; // a newer pan/zoom/filter already superseded this request
@@ -3711,6 +3742,8 @@ export class BidSheetComponent {
     // Toggle selected location for highlighted pin / comparison reference
     const alreadySelected = this.selectedLocationName() === loc.name;
     this.selectedLocationName.set(alreadySelected ? '' : loc.name);
+    // Mutually exclusive with a catalog reference -- only one comparison anchor at a time.
+    this.catalogReferenceKey.set(null);
     if (alreadySelected) {
       this._refreshMapMarkers();
       return;
@@ -3926,9 +3959,13 @@ export class BidSheetComponent {
     const crop = this.selectedCrop();
     const year = this.selectedYear();
 
-    // Reference bid for status comparison — use selectedYear (same year used for bid pill lookups)
+    // refName identifies which ADDED-location pin, if any, IS the reference itself (its own special
+    // styling below) -- a catalog reference is never one of these pins, so this stays tied to
+    // selectedLocationName alone. refBid is the VALUE every OTHER pin compares against, and resolves
+    // whichever kind of reference is actually set (_referenceBid), so comparison still works when the
+    // reference is a catalog listing.
     const refName = this.selectedLocationName();
-    const refBid = this._parseBid(refName ? this._getLatestBid(refName, year, crop, month) : '');
+    const refBid = this._referenceBid(year, crop, month);
 
     const statusColors: Record<string, { bg: string; border: string }> = {
       reference: { bg: '#2563eb', border: '#1d4ed8' },
@@ -3943,9 +3980,9 @@ export class BidSheetComponent {
     // Scoular pins switch presentation on ONE thing: whether a reference location is set.
     //   no reference  → whole pin green (fill), no ring
     //   reference set → status fill (blue/red/yellow) + green ring
-    // Keyed on refName, NOT on crop: picking a crop alone doesn't produce a comparison, and testing
-    // crop here is what previously made the ring appear with no reference selected.
-    const comparingToRef = !!refName;
+    // Keyed on _hasReference(), NOT on crop: picking a crop alone doesn't produce a comparison, and
+    // testing crop here is what previously made the ring appear with no reference selected.
+    const comparingToRef = this._hasReference();
     const scoularNames = this.scoularLocationNames();
 
     // Group all map locations by coordinates
@@ -4010,7 +4047,7 @@ export class BidSheetComponent {
         const panelIsScoular = scoularNames.has(panelOpenName);
         let pinBg = '#6b7280', pinBorder = '#4b5563';
         if (isRef) { pinBg = '#2563eb'; pinBorder = '#1d4ed8'; }
-        else if (hasIndividualTu && refName && bidStr) {
+        else if (this._hasReference() && bidStr) {
           const status = this._computeItemStatus(bidStr, false, refBid);
           const c = statusColors[status] ?? statusColors['none'];
           pinBg = c.bg; pinBorder = c.border;
@@ -4032,7 +4069,7 @@ export class BidSheetComponent {
         let color: string, border: string;
         if (isRef) {
           color = statusColors['reference'].bg; border = statusColors['reference'].border;
-        } else if (hasIndividualTu && refName && crop) {
+        } else if (this._hasReference() && crop) {
           // Use beating/matching/none color based on this location's bid vs the reference
           const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
           const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
@@ -4116,7 +4153,7 @@ export class BidSheetComponent {
       let bg: string, border: string;
       if (isRef) {
         bg = statusColors['reference'].bg; border = statusColors['reference'].border;
-      } else if (hasIndividualTu && refName && crop) {
+      } else if (this._hasReference() && crop) {
         // Use beating/matching/none color based on this location's bid vs the reference
         const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
         const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
@@ -4155,47 +4192,142 @@ export class BidSheetComponent {
    * this layer is that it can be a few thousand pins, where the spread pass's O(n^2) pairwise
    * comparison stops being free. Clicking one fetches its live bids -- see openCatalogDetail.
    */
+  /** Visible size of a catalog dot, in px. The clickable/hoverable icon box is bigger than this (see
+   *  _renderCatalogMarkers) -- the dot only needs to be big enough to see, not big enough to aim at. */
+  private static readonly CATALOG_DOT_SIZE = 10;
+  private static readonly CATALOG_DOT_SIZE_SELECTED = 16;
+  /** The icon's hit-test box is Leaflet's whole iconSize, so a visible dot this small would otherwise
+   *  need pixel-perfect aim. Padding the box (dot centered inside via the wrapper div) makes the
+   *  target roughly what a normal marker's is, without changing what's actually drawn. */
+  private static readonly CATALOG_HIT_PADDING = 14;
+
+  /** Not-comparing-to-anything color for a catalog price pill -- distinct from the added-location
+   *  pass's neutral gray so a catalog (not-yet-added) bid still reads as "not yours yet" even before
+   *  any comparison is in play. */
+  private static readonly CATALOG_PILL_BG = '#60a5fa';
+  private static readonly CATALOG_PILL_BORDER = '#3b82f6';
+
   private _renderCatalogMarkers(): void {
     if (!this._map || !this._catalogLayer || !this._L) return;
     this._catalogLayer.clearLayers();
     if (this.addLocationMode() || this.barchartMode()) return;
     const L = this._L;
-    const selectedKey = this.catalogDetailKey();
+    const detailKey = this.catalogDetailKey();
+    const refKey = this.catalogReferenceKey();
+    const crop = this.selectedCrop();
+    const year = this.selectedYear();
+    const month = this.selectedMonth();
+    const hasReference = this._hasReference();
+    // Same reference value the added-location pass compares against, so a catalog pin recolors
+    // consistently with everything else on the map when either kind of reference is set.
+    const refBid = hasReference ? this._referenceBid(year, crop, month) : null;
 
     for (const loc of this.catalogLocations()) {
       if (loc.latitude == null || loc.longitude == null) continue;
       if (loc.placements.length > 0) continue; // already drawn as an added location above
 
-      const selected = loc.locationKey === selectedKey;
-      const size = selected ? 14 : 8;
-      const icon = L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="width:${size}px;height:${size}px;background:${selected ? '#2563eb' : '#93c5fd'};border:1.5px solid ${selected ? '#1d4ed8' : '#60a5fa'};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2]
-      });
-      const marker = L.marker([loc.latitude, loc.longitude], { icon });
-      marker.on('click', () => this.openCatalogDetail(loc.locationKey));
-      // Same hover-expand the added-location pins use, so a dot too small to label on its own still
-      // tells you what it is without a click. Subtitle carries city/state instead of a bid, since a
-      // catalog-only listing has no priced cell to show yet.
-      const subtitle = [loc.city, loc.state].filter(Boolean).join(', ');
-      this._bindHoverExpand(marker, icon, barchartDisplayName(loc), subtitle, '#2563eb', '#1d4ed8');
+      // "Selected" covers both the open detail popup AND being the comparison reference -- closing
+      // the popup shouldn't make the pin you're actively comparing against look unselected.
+      const isRef = loc.locationKey === refKey;
+      const selected = loc.locationKey === detailKey || isRef;
+      const price = loc.matchedBidPrice;
+
+      const { marker, icon } = price != null
+        ? this._buildCatalogPriceMarker(loc, price, isRef, hasReference, refBid, selected)
+        : this._buildCatalogDotMarker(loc, selected);
+
+      marker.on('click', () => this._selectCatalogLocation(loc));
+      this._bindCatalogHover(marker, icon, loc, price ?? null);
       this._catalogLayer.addLayer(marker);
     }
   }
 
+  /** No crop selected, or this listing has nothing for the current period: a plain, small dot. */
+  private _buildCatalogDotMarker(loc: BarchartCatalogLocation, selected: boolean): { marker: Leaflet.Marker; icon: Leaflet.DivIcon } {
+    const L = this._L!;
+    const dotSize = selected ? BidSheetComponent.CATALOG_DOT_SIZE_SELECTED : BidSheetComponent.CATALOG_DOT_SIZE;
+    const box = dotSize + BidSheetComponent.CATALOG_HIT_PADDING;
+    const dotColor = selected ? '#2563eb' : '#93c5fd';
+    const dotBorder = selected ? '#1d4ed8' : '#60a5fa';
+    const icon = L.divIcon({
+      className: 'custom-marker',
+      html: `<div style="width:${box}px;height:${box}px;display:flex;align-items:center;justify-content:center;">
+        <div style="width:${dotSize}px;height:${dotSize}px;background:${dotColor};border:1.5px solid ${dotBorder};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+      </div>`,
+      iconSize: [box, box],
+      iconAnchor: [box / 2, box / 2]
+    });
+    return { marker: L.marker([loc.latitude!, loc.longitude!], { icon }), icon };
+  }
+
+  /**
+   * A crop/period filter is active and this listing publishes a price for it: a labeled pill, the
+   * same visual language _refreshMapMarkers already uses for an added location's bid ("show the bid
+   * value directly, hover to see the name") -- a plain dot only stands in for this until there is
+   * an actual number to show.
+   */
+  private _buildCatalogPriceMarker(loc: BarchartCatalogLocation, price: number, isRef: boolean,
+    hasReference: boolean, refBid: number | null, selected: boolean): { marker: Leaflet.Marker; icon: Leaflet.DivIcon } {
+    const L = this._L!;
+    const label = price.toString();
+    let bg: string, border: string;
+    if (isRef) {
+      bg = '#2563eb'; border = '#1d4ed8';
+    } else if (hasReference) {
+      const status = this._computeItemStatus(label, false, refBid);
+      const colors: Record<string, [string, string]> = {
+        beating: ['#dc2626', '#991b1b'], matching: ['#eab308', '#a16207'], none: ['#6b7280', '#4b5563'], reference: ['#2563eb', '#1d4ed8']
+      };
+      [bg, border] = colors[status] ?? colors['none'];
+    } else {
+      bg = BidSheetComponent.CATALOG_PILL_BG; border = BidSheetComponent.CATALOG_PILL_BORDER;
+    }
+    const width = Math.max(44, label.length * 8 + 16);
+    const height = selected ? 34 : 28;
+    const icon = L.divIcon({
+      className: 'custom-marker',
+      html: `<div style="position:relative;text-align:center;">
+        <div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 6px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>
+        <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${bg};margin:-1px auto 0;"></div>
+      </div>`,
+      iconSize: [width, height],
+      iconAnchor: [width / 2, height]
+    });
+    return { marker: L.marker([loc.latitude!, loc.longitude!], { icon }), icon };
+  }
+
+  /**
+   * Hover-expand for a catalog pin: name plus whatever the pin is already showing -- the matched
+   * price when it has one (the same number the pill prints), city/state otherwise. No fetch: the
+   * batched search response already carries every visible pin's price for the current period (see
+   * _loadCatalogLocations), so there is nothing left to look up just because the pointer arrived.
+   */
+  private _bindCatalogHover(marker: Leaflet.Marker, icon: Leaflet.DivIcon, loc: BarchartCatalogLocation, price: number | null): void {
+    const name = barchartDisplayName(loc);
+    const subtitle = [loc.city, loc.state].filter(Boolean).join(', ');
+    this._bindHoverExpand(marker, icon, name, price != null ? price.toString() : subtitle, '#2563eb', '#1d4ed8');
+  }
+
   /**
    * Opens the detail popup for a catalog-only pin and fetches its live bids -- the read path already
-   * existed for the picker's old confirm step; this is its only caller now.
+   * existed for the picker's old confirm step; this is its only caller now. Uses the shared cache
+   * first, so a pin already inspected via hover (or a prior click) doesn't fetch twice.
    */
   openCatalogDetail(locationKey: string): void {
     this.catalogDetailKey.set(locationKey);
+    this._refreshMapMarkers(); // re-draw so the clicked pin highlights immediately
+
+    const cached = this._catalogDetailCache.get(locationKey);
+    if (cached) { this.catalogDetail.set(cached); this.catalogDetailLoading.set(false); return; }
+
     this.catalogDetail.set(null);
     this.catalogDetailLoading.set(true);
-    this._refreshMapMarkers(); // re-draw so the clicked pin highlights immediately
     this.apiService.getBarchartLocationDetail(locationKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (detail) => { this.catalogDetailLoading.set(false); this.catalogDetail.set(detail); },
+      next: (detail) => {
+        this._catalogDetailCache.set(locationKey, detail);
+        this.catalogDetailLoading.set(false);
+        this.catalogDetail.set(detail);
+      },
       error: () => {
         this.catalogDetailLoading.set(false);
         this.toastService.error('Failed to load this location');
@@ -4208,6 +4340,86 @@ export class BidSheetComponent {
     this.catalogDetailKey.set(null);
     this.catalogDetail.set(null);
     this._refreshMapMarkers();
+  }
+
+  /**
+   * Toggles a catalog listing as the map's comparison reference -- the same click behaviour an ADDED
+   * location's pin already has (_selectMapLocation), extended to a listing nobody has added yet.
+   * Mutually exclusive with selectedLocationName: only one reference at a time, whichever kind.
+   * Public (not the click handler itself) because the detail popup's own button calls it too, for a
+   * location whose popup is already open.
+   */
+  toggleCatalogReference(locationKey: string): void {
+    if (this.catalogReferenceKey() === locationKey) {
+      this.catalogReferenceKey.set(null);
+    } else {
+      this.selectedLocationName.set('');
+      this.catalogReferenceKey.set(locationKey);
+      this._ensureCatalogDetailCached(locationKey, () => this._refreshMapMarkers());
+    }
+    this.filterBids();
+    this._refreshMapMarkers();
+  }
+
+  /** Map-click handler for a catalog dot: sets/clears the reference AND opens its detail popup --
+   *  inspecting a listing and anchoring the comparison to it are complementary on the same click,
+   *  not competing actions. */
+  private _selectCatalogLocation(loc: BarchartCatalogLocation): void {
+    this.toggleCatalogReference(loc.locationKey);
+    this.openCatalogDetail(loc.locationKey);
+  }
+
+  /** Fetches and caches a catalog listing's live bids if not already cached, then runs the callback
+   *  either way (immediately when cached, once the fetch resolves otherwise). Errors leave the key
+   *  uncached -- callers just see no bid data, same as a listing with nothing published. */
+  private _ensureCatalogDetailCached(locationKey: string, then: () => void): void {
+    if (this._catalogDetailCache.has(locationKey)) { then(); return; }
+    this.apiService.getBarchartLocationDetail(locationKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (detail) => { this._catalogDetailCache.set(locationKey, detail); then(); },
+      error: () => { /* stays uncached */ }
+    });
+  }
+
+  /**
+   * A catalog listing's bid for one crop/year/month, or '' if there's nothing for it.
+   *
+   * Checks the CURRENT search results first: catalogLocations() already carries matchedBidPrice for
+   * exactly the period the map's filters are showing (see _loadCatalogLocations), so when the
+   * requested period is that one, the answer is already in memory -- no fetch, no flash while a
+   * reference comparison waits on one to resolve. Old/new navigation asks about OTHER periods the
+   * current search never priced, which is what the detail cache (populated by hover or a click,
+   * covering every period a listing publishes) exists for.
+   */
+  private _catalogBidFor(locationKey: string, year: number | null, crop: string, month: number): string {
+    if (!year || !crop) return '';
+    if (year === this.selectedYear() && month === this.selectedMonth() && crop === this.selectedCrop()) {
+      const current = this.catalogLocations().find(l => l.locationKey === locationKey);
+      if (current?.matchedBidPrice != null) return String(current.matchedBidPrice);
+    }
+    const bid = this._catalogDetailCache.get(locationKey)?.bids
+      .find(b => b.commodityCode === crop && b.cropYear === year && b.month === month);
+    return bid?.price != null ? String(bid.price) : '';
+  }
+
+  /** True while ANY reference is set -- an added location or a catalog one. Drives the "am I
+   *  comparing at all" branches (the ring styling, the status-vs-plain-gray choice) without either
+   *  branch needing to know which kind of reference it is. */
+  private _hasReference(): boolean {
+    return !!this.selectedLocationName() || !!this.catalogReferenceKey();
+  }
+
+  /**
+   * The reference's bid for one crop/year/month, whichever kind of reference is set. Added-location
+   * references resolve through the normal bidLookup(); a catalog reference falls back to whatever's
+   * cached from being hovered or clicked -- null (not compared) rather than blocking on a fetch, so
+   * setting the reference doesn't freeze every other pin's color until a request round-trips.
+   */
+  private _referenceBid(year: number | null, crop: string, month: number): number | null {
+    const refName = this.selectedLocationName();
+    if (refName) return this._parseBid(this._getLatestBid(refName, year, crop, month));
+    const catalogKey = this.catalogReferenceKey();
+    if (catalogKey) return this._parseBid(this._catalogBidFor(catalogKey, year, crop, month));
+    return null;
   }
 
   /**

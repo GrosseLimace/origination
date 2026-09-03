@@ -35,6 +35,19 @@ public interface IBarchartCatalogRepository
     Task<BarchartLocationSummary?> GetLocationAsync(string locationKey, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The price each of the given locations publishes for one exact commodity/delivery period, for
+    /// locations that have one -- a location with nothing for that period is simply absent from the
+    /// result, not present with a null.
+    ///
+    /// Batched by design: the bid sheet map's catalog layer needs this for every pin in view once a
+    /// crop/year/month filter is active, and a per-pin round trip for that would be the O(pins) cost
+    /// the map's other perf work went to some effort to avoid.
+    /// </summary>
+    Task<Dictionary<string, decimal>> GetMatchedBidPricesAsync(
+        IReadOnlyCollection<string> locationKeys, string commodityCode, int cropYear, int month,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// What this location currently publishes, newest delivery first — including bids whose commodity
     /// has no mapping, flagged as unmapped so the picker can show the gap rather than hide it.
     /// </summary>
