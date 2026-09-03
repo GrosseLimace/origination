@@ -13,8 +13,9 @@ import { BidSheet, BidSheetEntry, BidSheetLayoutUpdate, BidSheetLocation, BidShe
 import type { EntitlementPerson } from '@features/daily-digest/models/entitlements-catalog.model';
 import { environment } from '@env/environment';
 import { BarchartPickerComponent, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
-import { BarchartCatalogLocation } from '@models';
+import { BarchartCatalogLocation, BarchartCatalogLocationDetail } from '@models';
 import { commodityHex } from '@shared/utils/commodity-color';
+import { barchartSaveName } from '../../utils/barchart-location-name';
 import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
@@ -658,6 +659,25 @@ export class BidSheetComponent {
   private _barchartPlacedKeys = new Set<string>();
   private _barchartMoveTimer: ReturnType<typeof setTimeout> | null = null;
   private _pickerRef = viewChild<BarchartPickerComponent>('picker');
+
+  // ---------------------------------------------------------------------------
+  // Catalog map — the whole BarChart catalog (~4,002 listings), not just what's been added.
+  //
+  // This is the base layer the map always shows (outside add-location/barchart-picker overlay
+  // modes), separate from the picker's own search: the picker asks "what's here so I can tick some",
+  // this asks "what's here at all" continuously as the user pans, so the map is a real catalog
+  // browser rather than only ever showing the handful of locations someone has already added.
+  // ---------------------------------------------------------------------------
+  /** Every catalog listing within the current view. Refetched on pan/zoom, debounced. */
+  private catalogLocations = signal<BarchartCatalogLocation[]>([]);
+  private _catalogMoveTimer: ReturnType<typeof setTimeout> | null = null;
+  private _catalogLoadGen = 0; // guards against a slow request landing after a newer one
+
+  /** The catalog pin the user clicked -- drives the detail popup. Null closes it. */
+  readonly catalogDetailKey = signal<string | null>(null);
+  readonly catalogDetailLoading = signal<boolean>(false);
+  readonly catalogDetail = signal<BarchartCatalogLocationDetail | null>(null);
+  readonly catalogDetailAdding = signal<boolean>(false);
 
   /**
    * Where a BARCHART add places its locations: whatever trade units are selected, and nothing else.
@@ -1453,18 +1473,24 @@ export class BidSheetComponent {
         uniqueNames.add(refName);
       }
 
+      // Built once, not once per name: a .find() over bidEntries()/allMapLocations() inside the loop
+      // below is O(names x entries), which is fine at a few dozen locations and stops being fine once
+      // the map is showing the whole BarChart catalog.
+      const entryByName = new Map<string, BidSheetEntry>();
+      for (const e of this.bidEntries()) if (!entryByName.has(e.name)) entryByName.set(e.name, e);
+      const scoularNamesForItems = this.scoularLocationNames();
+
       for (const name of uniqueNames) {
         const oldBid = this._getLatestBid(name, oldD.year, crop, oldD.month);
         const newBid = this._getLatestBid(name, newD.year, crop, newD.month);
         const selectedBid = this._getLatestBid(name, selectedYr, crop, month);
-        const entryWithCoords = this.bidEntries().find(e => e.name === name);
+        const entryWithCoords = entryByName.get(name);
         const isRef = hasIndividualTu && name === refName;
 
-        const locForScoular = this.allMapLocations().find(l => l.name === name);
         items.push({
           type: 'entry',
           name,
-          isScoular: !!locForScoular?.isScoularFacility,
+          isScoular: scoularNamesForItems.has(name),
           isRef,
           latitude: entryWithCoords?.latitude ?? null,
           longitude: entryWithCoords?.longitude ?? null,
@@ -1728,6 +1754,7 @@ export class BidSheetComponent {
     this._removeAddLocationPin();
     this._resetAddForm();
     this._refreshMapMarkers();
+    this._loadCatalogLocations(); // resumes the catalog layer, skipped while this mode owned the map
     this.addLocationOrigin.set(null);
   }
 
@@ -1884,18 +1911,53 @@ export class BidSheetComponent {
     this.barchartSearchArea.set(null);
     this._clearBarchartPins();
     this._refreshMapMarkers();
+    this._loadCatalogLocations(); // resumes the catalog layer, skipped while the picker owned the map
+  }
+
+  /**
+   * The current map view as a centre + radius, capped to what the search endpoint accepts (500mi).
+   * Radius = centre to the north-east corner, so the search covers everything on screen rather than
+   * a circle inscribed in it (which would omit the corners the user can plainly see). Shared by the
+   * picker's search and the catalog map layer -- both mean "what's visible right now".
+   */
+  private _currentViewArea(): BarchartSearchArea | null {
+    if (!this._map) return null;
+    const centre = this._map.getCenter();
+    const bounds = this._map.getBounds();
+    const radiusMiles = Math.max(10, Math.min(500,
+      Math.round(this._map.distance(centre, bounds.getNorthEast()) / 1609.34)));
+    return { latitude: centre.lat, longitude: centre.lng, radiusMiles };
   }
 
   /** Publishes the current map view as a centre + radius for the picker to search. */
   private _publishBarchartSearchArea(): void {
-    if (!this._map) return;
-    const centre = this._map.getCenter();
-    const bounds = this._map.getBounds();
-    // Radius = centre to the north-east corner, so the search covers everything on screen rather
-    // than a circle inscribed in it (which would omit the corners the user can plainly see).
-    const radiusMiles = Math.max(10, Math.min(500,
-      Math.round(this._map.distance(centre, bounds.getNorthEast()) / 1609.34)));
-    this.barchartSearchArea.set({ latitude: centre.lat, longitude: centre.lng, radiusMiles });
+    const area = this._currentViewArea();
+    if (area) this.barchartSearchArea.set(area);
+  }
+
+  /**
+   * Fetches every catalog listing in the current view and re-renders the map.
+   *
+   * Skipped while the map is repurposed for add-location or the BarChart picker -- same guard
+   * _refreshMapMarkers already uses, so the two stay in step. take is generous (up to 5,000, the
+   * request DTO's ceiling) because this is "what's here", not a curated picker list: the whole point
+   * is a wide zoom-out showing most of what BarChart publishes at once.
+   */
+  private _loadCatalogLocations(): void {
+    if (this.addLocationMode() || this.barchartMode()) return;
+    const area = this._currentViewArea();
+    if (!area) return;
+    const gen = ++this._catalogLoadGen;
+    this.apiService.searchBarchartLocations({
+      latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles, take: 5000
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (rows) => {
+        if (gen !== this._catalogLoadGen) return; // a newer pan/zoom already superseded this request
+        this.catalogLocations.set(rows);
+        this._refreshMapMarkers();
+      },
+      error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
+    });
   }
 
   /** Draws the picker's current results as candidate pins. */
@@ -2161,10 +2223,14 @@ export class BidSheetComponent {
     const addedNames = new Set<string>();
 
     // Add locations that have bid entries
-    const uniqueNames = [...new Set(this.bidEntries().map(e => e.name))];
+    const allEntries = this.bidEntries();
+    const uniqueNames = [...new Set(allEntries.map(e => e.name))];
+    // Built once rather than re-scanned per name: a .find() inside this loop is O(names x entries).
+    const repByName = new Map<string, BidSheetEntry>();
+    for (const e of allEntries) if (!repByName.has(e.name)) repByName.set(e.name, e);
     for (const name of uniqueNames) {
       addedNames.add(name);
-      const rep = this.bidEntries().find(e => e.name === name);
+      const rep = repByName.get(name);
       const bids: Record<string, string> = {};
       const basisBids: Record<string, string> = {};
       const originalBasisBids: Record<string, string> = {};
@@ -2699,10 +2765,20 @@ export class BidSheetComponent {
     if (dirty.length === 0) return;
     const now = new Date().toISOString();
 
+    // Grouped once rather than re-filtered per location: this used to scan the whole dirty array for
+    // EVERY location in allMapLocations(), which is fine at a few dozen locations and is real work
+    // once that list is the whole BarChart catalog.
+    const dirtyByName = new Map<string, typeof dirty>();
+    for (const d of dirty) {
+      const arr = dirtyByName.get(d.name ?? '');
+      if (arr) arr.push(d); else dirtyByName.set(d.name ?? '', [d]);
+    }
+
     const upsertInto = (locs: BidSheetLocation[]): BidSheetLocation[] => {
       let changed = false;
       const next = locs.map(loc => {
-        const forLoc = dirty.filter(d => d.name === loc.name && (!d.tradeUnitCode || d.tradeUnitCode === loc.tradeUnitCode));
+        const candidates = dirtyByName.get(loc.name);
+        const forLoc = candidates?.filter(d => !d.tradeUnitCode || d.tradeUnitCode === loc.tradeUnitCode) ?? [];
         if (forLoc.length === 0) return loc;
         changed = true;
         const bids = [...loc.bids];
@@ -3446,7 +3522,10 @@ export class BidSheetComponent {
   }
 
   isRowScoular(name: string): boolean {
-    return !!this._findLocationByName(name)?.isScoularFacility;
+    // scoularLocationNames() is an O(1) set lookup; _findLocationByName is an O(n) scan over every
+    // location, and this is called once per grid row on every change-detection pass -- O(rows x
+    // locations) repeated many times a second. At catalog scale that stops being free.
+    return this.scoularLocationNames().has(name);
   }
 
   toggleRowScoular(name: string, event?: Event): void {
@@ -3723,12 +3802,29 @@ export class BidSheetComponent {
       // Default to street; toggleMapView() swaps to satellite.
       this._streetLayer.addTo(this._map);
 
+      // These values only mattered while the map showed a trade unit's handful of added locations,
+      // where clustering had nothing real to do. They are load-bearing now that the catalog layer can
+      // put a few thousand pins on screen at once: a tight 12px radius that turns off at zoom 5 left
+      // nearly everything rendering as an individual DOM marker at any usable zoom.
       this._clusterGroup = (L as any).markerClusterGroup({
-        maxClusterRadius: 12,
-        disableClusteringAtZoom: 5,
+        maxClusterRadius: 60,
+        disableClusteringAtZoom: 11, // roughly city-scale; below this pins are sparse enough to read individually
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
-        zoomToBoundsOnClick: true
+        zoomToBoundsOnClick: true,
+        // Custom cluster icon: default plugin styling assumes dozens of markers, not thousands, and
+        // renders identically however large a cluster gets. This scales the visual size with count
+        // (log-scaled, so 4,000 doesn't dwarf 50) and keeps it cheap -- a few inline styles, no HTML
+        // per member.
+        iconCreateFunction: (cluster: any) => {
+          const count = cluster.getChildCount();
+          const size = Math.min(52, 28 + Math.round(Math.log10(count + 1) * 12));
+          return L.divIcon({
+            html: `<div style="width:${size}px;height:${size}px;line-height:${size}px;background:#2563eb;border:2px solid #1d4ed8;border-radius:50%;color:#fff;font-weight:600;font-size:${size > 36 ? 13 : 11}px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,0.35);">${count}</div>`,
+            className: 'custom-marker',
+            iconSize: [size, size]
+          });
+        }
       });
       this._map.addLayer(this._clusterGroup);
 
@@ -3744,20 +3840,27 @@ export class BidSheetComponent {
       this._map.on('zoomend', () => {
         if (this._zoomDebounceTimer) clearTimeout(this._zoomDebounceTimer);
         this._zoomDebounceTimer = setTimeout(() => this._refreshMapMarkers(), 200);
+        if (this._catalogMoveTimer) clearTimeout(this._catalogMoveTimer);
+        this._catalogMoveTimer = setTimeout(() => this._loadCatalogLocations(), 300);
       });
 
       // Left-click to place pin in add-location mode
       this._map.on('click', (e: any) => this._onMapClick(e));
 
       // While the picker is open, panning re-asks "what's near here?". Debounced, because a single
-      // drag fires moveend repeatedly and each one would be a round trip.
+      // drag fires moveend repeatedly and each one would be a round trip. The catalog layer does the
+      // same, always -- it is the map's base content, not something only the picker needs.
       this._map.on('moveend', () => {
-        if (!this.barchartMode()) return;
-        if (this._barchartMoveTimer) clearTimeout(this._barchartMoveTimer);
-        this._barchartMoveTimer = setTimeout(() => this._publishBarchartSearchArea(), 400);
+        if (this.barchartMode()) {
+          if (this._barchartMoveTimer) clearTimeout(this._barchartMoveTimer);
+          this._barchartMoveTimer = setTimeout(() => this._publishBarchartSearchArea(), 400);
+        }
+        if (this._catalogMoveTimer) clearTimeout(this._catalogMoveTimer);
+        this._catalogMoveTimer = setTimeout(() => this._loadCatalogLocations(), 300);
       });
 
       this._refreshMapMarkers();
+      this._loadCatalogLocations();
     } catch { /* map init failed — will retry on next navigation */ }
   }
 
@@ -3994,7 +4097,111 @@ export class BidSheetComponent {
       this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border);
       this._clusterGroup.addLayer(marker);
     });
+
+    this._renderCatalogMarkers();
   }
+
+  /**
+   * Draws the catalog layer: every BarChart listing in view that ISN'T already an added, company-wide
+   * location (those rendered above, from allMapLocations -- drawing both would double a pin).
+   *
+   * Deliberately cheap and deliberately NOT run through _spreadOverlappingPins: a small dot has
+   * nothing to lose by sitting under a neighbour the way a labeled card would, and the whole point of
+   * this layer is that it can be a few thousand pins, where the spread pass's O(n^2) pairwise
+   * comparison stops being free. Clicking one fetches its live bids -- see openCatalogDetail.
+   */
+  private _renderCatalogMarkers(): void {
+    if (!this._map || !this._clusterGroup || !this._L) return;
+    if (this.addLocationMode() || this.barchartMode()) return;
+    const L = this._L;
+    const selectedKey = this.catalogDetailKey();
+
+    for (const loc of this.catalogLocations()) {
+      if (loc.latitude == null || loc.longitude == null) continue;
+      if (loc.placements.length > 0) continue; // already drawn as an added location above
+
+      const selected = loc.locationKey === selectedKey;
+      const size = selected ? 14 : 8;
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="width:${size}px;height:${size}px;background:${selected ? '#2563eb' : '#93c5fd'};border:1.5px solid ${selected ? '#1d4ed8' : '#60a5fa'};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+      });
+      const marker = L.marker([loc.latitude, loc.longitude], { icon });
+      marker.on('click', () => this.openCatalogDetail(loc.locationKey));
+      this._clusterGroup.addLayer(marker);
+    }
+  }
+
+  /**
+   * Opens the detail popup for a catalog-only pin and fetches its live bids -- the read path already
+   * existed for the picker's old confirm step; this is its only caller now.
+   */
+  openCatalogDetail(locationKey: string): void {
+    this.catalogDetailKey.set(locationKey);
+    this.catalogDetail.set(null);
+    this.catalogDetailLoading.set(true);
+    this._refreshMapMarkers(); // re-draw so the clicked pin highlights immediately
+    this.apiService.getBarchartLocationDetail(locationKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (detail) => { this.catalogDetailLoading.set(false); this.catalogDetail.set(detail); },
+      error: () => {
+        this.catalogDetailLoading.set(false);
+        this.toastService.error('Failed to load this location');
+        this.closeCatalogDetail();
+      }
+    });
+  }
+
+  closeCatalogDetail(): void {
+    this.catalogDetailKey.set(null);
+    this.catalogDetail.set(null);
+    this._refreshMapMarkers();
+  }
+
+  /**
+   * Adds the catalog-only location from the detail popup to the active sheet: creates the company-wide
+   * row (linked to the feed, so its bids publish immediately) and links it in one flow, mirroring
+   * confirmAddLocation / onBarchartAddMany.
+   */
+  addCatalogDetailToSheet(): void {
+    const detail = this.catalogDetail();
+    const sheetId = this.activeSheetId();
+    if (!detail || this.catalogDetailAdding()) return;
+    if (sheetId == null) { this.toastService.error('Create or select a bid sheet first'); return; }
+
+    this.catalogDetailAdding.set(true);
+    const loc = detail.location;
+    this.apiService.createBidSheetLocation({
+      name: barchartSaveName(loc),
+      barchartLocationKey: loc.locationKey,
+      isScoularFacility: (loc.elevator ?? '').toLowerCase().includes('scoular'),
+      bids: []
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (saved) => {
+        this.catalogDetailAdding.set(false);
+        this.allMapLocations.update(locs => [saved, ...locs]);
+        this.sheets.update(list => list.map(s => s.id === sheetId ? { ...s, locations: [saved, ...s.locations] } : s));
+        this.toastService.success(`Added ${saved.name}`);
+        this.closeCatalogDetail();
+        this._applyBidFilterSources();
+        this.filterBids();
+        this._refreshMapMarkers();
+
+        this.apiService.addBidSheetLocation(sheetId, saved.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          next: (sheet) => this._applySheet(sheet),
+          error: (err) => { if (isDevMode()) console.warn('Failed to link the new location to the sheet', err); }
+        });
+        this._loadAllMapLocations();
+        this._loadCatalogLocations(); // drops it from the catalog layer now that it has a placement
+      },
+      error: (err) => {
+        this.catalogDetailAdding.set(false);
+        this.toastService.error(this._errorToast(err, 'Failed to add location'));
+      }
+    });
+  }
+
 
   /**
    * Spreads pins whose on-screen positions would overlap so none get hidden behind another. Members
@@ -4003,9 +4210,17 @@ export class BidSheetComponent {
    * separate, the offset shrinks and each pin glides back to its real spot. Returns one [lat,lng] per
    * input point (aligned by index); points that don't overlap anything are returned unchanged.
    */
+  /** Above this count the O(n^2) pairwise overlap check below stops being free. Locations added
+   *  company-wide accumulate across every sheet ever created, not just the active one, so this can
+   *  realistically be reached over time even though a single sheet stays small. Skipping the spread
+   *  at that point means some pins may sit exactly on top of each other rather than fanning out --
+   *  a visual compromise, not a functional one; clicking still works via the cluster. */
+  private static readonly MAX_SPREAD_PINS = 400;
+
   private _spreadOverlappingPins(points: [number, number][], zoom: number): [number, number][] {
     const L = this._L, map = this._map;
     if (!L || !map || points.length < 2) return points;
+    if (points.length > BidSheetComponent.MAX_SPREAD_PINS) return points;
     const SPREAD_PX = 24;             // radius each overlapping pin is pushed from the cluster centroid
     const OVERLAP_PX = SPREAD_PX * 2; // pins closer than this (screen px) are treated as overlapping
     const pts = points.map(([la, ln]) => map.project(L.latLng(la, ln), zoom));

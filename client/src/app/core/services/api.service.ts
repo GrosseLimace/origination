@@ -27,6 +27,7 @@ import {
   BidSheetLocationBid,
   BidSheetPreferenceUpdate,
   BarchartCatalogLocation,
+  BarchartCatalogLocationDetail,
   BarchartCoverage,
   BarchartLocationSearchParams,
   Elevator,
@@ -1054,6 +1055,15 @@ export class ApiService {
     }
     if (params.take != null) httpParams = httpParams.set('take', String(params.take));
     return this.http.get<BarchartCatalogLocation[]>(`${this.baseUrl}/barchart/locations`, { params: httpParams })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * One catalog listing plus the bids it currently publishes -- what clicking an un-added pin on the
+   * bid sheet map fetches, so the user sees real prices before deciding to add it.
+   */
+  getBarchartLocationDetail(locationKey: string): Observable<BarchartCatalogLocationDetail> {
+    return this.http.get<BarchartCatalogLocationDetail>(`${this.baseUrl}/barchart/locations/${encodeURIComponent(locationKey)}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

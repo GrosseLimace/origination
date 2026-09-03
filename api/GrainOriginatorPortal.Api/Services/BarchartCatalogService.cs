@@ -46,10 +46,16 @@ public class BarchartCatalogService : IBarchartCatalogService
 
         // A bounding box only pre-filters — it over-selects at the corners, so ask for extra rows and let
         // the exact distance pass below trim back to Take.
+        //
+        // The 1000 ceiling this used to have was sized for the picker's old 200-row Take max
+        // (200 * 4 = 800, rounds up to 1000 with room). Take now goes up to 5000 for the bid sheet
+        // map's catalog layer, so the ceiling has to scale with it -- otherwise a wide zoom-out asking
+        // for thousands of results would silently come back short, truncated at the intermediate
+        // bounding-box fetch rather than at the row cap the caller actually asked for.
         var box = isGeographic
             ? BoundingBox(request.Latitude!.Value, request.Longitude!.Value, radius)
             : ((double MinLat, double MaxLat, double MinLng, double MaxLng)?)null;
-        var take = isGeographic ? Math.Min(request.Take * 4, 1000) : request.Take;
+        var take = isGeographic ? Math.Min(request.Take * 4, 20000) : request.Take;
 
         var summaries = await _catalog.SearchLocationsAsync(
             request.Search, request.State, request.CommodityCode, box, take, cancellationToken);

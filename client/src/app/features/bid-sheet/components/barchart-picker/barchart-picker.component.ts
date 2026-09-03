@@ -8,6 +8,7 @@ import {
   BarchartCatalogLocation,
   BarchartCoverage
 } from '@models';
+import { barchartDisplayName, barchartSaveName, barchartSiteLabel } from '../../utils/barchart-location-name';
 
 /** Map centre + radius the picker searches around, supplied by the bid sheet map. */
 export interface BarchartSearchArea {
@@ -296,62 +297,21 @@ export class BarchartPickerComponent {
   }
 
   /**
-   * The name proposed for the bid sheet — "Farmers Cooperative Dorchester - Beattie".
-   *
-   * Same as the displayed label, except this always carries a site or town. On screen the town sits on
-   * the line below the label; a bid sheet row has no second line, and names must be unique per trade
-   * unit, so a company with several town-named sites would otherwise want the same row name for all of
-   * them. The user does not see this before the add -- the confirm step that used to show it was
-   * dropped in favour of ticking a batch -- so Edit Bids opens straight afterwards with the new rows
-   * renameable in place. That is where a vendor name gets corrected.
+   * The name proposed for the bid sheet — "Farmers Cooperative Dorchester - Beattie". The user does
+   * not see this before the add -- the confirm step that used to show it was dropped in favour of
+   * ticking a batch -- so Edit Bids opens straight afterwards with the new rows renameable in place.
+   * That is where a vendor name gets corrected.
    */
   defaultName(location: BarchartCatalogLocation): string {
-    const company = location.elevator?.trim();
-    const site = this.siteLabel(location) || location.city?.trim() || '';
-    if (company && site) return `${company} - ${site}`;
-    return company || site || `BarChart ${location.locationKey}`;
+    return barchartSaveName(location);
   }
 
-  /**
-   * The part that distinguishes one of a company's locations from another — or empty when the vendor's
-   * site name is just the town again and would only repeat the line beneath it.
-   *
-   * Measured on the live catalog (2026-08-19, 3,446 listings): 1,775 set the site name to the city and
-   * another 304 set it to the city plus the state ("Salina, KS", "FARNSWORTH TX") — 60% of the catalog
-   * between them, and that share has held steady as the catalog grew. Comparison is on letters and
-   * digits only, so all those spellings collapse the same way.
-   */
   siteLabel(location: BarchartCatalogLocation): string {
-    const site = location.locationName?.trim() ?? '';
-    if (!site) return '';
-
-    const key = this._nameKey(site);
-    const city = this._nameKey(location.city);
-    if (city && (key === city || key === city + this._nameKey(location.state))) return '';
-
-    return site;
+    return barchartSiteLabel(location);
   }
 
-  /** Letters and digits only, upper-cased — so "Salina, KS", "SALINA KS" and "salinaks" all match. */
-  private _nameKey(value: string | undefined): string {
-    return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  }
-
-  /**
-   * Headline for a listing: the company, then which of its sites —
-   * "Farmers Cooperative Dorchester - Beattie". This is also what gets saved, so what a user picks in
-   * the list is what lands on their sheet.
-   *
-   * Company leads deliberately. The vendor's site name alone is a poor label: half of them are just the
-   * town, which is ambiguous on a bid sheet and can collide with the unique name-per-trade-unit rule,
-   * and some name a different company than the one publishing the bid (a CHS listing whose site name is
-   * "GPC Muscatine") — leading with that would misattribute the price at a glance.
-   */
   primaryName(location: BarchartCatalogLocation): string {
-    const company = location.elevator?.trim();
-    const site = this.siteLabel(location);
-    if (company && site) return `${company} - ${site}`;
-    return company || site || `BarChart ${location.locationKey}`;
+    return barchartDisplayName(location);
   }
 
   /** Under the headline: just where it is. The site name is already part of the headline. */

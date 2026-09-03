@@ -181,9 +181,75 @@
                 <div class="w-4 h-4 rounded shrink-0" style="background:#00875F; border:1.5px solid #006B4C;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Scoular facility</span>
               </div>
+              <div class="flex items-center gap-2 pt-1 mt-1 border-t border-gray-200 dark:border-gray-700">
+                <div class="w-3 h-3 rounded-full shrink-0 ml-0.5" style="background:#93c5fd; border:1.5px solid #60a5fa;"></div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Catalog (not yet added)</span>
+              </div>
             </div>
             }
           </div>
+
+          <!-- Catalog location detail popup — the live-bids preview for an un-added BarChart pin -->
+          @if (catalogDetailKey()) {
+            <div class="absolute top-16 left-14 z-[1150] bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-80 max-w-[calc(100%-6rem)] max-h-[70vh] flex flex-col">
+              <div class="shrink-0 flex items-start justify-between gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <div class="min-w-0">
+                  @if (catalogDetail(); as detail) {
+                    <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ detail.location.elevator || detail.location.locationKey }}</p>
+                    @if (detail.location.locationName) {
+                      <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ detail.location.locationName }}</p>
+                    }
+                    <p class="text-xs text-gray-400 dark:text-gray-500">{{ [detail.location.city, detail.location.state].join(', ') }}</p>
+                  } @else {
+                    <p class="text-sm font-semibold text-gray-400 dark:text-gray-500">Loading…</p>
+                  }
+                </div>
+                <button (click)="closeCatalogDetail()" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+              <div class="flex-1 overflow-auto px-4 py-2">
+                @if (catalogDetailLoading()) {
+                  <div class="flex items-center justify-center py-8">
+                    <div class="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
+                  </div>
+                } @else if (catalogDetail(); as detail) {
+                  @if (detail.bids.length === 0) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic py-3">No active bids published right now.</p>
+                  } @else {
+                    <table class="w-full text-xs">
+                      <thead>
+                        <tr class="text-gray-400 dark:text-gray-500">
+                          <th class="text-left font-medium pb-1">Crop</th>
+                          <th class="text-right font-medium pb-1">Delivery</th>
+                          <th class="text-right font-medium pb-1">Price</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (bid of detail.bids; track bid.symbol) {
+                          <tr class="border-t border-gray-100 dark:border-gray-800">
+                            <td class="py-1 text-gray-700 dark:text-gray-300">{{ bid.commodityCode || bid.vendorCommodity }}</td>
+                            <td class="py-1 text-right text-gray-500 dark:text-gray-400">{{ formatMonthYear(bid.month, bid.cropYear) }}</td>
+                            <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ bid.price != null ? bid.price : '--' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                    @if (detail.unmappedBidCount > 0) {
+                      <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-2">+{{ detail.unmappedBidCount }} more bid{{ detail.unmappedBidCount === 1 ? '' : 's' }} in an unmapped commodity, not shown.</p>
+                    }
+                  }
+                }
+              </div>
+              <div class="shrink-0 px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+                <button (click)="addCatalogDetailToSheet()" [disabled]="catalogDetailLoading() || catalogDetailAdding() || !catalogDetail()"
+                  class="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  {{ catalogDetailAdding() ? 'Adding…' : (activeSheet() ? 'Add to "' + activeSheet()!.name + '"' : 'Add to a bid sheet') }}
+                </button>
+              </div>
+            </div>
+          }
 
           <!-- Slide-in bids panel (right edge) -->
           <div class="absolute top-0 right-0 h-full w-full sm:w-[var(--bid-panel-w)] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"

@@ -87,4 +87,13 @@ export interface BarchartLocationSearchParams {
   take?: number;
 }
 
-/** Result of re-running the feed bridge for one bid sheet location. */
+/**
+ * A catalog listing plus the bids it currently publishes — what a click on an un-added map pin
+ * fetches, so the user can see real prices before deciding to add it to a sheet.
+ */
+export interface BarchartCatalogLocationDetail {
+  location: BarchartCatalogLocation;
+  bids: BarchartCatalogBid[];
+  /** Bids whose vendor commodity has no active mapping — these won't reach the bid sheet yet. */
+  unmappedBidCount: number;
+}

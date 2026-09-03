@@ -32,7 +32,11 @@ public record BarchartLocationSearchRequest
     [Range(1, 500)]
     public double? RadiusMiles { get; init; }
 
-    /// <summary>Row cap. Kept small by default — the catalog holds thousands of listings.</summary>
-    [Range(1, 200)]
+    /// <summary>
+    /// Row cap. Kept small by default (the picker's list view) -- the bid sheet map's catalog layer
+    /// asks for far more so a wide zoom-out can return most of what BarChart publishes (~4,000
+    /// listings) in one request rather than paginating.
+    /// </summary>
+    [Range(1, 5000)]
     public int Take { get; init; } = 50;
 }

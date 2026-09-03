@@ -76,6 +76,29 @@ public class BarchartCatalogServiceTests
     }
 
     // -------------------------------------------------------------------------
+    // The bounding-box pre-fetch asks for Take * 4 rows (over-selecting to cover the box's corners,
+    // trimmed back to Take by the exact-distance pass above). That multiplier used to be capped at
+    // 1000 regardless of what Take was, sized for the picker's old 200-row ceiling -- so once the bid
+    // sheet map's catalog layer could ask for up to 5,000, a wide zoom-out would silently come back
+    // short: capped at the intermediate fetch, not at the row count the caller actually asked for.
+    [Fact]
+    public async Task SearchLocationsAsync_Geographic_ScalesTheIntermediateFetchWithTake()
+    {
+        var passedTake = -1;
+        _catalog.SearchLocationsAsync(
+                null, null, null, Arg.Any<(double, double, double, double)?>(), Arg.Do<int>(t => passedTake = t), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        await _sut.SearchLocationsAsync(
+            new BarchartLocationSearchRequest { Latitude = 41.42, Longitude = -91.04, RadiusMiles = 100, Take = 5000 },
+            CancellationToken.None);
+
+        // 5000 * 4 = 20000 -- if this were still capped at the old 1000, a catalog-wide zoom-out would
+        // silently return at most 250 real (post-distance-filter) results no matter what Take asked for.
+        Assert.Equal(20000, passedTake);
+    }
+
+    // -------------------------------------------------------------------------
     // Nearest first: an originator scanning a map expects the closest competitor at the top.
     [Fact]
     public async Task SearchLocationsAsync_Geographic_SortsNearestFirst()
