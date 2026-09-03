@@ -741,6 +741,14 @@ export class BidSheetComponent {
   private _hoveredMarker: { marker: any; resetIcon: any } | null = null;
   // markercluster's MarkerClusterGroup isn't in @types/leaflet — keep loose-typed
   private _clusterGroup: any = null;
+  /**
+   * Plain (non-clustering) layer for the catalog dots. Bundling them into _clusterGroup collapsed
+   * whole regions into a single numbered blob at any zoom wide enough to matter, which is the
+   * opposite of what a browsable catalog map is for -- a user panning around wants to see where
+   * things actually are. Small dots at their true coordinates are cheap enough to just show all of,
+   * so this layer never clusters; _spreadOverlappingPins isn't run on it either, for the same reason.
+   */
+  private _catalogLayer: Leaflet.LayerGroup | null = null;
   // Base layers for the street/satellite toggle. _satelliteLayer is a layerGroup
   // (Esri World Imagery + road/place label overlays) for a hybrid aerial view.
   private _streetLayer: Leaflet.TileLayer | null = null;
@@ -3802,31 +3810,23 @@ export class BidSheetComponent {
       // Default to street; toggleMapView() swaps to satellite.
       this._streetLayer.addTo(this._map);
 
-      // These values only mattered while the map showed a trade unit's handful of added locations,
-      // where clustering had nothing real to do. They are load-bearing now that the catalog layer can
-      // put a few thousand pins on screen at once: a tight 12px radius that turns off at zoom 5 left
-      // nearly everything rendering as an individual DOM marker at any usable zoom.
+      // Covers added locations only -- the catalog layer (below) is deliberately its own,
+      // never-clustering layer, so these values are back to trade-unit scale: a curated set of
+      // locations someone actually added, which can run into the low hundreds company-wide but isn't
+      // the whole catalog. A little more forgiving than the original 12px/zoom-5, which the phase-3
+      // audit flagged as too tight even for that smaller set.
       this._clusterGroup = (L as any).markerClusterGroup({
-        maxClusterRadius: 60,
-        disableClusteringAtZoom: 11, // roughly city-scale; below this pins are sparse enough to read individually
+        maxClusterRadius: 30,
+        disableClusteringAtZoom: 8,
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
-        zoomToBoundsOnClick: true,
-        // Custom cluster icon: default plugin styling assumes dozens of markers, not thousands, and
-        // renders identically however large a cluster gets. This scales the visual size with count
-        // (log-scaled, so 4,000 doesn't dwarf 50) and keeps it cheap -- a few inline styles, no HTML
-        // per member.
-        iconCreateFunction: (cluster: any) => {
-          const count = cluster.getChildCount();
-          const size = Math.min(52, 28 + Math.round(Math.log10(count + 1) * 12));
-          return L.divIcon({
-            html: `<div style="width:${size}px;height:${size}px;line-height:${size}px;background:#2563eb;border:2px solid #1d4ed8;border-radius:50%;color:#fff;font-weight:600;font-size:${size > 36 ? 13 : 11}px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,0.35);">${count}</div>`,
-            className: 'custom-marker',
-            iconSize: [size, size]
-          });
-        }
+        zoomToBoundsOnClick: true
       });
       this._map.addLayer(this._clusterGroup);
+
+      // Catalog dots: plain layer group, no clustering. See the field comment on _catalogLayer for why.
+      this._catalogLayer = L.layerGroup();
+      this._map.addLayer(this._catalogLayer);
 
       this._isMapInitialized = true;
 
@@ -3869,7 +3869,7 @@ export class BidSheetComponent {
     const L = this._L;
     this._clusterGroup.clearLayers();
     // Keep map clean during add-location mode, and while the BarChart picker owns the map
-    if (this.addLocationMode() || this.barchartMode()) return;
+    if (this.addLocationMode() || this.barchartMode()) { this._catalogLayer?.clearLayers(); return; }
 
     // Every location is in scope. The old pair asked which desks were selected so pins outside them
     // could be greyed and the panel filter could prune -- see the comment where hasTu is used.
@@ -4111,7 +4111,8 @@ export class BidSheetComponent {
    * comparison stops being free. Clicking one fetches its live bids -- see openCatalogDetail.
    */
   private _renderCatalogMarkers(): void {
-    if (!this._map || !this._clusterGroup || !this._L) return;
+    if (!this._map || !this._catalogLayer || !this._L) return;
+    this._catalogLayer.clearLayers();
     if (this.addLocationMode() || this.barchartMode()) return;
     const L = this._L;
     const selectedKey = this.catalogDetailKey();
@@ -4130,7 +4131,7 @@ export class BidSheetComponent {
       });
       const marker = L.marker([loc.latitude, loc.longitude], { icon });
       marker.on('click', () => this.openCatalogDetail(loc.locationKey));
-      this._clusterGroup.addLayer(marker);
+      this._catalogLayer.addLayer(marker);
     }
   }
 
@@ -4396,6 +4397,7 @@ export class BidSheetComponent {
       this._map.remove();
       this._map = null;
       this._clusterGroup = null;
+      this._catalogLayer = null;
       this._streetLayer = null;
       this._satelliteLayer = null;
       this._satelliteImageryLayer = null;
