@@ -3,43 +3,42 @@ using System.Security.Claims;
 namespace GrainOriginatorPortal.Api.Authorization;
 
 /// <summary>
-/// Access rules for the usage dashboard's read surface: the Admin app role OR a config allowlist
-/// (<c>UsageDashboard:Viewers</c>) of short names. The allowlist exists because Entra role
-/// assignment requires portal permissions the team doesn't hold — this is the self-service way to
-/// let a handful of non-admins see the dashboard. Exclusion management stays Admin-only.
-/// <para>
-/// The same check backs the <see cref="PolicyName"/> authorization policy (server enforcement) and
-/// the synthetic <see cref="ViewerRole"/> that /api/me appends for allowlisted users (client
-/// routing/nav). Keeping both on one method means the menu can never show a page the API would 403.
-/// </para>
+/// Access rules for the usage dashboard. Two independent questions, deliberately kept apart:
+/// <list type="bullet">
+/// <item><see cref="CanView"/> — may you open the dashboard at all? Answered by the Admin app role,
+/// which arrives via the "Origination App {Env} Super Users" group. That group is simply how a
+/// business user is granted access; managers and IT/admin alike are added there.</item>
+/// <item><see cref="CanViewAll"/> — how much of it do you see? Answered by the
+/// <c>UsageDashboard:ViewAll</c> config list. Those few get the manager dropdown and the whole
+/// organisation; everyone else is scoped to themselves plus their own reports.</item>
+/// </list>
+/// Exclusion management is separate again — Admin plus the ExclusionManagers allowlist.
 /// </summary>
 public static class UsageDashboardAccess
 {
-    /// <summary>Authorization policy name for the dashboard's read endpoints.</summary>
+    /// <summary>Authorization policy name for the dashboard's read endpoints. Currently equivalent to
+    /// "AdminOnly", but kept distinct so the read surface is named separately from exclusion
+    /// administration — a convention test in ControllerAuthorizationTests pins that split.</summary>
     public const string PolicyName = "UsageDashboardViewer";
-
-    /// <summary>Synthetic role /api/me appends for allowlisted users. Not an Entra app role —
-    /// it only ever originates from the allowlist check on our own server.</summary>
-    public const string ViewerRole = "UsageDashboardViewer";
 
     /// <summary>Synthetic role /api/me appends for the <c>UsageDashboard:ViewAll</c> list — the
     /// people who may read the WHOLE org and pick any manager. The client uses it to show or hide
     /// the manager dropdown; the server does not trust it back, it re-derives from config.</summary>
     public const string ViewAllRole = "UsageDashboardViewAll";
 
-    public static bool CanView(ClaimsPrincipal user, IReadOnlyCollection<string> viewerAllowlist)
-        => HasAdminRole(user) || IsAllowlisted(user, viewerAllowlist);
+    /// <summary>Whether the caller may open the dashboard at all — Super Users group membership,
+    /// surfaced as the Admin app role.</summary>
+    public static bool CanView(ClaimsPrincipal user) => HasAdminRole(user);
 
     /// <summary>Whether the caller may read the entire organisation and choose an arbitrary manager.
     /// <para>
     /// Deliberately does NOT include <see cref="HasAdminRole"/>, and do not "simplify" it to do so.
-    /// The Admin role arrives via the "Origination App {Env} Super Users" group, which is simply how
-    /// a business user is granted dashboard access — membership means "may open the usage dashboard",
-    /// not that the account is a developer's or IT's, and not that its owner should see the whole
-    /// company. That question is answered by <see cref="CanView"/>; this one is about how much of it
-    /// they get, which is a different decision and needs its own list.
+    /// The Admin role only tells you someone may OPEN the dashboard — the question
+    /// <see cref="CanView"/> already answers — because the Super Users group is how managers and
+    /// IT/admin are both granted access. It says nothing about how much of the org they should see,
+    /// which is a separate decision and needs its own list.
     /// </para><para>
-    /// It also could not work: every name on the Viewers list already holds Admin in QA and PROD
+    /// It also could not work: every name on the ViewAll list already holds Admin in QA and PROD
     /// through those groups, so an Admin-implies-view-all rule would leave nobody scoped in the only
     /// environments that matter, and the self-scoping in UsageDashboardService would be dead code
     /// that still passed its tests.
@@ -49,13 +48,6 @@ public static class UsageDashboardAccess
         var shortName = GetShortName(user);
         return shortName.Length > 0
             && viewAllList.Contains(shortName, StringComparer.OrdinalIgnoreCase);
-    }
-
-    public static bool IsAllowlisted(ClaimsPrincipal user, IReadOnlyCollection<string> viewerAllowlist)
-    {
-        var shortName = GetShortName(user);
-        return shortName.Length > 0
-            && viewerAllowlist.Contains(shortName, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Admin check across every claim name the role can arrive under — mirrors

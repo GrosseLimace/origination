@@ -34,10 +34,10 @@ export class UserRolesService {
   readonly roles: Signal<string[]> = this._roles.asReadonly();
   readonly isAdmin = computed(() => this._roles().includes('Admin'));
 
-  /** Usage-dashboard read access: Admin, or the synthetic UsageDashboardViewer role that
-   *  /api/me appends for people on the server's UsageDashboard:Viewers config allowlist. */
-  readonly canViewUsageDashboard = computed(() =>
-    this._roles().includes('Admin') || this._roles().includes('UsageDashboardViewer'));
+  /** Usage-dashboard access: the Admin app role, which is how the "Origination App {Env} Super
+   *  Users" group grants it. How MUCH of the dashboard you then see is a separate question —
+   *  see canViewAllUsage. */
+  readonly canViewUsageDashboard = computed(() => this._roles().includes('Admin'));
 
   /** Whether to offer the usage-dashboard manager dropdown. Note this is NOT implied by `isAdmin`:
    *  an Admin who isn't on the server's UsageDashboard:ViewAll list is scoped to their own org

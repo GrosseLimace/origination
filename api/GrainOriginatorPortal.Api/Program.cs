@@ -87,13 +87,11 @@ builder.Services.AddProblemDetails();
 // Configuration in appsettings.json "AzureAd" section.
 // =============================================================================
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
-// Non-admin usage-dashboard viewers, granted by short name in config because Entra role
-// assignment needs portal permissions the team doesn't hold. See UsageDashboardAccess.
-var usageDashboardViewers = builder.Configuration.GetSection("UsageDashboard:Viewers").Get<string[]>() ?? [];
 // Who may read the WHOLE org and pick any manager. Everyone else who can open the dashboard —
-// Admin role included — is scoped to their own org subtree. Kept separate from Viewers on purpose:
-// every Viewers name is already an Admin in QA/PROD, so deriving this from the Admin role would
-// leave nobody scoped there. Defaults to empty, which scopes everyone rather than opening up.
+// i.e. everyone else in the Super Users group — is scoped to themselves plus their own reports.
+// Deliberately NOT derived from the Admin role: that role is how the Super Users group grants
+// dashboard access to managers and IT/admin alike, so it answers "may I open this", not "how much
+// should I see". Defaults to empty, which scopes everyone rather than opening up.
 var usageDashboardViewAll = builder.Configuration.GetSection("UsageDashboard:ViewAll").Get<string[]>() ?? [];
 builder.Services.AddSingleton(
     new GrainOriginatorPortal.Api.Authorization.UsageDashboardViewAllList(usageDashboardViewAll));
@@ -105,11 +103,13 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireRole("Admin"));
 
-    // Usage-dashboard read surface: Admin OR the UsageDashboard:Viewers allowlist.
-    // Exclusion administration stays AdminOnly (+ the ExclusionManagers allowlist).
+    // Usage-dashboard read surface: Super Users group membership, surfaced as the Admin role.
+    // Equivalent to AdminOnly today; kept as its own named policy so the read surface stays distinct
+    // from exclusion administration (a convention test pins that split), and so how much of the org
+    // a viewer sees can keep changing without touching who may open it.
     options.AddPolicy(GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.PolicyName, policy =>
         policy.RequireAssertion(ctx =>
-            GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.CanView(ctx.User, usageDashboardViewers)));
+            GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.CanView(ctx.User)));
 });
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 

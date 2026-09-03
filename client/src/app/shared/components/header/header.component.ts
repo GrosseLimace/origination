@@ -55,14 +55,13 @@ export class HeaderComponent {
   // Groups (daily recap + @-mentionable in notes). On in every environment — see
   // environment.dailyDigestEnabled, which still carries the original Daily Digest name.
   readonly dailyDigestEnabled = environment.dailyDigestEnabled;
-  // Gate the Usage Dashboard nav button to users who can actually open it: the `Admin`
-  // app role, or the server's UsageDashboard:Viewers config allowlist (surfaced by
-  // /api/me as the synthetic `UsageDashboardViewer` role). Admin itself is never checked
-  // against group membership directly — each environment has its own Super Users
-  // security group (Origination App Dev / QA / Prod Super Users) that's assigned
-  // the Admin role on that env's API Enterprise Application, and membership flows
-  // into the access token's roles claim. Route re-enforces via `usageDashboardGuard`,
-  // and every dashboard endpoint re-enforces the same policy server-side.
+  // Gate the Usage Dashboard nav button to users who can actually open it: the `Admin` app role.
+  // Group membership is never checked directly — each environment has its own Super Users security
+  // group (Origination App Dev / QA / Prod Super Users), where managers and IT/admin are both
+  // added, that's assigned the Admin role on that env's API Enterprise Application, and membership
+  // flows into the access token's roles claim. Route re-enforces via `usageDashboardGuard`, and
+  // every dashboard endpoint re-enforces the same policy server-side. Note this only decides
+  // whether the page opens; what the caller then SEES is scoped separately (UsageDashboard:ViewAll).
   get usageDashboardEnabled(): boolean {
     return environment.usageDashboardEnabled && this.userRoles.canViewUsageDashboard();
   }

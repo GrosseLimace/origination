@@ -16,12 +16,10 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class MeController : ControllerBase
 {
-    private readonly string[] _usageDashboardViewers;
     private readonly string[] _usageDashboardViewAll;
 
     public MeController(IConfiguration configuration)
     {
-        _usageDashboardViewers = configuration.GetSection("UsageDashboard:Viewers").Get<string[]>() ?? [];
         _usageDashboardViewAll = configuration.GetSection("UsageDashboard:ViewAll").Get<string[]>() ?? [];
     }
 
@@ -41,15 +39,6 @@ public class MeController : ControllerBase
                         .Select(c => c.Value)
                         .Distinct()
                         .ToArray();
-
-        // Synthetic role for the UsageDashboard:Viewers config allowlist — lets non-admins on the
-        // list reach the (server-enforced) usage dashboard. Never comes from the token; it exists
-        // so the SPA's guard/nav can keep reading one roles array. See UsageDashboardAccess.
-        if (UsageDashboardAccess.IsAllowlisted(User, _usageDashboardViewers)
-            && !roles.Contains(UsageDashboardAccess.ViewerRole))
-        {
-            roles = [.. roles, UsageDashboardAccess.ViewerRole];
-        }
 
         // Synthetic role for the UsageDashboard:ViewAll list. Purely presentational — it tells the
         // SPA whether to render the manager dropdown. The server never reads it back: scoping is

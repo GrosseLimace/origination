@@ -12,11 +12,13 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [ApiController]
 [Route("api/usage-dashboard")]
 // Baseline: any authenticated user. Individual data-read endpoints require the
-// UsageDashboardViewer policy (Admin app role OR the UsageDashboard:Viewers config
-// allowlist), applied per method because ASP.NET combines Authorize attributes with
+// UsageDashboardViewer policy (the Admin app role, granted by the "Origination App {Env} Super
+// Users" group), applied per method because ASP.NET combines Authorize attributes with
 // AND — a class-level policy would also block the telemetry endpoint below, which
 // needs to accept click events from every signed-in user for user-activity tracking.
 // Exclusion administration stays AdminOnly (+ the ExclusionManagers allowlist).
+// These policies decide who may CALL a read. How much of the org each read returns is a separate
+// concern, scoped per caller in UsageDashboardService against UsageDashboard:ViewAll.
 [Authorize]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase
