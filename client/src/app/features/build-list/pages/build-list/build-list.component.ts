@@ -2,7 +2,7 @@ import { Component, ChangeDetectionStrategy, DestroyRef, inject, effect, untrack
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { forkJoin, of, catchError, timeout } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
@@ -26,7 +26,7 @@ import { CustomerMapComponent } from '@features/customers/components/map/custome
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
-import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
+import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, resolveCropGroup, CropSelection } from '@shared/utils/crop-group-match';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
@@ -37,6 +37,7 @@ import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
   imports: [
     CommonModule,
     FormsModule,
+    RouterLink,
     CardComponent,
     CardContentComponent,
     CardHeaderComponent,
@@ -86,6 +87,12 @@ export class BuildListComponent {
   // queries wait on this so "All producers with contracts" can't filter against a not-yet-loaded
   // contract set and falsely return "no producers matched".
   private _contractsReady = signal(false);
+  // Mirrors _contractsReady/_dpReady for storage: false until a FRESH _loadFresh confirms
+  // storedGrain. The recovery effect used to gate on storedGrain().length > 0, which meant a
+  // trade unit with genuinely zero storage rows (or a swallowed storedgrain fetch failure)
+  // could never satisfy the gate — a Storage prompt staged during load stayed on the spinner
+  // forever. Loaded-flag, not length, so a real empty result still resolves.
+  private _storageReady = signal(false);
   private _loadRequestId = 0;
   private _queryGenId = 0;
   // Key of the server-narrowed note slice currently in this.notes() for DISPLAY (encodes the
@@ -124,13 +131,14 @@ export class BuildListComponent {
     this._dpReady();
     this._ticketsReady();
     this._contractsReady();
+    this._storageReady();
     if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes() || this.waitingForDp()) && this.coreDataLoaded()) {
       untracked(() => {
         // Re-check if the needed data is now available
         const q = this.queryText();
         const ticketsOk = !this.nlqFilterService.queryInvolvesTickets(q) || this._ticketsReady();
         const contractsOk = !this.nlqFilterService.queryInvolvesContracts(q) || this._contractsReady();
-        const storageOk = !this.nlqFilterService.queryInvolvesStorage(q) || this.storedGrain().length > 0;
+        const storageOk = !this.nlqFilterService.queryInvolvesStorage(q) || this._storageReady();
         // Loaded-flag, not length: a TU with genuinely zero DP rows must satisfy this or the
         // spinner never clears.
         const dpOk = !this.nlqFilterService.queryInvolvesDpContracts(q) || this._dpReady();
@@ -147,6 +155,37 @@ export class BuildListComponent {
         }
       });
     }
+  });
+
+  // Commits a staged refine (_pendingApplyCriteria) once the dataset(s) it needs resolve.
+  // Declared immediately after _dataReadyEffect: field-initializer effects run in declaration
+  // order on their first scheduling, so this commit lands before the batched-clear effect
+  // (further down, keyed on _displayedMembershipKey) can observe the new result membership —
+  // without that ordering, that effect could wipe a note slice this one just fetched.
+  // See _commitRefinements for why this is a SEPARATE effect from _dataReadyEffect rather than
+  // a third writer of the waitingForTickets/waitingForNotes/waitingForDp flags.
+  private _refineReadyEffect = effect(() => {
+    const staged = this._pendingApplyCriteria();
+    // Tracked reads — re-run whenever any of these resolve so a pending commit can proceed.
+    this._loadedNoteScopeKey();
+    this.appState.notesLoaded();
+    this._ticketsReady();
+    this._contractsReady();
+    this._dpReady();
+    this._storageReady();
+    if (!staged) return;
+    untracked(() => {
+      if (this._pendingApplyGen !== this._queryGenId) {
+        // A new prompt/clear started since this apply was staged — drop it rather than commit
+        // criteria for a different query onto the current results.
+        this._pendingApplyCriteria.set(null);
+        return;
+      }
+      if (!this._criteriaReadiness(staged)) return; // still fetching — no writes at all
+      this._pendingApplyCriteria.set(null);
+      this.appliedRefinements.set(staged);
+      this._syncNoteSliceToScope();
+    });
   });
 
   // Pick up tickets that arrived via home's bulk fetch AFTER our own getTickets timed
@@ -241,6 +280,12 @@ export class BuildListComponent {
   readonly contractsUnavailableForQuery = computed(() =>
     this.contractsLoadFailed() && this.nlqFilterService.queryInvolvesContracts(this.queryText()));
 
+  /** True when the active query depends on tickets AND the last ticket fetch failed or timed
+   *  out. Mirrors contractsUnavailableForQuery — shows a retry panel instead of a misleading
+   *  "no producers found" for a ticket-aware prompt (e.g. "unapplied tickets"). */
+  readonly ticketsUnavailableForQuery = computed(() =>
+    this.ticketsLoadFailed() && this.nlqFilterService.queryInvolvesTickets(this.queryText()));
+
   /** Only show saved lists whose trade units exactly match the currently selected TUs. */
   readonly visibleSavedLists = computed(() => {
     const selectedTus = this.appState.selectedTradeUnits();
@@ -292,11 +337,11 @@ export class BuildListComponent {
     ].filter(Boolean).length;
   });
 
-  /** Matches a commodity string against selected crop filters (with aliases). */
-  private _matchesCropFilter(value: string, selectedCrops: Set<string>): boolean {
-    if (selectedCrops.size === 0) return true; // no crop filter = match all
-    const v = value.trim().toLowerCase();
-    return [...selectedCrops].some(crop => v.includes(crop) || crop.includes(v));
+  /** Matches a commodity string against selected crop filters. Delegates to the shared
+   *  group-resolving matcher (crop-group-match.ts) — kept as a 2-arg wrapper so the ~14 call
+   *  sites below didn't need to change. */
+  private _matchesCropFilter(value: string, selectedCrops: CropSelection): boolean {
+    return matchesCropSelection(value, selectedCrops, this._cropGroupLookup());
   }
 
 
@@ -327,19 +372,16 @@ export class BuildListComponent {
     const r = this.appliedRefinements();
     const contractMap = this._openContractsByCustomer(); // Open contracts only for refinements
 
-    // Build expanded crop set for contextual filtering (used by ticket/contract/storage filters)
-    const selectedCrops = new Set<string>();
-    if (r.crops && r.crops.length > 0) {
-      for (const crop of r.crops) {
-        for (const alias of expandCommodityAliases(crop)) selectedCrops.add(alias);
-      }
-    }
+    // Crop selection for contextual filtering (used by ticket/contract/storage filters) —
+    // resolves each chip to its Commodities.category group, with the CROP_CODE_MAP token map as
+    // a fallback tier. See crop-group-match.ts for why this replaced the old alias-only matcher.
+    const selectedCrops = buildCropSelection(r.crops, this._cropGroupLookup());
     const contactMap = this.lastContactByCustomer();
 
     // Helper: get contracts for a customer, optionally scoped to selected crops
     const getContracts = (c: Customer): Contract[] => {
       let contracts = contractMap.get(c.scoularId!) || [];
-      if (selectedCrops.size > 0) {
+      if (!selectedCrops.isEmpty) {
         contracts = contracts.filter(ct =>
           this._matchesCropFilter(ct.commodityCode || '', selectedCrops) ||
           this._matchesCropFilter(ct.commodityDescription || '', selectedCrops) ||
@@ -549,7 +591,7 @@ export class BuildListComponent {
         || r.gradeOver != null || r.gradeUnder != null) {
       const grainRowsFor = (c: Customer) => {
         const rows = c.grainOnFarm ?? [];
-        return selectedCrops.size > 0
+        return !selectedCrops.isEmpty
           ? rows.filter(g => !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops))
           : rows;
       };
@@ -638,7 +680,7 @@ export class BuildListComponent {
     }
 
     // Storage filters — scoped to selected crops when active
-    const scopedStorage = selectedCrops.size > 0
+    const scopedStorage = !selectedCrops.isEmpty
       ? this.storedGrain().filter(s => s.crop && this._matchesCropFilter(s.crop, selectedCrops))
       : this.storedGrain();
     if (r.storageDaysOver != null && r.storageDaysOver > 0) {
@@ -677,7 +719,7 @@ export class BuildListComponent {
     }
     const hasDpFilter = r.dpBushelsOver != null || r.dpDaysOver != null || r.dpChargesOver != null;
     if (hasDpFilter) {
-      const scopedDp = selectedCrops.size > 0
+      const scopedDp = !selectedCrops.isEmpty
         ? this.dpContracts().filter(d => d.crop && this._matchesCropFilter(d.crop, selectedCrops))
         : this.dpContracts();
       const dpByCustomer = new Map<number, DpContract[]>();
@@ -707,7 +749,7 @@ export class BuildListComponent {
         if (c.scoularId) codeToId.set(c.scoularId, c.id);
       }
       // Scope tickets to selected crops when a crop filter is active
-      const scopedTickets = selectedCrops.size > 0
+      const scopedTickets = !selectedCrops.isEmpty
         ? this.tickets().filter(t => t.productCode && this._matchesCropFilter(t.productCode, selectedCrops))
         : this.tickets();
 
@@ -780,39 +822,17 @@ export class BuildListComponent {
       list = list.filter(c => (customerAcres.get(c.id) || 0) > r.plantingAcresOver!);
     }
 
-    if (selectedCrops.size > 0) {
+    if (!selectedCrops.isEmpty) {
       // Dimension-aware crop filter: when the prompt is about a specific dimension
       // (storage / tickets / planting / contracts), require the producer to have a
       // crop match in THAT dimension's data — not in their generic c.commodities list.
       // Falls back to c.commodities only when no dimension is in play.
-      // Uses effectiveLibraryCategory so saved-list loads (which intentionally leave
-      // selectedLibraryQuery null to preserve the Active List context) still resolve
-      // the right category via queryText match — without this, the saved-list path
-      // silently fell back to c.commodities and produced fewer hits than the fresh
-      // prompt run with identical filters.
-      const category = this.effectiveLibraryCategory();
-      const isStorage = category === 'Storage' || r.hasGrainInStorage
-        || r.storageDaysOver != null || r.storageQuantityOver != null || r.storageReceivableOver != null;
-      const isDp = category === 'DP Contracts' || r.hasDpContracts
-        || r.dpBushelsOver != null || r.dpDaysOver != null || r.dpChargesOver != null;
-      const isTickets = category === 'Tickets' || r.hasDeliveriesThisYear
-        || r.ticketQuantityOver != null || r.ticketsInLastDays != null
-        || r.avgMoistureOver != null || r.avgMoistureUnder != null
-        || r.avgTestWeightOver != null || r.avgTestWeightUnder != null
-        || r.avgProteinOver != null || r.avgProteinUnder != null;
-      const isPlanting = category === 'Planting' || r.hasPlantingIntentions
-        || r.plantingYear != null || r.irrigatedOnly || r.drylandOnly || r.doubleCropOnly
-        || (r.plantingAcresOver != null && r.plantingAcresOver > 0);
-      const isContracts = category === 'Contracts'
-        || r.hasActiveContracts || r.hasUnsignedContracts || r.hasUnpricedContracts
-        || r.hasOverdueContracts || r.contractsExpiringThisMonth || r.multipleCommoditiesContracted
-        || (r.contractQuantityOver != null && r.contractQuantityOver > 0);
-      const isGrainOnFarm = category === 'Grain on Farm'
-        || r.grainOnFarmBushelsOver != null || r.hasGrainTarget || r.noGrainTarget
-        || r.grainTargetOver != null || r.grainTargetUnder != null || r.hasGrade
-        || r.gradeOver != null || r.gradeUnder != null;
+      // Single source of dimension inference — see NlqFilterService.refineDimension(). Keeps
+      // this block and applyRefinementFilters() (the saved-list / home-page copy) in sync by
+      // construction rather than by copy-pasted flag lists.
+      const dim = this.nlqFilterService.refineDimension(r, this.effectiveLibraryCategory());
 
-      if (isDp) {
+      if (dim === 'DP Contracts') {
         // Crop-scope a DP prompt against DP positions, not generic customer.commodities.
         const dpByCustomer = new Map<number, DpContract[]>();
         for (const d of this.dpContracts()) {
@@ -822,7 +842,7 @@ export class BuildListComponent {
         list = list.filter(c => (dpByCustomer.get(c.id) ?? []).some(d =>
           !!d.crop && this._matchesCropFilter(d.crop, selectedCrops)
         ));
-      } else if (isStorage) {
+      } else if (dim === 'Storage') {
         const storageByCustomer = new Map<number, StoredGrain[]>();
         for (const s of this.storedGrain()) {
           if (!storageByCustomer.has(s.customerId)) storageByCustomer.set(s.customerId, []);
@@ -831,7 +851,7 @@ export class BuildListComponent {
         list = list.filter(c => (storageByCustomer.get(c.id) ?? []).some(s =>
           !!s.crop && this._matchesCropFilter(s.crop, selectedCrops)
         ));
-      } else if (isTickets) {
+      } else if (dim === 'Tickets') {
         const codeToId = new Map<string, number>();
         for (const c of this.customers()) {
           if (c.scoularId) codeToId.set(c.scoularId, c.id);
@@ -845,7 +865,7 @@ export class BuildListComponent {
           }
         }
         list = list.filter(c => matchingIds.has(c.id));
-      } else if (isPlanting) {
+      } else if (dim === 'Planting') {
         const plantingByCustomer = new Map<number, PlantingIntention[]>();
         for (const p of this.plantingIntentions()) {
           if (!plantingByCustomer.has(p.customerId)) plantingByCustomer.set(p.customerId, []);
@@ -854,7 +874,7 @@ export class BuildListComponent {
         list = list.filter(c => (plantingByCustomer.get(c.id) ?? []).some(p =>
           !!p.crop && this._matchesCropFilter(p.crop, selectedCrops)
         ));
-      } else if (isContracts) {
+      } else if (dim === 'Contracts') {
         list = list.filter(c => {
           const cContracts = contractMap.get(c.scoularId!) || [];
           return cContracts.some(ct =>
@@ -863,13 +883,13 @@ export class BuildListComponent {
             this._matchesCropFilter(ct.commodityGroup || '', selectedCrops)
           );
         });
-      } else if (isGrainOnFarm) {
+      } else if (dim === 'Grain on Farm') {
         // Scope crop matching to the producer's grain-on-farm rows (with bushels on hand).
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
           !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops) && (g.bushelsOnHand ?? 0) > 0
         ));
       } else {
-        list = list.filter(c => (c.commodities ?? []).some(crop => selectedCrops.has(crop.trim().toLowerCase())));
+        list = list.filter(c => (c.commodities ?? []).some(crop => this._matchesCropFilter(crop, selectedCrops)));
       }
     }
     if (r.states && r.states.length > 0) {
@@ -984,24 +1004,27 @@ export class BuildListComponent {
     return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   });
 
+  /** Shared code/name → crop-group lookup, built once per commodities change. This is the SAME
+   *  resolver _matchesCropFilter uses to MATCH chips — availableCrops() below must generate chips
+   *  through this same resolver, or a chip could return zero producers for the very row that
+   *  produced it (the round-trip invariant crop-group-match.ts documents). */
+  private readonly _cropGroupLookup = computed(() => buildCropGroupLookup(this.appState.commodities()));
+
   readonly availableCrops = computed(() => {
     // Show the crop GROUP (Corn, Wheat, Soybeans) rather than the raw commodity codes (YC, HRWW)
-    // the producers actually carry — that's the vocabulary users pick by. Map code/name → category
-    // via the Commodities lookup; fall back to the raw value when a code isn't in the table.
-    const groupByKey = new Map<string, string>();
-    for (const cm of this.appState.commodities()) {
-      const group = (cm.category || cm.name || '').trim();
-      if (!group) continue;
-      if (cm.code) groupByKey.set(cm.code.trim().toLowerCase(), group);
-      if (cm.name) groupByKey.set(cm.name.trim().toLowerCase(), group);
-    }
+    // the producers actually carry — that's the vocabulary users pick by.
+    const lookup = this._cropGroupLookup();
     const groups = new Set<string>();
+    const labelFor = (group: string, fallback: string): string =>
+      lookup.labelByGroup.get(group) ?? fallback;
+    const addCrop = (raw: string) => {
+      const trimmed = raw.trim();
+      if (!trimmed) return;
+      const group = resolveCropGroup(trimmed, lookup);
+      groups.add(group ? labelFor(group, trimmed) : trimmed);
+    };
     for (const c of this.filteredCustomers()) {
-      for (const crop of (c.commodities ?? [])) {
-        const key = crop.trim().toLowerCase();
-        if (!key) continue;
-        groups.add(groupByKey.get(key) ?? crop.trim());
-      }
+      for (const crop of (c.commodities ?? [])) addCrop(crop);
     }
     // On Grain on Farm lists the relevant crops are what producers hold on the farm, which
     // may not appear in c.commodities (a producer can have grain on farm with no ticket or
@@ -1011,9 +1034,8 @@ export class BuildListComponent {
     if (this.showGrainOnFarmFilters()) {
       for (const c of this.filteredCustomers()) {
         for (const g of (c.grainOnFarm ?? [])) {
-          const grp = (g.commodityGroup || '').trim();
-          if (!grp || (g.bushelsOnHand ?? 0) <= 0) continue;
-          groups.add(groupByKey.get(grp.toLowerCase()) ?? grp);
+          if ((g.bushelsOnHand ?? 0) <= 0) continue;
+          addCrop(g.commodityGroup || '');
         }
       }
     }
@@ -1022,11 +1044,7 @@ export class BuildListComponent {
     if (this.showDpFilters()) {
       const dpByCustomer = this._dpByCustomerId();
       for (const c of this.filteredCustomers()) {
-        for (const d of (dpByCustomer.get(c.id) ?? [])) {
-          const crop = (d.crop || '').trim();
-          if (!crop) continue;
-          groups.add(groupByKey.get(crop.toLowerCase()) ?? crop);
-        }
+        for (const d of (dpByCustomer.get(c.id) ?? [])) addCrop(d.crop || '');
       }
     }
     return [...groups].sort();
@@ -1038,8 +1056,10 @@ export class BuildListComponent {
       const s = c.extendedStateProvince || c.stateProvince;
       if (s) states.add(s);
     }
-    const list = [...states].sort();
-    return list.length > 1 ? list : [];
+    // Previously hidden entirely for a single-state result set — that made the whole Location
+    // section vanish, which read as "the state filter is missing" rather than "everyone's
+    // already in the same state." Always show the chip(s) that exist.
+    return [...states].sort();
   });
 
   queryText = signal('');
@@ -1072,6 +1092,25 @@ export class BuildListComponent {
    *  "Loading DP contract data…" spinner and suppresses the no-match banner, so a DP prompt doesn't
    *  read "no producers found" before the fetch lands (mirrors waitingForTickets / waitingForNotes). */
   waitingForDp = signal(false);
+  /** Staged refinements waiting on a data fetch (applyFilters/a crop-or-state chip landed while a
+   *  dataset the NEW criteria need — e.g. a crop chip that scopes to Storage, or a note refine
+   *  needing a slice that hasn't been fetched — was unresolved). Deliberately SEPARATE from
+   *  waitingForTickets/waitingForNotes/waitingForDp: those are read inside _dataReadyEffect's
+   *  guard and written by _applyNlqFilter, and a third writer there would add an edge to the
+   *  exact re-entrant cycle its comment warns about (re-asserting a wait flag on data EMPTINESS
+   *  — rather than on fetch RESOLUTION — previously caused an infinite loop / hard freeze). This
+   *  signal is written only by _commitRefinements (set) and _refineReadyEffect (clear to null),
+   *  and _refineReadyEffect never touches waitingFor-flags or isProcessing, so it cannot join that cycle.
+   *  Also, unlike those three, this one does NOT gate the results block in the template — the
+   *  panel and the last good (data-backed) results stay mounted while it's true. */
+  private _pendingApplyCriteria = signal<RefinementFilters | null>(null);
+  /** Query generation the staged apply belongs to — a new prompt/clear bumps _queryGenId and
+   *  clears _pendingApplyCriteria directly, so this is a belt-and-braces staleness guard, not
+   *  the primary invalidation path. */
+  private _pendingApplyGen = 0;
+  /** True while a refine commit is waiting on a data fetch. Drives the Refine panel's inline
+   *  spinner / disabled Apply / disabled Save — see _commitRefinements. */
+  readonly refineDataPending = computed(() => this._pendingApplyCriteria() !== null);
   /** True once THIS page's local `dpContracts` signal has been hydrated for the current trade units.
    *  Deliberately separate from appState.dpContractsLoaded: the TU preload fills appState while this
    *  page's local copy is still empty, and the NLQ context reads the LOCAL copy — gating on the
@@ -1108,10 +1147,22 @@ export class BuildListComponent {
   loadingSavedLists = signal(false);
   detectedState = signal<string | null>(null);
   queryReturnedNoMatches = signal(false);
+  /** True when a planting-coverage prompt ("under 50 percent contracted", "highest
+   *  uncontracted bushels") came back empty/near-empty because none of the evaluated
+   *  planting rows have a season yield target saved on the Planting Intentions dashboard —
+   *  not because producers are genuinely well-contracted. Coverage can't be computed without
+   *  a target (estimatedProduction needs acres × yield), so this distinguishes "the data
+   *  isn't there yet" from a real zero-match, which otherwise looked identical.
+   */
+  coverageNeedsYieldTargets = signal(false);
   // True when the contracts fetch failed/timed out on the last load. Lets the results area
   // distinguish "couldn't load contract data" from a genuine zero-match — a contract-aware
   // query running against a silently-empty contracts array would otherwise read as "0 producers".
   contractsLoadFailed = signal(false);
+  // Same idea for tickets: true when the bulk ticket fetch failed or exceeded the client
+  // timeout on the last load. A ticket-aware query running against a silently-empty ticket
+  // array would otherwise read as "0 producers" instead of "could not load ticket data".
+  ticketsLoadFailed = signal(false);
   showRefinePanel = signal(false);
   pendingRefinements = signal<RefinementFilters>({});
   appliedRefinements = signal<RefinementFilters>({});
@@ -1299,15 +1350,10 @@ export class BuildListComponent {
     return buildLinkedProducerComponents(this.customers());
   });
 
-  /** True when the result list should render an inline note section per customer.
-   *  Every Contacts-category prompt surfaces inline notes — including absence prompts
-   *  ("never contacted", "haven't contacted in N days"). The user still wants context
-   *  on those producers: even if THEY haven't contacted the producer, a teammate or
-   *  prior merchandiser may have, and seeing the most-recent note tells them what was
-   *  last discussed. The predicate skips date cutoffs for absence prompts so old notes
-   *  aren't accidentally hidden. */
-  readonly noteFilterActive = computed(() => {
-    const r = this.appliedRefinements();
+  /** Pure predicate behind noteFilterActive() — split out so the readiness machinery
+   *  (_criteriaReadiness / _commitRefinements) can evaluate it against a STAGED refinement
+   *  set that hasn't been committed to appliedRefinements yet. */
+  private _isNoteFilterActive(r: RefinementFilters, queryText: string): boolean {
     if (r.notesInLastDays != null && r.notesInLastDays > 0) return true;
     if (r.noteKeyword?.trim()) return true;
     if (r.hasPinnedNotes) return true;
@@ -1316,13 +1362,22 @@ export class BuildListComponent {
     if (r.neverContacted) return true;
     if (r.notContactedDays != null && r.notContactedDays > 0) return true;
 
-    const q = this.queryText().toLowerCase();
+    const q = queryText.toLowerCase();
     if (/\b(?:contacted|called|reached\s+out)\b/.test(q)) return true;
     return BuildListComponent._NLQ_NOTE_VERB.test(q)
         || /pinned\s+note/.test(q)
         || /(?:with|has|have)\s+notes?\b/.test(q)
         || /notes?\s+(?:about|mentioning|containing|saying)/.test(q);
-  });
+  }
+
+  /** True when the result list should render an inline note section per customer.
+   *  Every Contacts-category prompt surfaces inline notes — including absence prompts
+   *  ("never contacted", "haven't contacted in N days"). The user still wants context
+   *  on those producers: even if THEY haven't contacted the producer, a teammate or
+   *  prior merchandiser may have, and seeing the most-recent note tells them what was
+   *  last discussed. The predicate skips date cutoffs for absence prompts so old notes
+   *  aren't accidentally hidden. */
+  readonly noteFilterActive = computed(() => this._isNoteFilterActive(this.appliedRefinements(), this.queryText()));
 
   /** Predicate that matches a note against whichever note criteria are active. */
   readonly noteFilterPredicate = computed<(n: Note) => boolean>(() => {
@@ -1978,8 +2033,11 @@ export class BuildListComponent {
     // Fresh contracts not yet confirmed — contract-aware queries will wait on this until the
     // forkJoin below resolves (covers the cache-restore background-refresh window).
     this._contractsReady.set(false);
+    this._storageReady.set(false);
     // Reset the contracts-failure flag so a retry / fresh load starts clean.
     this.contractsLoadFailed.set(false);
+    // Reset the tickets-failure flag too — same reasoning.
+    this.ticketsLoadFailed.set(false);
     // Only reset coreDataLoaded when clearing signals (TU change / initial load).
     // For background refreshes (clearSignals=false with existing data), keep it true
     // so the UI stays interactive while fresh data loads behind the scenes.
@@ -2044,6 +2102,7 @@ export class BuildListComponent {
         // Fresh contracts are now in hand (real data, or [] with contractsLoadFailed set on a
         // failed inner fetch) — release any contract-aware query staged in processQuery.
         this._contractsReady.set(true);
+        this._storageReady.set(true);
 
         // Re-run active query with fresh data — cached data may have been stale/incomplete
         // (e.g., notes hadn't finished loading on home page before user navigated here).
@@ -2059,18 +2118,22 @@ export class BuildListComponent {
         this.loading.set(false);
         this.coreDataLoaded.set(true); // Mark loaded even on error so UI isn't stuck
         this._contractsReady.set(true); // Don't strand contract-queries waiting forever on error
+        this._storageReady.set(true); // Same — don't strand storage-queries waiting forever on error
         this.toastService.error('Failed to load data');
       }
     });
 
     // Tickets load in background — processQuery waits for them only if the query needs tickets.
-    // On timeout / error the inner `catchError` swallows to [], but we DO NOT clobber the global
-    // appState.tickets signal (the TU-wide list/NLQ cache) with the empty array; another lazy
-    // consumer (e.g. customer-list) may have populated it. Only write through to appState when the
-    // response actually carried tickets.
+    // The client timeout (310s) is set ABOVE the server's documented 300s command-timeout
+    // ceiling for this exact query (see TicketRepository.cs) — a shorter client timeout was
+    // aborting the request before the server could genuinely answer, so a slow-but-successful
+    // ODS scan looked identical to "no tickets" and every ticket prompt silently came back
+    // empty. On a genuine timeout/HTTP error we now mark ticketsLoadFailed so the results area
+    // can show a retry panel instead of a misleading "no producers found" (mirrors contracts).
+    let ticketFetchFailed = false;
     this.apiService.getTickets(tuParam).pipe(
-      timeout(60000),
-      catchError(() => of([] as Ticket[])),
+      timeout(310000),
+      catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;
@@ -2083,6 +2146,9 @@ export class BuildListComponent {
         // the real tickets instead of [].
         this.tickets.set(this.appState.tickets());
       }
+      // Only flag a failure when nothing usable came back at all — the appState fallback
+      // above means the data genuinely arrived (via another consumer), so that's a success.
+      this.ticketsLoadFailed.set(ticketFetchFailed && this.tickets().length === 0);
       this._ticketsReady.set(true);
     });
   }
@@ -2268,6 +2334,14 @@ export class BuildListComponent {
     this._loadFresh(true);
   }
 
+  /** Retry after a ticket-fetch failure/timeout surfaced the "couldn't load ticket data"
+   *  panel. Same recovery path as retryContractLoad — a single fresh load refreshes every
+   *  dataset, tickets included. */
+  retryTicketLoad(): void {
+    this.isProcessing.set(true);
+    this._loadFresh(true);
+  }
+
   processQuery(overrideTradeUnits?: string[]): void {
     if (!this.queryText().trim()) return;
     // Don't run if core data hasn't loaded yet — set isProcessing so the _dataReadyEffect
@@ -2342,8 +2416,7 @@ export class BuildListComponent {
   /** Bounded recency window (days) a positive date-scoped prompt/refine needs for DISPLAY, or null
    *  if it isn't a bounded positive-recency one. Padded +1 day so the fetch slice is always at
    *  least as wide as the display cutoff (never drops a shown note). */
-  private _recencyWindowDays(): number | null {
-    const r = this.appliedRefinements();
+  private _recencyWindowDays(r: RefinementFilters = this.appliedRefinements()): number | null {
     if (r.notesInLastDays != null && r.notesInLastDays > 0) return r.notesInLastDays + 1;
     const q = this.queryText().toLowerCase();
     const numeric = q.match(/(?:notes?\s+(?:added|made|entered|written|created|left)|contacted|called|reach(?:ed)?\s+out)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
@@ -2364,9 +2437,8 @@ export class BuildListComponent {
    *                 aggregate (instant) and note bodies load one RENDER BATCH at a time by
    *                 customerId, so the first screen never waits on the whole 28.8k-note set.
    *   - 'full'    : needs the whole set (note counts, "by someone else", or any unclassifiable combo). */
-  private _noteScope(): { mode: 'none' } | { mode: 'full' } | { mode: 'batched' } | { mode: 'scoped'; key: string; opts: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean } } {
-    if (!this.noteFilterActive()) return { mode: 'none' };
-    const r = this.appliedRefinements();
+  private _noteScope(r: RefinementFilters = this.appliedRefinements()): { mode: 'none' } | { mode: 'full' } | { mode: 'batched' } | { mode: 'scoped'; key: string; opts: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean } } {
+    if (!this._isNoteFilterActive(r, this.queryText())) return { mode: 'none' };
     const q = this.queryText().toLowerCase();
     // Note-COUNT prompts genuinely need every note (to count per producer).
     const count = !!r.contactedOnlyOnce || !!r.contactedMoreThan5 || /most\s+notes|most\s+engaged|by\s+notes/.test(q);
@@ -2392,7 +2464,7 @@ export class BuildListComponent {
       || /\bby\s+me\b/.test(q) || /\bmy\s+notes?\b/.test(q));
     // Absence phrasing ("not contacted in 30 days") trips the recency regex — ignore the window
     // for absence so it routes to 'batched', not a wrong positive-recency slice.
-    const window = absence ? null : this._recencyWindowDays();
+    const window = absence ? null : this._recencyWindowDays(r);
     const gen = this._queryGenId;
 
     // Absence: batched on its own; but mixed with a note-content/pinned criterion it needs the real
@@ -2427,8 +2499,8 @@ export class BuildListComponent {
 
   /** True when the notes this prompt needs for display are already loaded. Batched prompts never
    *  block — their set comes from the aggregate and note bodies stream in per render batch. */
-  private _notesReadyForQuery(): boolean {
-    const scope = this._noteScope();
+  private _notesReadyForQuery(r: RefinementFilters = this.appliedRefinements()): boolean {
+    const scope = this._noteScope(r);
     if (scope.mode === 'none' || scope.mode === 'batched') return true;
     if (scope.mode === 'full') return this.appState.notesLoaded();
     return this._loadedNoteScopeKey() === scope.key;
@@ -2470,8 +2542,8 @@ export class BuildListComponent {
     });
   }
 
-  private _ensureNotesForQuery(): void {
-    const scope = this._noteScope();
+  private _ensureNotesForQuery(r: RefinementFilters = this.appliedRefinements()): void {
+    const scope = this._noteScope(r);
     if (scope.mode === 'none' || scope.mode === 'batched') return;
     if (scope.mode === 'full') { this._ensureNotesLoaded(); return; }
     if (this._loadedNoteScopeKey() === scope.key || this._scopedNotesFetchInFlight) return;
@@ -2567,8 +2639,9 @@ export class BuildListComponent {
   /** Fetches fresh data for specific trade units and runs the NLQ filter. */
   private _fetchAndFilter(tradeUnits: string[]): void {
     const queryGen = this._queryGenId; // Capture to detect if a newer query supersedes this one
-    // Reset the contracts-failure flag — a fresh fetch is about to (re)determine it.
+    // Reset the contracts/tickets-failure flags — a fresh fetch is about to (re)determine them.
     this.contractsLoadFailed.set(false);
+    this.ticketsLoadFailed.set(false);
 
     // Fast path: if requested TUs match what's already loaded AND all data the query
     // needs is ready, skip the fetch and run NLQ directly against in-memory data.
@@ -2581,7 +2654,7 @@ export class BuildListComponent {
     const needsDp = this.nlqFilterService.queryInvolvesDpContracts(query);
     const needsNotes = this.noteFilterActive();
     const ticketsOk = !needsTickets || this._ticketsReady();
-    const storageOk = !needsStorage || this.storedGrain().length > 0;
+    const storageOk = !needsStorage || this._storageReady();
     const dpOk = !needsDp || this._dpReady();
     const notesOk = !needsNotes || this.notes().length > 0;
     // The full note set is only required for prompts/refines that actually read note content,
@@ -2601,10 +2674,11 @@ export class BuildListComponent {
     // shared cache is cold — otherwise reuse (or skip) it. Non-note and recency-only prompts
     // never download the full set.
     const fetchingNotes = needsNotes && !this.appState.notesLoaded();
+    let ticketFetchFailed = false;
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
-      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
+      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: fetchingNotes
         ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
@@ -2619,6 +2693,7 @@ export class BuildListComponent {
         this._mergeProducerDetails(data.producerDetails);
         this.contracts.set(data.contracts);
         this.tickets.set(data.tickets);
+        this.ticketsLoadFailed.set(ticketFetchFailed && data.tickets.length === 0);
         this.notes.set(data.notes);
         // Warm the shared lazy cache so other consumers (home enrichment, customer-list
         // saved lists) and this page's next query skip the download.
@@ -2629,6 +2704,7 @@ export class BuildListComponent {
         this.appState.setDpContracts(data.dpContracts);
         this._dpReady.set(true);
         this._ticketsReady.set(true);
+        this._storageReady.set(true);
         this.coreDataLoaded.set(true);
         this._resolvePendingIncludes();
 
@@ -2832,10 +2908,86 @@ export class BuildListComponent {
     this.processQuery(savedTradeUnits);
   }
 
+  /** Are all datasets the given (current query text + refinements) pair needs RESOLVED? Never
+   *  keys off emptiness — only fetch resolution — so a trade unit with genuinely zero rows in a
+   *  dataset still reports ready (matches the doctrine _ticketsReady/_contractsReady/_dpReady/
+   *  _storageReady/_notesReadyForQuery already follow). Used by _commitRefinements to decide
+   *  whether a refine change can apply immediately or must stage and wait. */
+  private _criteriaReadiness(r: RefinementFilters = this.appliedRefinements()): boolean {
+    const needs = this.nlqFilterService.dataNeedsForCriteria(this.queryText(), r);
+    if (needs.tickets && !this._ticketsReady()) return false;
+    if (needs.contracts && !this._contractsReady()) return false;
+    if (needs.storage && !this._storageReady()) return false;
+    if (needs.dp && !this._dpReady()) return false;
+    // _notesReadyForQuery already encodes the note-scope nuance (none/full/batched/scoped) that
+    // dataNeedsForCriteria's fullNotes flag alone can't — reuse it rather than duplicating that.
+    if (!this._notesReadyForQuery(r)) return false;
+    return true;
+  }
+
+  /** Idempotently starts whatever fetches the given criteria need but don't already have one in
+   *  flight. Tickets/contracts/storage have no on-demand fetch of their own — they're already in
+   *  flight from _loadFresh — so only notes and DP have anything to kick here. */
+  private _ensureDataForCriteria(r: RefinementFilters = this.appliedRefinements()): void {
+    if (this._isNoteFilterActive(r, this.queryText())) this._ensureNotesForQuery(r);
+    if (this.nlqFilterService.dataNeedsForCriteria(this.queryText(), r).dp) this._ensureDpForQuery();
+  }
+
+  /** Reconciles this.notes()/_loadedNoteScopeKey/_batchedNoteCustomerIds with the note scope the
+   *  CURRENT (just-committed) appliedRefinements imply. Fixes two gaps a bare
+   *  appliedRefinements.set() would leave: (1) _ensureNotesLoaded()'s equal-length blind spot
+   *  when a scoped slice happens to match the full set's length, and (2) a scope-mode change
+   *  (e.g. unchecking "pinned" drops back to 'batched') that doesn't change result MEMBERSHIP, so
+   *  the membership-keyed render-reset effect never fires to clear the stale slice. Called after
+   *  every appliedRefinements commit. */
+  private _syncNoteSliceToScope(): void {
+    const scope = this._noteScope();
+    if (scope.mode === 'scoped') {
+      if (this._loadedNoteScopeKey() !== scope.key) this._ensureNotesForQuery();
+    } else if (scope.mode === 'full') {
+      if (this._loadedNoteScopeKey() !== '') {
+        this.notes.set(this.appState.notes());
+        this._loadedNoteScopeKey.set('');
+      }
+      this._ensureNotesLoaded();
+    } else if (scope.mode === 'batched') {
+      if (this._loadedNoteScopeKey() !== '') {
+        this.notes.set([]);
+        this._batchedNoteCustomerIds.clear();
+        this._loadedNoteScopeKey.set('');
+      }
+    }
+    // 'none' — no-op.
+  }
+
+  /** Single commit point for appliedRefinements — applyFilters, clearRefinements, and the
+   *  immediate-apply crop/state chips all route through this. Commits immediately when every
+   *  dataset the new criteria read is already resolved (the common case, identical to the old
+   *  synchronous behavior). When a dataset the new criteria need is NOT yet resolved — e.g. a
+   *  crop chip that scopes to Storage but storedGrain hasn't loaded, or a note refine needing a
+   *  server-narrowed slice that hasn't been fetched — it STAGES the criteria, starts the fetch,
+   *  and leaves the OLD (data-backed) results on screen; _refineReadyEffect commits once the
+   *  fetch resolves. This is what stops a refine change from ever filtering against a partial
+   *  dataset and silently returning near-zero results — the exact "the state/commodity filter
+   *  doesn't filter" symptom this was built to fix. It deliberately does NOT re-run the NLQ:
+   *  refinements narrow filteredCustomers, they don't change it, so there's nothing to re-parse. */
+  private _commitRefinements(next: RefinementFilters): void {
+    const staged = { ...next };
+    if (this._criteriaReadiness(staged)) {
+      this._pendingApplyCriteria.set(null);
+      this.appliedRefinements.set(staged);
+      this._syncNoteSliceToScope();
+      return;
+    }
+    this._pendingApplyGen = this._queryGenId; // no ++ — the note-scope key embeds the CURRENT gen
+    this._pendingApplyCriteria.set(staged);
+    this._ensureDataForCriteria(staged);
+  }
+
   clearRefinements(): void {
     this.pendingRefinements.set({});
-    this.appliedRefinements.set({});
     this.notContactedDaysInput.set('');
+    this._commitRefinements({});
   }
 
   applyNotContactedDays(): void {
@@ -2844,22 +2996,28 @@ export class BuildListComponent {
   }
 
   applyFilters(): void {
-    // Setting appliedRefinements is sufficient — displayedCustomers computed signal
-    // automatically recalculates when appliedRefinements() changes. No need to re-run
-    // the full NLQ parse/filter pipeline since the base filteredCustomers hasn't changed.
-    this.appliedRefinements.set({ ...this.pendingRefinements() });
+    this._commitRefinements(this.pendingRefinements());
   }
 
+  /** Crop chips apply immediately on click (cheap, client-side narrowing) rather than waiting
+   *  for the Apply button — routed through _commitRefinements like every other refine change so
+   *  a chip that happens to need not-yet-loaded dimension data (e.g. scoping to Storage) stages
+   *  and waits instead of silently filtering to near-zero. */
   togglePendingCrop(crop: string): void {
     const current = this.pendingRefinements().crops ?? [];
     const updated = current.includes(crop) ? current.filter(c => c !== crop) : [...current, crop];
-    this.pendingRefinements.update(r => ({ ...r, crops: updated.length > 0 ? updated : undefined }));
+    const next = { ...this.pendingRefinements(), crops: updated.length > 0 ? updated : undefined };
+    this.pendingRefinements.set(next);
+    this._commitRefinements(next);
   }
 
+  /** State chips apply immediately on click — see togglePendingCrop. */
   togglePendingState(state: string): void {
     const current = this.pendingRefinements().states ?? [];
     const updated = current.includes(state) ? current.filter(s => s !== state) : [...current, state];
-    this.pendingRefinements.update(r => ({ ...r, states: updated.length > 0 ? updated : undefined }));
+    const next = { ...this.pendingRefinements(), states: updated.length > 0 ? updated : undefined };
+    this.pendingRefinements.set(next);
+    this._commitRefinements(next);
   }
 
   isCropSelected(crop: string): boolean {
@@ -3038,6 +3196,7 @@ export class BuildListComponent {
     // These two early exits must clear isProcessing themselves: the caller now leaves it set for
     // coverage queries (so the unfiltered list can't flash), so bailing without clearing it would
     // strand the spinner with no fetch in flight.
+    this.coverageNeedsYieldTargets.set(false);
     const intentions = this.plantingIntentions();
     if (intentions.length === 0) {
       this.filteredCustomers.set([]);
@@ -3140,6 +3299,14 @@ export class BuildListComponent {
         return category === target;
       };
 
+      // Tracks whether the "under X% contracted" / "uncontracted" branches below could find a
+      // saved season yield target for ANY planting row they evaluated. Coverage can't be computed
+      // without one (estimatedProduction = acres × yield), so if every row lacks a target the
+      // result is an empty list that looks IDENTICAL to "everyone is well-contracted" — this
+      // distinguishes the two so the UI can point at the real cause instead of "No Producers Found".
+      let plantingRowsEvaluated = 0;
+      let plantingRowsWithEstimate = 0;
+
       if (lq.includes('planting') && (lq.includes('no contract') || lq.includes('no active contract'))) {
         // 0% coverage: any planting crop+year with zero matching contracts
         this.filteredCustomers.set(allCustomers.filter(c => {
@@ -3162,8 +3329,10 @@ export class BuildListComponent {
           // Check each planting crop: estimated production vs contracted bushels
           return plantings.some(p => {
             // Same rule as the producer page: the estimate must belong to THIS crop and THIS year.
+            plantingRowsEvaluated++;
             const yieldEst = findYieldEstimate(allEstimates, p.type, p.category, p.year);
             if (!yieldEst) return false; // can't calculate without a season target
+            plantingRowsWithEstimate++;
             const estimatedProduction = p.acres * yieldEst;
             // Bushels, not raw quantity: contracts for meal / oil / popcorn sit in the same
             // commodity group but are priced by weight, and adding them in would overstate coverage
@@ -3184,8 +3353,10 @@ export class BuildListComponent {
           const custContracts = contractsByCustomer.get(c.scoularId!) || [];
           let totalGap = 0;
           for (const p of plantings) {
+            plantingRowsEvaluated++;
             const yieldEst = findYieldEstimate(allEstimates, p.type, p.category, p.year);
             if (!yieldEst) continue;
+            plantingRowsWithEstimate++;
             const estimatedProduction = p.acres * yieldEst;
             const { contracted: contractedBu } = sumInBushels(
               custContracts.filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category)),
@@ -3198,7 +3369,13 @@ export class BuildListComponent {
         this.filteredCustomers.set(customerGaps.slice(0, 10).map(g => g.customer));
       }
 
-      this.queryReturnedNoMatches.set(this.filteredCustomers().length === 0);
+      const noResults = this.filteredCustomers().length === 0;
+      const missingYieldTargets = noResults && plantingRowsEvaluated > 0 && plantingRowsWithEstimate === 0;
+      this.coverageNeedsYieldTargets.set(missingYieldTargets);
+      // Suppress the generic "no match" banner in favor of the yield-target-specific one —
+      // same pattern as contractsUnavailableForQuery/ticketsUnavailableForQuery suppressing it
+      // in favor of their retry panels.
+      this.queryReturnedNoMatches.set(noResults && !missingYieldTargets);
       this.isProcessing.set(false);
     });
   }

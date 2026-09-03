@@ -3,6 +3,7 @@ using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.Data.SqlClient;
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -43,10 +44,15 @@ public class TicketService : ITicketService
         SafeFetchAsync(ct => _repository.GetByFarmAsync(farmId, ct), $"tickets for farm {farmId}", cancellationToken);
 
     /// <summary>
-    /// Runs a ticket fetch and maps to DTOs, degrading to an empty list when the ODS ticket view is
-    /// missing a mapped column / object (SQL 207/208), the DB connection fails, or EF hits a mapping
-    /// mismatch — the same graceful behavior the prior SqlDataService provided so a missing Dev view
-    /// doesn't 500 the page. Non-database exceptions propagate to the global handler.
+    /// Runs a ticket fetch and maps to DTOs, degrading to an empty list only when the ODS ticket
+    /// view is missing a mapped column / object (SQL 207/208) or EF hits a mapping mismatch — a
+    /// permanent schema-drift condition that a retry cannot fix, the same graceful behavior the
+    /// prior SqlDataService provided so a missing Dev view doesn't 500 the page. A genuine
+    /// connection failure or SQL timeout (e.g. Number -2 — see the 300s command-timeout comment
+    /// on the bulk ticket query) is DIFFERENT: it is transient and retryable, so it is rethrown as
+    /// an InfrastructureException (503) instead of silently degrading to []. Swallowing a timeout
+    /// to [] previously made ticket-aware Build-A-List prompts render "No Producers Found" with no
+    /// way for the client to distinguish that from a genuine zero-match.
     /// </summary>
     private async Task<List<TicketResponse>> SafeFetchAsync(
         Func<CancellationToken, Task<List<Ticket>>> fetch, string context, CancellationToken cancellationToken)
@@ -64,8 +70,13 @@ public class TicketService : ITicketService
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            _logger.LogWarning(ex, "DB connection error retrieving {Context} — returning empty list", context);
-            return [];
+            // Anything reaching here is a genuine connection failure, timeout, or throttling —
+            // NOT the missing-column/view case (caught above) — so it is transient and worth a
+            // retry rather than a silent, indistinguishable-from-real-zero empty list.
+            _logger.LogError(ex, "Transient DB error retrieving {Context} — surfacing as retryable", context);
+            throw new InfrastructureException(
+                "The ticket data source is temporarily unavailable. Please retry shortly.",
+                "TICKETS_DB_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
         }
         catch (Exception ex) when (ex is InvalidCastException or InvalidOperationException or OverflowException)
         {

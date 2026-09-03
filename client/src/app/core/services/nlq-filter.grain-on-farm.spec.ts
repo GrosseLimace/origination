@@ -169,4 +169,18 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
     // bravo (wheat) excluded even though 20k bu, because crop is scoped to corn
     expect(refine({ grainOnFarmBushelsOver: 10000, crops: ['corn'] })).toEqual([1]);
   });
+
+  it('a "Wheat" chip keeps a producer whose commodityGroup is a raw code, not the group name', () => {
+    // This is the bug in the exact shape a real saved list hits: grainOnFarm.commodityGroup can
+    // be a raw commodity CODE (SRWW) rather than the friendly group name — the old bidirectional-
+    // substring matcher had no way to resolve SRWW -> wheat without a lookup table. _promptCategory
+    // is what routes crop scoping to the grainOnFarm rows instead of the generic commodities list
+    // (mirrors how a real Grain on Farm library prompt stamps the category at save time).
+    const echo = customer(5, 'Echo Farms', [{ commodityGroup: 'SRWW', bushelsOnHand: 15000 }]);
+    const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
+    const result = svc.applyRefinementFilters([...all, echo],
+      { _promptCategory: 'Grain on Farm', crops: ['Wheat'] } as never, [], [], { commodities })
+      .map(c => c.id).sort((a, b) => a - b);
+    expect(result).toContain(5);
+  });
 });
