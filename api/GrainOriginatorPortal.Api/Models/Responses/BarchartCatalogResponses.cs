@@ -91,6 +91,14 @@ public record BarchartCatalogBidResponse
 
     /// <summary>False when no active commodity mapping exists for <see cref="VendorCommodity"/>.</summary>
     public bool IsMapped { get; init; }
+
+    /// <summary>
+    /// True for a basis instrument, false for cash. Cash and basis are separate BarChart instruments
+    /// with independent quotes for the same commodity/period, so this list carries both as distinct
+    /// rows rather than one row with two prices -- a caller picking "the" bid for a period (the map's
+    /// catalog-reference comparison) has to filter on this, not just take the first match.
+    /// </summary>
+    public bool IsBasis { get; init; }
 }
 
 /// <summary>Catalog coverage, so the picker can say what it holds instead of just showing nothing.</summary>

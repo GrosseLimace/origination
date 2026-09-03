@@ -35,16 +35,20 @@ public interface IBarchartCatalogRepository
     Task<BarchartLocationSummary?> GetLocationAsync(string locationKey, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// The price each of the given locations publishes for one exact commodity/delivery period, for
-    /// locations that have one -- a location with nothing for that period is simply absent from the
-    /// result, not present with a null.
+    /// The price each of the given locations publishes for one exact commodity/delivery period AND
+    /// vendor price type, for locations that have one -- a location with nothing for that period is
+    /// simply absent from the result, not present with a null. Cash and basis are separate BarChart
+    /// instruments with independent quotes (<see cref="BarchartFeedDefaults.InstrumentType"/> /
+    /// <see cref="BarchartFeedDefaults.BasisInstrumentType"/>), not one price under two labels, so
+    /// instrumentType is not optional here the way it is on <see cref="GetBidPreviewAsync"/> -- a
+    /// caller pricing a map's crop/year/month filter always means one specific type or the other.
     ///
     /// Batched by design: the bid sheet map's catalog layer needs this for every pin in view once a
     /// crop/year/month filter is active, and a per-pin round trip for that would be the O(pins) cost
     /// the map's other perf work went to some effort to avoid.
     /// </summary>
     Task<Dictionary<string, decimal>> GetMatchedBidPricesAsync(
-        IReadOnlyCollection<string> locationKeys, string commodityCode, int cropYear, int month,
+        IReadOnlyCollection<string> locationKeys, string commodityCode, int cropYear, int month, string instrumentType,
         CancellationToken cancellationToken = default);
 
     /// <summary>

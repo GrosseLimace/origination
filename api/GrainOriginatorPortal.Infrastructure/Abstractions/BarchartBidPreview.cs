@@ -28,6 +28,11 @@ public record BarchartBidPreview
     /// <summary>False when the commodity has no active mapping — this bid will not reach the Bid Sheet.</summary>
     public bool IsMapped { get; init; }
 
+    /// <summary>True for a basis instrument, false for cash -- see BarchartFeedDefaults.InstrumentType
+    /// / BasisInstrumentType. Cash and basis publish as separate instruments with independent quotes
+    /// for the same commodity/period, so a caller matching "the" bid for one has to filter on this.</summary>
+    public bool IsBasis { get; init; }
+
     /// <summary>
     /// Half-month split marker (F = first half, L = last half) or null for a whole month. Used to rank
     /// competing instruments the same way the bridge does, so the preview shows one row per Bid Sheet

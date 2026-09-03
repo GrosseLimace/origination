@@ -91,7 +91,8 @@ public class BarchartCatalogService : IBarchartCatalogService
         {
             var prices = await _catalog.GetMatchedBidPricesAsync(
                 results.Select(r => r.LocationKey).ToList(),
-                request.CommodityCode, request.CropYear.Value, request.Month.Value, cancellationToken);
+                request.CommodityCode, request.CropYear.Value, request.Month.Value,
+                request.InstrumentType ?? DefaultInstrumentType, cancellationToken);
             if (prices.Count > 0)
             {
                 for (var i = 0; i < results.Count; i++)

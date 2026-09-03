@@ -84,19 +84,24 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
 
     /// <inheritdoc />
     public async Task<Dictionary<string, decimal>> GetMatchedBidPricesAsync(
-        IReadOnlyCollection<string> locationKeys, string commodityCode, int cropYear, int month,
+        IReadOnlyCollection<string> locationKeys, string commodityCode, int cropYear, int month, string instrumentType,
         CancellationToken cancellationToken = default)
     {
         if (locationKeys.Count == 0) return [];
         var today = DateTime.UtcNow.Date;
 
         // Same shape as GetBidPreviewAsync's per-location join, batched across every key the caller
-        // asked about in one round trip instead of one per pin.
+        // asked about in one round trip instead of one per pin. instrumentType is NOT optional here
+        // (GetBidPreviewAsync defaults it because it returns every type at once for a detail table) --
+        // cash and basis are separate instruments with independent quotes, so leaving this filter off
+        // let either one win the "first found" price per location, which is why this looked like it
+        // ignored the cash/basis toggle entirely rather than showing the wrong one.
         var rows = await _appContext.BarchartInstruments
             .AsNoTracking()
             .Where(i => locationKeys.Contains(i.LocationKey)
                      && i.IsActive
                      && !i.IsTest
+                     && i.InstrumentType == instrumentType
                      && i.DeliveryStart != null
                      && i.DeliveryStart.Value.Year == cropYear
                      && i.DeliveryStart.Value.Month == month
@@ -159,6 +164,7 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
                     .FirstOrDefault(),
                 IsMapped = _appContext.BarchartCommodityMaps
                     .Any(m => m.BarchartCommodity == i.Commodity && m.IsActive),
+                IsBasis = i.InstrumentType == BarchartFeedDefaults.BasisInstrumentType,
                 CropYear = i.DeliveryStart!.Value.Year,
                 Month = i.DeliveryStart!.Value.Month,
                 Symbol = i.Symbol,

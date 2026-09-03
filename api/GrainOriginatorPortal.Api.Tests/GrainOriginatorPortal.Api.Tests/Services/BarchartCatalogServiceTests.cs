@@ -111,7 +111,7 @@ public class BarchartCatalogServiceTests
             .Returns([Summary("priced"), Summary("unpriced")]);
         _catalog.GetMatchedBidPricesAsync(
                 Arg.Is<IReadOnlyCollection<string>>(k => k.Contains("priced") && k.Contains("unpriced")),
-                "YC", 2026, 8, Arg.Any<CancellationToken>())
+                "YC", 2026, 8, "bidCash", Arg.Any<CancellationToken>())
             .Returns(new Dictionary<string, decimal> { ["priced"] = 4.98m });
 
         var results = await _sut.SearchLocationsAsync(
@@ -120,6 +120,46 @@ public class BarchartCatalogServiceTests
 
         Assert.Equal(4.98m, results.Single(r => r.LocationKey == "priced").MatchedBidPrice);
         Assert.Null(results.Single(r => r.LocationKey == "unpriced").MatchedBidPrice);
+    }
+
+    // -------------------------------------------------------------------------
+    // Cash and basis are separate BarChart instruments with independent quotes -- toggling the bid
+    // sheet's price mode has to change which one this asks for, not just relabel the same number.
+    // Regression test: the first version of this lookup had no InstrumentType filter at all, so
+    // switching the toggle re-ran the same query and could never show a different price.
+    [Fact]
+    public async Task SearchLocationsAsync_PassesTheRequestedInstrumentType()
+    {
+        _catalog.SearchLocationsAsync(null, null, "YC", null, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([Summary("82259")]);
+        _catalog.GetMatchedBidPricesAsync(
+                Arg.Any<IReadOnlyCollection<string>>(), "YC", 2026, 8, "bidBasis", Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, decimal> { ["82259"] = -30m });
+
+        var results = await _sut.SearchLocationsAsync(
+            new BarchartLocationSearchRequest { CommodityCode = "YC", CropYear = 2026, Month = 8, InstrumentType = "bidBasis" },
+            CancellationToken.None);
+
+        Assert.Equal(-30m, results.Single().MatchedBidPrice);
+    }
+
+    // -------------------------------------------------------------------------
+    // No InstrumentType sent means the caller didn't ask for basis, so this must default to cash --
+    // matching the single-location detail endpoint's own default -- not leave the choice ambiguous.
+    [Fact]
+    public async Task SearchLocationsAsync_DefaultsToCashWhenInstrumentTypeIsOmitted()
+    {
+        _catalog.SearchLocationsAsync(null, null, "YC", null, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([Summary("82259")]);
+        _catalog.GetMatchedBidPricesAsync(
+                Arg.Any<IReadOnlyCollection<string>>(), "YC", 2026, 8, "bidCash", Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, decimal> { ["82259"] = 4.98m });
+
+        var results = await _sut.SearchLocationsAsync(
+            new BarchartLocationSearchRequest { CommodityCode = "YC", CropYear = 2026, Month = 8 },
+            CancellationToken.None);
+
+        Assert.Equal(4.98m, results.Single().MatchedBidPrice);
     }
 
     // -------------------------------------------------------------------------
@@ -136,7 +176,7 @@ public class BarchartCatalogServiceTests
             new BarchartLocationSearchRequest { CropYear = 2026, Month = 8 }, CancellationToken.None);
 
         await _catalog.DidNotReceive().GetMatchedBidPricesAsync(
-            Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------

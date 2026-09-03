@@ -499,7 +499,7 @@ describe('BidSheetComponent — catalog location as comparison reference', () =>
         locationKey: key, elevator: 'Competitor Co', instrumentCount: 1, commodityCount: 1, placements: [],
       },
       bids: [
-        { commodityCode: 'YC', vendorCommodity: 'Corn', cropYear: 2026, month: 8, price: 4.50, symbol: 'ZCU26', isMapped: true },
+        { commodityCode: 'YC', vendorCommodity: 'Corn', cropYear: 2026, month: 8, price: 4.50, symbol: 'ZCU26', isMapped: true, isBasis: false },
       ],
       unmappedBidCount: 0,
     });
@@ -580,5 +580,58 @@ describe('BidSheetComponent — catalog location as comparison reference', () =>
 
     const item = component.filteredBidItems().find(i => i.type === 'entry' && i.name === 'Elevator A');
     expect((item as { status?: string })?.status).toBe('none');
+  });
+
+  // Regression coverage for the actual reported bug: cash and basis are separate BarChart instruments
+  // with independent quotes, not one price under two labels. A catalog reference's cached detail
+  // carries both as distinct rows, so basis-mode comparison must resolve the BASIS row -- not whichever
+  // row happens to come back first, which is what made switching the toggle look like it did nothing.
+  it('does not fall back to the catalog reference\'s cash bid while comparing in basis mode', () => {
+    // Elevator A gets a real basis value so there is something to wrongly match against.
+    const loc = location('Elevator A', [bid({ locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 8, bid: '5.00', basisBid: '-20' })]);
+    component.allMapLocations.set([loc]);
+    component.sheets.update(sheets => sheets.map(s => ({ ...s, locations: [loc] })));
+    component.priceMode.set('basis');
+
+    getBarchartLocationDetail = () => of({
+      location: { locationKey: 'CATKEY3', elevator: 'Competitor Co', instrumentCount: 1, commodityCount: 1, placements: [] },
+      bids: [
+        // Only a cash row exists for this reference -- chosen so a broken (type-blind) match would
+        // read as -20 > -25 = "beating"; the correct answer is "none", since no basis was published.
+        { commodityCode: 'YC', vendorCommodity: 'Corn', cropYear: 2026, month: 8, price: -25, symbol: 'ZCU26.CM', isMapped: true, isBasis: false },
+      ],
+      unmappedBidCount: 0,
+    });
+
+    component.toggleCatalogReference('CATKEY3');
+    component.filterBids();
+
+    const item = component.filteredBidItems().find(i => i.type === 'entry' && i.name === 'Elevator A');
+    expect((item as { status?: string })?.status).toBe('none');
+  });
+
+  it('uses the catalog reference\'s basis bid, not its cash bid, while comparing in basis mode', () => {
+    const loc = location('Elevator A', [bid({ locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 8, bid: '5.00', basisBid: '-20' })]);
+    component.allMapLocations.set([loc]);
+    component.sheets.update(sheets => sheets.map(s => ({ ...s, locations: [loc] })));
+    component.priceMode.set('basis');
+
+    getBarchartLocationDetail = () => of({
+      location: { locationKey: 'CATKEY4', elevator: 'Competitor Co', instrumentCount: 1, commodityCount: 1, placements: [] },
+      bids: [
+        // A broken (type-blind) match could pick either row; only the basis one (-30) is correct here.
+        { commodityCode: 'YC', vendorCommodity: 'Corn', cropYear: 2026, month: 8, price: 4.50, symbol: 'ZCU26.CM', isMapped: true, isBasis: false },
+        { commodityCode: 'YC', vendorCommodity: 'Corn', cropYear: 2026, month: 8, price: -30, symbol: 'ZCU26-80U.CM', isMapped: true, isBasis: true },
+      ],
+      unmappedBidCount: 0,
+    });
+
+    component.toggleCatalogReference('CATKEY4');
+    component.filterBids();
+
+    const item = component.filteredBidItems().find(i => i.type === 'entry' && i.name === 'Elevator A');
+    // -20 (Elevator A's basis) > -30 (the reference's basis) → beating. Matching the cash row (4.50)
+    // instead would give "none" (-20 is neither greater than nor equal to 4.50).
+    expect((item as { status?: string })?.status).toBe('beating');
   });
 });

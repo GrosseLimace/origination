@@ -1050,6 +1050,7 @@ export class ApiService {
     if (params.commodityCode) httpParams = httpParams.set('commodityCode', params.commodityCode);
     if (params.cropYear != null) httpParams = httpParams.set('cropYear', String(params.cropYear));
     if (params.month != null) httpParams = httpParams.set('month', String(params.month));
+    if (params.instrumentType) httpParams = httpParams.set('instrumentType', params.instrumentType);
     if (params.latitude != null && params.longitude != null) {
       httpParams = httpParams.set('latitude', String(params.latitude))
                              .set('longitude', String(params.longitude));

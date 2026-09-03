@@ -39,6 +39,7 @@ public static class BarchartCatalogMappings
         QuoteAsOf = b.QuoteAsOf,
         Symbol = b.Symbol,
         IsMapped = b.IsMapped,
+        IsBasis = b.IsBasis,
     };
 
     public static BarchartCatalogPlacementResponse ToResponse(this BarchartLocationPlacement p) => new()

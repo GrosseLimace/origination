@@ -1378,6 +1378,11 @@ export class BidSheetComponent {
     this.priceMode.set(mode);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', `price-mode-${mode}`);
     this.onFilterChange();
+    this._savePreference();
+    // Cash and basis are separate BarChart instruments with independent quotes, so a catalog pin's
+    // price pill has to be re-fetched for the newly chosen one -- it is not a client-side relabel of
+    // a value already in hand the way it is for an added location's bid.
+    this._loadCatalogLocations();
     if (this.editBidsMode()) this._buildEditGrid();
   }
 
@@ -2027,7 +2032,15 @@ export class BidSheetComponent {
     // location's own board once ingested -- there is no calendar month to price a not-yet-added
     // listing against, so catalog pins fall back to a plain dot in Year view, same as with no crop
     // selected. Only a real 1-12 month names a single instrument this endpoint can price.
-    const period = crop && month > 0 ? { cropYear: this.selectedYear(), month } : {};
+    //
+    // instrumentType rides along with the period: cash and basis are separate BarChart instruments
+    // with independent quotes, not one price under two labels, so which one to price is part of
+    // "what period" just as much as the year and month are. 'both' resolves to cash, the same
+    // convention bidEntries() already uses for anything on this screen that shows one number.
+    const instrumentType: 'bidCash' | 'bidBasis' = this.priceMode() === 'basis' ? 'bidBasis' : 'bidCash';
+    const period = crop && month > 0
+      ? { cropYear: this.selectedYear(), month, instrumentType }
+      : {};
     this.apiService.searchBarchartLocations({
       latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles, take: 5000,
       commodityCode: crop,
@@ -4396,8 +4409,12 @@ export class BidSheetComponent {
       const current = this.catalogLocations().find(l => l.locationKey === locationKey);
       if (current?.matchedBidPrice != null) return String(current.matchedBidPrice);
     }
+    // isBasis has to match too: the detail cache holds cash AND basis as separate rows for the same
+    // commodity/period, not one row with two prices, so leaving this off would let whichever one
+    // happens to sort first win regardless of which the price mode toggle asked for.
+    const wantBasis = this.priceMode() === 'basis';
     const bid = this._catalogDetailCache.get(locationKey)?.bids
-      .find(b => b.commodityCode === crop && b.cropYear === year && b.month === month);
+      .find(b => b.commodityCode === crop && b.cropYear === year && b.month === month && b.isBasis === wantBasis);
     return bid?.price != null ? String(bid.price) : '';
   }
 

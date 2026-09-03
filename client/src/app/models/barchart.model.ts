@@ -65,6 +65,10 @@ export interface BarchartCatalogBid {
   symbol: string;
   /** False when the commodity has no active mapping. */
   isMapped: boolean;
+  /** True for a basis instrument, false for cash -- cash and basis are separate BarChart instruments
+   *  with independent quotes for the same commodity/period, so this list carries both as distinct
+   *  rows rather than one row with two prices. */
+  isBasis: boolean;
 }
 
 /** What the catalog holds, so an empty search reads as a coverage gap rather than a broken feed. */
@@ -89,6 +93,10 @@ export interface BarchartLocationSearchParams {
    *  commodityCode and each other -- see BarchartCatalogLocation.matchedBidPrice. */
   cropYear?: number;
   month?: number;
+  /** Which vendor price type matchedBidPrice should read -- "bidCash" or "bidBasis". Cash and basis
+   *  are separate BarChart instruments with independent quotes, not one price under two labels, so
+   *  this is not optional when a period is given: server defaults to cash if omitted. */
+  instrumentType?: 'bidCash' | 'bidBasis';
   latitude?: number;
   longitude?: number;
   radiusMiles?: number;

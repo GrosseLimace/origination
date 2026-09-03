@@ -33,6 +33,16 @@ public record BarchartLocationSearchRequest
     [Range(1, 12)]
     public int? Month { get; init; }
 
+    /// <summary>
+    /// Which vendor price type MatchedBidPrice should read -- "bidCash" or "bidBasis". Cash and basis
+    /// are separate BarChart instruments with their own independent quotes, not one price under two
+    /// labels, so this has to be an explicit choice: defaults to cash when the caller doesn't send
+    /// one (same default the single-location detail endpoint uses), matching the bid sheet's existing
+    /// "both" price mode convention of resolving to cash for anything that shows one number.
+    /// </summary>
+    [MaxLength(20)]
+    public string? InstrumentType { get; init; }
+
     /// <summary>Map-centre latitude. Requires <see cref="Longitude"/>; pairs with <see cref="RadiusMiles"/>.</summary>
     [Range(-90, 90)]
     public double? Latitude { get; init; }
