@@ -15,7 +15,7 @@ import { environment } from '@env/environment';
 import { BarchartPickerComponent, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
 import { BarchartCatalogLocation, BarchartCatalogLocationDetail } from '@models';
 import { commodityHex } from '@shared/utils/commodity-color';
-import { barchartSaveName } from '../../utils/barchart-location-name';
+import { barchartDisplayName, barchartSaveName } from '../../utils/barchart-location-name';
 import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
@@ -281,6 +281,38 @@ export class BidSheetComponent {
   cropYears = signal<number[]>([]);
   crops = signal<string[]>([]);
   isLoading = signal<boolean>(false);
+
+  /**
+   * Every commodity the crop FILTER can narrow by -- not just the ones the active sheet happens to
+   * have bids for (that's crops(), which is a different thing: the Edit Bids grid's column order,
+   * saved per sheet). The catalog map shows locations nobody has priced yet, so the filter has to
+   * offer commodities before any sheet does, not after.
+   */
+  readonly filterableCrops = computed<string[]>(() => {
+    const source = this.plantingCommodities().length > 0 ? this.plantingCommodities() : this.allCommodities();
+    const seen = new Set<string>();
+    const codes: string[] = [];
+    for (const c of source) {
+      const code = (c.code ?? '').trim();
+      const cat = (c.category ?? '').trim().toUpperCase();
+      if (!code || seen.has(code) || BidSheetComponent._excludedCommodityCategories.has(cat)) continue;
+      seen.add(code);
+      codes.push(code);
+    }
+    return codes.sort();
+  });
+
+  /**
+   * Every year the YEAR filter offers: a sensible default span around today plus whatever years the
+   * active sheet actually has bids for, so a real priced year is never missing just because it falls
+   * outside the default window.
+   */
+  readonly filterableYears = computed<number[]>(() => {
+    const now = new Date().getFullYear();
+    const years = new Set<number>([now - 1, now, now + 1, now + 2]);
+    for (const y of this.cropYears()) years.add(y);
+    return [...years].sort((a, b) => a - b);
+  });
 
   // --- Old/New year logic (data-driven, navigable) ---
   // yearOffset 0 = latest two years, -1 = shift one year earlier, etc.
@@ -1344,6 +1376,7 @@ export class BidSheetComponent {
   onMapCropChange(): void {
     this.onFilterChange();
     this._savePreference();
+    this._loadCatalogLocations(); // crop narrows the catalog dots too, not just the added-location pins
   }
 
   onYearDropdownChange(year: number): void {
@@ -1409,10 +1442,13 @@ export class BidSheetComponent {
     }
   }
 
-  /** Search input only filters map pins — panel stays full (debounced 250ms) */
+  /** Search filters map pins (panel stays full) and re-queries the catalog layer, debounced 250ms. */
   onSearchInput(): void {
     if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
-    this._searchDebounceTimer = setTimeout(() => this._refreshMapMarkers(), 250);
+    this._searchDebounceTimer = setTimeout(() => {
+      this._refreshMapMarkers();
+      this._loadCatalogLocations();
+    }, 250);
   }
 
   filterBids(): void {
@@ -1950,6 +1986,12 @@ export class BidSheetComponent {
    * _refreshMapMarkers already uses, so the two stay in step. take is generous (up to 5,000, the
    * request DTO's ceiling) because this is "what's here", not a curated picker list: the whole point
    * is a wide zoom-out showing most of what BarChart publishes at once.
+   *
+   * The crop and search filters narrow this same request (server-side, via the commodity mapping and
+   * name/city match the search endpoint already supports) -- geography still applies too, unlike the
+   * BarChart picker's own search, which drops it once you type. The map's search box is "find this
+   * pin on my screen", not "search the whole catalog"; that broader search already exists as its own
+   * feature (the picker).
    */
   private _loadCatalogLocations(): void {
     if (this.addLocationMode() || this.barchartMode()) return;
@@ -1957,10 +1999,12 @@ export class BidSheetComponent {
     if (!area) return;
     const gen = ++this._catalogLoadGen;
     this.apiService.searchBarchartLocations({
-      latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles, take: 5000
+      latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles, take: 5000,
+      commodityCode: this.selectedCrop() || undefined,
+      search: this.searchQuery().trim() || undefined
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (rows) => {
-        if (gen !== this._catalogLoadGen) return; // a newer pan/zoom already superseded this request
+        if (gen !== this._catalogLoadGen) return; // a newer pan/zoom/filter already superseded this request
         this.catalogLocations.set(rows);
         this._refreshMapMarkers();
       },
@@ -3692,6 +3736,7 @@ export class BidSheetComponent {
     this.showPanel.set(false);
     this.panelSelectedLocation.set('');
     this._refreshMapMarkers();
+    this._loadCatalogLocations();
   }
 
   togglePanel(): void { this.showPanel.set(!this.showPanel()); }
@@ -4131,6 +4176,11 @@ export class BidSheetComponent {
       });
       const marker = L.marker([loc.latitude, loc.longitude], { icon });
       marker.on('click', () => this.openCatalogDetail(loc.locationKey));
+      // Same hover-expand the added-location pins use, so a dot too small to label on its own still
+      // tells you what it is without a click. Subtitle carries city/state instead of a bid, since a
+      // catalog-only listing has no priced cell to show yet.
+      const subtitle = [loc.city, loc.state].filter(Boolean).join(', ');
+      this._bindHoverExpand(marker, icon, barchartDisplayName(loc), subtitle, '#2563eb', '#1d4ed8');
       this._catalogLayer.addLayer(marker);
     }
   }

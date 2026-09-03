@@ -405,3 +405,78 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(component.editBidsYearChoices()).toEqual([2025, 2026, 2027]);
   });
 });
+
+/**
+ * The map filter bar's crop/year dropdowns used to be sourced from crops()/cropYears() -- the active
+ * sheet's own bid data, which is also the Edit Bids grid's column order. That made sense before the
+ * map showed the whole BarChart catalog: a brand-new or catalog-browsing sheet has no bids yet, so the
+ * dropdowns went empty even though there was plenty on screen to filter. filterableCrops/filterableYears
+ * are deliberately a SEPARATE source so fixing the filter can't quietly change what columns the grid
+ * saves.
+ */
+describe('BidSheetComponent — filter dropdown sources', () => {
+  let component: BidSheetComponent;
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  it('offers every planting commodity, not just what the active sheet has priced', () => {
+    component.plantingCommodities.set([
+      { id: 1, code: 'YC', name: 'Yellow Corn' },
+      { id: 2, code: 'HRWW', name: 'Hard Red Winter Wheat' },
+      { id: 3, code: 'SOR', name: 'Sorghum' },
+    ]);
+    // The active sheet has never priced any of these -- crops() (the grid's own column order) is
+    // untouched and empty, but the filter must not be.
+    expect(component.crops()).toEqual([]);
+    expect(component.filterableCrops()).toEqual(['HRWW', 'SOR', 'YC']);
+  });
+
+  it('excludes non-crop categories from the filter, same rule the add-commodity search uses', () => {
+    component.plantingCommodities.set([
+      { id: 1, code: 'YC', name: 'Yellow Corn', category: 'GRAIN' },
+      { id: 2, code: 'USD', name: 'US Dollar', category: 'CURRENCY' },
+    ]);
+    expect(component.filterableCrops()).toEqual(['YC']);
+  });
+
+  it('falls back to the full commodity list when the curated planting list has not loaded', () => {
+    component.allCommodities.set([{ id: 1, code: 'DNGS', name: 'Distillers Grains' }]);
+    expect(component.filterableCrops()).toEqual(['DNGS']);
+  });
+
+  it('offers a default span of years around today even with no bid data anywhere', () => {
+    const now = new Date().getFullYear();
+    expect(component.cropYears()).toEqual([]);
+    expect(component.filterableYears()).toEqual([now - 1, now, now + 1, now + 2]);
+  });
+
+  it('keeps a real priced year even when it falls outside the default span', () => {
+    const now = new Date().getFullYear();
+    component.cropYears.set([now + 10]);
+    expect(component.filterableYears()).toContain(now + 10);
+    expect(component.filterableYears()).toEqual([...component.filterableYears()].sort((a, b) => a - b));
+  });
+});

@@ -31,24 +31,20 @@
             </button>
             @if (showFilters()) {
             <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-            <!-- These used to hide entirely until the active sheet had bid data (cropYears().length
-                 > 0), which made sense when the map only ever showed locations that already had bids.
-                 Now a brand-new or catalog-browsing sheet is a completely normal state to be in, and
-                 hiding every filter but search made the bar look broken. They stay visible with a
-                 placeholder until there is real data to filter by. -->
+            <!-- These used to hide entirely until the active sheet had bid data, which made sense when
+                 the map only ever showed locations that already had bids. Now the map is a catalog
+                 browser first: the crop and year lists offer every possible choice (filterableCrops /
+                 filterableYears), not just what the active sheet happens to have priced, so filtering
+                 works before you've added anything. Selecting a crop also narrows the catalog dots
+                 themselves -- see _loadCatalogLocations. -->
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-              @if (crops().length === 0) {
-                <option value="" disabled selected>No crops yet</option>
-              }
-              @for (crop of crops(); track crop) {
+              <option value="">All Crops</option>
+              @for (crop of filterableCrops(); track crop) {
                 <option [value]="crop">{{ crop }}</option>
               }
             </select>
             <select [ngModel]="selectedYear()" (ngModelChange)="onYearDropdownChange(+$event)" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-              @if (cropYears().length === 0) {
-                <option value="" disabled selected>No years yet</option>
-              }
-              @for (year of cropYears(); track year) {
+              @for (year of filterableYears(); track year) {
                 <option [value]="year">{{ year }}</option>
               }
             </select>
