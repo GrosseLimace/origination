@@ -9,7 +9,8 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
+import { BidSheet, BidSheetEntry, BidSheetLayoutUpdate, BidSheetLocation, BidSheetLocationBid, BidSheetShare, Elevator, Commodity } from '@models';
+import type { EntitlementPerson } from '@features/daily-digest/models/entitlements-catalog.model';
 import { environment } from '@env/environment';
 import { BarchartPickerComponent, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
 import { BarchartCatalogLocation } from '@models';
@@ -129,8 +130,68 @@ export class BidSheetComponent {
   selectedMonth = signal<number>(0); // 0=yearly, 1-12=monthly
 
   // --- Data ---
-  allMapLocations = signal<BidSheetLocation[]>([]); // ALL locations across all TUs (for map)
-  bidLocations = signal<BidSheetLocation[]>([]);
+  allMapLocations = signal<BidSheetLocation[]>([]); // every added location, company-wide (for map)
+
+  // --- Sheets ---
+  // A sheet is the named, shareable working set of locations a user actually compares -- what
+  // replaced the trade unit as the thing deciding what the panel and grid show. The map stays
+  // unscoped (allMapLocations, above); only the panel/grid narrow to the active sheet.
+  readonly sheets = signal<BidSheet[]>([]);
+  readonly sheetsLoaded = signal<boolean>(false);
+  readonly activeSheetId = signal<number | null>(null);
+  readonly activeSheet = computed<BidSheet | null>(() =>
+    this.sheets().find(s => s.id === this.activeSheetId()) ?? null);
+
+  /**
+   * The panel/grid location set: the active sheet's locations, cross-referenced against
+   * allMapLocations so an in-place edit (a bid save, a rename, the Scoular flag) shows immediately
+   * instead of waiting for the sheet to reload. Falls back to the sheet's own copy for a location
+   * allMapLocations hasn't caught up to yet (e.g. one just linked from another tab).
+   */
+  readonly bidLocations = computed<BidSheetLocation[]>(() => {
+    const sheet = this.activeSheet();
+    if (!sheet) return [];
+    const live = new Map(this.allMapLocations().map(l => [l.id, l]));
+    return sheet.locations.map(l => live.get(l.id) ?? l);
+  });
+
+  /** Ids on the active sheet, for the BarChart picker's "already here" checkbox state. */
+  readonly activeSheetLocationIds = computed<ReadonlySet<number>>(() =>
+    new Set(this.bidLocations().map(l => l.id)));
+
+  readonly showSheetMenu = signal<boolean>(false);
+  readonly showCreateSheet = signal<boolean>(false);
+  readonly newSheetName = signal<string>('');
+  readonly creatingSheet = signal<boolean>(false);
+  readonly showRenameSheet = signal<boolean>(false);
+  readonly renameSheetName = signal<string>('');
+  readonly renamingSheet = signal<boolean>(false);
+  readonly showDeleteSheetConfirm = signal<boolean>(false);
+  readonly deletingSheet = signal<boolean>(false);
+
+  // Sharing
+  readonly showShareSheet = signal<boolean>(false);
+  readonly shareSearch = signal<string>('');
+  readonly shareCatalog = signal<EntitlementPerson[]>([]);
+  readonly shareCatalogLoaded = signal<boolean>(false);
+  readonly shareCatalogLoading = signal<boolean>(false);
+  /** Staged edits while the share dialog is open; written on Save, same pattern as the multi-select pickers elsewhere on this screen. */
+  readonly pendingShares = signal<BidSheetShare[]>([]);
+  readonly savingShares = signal<boolean>(false);
+
+  /** People with access who aren't already staged and aren't the owner, matching the search. */
+  readonly shareCandidates = computed<EntitlementPerson[]>(() => {
+    const q = this.shareSearch().trim().toLowerCase();
+    const already = new Set(this.pendingShares().map(s => s.userId.toLowerCase()));
+    const owner = (this.activeSheet()?.ownerUserId ?? '').toLowerCase();
+    return this.shareCatalog()
+      .filter(p => !already.has(p.userId.toLowerCase()) && p.userId.toLowerCase() !== owner)
+      .filter(p => !q || p.displayName.toLowerCase().includes(q) || p.userId.toLowerCase().includes(q))
+      .slice(0, 8);
+  });
+
+  /** Sheet-count behind the delete-location confirmation, fetched when the confirm dialog opens. */
+  readonly deleteLocationSheetCount = signal<number | null>(null);
   /** Set of location IDs that are marked as Scoular facilities — used for row highlighting in edit bids grid and print. */
   readonly scoularLocationIds = computed<Set<number>>(() => {
     const ids = new Set<number>();
@@ -313,8 +374,6 @@ export class BidSheetComponent {
     return `${names[month]} ${year.toString().slice(-2)}`;
   }
 
-  // --- Location order (per trade unit, persisted to DB) ---
-  private locationOrderByTu = signal<Map<string, string[]>>(new Map());
   // --- Crop column order (per trade unit, persisted in BidSheetPreferences.CropOrder) ---
   private cropOrderByTu = signal<Map<string, string[]>>(new Map());
 
@@ -714,6 +773,12 @@ export class BidSheetComponent {
     // Load all bid sheet locations for map display (once)
     this._loadAllMapLocations();
 
+    // Restores saved crop/month/year/columns AND which sheet was last open (_loadSheets runs once
+    // that comes back). This used to be gated on having a trade unit selected and, worse, was never
+    // actually called after that gate was written -- so no preference has loaded since the trade-unit
+    // selector came off the screen. Fixed here rather than left for whoever notices next.
+    this._loadPreference();
+
     // Load commodities on init (once). Two lists:
     //  - allCommodities (full): used to resolve a bid's commodity code -> name (existing bids may
     //    carry any code), so display never loses a name.
@@ -755,7 +820,6 @@ export class BidSheetComponent {
     this.apiService.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (locs) => {
         this.allMapLocations.set(locs);
-        this.bidLocations.set(locs);
         this._applyBidFilterSources();
         this.filterBids();
         this._refreshMapMarkers();
@@ -779,9 +843,13 @@ export class BidSheetComponent {
    * These used to come from two per-trade-unit endpoints. Deriving them from the payload is a call
    * the screen no longer has to make, and it cannot disagree with what is on the map -- the old pair
    * could, whenever a desk's list and the map's locations were fetched a moment apart.
+   *
+   * Reads bidLocations(), the ACTIVE SHEET's locations -- not allMapLocations(), which is everything
+   * company-wide. A crop dropdown built from every location would routinely offer a crop nobody on
+   * this sheet has priced, and picking it would show an empty panel with no visible cause.
    */
   private _applyBidFilterSources(): void {
-    const bids = this.allMapLocations().flatMap(l => l.bids ?? []);
+    const bids = this.bidLocations().flatMap(l => l.bids ?? []);
     const crops = [...new Set(bids.map(b => b.commodityCode).filter((c): c is string => !!c))].sort();
     const years = [...new Set(bids.map(b => b.cropYear).filter((y): y is number => y != null))].sort((a, b) => a - b);
     this.crops.set(crops);
@@ -796,178 +864,387 @@ export class BidSheetComponent {
   }
 
   // =========================================================================
+  // Sheets
+  // =========================================================================
 
   /**
-   * Loads the saved row order.
+   * Loads the sheets the user owns or is shared on, then decides which one is open.
    *
-   * Note there is no early return for "nothing selected" here any more. There used to be, and it
-   * meant the order was never even attempted without a trade unit -- so in the old All Producers mode
-   * a saved arrangement silently did not apply. With one key per user there is always a key to ask
-   * for, and no state in which asking is wrong.
+   * Preference order: the sheet the preference row named (if it still exists -- it may have been
+   * deleted, or unshared, since); otherwise, if there is exactly one sheet, that one, since a picker
+   * would be pure friction with nothing to pick between. With zero sheets or more than one and no
+   * saved choice, activeSheetId stays null and the empty state asks the user to create or pick one.
    */
-  private _loadLocationOrder(): void {
-    const key = this.preferenceKey();
-    this.apiService.getBidSheetLocationOrder(key).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: result => {
-        const orderMap = new Map(this.locationOrderByTu());
-        if (result?.locationOrder) {
-          try { orderMap.set(key, JSON.parse(result.locationOrder)); }
-          catch { orderMap.delete(key); }
-        } else {
-          orderMap.delete(key);
+  private _loadSheets(preferredSheetId: number | null): void {
+    this.apiService.getBidSheets().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (list) => {
+        this.sheets.set(list);
+        this.sheetsLoaded.set(true);
+        if (preferredSheetId != null && list.some(s => s.id === preferredSheetId)) {
+          this.activeSheetId.set(preferredSheetId);
+        } else if (list.length === 1) {
+          this.activeSheetId.set(list[0].id);
         }
-        this.locationOrderByTu.set(orderMap);
-        if (this.editBidsMode()) this._buildEditGrid();
-      },
-      // Was unhandled, so a failure here killed the subscription and left the order silently unapplied.
-      error: (err) => { if (isDevMode()) console.warn('Failed to load saved row order', err); }
-    });
-  }
-
-  /** Special key used to store the user's global (cross-TU) crop preference. */
-  private static readonly GLOBAL_PREF_KEY = '__global__';
-
-  /** Loads saved preferences (crop, month, year) for the current TU combo, falling back to global if no per-key entry. */
-  private _loadPreference(tus: string[]): void {
-    if (tus.length === 0) return;
-    const key = [...tus].sort().join(',');
-    forkJoin({
-      perKey: this.apiService.getBidSheetPreference(key),
-      global: this.apiService.getBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY)
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ perKey, global }) => {
-      // Per-key takes priority; fall back to global if per-key is missing the field
-      const desiredCrop = perKey?.cropCode ?? global?.cropCode ?? null;
-      const desiredMonth = perKey?.month ?? global?.month ?? null;
-      const desiredYear = perKey?.cropYear ?? global?.cropYear ?? null;
-
-      let changed = false;
-
-      // Apply crop if available
-      const available = this.crops();
-      if (desiredCrop && available.includes(desiredCrop) && this.selectedCrop() !== desiredCrop) {
-        this.selectedCrop.set(desiredCrop);
-        changed = true;
-      }
-
-      // Apply month (always valid 0-12)
-      if (desiredMonth != null && this.selectedMonth() !== desiredMonth) {
-        this.selectedMonth.set(desiredMonth);
-        changed = true;
-      }
-
-      // Apply year if available in current cropYears
-      if (desiredYear != null && this.cropYears().includes(desiredYear) && this.selectedYear() !== desiredYear) {
-        const years = this.cropYears();
-        const idx = years.indexOf(desiredYear);
-        this.selectedYear.set(desiredYear);
-        if (idx >= 0) this.yearOffset.set(idx - (years.length - 1));
-        changed = true;
-      }
-
-      // Apply hidden crops if available
-      const hiddenCropsJson = perKey?.hiddenCrops ?? null;
-      if (hiddenCropsJson) {
-        try { this.hiddenCrops.set(new Set(JSON.parse(hiddenCropsJson))); }
-        catch { this.hiddenCrops.set(new Set()); }
-      } else {
-        this.hiddenCrops.set(new Set());
-      }
-
-      // Apply selected months if available
-      const selectedMonthsJson = perKey?.selectedMonths ?? null;
-      if (selectedMonthsJson) {
-        try { this.editBidsMonths.set(JSON.parse(selectedMonthsJson)); }
-        catch { this.editBidsMonths.set([0]); }
-      }
-
-      // Apply the Edit Bids year selection. Sanitized rather than trusted, like the print layout is:
-      // malformed persisted data must not leave the grid with zero columns or hundreds of them.
-      const selectedYearsJson = perKey?.selectedYears ?? null;
-      if (selectedYearsJson) {
-        try {
-          const parsed: unknown = JSON.parse(selectedYearsJson);
-          const years = Array.isArray(parsed)
-            ? [...new Set(parsed.map(y => Math.trunc(Number(y))).filter(y => y >= 1900 && y <= 2999))]
-                .sort((a, b) => a - b)
-                .slice(0, BidSheetComponent.MAX_EDIT_BIDS_YEARS)
-            : [];
-          if (years.length > 0) this.editBidsYears.set(years);
-        } catch { /* invalid JSON — keep whatever openEditBids seeded */ }
-      }
-
-      // Apply crop column order if available
-      const cropOrderJson = perKey?.cropOrder ?? null;
-      if (cropOrderJson) {
-        try {
-          const savedOrder: string[] = JSON.parse(cropOrderJson);
-          const orderMap = new Map(this.cropOrderByTu());
-          orderMap.set(key, savedOrder);
-          this.cropOrderByTu.set(orderMap);
-          // Bring back any crop the user added but has not priced yet. The server derives its commodity
-          // list from saved BIDS, so a crop with none is absent from it, and the bid load runs before
-          // this -- which is why an added-then-unused column disappeared on a page reload. The saved
-          // order is the record that the user asked for that column, so it is what restores it.
-          const known = new Set(this.crops());
-          const missing = savedOrder.filter(c => c && !known.has(c));
-          if (missing.length > 0) this.crops.update(cs => [...cs, ...missing]);
-          if (this.editBidsMode()) this._buildEditGrid();
-        } catch { /* invalid JSON — skip */ }
-      }
-
-      // Restore the cash/basis choice, per-key then global. Validated rather than trusted: an
-      // unrecognised value falls back to cash rather than putting the sheet in a mode nothing renders.
-      const savedPriceMode = perKey?.priceMode ?? global?.priceMode ?? null;
-      this.priceMode.set(savedPriceMode === 'basis' ? 'basis' : 'cash');
-
-      // Apply saved print/export layout if available (per-key then global). Sanitize on read so
-      // malformed/out-of-range persisted data can't break the year pickers.
-      const printLayoutJson = perKey?.printLayout ?? global?.printLayout ?? null;
-      if (printLayoutJson) {
-        try {
-          const l = JSON.parse(printLayoutJson);
-          if (Array.isArray(l?.yearlyRows) && l.yearlyRows.length) {
-            this.printYearlyRows.set(
-              l.yearlyRows.slice(0, BidSheetComponent.MAX_PRINT_YEARLY_ROWS).map((r: { enabled?: unknown; offset?: unknown; oldNew?: unknown }) => ({
-                id: this._newRowId(),
-                enabled: r?.enabled !== false,
-                offset: Math.max(-2, Math.min(2, Math.trunc(Number(r?.offset)) || 0)),
-                oldNew: (r?.oldNew === 'old' || r?.oldNew === 'new') ? r.oldNew : '' as const
-              }))
-            );
-          }
-          if (typeof l?.address === 'string') this.printAddress.set(l.address);
-          if (typeof l?.phone === 'string') this.printPhone.set(l.phone);
-          if (typeof l?.highlightScoular === 'boolean') this.printHighlightScoularLocations.set(l.highlightScoular);
-          // Retired 'sideBySide' / 'stacked' values fall back to the default; the next save rewrites them.
-          this.printLayoutStyle.set(parsePrintLayoutStyle(l?.layoutStyle));
-        } catch { /* invalid JSON — keep defaults */ }
-      }
-
-      if (changed) {
+        this._applyBidFilterSources();
         this.filterBids();
         this._refreshMapMarkers();
+      },
+      error: (err) => {
+        this.sheetsLoaded.set(true);
+        if (isDevMode()) console.error('[BidSheet] failed to load sheets', err);
+        this.toastService.error('Failed to load bid sheets');
       }
     });
   }
 
-  /** Persists the current crop, month, and year preferences for the active TU combo AND globally (fire-and-forget). */
+  /**
+   * Swaps in a freshly-saved sheet. Every sheet mutation (create, rename, share, layout, add/remove
+   * location, reorder) returns the whole sheet back from the server, so this is the one place that
+   * merges a write into local state -- no path re-derives it by hand and risks drifting from what the
+   * server actually stored.
+   */
+  private _applySheet(sheet: BidSheet): void {
+    this.sheets.update(list => {
+      const idx = list.findIndex(s => s.id === sheet.id);
+      if (idx === -1) return [...list, sheet].sort((a, b) => a.name.localeCompare(b.name));
+      const next = [...list];
+      next[idx] = sheet;
+      return next;
+    });
+  }
+
+  selectSheet(id: number): void {
+    this.showSheetMenu.set(false);
+    if (this.activeSheetId() === id) return;
+    this.activeSheetId.set(id);
+    this._applyBidFilterSources();
+    this.filterBids();
+    this._refreshMapMarkers();
+    this._saveSelectedSheet(id);
+  }
+
+  toggleSheetMenu(): void {
+    this.showSheetMenu.update(v => !v);
+  }
+
+  /** Records which sheet is open, so a reload reopens the same one. */
+  private _saveSelectedSheet(id: number): void {
+    const cropCode = this.selectedCrop() || null;
+    const month = this.selectedMonth();
+    const cropYear = this.selectedYear() || null;
+    this.apiService.setBidSheetPreference({
+      tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, selectedBidSheetId: id
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      error: (err) => { if (isDevMode()) console.warn('Failed to save the open bid sheet', err); }
+    });
+  }
+
+  openCreateSheet(): void {
+    this.newSheetName.set('');
+    this.showCreateSheet.set(true);
+    this.showSheetMenu.set(false);
+  }
+
+  cancelCreateSheet(): void {
+    this.showCreateSheet.set(false);
+  }
+
+  confirmCreateSheet(): void {
+    const name = this.newSheetName().trim();
+    if (!name || this.creatingSheet()) return;
+    this.creatingSheet.set(true);
+    this.apiService.createBidSheet(name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (sheet) => {
+        this.creatingSheet.set(false);
+        this._applySheet(sheet);
+        this.activeSheetId.set(sheet.id);
+        this.showCreateSheet.set(false);
+        this.toastService.success(`Created "${sheet.name}"`);
+        this._saveSelectedSheet(sheet.id);
+        this._applyBidFilterSources();
+        this.filterBids();
+        this._refreshMapMarkers();
+      },
+      error: (err) => {
+        this.creatingSheet.set(false);
+        this.toastService.error(err?.status === 409
+          ? `You already have a bid sheet called "${name}"`
+          : 'Failed to create bid sheet');
+      }
+    });
+  }
+
+  openRenameSheet(): void {
+    const sheet = this.activeSheet();
+    if (!sheet) return;
+    this.renameSheetName.set(sheet.name);
+    this.showRenameSheet.set(true);
+    this.showSheetMenu.set(false);
+  }
+
+  cancelRenameSheet(): void {
+    this.showRenameSheet.set(false);
+  }
+
+  confirmRenameSheet(): void {
+    const sheet = this.activeSheet();
+    const name = this.renameSheetName().trim();
+    if (!sheet || !name || this.renamingSheet()) return;
+    this.renamingSheet.set(true);
+    this.apiService.renameBidSheet(sheet.id, name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (updated) => {
+        this.renamingSheet.set(false);
+        this._applySheet(updated);
+        this.showRenameSheet.set(false);
+        this.toastService.success(`Renamed to "${updated.name}"`);
+      },
+      error: (err) => {
+        this.renamingSheet.set(false);
+        this.toastService.error(err?.status === 409
+          ? `You already have a bid sheet called "${name}"`
+          : 'Failed to rename bid sheet');
+      }
+    });
+  }
+
+  openDeleteSheetConfirm(): void {
+    if (!this.activeSheet()) return;
+    this.showDeleteSheetConfirm.set(true);
+    this.showSheetMenu.set(false);
+  }
+
+  cancelDeleteSheet(): void {
+    this.showDeleteSheetConfirm.set(false);
+  }
+
+  confirmDeleteSheet(): void {
+    const sheet = this.activeSheet();
+    if (!sheet || this.deletingSheet()) return;
+    this.deletingSheet.set(true);
+    this.apiService.deleteBidSheet(sheet.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.deletingSheet.set(false);
+        this.showDeleteSheetConfirm.set(false);
+        this.sheets.update(list => list.filter(s => s.id !== sheet.id));
+        this.activeSheetId.set(null);
+        this.toastService.success(`Deleted "${sheet.name}"`);
+        this._applyBidFilterSources();
+        this.filterBids();
+        this._refreshMapMarkers();
+      },
+      error: () => {
+        this.deletingSheet.set(false);
+        this.toastService.error('Failed to delete bid sheet');
+      }
+    });
+  }
+
+  // ---- Sharing ------------------------------------------------------------------------------
+
+  openShareSheet(): void {
+    const sheet = this.activeSheet();
+    if (!sheet) return;
+    this.pendingShares.set([...sheet.shares]);
+    this.shareSearch.set('');
+    this.showShareSheet.set(true);
+    this.showSheetMenu.set(false);
+    if (!this.shareCatalogLoaded() && !this.shareCatalogLoading()) {
+      this.shareCatalogLoading.set(true);
+      this.apiService.getEntitlementsCatalog().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (catalog) => {
+          this.shareCatalog.set(catalog.people ?? []);
+          this.shareCatalogLoaded.set(true);
+          this.shareCatalogLoading.set(false);
+        },
+        error: () => {
+          this.shareCatalogLoading.set(false);
+          this.toastService.error('Failed to load the people directory');
+        }
+      });
+    }
+  }
+
+  cancelShareSheet(): void {
+    this.showShareSheet.set(false);
+  }
+
+  addShareCandidate(person: EntitlementPerson): void {
+    this.pendingShares.update(list => [...list, { userId: person.userId, name: person.displayName, sharedBy: '', sharedAt: '' }]);
+    this.shareSearch.set('');
+  }
+
+  removeShareCandidate(userId: string): void {
+    this.pendingShares.update(list => list.filter(s => s.userId !== userId));
+  }
+
+  confirmShareSheet(): void {
+    const sheet = this.activeSheet();
+    if (!sheet || this.savingShares()) return;
+    this.savingShares.set(true);
+    const members = this.pendingShares().map(s => ({ userId: s.userId, name: s.name }));
+    this.apiService.setBidSheetShares(sheet.id, members).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (updated) => {
+        this.savingShares.set(false);
+        this._applySheet(updated);
+        this.showShareSheet.set(false);
+        this.toastService.success('Sharing updated');
+      },
+      error: () => {
+        this.savingShares.set(false);
+        this.toastService.error('Failed to update sharing');
+      }
+    });
+  }
+
+  // =========================================================================
+
+  /** Special key used to store the user's single, global bid-sheet preference row. */
+  private static readonly GLOBAL_PREF_KEY = '__global__';
+
+  /**
+   * Loads the one saved preference row: crop/month/year, columns, print layout, and which sheet was
+   * last open.
+   *
+   * There used to be a per-trade-unit key with this as its fallback (a forkJoin of two fetches that
+   * merged). There is only one key now, so it is one fetch -- and the row order that used to live
+   * here (BidSheetLocationOrders, name-keyed, per user) is gone too: it now lives on the sheet itself,
+   * shared with everyone on it, keyed by location id rather than a name a rename could orphan.
+   */
+  private _loadPreference(): void {
+    this.apiService.getBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (pref) => {
+          const key = BidSheetComponent.GLOBAL_PREF_KEY;
+          let changed = false;
+
+          // Apply crop if available
+          const available = this.crops();
+          const desiredCrop = pref?.cropCode ?? null;
+          if (desiredCrop && available.includes(desiredCrop) && this.selectedCrop() !== desiredCrop) {
+            this.selectedCrop.set(desiredCrop);
+            changed = true;
+          }
+
+          // Apply month (always valid 0-12)
+          const desiredMonth = pref?.month ?? null;
+          if (desiredMonth != null && this.selectedMonth() !== desiredMonth) {
+            this.selectedMonth.set(desiredMonth);
+            changed = true;
+          }
+
+          // Apply year if available in current cropYears
+          const desiredYear = pref?.cropYear ?? null;
+          if (desiredYear != null && this.cropYears().includes(desiredYear) && this.selectedYear() !== desiredYear) {
+            const years = this.cropYears();
+            const idx = years.indexOf(desiredYear);
+            this.selectedYear.set(desiredYear);
+            if (idx >= 0) this.yearOffset.set(idx - (years.length - 1));
+            changed = true;
+          }
+
+          // Apply hidden crops if available
+          const hiddenCropsJson = pref?.hiddenCrops ?? null;
+          if (hiddenCropsJson) {
+            try { this.hiddenCrops.set(new Set(JSON.parse(hiddenCropsJson))); }
+            catch { this.hiddenCrops.set(new Set()); }
+          } else {
+            this.hiddenCrops.set(new Set());
+          }
+
+          // Apply selected months if available
+          const selectedMonthsJson = pref?.selectedMonths ?? null;
+          if (selectedMonthsJson) {
+            try { this.editBidsMonths.set(JSON.parse(selectedMonthsJson)); }
+            catch { this.editBidsMonths.set([0]); }
+          }
+
+          // Apply the Edit Bids year selection. Sanitized rather than trusted, like the print layout is:
+          // malformed persisted data must not leave the grid with zero columns or hundreds of them.
+          const selectedYearsJson = pref?.selectedYears ?? null;
+          if (selectedYearsJson) {
+            try {
+              const parsed: unknown = JSON.parse(selectedYearsJson);
+              const years = Array.isArray(parsed)
+                ? [...new Set(parsed.map(y => Math.trunc(Number(y))).filter(y => y >= 1900 && y <= 2999))]
+                    .sort((a, b) => a - b)
+                    .slice(0, BidSheetComponent.MAX_EDIT_BIDS_YEARS)
+                : [];
+              if (years.length > 0) this.editBidsYears.set(years);
+            } catch { /* invalid JSON — keep whatever openEditBids seeded */ }
+          }
+
+          // Apply crop column order if available
+          const cropOrderJson = pref?.cropOrder ?? null;
+          if (cropOrderJson) {
+            try {
+              const savedOrder: string[] = JSON.parse(cropOrderJson);
+              const orderMap = new Map(this.cropOrderByTu());
+              orderMap.set(key, savedOrder);
+              this.cropOrderByTu.set(orderMap);
+              // Bring back any crop the user added but has not priced yet. The server derives its commodity
+              // list from saved BIDS, so a crop with none is absent from it, and the bid load runs before
+              // this -- which is why an added-then-unused column disappeared on a page reload. The saved
+              // order is the record that the user asked for that column, so it is what restores it.
+              const known = new Set(this.crops());
+              const missing = savedOrder.filter(c => c && !known.has(c));
+              if (missing.length > 0) this.crops.update(cs => [...cs, ...missing]);
+              if (this.editBidsMode()) this._buildEditGrid();
+            } catch { /* invalid JSON — skip */ }
+          }
+
+          // Restore the cash/basis choice. Validated rather than trusted: an unrecognised value falls
+          // back to cash rather than putting the sheet in a mode nothing renders.
+          this.priceMode.set(pref?.priceMode === 'basis' ? 'basis' : 'cash');
+
+          // Apply saved print/export layout if available. Sanitize on read so malformed/out-of-range
+          // persisted data can't break the year pickers.
+          const printLayoutJson = pref?.printLayout ?? null;
+          if (printLayoutJson) {
+            try {
+              const l = JSON.parse(printLayoutJson);
+              if (Array.isArray(l?.yearlyRows) && l.yearlyRows.length) {
+                this.printYearlyRows.set(
+                  l.yearlyRows.slice(0, BidSheetComponent.MAX_PRINT_YEARLY_ROWS).map((r: { enabled?: unknown; offset?: unknown; oldNew?: unknown }) => ({
+                    id: this._newRowId(),
+                    enabled: r?.enabled !== false,
+                    offset: Math.max(-2, Math.min(2, Math.trunc(Number(r?.offset)) || 0)),
+                    oldNew: (r?.oldNew === 'old' || r?.oldNew === 'new') ? r.oldNew : '' as const
+                  }))
+                );
+              }
+              if (typeof l?.address === 'string') this.printAddress.set(l.address);
+              if (typeof l?.phone === 'string') this.printPhone.set(l.phone);
+              if (typeof l?.highlightScoular === 'boolean') this.printHighlightScoularLocations.set(l.highlightScoular);
+              // Retired 'sideBySide' / 'stacked' values fall back to the default; the next save rewrites them.
+              this.printLayoutStyle.set(parsePrintLayoutStyle(l?.layoutStyle));
+            } catch { /* invalid JSON — keep defaults */ }
+          }
+
+          if (changed) {
+            this.filterBids();
+            this._refreshMapMarkers();
+          }
+
+          // Sheets load last, using whichever one this preference row says was open.
+          this._loadSheets(pref?.selectedBidSheetId ?? null);
+        },
+        // A failed preference load must not block the screen from showing sheets at all.
+        error: (err) => { if (isDevMode()) console.warn('Failed to load bid sheet preference', err); this._loadSheets(null); }
+      });
+  }
+
+  /** Persists the current crop, month, and year preferences (fire-and-forget). */
   private _savePreference(): void {
     const cropCode = this.selectedCrop() || null;
     const month = this.selectedMonth();
     const cropYear = this.selectedYear() || null;
-    const key = this.preferenceKey();
     // Cash/basis rides along with crop, month and year: it's the same kind of choice, and having it
     // reset on every visit would be its own small annoyance.
     const priceMode = this.priceMode();
-    if (key) {
-      this.apiService.setBidSheetPreference({ tradeUnitKey: key, cropCode, month, cropYear, priceMode })
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save per-TU bid sheet preference', err); } });
-    }
-    // Always save globally so choices carry over to new TU/group selections
     this.apiService.setBidSheetPreference({ tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, priceMode })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save global bid sheet preference', err); } });
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save bid sheet preference', err); } });
   }
 
   /** Pixel width of the side panel when open. */
@@ -1402,6 +1679,12 @@ export class BidSheetComponent {
    * the behaviour every environment had before the picker existed.
    */
   startAddLocation(origin: 'editBids' | 'map'): void {
+    // A location has to land somewhere. With no sheet open there is no destination for it, so ask
+    // for one first rather than opening a picker whose Add button would have nothing to do.
+    if (!this.activeSheet()) {
+      if (this.sheets().length === 0) { this.openCreateSheet(); } else { this.showSheetMenu.set(true); }
+      return;
+    }
     this.addLocationOrigin.set(origin === 'editBids' ? 'editBids' : null);
     if (!this.barchartEnabled) { this._startManualAdd(); return; }
     this.showAddSourceChoice.set(true);
@@ -1488,6 +1771,8 @@ export class BidSheetComponent {
 
   confirmAddLocation(): void {
     if (this.addLocationSaving()) return; // guard against a double-click firing two creates
+    const sheetId = this.activeSheetId();
+    if (sheetId == null) { this.toastService.error('Create or select a bid sheet first'); return; }
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
     const name = this.newLocationName().trim();
     const lat = this.newLocationLat();
@@ -1506,9 +1791,10 @@ export class BidSheetComponent {
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
         this.addLocationSaving.set(false);
-        // Optimistically add the new location so the grid can open instantly without a network wait.
-        this.bidLocations.update(locs => [saved, ...locs]);
+        // Optimistically add the new location -- to the catalog AND the active sheet -- so the grid
+        // can open instantly without a network wait.
         this.allMapLocations.update(locs => [saved, ...locs]);
+        this.sheets.update(list => list.map(s => s.id === sheetId ? { ...s, locations: [saved, ...s.locations] } : s));
         this.toastService.success(`Added ${name}`);
         this.exitAddLocationMode();
 
@@ -1518,9 +1804,17 @@ export class BidSheetComponent {
         // Pass saved.name only as the grid's focus target — do NOT set panelSelectedLocation, or
         // the side panel would open in single-location DETAIL mode (for the new location) after the
         // grid closes, instead of the full list.
+        this._applyBidFilterSources();
         this.filterBids();
         this._refreshMapMarkers();
         this.openEditBids(saved.name);
+
+        // Persist the sheet link in the background. Idempotent server-side, so a race against the
+        // optimistic update above just resolves to the same row.
+        this.apiService.addBidSheetLocation(sheetId, saved.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          next: (sheet) => this._applySheet(sheet),
+          error: (err) => { if (isDevMode()) console.warn('Failed to link the new location to the sheet', err); }
+        });
 
         // Sync map/panel with the server in the background. Pass NO onLoaded callback: the grid is
         // already open and built from in-memory data, and an onLoaded callback would flip
@@ -1710,58 +2004,74 @@ export class BidSheetComponent {
   onBarchartAddMany(request: BarchartBulkAddRequest): void {
     if (this.barchartAdding()) return;
     if (request.locations.length === 0) return;
-    // No destination means nothing can be created. Said out loud rather than returning silently,
-    // which left the button looking broken.
-    if (request.tradeUnitCodes.length === 0) {
-      this.toastService.error('Select a trade unit or group first, then add these locations');
+    const sheetId = this.activeSheetId();
+    // No destination means nothing can be linked anywhere. Said out loud rather than returning
+    // silently, which left the button looking broken.
+    if (sheetId == null) {
+      this.toastService.error('Create or select a bid sheet first, then add these locations');
       return;
     }
     this.barchartAdding.set(true);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
 
-    // One create per location per trade unit, same call the single add uses -- so the duplicate-name
-    // and already-linked rules the server enforces still apply to every one of them. Each create
-    // carries its own failure: one location already sitting on one of the trade units must not sink
-    // the rest of the batch, which is exactly what a bare forkJoin did.
+    // Create only when the location doesn't already exist company-wide (the picker tells us via
+    // existingLocationId, from the catalog's placements); either way, finish by linking it onto the
+    // active sheet. Each location carries its own failure -- one already-linked location must not
+    // sink the rest of the batch, which is exactly what a bare forkJoin did.
     //
     // The failure is KEPT, not discarded. A duplicate is routine and worth only a footnote, but a 403
     // or a 500 is not -- reporting everything as "already added" made a real outage look like a
-    // no-op. 400 is the server's validation status for both duplicate rules (name-in-use and
-    // location-already-linked), so it is the one status treated as benign.
-    const creates = request.locations.flatMap(loc =>
-      request.tradeUnitCodes.map(tu => this.apiService.createBidSheetLocation({
-        name: loc.name,
-        tradeUnitCode: tu,
-        groupName: this._getGroupNameForTu(tu) || undefined,
-        barchartLocationKey: loc.locationKey,
-        isScoularFacility: loc.isScoularFacility,
-        bids: []
-      }).pipe(
-        map(created => ({ created, duplicate: false, failed: false })),
+    // no-op. 400 is the server's validation status for the duplicate-name create rule, so it is the
+    // one status treated as benign.
+    const linkToSheet = (locationId: number) =>
+      this.apiService.addBidSheetLocation(sheetId, locationId).pipe(
+        map(sheet => ({
+          sheet,
+          location: sheet.locations.find(l => l.id === locationId) ?? null,
+          duplicate: false,
+          failed: false
+        })),
         catchError((err: unknown) => {
-          const duplicate = (err as { status?: number })?.status === 400;
-          if (!duplicate && isDevMode()) console.error('[BidSheet] barchart create failed', err);
-          return of({ created: null, duplicate, failed: !duplicate });
+          if (isDevMode()) console.error('[BidSheet] failed to add location to sheet', err);
+          return of({ sheet: null as BidSheet | null, location: null as BidSheetLocation | null, duplicate: false, failed: true });
         })
-      )));
+      );
+
+    const creates = request.locations.map(loc =>
+      loc.existingLocationId != null
+        ? linkToSheet(loc.existingLocationId)
+        : this.apiService.createBidSheetLocation({
+            name: loc.name,
+            barchartLocationKey: loc.locationKey,
+            isScoularFacility: loc.isScoularFacility,
+            bids: []
+          }).pipe(
+            switchMap(created => linkToSheet(created.id)),
+            catchError((err: unknown) => {
+              const duplicate = (err as { status?: number })?.status === 400;
+              if (!duplicate && isDevMode()) console.error('[BidSheet] barchart create failed', err);
+              return of({ sheet: null as BidSheet | null, location: null as BidSheetLocation | null, duplicate, failed: !duplicate });
+            })
+          ));
 
     forkJoin(creates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(results => {
       // Reset before the handoff, not after the reload. Tying it to the reload's callback meant a
-      // cancelled reload (switching trade unit mid-add) left this true forever, and the picker's own
-      // guards then made it permanently dead behind a spinning button.
+      // cancelled reload left this true forever, and the picker's own guards then made it
+      // permanently dead behind a spinning button.
       this.barchartAdding.set(false);
 
-      const saved = results.map(r => r.created).filter((l): l is NonNullable<typeof l> => l != null);
+      const succeeded = results.filter((r): r is { sheet: BidSheet; location: BidSheetLocation; duplicate: boolean; failed: boolean } => r.location != null);
       const duplicates = results.filter(r => r.duplicate).length;
       const failures = results.filter(r => r.failed).length;
 
-      if (saved.length === 0) {
+      if (succeeded.length === 0) {
         this.toastService.error(failures > 0
           ? 'Could not add locations — something went wrong, please try again'
-          : 'Those locations are already on these trade units');
+          : 'Those locations are already on this sheet');
         return;
       }
 
+      const saved = succeeded.map(r => r.location);
       const count = new Set(saved.map(l => l.name)).size;
       const notes = [
         duplicates > 0 ? `${duplicates} already added` : '',
@@ -1770,10 +2080,12 @@ export class BidSheetComponent {
       this.toastService.success(
         `Added ${count} location${count === 1 ? '' : 's'}` + (notes ? ` — ${notes}` : ''));
 
-      // One list. This used to split the new rows into "on a desk I am viewing" and "everything
-      // else", because a location belonged to a desk and only some of them were mine to see.
-      this.bidLocations.update(locs => [...saved, ...locs]);
-      this.allMapLocations.update(locs => [...saved, ...locs]);
+      this.allMapLocations.update(locs => [...saved, ...locs.filter(l => !saved.some(s => s.id === l.id))]);
+      // Bridge with whichever response landed, in order -- the requests ran in parallel against the
+      // same sheet, so any single one may be missing a sibling's row. The reload below is what makes
+      // this authoritative; this just avoids a blank moment before it lands.
+      for (const r of succeeded) this._applySheet(r.sheet);
+      this._applyBidFilterSources();
 
       // Hand off immediately from the cache we just updated -- Edit Bids builds from memory, so the
       // new rows are there at once and no map flash shows between the two screens. The server sync
@@ -1784,13 +2096,11 @@ export class BidSheetComponent {
       this.openEditBids(request.locations[0]?.name);
 
       this._loadAllMapLocations();
+      this.apiService.getBidSheet(sheetId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (sheet) => this._applySheet(sheet),
+        error: (err) => { if (isDevMode()) console.warn('Failed to refresh the sheet after a batch add', err); }
+      });
     });
-  }
-
-  private _getGroupNameForTu(tuCode: string): string {
-    return this.appState.userGroups()
-      .find(g => g.tradeUnitCodes.some(c => c.trim() === tuCode.trim()))
-      ?.groupName ?? '';
   }
 
   // =========================================================================
@@ -1887,17 +2197,9 @@ export class BidSheetComponent {
       rows.push({ name: loc.name, locationId: loc.id, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, yearFrom: {}, boardChips: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
     }
 
-    // Apply saved location order (unknown names go to end)
-    const savedOrder = this.locationOrderByTu().get(this.preferenceKey());
-    if (savedOrder && savedOrder.length > 0) {
-      const orderMap = new Map(savedOrder.map((name, idx) => [name, idx]));
-      rows.sort((a, b) => {
-        const ai = orderMap.get(a.name) ?? Number.MAX_SAFE_INTEGER;
-        const bi = orderMap.get(b.name) ?? Number.MAX_SAFE_INTEGER;
-        return ai - bi;
-      });
-    }
-
+    // No re-sort here. Row order used to be a separate, per-user, name-keyed lookup applied on top --
+    // bidLocations() is already in the active sheet's own order (its SortOrder, shared with everyone
+    // on it), because rows above were built by iterating bidEntries(), which flattens bidLocations().
     this.editBidsRows.set(rows);
   }
 
@@ -1910,18 +2212,26 @@ export class BidSheetComponent {
       return updated;
     });
 
-    // Persist the new order
-    const key = this.preferenceKey();
-    if (!key) return;
-    const names = this.editBidsRows().map(r => r.name);
-    const orderMap = new Map(this.locationOrderByTu());
-    orderMap.set(key, names);
-    this.locationOrderByTu.set(orderMap);
+    // Persisted on the SHEET, shared with everyone on it, keyed by location id -- not the old
+    // per-user JSON keyed by name, which meant a colleague's drag never showed up for you and a
+    // rename silently orphaned a row's saved position.
+    const sheetId = this.activeSheetId();
+    if (sheetId == null) return;
+    const locationIds = this.editBidsRows().map(r => r.locationId).filter((id): id is number => id != null);
 
-    this.apiService.setBidSheetLocationOrder(key, JSON.stringify(names))
+    // Reflect the new order in the local sheet immediately so a second drag before the response
+    // lands still sees the just-moved row where it was put.
+    this.sheets.update(list => list.map(s => s.id !== sheetId ? s : {
+      ...s,
+      locations: locationIds
+        .map(id => s.locations.find(l => l.id === id))
+        .filter((l): l is BidSheetLocation => !!l)
+    }));
+
+    this.apiService.setBidSheetRowOrder(sheetId, locationIds)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: () => this.toastService.success('Location order saved'),
+        next: (sheet) => this._applySheet(sheet),
         error: () => this.toastService.error('Failed to save row order')
       });
   }
@@ -2429,7 +2739,6 @@ export class BidSheetComponent {
       return changed ? next : locs; // preserve reference when untouched so dependent computeds don't churn
     };
 
-    this.bidLocations.update(upsertInto);
     this.allMapLocations.update(upsertInto);
 
     // Surface any brand-new crop year to the panel / old-new navigation as well.
@@ -2967,6 +3276,21 @@ export class BidSheetComponent {
     this._refreshMapMarkers();
   }
 
+  /**
+   * Opens the delete confirmation and fetches how many sheets hold this location -- deleting it now
+   * takes the elevator and its whole bid history off every one of them, not just this screen's.
+   */
+  openDeleteLocationConfirm(): void {
+    this.showDeleteLocationConfirm.set(true);
+    this.deleteLocationSheetCount.set(null);
+    const loc = this._findLocationByName(this.panelSelectedLocation());
+    if (!loc) return;
+    this.apiService.getBidSheetLocationSheetCount(loc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (count) => this.deleteLocationSheetCount.set(count),
+      error: () => this.deleteLocationSheetCount.set(null)
+    });
+  }
+
   confirmDeleteLocation(): void {
     const name = this.panelSelectedLocation();
     if (!name) return;
@@ -2977,13 +3301,15 @@ export class BidSheetComponent {
     // The server authorizes on the persisted CreatedBy instead: creator or Admin.
     this.apiService.deleteBidSheetLocation(loc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
-        this.bidLocations.update(locs => locs.filter(l => l.id !== loc.id));
         this.allMapLocations.update(locs => locs.filter(l => l.id !== loc.id));
+        // Company-wide delete: it comes off every sheet, not just the active one.
+        this.sheets.update(list => list.map(s => ({ ...s, locations: s.locations.filter(l => l.id !== loc.id) })));
         this.showDeleteLocationConfirm.set(false);
         this.deleteMode.set(false);
         this.panelSelectedLocation.set('');
         this.selectedLocationName.set('');
         this.toastService.success(`Deleted ${name}`);
+        this._applyBidFilterSources();
         this.filterBids();
         this._refreshMapMarkers();
         this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-deleted', name);
@@ -3014,10 +3340,6 @@ export class BidSheetComponent {
     // No trade unit sent -- see confirmDeleteLocation above.
     this.apiService.deleteBidSheetBids(loc.id, crop).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
-        // Remove bids locally from both caches
-        this.bidLocations.update(locs => locs.map(l =>
-          l.id === loc.id ? { ...l, bids: (l.bids ?? []).filter(b => b.commodityCode !== crop) } : l
-        ));
         this.allMapLocations.update(locs => locs.map(l =>
           l.id === loc.id ? { ...l, bids: (l.bids ?? []).filter(b => b.commodityCode !== crop) } : l
         ));
@@ -3118,24 +3440,9 @@ export class BidSheetComponent {
 
     const loc = this._findLocationByName(oldName);
     if (!loc) return;
-    // Row order is persisted BY NAME, so a rename orphans the entry and the row drops to the bottom of
-    // the grid -- alarming right after renaming it. Carry the position over to the new name.
-    this._renameInSavedOrder(oldName, newName);
+    // Row order is keyed by location id now, not name, so a rename cannot orphan it -- nothing to
+    // carry over, unlike the old per-user JSON order this replaced.
     this._saveLocationFields(loc, { name: newName }, `Renamed to ${newName}`, 'Failed to rename location');
-  }
-
-  /** Keeps a renamed row where the user put it, in memory and in the saved preference. */
-  private _renameInSavedOrder(oldName: string, newName: string): void {
-    const key = this.preferenceKey();
-    const order = this.locationOrderByTu().get(key);
-    if (!order || !order.includes(oldName)) return;
-    const next = order.map(n => (n === oldName ? newName : n));
-    const orderMap = new Map(this.locationOrderByTu());
-    orderMap.set(key, next);
-    this.locationOrderByTu.set(orderMap);
-    this.apiService.setBidSheetLocationOrder(key, JSON.stringify(next))
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to carry row order to the new name', err); } });
   }
 
   isRowScoular(name: string): boolean {
@@ -3176,7 +3483,6 @@ export class BidSheetComponent {
     } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.allMapLocations.update(locs => locs.map(l => l.id === loc.id ? { ...l, ...changes } : l));
-        this.bidLocations.update(locs => locs.map(l => l.id === loc.id ? { ...l, ...changes } : l));
         this.toastService.success(successMessage);
         // Rebuild from the cache just updated, then sync in the background with NO callback. Passing
         // one makes the reload take ownership of the grid's loading flag, which replaces the whole
@@ -3249,9 +3555,6 @@ export class BidSheetComponent {
     } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.allMapLocations.update(locs => locs.map(l =>
-          l.id === loc.id ? { ...l, isScoularFacility: newValue } : l
-        ));
-        this.bidLocations.update(locs => locs.map(l =>
           l.id === loc.id ? { ...l, isScoularFacility: newValue } : l
         ));
         this.toastService.success(newValue ? `${name} marked as Scoular facility` : `${name} unmarked as Scoular facility`);

@@ -17,5 +17,6 @@ public record BidSheetPreferenceResponse
     public string? SelectedYears { get; init; }
     public string? PrintLayout { get; init; }
     public string? PriceMode { get; init; }
+    public int? SelectedBidSheetId { get; init; }
     public DateTime ModifiedAt { get; init; }
 }

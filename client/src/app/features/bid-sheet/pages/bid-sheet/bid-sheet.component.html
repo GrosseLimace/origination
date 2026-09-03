@@ -310,7 +310,7 @@
                       <td class="px-1 py-3 text-center">
                         @if (row.isFed) {
                           <span class="text-[10px] text-gray-400 dark:text-gray-500"
-                                title="BarChart owns this crop's bids. Remove the location from this trade unit to stop showing them.">Feed</span>
+                                title="BarChart owns this crop's bids. Remove the location to stop showing them.">Feed</span>
                         } @else {
                         <button (click)="requestDeleteCrop(row.crop)" title="Delete {{ row.crop }} bids"
                           class="p-1 rounded text-gray-400 hover:text-scoular-red-accessible dark:text-gray-500 dark:hover:text-scoular-red transition-colors">
@@ -329,7 +329,7 @@
               <!-- Delete entire location (only visible in delete mode) -->
               @if (deleteMode()) {
               <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-                <button (click)="showDeleteLocationConfirm.set(true)"
+                <button (click)="openDeleteLocationConfirm()"
                   class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                   Delete Location &amp; All Bids
@@ -342,7 +342,7 @@
               </div>
               @if (deleteMode()) {
               <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-                <button (click)="showDeleteLocationConfirm.set(true)"
+                <button (click)="openDeleteLocationConfirm()"
                   class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                   Delete Location
@@ -354,6 +354,59 @@
 
             } @else {
             <!-- ========== LIST VIEW ========== -->
+
+            <!-- Sheet bar: which sheet is open, and the menu to switch/create/rename/share/delete. -->
+            <div class="shrink-0 relative px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <button (click)="toggleSheetMenu()" class="w-full flex items-center gap-1.5 text-left group">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400"><path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/></svg>
+                <span class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate group-hover:text-scoular-green-accessible transition-colors">
+                  {{ activeSheet()?.name ?? (sheets().length === 0 ? 'No bid sheets yet' : 'Choose a bid sheet') }}
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400 ml-auto"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+
+              @if (showSheetMenu()) {
+                <div class="absolute left-3 right-3 top-full mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[1200] overflow-hidden">
+                  @if (sheets().length > 0) {
+                    <div class="max-h-48 overflow-auto py-1">
+                      @for (sheet of sheets(); track sheet.id) {
+                        <button (click)="selectSheet(sheet.id)"
+                          class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                          [class]="sheet.id === activeSheetId() ? 'text-scoular-green-accessible dark:text-scoular-green font-semibold' : 'text-gray-800 dark:text-gray-200'">
+                          <span class="truncate flex-1">{{ sheet.name }}</span>
+                          @if (!sheet.isOwner) {
+                            <span class="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
+                          }
+                        </button>
+                      }
+                    </div>
+                    <div class="border-t border-gray-200 dark:border-gray-700"></div>
+                  }
+                  <button (click)="openCreateSheet()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-scoular-green-accessible dark:text-scoular-green hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    New bid sheet
+                  </button>
+                  @if (activeSheet(); as sheet) {
+                    <div class="border-t border-gray-200 dark:border-gray-700"></div>
+                    <button (click)="openShareSheet()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      Share{{ sheet.shares.length > 0 ? ' (' + sheet.shares.length + ')' : '' }}
+                    </button>
+                    @if (sheet.isOwner) {
+                      <button (click)="openRenameSheet()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        Rename
+                      </button>
+                      <button (click)="openDeleteSheetConfirm()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-scoular-red-accessible dark:text-scoular-red hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                        Delete
+                      </button>
+                    }
+                  }
+                </div>
+              }
+            </div>
+
             <!-- Panel Header -->
             <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[52px]">
               @if (cropYears().length > 0) {
@@ -382,13 +435,41 @@
             <!-- Panel Body -->
             <div class="flex-1 overflow-auto">
 
-              @if (cropYears().length === 0) {
+              @if (!sheetsLoaded()) {
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <div class="inline-block animate-spin rounded-full h-6 w-6 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
+                </div>
+              } @else if (sheets().length === 0) {
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
+                    <path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No bid sheets yet</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed mb-3">A bid sheet is a list of locations you compare. Make one to start adding locations and tracking bids.</p>
+                  <button (click)="openCreateSheet()" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Create a Bid Sheet
+                  </button>
+                </div>
+              } @else if (!activeSheet()) {
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
+                    <path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Choose a bid sheet</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Pick one from the bar above to see its locations and bids.</p>
+                </div>
+              } @else if (cropYears().length === 0) {
                 <div class="flex flex-col items-center justify-center h-full px-6 text-center">
                   <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
                   </svg>
-                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No location selected</p>
-                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Select a location on the map or choose a trade unit from the filter to view bids.</p>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No bids yet</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed mb-3">Add a location to "{{ activeSheet()?.name }}" to start tracking bids.</p>
+                  <button (click)="startAddLocation('map'); showPanel.set(false)" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add Location
+                  </button>
                 </div>
               } @else {
 
@@ -481,6 +562,11 @@
                       <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Delete Location?</h4>
                       <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                         Permanently delete <span class="font-medium text-gray-700 dark:text-gray-300">{{ panelSelectedLocation() }}</span> and all its bids. This cannot be undone.
+                        @if (deleteLocationSheetCount(); as count) {
+                          @if (count > 1) {
+                            <span class="block mt-1.5 font-medium text-scoular-red-accessible dark:text-scoular-red">It is on {{ count }} bid sheets — this removes it from all of them.</span>
+                          }
+                        }
                       </p>
                     </div>
                   </div>
@@ -488,6 +574,137 @@
                 <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
                   <button (click)="showDeleteLocationConfirm.set(false)" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
                   <button (click)="confirmDeleteLocation()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-red-accessible hover:bg-scoular-red rounded-lg transition-colors">Delete</button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Create Bid Sheet -->
+          @if (showCreateSheet()) {
+            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
+                <div class="px-5 pt-5 pb-4">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">New Bid Sheet</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-3">A named list of the locations you want to compare. Share it with colleagues who should see and edit it too.</p>
+                  <input
+                    type="text"
+                    [ngModel]="newSheetName()"
+                    (ngModelChange)="newSheetName.set($event)"
+                    (keydown.enter)="confirmCreateSheet()"
+                    placeholder="e.g. West Desk"
+                    class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
+                  />
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                  <button (click)="cancelCreateSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmCreateSheet()" [disabled]="!newSheetName().trim() || creatingSheet()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ creatingSheet() ? 'Creating…' : 'Create' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Rename Bid Sheet -->
+          @if (showRenameSheet()) {
+            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
+                <div class="px-5 pt-5 pb-4">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Rename Bid Sheet</h4>
+                  <input
+                    type="text"
+                    [ngModel]="renameSheetName()"
+                    (ngModelChange)="renameSheetName.set($event)"
+                    (keydown.enter)="confirmRenameSheet()"
+                    class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
+                  />
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                  <button (click)="cancelRenameSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmRenameSheet()" [disabled]="!renameSheetName().trim() || renamingSheet()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ renamingSheet() ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Delete Bid Sheet Confirmation -->
+          @if (showDeleteSheetConfirm()) {
+            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
+                <div class="px-5 pt-5 pb-4">
+                  <div class="flex items-start gap-3">
+                    <div class="shrink-0 w-9 h-9 rounded-full bg-scoular-red/10 dark:bg-scoular-red/20 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-red-accessible dark:text-scoular-red">
+                        <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Delete "{{ activeSheet()?.name }}"?</h4>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                        This removes the sheet and unshares it. The locations on it stay -- they are shared company-wide and other sheets may hold them too.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                  <button (click)="cancelDeleteSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmDeleteSheet()" [disabled]="deletingSheet()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-red-accessible hover:bg-scoular-red rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ deletingSheet() ? 'Deleting…' : 'Delete' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Share Bid Sheet -->
+          @if (showShareSheet()) {
+            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4 max-h-[80vh] flex flex-col">
+                <div class="px-5 pt-5 pb-3 shrink-0">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Share "{{ activeSheet()?.name }}"</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">Everyone you add can edit this sheet — its locations, columns and order.</p>
+                </div>
+                <div class="px-5 pb-3 shrink-0 relative">
+                  <input
+                    type="text"
+                    [ngModel]="shareSearch()"
+                    (ngModelChange)="shareSearch.set($event)"
+                    placeholder="Search people…"
+                    class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
+                  />
+                  @if (shareSearch() && shareCandidates().length > 0) {
+                    <div class="absolute left-5 right-5 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto z-10">
+                      @for (person of shareCandidates(); track person.userId) {
+                        <button (click)="addShareCandidate(person)" class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                          <span class="text-gray-900 dark:text-white">{{ person.displayName }}</span>
+                          <span class="text-gray-400 dark:text-gray-500 ml-1">{{ person.userId }}</span>
+                        </button>
+                      }
+                    </div>
+                  } @else if (shareSearch() && shareCatalogLoaded()) {
+                    <div class="absolute left-5 right-5 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-3 py-2 text-xs text-gray-400 dark:text-gray-500 z-10">No match</div>
+                  }
+                </div>
+                <div class="flex-1 overflow-auto px-5 pb-3 space-y-1.5">
+                  @if (pendingShares().length === 0) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic">Not shared with anyone yet.</p>
+                  }
+                  @for (share of pendingShares(); track share.userId) {
+                    <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800">
+                      <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ share.name || share.userId }}</span>
+                      <button (click)="removeShareCandidate(share.userId)" class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-red hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                      </button>
+                    </div>
+                  }
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 shrink-0">
+                  <button (click)="cancelShareSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmShareSheet()" [disabled]="savingShares()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ savingShares() ? 'Saving…' : 'Save' }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -580,7 +797,7 @@
             <p class="text-sm font-semibold text-gray-900 dark:text-white">Pick a location from BarChart</p>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Pins are competitor locations in the feed near this view. Pan the map to look elsewhere, or search by name.
-              Hollow pins are already on the trade units you're adding to; blue pins are the ones you have ticked to add.
+              Hollow pins are already added (link them to add to this sheet); blue pins are the ones you have ticked to add.
             </p>
           </div>
 
@@ -588,6 +805,8 @@
             #picker
             [searchArea]="barchartSearchArea()"
             [adding]="barchartAdding()"
+            [sheetName]="activeSheet()?.name ?? ''"
+            [sheetLocationIds]="activeSheetLocationIds()"
             (resultsChange)="onBarchartResults($event)"
             (focus)="onBarchartFocus($event)"
             (addMany)="onBarchartAddMany($event)"
@@ -912,7 +1131,7 @@
             } @else if (editBidsRows().length === 0) {
               <div class="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500">
                 <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-40"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-                <p class="text-sm">No locations or crops found for this trade unit.</p>
+                <p class="text-sm">No locations on this bid sheet yet.</p>
                 <button (click)="addLocationFromEditBids()" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors mt-2">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                   Add Location

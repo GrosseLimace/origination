@@ -56,26 +56,25 @@ public class BidSheetRepository : IBidSheetRepository
             .Select(l => l.CreatedBy)
             .FirstOrDefaultAsync(cancellationToken);
 
-    public Task<bool> LocationNameExistsAsync(string name, string tradeUnitCode, CancellationToken cancellationToken)
+    public Task<bool> LocationNameExistsAsync(string name, CancellationToken cancellationToken)
     {
         var trimmed = name.Trim();
-        // String equality translates to SQL '=' under the column's (case-insensitive) collation,
-        // matching the UQ_BidSheetLocations_Name_TradeUnit unique index.
+        // Global now -- a location is one company-wide row, so "already taken" no longer has a desk
+        // to scope by.
         //
-        // ⚠ That index exists in the Dev DATABASE but nowhere in this codebase -- no migration creates
-        // it and the model does not declare it, so whether QA and PROD have it is unverified and it
-        // cannot be relied on for correctness in a deployed environment. Declaring it needs a
-        // duplicate-name sweep of those environments first: the table predates the rule by years, and a
-        // unique index over existing duplicates fails the deploy. Concurrent creates of the same name
-        // are caught by ReconcileDuplicateBidInsertsAsync either way; BarChart placements additionally
-        // have UQ_BidSheetLocations_TradeUnit_BarchartKey, which IS declared and migrated.
+        // ⚠ There is NO unique index backing this. The old UQ_BidSheetLocations_Name_TradeUnit was
+        // scoped by trade unit and is gone from the model; a global equivalent needs a duplicate-name
+        // sweep of QA/PROD first (the table predates any name rule by years, and a unique index over
+        // existing duplicates fails the deploy). This check is a courtesy message, not a guarantee --
+        // a race between two concurrent creates of the same name both succeed. Pre-existing gap, not
+        // introduced here.
         return _appContext.BidSheetLocations
-            .AnyAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name == trimmed, cancellationToken);
+            .AnyAsync(l => l.Name == trimmed, cancellationToken);
     }
 
-    public Task<bool> BarchartLocationLinkedAsync(string barchartLocationKey, string tradeUnitCode, CancellationToken cancellationToken) =>
+    public Task<bool> BarchartLocationLinkedAsync(string barchartLocationKey, CancellationToken cancellationToken) =>
         _appContext.BidSheetLocations
-            .AnyAsync(l => l.TradeUnitCode == tradeUnitCode && l.BarchartLocationKey == barchartLocationKey, cancellationToken);
+            .AnyAsync(l => l.BarchartLocationKey == barchartLocationKey, cancellationToken);
 
     public async Task<BidSheetLocation?> GetLocationAsync(int id, CancellationToken cancellationToken) =>
         await _appContext.BidSheetLocations
@@ -397,7 +396,7 @@ public class BidSheetRepository : IBidSheetRepository
 
     public async Task SetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear,
         string? cropOrder, string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
-        CancellationToken cancellationToken)
+        int? selectedBidSheetId, CancellationToken cancellationToken)
     {
         var existing = await _appContext.BidSheetPreferences
             .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
@@ -413,6 +412,7 @@ public class BidSheetRepository : IBidSheetRepository
             if (selectedYears is not null) existing.SelectedYears = selectedYears;
             if (printLayout is not null) existing.PrintLayout = printLayout;
             if (priceMode is not null) existing.PriceMode = priceMode;
+            if (selectedBidSheetId is not null) existing.SelectedBidSheetId = selectedBidSheetId;
             existing.ModifiedAt = DateTime.UtcNow;
         }
         else
@@ -430,6 +430,7 @@ public class BidSheetRepository : IBidSheetRepository
                 SelectedYears = selectedYears,
                 PrintLayout = printLayout,
                 PriceMode = priceMode,
+                SelectedBidSheetId = selectedBidSheetId,
                 ModifiedAt = DateTime.UtcNow
             });
         }

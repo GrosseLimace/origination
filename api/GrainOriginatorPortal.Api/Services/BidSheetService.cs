@@ -83,11 +83,12 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task<BidSheetLocationResponse> CreateLocationAsync(CreateBidSheetLocationRequest request, CancellationToken cancellationToken)
     {
-        // Friendly guard for the unique (Name, TradeUnitCode) index: surface a clear validation
-        // message (→ 400) instead of a generic 500 when the name is already taken in this trade unit.
-        if (await _repository.LocationNameExistsAsync(request.Name, request.TradeUnitCode, cancellationToken))
+        // Friendly guard, not a database constraint (see LocationNameExistsAsync): surface a clear
+        // validation message (→ 400) rather than letting a same-named row through silently. Locations
+        // are company-wide now, so this checks every location, not one desk's.
+        if (await _repository.LocationNameExistsAsync(request.Name, cancellationToken))
             throw new ValidationException("name",
-                $"A location named \"{request.Name.Trim()}\" already exists in this trade unit. Use a different name.");
+                $"A location named \"{request.Name.Trim()}\" already exists. Use a different name.");
 
         // Resolved before anything is written so a bad link fails as a 400 rather than leaving an
         // unlinked location behind.
@@ -163,7 +164,7 @@ public class BidSheetService : IBidSheetService
 
         var key = request.BarchartLocationKey.Trim();
 
-        if (await _repository.BarchartLocationLinkedAsync(key, request.TradeUnitCode, cancellationToken))
+        if (await _repository.BarchartLocationLinkedAsync(key, cancellationToken))
             throw new ValidationException("barchartLocationKey",
                 "This BarChart location is already on this trade unit's bid sheet.");
 
@@ -281,9 +282,9 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public Task SetPreferenceAsync(string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder,
         string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
-        CancellationToken cancellationToken) =>
+        int? selectedBidSheetId, CancellationToken cancellationToken) =>
         _repository.SetPreferenceAsync(_requestContext.GetCurrentUser(), tradeUnitKey, cropCode, month, cropYear,
-            cropOrder, hiddenCrops, selectedMonths, selectedYears, printLayout, priceMode, cancellationToken);
+            cropOrder, hiddenCrops, selectedMonths, selectedYears, printLayout, priceMode, selectedBidSheetId, cancellationToken);
 
     // =============================================================================================
     // Sheets

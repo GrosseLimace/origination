@@ -16,6 +16,15 @@ public class BidSheetPreference
     public string? SelectedYears { get; set; }
     public string? PrintLayout { get; set; }
     /// <summary>Which price the sheet was last showing: "cash" or "basis". Null = never chosen.</summary>
+    /// <summary>
+    /// The sheet this user last had open, so the screen reopens where they left it.
+    ///
+    /// Per-user on purpose, unlike everything else about a sheet: which sheet you are looking at is
+    /// yours, while the sheet's own columns and row order are shared with everyone on it. Stored on
+    /// the "__global__" preference row -- it is not per-desk, and there are no desks here any more.
+    /// </summary>
+    public int? SelectedBidSheetId { get; set; }
+
     public string? PriceMode { get; set; } // JSON: print/export layout — { yearColumns:[{label,offset}], address, phone, highlightScoular }
     public DateTime ModifiedAt { get; set; }
 }

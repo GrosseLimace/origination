@@ -30,8 +30,13 @@ public record CreateBidSheetLocationRequest
     [MaxLength(50)]
     public string? BarchartLocationKey { get; init; }
 
-    [Required, MaxLength(100)]
-    public string TradeUnitCode { get; init; } = string.Empty;
+    /// <summary>
+    /// Provenance only -- which desk first added this location. Locations are company-wide, so this
+    /// is no longer a scope key and nothing requires it; the manual-add flow and the BarChart picker
+    /// both create locations with no trade unit in view.
+    /// </summary>
+    [MaxLength(100)]
+    public string? TradeUnitCode { get; init; }
 
     [MaxLength(200)]
     public string? GroupName { get; init; }

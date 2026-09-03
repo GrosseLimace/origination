@@ -287,7 +287,8 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetPreferences', 'ModifiedAt',     'datetime2',     0),
 ('dbo', 'BidSheetPreferences', 'Month',          'int',           1),
 ('dbo', 'BidSheetPreferences', 'PrintLayout',    'nvarchar(max)', 1),
-('dbo', 'BidSheetPreferences', 'SelectedMonths', 'nvarchar(max)', 1),
+('dbo', 'BidSheetPreferences', 'SelectedBidSheetId', 'int',           1),
+('dbo', 'BidSheetPreferences', 'SelectedMonths',     'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedYears',  'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'TradeUnitKey',   'nvarchar(500)', 0),
 ('dbo', 'BidSheetPreferences', 'UserId',         'nvarchar(256)', 0),
@@ -590,7 +591,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (34; see KNOWN PRE-EXISTING GAPS in the header)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (35; see KNOWN PRE-EXISTING GAPS in the header)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Migrations (MigrationId) VALUES
 ('20260310202402_AddESignEnrollment'),
@@ -626,7 +627,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260901175652_AddUniqueBarchartPlacementIndex'),
 ('20260902185607_AddSelectedYearsToBidSheetPreference'),
 ('20260902194934_MakeBidSheetLocationsGlobal'),
-('20260903124434_AddBidSheets');
+('20260903124434_AddBidSheets'),
+('20260903133208_AddSelectedBidSheetIdToPreference');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

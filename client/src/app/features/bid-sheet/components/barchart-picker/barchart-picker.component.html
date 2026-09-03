@@ -57,17 +57,19 @@
         <div class="flex-shrink-0 flex items-center">
           <input type="checkbox" (click)="toggleSelected(loc, $event)"
                  [checked]="isSelected(loc.locationKey)"
-                 [disabled]="alreadyOnAll(loc)"
+                 [disabled]="alreadyOnSheet(loc)"
                  [attr.aria-label]="'Select ' + primaryName(loc)"
                  class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
         </div>
       </div>
-      @if (alreadyOnTus(loc); as onTus) {
-        @if (onTus.length > 0) {
-          <p class="mt-1 text-[10px] text-scoular-green-accessible dark:text-scoular-green">
-            Already on {{ onTus.join(', ') }}
-          </p>
-        }
+      @if (alreadyOnSheet(loc)) {
+        <p class="mt-1 text-[10px] text-scoular-green-accessible dark:text-scoular-green">
+          Already on this sheet
+        </p>
+      } @else if (existingLocationId(loc)) {
+        <p class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+          Already added — will link to this sheet
+        </p>
       }
     </button>
   </ng-template>
@@ -128,22 +130,12 @@
          footer inside the list is somewhere the user has to go looking for. Appears only once
          something is ticked, so an untouched panel looks exactly as it did before. -->
     <div class="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 space-y-2">
-      <!-- Where these are going. A location is placed once per trade unit, so the reach has to be on
-           screen before the click: three ticks against several desks is a lot of new rows, and it used
-           to happen silently. With nothing selected there is no destination and the add says so. -->
-      @if (tradeUnits().length === 0) {
-        <p class="text-[11px] text-scoular-red-accessible dark:text-scoular-red">
-          Select a trade unit or group first — that's where these get added.
-        </p>
-      } @else if (tradeUnits().length > 1) {
-        <p class="text-[11px] text-gray-500 dark:text-gray-400" [title]="tradeUnits().join(', ')">
-          Adding to {{ tradeUnits().length }} trade units — {{ selectedCount() * tradeUnits().length }} rows
-        </p>
-      } @else {
-        <p class="text-[11px] text-gray-500 dark:text-gray-400">Adding to {{ tradeUnits()[0] }}</p>
-      }
+      <!-- Where these are going. Named so the destination is on screen before the click, the same
+           reason this used to name the trade unit(s) -- now there is exactly one destination, the
+           open sheet, so it is just said once. -->
+      <p class="text-[11px] text-gray-500 dark:text-gray-400">Adding to "{{ sheetName() }}"</p>
       <div class="flex items-center gap-2">
-      <button (click)="addSelected()" [disabled]="adding() || tradeUnits().length === 0"
+      <button (click)="addSelected()" [disabled]="adding()"
               class="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors disabled:opacity-70 disabled:cursor-not-allowed">
         @if (adding()) {
           <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

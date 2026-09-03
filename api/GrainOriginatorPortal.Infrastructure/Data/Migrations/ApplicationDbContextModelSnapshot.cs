@@ -758,6 +758,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<string>("PrintLayout")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int?>("SelectedBidSheetId")
+                        .HasColumnType("int");
+
                     b.Property<string>("SelectedMonths")
                         .HasColumnType("nvarchar(max)");
 

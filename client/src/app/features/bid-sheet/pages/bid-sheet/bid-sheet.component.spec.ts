@@ -7,7 +7,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { BidSheetLocation, BidSheetLocationBid } from '@models';
+import { BidSheet, BidSheetLocation, BidSheetLocationBid } from '@models';
 
 import { BidSheetComponent } from './bid-sheet.component';
 
@@ -66,6 +66,18 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       getElevators: () => of([]),
       getBarchartCoverage: () => of(null),
       searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getBidSheet: () => of(null),
+      createBidSheet: () => of(null),
+      renameBidSheet: () => of(null),
+      deleteBidSheet: () => of(undefined),
+      setBidSheetShares: () => of(null),
+      setBidSheetLayout: () => of(null),
+      addBidSheetLocation: () => of(null),
+      removeBidSheetLocation: () => of(null),
+      setBidSheetRowOrder: () => of(null),
+      getBidSheetLocationSheetCount: () => of(0),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -83,13 +95,20 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     component = TestBed.createComponent(BidSheetComponent).componentInstance;
   });
 
-  /** Puts locations in the map cache, which bidEntries reads when no trade unit is active. */
-  // Both, because they hold the same thing now: locations are company-wide, so what the map shows and
-  // what the sheet works from are one list. They stay separate signals because a SHEET will pull them
-  // apart again -- bidLocations becoming the sheet, allMapLocations staying everything.
+  /**
+   * Puts locations in the map cache AND on a single active sheet -- bidEntries (what most of this
+   * suite exercises) reads bidLocations, which is now the active sheet's locations, not the whole
+   * map cache.
+   */
   function seed(...locs: BidSheetLocation[]): void {
     component.allMapLocations.set(locs);
-    component.bidLocations.set(locs);
+    const sheet: BidSheet = {
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z',
+      shares: [], locations: locs,
+    };
+    component.sheets.set([sheet]);
+    component.activeSheetId.set(1);
   }
 
   // ── the column's board ────────────────────────────────────────────────────────────────────────

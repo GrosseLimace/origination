@@ -18,8 +18,14 @@ export interface BarchartSearchArea {
 
 /** Several locations added in one go from the list's checkboxes. */
 export interface BarchartBulkAddRequest {
-  locations: Array<{ locationKey: string; name: string; isScoularFacility: boolean }>;
-  tradeUnitCodes: string[];
+  locations: Array<{
+    locationKey: string;
+    name: string;
+    isScoularFacility: boolean;
+    /** The bid-sheet location id if this listing is already a company-wide row (from its
+     *  placements); present means "link it to the sheet", absent means "create it first". */
+    existingLocationId?: number;
+  }>;
 }
 
 /**
@@ -43,8 +49,11 @@ export class BarchartPickerComponent {
   /** Map centre to search around. Changes as the user pans, which re-runs the nearby search. */
   readonly searchArea = input<BarchartSearchArea | null>(null);
 
-  /** Trade units the user may add a location to. */
-  readonly tradeUnits = input<string[]>([]);
+  /** Name of the sheet ticked locations will be added to, shown in the footer. */
+  readonly sheetName = input<string>('');
+
+  /** Location ids already on the active sheet, so an already-added listing can't be ticked again. */
+  readonly sheetLocationIds = input<ReadonlySet<number>>(new Set());
 
   /**
    * True while the parent is creating the ticked locations and preparing Edit Bids. Each create
@@ -117,7 +126,7 @@ export class BarchartPickerComponent {
     // Stops the row handler running as well, which would tick it straight back off.
     event?.stopPropagation();
     if (this.adding()) return; // the batch is already on its way to the server
-    if (this.alreadyOnAll(location)) return; // nothing left to add it to
+    if (this.alreadyOnSheet(location)) return; // nothing left to add it to
     this.selected.update(current => {
       const next = new Map(current);
       next.has(location.locationKey) ? next.delete(location.locationKey) : next.set(location.locationKey, location);
@@ -143,19 +152,20 @@ export class BarchartPickerComponent {
   }
 
   /**
-   * The location's placements on the trade units CURRENTLY being added to -- the only ones that
-   * matter here. A placement on some other desk's trade unit is that desk's business: showing it
-   * read as "you can't add this" to a user on a different trade unit, which is exactly wrong.
+   * The bid-sheet location id this listing already exists as, company-wide -- or null if it has
+   * never been added by anyone. A listing's placements array holds at most one entry now that
+   * locations are de-duplicated to one row per elevator, so this is a lookup, not a filter.
    */
-  alreadyOnTus(location: BarchartCatalogLocation): string[] {
-    const targets = new Set(this.tradeUnits());
-    return location.placements.filter(p => targets.has(p.tradeUnitCode)).map(p => p.tradeUnitCode);
+  existingLocationId(location: BarchartCatalogLocation): number | null {
+    return location.placements[0]?.locationId ?? null;
   }
 
-  /** Already on every trade unit in play -- adding it again can only fail, so ticking is off. */
-  alreadyOnAll(location: BarchartCatalogLocation): boolean {
-    const tus = this.tradeUnits();
-    return tus.length > 0 && this.alreadyOnTus(location).length === tus.length;
+  /** Already on the ACTIVE sheet -- ticking it again can only be a no-op, so the checkbox is off.
+   *  Existing elsewhere company-wide but not on this sheet is still selectable: ticking it just
+   *  links the existing row instead of creating a new one. */
+  alreadyOnSheet(location: BarchartCatalogLocation): boolean {
+    const id = this.existingLocationId(location);
+    return id != null && this.sheetLocationIds().has(id);
   }
 
   /** Emits every ticked location, named as the vendor names it and pre-classified. */
@@ -168,9 +178,9 @@ export class BarchartPickerComponent {
       locations: picked.map(l => ({
         locationKey: l.locationKey,
         name: this.defaultName(l),
-        isScoularFacility: this.isScoularListing(l)
-      })),
-      tradeUnitCodes: this.tradeUnits()
+        isScoularFacility: this.isScoularListing(l),
+        existingLocationId: this.existingLocationId(l) ?? undefined
+      }))
     });
   }
 

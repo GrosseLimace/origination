@@ -22,4 +22,7 @@ public record SetBidSheetPreferenceRequest
 
     [MaxLength(10)]
     public string? PriceMode { get; init; }
+
+    /// <summary>The sheet the user last had open. Null leaves the stored value alone.</summary>
+    public int? SelectedBidSheetId { get; init; }
 }

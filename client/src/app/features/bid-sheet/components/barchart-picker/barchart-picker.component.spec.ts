@@ -198,10 +198,9 @@ describe('BarchartPickerComponent', () => {
     expect(component.isScoularListing(location({ elevator: undefined }))).toBe(false);
   });
 
-  it('emits every ticked location, named and classified, for the trade units in play', () => {
+  it('emits every ticked location, named and classified', () => {
     const emitted: any[] = [];
     component.addMany.subscribe(r => emitted.push(r));
-    fixture.componentRef.setInput('tradeUnits', ['2190', '4056']);
     fixture.detectChanges();
 
     component.toggleSelected(location());
@@ -210,11 +209,21 @@ describe('BarchartPickerComponent', () => {
 
     expect(emitted[0]).toEqual({
       locations: [
-        { locationKey: '82259', name: 'Grain Processing Corporation - GPC-MUSCATINE', isScoularFacility: false },
-        { locationKey: '4087', name: 'Scoular Company - Kansas - Salina', isScoularFacility: true },
+        { locationKey: '82259', name: 'Grain Processing Corporation - GPC-MUSCATINE', isScoularFacility: false, existingLocationId: undefined },
+        { locationKey: '4087', name: 'Scoular Company - Kansas - Salina', isScoularFacility: true, existingLocationId: undefined },
       ],
-      tradeUnitCodes: ['2190', '4056'],
     });
+  });
+
+  it('carries the existing bid-sheet location id for a listing already added company-wide', () => {
+    const emitted: any[] = [];
+    component.addMany.subscribe(r => emitted.push(r));
+    fixture.detectChanges();
+
+    component.toggleSelected(location({ placements: [{ locationId: 55, tradeUnitCode: '2038', name: 'x' }] }));
+    component.addSelected();
+
+    expect(emitted[0].locations[0].existingLocationId).toBe(55);
   });
 
   it('adds nothing when nothing is ticked', () => {
@@ -247,7 +256,6 @@ describe('BarchartPickerComponent', () => {
   it('adds a location the search has moved past', () => {
     const emitted: any[] = [];
     component.addMany.subscribe(r => emitted.push(r));
-    fixture.componentRef.setInput('tradeUnits', ['2190']);
     fixture.detectChanges();
     component.toggleSelected(location({ locationKey: '99999', elevator: 'Far Away Co-op' }));
 
@@ -281,33 +289,34 @@ describe('BarchartPickerComponent', () => {
     expect(component.offListSelected()).toEqual([]);
   });
   // -------------------------------------------------------------------------
-  // Placements only matter relative to the trade units being added to. A user on 2038 saw
-  // "Already on 2130" -- another desk's placement -- which read as "you can't add this" and was wrong.
+  // A listing already added company-wide (has a placement) is still tickable -- ticking it just
+  // links the existing row to this sheet. Only ALREADY ON THIS SHEET disables the checkbox.
 
-  it('names only placements on the trade units in play', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2038']);
-    fixture.detectChanges();
-    const loc = location({ placements: [
-      { tradeUnitCode: '2130', locationName: 'x' } as any,
-      { tradeUnitCode: '2038', locationName: 'x' } as any,
-    ]});
-
-    expect(component.alreadyOnTus(loc)).toEqual(['2038']);
-    expect(component.alreadyOnTus(location({ placements: [{ tradeUnitCode: '2130', locationName: 'x' } as any] }))).toEqual([]);
+  it('reads the existing bid-sheet location id off a listing\'s placement', () => {
+    const loc = location({ placements: [{ locationId: 55, tradeUnitCode: '2038', name: 'x' }] });
+    expect(component.existingLocationId(loc)).toBe(55);
+    expect(component.existingLocationId(location({ placements: [] }))).toBeNull();
   });
 
-  it('refuses to tick a location already on every target trade unit', () => {
-    fixture.componentRef.setInput('tradeUnits', ['2038']);
+  it('refuses to tick a location already on the active sheet', () => {
+    fixture.componentRef.setInput('sheetLocationIds', new Set([55]));
     fixture.detectChanges();
-    const done = location({ placements: [{ tradeUnitCode: '2038', locationName: 'x' } as any] });
+    const onSheet = location({ placements: [{ locationId: 55, tradeUnitCode: '2038', name: 'x' }] });
 
-    component.toggleSelected(done);
+    component.toggleSelected(onSheet);
 
     expect(component.selectedCount()).toBe(0);
-    expect(component.alreadyOnAll(done)).toBe(true);
-    // Partially placed stays tickable -- the other trade units still want it.
-    fixture.componentRef.setInput('tradeUnits', ['2038', '2040']);
+    expect(component.alreadyOnSheet(onSheet)).toBe(true);
+  });
+
+  it('still ticks a listing that exists company-wide but is not yet on this sheet', () => {
+    fixture.componentRef.setInput('sheetLocationIds', new Set([99]));
     fixture.detectChanges();
-    expect(component.alreadyOnAll(done)).toBe(false);
+    const elsewhere = location({ placements: [{ locationId: 55, tradeUnitCode: '2038', name: 'x' }] });
+
+    component.toggleSelected(elsewhere);
+
+    expect(component.selectedCount()).toBe(1);
+    expect(component.alreadyOnSheet(elsewhere)).toBe(false);
   });
 });

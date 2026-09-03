@@ -20,13 +20,13 @@ public interface IBidSheetRepository
     /// caller supplied.
     /// </summary>
     Task<string?> GetLocationCreatedByAsync(int id, CancellationToken cancellationToken);
-    /// <summary>True if a location with this name already exists in the trade unit (matches the
-    /// unique (Name, TradeUnitCode) index). Lets the service surface a friendly duplicate-name error.</summary>
-    Task<bool> LocationNameExistsAsync(string name, string tradeUnitCode, CancellationToken cancellationToken);
-    /// <summary>True if this trade unit is already linked to the given BarChart location. Keeps a
-    /// user from adding the same feed location twice to one trade unit, which would duplicate every
-    /// fed bid on the sheet.</summary>
-    Task<bool> BarchartLocationLinkedAsync(string barchartLocationKey, string tradeUnitCode, CancellationToken cancellationToken);
+    /// <summary>True if a location with this name already exists, anywhere -- a location is one
+    /// company-wide row now. Lets the service surface a friendly duplicate-name error; there is no
+    /// database constraint backing this (see the implementation), so it is a courtesy, not a guarantee.</summary>
+    Task<bool> LocationNameExistsAsync(string name, CancellationToken cancellationToken);
+    /// <summary>True if this BarChart location is already linked to a bid-sheet location, anywhere.
+    /// Matches UQ_BidSheetLocations_BarchartKey, which is global (filtered on NOT NULL), not per desk.</summary>
+    Task<bool> BarchartLocationLinkedAsync(string barchartLocationKey, CancellationToken cancellationToken);
     /// <summary>A single location with its bids, or null. Used to return a freshly linked location
     /// after the feed bridge has filled in its bids.</summary>
     Task<BidSheetLocation?> GetLocationAsync(int id, CancellationToken cancellationToken);
@@ -48,7 +48,8 @@ public interface IBidSheetRepository
     Task SetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken);
     Task<BidSheetPreference?> GetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken);
     Task SetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear,
-        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode, CancellationToken cancellationToken);
+        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
+        int? selectedBidSheetId, CancellationToken cancellationToken);
 
     // ---- Sheets --------------------------------------------------------------------------------
     // A sheet is a named, shareable working set of locations. It replaced the trade unit as the thing

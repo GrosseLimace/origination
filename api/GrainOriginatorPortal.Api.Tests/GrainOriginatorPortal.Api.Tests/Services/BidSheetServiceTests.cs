@@ -44,7 +44,7 @@ public class BidSheetServiceTests
     [Fact]
     public async Task CreateLocationAsync_DuplicateNameInTradeUnit_ThrowsValidation_AndDoesNotInsert()
     {
-        _repo.Setup(r => r.LocationNameExistsAsync("Kansas West", "TU1", It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.LocationNameExistsAsync("Kansas West", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() =>
@@ -62,7 +62,7 @@ public class BidSheetServiceTests
     [Fact]
     public async Task CreateLocationAsync_NewName_CreatesLocationWithNoBids()
     {
-        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         BidSheetLocation? captured = null;
         _repo.Setup(r => r.CreateLocationAsync(It.IsAny<BidSheetLocation>(), It.IsAny<CancellationToken>()))
@@ -87,9 +87,9 @@ public class BidSheetServiceTests
     [Fact]
     public async Task CreateLocationAsync_WithBarchartKey_PrefillsFromCatalogAndAppliesBids()
     {
-        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
-        _repo.Setup(r => r.BarchartLocationLinkedAsync("82259", "TU1", It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.BarchartLocationLinkedAsync("82259", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         _barchartCatalog.Setup(c => c.GetLocationAsync("82259", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new BarchartLocationSummary
@@ -126,9 +126,9 @@ public class BidSheetServiceTests
     [Fact]
     public async Task CreateLocationAsync_WithBarchartKeyAndSuppliedFields_KeepsSuppliedValues()
     {
-        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
-        _repo.Setup(r => r.BarchartLocationLinkedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.BarchartLocationLinkedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         _barchartCatalog.Setup(c => c.GetLocationAsync("82259", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new BarchartLocationSummary { LocationKey = "82259", City = "Muscatine", State = "IA" });
@@ -150,9 +150,9 @@ public class BidSheetServiceTests
     [Fact]
     public async Task CreateLocationAsync_UnknownBarchartKey_ThrowsValidation_AndDoesNotInsert()
     {
-        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
-        _repo.Setup(r => r.BarchartLocationLinkedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.BarchartLocationLinkedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         _barchartCatalog.Setup(c => c.GetLocationAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((BarchartLocationSummary?)null);
@@ -169,9 +169,9 @@ public class BidSheetServiceTests
     [Fact]
     public async Task CreateLocationAsync_BarchartKeyAlreadyLinkedInTradeUnit_ThrowsValidation()
     {
-        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
-        _repo.Setup(r => r.BarchartLocationLinkedAsync("82259", "TU1", It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.BarchartLocationLinkedAsync("82259", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() =>
@@ -186,7 +186,7 @@ public class BidSheetServiceTests
     [Fact]
     public async Task CreateLocationAsync_WithoutBarchartKey_DoesNotTouchFeed()
     {
-        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.LocationNameExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         _repo.Setup(r => r.CreateLocationAsync(It.IsAny<BidSheetLocation>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((BidSheetLocation loc, CancellationToken _) => loc);

@@ -90,6 +90,7 @@ public static class BidSheetMappings
         SelectedYears = p.SelectedYears,
         PrintLayout = p.PrintLayout,
         PriceMode = p.PriceMode,
+        SelectedBidSheetId = p.SelectedBidSheetId,
         ModifiedAt = p.ModifiedAt,
     };
 
