@@ -83,7 +83,7 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
             .FirstOrDefaultAsync(l => l.LocationKey == locationKey, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Dictionary<string, decimal>> GetMatchedBidPricesAsync(
+    public async Task<Dictionary<string, BarchartMatchedPrice>> GetMatchedBidPricesAsync(
         IReadOnlyCollection<string> locationKeys, string commodityCode, int cropYear, int month, string instrumentType,
         CancellationToken cancellationToken = default)
     {
@@ -111,6 +111,7 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
             .Select(i => new
             {
                 i.LocationKey,
+                i.UnderlyingFuture,
                 Price = _appContext.BarchartCurrentQuotes
                     .Where(q => q.Symbol == i.Symbol)
                     .Select(q => (decimal?)q.LastPrice)
@@ -121,10 +122,17 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
 
         // One price per location: a site publishing this exact commodity/period through more than one
         // instrument is an edge case the map pin has no room to show twice, so first-found wins.
-        var result = new Dictionary<string, decimal>();
+        var result = new Dictionary<string, BarchartMatchedPrice>();
         foreach (var row in rows)
         {
-            if (!result.ContainsKey(row.LocationKey)) result[row.LocationKey] = row.Price!.Value;
+            if (!result.ContainsKey(row.LocationKey))
+            {
+                result[row.LocationKey] = new BarchartMatchedPrice
+                {
+                    Price = row.Price!.Value,
+                    UnderlyingFuture = row.UnderlyingFuture
+                };
+            }
         }
         return result;
     }

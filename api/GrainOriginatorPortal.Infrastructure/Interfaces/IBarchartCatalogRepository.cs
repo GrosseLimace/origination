@@ -47,7 +47,7 @@ public interface IBarchartCatalogRepository
     /// crop/year/month filter is active, and a per-pin round trip for that would be the O(pins) cost
     /// the map's other perf work went to some effort to avoid.
     /// </summary>
-    Task<Dictionary<string, decimal>> GetMatchedBidPricesAsync(
+    Task<Dictionary<string, BarchartMatchedPrice>> GetMatchedBidPricesAsync(
         IReadOnlyCollection<string> locationKeys, string commodityCode, int cropYear, int month, string instrumentType,
         CancellationToken cancellationToken = default);
 

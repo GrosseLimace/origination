@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { of } from 'rxjs';
@@ -7,7 +7,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { BidSheet, BidSheetLocation, BidSheetLocationBid } from '@models';
+import { BarchartCatalogLocation, BidSheet, BidSheetLocation, BidSheetLocationBid } from '@models';
 
 import { BidSheetComponent } from './bid-sheet.component';
 
@@ -467,10 +467,13 @@ describe('BidSheetComponent — filter dropdown sources', () => {
     expect(component.filterableCrops()).toEqual(['DNGS']);
   });
 
-  it('offers a default span of years around today even with no bid data anywhere', () => {
+  // Last year / this year / next year: the old crop still being priced out, the current one, and the
+  // new crop being booked forward. Deliberately not a year further out -- that only appears if a bid
+  // genuinely exists for it (next test), rather than offering a year with nothing behind it.
+  it('offers last year, this year and next year even with no bid data anywhere', () => {
     const now = new Date().getFullYear();
     expect(component.cropYears()).toEqual([]);
-    expect(component.filterableYears()).toEqual([now - 1, now, now + 1, now + 2]);
+    expect(component.filterableYears()).toEqual([now - 1, now, now + 1]);
   });
 
   it('keeps a real priced year even when it falls outside the default span', () => {
@@ -633,5 +636,523 @@ describe('BidSheetComponent — catalog location as comparison reference', () =>
     // -20 (Elevator A's basis) > -30 (the reference's basis) → beating. Matching the cash row (4.50)
     // instead would give "none" (-20 is neither greater than nor equal to 4.50).
     expect((item as { status?: string })?.status).toBe('beating');
+  });
+});
+
+/**
+ * Regression coverage for "Both does not work": catalog pins hard-coded to a cash-only price lookup
+ * regardless of price mode, so "Both" looked identical to "Cash". _loadCatalogLocations now fetches
+ * cash and basis separately (they're independent BarChart instruments) and merges them client-side;
+ * _catalogPriceLabel is the pure function that turns the merged pair into what the pin actually prints.
+ */
+describe('BidSheetComponent — catalog pin price label in Both mode', () => {
+  let component: BidSheetComponent;
+
+  function catalogLoc(overrides: Partial<BarchartCatalogLocation> = {}): BarchartCatalogLocation {
+    return { locationKey: 'CATKEY1', instrumentCount: 1, commodityCount: 1, placements: [], ...overrides };
+  }
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  it('shows only the cash price outside Both mode, even when a basis price is merged in', () => {
+    component.priceMode.set('cash');
+    const label = (component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation): string | null })
+      ._catalogPriceLabel(catalogLoc({ matchedBidPrice: 4.98, matchedBasisPrice: -30 }));
+    expect(label).toBe('4.98');
+  });
+
+  it('combines cash and basis into one "cash / basis" label in Both mode', () => {
+    component.priceMode.set('both');
+    const label = (component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation): string | null })
+      ._catalogPriceLabel(catalogLoc({ matchedBidPrice: 4.98, matchedBasisPrice: -30 }));
+    expect(label).toBe('4.98 / -30');
+  });
+
+  it('falls back to whichever side is published when Both mode only has one', () => {
+    component.priceMode.set('both');
+    const label = (component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation): string | null })
+      ._catalogPriceLabel;
+    expect(label.call(component, catalogLoc({ matchedBidPrice: 4.98 }))).toBe('4.98');
+    expect(label.call(component, catalogLoc({ matchedBasisPrice: -30 }))).toBe('-30');
+  });
+
+  it('returns null when neither price is published, regardless of mode', () => {
+    component.priceMode.set('both');
+    const label = (component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation): string | null })
+      ._catalogPriceLabel(catalogLoc());
+    expect(label).toBeNull();
+  });
+});
+
+/**
+ * Regression coverage for the panning/loading-performance ask: catalog fetches were a flat take: 5000
+ * at every zoom level, so a zoomed-out view forced thousands of un-clustered DOM markers to draw on
+ * every pan. _catalogTakeFor scales the request size down as the view widens.
+ */
+describe('BidSheetComponent — catalog fetch size scales with map radius', () => {
+  let takeFor: (radiusMiles: number) => number;
+
+  beforeEach(() => {
+    takeFor = (BidSheetComponent as unknown as { _catalogTakeFor(r: number): number })._catalogTakeFor;
+  });
+
+  it('caps a wide, zoomed-out view at 500', () => {
+    expect(takeFor(500)).toBe(500);
+    expect(takeFor(300)).toBe(500);
+  });
+
+  it('caps a mid-range view at 1500', () => {
+    expect(takeFor(299)).toBe(1500);
+    expect(takeFor(100)).toBe(1500);
+  });
+
+  it('keeps the full 5000 for a close-in view', () => {
+    expect(takeFor(99)).toBe(5000);
+    expect(takeFor(10)).toBe(5000);
+  });
+});
+
+/**
+ * The "+ Add" entry point. Building a sheet used to mean creating an empty one and then hunting for
+ * "Add Location"; now one menu offers "build a sheet" (pick a batch off the map, name it last) beside
+ * the manual single-location add. The ordering is the point: naming is asked for AFTER the locations
+ * are picked, and the sheet itself isn't created until the batch is confirmed -- so the flow has to
+ * work with no sheet open at all, which is exactly what the old guard rejected.
+ */
+describe('BidSheetComponent — the "+ Add" menu and building a sheet from a batch', () => {
+  let component: BidSheetComponent;
+  let createBidSheet: ReturnType<typeof vi.fn>;
+  let addBidSheetLocation: ReturnType<typeof vi.fn>;
+
+  const NEW_SHEET: BidSheet = {
+    id: 7, name: 'West Desk', ownerUserId: 'test', isOwner: true,
+    createdBy: 'test', createdAt: '2026-09-03T00:00:00Z', shares: [], locations: [],
+  } as BidSheet;
+
+  /** One ticked catalog listing that already exists company-wide, so adding it is a link, not a create. */
+  const BATCH = { locations: [{ locationKey: 'CATKEY1', name: 'Competitor Co — Ames', isScoularFacility: false, existingLocationId: 42 }] };
+
+  beforeEach(() => {
+    createBidSheet = vi.fn(() => of(NEW_SHEET));
+    addBidSheetLocation = vi.fn((sheetId: number, locationId: number) => of({
+      ...NEW_SHEET,
+      id: sheetId,
+      locations: [location('Competitor Co — Ames', [bid({ locationId })])],
+    } as BidSheet));
+
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getBidSheet: () => of(NEW_SHEET),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+      createBidSheet: (name: string) => createBidSheet(name),
+      addBidSheetLocation: (sheetId: number, locationId: number) => addBidSheetLocation(sheetId, locationId),
+      createBidSheetLocation: () => of(location('Manual', [])),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  it('opens the picker in new-sheet mode with no sheet open, rather than demanding one first', () => {
+    expect(component.sheets()).toEqual([]);
+
+    component.chooseBuildSheet();
+
+    expect(component.barchartMode()).toBe(true);
+    expect(component.barchartSheetMode()).toBe('new');
+    expect(component.showCreateSheet()).toBe(false); // nothing named yet -- that comes after picking
+  });
+
+  it('asks for a name when a batch is confirmed without one, holding the batch rather than dropping it', () => {
+    component.chooseBuildSheet();
+
+    component.onBarchartAddMany(BATCH);
+
+    expect(component.showCreateSheet()).toBe(true);
+    expect(component.namingSheetForBatch()).toBe(true);
+    expect(createBidSheet).not.toHaveBeenCalled();
+  });
+
+  it('creates the sheet from the name typed in the picker and adds the batch to it', () => {
+    component.chooseBuildSheet();
+    component.newSheetName.set('West Desk');
+
+    component.onBarchartAddMany(BATCH);
+
+    expect(createBidSheet).toHaveBeenCalledWith('West Desk');
+    expect(addBidSheetLocation).toHaveBeenCalledWith(NEW_SHEET.id, 42);
+    expect(component.activeSheetId()).toBe(NEW_SHEET.id);
+    // The sheet exists now, so anything added next belongs to it rather than starting another one.
+    expect(component.barchartSheetMode()).toBe('existing');
+  });
+
+  it('creates the sheet and adds the parked batch when the name comes from the dialog instead', () => {
+    component.chooseBuildSheet();
+    component.onBarchartAddMany(BATCH); // no name yet -> parked
+
+    component.newSheetName.set('West Desk');
+    component.confirmCreateSheet();
+
+    expect(createBidSheet).toHaveBeenCalledWith('West Desk');
+    expect(addBidSheetLocation).toHaveBeenCalledWith(NEW_SHEET.id, 42);
+    expect(component.showCreateSheet()).toBe(false);
+  });
+
+  it('cancelling the name drops the parked batch but leaves the picker open to re-pick', () => {
+    component.chooseBuildSheet();
+    component.onBarchartAddMany(BATCH);
+
+    component.cancelCreateSheet();
+
+    expect(component.namingSheetForBatch()).toBe(false);
+    expect(component.showCreateSheet()).toBe(false);
+    expect(component.barchartMode()).toBe(true);
+    expect(createBidSheet).not.toHaveBeenCalled();
+  });
+
+  it('still asks for a destination before a manual add, which has no sheet to create one from', () => {
+    component.chooseManualAdd();
+
+    expect(component.addLocationMode()).toBe(false);
+    expect(component.showCreateSheet()).toBe(true); // no sheets exist -> name one first
+    expect(component.namingSheetForBatch()).toBe(false);
+  });
+});
+
+/**
+ * Map scope. The panel has always shown only the open sheet's locations while the map drew every
+ * added location company-wide -- so picking a sheet to compare a set of elevators got you a map
+ * answering with bids from elevators that weren't in it. The map now follows the sheet by default,
+ * with "All" as the explicit way back to browsing everything.
+ */
+describe('BidSheetComponent — map scope follows the open sheet', () => {
+  let component: BidSheetComponent;
+
+  const onSheet = location('On The Sheet', [bid({ locationId: 1 })]);
+  const elsewhere = location('Someone Else\'s', [bid({ locationId: 2 })]);
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    // Two added locations company-wide; only one of them is on the open sheet.
+    component.allMapLocations.set([onSheet, elsewhere]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [onSheet],
+    } as BidSheet]);
+  });
+
+  it('draws only the open sheet\'s locations by default', () => {
+    component.activeSheetId.set(1);
+
+    expect(component.mapScope()).toBe('sheet');
+    expect(component.mapLocations().map(l => l.name)).toEqual(['On The Sheet']);
+  });
+
+  it('draws every added location once scope is switched to All', () => {
+    component.activeSheetId.set(1);
+
+    component.setMapScope('all');
+
+    expect(component.mapLocations().map(l => l.name)).toEqual(['On The Sheet', "Someone Else's"]);
+  });
+
+  // Guards the trap that made "All locations" a no-op: map pins are pruned to whatever the panel's
+  // filters left, but the panel only ever lists the SHEET's locations -- so an off-sheet pin, which by
+  // construction has no panel row, was pruned every time and All rendered exactly what Sheet did.
+  it('exempts off-sheet locations from the panel-parity prune, which never lists them', () => {
+    const component_ = component as unknown as {
+      _passesPanelPrune(n: string[], p: ReadonlySet<string>, s: ReadonlySet<string>): boolean;
+    };
+    const panelNames = new Set(['On The Sheet']);
+    const sheetNames = new Set(['On The Sheet']);
+
+    expect(component_._passesPanelPrune(["Someone Else's"], panelNames, sheetNames)).toBe(true);
+    // On-sheet locations still answer to the panel, so a status filter narrows map and panel together.
+    expect(component_._passesPanelPrune(['On The Sheet'], panelNames, sheetNames)).toBe(true);
+    expect(component_._passesPanelPrune(['On The Sheet'], new Set<string>(), sheetNames)).toBe(false);
+  });
+
+  it('drives the toolbar dropdown from the scope, so "All locations" shows as selected', () => {
+    component.activeSheetId.set(1);
+    expect(component.sheetDropdownValue()).toBe('1');
+
+    component.onSheetDropdownChange('all');
+
+    expect(component.mapScope()).toBe('all');
+    expect(component.sheetDropdownValue()).toBe('all');
+    // The sheet stays open underneath -- the panel, the grid and Add all still need a destination.
+    expect(component.activeSheetId()).toBe(1);
+  });
+
+  it('picking a sheet from the dropdown narrows back to it', () => {
+    component.activeSheetId.set(1);
+    component.onSheetDropdownChange('all');
+
+    component.onSheetDropdownChange('1');
+
+    expect(component.mapScope()).toBe('sheet');
+    expect(component.mapLocations().map(l => l.name)).toEqual(['On The Sheet']);
+  });
+
+  it('falls back to everything when no sheet is open, since there is nothing to narrow to', () => {
+    component.activeSheetId.set(null);
+
+    expect(component.mapScope()).toBe('sheet'); // the setting stands…
+    expect(component.mapLocations()).toHaveLength(2); // …but has nothing to apply to
+  });
+});
+
+/**
+ * Progressive disclosure on the map. The board symbol roughly doubles a pill's width, and once catalog
+ * pins started carrying it a regional view became a wall of overlapping boxes. Labels now arrive in
+ * stages as you zoom in — and both layers have to change at the SAME zoom in "All locations", or the
+ * sheet's own pins look stuck on while every catalog pin around them is still a dot.
+ */
+describe('BidSheetComponent — map labels appear in stages as you zoom in', () => {
+  let component: BidSheetComponent;
+
+  function catalogLoc(overrides: Partial<BarchartCatalogLocation> = {}): BarchartCatalogLocation {
+    return { locationKey: 'CATKEY1', instrumentCount: 1, commodityCount: 1, placements: [], ...overrides };
+  }
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  function priceLabel(loc: BarchartCatalogLocation, includeBoard?: boolean): string | null {
+    return (component as unknown as {
+      _catalogPriceLabel(l: BarchartCatalogLocation, b?: boolean): string | null;
+    })._catalogPriceLabel(loc, includeBoard);
+  }
+
+  it('drops the board from a catalog pill when zoomed too far out for it', () => {
+    const loc = catalogLoc({ matchedBidPrice: 4.98, matchedBidBoard: 'ZCU26' });
+
+    expect(priceLabel(loc, true)).toBe('4.98 (ZCU26)');
+    expect(priceLabel(loc, false)).toBe('4.98');
+  });
+
+  it('keeps the board out of a Both-mode pill too, without losing either price', () => {
+    component.priceMode.set('both');
+    const loc = catalogLoc({ matchedBidPrice: 4.98, matchedBasisPrice: -30, matchedBidBoard: 'ZCU26' });
+
+    expect(priceLabel(loc, true)).toBe('4.98 / -30 (ZCU26)');
+    expect(priceLabel(loc, false)).toBe('4.98 / -30');
+  });
+
+  it('defaults to naming the board, so hover and the panel are unaffected by the map gates', () => {
+    expect(priceLabel(catalogLoc({ matchedBidPrice: 4.98, matchedBidBoard: 'ZCU26' }))).toBe('4.98 (ZCU26)');
+  });
+});
+
+/**
+ * Narrowing back to a sheet takes the catalog layer off the map, so anything anchored to it has to go
+ * too. A catalog listing left as the comparison reference is the harmful one: every sheet pin would go
+ * on colouring itself against a location the user can no longer see.
+ */
+describe('BidSheetComponent — narrowing scope clears catalog-anchored state', () => {
+  let component: BidSheetComponent;
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+      getBarchartLocationDetail: (key: string) => of({
+        location: { locationKey: key, instrumentCount: 0, commodityCount: 0, placements: [] },
+        bids: [], unmappedBidCount: 0,
+      }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    const loc = location('On The Sheet', [bid({ locationId: 1 })]);
+    component.allMapLocations.set([loc]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [loc],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+    component.setMapScope('all');
+  });
+
+  it('drops a catalog reference when the catalog layer goes away', () => {
+    component.toggleCatalogReference('CATKEY1');
+    expect(component.catalogReferenceKey()).toBe('CATKEY1');
+
+    component.setMapScope('sheet');
+
+    expect(component.catalogReferenceKey()).toBeNull();
+  });
+
+  it('closes an open catalog detail popup on the way back to sheet scope', () => {
+    component.openCatalogDetail('CATKEY1');
+    expect(component.catalogDetailKey()).toBe('CATKEY1');
+
+    component.setMapScope('sheet');
+
+    expect(component.catalogDetailKey()).toBeNull();
+    expect(component.catalogDetail()).toBeNull();
+  });
+});
+
+/**
+ * Pin parity in "All locations". An added location has no business looking different from a catalog
+ * one just because somebody added it — the map is showing everything, and a pin that stands out should
+ * stand out for a reason the user chose (reference, Scoular, a status). The catalog draws dots lighter
+ * than pills, so matching has to be per shape: borrowing the pill colour for a dot is what made one
+ * pin visibly darker than the thousands around it.
+ */
+describe('BidSheetComponent — added pins match catalog pins in All scope', () => {
+  let component: BidSheetComponent;
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    const loc = location('On The Sheet', [bid({ locationId: 1 })]);
+    component.allMapLocations.set([loc]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [loc],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+  });
+
+  function neutral(shape?: 'pill' | 'dot'): { bg: string; border: string } {
+    return (component as unknown as {
+      _neutralPinColors(s?: 'pill' | 'dot'): { bg: string; border: string };
+    })._neutralPinColors(shape);
+  }
+
+  it('uses the catalog DOT colours for an added dot, not the darker pill colours', () => {
+    component.setMapScope('all');
+
+    // #93c5fd/#60a5fa are the catalog dot pair; #60a5fa/#3b82f6 is the pill pair one step darker.
+    expect(neutral('dot')).toEqual({ bg: '#93c5fd', border: '#60a5fa' });
+    expect(neutral('pill')).toEqual({ bg: '#60a5fa', border: '#3b82f6' });
+  });
+
+  it('keeps the sheet view grey for both shapes, where there is no catalog to match', () => {
+    expect(component.mapScope()).toBe('sheet');
+
+    expect(neutral('dot')).toEqual({ bg: '#9ca3af', border: '#6b7280' });
+    expect(neutral('pill')).toEqual({ bg: '#9ca3af', border: '#6b7280' });
   });
 });

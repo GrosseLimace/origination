@@ -53,6 +53,19 @@ export class BarchartPickerComponent {
   /** Name of the sheet ticked locations will be added to, shown in the footer. */
   readonly sheetName = input<string>('');
 
+  /**
+   * Building a NEW sheet out of what gets ticked, rather than adding to one that already exists.
+   * The two differ only at the destination: same catalog, same search, same basket. The name field
+   * appears in this mode, and naming stays optional here -- the parent asks for one on confirm if
+   * it's still blank, so picking locations (the part the user came to do) is never gated behind
+   * naming something they haven't built yet.
+   */
+  readonly newSheetMode = input(false);
+
+  /** The in-progress name for that new sheet, owned by the parent so it survives leaving the picker. */
+  readonly sheetNameDraft = input<string>('');
+  readonly sheetNameDraftChange = output<string>();
+
   /** Location ids already on the active sheet, so an already-added listing can't be ticked again. */
   readonly sheetLocationIds = input<ReadonlySet<number>>(new Set());
 

@@ -160,10 +160,50 @@ export class BidSheetComponent {
   readonly activeSheetLocationIds = computed<ReadonlySet<number>>(() =>
     new Set(this.bidLocations().map(l => l.id)));
 
+  /**
+   * Which added locations the MAP draws as bid pins: the open sheet's, or every one company-wide.
+   *
+   * Defaults to the sheet because the panel has always been sheet-scoped, and a map showing everyone
+   * else's locations beside a panel showing only yours reads as a bug -- you pick a sheet to compare
+   * a set of elevators, then the map answers with bids from elevators that aren't in it.
+   *
+   * "All" is the browse mode that behaviour used to be: every added location, whoever's sheet it is on.
+   * It governs the MAP only. The panel and the Edit Bids grid stay the sheet's, because the sheet is
+   * the thing with a shared row order and column layout -- widening those would mean reordering rows
+   * that don't belong to it.
+   */
+  readonly mapScope = signal<'sheet' | 'all'>('sheet');
+
+  /**
+   * True when the map is showing everything rather than one sheet -- either "All locations" is picked
+   * or there is no sheet to narrow to. The catalog layer rides on this too: with a sheet open the map
+   * is meant to be JUST that sheet, and a few thousand catalog dots underneath is the opposite of that.
+   */
+  readonly showingAllLocations = computed<boolean>(() => this.mapScope() === 'all' || !this.activeSheet());
+
+  /** The added locations the map should draw, per mapScope. */
+  readonly mapLocations = computed<BidSheetLocation[]>(() =>
+    this.showingAllLocations() ? this.allMapLocations() : this.bidLocations());
+
+  /** Stable identity for "no sheet to be already-on" (the picker's new-sheet mode), so binding it
+   *  doesn't hand the input a fresh Set on every change-detection pass. */
+  readonly emptyLocationIds: ReadonlySet<number> = new Set();
+
   readonly showSheetMenu = signal<boolean>(false);
   readonly showCreateSheet = signal<boolean>(false);
   readonly newSheetName = signal<string>('');
   readonly creatingSheet = signal<boolean>(false);
+
+  /**
+   * Whether the picker is filling the open sheet or building a brand-new one ("+ Add" → Build a bid
+   * sheet). In 'new' the sheet does not exist until the batch is confirmed, so nothing downstream may
+   * assume activeSheetId is the destination -- see onBarchartAddMany.
+   */
+  readonly barchartSheetMode = signal<'existing' | 'new'>('existing');
+  /** A picked batch parked while the naming dialog asks what to call its sheet. */
+  private readonly pendingBulkAdd = signal<BarchartBulkAddRequest | null>(null);
+  /** Drives the create-sheet dialog's copy: naming a sheet for a batch reads differently to naming an empty one. */
+  readonly namingSheetForBatch = computed(() => this.pendingBulkAdd() !== null);
   readonly showRenameSheet = signal<boolean>(false);
   readonly renameSheetName = signal<string>('');
   readonly renamingSheet = signal<boolean>(false);
@@ -309,7 +349,10 @@ export class BidSheetComponent {
    */
   readonly filterableYears = computed<number[]>(() => {
     const now = new Date().getFullYear();
-    const years = new Set<number>([now - 1, now, now + 1, now + 2]);
+    // Last year, this year, next year -- the three an originator actually trades across: the old crop
+    // still being priced out, the current one, and the new crop being booked forward. Anything further
+    // out only appears if a bid genuinely exists for it (below), rather than offering empty years.
+    const years = new Set<number>([now - 1, now, now + 1]);
     for (const y of this.cropYears()) years.add(y);
     return [...years].sort((a, b) => a - b);
   });
@@ -1001,6 +1044,92 @@ export class BidSheetComponent {
     this.showSheetMenu.update(v => !v);
   }
 
+  /**
+   * The map toolbar's sheet dropdown, whose options are the user's sheets plus "All locations" --
+   * one control answering "what am I looking at", rather than a sheet picker beside a scope switch
+   * saying the same thing twice. "All locations" widens the MAP only; the sheet stays open underneath
+   * so the panel, the grid and Add all still have their destination.
+   */
+  readonly sheetDropdownValue = computed<string>(() =>
+    this.mapScope() === 'all' ? 'all' : String(this.activeSheetId() ?? ''));
+
+  onSheetDropdownChange(value: string): void {
+    if (value === 'all') { this.setMapScope('all'); return; }
+    const id = Number(value);
+    if (!id) return;
+    this.setMapScope('sheet');
+    this.selectSheet(id);
+  }
+
+  /**
+   * Switching sheets from inside the Edit Bids grid. Flushes pending cell edits against the CURRENT
+   * sheet before the rows change underneath them -- same ordering confirmCropSelection uses, and for
+   * the same reason: _buildEditGrid reshapes what the dirty cells refer to.
+   */
+  onEditBidsSheetChange(id: number): void {
+    if (!id || id === this.activeSheetId()) return;
+    this._saveDirtyBids(() => {
+      this.selectSheet(id);
+      this._buildEditGrid();
+    });
+  }
+
+  /**
+   * Whether a coordinate group survives the panel-parity prune -- the rule that keeps the map showing
+   * what the panel's filters left, so a Matching/Beating filter narrows both together.
+   *
+   * A group NOT on the open sheet is exempt: the panel never lists it, so it has no row to be filtered
+   * out of. That only arises in "All" map scope, which exists precisely to show those locations.
+   */
+  private _passesPanelPrune(names: string[], panelNames: ReadonlySet<string>, sheetNames: ReadonlySet<string>): boolean {
+    if (!names.some(n => sheetNames.has(n))) return true;
+    return names.some(n => panelNames.has(n));
+  }
+
+  /**
+   * The "nothing to compare against" pin colour, for an added location that is neither the reference
+   * nor a Scoular site.
+   *
+   * Scope-dependent because the map is a different thing in each mode. Showing one sheet, every pin is
+   * an added location and grey is the established neutral. Showing ALL locations, the map is mostly
+   * catalog listings -- and an added location rendered grey among thousands of blue ones reads as
+   * "this pin is special" when the only thing different about it is that somebody added it. Same
+   * colour, so the two layers look like one map. Once a reference IS set both layers switch to the
+   * shared status palette, so they already agree from there on.
+   */
+  private _neutralPinColors(shape: 'pill' | 'dot' = 'pill'): { bg: string; border: string } {
+    if (!this.showingAllLocations()) return { bg: '#9ca3af', border: '#6b7280' };
+    // Matched per shape, not just per layer: the catalog draws its dots lighter than its pills, so
+    // borrowing the pill colour for an added DOT made that one pin visibly darker than every catalog
+    // dot around it -- the same "why is mine different" the colour split caused in the first place.
+    return shape === 'dot'
+      ? { bg: BidSheetComponent.CATALOG_DOT_BG, border: BidSheetComponent.CATALOG_DOT_BORDER }
+      : { bg: BidSheetComponent.CATALOG_PILL_BG, border: BidSheetComponent.CATALOG_PILL_BORDER };
+  }
+
+  /** Narrows the map to the open sheet, or widens it back to every added location plus the catalog. */
+  setMapScope(scope: 'sheet' | 'all'): void {
+    if (this.mapScope() === scope) return;
+    this.mapScope.set(scope);
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', `map-scope-${scope}`);
+
+    // Narrowing takes the catalog layer off the map, so anything anchored to it has to go with it: an
+    // open detail popup for a pin that no longer exists, and -- worse -- a catalog listing left as the
+    // comparison reference, which would go on colouring every sheet pin against something invisible.
+    if (scope === 'sheet') {
+      this.catalogDetailKey.set(null);
+      this.catalogDetail.set(null);
+      if (this.catalogReferenceKey()) {
+        this.catalogReferenceKey.set(null);
+        this.filterBids();
+      }
+    }
+
+    this._refreshMapMarkers();
+    // Widening needs the catalog fetched (sheet scope skips it); narrowing clears what it left behind.
+    this._loadCatalogLocations();
+  }
+
   /** Records which sheet is open, so a reload reopens the same one. */
   private _saveSelectedSheet(id: number): void {
     const cropCode = this.selectedCrop() || null;
@@ -1021,11 +1150,24 @@ export class BidSheetComponent {
 
   cancelCreateSheet(): void {
     this.showCreateSheet.set(false);
+    // Backing out of naming returns to the picker with the basket still ticked, rather than throwing
+    // the selection away -- the user cancelled the name, not the batch.
+    this.pendingBulkAdd.set(null);
   }
 
   confirmCreateSheet(): void {
     const name = this.newSheetName().trim();
     if (!name || this.creatingSheet()) return;
+
+    // Naming a sheet for a batch that's already picked: create it and add them, in one step.
+    const pending = this.pendingBulkAdd();
+    if (pending) {
+      this.pendingBulkAdd.set(null);
+      this.showCreateSheet.set(false);
+      this._createSheetThenBulkAdd(name, pending);
+      return;
+    }
+
     this.creatingSheet.set(true);
     this.apiService.createBidSheet(name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (sheet) => {
@@ -1688,12 +1830,18 @@ export class BidSheetComponent {
    * Status colouring deliberately does NOT use this -- it keys off the cash value alone, because a
    * combined string has no numeric meaning and would compare as NaN against the reference.
    */
-  private _getDisplayBid(name: string, year: number | null, crop: string, month: number): string {
+  /**
+   * @param includeContract false drops the "(ZCU26)" suffix. Only the MAP passes false, and only at a
+   * wide zoom -- the contract doubles a pill's width, and a region's worth of them is what makes the
+   * map cramped. The panel, the grid and print always name it; so does hover, at any zoom.
+   */
+  private _getDisplayBid(name: string, year: number | null, crop: string, month: number, includeContract = true): string {
     const primary = this._getLatestBid(name, year, crop, month);
     const basis = (this._getLatestEntry(name, year, crop, month)?.basisBid ?? '').trim();
     const value = this.priceMode() === 'both'
       ? (primary && basis ? `${primary} / ${basis}` : (primary || basis))
       : primary;
+    if (!includeContract) return value;
     // Every fed value names the contract it is quoted against: a Year cell because its value is one
     // month standing in for a year, a month cell because the board is what makes two bids comparable
     // at all. Manual cells stay bare -- there is no contract behind them to name.
@@ -1776,25 +1924,56 @@ export class BidSheetComponent {
    * With the feed turned off there's nothing to choose, so this goes straight to the manual flow —
    * the behaviour every environment had before the picker existed.
    */
+  /**
+   * The "+ Add" menu. Deliberately does NOT require a sheet up front: building one out of a batch of
+   * locations is one of the choices it offers, so demanding a sheet first would gate the very thing
+   * the user came to do. The choices that do need a destination ask for one themselves (_requireSheet).
+   */
   startAddLocation(origin: 'editBids' | 'map'): void {
-    // A location has to land somewhere. With no sheet open there is no destination for it, so ask
-    // for one first rather than opening a picker whose Add button would have nothing to do.
-    if (!this.activeSheet()) {
-      if (this.sheets().length === 0) { this.openCreateSheet(); } else { this.showSheetMenu.set(true); }
+    this.addLocationOrigin.set(origin === 'editBids' ? 'editBids' : null);
+    // Without the feed there is no catalog to build a sheet from, so the only choice is the manual
+    // one -- skip the menu rather than show it with a single option.
+    if (!this.barchartEnabled) {
+      if (!this._requireSheet()) return;
+      this._startManualAdd();
       return;
     }
-    this.addLocationOrigin.set(origin === 'editBids' ? 'editBids' : null);
-    if (!this.barchartEnabled) { this._startManualAdd(); return; }
     this.showAddSourceChoice.set(true);
+  }
+
+  /**
+   * Ensures there is somewhere for a single location to land, prompting for a sheet if not.
+   * Returns false when the caller should stand down and let the prompt take over.
+   */
+  private _requireSheet(): boolean {
+    if (this.activeSheet()) return true;
+    if (this.sheets().length === 0) { this.openCreateSheet(); } else { this.showSheetMenu.set(true); }
+    return false;
   }
 
   chooseManualAdd(): void {
     this.showAddSourceChoice.set(false);
+    if (!this._requireSheet()) return;
     this._startManualAdd();
   }
 
-  chooseBarchartAdd(): void {
+  /** Build a new sheet from a batch of catalog locations. The sheet is created on confirm, not now. */
+  chooseBuildSheet(): void {
     this.showAddSourceChoice.set(false);
+    // No feed means no catalog to pick from, so there is nothing to build a sheet OUT of -- fall back
+    // to naming an empty one, which is the only way to get a sheet at all in that configuration.
+    if (!this.barchartEnabled) { this.openCreateSheet(); return; }
+    this.barchartSheetMode.set('new');
+    this.newSheetName.set('');
+    this._pickerRef()?.clearSelection();
+    this.enterBarchartMode();
+  }
+
+  /** Add catalog locations to the sheet that's already open. */
+  chooseAddToSheet(): void {
+    this.showAddSourceChoice.set(false);
+    if (!this._requireSheet()) return;
+    this.barchartSheetMode.set('existing');
     this.enterBarchartMode();
   }
 
@@ -1979,6 +2158,8 @@ export class BidSheetComponent {
    */
   private _leaveBarchartMode(): void {
     this.barchartMode.set(false);
+    this.barchartSheetMode.set('existing'); // or the next visit inherits "building a new sheet"
+    this.pendingBulkAdd.set(null);
     this.barchartSelectedKey.set(null);
     this.barchartSearchArea.set(null);
     this._clearBarchartPins();
@@ -2008,12 +2189,29 @@ export class BidSheetComponent {
   }
 
   /**
-   * Fetches every catalog listing in the current view and re-renders the map.
+   * The row cap for a catalog fetch, scaled DOWN as the view widens. take was a flat 5,000 at first --
+   * fine for the network payload (the request DTO's own ceiling), not fine for panning: a national-
+   * scale view was asking for and then drawing thousands of un-clustered DOM markers (see
+   * _catalogLayer's own comment for why they don't cluster), which is exactly the redraw cost that
+   * made panning feel laggy. At that radius the dots would overlap into an unreadable smear anyway, so
+   * capping lower there costs nothing worth having; a close-in view keeps the full 5,000 because at
+   * that radius there are naturally few enough results for it to never bind.
+   */
+  private static _catalogTakeFor(radiusMiles: number): number {
+    if (radiusMiles >= 300) return 500;
+    if (radiusMiles >= 100) return 1500;
+    return 5000;
+  }
+
+  /**
+   * Fetches every catalog listing in the current view and re-renders JUST the catalog layer -- never
+   * the added-location pins, which this has no new data for and which are the more expensive of the
+   * two to redraw (clustering, spread, richer icons). Splitting it out is what makes panning tolerable:
+   * every pan/zoom used to force a full _refreshMapMarkers(), redrawing added-location pins that had
+   * not changed at all.
    *
    * Skipped while the map is repurposed for add-location or the BarChart picker -- same guard
-   * _refreshMapMarkers already uses, so the two stay in step. take is generous (up to 5,000, the
-   * request DTO's ceiling) because this is "what's here", not a curated picker list: the whole point
-   * is a wide zoom-out showing most of what BarChart publishes at once.
+   * _refreshMapMarkers uses for its own layer, so the two stay in step.
    *
    * The crop and search filters narrow this same request (server-side, via the commodity mapping and
    * name/city match the search endpoint already supports) -- geography still applies too, unlike the
@@ -2023,34 +2221,78 @@ export class BidSheetComponent {
    */
   private _loadCatalogLocations(): void {
     if (this.addLocationMode() || this.barchartMode()) return;
+    // Nothing to draw it into while the map is scoped to one sheet -- skip the round trip entirely
+    // rather than fetching thousands of rows for a layer that won't render (see _renderCatalogMarkers).
+    if (!this.showingAllLocations()) { this.catalogLocations.set([]); return; }
     const area = this._currentViewArea();
     if (!area) return;
     const gen = ++this._catalogLoadGen;
     const crop = this.selectedCrop() || undefined;
     const month = this.selectedMonth();
+    const take = BidSheetComponent._catalogTakeFor(area.radiusMiles);
+    const baseParams = {
+      latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles, take,
+      commodityCode: crop,
+      search: this.searchQuery().trim() || undefined,
+    };
+
     // The "Year" column (month 0) is a materialized cell the feed bridge resolves onto an ADDED
     // location's own board once ingested -- there is no calendar month to price a not-yet-added
     // listing against, so catalog pins fall back to a plain dot in Year view, same as with no crop
     // selected. Only a real 1-12 month names a single instrument this endpoint can price.
-    //
-    // instrumentType rides along with the period: cash and basis are separate BarChart instruments
-    // with independent quotes, not one price under two labels, so which one to price is part of
-    // "what period" just as much as the year and month are. 'both' resolves to cash, the same
-    // convention bidEntries() already uses for anything on this screen that shows one number.
-    const instrumentType: 'bidCash' | 'bidBasis' = this.priceMode() === 'basis' ? 'bidBasis' : 'bidCash';
-    const period = crop && month > 0
-      ? { cropYear: this.selectedYear(), month, instrumentType }
-      : {};
-    this.apiService.searchBarchartLocations({
-      latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles, take: 5000,
-      commodityCode: crop,
-      search: this.searchQuery().trim() || undefined,
-      ...period
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (rows) => {
-        if (gen !== this._catalogLoadGen) return; // a newer pan/zoom/filter already superseded this request
-        this.catalogLocations.set(rows);
-        this._refreshMapMarkers();
+    if (!crop || month === 0) {
+      this.apiService.searchBarchartLocations(baseParams).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (rows) => {
+          if (gen !== this._catalogLoadGen) return; // a newer pan/zoom/filter already superseded this
+          this.catalogLocations.set(rows);
+          this._renderCatalogMarkers();
+        },
+        error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
+      });
+      return;
+    }
+
+    const period = { cropYear: this.selectedYear(), month };
+    // Cash and basis are separate BarChart instruments with independent quotes, not one price under
+    // two labels -- "Both" mode needs both fetched and merged, one request per type, since the search
+    // endpoint prices one instrument at a time. Cash carries the location metadata (name, coordinates,
+    // placements); the basis pass only contributes its price, matched back in by locationKey.
+    if (this.priceMode() === 'basis') {
+      this.apiService.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidBasis' })
+        .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          next: (rows) => {
+            if (gen !== this._catalogLoadGen) return;
+            this.catalogLocations.set(rows);
+            this._renderCatalogMarkers();
+          },
+          error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
+        });
+      return;
+    }
+
+    const cash$ = this.apiService.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidCash' });
+    if (this.priceMode() !== 'both') {
+      cash$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (rows) => {
+          if (gen !== this._catalogLoadGen) return;
+          this.catalogLocations.set(rows);
+          this._renderCatalogMarkers();
+        },
+        error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
+      });
+      return;
+    }
+
+    const basis$ = this.apiService.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidBasis' });
+    forkJoin({ cash: cash$, basis: basis$ }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: ({ cash, basis }) => {
+        if (gen !== this._catalogLoadGen) return;
+        const basisByKey = new Map(basis.filter(r => r.matchedBidPrice != null).map(r => [r.locationKey, r.matchedBidPrice]));
+        this.catalogLocations.set(cash.map(r => {
+          const matchedBasisPrice = basisByKey.get(r.locationKey);
+          return matchedBasisPrice != null ? { ...r, matchedBasisPrice } : r;
+        }));
+        this._renderCatalogMarkers();
       },
       error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
     });
@@ -2159,9 +2401,24 @@ export class BidSheetComponent {
    * the publishing company; Edit Bids is where both get corrected, which is why it opens straight
    * after rather than dropping the user back on the map.
    */
+  /**
+   * Resolves where a picked batch is going, then hands off to _bulkAddToSheet.
+   *
+   * In "build a sheet" mode the destination does not exist yet: the sheet is created from the name
+   * typed in the picker, or -- if that was left blank -- from one asked for now, with the batch parked
+   * until the dialog comes back. Naming last is deliberate; see the picker's newSheetMode.
+   */
   onBarchartAddMany(request: BarchartBulkAddRequest): void {
     if (this.barchartAdding()) return;
     if (request.locations.length === 0) return;
+
+    if (this.barchartSheetMode() === 'new') {
+      const name = this.newSheetName().trim();
+      if (!name) { this.pendingBulkAdd.set(request); this.showCreateSheet.set(true); return; }
+      this._createSheetThenBulkAdd(name, request);
+      return;
+    }
+
     const sheetId = this.activeSheetId();
     // No destination means nothing can be linked anywhere. Said out loud rather than returning
     // silently, which left the button looking broken.
@@ -2169,6 +2426,32 @@ export class BidSheetComponent {
       this.toastService.error('Create or select a bid sheet first, then add these locations');
       return;
     }
+    this._bulkAddToSheet(sheetId, request);
+  }
+
+  /** Creates the sheet a "build a sheet" batch is destined for, then adds the batch to it. */
+  private _createSheetThenBulkAdd(name: string, request: BarchartBulkAddRequest): void {
+    this.barchartAdding.set(true);
+    this.apiService.createBidSheet(name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (sheet) => {
+        this.barchartAdding.set(false);
+        this._applySheet(sheet);
+        this.activeSheetId.set(sheet.id);
+        this._saveSelectedSheet(sheet.id);
+        this.barchartSheetMode.set('existing'); // it exists now -- anything further adds to it
+        this._bulkAddToSheet(sheet.id, request);
+      },
+      error: (err: { status?: number }) => {
+        this.barchartAdding.set(false);
+        // Keeps the picker open with the basket intact, so the user just renames and confirms again.
+        this.toastService.error(err?.status === 409
+          ? `You already have a bid sheet called "${name}"`
+          : 'Failed to create bid sheet');
+      }
+    });
+  }
+
+  private _bulkAddToSheet(sheetId: number, request: BarchartBulkAddRequest): void {
     this.barchartAdding.set(true);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
 
@@ -3990,6 +4273,10 @@ export class BidSheetComponent {
     // Search query — only filter map pins, panel stays full
     const searchQ = this.searchQuery().toLowerCase();
 
+    // One threshold, both layers, every scope -- so the sheet's pins and the catalog's never disagree
+    // about whether this zoom is a dot zoom or a label zoom.
+    const labelZoom = BidSheetComponent.LABEL_ZOOM;
+
     // Scoular pins switch presentation on ONE thing: whether a reference location is set.
     //   no reference  → whole pin green (fill), no ring
     //   reference set → status fill (blue/red/yellow) + green ring
@@ -3998,9 +4285,9 @@ export class BidSheetComponent {
     const comparingToRef = this._hasReference();
     const scoularNames = this.scoularLocationNames();
 
-    // Group all map locations by coordinates
+    // Group the in-scope locations by coordinates -- the open sheet's, or everything, per mapScope.
     const locsByPos = new Map<string, BidSheetLocation[]>();
-    for (const loc of this.allMapLocations()) {
+    for (const loc of this.mapLocations()) {
       if (!loc.latitude || !loc.longitude) continue;
       const key = locKey(loc.latitude, loc.longitude);
       const arr = locsByPos.get(key) || [];
@@ -4013,6 +4300,10 @@ export class BidSheetComponent {
 
     // Build set of location names visible in the panel (respects crop/TU/search filters)
     const panelNames = new Set(this.filteredBidItems().map(i => i.name));
+    // The panel lists the SHEET's locations, so it can only speak for those. In "All" scope the map
+    // also draws locations that are on nobody's open sheet -- they have no panel row by construction,
+    // and pruning them by one would silently make All identical to Sheet.
+    const sheetNames = new Set(this.bidLocations().map(l => l.name));
 
     // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
     // Was "a trade unit is selected, OR we are in All Producers with data" -- both branches are
@@ -4032,7 +4323,7 @@ export class BidSheetComponent {
       const isRef = !!(hasIndividualTu && refName && names.includes(refName));
       const isPanelOpen = !!(panelOpenName && names.includes(panelOpenName));
       // When filters are active, only show locations that appear in the panel
-      if (hasTu && !names.some(n => panelNames.has(n))) continue;
+      if (hasTu && !this._passesPanelPrune(names, panelNames, sheetNames)) continue;
       // Skip locations with no bid for the selected crop/year/month
       if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
       renderGroups.push({ locs, names, isActiveTu, isRef, isPanelOpen });
@@ -4074,8 +4365,9 @@ export class BidSheetComponent {
 
       // Below the bid-pin zoom threshold: colored dot — but when searching, always show name labels.
       // Lowered from 8 → 6 so the bid-value pins appear sooner (esp. in All Producers, which opens at
-      // the wider US overview). Zoom 5 = national overview keeps dots; 6+ shows the bid pins.
-      if (zoom < 6 && !searchQ) {
+      // the wider US overview). Zoom 5 = national overview keeps dots; 6+ shows the bid pins. In "All
+      // locations" this defers to the catalog's threshold so both layers change together.
+      if (zoom < labelZoom && !searchQ) {
         // Dot stands for the whole coordinate group, so it counts as ours if ANY location here is.
         const dotIsScoular = names.some(n => scoularNames.has(n));
         // Compute dot color from bid status (matches the pill colors used when zoomed in)
@@ -4090,12 +4382,18 @@ export class BidSheetComponent {
         } else if (dotIsScoular) {
           color = BidSheetComponent.SCOULAR_BG; border = BidSheetComponent.SCOULAR_BORDER;
         } else {
-          color = '#9ca3af'; border = '#6b7280';
+          ({ bg: color, border } = this._neutralPinColors('dot'));
         }
+        // Sized to match the catalog's dots in "All locations" for the same reason they're coloured to
+        // match: a bigger, darker dot among thousands of small pale ones says "this one is special"
+        // when the only thing different about it is that somebody added it. Scoped to a sheet it keeps
+        // its own larger size -- there is nothing there for it to disagree with.
+        const dotPx = this.showingAllLocations() ? BidSheetComponent.CATALOG_DOT_SIZE : 14;
+        const dotBorderPx = this.showingAllLocations() ? 1.5 : 2;
         const dotIcon = L.divIcon({
           className: 'custom-marker',
-          html: `<div style="width:14px;height:14px;background:${color};border:2px solid ${border};border-radius:50%;box-shadow:${this._scoularRing(comparingToRef && dotIsScoular)}0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`,
-          iconSize: [14, 14], iconAnchor: [7, 7]
+          html: `<div style="width:${dotPx}px;height:${dotPx}px;background:${color};border:${dotBorderPx}px solid ${border};border-radius:50%;box-shadow:${this._scoularRing(comparingToRef && dotIsScoular)}0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`,
+          iconSize: [dotPx, dotPx], iconAnchor: [dotPx / 2, dotPx / 2]
         });
         const m = L.marker([lat, lng], { icon: dotIcon });
         m.on('click', () => this._selectMapLocation(locs[0]));
@@ -4113,7 +4411,9 @@ export class BidSheetComponent {
             // bidVal drives presence and status comparison and must stay numeric; bidLabel is what
             // the pill prints, which in Both mode carries the basis alongside.
             const bidVal = this._getLatestBid(n, year, crop, month);
-            const bidLabel = this._getDisplayBid(n, year, crop, month);
+            // The board only joins the pill once there is room for it (BOARD_SYMBOL_ZOOM); hover and
+            // the panel still name it at any zoom.
+            const bidLabel = this._getDisplayBid(n, year, crop, month, zoom >= BidSheetComponent.BOARD_SYMBOL_ZOOM);
             const nameIsScoular = scoularNames.has(n);
             if (isNameRef) {
               const { bg, border } = statusColors['reference'];
@@ -4124,6 +4424,13 @@ export class BidSheetComponent {
             // rather than a gray "no status" pill wearing a ring.
             if (!comparingToRef && nameIsScoular) {
               return { name: n, label: bidLabel, bg: BidSheetComponent.SCOULAR_BG, border: BidSheetComponent.SCOULAR_BORDER, isScoular: true };
+            }
+            // No reference means there is no status to colour by, so this is the neutral pin -- which
+            // in "All locations" has to be the catalog's own neutral, or the added pins are the only
+            // grey ones on a map of blue (see _neutralPinColors).
+            if (!comparingToRef) {
+              const neutral = this._neutralPinColors();
+              return { name: n, label: bidLabel, bg: neutral.bg, border: neutral.border, isScoular: nameIsScoular };
             }
             const status = this._computeItemStatus(bidVal, false, refBid);
             const { bg, border } = statusColors[status] ?? statusColors['none'];
@@ -4174,7 +4481,7 @@ export class BidSheetComponent {
       } else if (labelIsScoular) {
         bg = BidSheetComponent.SCOULAR_BG; border = BidSheetComponent.SCOULAR_BORDER;
       } else {
-        bg = '#9ca3af'; border = '#6b7280';
+        ({ bg, border } = this._neutralPinColors());
       }
       // Must match _buildStackedLabel's own width maths, including its 150px cap -- the label clamps
       // and ellipsises at that width, so sizing the icon box by an uncapped estimate left a long
@@ -4220,10 +4527,40 @@ export class BidSheetComponent {
   private static readonly CATALOG_PILL_BG = '#60a5fa';
   private static readonly CATALOG_PILL_BORDER = '#3b82f6';
 
+  /** A catalog DOT is lighter than a catalog pill on purpose -- a pill is a number you are meant to
+   *  read, a dot is just "something is here". Named because the added-location pass has to match them
+   *  exactly in "All locations" scope; see _neutralPinColors. */
+  private static readonly CATALOG_DOT_BG = '#93c5fd';
+  private static readonly CATALOG_DOT_BORDER = '#60a5fa';
+
+  /**
+   * Zoom at which a pin turns from a plain dot into a labelled price -- for BOTH layers, deliberately.
+   *
+   * The bid value is the reason this screen exists, so it appears as early as it can be read: zoom 5 is
+   * the national overview and stays dots, 6 is regional and shows the numbers. An earlier attempt held
+   * catalog prices back to zoom 9 to fight crowding, which just meant no bids were visible at any zoom
+   * a user actually browses at. Crowding is the BOARD's problem to solve (below), not the price's.
+   */
+  private static readonly LABEL_ZOOM = 6;
+
+  /**
+   * Zoom at which a label gains the futures contract -- "4.98" becomes "4.98 (ZCU26)".
+   *
+   * This is the one thing that genuinely needs holding back: the contract roughly doubles a pill's
+   * width, and it is what tipped the map from busy into cramped once catalog pins started carrying it.
+   * It is also the least urgent part of the label -- the price is what you scan across a region, the
+   * board is what you check before trusting one specific comparison, and by then you are zoomed in on
+   * it. Hover shows it at any zoom.
+   */
+  private static readonly BOARD_SYMBOL_ZOOM = 10;
+
   private _renderCatalogMarkers(): void {
     if (!this._map || !this._catalogLayer || !this._L) return;
     this._catalogLayer.clearLayers();
     if (this.addLocationMode() || this.barchartMode()) return;
+    // With a sheet open the map answers with that sheet and nothing else -- browsing the wider catalog
+    // is what "All locations" is for.
+    if (!this.showingAllLocations()) return;
     const L = this._L;
     const detailKey = this.catalogDetailKey();
     const refKey = this.catalogReferenceKey();
@@ -4235,24 +4572,63 @@ export class BidSheetComponent {
     // consistently with everything else on the map when either kind of reference is set.
     const refBid = hasReference ? this._referenceBid(year, crop, month) : null;
 
+    // Skip only what the pin pass ACTUALLY drew, not everything that has ever been added. In sheet
+    // scope an added location that isn't on the open sheet is drawn by neither pass otherwise, and
+    // simply vanishes; as a catalog dot it stays findable, and clicking it offers to add it.
+    const drawnIds = new Set(this.mapLocations().map(l => l.id));
+
+    const zoom = this._map.getZoom();
+    const showLabels = zoom >= BidSheetComponent.LABEL_ZOOM;
+    const showBoard = zoom >= BidSheetComponent.BOARD_SYMBOL_ZOOM;
+
     for (const loc of this.catalogLocations()) {
       if (loc.latitude == null || loc.longitude == null) continue;
-      if (loc.placements.length > 0) continue; // already drawn as an added location above
+      if (loc.placements.some(p => drawnIds.has(p.locationId))) continue; // drawn as a bid pin above
 
       // "Selected" covers both the open detail popup AND being the comparison reference -- closing
       // the popup shouldn't make the pin you're actively comparing against look unselected.
       const isRef = loc.locationKey === refKey;
       const selected = loc.locationKey === detailKey || isRef;
       const price = loc.matchedBidPrice;
+      // Two separate gates, so the label grows in stages as you close in: nothing at a wide zoom, the
+      // price once pills have room, the board once the price alone has room to spare.
+      const label = showLabels ? this._catalogPriceLabel(loc, showBoard) : null;
 
-      const { marker, icon } = price != null
-        ? this._buildCatalogPriceMarker(loc, price, isRef, hasReference, refBid, selected)
+      const { marker, icon } = label != null
+        ? this._buildCatalogPriceMarker(loc, label, price, isRef, hasReference, refBid, selected)
         : this._buildCatalogDotMarker(loc, selected);
 
       marker.on('click', () => this._selectCatalogLocation(loc));
-      this._bindCatalogHover(marker, icon, loc, price ?? null);
+      // Hover is a deliberate act on one pin, so it always gets the full label -- the zoom gates are
+      // about the map being legible at a glance, not about withholding the number.
+      this._bindCatalogHover(marker, icon, loc, this._catalogPriceLabel(loc));
       this._catalogLayer.addLayer(marker);
     }
+  }
+
+  /**
+   * The pill text for a catalog pin's matched price(s), or null when this listing has nothing for the
+   * current period (falls back to a plain dot). Both mode combines cash and basis the same way
+   * _getDisplayBid does for an added location ("4.98 / -30", or whichever side actually has a value) --
+   * a location can have one instrument published without the other, since they're independent feeds.
+   */
+  private _catalogPriceLabel(loc: BarchartCatalogLocation, includeBoard = true): string | null {
+    const cash = loc.matchedBidPrice;
+    const basis = loc.matchedBasisPrice;
+    let value: string | null;
+    if (this.priceMode() !== 'both') {
+      value = cash != null ? cash.toString() : null;
+    } else if (cash != null && basis != null) {
+      value = `${cash} / ${basis}`;
+    } else {
+      value = cash != null ? cash.toString() : (basis != null ? basis.toString() : null);
+    }
+    if (value == null) return null;
+    if (!includeBoard) return value;
+    // Names the contract behind the number, exactly as _getDisplayBid does for an added location --
+    // the two kinds of pin sit on the same map and have to be readable against each other.
+    const board = loc.matchedBidBoard?.trim();
+    return board ? `${value} (${board})` : value;
   }
 
   /** No crop selected, or this listing has nothing for the current period: a plain, small dot. */
@@ -4260,8 +4636,8 @@ export class BidSheetComponent {
     const L = this._L!;
     const dotSize = selected ? BidSheetComponent.CATALOG_DOT_SIZE_SELECTED : BidSheetComponent.CATALOG_DOT_SIZE;
     const box = dotSize + BidSheetComponent.CATALOG_HIT_PADDING;
-    const dotColor = selected ? '#2563eb' : '#93c5fd';
-    const dotBorder = selected ? '#1d4ed8' : '#60a5fa';
+    const dotColor = selected ? '#2563eb' : BidSheetComponent.CATALOG_DOT_BG;
+    const dotBorder = selected ? '#1d4ed8' : BidSheetComponent.CATALOG_DOT_BORDER;
     const icon = L.divIcon({
       className: 'custom-marker',
       html: `<div style="width:${box}px;height:${box}px;display:flex;align-items:center;justify-content:center;">
@@ -4279,15 +4655,17 @@ export class BidSheetComponent {
    * value directly, hover to see the name") -- a plain dot only stands in for this until there is
    * an actual number to show.
    */
-  private _buildCatalogPriceMarker(loc: BarchartCatalogLocation, price: number, isRef: boolean,
+  private _buildCatalogPriceMarker(loc: BarchartCatalogLocation, label: string, cashPrice: number | undefined, isRef: boolean,
     hasReference: boolean, refBid: number | null, selected: boolean): { marker: Leaflet.Marker; icon: Leaflet.DivIcon } {
     const L = this._L!;
-    const label = price.toString();
     let bg: string, border: string;
     if (isRef) {
       bg = '#2563eb'; border = '#1d4ed8';
     } else if (hasReference) {
-      const status = this._computeItemStatus(label, false, refBid);
+      // Status keys off the cash value alone -- a combined "x / y" string has no numeric meaning to
+      // compare against the reference, the same rule _getDisplayBid documents for added locations. A
+      // basis-only listing (no cash for this period) has nothing to compare, so it reads as 'none'.
+      const status = cashPrice != null ? this._computeItemStatus(cashPrice.toString(), false, refBid) : 'none';
       const colors: Record<string, [string, string]> = {
         beating: ['#dc2626', '#991b1b'], matching: ['#eab308', '#a16207'], none: ['#6b7280', '#4b5563'], reference: ['#2563eb', '#1d4ed8']
       };
@@ -4311,14 +4689,14 @@ export class BidSheetComponent {
 
   /**
    * Hover-expand for a catalog pin: name plus whatever the pin is already showing -- the matched
-   * price when it has one (the same number the pill prints), city/state otherwise. No fetch: the
+   * price label when it has one (the same text the pill prints), city/state otherwise. No fetch: the
    * batched search response already carries every visible pin's price for the current period (see
    * _loadCatalogLocations), so there is nothing left to look up just because the pointer arrived.
    */
-  private _bindCatalogHover(marker: Leaflet.Marker, icon: Leaflet.DivIcon, loc: BarchartCatalogLocation, price: number | null): void {
+  private _bindCatalogHover(marker: Leaflet.Marker, icon: Leaflet.DivIcon, loc: BarchartCatalogLocation, label: string | null): void {
     const name = barchartDisplayName(loc);
     const subtitle = [loc.city, loc.state].filter(Boolean).join(', ');
-    this._bindHoverExpand(marker, icon, name, price != null ? price.toString() : subtitle, '#2563eb', '#1d4ed8');
+    this._bindHoverExpand(marker, icon, name, label ?? subtitle, '#2563eb', '#1d4ed8');
   }
 
   /**

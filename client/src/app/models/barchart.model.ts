@@ -34,10 +34,19 @@ export interface BarchartCatalogLocation {
   distanceMiles?: number;
   /** Trade units this location is already on, so the picker can show it as already added. */
   placements: BarchartCatalogPlacement[];
-  /** This location's price for the search's commodityCode/cropYear/month, when the search asked for
-   *  one and this location has one. Absent both when the search didn't ask and when it did but this
-   *  location has nothing published for that exact period. */
+  /** This location's price for the search's commodityCode/cropYear/month/instrumentType, when the
+   *  search asked for one and this location has one. Absent both when the search didn't ask and when
+   *  it did but this location has nothing published for that exact period+type. */
   matchedBidPrice?: number;
+  /** Futures contract matchedBidPrice is quoted against, e.g. "ZCU26". The map prints it after the
+   *  price, the same way an added location's pin does -- same delivery month on two exchanges is not
+   *  a like-for-like comparison, so the number alone is not enough to read one pin against another. */
+  matchedBidBoard?: string;
+  /** The SAME location's basis price for the same period -- populated client-side only, by a second
+   *  request, when the price mode is "both" (see _loadCatalogLocations). The search endpoint prices
+   *  one instrument type per call, since cash and basis are independent instruments; this is the
+   *  merge point rather than a second server round trip the map has to know about. */
+  matchedBasisPrice?: number;
 }
 
 /** Where a catalog listing already sits on the bid sheet. */

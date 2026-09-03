@@ -97,8 +97,14 @@ public class BarchartCatalogService : IBarchartCatalogService
             {
                 for (var i = 0; i < results.Count; i++)
                 {
-                    if (prices.TryGetValue(results[i].LocationKey, out var price))
-                        results[i] = results[i] with { MatchedBidPrice = price };
+                    if (prices.TryGetValue(results[i].LocationKey, out var matched))
+                    {
+                        results[i] = results[i] with
+                        {
+                            MatchedBidPrice = matched.Price,
+                            MatchedBidBoard = matched.UnderlyingFuture
+                        };
+                    }
                 }
             }
         }

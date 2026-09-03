@@ -46,3 +46,21 @@ public record BarchartBidPreview
     /// <summary>End of the vendor delivery window (UTC); part of the same ranking.</summary>
     public DateTime? DeliveryEnd { get; init; }
 }
+
+/// <summary>
+/// A single location's matched price for one commodity/period/instrument type, as the map's catalog
+/// pins show it — the price plus the futures contract it is quoted against.
+/// </summary>
+/// <remarks>
+/// This carries the board because a bare number on a pin is not comparable: two elevators quoting the
+/// same delivery month can be quoting different exchanges (Kansas City wheat delivering in January
+/// trades against the March board), so the map labels an added location's bid with its contract and
+/// a catalog listing's bid has to say the same thing or the two cannot be read side by side.
+/// </remarks>
+public record BarchartMatchedPrice
+{
+    public decimal Price { get; init; }
+
+    /// <summary>Futures contract the price is quoted against, e.g. "ZCU26". Null when the vendor didn't supply one.</summary>
+    public string? UnderlyingFuture { get; init; }
+}

@@ -44,6 +44,14 @@ public record BarchartCatalogLocationResponse
     /// two look the same on the wire and the caller already knows which one it asked for.
     /// </summary>
     public decimal? MatchedBidPrice { get; init; }
+
+    /// <summary>
+    /// Futures contract MatchedBidPrice is quoted against, e.g. "ZCU26". Null whenever MatchedBidPrice
+    /// is, and also when the vendor published the instrument without one. The map prints it beside the
+    /// price the same way it does for an added location's bid -- two elevators quoting the same
+    /// delivery month can be on different exchanges, so the number alone isn't a like-for-like compare.
+    /// </summary>
+    public string? MatchedBidBoard { get; init; }
 }
 
 /// <summary>Where a catalog listing already sits on the Bid Sheet.</summary>

@@ -37,6 +37,21 @@
                  filterableYears), not just what the active sheet happens to have priced, so filtering
                  works before you've added anything. Selecting a crop also narrows the catalog dots
                  themselves -- see _loadCatalogLocations. -->
+            <!-- What the map is showing: one of your sheets, or every location anyone has added.
+                 Leads the bar because it is the context every filter after it is read against, and it
+                 was previously only visible with the side panel open. The panel's own sheet bar keeps
+                 the full menu (share / rename / delete) -- this is switch-and-see. -->
+            @if (sheets().length > 0) {
+              <select [ngModel]="sheetDropdownValue()" (ngModelChange)="onSheetDropdownChange($event)"
+                      title="Which bid sheet the map and panel are showing"
+                      class="max-w-[180px] px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                @for (sheet of sheets(); track sheet.id) {
+                  <option [value]="sheet.id">{{ sheet.name }}{{ sheet.isOwner ? '' : ' (shared)' }}</option>
+                }
+                <option value="all">All locations</option>
+              </select>
+            }
+
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               <option value="">All Crops</option>
               @for (crop of filterableCrops(); track crop) {
@@ -113,7 +128,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M5 12h14"/><path d="M12 5v14"/>
               </svg>
-              Add Location
+              Add
             </button>
             <button
               (click)="toggleMapView()"
@@ -519,10 +534,10 @@
                     <path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/>
                   </svg>
                   <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No bid sheets yet</p>
-                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed mb-3">A bid sheet is a list of locations you compare. Make one to start adding locations and tracking bids.</p>
-                  <button (click)="openCreateSheet()" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed mb-3">A bid sheet is a list of locations you compare. Pick the ones you want and name it — you can share it with colleagues afterwards.</p>
+                  <button (click)="chooseBuildSheet(); showPanel.set(false)" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                    Create a Bid Sheet
+                    Build a Bid Sheet
                   </button>
                 </div>
               } @else if (!activeSheet()) {
@@ -658,8 +673,14 @@
             <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
               <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
                 <div class="px-5 pt-5 pb-4">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">New Bid Sheet</h4>
-                  <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-3">A named list of the locations you want to compare. Share it with colleagues who should see and edit it too.</p>
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">{{ namingSheetForBatch() ? 'Name your bid sheet' : 'New Bid Sheet' }}</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-3">
+                    @if (namingSheetForBatch()) {
+                      The locations you ticked go on it, and you'll land straight in the bids grid. Share it with colleagues from there.
+                    } @else {
+                      A named list of the locations you want to compare. Share it with colleagues who should see and edit it too.
+                    }
+                  </p>
                   <input
                     type="text"
                     [ngModel]="newSheetName()"
@@ -672,7 +693,7 @@
                 <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
                   <button (click)="cancelCreateSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
                   <button (click)="confirmCreateSheet()" [disabled]="!newSheetName().trim() || creatingSheet()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
-                    {{ creatingSheet() ? 'Creating…' : 'Create' }}
+                    {{ creatingSheet() ? 'Creating…' : (namingSheetForBatch() ? 'Create & add locations' : 'Create') }}
                   </button>
                 </div>
               </div>
@@ -818,25 +839,42 @@
             <div class="w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
                  (click)="$event.stopPropagation()">
               <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Add a location</h4>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Where should its bids come from?</p>
+                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Add</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Build a sheet from the map, or add a single location yourself.</p>
               </div>
 
               <div class="p-3 space-y-2">
-                <button (click)="chooseBarchartAdd()"
+                <button (click)="chooseBuildSheet()"
                         class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
                   <div class="flex items-start gap-3">
                     <span class="flex-shrink-0 mt-0.5 text-scoular-green-accessible dark:text-scoular-green">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/></svg>
                     </span>
                     <span class="min-w-0">
-                      <span class="block text-sm font-medium text-gray-900 dark:text-white">From BarChart</span>
+                      <span class="block text-sm font-medium text-gray-900 dark:text-white">Build a bid sheet</span>
                       <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        Pick a competitor location from the feed. Its bids appear on their own and stay current — you won't type them.
+                        Tick the locations you want to compare, name the sheet, and go straight to entering bids. Share it with colleagues from there.
                       </span>
                     </span>
                   </div>
                 </button>
+
+                @if (activeSheet(); as sheet) {
+                  <button (click)="chooseAddToSheet()"
+                          class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
+                    <div class="flex items-start gap-3">
+                      <span class="flex-shrink-0 mt-0.5 text-scoular-green-accessible dark:text-scoular-green">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                      </span>
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-gray-900 dark:text-white truncate">Add locations to "{{ sheet.name }}"</span>
+                        <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Pick more from the BarChart feed. Their bids appear on their own and stay current — you won't type them.
+                        </span>
+                      </span>
+                    </div>
+                  </button>
+                }
 
                 <button (click)="chooseManualAdd()"
                         class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
@@ -845,7 +883,7 @@
                       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                     </span>
                     <span class="min-w-0">
-                      <span class="block text-sm font-medium text-gray-900 dark:text-white">Manually</span>
+                      <span class="block text-sm font-medium text-gray-900 dark:text-white">Add a location manually</span>
                       <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                         Drop a pin on the map, name it, and enter the bids yourself. Use this for anything the feed doesn't carry.
                       </span>
@@ -868,7 +906,9 @@
         @if (barchartMode()) {
           <!-- left-14 clears Leaflet's zoom control, the same offset the filter bar uses. -->
           <div class="absolute top-2.5 left-14 z-[1100] bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 max-w-[300px]">
-            <p class="text-sm font-semibold text-gray-900 dark:text-white">Pick a location from BarChart</p>
+            <p class="text-sm font-semibold text-gray-900 dark:text-white">
+              {{ barchartSheetMode() === 'new' ? 'Pick the locations for your sheet' : 'Pick a location from BarChart' }}
+            </p>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Pins are competitor locations in the feed near this view. Pan the map to look elsewhere, or search by name.
               Hollow pins are already added (link them to add to this sheet); blue pins are the ones you have ticked to add.
@@ -879,8 +919,11 @@
             #picker
             [searchArea]="barchartSearchArea()"
             [adding]="barchartAdding()"
+            [newSheetMode]="barchartSheetMode() === 'new'"
+            [sheetNameDraft]="newSheetName()"
+            (sheetNameDraftChange)="newSheetName.set($event)"
             [sheetName]="activeSheet()?.name ?? ''"
-            [sheetLocationIds]="activeSheetLocationIds()"
+            [sheetLocationIds]="barchartSheetMode() === 'new' ? emptyLocationIds : activeSheetLocationIds()"
             (resultsChange)="onBarchartResults($event)"
             (focus)="onBarchartFocus($event)"
             (addMany)="onBarchartAddMany($event)"
@@ -1178,6 +1221,19 @@
                     </div>
                   }
                 </div>
+
+                <!-- Which sheet is being edited. No "All locations" here, unlike the map's copy of this
+                     dropdown: the grid's rows carry the sheet's own shared order and column layout, so
+                     it always edits exactly one sheet. -->
+                @if (sheets().length > 0) {
+                  <select [ngModel]="activeSheetId()" (ngModelChange)="onEditBidsSheetChange(+$event)"
+                          title="The bid sheet you're editing"
+                          class="max-w-[220px] px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base font-medium text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-scoular-green">
+                    @for (sheet of sheets(); track sheet.id) {
+                      <option [value]="sheet.id">{{ sheet.name }}{{ sheet.isOwner ? '' : ' (shared)' }}</option>
+                    }
+                  </select>
+                }
               </div>
 
               <!-- Print (right). No trade-unit selector: the sheet is not scoped by desk, and no
@@ -1230,7 +1286,11 @@
                     }
                     <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onCropColumnDrop($event)"
                         class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[240px] lg:min-w-[340px]">Location</th>
+                      <!-- Names the sheet in the corner cell: with several sheets in play, the grid
+                           otherwise looks identical whichever one is open. -->
+                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[240px] lg:min-w-[340px]">
+                        Locations@if (activeSheet(); as sheet) { <span class="normal-case text-gray-700 dark:text-gray-200"> — {{ sheet.name }}</span> }
+                      </th>
                       @for (col of editGridColumns(); track col.key) {
                         <th cdkDrag cdkDragLockAxis="x"
                             (cdkDragStarted)="draggingCrop.set(col.crop)"

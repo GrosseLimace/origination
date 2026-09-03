@@ -112,7 +112,7 @@ public class BarchartCatalogServiceTests
         _catalog.GetMatchedBidPricesAsync(
                 Arg.Is<IReadOnlyCollection<string>>(k => k.Contains("priced") && k.Contains("unpriced")),
                 "YC", 2026, 8, "bidCash", Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, decimal> { ["priced"] = 4.98m });
+            .Returns(new Dictionary<string, BarchartMatchedPrice> { ["priced"] = new() { Price = 4.98m, UnderlyingFuture = "ZCU26" } });
 
         var results = await _sut.SearchLocationsAsync(
             new BarchartLocationSearchRequest { CommodityCode = "YC", CropYear = 2026, Month = 8 },
@@ -120,6 +120,10 @@ public class BarchartCatalogServiceTests
 
         Assert.Equal(4.98m, results.Single(r => r.LocationKey == "priced").MatchedBidPrice);
         Assert.Null(results.Single(r => r.LocationKey == "unpriced").MatchedBidPrice);
+        // The board rides along with the price: the map prints it beside the number, because two
+        // elevators quoting the same delivery month can be quoting different exchanges.
+        Assert.Equal("ZCU26", results.Single(r => r.LocationKey == "priced").MatchedBidBoard);
+        Assert.Null(results.Single(r => r.LocationKey == "unpriced").MatchedBidBoard);
     }
 
     // -------------------------------------------------------------------------
@@ -134,7 +138,7 @@ public class BarchartCatalogServiceTests
             .Returns([Summary("82259")]);
         _catalog.GetMatchedBidPricesAsync(
                 Arg.Any<IReadOnlyCollection<string>>(), "YC", 2026, 8, "bidBasis", Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, decimal> { ["82259"] = -30m });
+            .Returns(new Dictionary<string, BarchartMatchedPrice> { ["82259"] = new() { Price = -30m } });
 
         var results = await _sut.SearchLocationsAsync(
             new BarchartLocationSearchRequest { CommodityCode = "YC", CropYear = 2026, Month = 8, InstrumentType = "bidBasis" },
@@ -153,7 +157,7 @@ public class BarchartCatalogServiceTests
             .Returns([Summary("82259")]);
         _catalog.GetMatchedBidPricesAsync(
                 Arg.Any<IReadOnlyCollection<string>>(), "YC", 2026, 8, "bidCash", Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, decimal> { ["82259"] = 4.98m });
+            .Returns(new Dictionary<string, BarchartMatchedPrice> { ["82259"] = new() { Price = 4.98m } });
 
         var results = await _sut.SearchLocationsAsync(
             new BarchartLocationSearchRequest { CommodityCode = "YC", CropYear = 2026, Month = 8 },
