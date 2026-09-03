@@ -695,7 +695,8 @@ export class HomeComponent {
             dpContracts: this.dpContracts(),
             plantingIntentions: this.plantingIntentions(),
             commodityConversions: this.appState.commodityConversions(),
-            noteLastContacts: this.appState.noteLastContacts()
+            noteLastContacts: this.appState.noteLastContacts(),
+            commodities: this.appState.commodities()
           })
         : result.customers;
       const ids = this.nlqFilterService.applyCustomerOverrides(

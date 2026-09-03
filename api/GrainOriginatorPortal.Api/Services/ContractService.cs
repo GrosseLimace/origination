@@ -3,6 +3,7 @@ using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.Data.SqlClient;
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -72,9 +73,14 @@ public class ContractService : IContractService
     }
 
     /// <summary>
-    /// Runs a contract fetch and maps to DTOs, degrading to an empty list when the ODS contract view
-    /// is missing a mapped column / object (SQL 207/208) or the DB connection fails — the prior
-    /// SqlDataService behavior. Non-database exceptions propagate to the global handler.
+    /// Runs a contract fetch and maps to DTOs, degrading to an empty list only when the ODS
+    /// contract view is missing a mapped column / object (SQL 207/208) — a permanent schema-drift
+    /// condition that a retry cannot fix, the prior SqlDataService behavior. A genuine connection
+    /// failure or SQL timeout is DIFFERENT: it is transient and retryable, so it is rethrown as an
+    /// InfrastructureException (503) instead of silently degrading to []. Swallowing a timeout to
+    /// [] previously made contract-aware Build-A-List prompts (e.g. "producers with active
+    /// contracts") render "No Producers Found" with no way for the client to distinguish that from
+    /// a genuine zero-match — see the 300s command-timeout comment on the bulk contracts query.
     /// </summary>
     private async Task<List<ContractResponse>> SafeContractsAsync(
         Func<CancellationToken, Task<List<Contract>>> fetch, string context, CancellationToken cancellationToken)
@@ -92,8 +98,13 @@ public class ContractService : IContractService
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            _logger.LogWarning(ex, "DB connection error retrieving {Context} — returning empty list", context);
-            return [];
+            // Anything reaching here is a genuine connection failure, timeout, or throttling —
+            // NOT the missing-column/view case (caught above) — so it is transient and worth a
+            // retry rather than a silent, indistinguishable-from-real-zero empty list.
+            _logger.LogError(ex, "Transient DB error retrieving {Context} — surfacing as retryable", context);
+            throw new InfrastructureException(
+                "The contract data source is temporarily unavailable. Please retry shortly.",
+                "CONTRACTS_DB_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
         }
     }
 }
