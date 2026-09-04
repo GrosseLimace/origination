@@ -8,6 +8,7 @@ import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { compareTicketsByDateThenNumber } from '@shared/utils/ticket-sort';
+import { ticketDisplayNumber } from '@shared/utils/ticket-display';
 
 type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'specialType' | 'price' | 'deliveryStart' | 'status'
   | 'remaining' | 'delivered' | 'unsettled';
@@ -37,6 +38,10 @@ interface ExtraColumn { key: ExtraColumnKey; label: string; value: (c: Contract)
 export class ContractsTableComponent {
   private readonly appState = inject(AppStateService);
   private readonly usageTracking = inject(UsageTrackingService);
+
+  /** Exposed for the template — shows the full shipment ticket number (prefix + number + suffix). */
+  readonly ticketDisplayNumber = ticketDisplayNumber;
+
   private _conversionMap: Map<string, number> | null = null;
 
   public isLoading = input(false);

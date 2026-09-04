@@ -34,7 +34,13 @@ export function compareNumericStrings(a: string | null | undefined, b: string | 
   return sa.localeCompare(sb, undefined, { sensitivity: 'base' });
 }
 
-/** Compare two tickets by their displayed ticket number, smallest → largest. */
+/** Compare two tickets by the bare ticket number, smallest → largest.
+ *
+ *  NOTE this is no longer the number the grid displays — that is now the full shipment ticket
+ *  number (see ticket-display.ts). Sorting stays on the bare sequence deliberately: shipment
+ *  numbers carry a prefix and suffix, so they are not numeric, and compareNumericStrings would fall
+ *  through to a string compare — reintroducing exactly the "1000 before 999" ordering bug the
+ *  helper exists to avoid. Revisit only if the visible order matters more than the numeric one. */
 export function compareTicketNumbers(a: Ticket, b: Ticket): number {
   return compareNumericStrings(a.ticketNumber, b.ticketNumber);
 }
