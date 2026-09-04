@@ -34,6 +34,20 @@ export const CROP_CODE_MAP: Readonly<Record<string, readonly string[]>> = {
   sunflower: ['sunfl', 'sunflower'],
 } as const;
 
+/** Crop groups that should be OFFERED as a "Crops" refine chip (lowercased). `dbo.Commodities`
+ *  is a company-wide commodity master shared across Scoular's other business lines, not just
+ *  Origination's grain producers — it has ~90 Category values, and all but a handful (marine
+ *  protein, animal feed ingredients, freight, "Processed Co-Product" — 972 codes covering custom
+ *  feed blends — etc.) are irrelevant field crops. A producer's commodity CSV can legitimately
+ *  include a code under one of those categories, and without this allowlist availableCrops()
+ *  surfaced the category verbatim as a chip, which read as "why is Processed Co-Product a crop?"
+ *  Deliberately narrower than CROP_CODE_MAP's keys (no oats/sunflower) — this only gates what's
+ *  OFFERED as a chip; matching (resolveCropGroup/matchesCropSelection) stays unrestricted so an
+ *  older saved list that stored a now-excluded group still filters the same as it always did. */
+export const CROP_CHIP_GROUPS: ReadonlySet<string> = new Set([
+  'corn', 'soybeans', 'wheat', 'barley', 'sorghum', 'canola',
+]);
+
 /** Reverse index: any token from CROP_CODE_MAP (plus each group name itself, and the
  *  'soybean'/'beans' singular/plural variants) → its canonical group. */
 export const CROP_GROUP_BY_TOKEN: ReadonlyMap<string, string> = (() => {

@@ -1309,6 +1309,12 @@ export class NlqFilterService {
   // ============================================================
 
   private filterCustomers(query: string, context: NlqFilterContext, detectedState: string | null): Customer[] {
+    // The "Start with no producers" blank-start card is the deliberate OPPOSITE of "All
+    // producers": every other unrecognized query defaults to matching everyone (filterCustomers
+    // only ever narrows), so an explicit, exact-match early return is the only way to make a
+    // card mean "match nobody" — the user then builds the list entirely via Manage Members.
+    // Checked before normalizeSynonyms/anything else so no other rule can override it.
+    if (query.trim().toLowerCase() === 'start with no producers') return [];
     // Normalize synonyms before pattern matching
     const lowerQuery = this.normalizeSynonyms(query.toLowerCase());
     let result = [...context.customers];

@@ -496,6 +496,26 @@
         </div>
       }
 
+      <!-- "Start with no producers" — the deliberately blank list. Points at Manage Members
+           instead of the generic no-match banner, since an empty result here is the whole
+           point, not a failure. -->
+      @if (isBlankStartQuery() && hasGenerated() && !isProcessing()) {
+        <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+          </svg>
+          <div class="flex-1">
+            <p class="text-sm text-blue-700 dark:text-blue-300">This list starts empty. Use Manage Members below to search for producers and add them one at a time.</p>
+            @if (!showManageMembersPanel()) {
+              <button type="button" (click)="toggleManageMembersPanel()"
+                class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                Open Manage Members
+              </button>
+            }
+          </div>
+        </div>
+      }
+
       <!-- Valid query, no matches (query was understood but data is empty for these criteria) -->
       @if (queryReturnedNoMatches() && hasGenerated() && queryText().trim() && !contractsUnavailableForQuery()) {
         <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
@@ -516,7 +536,6 @@
         @let refinementCount = activeRefinementCount();
         @let crops = availableCrops();
         @let states = availableStates();
-        @let deliveryLocations = availableDeliveryLocations();
         <app-card>
           <app-card-header>
             <div class="flex items-center justify-between">
@@ -621,26 +640,26 @@
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Contract Status</p>
                       @if (!h.has('noActiveContracts')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().noActiveContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, noActiveContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().noActiveContracts" (ngModelChange)="updateRefinement(r => ({...r, noActiveContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           No active contracts
                         </label>
                       }
                       <!-- Stricter than "No active contracts": zero contracts of any status. -->
                       @if (!h.has('noContractsAtAll')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().noContractsAtAll" (ngModelChange)="pendingRefinements.update(r => ({...r, noContractsAtAll: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().noContractsAtAll" (ngModelChange)="updateRefinement(r => ({...r, noContractsAtAll: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           No contracts at all
                         </label>
                       }
                       @if (!h.has('hasUnsignedContracts')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasUnsignedContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, hasUnsignedContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasUnsignedContracts" (ngModelChange)="updateRefinement(r => ({...r, hasUnsignedContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has unconfirmed contracts
                         </label>
                       }
                       @if (!h.has('hasOverdueContracts')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasOverdueContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, hasOverdueContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasOverdueContracts" (ngModelChange)="updateRefinement(r => ({...r, hasOverdueContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has overdue bu contracts
                         </label>
                       }
@@ -651,7 +670,7 @@
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Pricing & Pace</p>
                       @if (!h.has('hasUnpricedContracts')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasUnpricedContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, hasUnpricedContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasUnpricedContracts" (ngModelChange)="updateRefinement(r => ({...r, hasUnpricedContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has unpriced contracts
                         </label>
                       }
@@ -664,19 +683,19 @@
                         <span class="shrink-0">Quantity over</span>
                         <input type="number" min="1"
                           [ngModel]="pendingRefinements().contractQuantityOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, contractQuantityOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, contractQuantityOver: $event ? +$event : null}))"
                           placeholder="bushels"
                           class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         <span>bu</span>
                       </div>
                       @if (!h.has('contractsExpiringThisMonth')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().contractsExpiringThisMonth" (ngModelChange)="pendingRefinements.update(r => ({...r, contractsExpiringThisMonth: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().contractsExpiringThisMonth" (ngModelChange)="updateRefinement(r => ({...r, contractsExpiringThisMonth: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Expiring this month
                         </label>
                       }
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().multipleCommoditiesContracted" (ngModelChange)="pendingRefinements.update(r => ({...r, multipleCommoditiesContracted: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().multipleCommoditiesContracted" (ngModelChange)="updateRefinement(r => ({...r, multipleCommoditiesContracted: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Multiple commodities
                       </label>
                     </div>
@@ -692,7 +711,7 @@
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Contact History</p>
                       @if (!hc.has('neverContacted')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().neverContacted" (ngModelChange)="pendingRefinements.update(r => ({...r, neverContacted: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().neverContacted" (ngModelChange)="updateRefinement(r => ({...r, neverContacted: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Never contacted
                         </label>
                       }
@@ -712,7 +731,7 @@
                           <span class="shrink-0">Notes added in last</span>
                           <input type="number" min="1"
                             [ngModel]="pendingRefinements().notesInLastDays || ''"
-                            (ngModelChange)="pendingRefinements.update(r => ({...r, notesInLastDays: $event ? +$event : null}))"
+                            (ngModelChange)="updateRefinement(r => ({...r, notesInLastDays: $event ? +$event : null}))"
                             placeholder="7"
                             class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                           <span>days</span>
@@ -724,11 +743,11 @@
                     <div class="space-y-2.5">
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Contact Frequency</p>
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().contactedOnlyOnce" (ngModelChange)="pendingRefinements.update(r => ({...r, contactedOnlyOnce: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().contactedOnlyOnce" (ngModelChange)="updateRefinement(r => ({...r, contactedOnlyOnce: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Only contacted once
                       </label>
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().contactedMoreThan5" (ngModelChange)="pendingRefinements.update(r => ({...r, contactedMoreThan5: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().contactedMoreThan5" (ngModelChange)="updateRefinement(r => ({...r, contactedMoreThan5: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Contacted more than 5 times
                       </label>
                     </div>
@@ -738,12 +757,12 @@
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Contact Author</p>
                       @if (!hc.has('contactedByMeOnly')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().contactedByMeOnly" (ngModelChange)="pendingRefinements.update(r => ({...r, contactedByMeOnly: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().contactedByMeOnly" (ngModelChange)="updateRefinement(r => ({...r, contactedByMeOnly: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Contacted by me only
                         </label>
                       }
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().contactedBySomeoneElse" (ngModelChange)="pendingRefinements.update(r => ({...r, contactedBySomeoneElse: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().contactedBySomeoneElse" (ngModelChange)="updateRefinement(r => ({...r, contactedBySomeoneElse: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Contacted by someone else
                       </label>
                     </div>
@@ -753,7 +772,7 @@
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Notes Content</p>
                       @if (!hc.has('hasPinnedNotes')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasPinnedNotes" (ngModelChange)="pendingRefinements.update(r => ({...r, hasPinnedNotes: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasPinnedNotes" (ngModelChange)="updateRefinement(r => ({...r, hasPinnedNotes: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has pinned notes
                         </label>
                       }
@@ -762,7 +781,7 @@
                           <span class="shrink-0">Notes mention</span>
                           <input type="text"
                             [ngModel]="pendingRefinements().noteKeyword || ''"
-                            (ngModelChange)="pendingRefinements.update(r => ({...r, noteKeyword: $event || null}))"
+                            (ngModelChange)="updateRefinement(r => ({...r, noteKeyword: $event || null}))"
                             placeholder="keyword"
                             class="w-24 sm:w-32 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         </div>
@@ -783,22 +802,22 @@
                           <span class="shrink-0">Acres over</span>
                           <input type="number" min="1"
                             [ngModel]="pendingRefinements().acresOver || ''"
-                            (ngModelChange)="pendingRefinements.update(r => ({...r, acresOver: $event ? +$event : null}))"
+                            (ngModelChange)="updateRefinement(r => ({...r, acresOver: $event ? +$event : null}))"
                             placeholder="500"
                             class="w-20 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         </div>
                       }
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().hasBinCapacity" (ngModelChange)="pendingRefinements.update(r => ({...r, hasBinCapacity: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().hasBinCapacity" (ngModelChange)="updateRefinement(r => ({...r, hasBinCapacity: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Has bin capacity
                       </label>
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().noBinCapacity" (ngModelChange)="pendingRefinements.update(r => ({...r, noBinCapacity: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().noBinCapacity" (ngModelChange)="updateRefinement(r => ({...r, noBinCapacity: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         No bin capacity
                       </label>
                       @if (!hg.has('downHarvestPace')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().downHarvestPace" (ngModelChange)="pendingRefinements.update(r => ({...r, downHarvestPace: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().downHarvestPace" (ngModelChange)="updateRefinement(r => ({...r, downHarvestPace: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Down harvest contract pace
                         </label>
                       }
@@ -809,33 +828,33 @@
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Producer Info</p>
                       @if (!hg.has('hasPrimaryContact')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasPrimaryContact" (ngModelChange)="pendingRefinements.update(r => ({...r, hasPrimaryContact: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasPrimaryContact" (ngModelChange)="updateRefinement(r => ({...r, hasPrimaryContact: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has primary contact
                         </label>
                       }
                       @if (!hg.has('noPrimaryContact')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().noPrimaryContact" (ngModelChange)="pendingRefinements.update(r => ({...r, noPrimaryContact: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().noPrimaryContact" (ngModelChange)="updateRefinement(r => ({...r, noPrimaryContact: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           No primary contact
                         </label>
                       }
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().hasEmail" (ngModelChange)="pendingRefinements.update(r => ({...r, hasEmail: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().hasEmail" (ngModelChange)="updateRefinement(r => ({...r, hasEmail: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Has email on file
                       </label>
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().hasPhone" (ngModelChange)="pendingRefinements.update(r => ({...r, hasPhone: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().hasPhone" (ngModelChange)="updateRefinement(r => ({...r, hasPhone: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Has phone on file
                       </label>
                       @if (!hg.has('hasLinkedProducers')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasLinkedProducers" (ngModelChange)="pendingRefinements.update(r => ({...r, hasLinkedProducers: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasLinkedProducers" (ngModelChange)="updateRefinement(r => ({...r, hasLinkedProducers: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has linked producers
                         </label>
                       }
                       @if (!hg.has('notEsignEnrolled')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().notEsignEnrolled" (ngModelChange)="pendingRefinements.update(r => ({...r, notEsignEnrolled: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().notEsignEnrolled" (ngModelChange)="updateRefinement(r => ({...r, notEsignEnrolled: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Not eSign enrolled
                         </label>
                       }
@@ -846,19 +865,19 @@
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Producer Activity</p>
                       @if (!hg.has('hasActiveContracts')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasActiveContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, hasActiveContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasActiveContracts" (ngModelChange)="updateRefinement(r => ({...r, hasActiveContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has active contracts
                         </label>
                       }
                       @if (!hg.has('hasPlantingIntentions')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasPlantingIntentions" (ngModelChange)="pendingRefinements.update(r => ({...r, hasPlantingIntentions: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasPlantingIntentions" (ngModelChange)="updateRefinement(r => ({...r, hasPlantingIntentions: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has planting intentions
                         </label>
                       }
                       @if (!hg.has('hasGrainInStorage')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().hasGrainInStorage" (ngModelChange)="pendingRefinements.update(r => ({...r, hasGrainInStorage: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasGrainInStorage" (ngModelChange)="updateRefinement(r => ({...r, hasGrainInStorage: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Has grain in storage
                         </label>
                       }
@@ -876,7 +895,7 @@
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                           <input type="checkbox"
                             [ngModel]="(pendingRefinements().ticketViewMode ?? 'single') === 'grouped'"
-                            (ngModelChange)="pendingRefinements.update(r => ({...r, ticketViewMode: $event ? 'grouped' : 'single'}))"
+                            (ngModelChange)="updateRefinement(r => ({...r, ticketViewMode: $event ? 'grouped' : 'single'}))"
                             class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           View by AVG
                         </label>
@@ -885,7 +904,7 @@
                         <span class="shrink-0">{{ effectiveTicketViewMode() === 'grouped' ? 'Avg net bu over' : 'Net bu over' }}</span>
                         <input type="number" min="1"
                           [ngModel]="pendingRefinements().ticketQuantityOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, ticketQuantityOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, ticketQuantityOver: $event ? +$event : null}))"
                           placeholder="bu"
                           class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         <span>bu</span>
@@ -894,7 +913,7 @@
                         <span class="shrink-0">Tickets in last</span>
                         <input type="number" min="1"
                           [ngModel]="pendingRefinements().ticketsInLastDays || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, ticketsInLastDays: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, ticketsInLastDays: $event ? +$event : null}))"
                           placeholder="30"
                           class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         <span>days</span>
@@ -908,7 +927,7 @@
                         <span class="shrink-0">Over</span>
                         <input type="number" step="any" [style]="'appearance: textfield; -moz-appearance: textfield;'"
                           [ngModel]="pendingRefinements().avgMoistureOver ?? ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, avgMoistureOver: $event !== '' ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, avgMoistureOver: $event !== '' ? +$event : null}))"
                           placeholder="%"
                           class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -916,7 +935,7 @@
                         <span class="shrink-0">Under</span>
                         <input type="number" step="any" [style]="'appearance: textfield; -moz-appearance: textfield;'"
                           [ngModel]="pendingRefinements().avgMoistureUnder ?? ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, avgMoistureUnder: $event !== '' ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, avgMoistureUnder: $event !== '' ? +$event : null}))"
                           placeholder="%"
                           class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -929,7 +948,7 @@
                         <span class="shrink-0">Over</span>
                         <input type="number" step="any" [style]="'appearance: textfield; -moz-appearance: textfield;'"
                           [ngModel]="pendingRefinements().avgTestWeightOver ?? ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, avgTestWeightOver: $event !== '' ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, avgTestWeightOver: $event !== '' ? +$event : null}))"
                           placeholder="%"
                           class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -937,7 +956,7 @@
                         <span class="shrink-0">Under</span>
                         <input type="number" step="any" [style]="'appearance: textfield; -moz-appearance: textfield;'"
                           [ngModel]="pendingRefinements().avgTestWeightUnder ?? ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, avgTestWeightUnder: $event !== '' ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, avgTestWeightUnder: $event !== '' ? +$event : null}))"
                           placeholder="%"
                           class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -950,7 +969,7 @@
                         <span class="shrink-0">Over</span>
                         <input type="number" step="any" [style]="'appearance: textfield; -moz-appearance: textfield;'"
                           [ngModel]="pendingRefinements().avgProteinOver ?? ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, avgProteinOver: $event !== '' ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, avgProteinOver: $event !== '' ? +$event : null}))"
                           placeholder="%"
                           class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -958,7 +977,7 @@
                         <span class="shrink-0">Under</span>
                         <input type="number" step="any" [style]="'appearance: textfield; -moz-appearance: textfield;'"
                           [ngModel]="pendingRefinements().avgProteinUnder ?? ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, avgProteinUnder: $event !== '' ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, avgProteinUnder: $event !== '' ? +$event : null}))"
                           placeholder="%"
                           class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -978,7 +997,7 @@
                           <span class="shrink-0">Stored over</span>
                           <input type="number" min="1"
                             [ngModel]="pendingRefinements().storageDaysOver || ''"
-                            (ngModelChange)="pendingRefinements.update(r => ({...r, storageDaysOver: $event ? +$event : null}))"
+                            (ngModelChange)="updateRefinement(r => ({...r, storageDaysOver: $event ? +$event : null}))"
                             placeholder="60"
                             class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                           <span>days</span>
@@ -993,7 +1012,7 @@
                         <span class="shrink-0">Quantity over</span>
                         <input type="number" min="1"
                           [ngModel]="pendingRefinements().storageQuantityOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, storageQuantityOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, storageQuantityOver: $event ? +$event : null}))"
                           placeholder="bushels"
                           class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         <span>bu</span>
@@ -1008,7 +1027,7 @@
                         <span>$</span>
                         <input type="number" min="1"
                           [ngModel]="pendingRefinements().storageReceivableOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, storageReceivableOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, storageReceivableOver: $event ? +$event : null}))"
                           placeholder="500"
                           class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -1028,7 +1047,7 @@
                           <span class="shrink-0">On DP over</span>
                           <input type="number" min="1"
                             [ngModel]="pendingRefinements().dpDaysOver || ''"
-                            (ngModelChange)="pendingRefinements.update(r => ({...r, dpDaysOver: $event ? +$event : null}))"
+                            (ngModelChange)="updateRefinement(r => ({...r, dpDaysOver: $event ? +$event : null}))"
                             placeholder="90"
                             class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                           <span>days</span>
@@ -1043,7 +1062,7 @@
                         <span class="shrink-0">Bushels over</span>
                         <input type="number" min="1"
                           [ngModel]="pendingRefinements().dpBushelsOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, dpBushelsOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, dpBushelsOver: $event ? +$event : null}))"
                           placeholder="bushels"
                           class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         <span>bu</span>
@@ -1059,7 +1078,7 @@
                           <span>$</span>
                           <input type="number" min="1"
                             [ngModel]="pendingRefinements().dpChargesOver || ''"
-                            (ngModelChange)="pendingRefinements.update(r => ({...r, dpChargesOver: $event ? +$event : null}))"
+                            (ngModelChange)="updateRefinement(r => ({...r, dpChargesOver: $event ? +$event : null}))"
                             placeholder="500"
                             class="w-20 sm:w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         </div>
@@ -1080,26 +1099,26 @@
                           <span class="shrink-0">Planting year</span>
                           <input type="number" min="2020" max="2030"
                             [ngModel]="pendingRefinements().plantingYear || ''"
-                            (ngModelChange)="pendingRefinements.update(r => ({...r, plantingYear: $event ? +$event : null}))"
+                            (ngModelChange)="updateRefinement(r => ({...r, plantingYear: $event ? +$event : null}))"
                             placeholder="2026"
                             class="w-20 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         </div>
                       }
                       @if (!hp.has('irrigatedOnly')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().irrigatedOnly" (ngModelChange)="pendingRefinements.update(r => ({...r, irrigatedOnly: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().irrigatedOnly" (ngModelChange)="updateRefinement(r => ({...r, irrigatedOnly: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Irrigated only
                         </label>
                       }
                       @if (!hp.has('drylandOnly')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().drylandOnly" (ngModelChange)="pendingRefinements.update(r => ({...r, drylandOnly: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().drylandOnly" (ngModelChange)="updateRefinement(r => ({...r, drylandOnly: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Dryland only
                         </label>
                       }
                       @if (!hp.has('doubleCropOnly')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                          <input type="checkbox" [ngModel]="pendingRefinements().doubleCropOnly" (ngModelChange)="pendingRefinements.update(r => ({...r, doubleCropOnly: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          <input type="checkbox" [ngModel]="pendingRefinements().doubleCropOnly" (ngModelChange)="updateRefinement(r => ({...r, doubleCropOnly: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                           Double Crop only
                         </label>
                       }
@@ -1112,7 +1131,7 @@
                         <span class="shrink-0">Planting acres over</span>
                         <input type="number" min="1"
                           [ngModel]="pendingRefinements().plantingAcresOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, plantingAcresOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, plantingAcresOver: $event ? +$event : null}))"
                           placeholder="500"
                           class="w-20 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -1130,17 +1149,17 @@
                         <span class="shrink-0">Bushels on farm over</span>
                         <input type="number" min="1"
                           [ngModel]="pendingRefinements().grainOnFarmBushelsOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, grainOnFarmBushelsOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, grainOnFarmBushelsOver: $event ? +$event : null}))"
                           placeholder="bu"
                           class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         <span>bu</span>
                       </div>
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().hasGrainTarget" (ngModelChange)="pendingRefinements.update(r => ({...r, hasGrainTarget: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().hasGrainTarget" (ngModelChange)="updateRefinement(r => ({...r, hasGrainTarget: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Has a target price
                       </label>
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().noGrainTarget" (ngModelChange)="pendingRefinements.update(r => ({...r, noGrainTarget: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().noGrainTarget" (ngModelChange)="updateRefinement(r => ({...r, noGrainTarget: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         No target set
                       </label>
                     </div>
@@ -1152,7 +1171,7 @@
                         <span class="shrink-0">Target over $</span>
                         <input type="number" min="0" step="0.01"
                           [ngModel]="pendingRefinements().grainTargetOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, grainTargetOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, grainTargetOver: $event ? +$event : null}))"
                           placeholder="5.50"
                           class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -1160,7 +1179,7 @@
                         <span class="shrink-0">Target under $</span>
                         <input type="number" min="0" step="0.01"
                           [ngModel]="pendingRefinements().grainTargetUnder || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, grainTargetUnder: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, grainTargetUnder: $event ? +$event : null}))"
                           placeholder="6.00"
                           class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -1170,14 +1189,14 @@
                     <div class="space-y-2.5">
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Grade</p>
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().hasGrade" (ngModelChange)="pendingRefinements.update(r => ({...r, hasGrade: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        <input type="checkbox" [ngModel]="pendingRefinements().hasGrade" (ngModelChange)="updateRefinement(r => ({...r, hasGrade: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Has a grade
                       </label>
                       <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                         <span class="shrink-0">Grade over</span>
                         <input type="number" step="0.1"
                           [ngModel]="pendingRefinements().gradeOver || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, gradeOver: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, gradeOver: $event ? +$event : null}))"
                           placeholder="4.0"
                           class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -1185,7 +1204,7 @@
                         <span class="shrink-0">Grade under</span>
                         <input type="number" step="0.1"
                           [ngModel]="pendingRefinements().gradeUnder || ''"
-                          (ngModelChange)="pendingRefinements.update(r => ({...r, gradeUnder: $event ? +$event : null}))"
+                          (ngModelChange)="updateRefinement(r => ({...r, gradeUnder: $event ? +$event : null}))"
                           placeholder="6.0"
                           class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
@@ -1231,33 +1250,26 @@
                   </div>
                 }
 
-                <!-- Delivery Location -->
-                @if (deliveryLocations.length > 0) {
-                  <div class="space-y-2.5 pt-1 border-t border-gray-200 dark:border-gray-700">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-3">Delivery Location</p>
-                    <div class="flex flex-wrap gap-2">
-                      @for (location of deliveryLocations; track location) {
-                        <button
-                          type="button"
-                          (click)="togglePendingDeliveryLocation(location)"
-                          [class]="isDeliveryLocationSelected(location)
-                            ? 'bg-scoular-green-accessible text-white border-scoular-green-accessible dark:bg-scoular-green-accessible dark:border-scoular-green-accessible'
-                            : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'"
-                          class="px-3 py-1 rounded-full border text-sm font-medium transition-colors"
-                        >{{ location }}</button>
-                      }
-                    </div>
-                  </div>
-                }
+                <!-- Delivery Location refine chip is built (availableDeliveryLocations() /
+                     togglePendingDeliveryLocation() / isDeliveryLocationSelected() in the
+                     component, plus the matching filter logic) but hidden here for now — not
+                     needed on the page yet. -->
 
-                <!-- Footer: count + Apply button -->
+                <!-- Footer: count, or an inline spinner while a change to the filters above is
+                     staged waiting on data (e.g. a checkbox that scopes to Storage before
+                     storedGrain has loaded) — filters apply immediately on change, no Apply
+                     button needed. -->
                 <div class="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
                   <p class="text-xs text-gray-400 dark:text-gray-500">
-                    @if (refinementCount > 0) {
+                    @if (refineDataPending()) {
+                      <span class="inline-flex items-center gap-2">
+                        <span class="inline-block animate-spin rounded-full h-3 w-3 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></span>
+                        Applying filter...
+                      </span>
+                    } @else if (refinementCount > 0) {
                       Showing {{ displayed.length }} of {{ customers().length }} producers
                     }
                   </p>
-                  <app-button (onClick)="applyFilters()">Apply Filters</app-button>
                 </div>
               </div>
             }

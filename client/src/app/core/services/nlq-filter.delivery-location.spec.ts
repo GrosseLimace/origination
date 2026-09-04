@@ -74,3 +74,16 @@ describe('NlqFilterService — "All producers" blank-start card', () => {
     expect(ids).toEqual([1, 2]);
   });
 });
+
+describe('NlqFilterService — "Start with no producers" blank-start card', () => {
+  let svc: NlqFilterService;
+  beforeEach(() => { svc = new NlqFilterService(); });
+
+  it('returns nobody, even though every other unrecognized query defaults to matching everyone', () => {
+    const alpha = customer(1, 'Alpha Farms', 'S1');
+    const bravo = customer(2, 'Bravo Farms', 'S2');
+    const ids = svc.parseAndFilter('Start with no producers', { customers: [alpha, bravo], contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] })
+      .customers.map(c => c.id);
+    expect(ids).toEqual([]);
+  });
+});

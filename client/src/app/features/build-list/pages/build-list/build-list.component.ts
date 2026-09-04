@@ -26,7 +26,7 @@ import { CustomerMapComponent } from '@features/customers/components/map/custome
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
-import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, resolveCropGroup, CropSelection } from '@shared/utils/crop-group-match';
+import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, resolveCropGroup, CropSelection, CROP_CHIP_GROUPS } from '@shared/utils/crop-group-match';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
@@ -285,6 +285,13 @@ export class BuildListComponent {
    *  "no producers found" for a ticket-aware prompt (e.g. "unapplied tickets"). */
   readonly ticketsUnavailableForQuery = computed(() =>
     this.ticketsLoadFailed() && this.nlqFilterService.queryInvolvesTickets(this.queryText()));
+
+  /** The "Start with no producers" blank-start card — the deliberate opposite of "All
+   *  producers". It always resolves to zero (see filterCustomers' early return), so the
+   *  results area shows a friendly "build this list manually" prompt instead of the generic
+   *  no-match banner. */
+  readonly isBlankStartQuery = computed(() =>
+    this.queryText().trim().toLowerCase() === 'start with no producers');
 
   /** Only show saved lists whose trade units exactly match the currently selected TUs. */
   readonly visibleSavedLists = computed(() => {
@@ -1037,7 +1044,13 @@ export class BuildListComponent {
       const trimmed = raw.trim();
       if (!trimmed) return;
       const group = resolveCropGroup(trimmed, lookup);
-      groups.add(group ? labelFor(group, trimmed) : trimmed);
+      // Only offer a chip for a real field-crop group (CROP_CHIP_GROUPS) — dbo.Commodities is a
+      // company-wide master shared with Scoular's other business lines (marine protein, animal
+      // feed ingredients, freight, "Processed Co-Product", etc.), so most categories a producer's
+      // commodity code could map to aren't crops at all. An unresolved or non-crop code is
+      // skipped entirely rather than falling back to a raw-code chip — see CROP_CHIP_GROUPS.
+      if (!group || !CROP_CHIP_GROUPS.has(group)) return;
+      groups.add(labelFor(group, trimmed));
     };
     for (const c of this.filteredCustomers()) {
       for (const crop of (c.commodities ?? [])) addCrop(crop);
@@ -2865,7 +2878,11 @@ export class BuildListComponent {
       return true;
     }
 
-    this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPendingForBanner && !notesPending);
+    // The blank-start card is INTENTIONALLY empty — suppress the generic "no match" banner in
+    // favor of the dedicated one pointing at Manage Members (same suppression pattern as
+    // contractsUnavailableForQuery / coverageNeedsYieldTargets).
+    this.queryReturnedNoMatches.set(
+      result.customers.length === 0 && !ticketsPendingForBanner && !notesPending && !this.isBlankStartQuery());
     this.filteredCustomers.set(result.customers);
 
     // If the query mentions pacing, apply direction filtering here at the component level
@@ -3031,17 +3048,26 @@ export class BuildListComponent {
 
   applyNotContactedDays(): void {
     const days = parseInt(this.notContactedDaysInput(), 10);
-    this.pendingRefinements.update(r => ({ ...r, notContactedDays: isNaN(days) || days <= 0 ? null : days }));
+    this.updateRefinement(r => ({ ...r, notContactedDays: isNaN(days) || days <= 0 ? null : days }));
   }
 
-  applyFilters(): void {
-    this._commitRefinements(this.pendingRefinements());
+  /** Single entry point for every refine-panel input (checkboxes, number fields, chips) — updates
+   *  the pending draft AND immediately commits it, so no separate "Apply Filters" click is
+   *  needed. Routes through the same _commitRefinements staging/readiness protection the crop/
+   *  state chips already used: if the new criteria need data that hasn't loaded yet, the old
+   *  (data-backed) results stay on screen while it fetches rather than flashing a false
+   *  near-empty result. Takes the same updater-function shape as Signal.update() so every
+   *  template binding that used to call `pendingRefinements.update(...)` now calls this instead. */
+  updateRefinement(updater: (r: RefinementFilters) => RefinementFilters): void {
+    const next = updater(this.pendingRefinements());
+    this.pendingRefinements.set(next);
+    this._commitRefinements(next);
   }
 
-  /** Crop chips apply immediately on click (cheap, client-side narrowing) rather than waiting
-   *  for the Apply button — routed through _commitRefinements like every other refine change so
-   *  a chip that happens to need not-yet-loaded dimension data (e.g. scoping to Storage) stages
-   *  and waits instead of silently filtering to near-zero. */
+  /** Crop chips apply immediately on click (cheap, client-side narrowing) — routed through
+   *  _commitRefinements like every other refine change so a chip that happens to need
+   *  not-yet-loaded dimension data (e.g. scoping to Storage) stages and waits instead of
+   *  silently filtering to near-zero. */
   togglePendingCrop(crop: string): void {
     const current = this.pendingRefinements().crops ?? [];
     const updated = current.includes(crop) ? current.filter(c => c !== crop) : [...current, crop];
