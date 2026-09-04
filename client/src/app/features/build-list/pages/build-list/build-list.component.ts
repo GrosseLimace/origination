@@ -333,7 +333,8 @@ export class BuildListComponent {
       r.grainTargetOver != null && r.grainTargetOver > 0,
       r.grainTargetUnder != null && r.grainTargetUnder > 0,
       r.gradeOver != null, r.gradeUnder != null,
-      r.crops && r.crops.length > 0, r.states && r.states.length > 0
+      r.crops && r.crops.length > 0, r.states && r.states.length > 0,
+      r.deliveryLocations && r.deliveryLocations.length > 0
     ].filter(Boolean).length;
   });
 
@@ -898,6 +899,21 @@ export class BuildListComponent {
         return !!state && r.states!.includes(state);
       });
     }
+    if (r.deliveryLocations && r.deliveryLocations.length > 0) {
+      // Independent of crops/states — a producer matches if ANY ticket has a matching
+      // elevatorCity, regardless of the active prompt's dimension.
+      const locationsByCode = new Map<string, Set<string>>();
+      for (const t of this.tickets()) {
+        if (!t.customerCode || !t.elevatorCity) continue;
+        if (!locationsByCode.has(t.customerCode)) locationsByCode.set(t.customerCode, new Set());
+        locationsByCode.get(t.customerCode)!.add(t.elevatorCity);
+      }
+      list = list.filter(c => {
+        if (!c.scoularId) return false;
+        const locations = locationsByCode.get(c.scoularId);
+        return !!locations && r.deliveryLocations!.some(l => locations.has(l));
+      });
+    }
     // Apply manual member overrides: exclude removed, add included
     const excludedIds = this.manuallyExcludedCustomerIds();
     if (excludedIds.size > 0) {
@@ -1060,6 +1076,25 @@ export class BuildListComponent {
     // section vanish, which read as "the state filter is missing" rather than "everyone's
     // already in the same state." Always show the chip(s) that exist.
     return [...states].sort();
+  });
+
+  /** Distinct Scoular delivery locations (elevatorCity, e.g. "Madrid, NE") across the current
+   *  producers' tickets. Unlike crops, no group resolution needed — elevatorCity is already a
+   *  clean display string resolved server-side from dbo.MbpLocationSynonym. Empty until the
+   *  background ticket fetch (_loadFresh) resolves, same as crops/states populate lazily off
+   *  whatever data has landed. */
+  readonly availableDeliveryLocations = computed(() => {
+    const scoularIds = new Set<string>();
+    for (const c of this.filteredCustomers()) {
+      if (c.scoularId) scoularIds.add(c.scoularId);
+    }
+    const locations = new Set<string>();
+    for (const t of this.tickets()) {
+      if (t.customerCode && scoularIds.has(t.customerCode) && t.elevatorCity) {
+        locations.add(t.elevatorCity);
+      }
+    }
+    return [...locations].sort();
   });
 
   queryText = signal('');
@@ -1805,7 +1840,11 @@ export class BuildListComponent {
   readonly showGeneralFilters = computed(() => {
     if (this.isResolvingSavedListCategory()) return false;
     const cat = this.effectiveLibraryCategory();
-    return !cat || cat === 'General';
+    // 'Producers' cards (e.g. "All Producers") have no dimension of their own — the General
+    // panel's producer-level fields (acres, contact info, eSign, linked producers) are exactly
+    // the "common refine filters" a blank-start card needs, alongside the always-unconditional
+    // Crops/Location/Delivery Location chips.
+    return !cat || cat === 'General' || cat === 'Producers';
   });
 
   readonly groupedLibrary = computed(() => {
@@ -3028,6 +3067,21 @@ export class BuildListComponent {
     return !!(this.pendingRefinements().states?.includes(state));
   }
 
+  /** Delivery Location chips apply immediately on click — see togglePendingCrop. Picking one
+   *  needs tickets loaded (elevatorCity lives on Ticket, not Customer); _commitRefinements
+   *  stages and waits via _criteriaReadiness/dataNeedsForCriteria if they haven't landed yet. */
+  togglePendingDeliveryLocation(location: string): void {
+    const current = this.pendingRefinements().deliveryLocations ?? [];
+    const updated = current.includes(location) ? current.filter(l => l !== location) : [...current, location];
+    const next = { ...this.pendingRefinements(), deliveryLocations: updated.length > 0 ? updated : undefined };
+    this.pendingRefinements.set(next);
+    this._commitRefinements(next);
+  }
+
+  isDeliveryLocationSelected(location: string): boolean {
+    return !!(this.pendingRefinements().deliveryLocations?.includes(location));
+  }
+
   // ── Manage Members methods ─────────────────────────────────────────────
 
   /** Matches from current displayed results (available to exclude). */
@@ -3422,7 +3476,8 @@ export class BuildListComponent {
       (filters.grainTargetUnder != null && filters.grainTargetUnder > 0) ||
       filters.gradeOver != null || filters.gradeUnder != null ||
       (filters.crops && filters.crops.length > 0) ||
-      (filters.states && filters.states.length > 0)
+      (filters.states && filters.states.length > 0) ||
+      (filters.deliveryLocations && filters.deliveryLocations.length > 0)
     );
   }
 

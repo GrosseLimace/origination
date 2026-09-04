@@ -516,6 +516,7 @@
         @let refinementCount = activeRefinementCount();
         @let crops = availableCrops();
         @let states = availableStates();
+        @let deliveryLocations = availableDeliveryLocations();
         <app-card>
           <app-card-header>
             <div class="flex items-center justify-between">
@@ -1225,6 +1226,25 @@
                             : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'"
                           class="px-3 py-1 rounded-full border text-sm font-medium transition-colors"
                         >{{ getStateDisplayName(state) || state }}</button>
+                      }
+                    </div>
+                  </div>
+                }
+
+                <!-- Delivery Location -->
+                @if (deliveryLocations.length > 0) {
+                  <div class="space-y-2.5 pt-1 border-t border-gray-200 dark:border-gray-700">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-3">Delivery Location</p>
+                    <div class="flex flex-wrap gap-2">
+                      @for (location of deliveryLocations; track location) {
+                        <button
+                          type="button"
+                          (click)="togglePendingDeliveryLocation(location)"
+                          [class]="isDeliveryLocationSelected(location)
+                            ? 'bg-scoular-green-accessible text-white border-scoular-green-accessible dark:bg-scoular-green-accessible dark:border-scoular-green-accessible'
+                            : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'"
+                          class="px-3 py-1 rounded-full border text-sm font-medium transition-colors"
+                        >{{ location }}</button>
                       }
                     </div>
                   </div>
