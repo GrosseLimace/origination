@@ -92,3 +92,33 @@ describe('NlqFilterService — contract absence ("No contracts" prompt)', () => 
     expect(r.customers.map(c => c.id).sort((a, b) => a - b)).toEqual([1, 2, 3]);
   });
 });
+
+describe('NlqFilterService — ranking prompt-card wording (pins the literal QueryText the cards use)', () => {
+  let svc: NlqFilterService;
+  beforeEach(() => { svc = new NlqFilterService(); });
+
+  const alpha = customer(1, 'Alpha Farms', 'S1');
+  const bravo = customer(2, 'Bravo Farms', 'S2');
+  const charlie = customer(3, 'Charlie Farms', 'S3');
+  const all = [alpha, bravo, charlie];
+
+  it('"Top 10 by contracted bushels" (renamed from "…by contract value", which mislabeled a bushel-volume ranking as a dollar value) still ranks by total contracted quantity, descending', () => {
+    const contracts = [
+      contract('S1', { quantity: 10000 }),
+      contract('S2', { quantity: 50000 }),
+      contract('S3', { quantity: 25000 }),
+    ];
+    const ordered = svc.parseAndFilter('Top 10 by contracted bushels', ctx(all, contracts)).customers.map(c => c.id);
+    expect(ordered).toEqual([2, 3, 1]);
+  });
+
+  it('"Top 10 by acres" (renamed from "Top 10 largest operations", which only worked via a synonym rewrite) ranks by totalAcres, descending', () => {
+    const withAcres = [
+      { ...alpha, totalAcres: 1200 },
+      { ...bravo, totalAcres: 5000 },
+      { ...charlie, totalAcres: 2800 },
+    ];
+    const ordered = svc.parseAndFilter('Top 10 by acres', ctx(withAcres, [])).customers.map(c => c.id);
+    expect(ordered).toEqual([2, 3, 1]);
+  });
+});

@@ -95,6 +95,10 @@ describe('NlqFilterService.extractNoteSearchKeywords (server content-filter sour
     expect(svc.extractNoteSearchKeywords('notes added yesterday')).toEqual([]);   // recency, not content
     expect(svc.extractNoteSearchKeywords('producers with pinned notes')).toEqual([]);
   });
+  it('pins the "Notes mentioning bin" library card\'s literal QueryText — it was broadened from just "bin" to also match the major grain crop names, so a re-wording that drops one of these silently narrows the card', () => {
+    expect(svc.extractNoteSearchKeywords('Notes mentioning bin corn soybeans wheat oats barley sorghum milo canola and sunflower'))
+      .toEqual(['bin', 'corn', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum', 'milo', 'canola', 'sunflower']);
+  });
 });
 
 describe('NlqFilterService.refineFiltersNeedFullNotes', () => {
@@ -260,6 +264,10 @@ describe('NlqFilterService.refineDimension', () => {
     expect(svc.refineDimension({ hasPlantingIntentions: true, hasActiveContracts: true } as never)).toBe('Planting');
     expect(svc.refineDimension({ hasActiveContracts: true, hasGrainTarget: true } as never)).toBe('Contracts');
     expect(svc.refineDimension({ hasGrainTarget: true } as never)).toBe('Grain on Farm');
+  });
+
+  it('downHarvestPace routes to Contracts — the "Down harvest contract pace" card (Category=General) has no explicit-category route, so a crop chip needs the flag to reach the right dimension', () => {
+    expect(svc.refineDimension({ downHarvestPace: true } as never)).toBe('Contracts');
   });
 
   it('returns null when no dimension flag is set and no category is known', () => {

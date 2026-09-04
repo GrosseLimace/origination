@@ -234,6 +234,7 @@ export class NlqFilterService {
     if (isPlanting) return 'Planting';
     const isContracts = !!r.hasActiveContracts || !!r.hasUnsignedContracts || !!r.hasUnpricedContracts
       || !!r.hasOverdueContracts || !!r.contractsExpiringThisMonth || !!r.multipleCommoditiesContracted
+      || !!r.downHarvestPace
       || (r.contractQuantityOver != null && r.contractQuantityOver > 0);
     if (isContracts) return 'Contracts';
     const isGrainOnFarm = r.grainOnFarmBushelsOver != null || !!r.hasGrainTarget || !!r.noGrainTarget
@@ -253,8 +254,12 @@ export class NlqFilterService {
     filters?: RefinementFilters | null
   ): { tickets: boolean; contracts: boolean; storage: boolean; dp: boolean; planting: boolean; fullNotes: boolean } {
     const dim = this.refineDimension(filters, filters?._promptCategory);
+    // Delivery Location reads Ticket.elevatorCity — needs tickets loaded regardless of the
+    // active prompt's own dimension (e.g. picking it on the "All Producers" card, which has no
+    // ticket-related trigger phrase of its own).
+    const needsDeliveryLocation = !!filters?.deliveryLocations && filters.deliveryLocations.length > 0;
     return {
-      tickets: this.queryInvolvesTickets(query) || dim === 'Tickets',
+      tickets: this.queryInvolvesTickets(query) || dim === 'Tickets' || needsDeliveryLocation,
       contracts: this.queryInvolvesContracts(query) || dim === 'Contracts',
       storage: this.queryInvolvesStorage(query) || dim === 'Storage',
       dp: this.queryInvolvesDpContracts(query) || dim === 'DP Contracts',
@@ -874,6 +879,21 @@ export class NlqFilterService {
       list = list.filter(c => {
         const state = c.extendedStateProvince || c.stateProvince;
         return !!state && filters.states!.includes(state);
+      });
+    }
+    if (filters.deliveryLocations && filters.deliveryLocations.length > 0) {
+      // Independent of crops/states — mirrors build-list's displayedCustomers() block so a
+      // saved list applies this identically on the home page / customer list.
+      const locationsByCode = new Map<string, Set<string>>();
+      for (const t of (dimensionContext?.tickets ?? [])) {
+        if (!t.customerCode || !t.elevatorCity) continue;
+        if (!locationsByCode.has(t.customerCode)) locationsByCode.set(t.customerCode, new Set());
+        locationsByCode.get(t.customerCode)!.add(t.elevatorCity);
+      }
+      list = list.filter(c => {
+        if (!c.scoularId) return false;
+        const locations = locationsByCode.get(c.scoularId);
+        return !!locations && filters.deliveryLocations!.some(l => locations.has(l));
       });
     }
     return list;

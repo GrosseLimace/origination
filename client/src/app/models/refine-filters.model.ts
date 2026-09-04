@@ -85,6 +85,10 @@ export interface RefinementFilters {
   // Dynamic
   crops?: string[];
   states?: string[];
+  /** Scoular elevator/location a producer has delivered to, resolved from Ticket.elevatorCity
+   *  (dbo.MbpLocationSynonym display name, e.g. "Madrid, NE"). Independent of crops/states —
+   *  a producer matches if ANY of their tickets has a matching elevatorCity. */
+  deliveryLocations?: string[];
   /** Private hint set when a list is saved — captures the prompt's library category
    *  (Contracts / Tickets / Storage / Planting / etc.) so the dimension-aware crops filter
    *  evaluates the same way on every page (build-list, home, customer-list). Without it,
