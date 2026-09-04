@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, resolveCropGroup } from './crop-group-match';
+import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, resolveCropGroup, CROP_CHIP_GROUPS } from './crop-group-match';
 import { Commodity } from '@models';
 
 function commodity(code: string, name: string, category?: string): Commodity {
@@ -55,6 +55,23 @@ describe('crop-group-match — table-driven codes verified against real TU-scope
     const corn = buildCropSelection(['Corn'], lookup);
     expect(matchesCropSelection('WHTO', corn, lookup)).toBe(false);
     expect(matchesCropSelection('YC', wheat, lookup)).toBe(false);
+  });
+});
+
+describe('CROP_CHIP_GROUPS — what the Crops refine chip is allowed to offer', () => {
+  it('is exactly the 6 field-crop categories, not the ~90 categories dbo.Commodities actually has', () => {
+    // Pinned per explicit confirmation: dbo.Commodities is a company-wide master shared with
+    // Scoular's other business lines (marine protein, animal feed ingredients, freight,
+    // "Processed Co-Product" — 972 codes of custom feed blends — etc.). Without this allowlist,
+    // availableCrops() surfaced whatever category a producer's commodity code happened to map
+    // to, including those, as if they were crops.
+    expect([...CROP_CHIP_GROUPS].sort()).toEqual(['barley', 'canola', 'corn', 'sorghum', 'soybeans', 'wheat']);
+  });
+
+  it('excludes real non-crop categories a producer\'s commodity code can legitimately carry', () => {
+    for (const nonCrop of ['processed co-product', 'fishmeal', 'petfood', 'freight', 'tallow', 'miscellaneous']) {
+      expect(CROP_CHIP_GROUPS.has(nonCrop)).toBe(false);
+    }
   });
 });
 
