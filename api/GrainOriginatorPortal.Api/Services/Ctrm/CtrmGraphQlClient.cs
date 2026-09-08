@@ -81,6 +81,9 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
 
         string body;
         int httpStatus;
+        // CTRM's own request id. Its internal-error message says to look the failure up by this, so
+        // without it a CTRM-side error is something we can see but the API team cannot find.
+        string? correlationId = null;
         try
         {
             var http = _httpFactory.CreateClient(HttpClientName);
@@ -95,6 +98,9 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
             using var response = await http.SendAsync(request, cancellationToken);
             httpStatus = (int)response.StatusCode;
             body = await response.Content.ReadAsStringAsync(cancellationToken);
+            correlationId = response.Headers.TryGetValues("x-correlation-id", out var correlationValues)
+                ? correlationValues.FirstOrDefault()
+                : null;
 
             // Deliberately NOT short-circuiting on !IsSuccessStatusCode. This API answers HTTP 500
             // for caller-input validation failures while still returning a well-formed GraphQL
@@ -104,12 +110,12 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
                 && !LooksLikeHtml(body))
                 return Fail<T>(CtrmReadStatus.Unauthorized, httpStatus, null,
                     "APIM refused the request — either the Ctrm--ClientSecret Key Vault secret is empty or has " +
-                    "expired, or the app registration no longer holds a role on the CTRM API.");
+                    "expired, or the app registration no longer holds a role on the CTRM API.", correlationId);
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 return Fail<T>(CtrmReadStatus.Throttled, httpStatus, null,
                     "APIM throttled the request — reduce Ctrm:TicketBatchLimit or the batch size before retrying. " +
-                    "Do not retry immediately in a loop.");
+                    "Do not retry immediately in a loop.", correlationId);
         }
         catch (BrokenCircuitException)
         {
@@ -148,7 +154,7 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
         if (LooksLikeHtml(body))
             return Fail<T>(CtrmReadStatus.Error, httpStatus, null,
                 $"Gateway returned HTML rather than JSON (HTTP {httpStatus}) — the WAF rejected the request " +
-                "before it reached the API. Query documents must contain no '#' comment lines.");
+                "before it reached the API. Query documents must contain no '#' comment lines.", correlationId);
 
         JsonDocument doc;
         try
@@ -158,7 +164,7 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
         catch (JsonException ex)
         {
             return Fail<T>(CtrmReadStatus.Error, httpStatus, null,
-                $"CTRM response was neither JSON nor HTML ({ex.Message}).");
+                $"CTRM response was neither JSON nor HTML ({ex.Message}).", correlationId);
         }
 
         using (doc)
@@ -177,31 +183,31 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
                 if (hasData)
                 {
                     if (!TryDeserialize<T>(data, out var partialValue, out var partialError))
-                        return Fail<T>(CtrmReadStatus.Error, httpStatus, code, partialError);
+                        return Fail<T>(CtrmReadStatus.Error, httpStatus, code, partialError, correlationId);
 
-                    _logger.LogWarning("CTRM query partially failed [{ErrorCode}] [{ErrorCategory}]: {GraphQlCode}",
-                        "INFRASTRUCTURE_CTRM_PARTIAL", "Infrastructure", code ?? "(none)");
+                    _logger.LogWarning("CTRM query partially failed [{ErrorCode}] [{ErrorCategory}]: {GraphQlCode}, CTRM correlationId {CorrelationId}",
+                        "INFRASTRUCTURE_CTRM_PARTIAL", "Infrastructure", code ?? "(none)", correlationId ?? "(none)");
                     return new CtrmReadResult<T>
                     {
                         Status = CtrmReadStatus.PartialSuccess,
                         HttpStatus = httpStatus,
                         ErrorCode = code,
-                        Detail = $"Partial result — GraphQL reported: {message}",
+                        Detail = WithCorrelation($"Partial result — GraphQL reported: {message}", correlationId),
                         Value = partialValue
                     };
                 }
 
                 return Fail<T>(CtrmReadStatus.QueryError, httpStatus, code,
                     $"CTRM rejected the query: {message}"
-                    + (code is null ? null : $" (code {code})"));
+                    + (code is null ? null : $" (code {code})"), correlationId);
             }
 
             if (!hasData)
                 return Fail<T>(CtrmReadStatus.Error, httpStatus, null,
-                    $"CTRM returned neither data nor errors (HTTP {httpStatus}).");
+                    $"CTRM returned neither data nor errors (HTTP {httpStatus}).", correlationId);
 
             if (!TryDeserialize<T>(data, out var value, out var error))
-                return Fail<T>(CtrmReadStatus.Error, httpStatus, null, error);
+                return Fail<T>(CtrmReadStatus.Error, httpStatus, null, error, correlationId);
 
             return new CtrmReadResult<T>
             {
@@ -266,13 +272,23 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
         return trimmed.Length > 0 && trimmed[0] == '<';
     }
 
-    private CtrmReadResult<T> Fail<T>(CtrmReadStatus status, int? httpStatus, string? errorCode, string detail)
+    private CtrmReadResult<T> Fail<T>(CtrmReadStatus status, int? httpStatus, string? errorCode, string detail, string? correlationId = null)
     {
         // Outcome and status only — no contract, ticket or producer data in logs.
-        _logger.LogWarning("CTRM read failed [{ErrorCode}] [{ErrorCategory}]: {Status} (HTTP {HttpStatus}, code {GraphQlCode})",
-            "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", status, httpStatus, errorCode ?? "(none)");
-        return new CtrmReadResult<T> { Status = status, HttpStatus = httpStatus, ErrorCode = errorCode, Detail = detail };
+        _logger.LogWarning("CTRM read failed [{ErrorCode}] [{ErrorCategory}]: {Status} (HTTP {HttpStatus}, code {GraphQlCode}, CTRM correlationId {CorrelationId})",
+            "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", status, httpStatus, errorCode ?? "(none)", correlationId ?? "(none)");
+        return new CtrmReadResult<T>
+        {
+            Status = status,
+            HttpStatus = httpStatus,
+            ErrorCode = errorCode,
+            Detail = WithCorrelation(detail, correlationId)
+        };
     }
+
+    /// <summary>Appends CTRM's request id to a failure detail, when the gateway supplied one.</summary>
+    private static string WithCorrelation(string detail, string? correlationId) =>
+        string.IsNullOrWhiteSpace(correlationId) ? detail : $"{detail} [CTRM correlationId {correlationId}]";
 
     private async Task<string> GetBearerTokenAsync(CancellationToken cancellationToken)
     {
