@@ -86,9 +86,11 @@ There is **no ODS fallback** on the CTRM path. A failed CTRM read returns an emp
 
 The API's own status taxonomy is handled explicitly: business validation → HTTP 200 with a `VALIDATION`-coded error; malformed query → 400; bad auth → 401; both mapped to `QueryError`/`Unauthorized` rather than surfacing as 500s. A per-attempt 30s timeout with two retries sits under a 110s overall budget.
 
+**CTRM's own 30-second server timeout (`HC0045`, returned as HTTP 400) is not retried** as of 2026-09-03: `ServerTimeoutRetries` and `InteractiveServerTimeoutRetries` are both 0. The reason is measured, not theoretical. The CTRM server answers HC0045 at 30 s but does not cancel the Db2 query, which runs on to completion (70 s and more); a re-send therefore lands while the first copy is still running on the same partition and slows both. With the old budget (background 4 x 8 s, interactive 1 x 3 s) there were five copies of one 70 s query in flight by ~32 s, and our own probe of a count issued right after a timed-out page timed out too (76 s). The API owner asked for one retry after 90 s or none until cancellation is fixed; the delay is capped at 60 s in `CtrmServerTimeoutRetry`, so none. Per-producer reads measured 0 HC0045 in 791 calls on 2026-09-02, so the interactive budget was rarely exercised; a click that does hit HC0045 now fails at 30 s and the screen shows the cached copy or the CTRM-unavailable state. **Leave them at zero permanently.** This started as a request to reduce them, but the API team has since established that one of these queries cannot be bounded by anyone: the connection-level timeout is ignored by the driver, a client timeout does not stop the query (a 10-second client limit was observed letting an 86-second query run to completion and return a full result), and the server-side control requires an authority they do not hold. A query that overruns therefore runs to completion no matter what either side configures, so a retry can only ever add a second competing copy. This is not a temporary workaround pending a fix — there is no fix to wait for.
+
 ## Configuration
 
-Base `appsettings.json` documents every key with a `// Key` sibling. Per environment: `Source`, `GraphQlUri`, `TenantId`, `ClientId`, `Audience`, `PageSize`, `PageConcurrency`, `TradeUnitCacheMinutes` (15), `TradeUnitContractStrategy` (`perProducer`), `TradeUnitPerProducerConcurrency` (8), `TradeUnitContractConcurrency` (2), `TradeUnitContractMaxPagesPerChunk` (100), `TradeUnitTicketMaxPagesPerWindow` (200), `TradeUnitMaxConcurrentRequests` (6), `BackgroundMaxDeferSeconds` (20), `ServerTimeoutRetries` (4) / `ServerTimeoutRetryDelaySeconds` (8), `InteractiveServerTimeoutRetries` (1) / `InteractiveServerTimeoutRetryDelaySeconds` (3), `InteractivePageConcurrency` (4), `InteractiveWindowSplit` (1 = off), `CrossBookedAppliedTickets` (false), `LiveCacheSeconds`, `TicketLookbackDays` (1095), `HistoricalTicketCacheMinutes`, `RecentTicketDays` (30; Spot Loads).
+Base `appsettings.json` documents every key with a `// Key` sibling. Per environment: `Source`, `GraphQlUri`, `TenantId`, `ClientId`, `Audience`, `PageSize`, `PageConcurrency`, `TradeUnitCacheMinutes` (15), `TradeUnitContractStrategy` (`perProducer`), `TradeUnitPerProducerConcurrency` (8), `TradeUnitContractConcurrency` (2), `TradeUnitContractMaxPagesPerChunk` (100), `TradeUnitTicketMaxPagesPerWindow` (200), `TradeUnitMaxConcurrentRequests` (6), `BackgroundMaxDeferSeconds` (20), `ServerTimeoutRetries` (0) / `ServerTimeoutRetryDelaySeconds` (8), `InteractiveServerTimeoutRetries` (0) / `InteractiveServerTimeoutRetryDelaySeconds` (3), `InteractivePageConcurrency` (4), `InteractiveWindowSplit` (1 = off), `CrossBookedAppliedTickets` (false), `LiveCacheSeconds`, `TicketLookbackDays` (1095), `HistoricalTicketCacheMinutes`, `RecentTicketDays` (30; Spot Loads).
 
 To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to that environment's Key Vault, confirm APIM egress (no custom NSG rule needed), restart.
 
@@ -133,13 +135,53 @@ Qualification is strict, because serving the wrong thing here shows a producer s
 
 Both projections carry only fields something actually reads, verified by a cross-layer trace (mapping, response serialization, client templates and logic, server-side rules). Ten ticket fields, `customerName`, and twelve of the twenty price fields were removed. Measured on QA, same window, alternating runs: a 194-row ticket window went from 3.83s to 1.59s for one producer and 3.16s to 2.07s for another, with identical row counts - this API resolves fields per row, so dead fields on a ticket DETAIL row cost real time. `unloadQuantity` stays because Actionable Insights uses it as a fallback quantity; `LastActivityTimestamp` stays on the DTO (not the projection) as the regression vehicle for `CtrmDateTimeConverterTests`. Re-adding a field means projecting it, mapping it, and naming a consumer.
 
+## The last ODS contract and ticket reads (closed 2026-09-08)
+
+Three reads outside the repository switches still touched ODS contract or ticket rows. None displayed contract
+or ticket data, which is why they outlived the migration, and all three are now resolved.
+
+**Planting Intentions producer scoping** was the only one that ran on every trade-unit load, and it was the
+last ODS contract read on the CTRM path. It resolved the in-scope producers by unioning `dbo.CustomerTradeUnit`
+membership with producer codes taken from `base.vw_CurrentContracts`. It now uses membership alone. Measured
+before removing it, on trade units 1340, 2057, 2115 and 2190: the contract scan contributed 29-30 codes apiece
+that membership missed, **every one of them absent from `dbo.Customer`** - commercial counterparties (ADM,
+Bunge, grain companies) Scoular buys from, not producers. Because codes are resolved to `CustomerId` through
+`dbo.Customer`, a code with no customer row cannot produce a planting record, so none of them could ever
+render. The case that *would* have lost data - a producer present in `dbo.Customer` but missing an active
+membership row - measured **zero on all four units**. `PlantingIntentionRepository` no longer takes
+`OriginationDbContext` at all; `PlantingIntentionScopingTests` pins that membership is what decides scope.
+
+**The commodity sync** (`CommodityRepository.SyncAsync`) read distinct commodity codes from ODS contracts and
+product codes from ODS tickets to discover new commodities. It had no caller anywhere - no controller, service,
+background job or test - so it was 87 lines of dead code holding the only ODS contract and ticket reads in that
+repository, and it was deleted. The crop dropdown was never affected: `GetActiveAsync` and `GetPlantingAsync`
+read the app's own `dbo.Commodities` table. `GetConversionsAsync` still reads ODS `ctrm.vw_GNP024`, which is
+commodity reference data rather than contract or ticket data and stays there. The Dev-only
+`POST /api/diagnostics/commodities/seed` endpoint also still seeds from ODS contracts; it is a manual
+developer tool, explicitly gated to Development, and is left alone deliberately.
+
+**Usage-dashboard contract labels** turned a clicked contract into "number - commodity" by looking the id up in
+ODS. The client already records the *source* contract id (e.g. `PCW227498`) rather than the row id, precisely
+because the row id is an ODS surrogate on one source and a manufactured hash on the other. The server had not
+caught up: it parsed the target id as a `long` and queried ODS by surrogate, which resolved nothing on CTRM. It
+now falls back to showing the source contract id itself, which is readable and identical on both sources. The
+ODS lookup is kept only for legacy rows recorded before the client change, whose surrogate ids are meaningless
+on screen without it.
+
 ## Known gaps (waiting on the API team)
 
-1. `contracts(customerIds:)` cold performance — would make the trade-unit contract read seconds instead of ~25s per chunk, and remove the only cold wait a session can hit.
+1. `contracts(customerIds:)` page cost — still the biggest item. Status from the API owner (2026-09-03, confirmed on a follow-up): two fixes are needed **together**, not either alone. A two-step page (find the page's keys, then fetch those rows) takes a cold trade-unit page from ~70 s to ~26 s, which is under the 30 s cutoff with about 4 s of margin — not enough to ship by itself. Connection warming (~2 s once warm) is the other half; both are designed and measured, neither shipped. He will give notice before asking us to re-run the trade-unit page probe. Until it lands, the trade-unit contract read stays per-producer (587 calls in 73-211 s for a 587-producer unit; seventeen walks measured 2026-09-02/03, median 115 s, no failures or retries in any of them — the spread is entirely the shared gateway, not our code, since the count held with zero HC0045 retries in effect for the last eleven).
 2. ~~A contract-number-prefix or `unappliedOnly` filter on `tickets`~~ — delivered as `unappliedOnly` (2026-08-27) but not used: the trade-unit read must carry applied tickets too (delivered/unsettled prompts), and for real trade units the unfiltered walk is cheap enough in the background.
 3. The over-length `customerIds` error (7 chars works, 8 fails).
 4. ~~Response caching that ignores `cropYear`~~ — fixed by the API owner 2026-08-27; moot for us anyway since `cropYear` is no longer sent.
-5. A `modifiedSince` argument on `tickets` and `contracts` — would make refreshes incremental (one or two calls) and the trade-unit reads effectively live.
+5. A `modifiedSince` argument on `tickets` and `contracts` — the API owner is building it on the change journals, which give second precision on both roots (our 5-minute cadence is served). **Do not build freshness on `tickets.details.ticketLastChangeDate`.** It is populated on every row we sampled (849 of 849) but is restamped only ~70% of the time a row changes: programs GNR515 and GNR725 update ticket status and final settled date, both fields we read, without touching it. Presence is not freshness. One open design problem on their side: contract headers and child records are journaled separately, so a header-only filter could report "nothing changed" for a contract whose price moved.
+6. ~~The ticket lookup scanning instead of using the customer-code index~~ — **FIXED by the API team, live in nonprod 2026-09-07; measured here 2026-09-08.** Two separate changes were involved. First, a trim in the API's SQL made the existing indexes (GNL014$26/$21/19, all leading with the customer code) ineligible; removing it was necessary but on its own produced no measurable gain. Second, and this is the one that mattered, the query was rebuilt so cost no longer scales with how old the requested window is. That second change was originally closed as not worth doing, because it had been measured only on the current-year window — the one window where it makes no difference. Our incidental observation that a zero-ticket producer paid 0.3-0.5 s on the current-year window but 1.0-1.2 s on each prior-year window is what reopened it.
+
+   Measured on apiqa with the app's exact per-producer read (three 366-day windows, `take: 500`, `TicketProjection`), against our own 2026-09-03 numbers on the same gateway. Isolated per window, warm, for a producer with **zero** tickets: 130-179 ms on all three windows, flat, against 0.3-0.5 s current-year and 1.0-1.2 s prior-year before. Full three-window parallel read, the shape the app issues, warm wall time: zero-ticket producer 1.1-1.2 s → **0.21-0.43 s**; 44 tickets 1.1-1.8 s → **0.29-0.45 s**; 536 tickets 1.6-2.2 s → **0.95-1.35 s**; 821 tickets 1.8-3.3 s → **1.5-2.7 s**. Heavy producers improve least because they are bound by row volume, not window age — which is the expected shape if the fix removed a per-window scan.
+
+   **The floor this removes is the one we had reported since the first note:** a producer with no tickets used to cost seconds per window, and the app reads three windows per producer. Cold first touch still costs ~5.6 s on the first call after an idle period (connection establishment, unrelated to this fix).
+
+   Correctness was verified independently here, not taken on trust, because this changed how the query is built: ticket totals across ten producers (0 to 821 tickets, 3,513 detail rows) are byte-for-byte identical to what we recorded 2026-09-02/03, with zero duplicated detail keys — including a ticket spanning two producer codes, the case the CTRM data owner had flagged as the likely breakage. The mandatory date range on `tickets(customerId:)` is still required; its waiver was sequenced behind this fix and is now unblocked on the API side.
 
 ## Testing notes
 
