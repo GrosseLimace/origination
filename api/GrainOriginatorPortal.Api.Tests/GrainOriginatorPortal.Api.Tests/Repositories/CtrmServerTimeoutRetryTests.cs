@@ -80,17 +80,39 @@ public class CtrmServerTimeoutRetryTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task InteractiveReadsRetryOnceByDefault()
+    public async Task AnAbsentInteractiveBudgetMeansNoRetryAtAll_NotTheOldOneRetryDefault()
     {
-        // The background budget is 4 retries x 8s. Applied to a producer click that was up to 32 seconds of
-        // Task.Delay inside the click - worse than the failure it was papering over.
+        // Both budgets default to 0, so a missing key cannot silently reintroduce retrying. CTRM cannot
+        // cancel a query that overruns - it runs to completion whatever either side configures (measured:
+        // a 10s client timeout let an 86s query finish and return full results) - so a re-send only adds a
+        // second copy competing with the first on the same partition. This used to default to one retry.
         var calls = 0;
         var result = await CtrmServerTimeoutRetry.RunAsync(
             () => { calls++; return Task.FromResult(Timeout()); },
             Config(), new Mock<ILogger>().Object, "test", interactive: true);
 
         Assert.False(result.Ok);
-        Assert.Equal(2, calls);   // one attempt + one retry
+        Assert.Equal(1, calls);   // the one attempt, and nothing behind it
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AnAbsentBackgroundBudgetAlsoMeansNoRetry()
+    {
+        // Same fail-safe on the background path, which is where the old 4 x 8s budget could put five copies
+        // of one 70s query in flight inside about half a minute.
+        var calls = 0;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0"
+        }).Build();
+
+        var result = await CtrmServerTimeoutRetry.RunAsync(
+            () => { calls++; return Task.FromResult(Timeout()); },
+            config, new Mock<ILogger>().Object, "test");
+
+        Assert.False(result.Ok);
+        Assert.Equal(1, calls);
     }
 
     // -------------------------------------------------------------------------

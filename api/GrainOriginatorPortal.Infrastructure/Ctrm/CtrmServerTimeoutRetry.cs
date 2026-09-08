@@ -39,8 +39,11 @@ public static class CtrmServerTimeoutRetry
         bool interactive = false)
     {
         var retries = interactive
-            ? Math.Clamp(ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetries", 1), 0, 4)
-            : Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetries", 4), 0, 10);
+            // Both default to 0. CTRM cannot cancel a query that overruns - it runs to completion
+            // whatever either side configures - so a re-send only ever adds a competing copy. A missing
+            // key must fail safe rather than silently restore the old 1/4 budgets.
+            ? Math.Clamp(ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetries", 0), 0, 4)
+            : Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetries", 0), 0, 10);
         var delay = interactive
             ? TimeSpan.FromSeconds(Math.Clamp(ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetryDelaySeconds", 3), 0, 30))
             : TimeSpan.FromSeconds(Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetryDelaySeconds", 8), 0, 60));
