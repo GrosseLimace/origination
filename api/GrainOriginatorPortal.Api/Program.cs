@@ -498,11 +498,12 @@ if (app.Environment.IsDevelopment())
             );
             app.Logger.LogInformation("DB connections warmed up successfully.");
 
-            // SyncCommoditiesAsync deliberately NOT called here. dbo.Commodities is hand-curated
-            // (Code/Name/Category plus Tier1/Tier2/Tier3/BaseUOM which the ODS sync doesn't know
-            // about), so we don't want the startup to scan the 2M-row vw_CurrentTickets view on
-            // every dev restart just to confirm there's nothing new to add. The method is still
-            // callable on demand via the diagnostics endpoint if a one-time backfill is needed.
+            // No commodity sync runs here, and there is no longer one to run. dbo.Commodities is
+            // hand-curated (Code/Name/Category plus Tier1/Tier2/Tier3/BaseUOM, none of which a scan of
+            // ODS contracts could supply), so the repository's ODS-scanning SyncAsync was never wired to
+            // anything and has been removed. The Dev-only POST /api/diagnostics/commodities/seed endpoint
+            // remains for a one-time backfill; it has always carried its own query rather than calling
+            // that method.
         }
         catch (Exception ex)
         {

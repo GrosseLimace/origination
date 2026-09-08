@@ -16,10 +16,4 @@ public interface ICommodityRepository
 
     /// <summary>Active harvest windows (app DB).</summary>
     Task<IReadOnlyList<HarvestWindow>> GetHarvestWindowsAsync(CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Syncs the Commodities table from ODS contract/ticket data (adds missing codes, backfills
-    /// categories). Called once at app startup. Returns the total active commodity count.
-    /// </summary>
-    Task<int> SyncAsync(CancellationToken cancellationToken);
 }

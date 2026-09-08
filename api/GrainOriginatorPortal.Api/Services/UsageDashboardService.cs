@@ -994,8 +994,18 @@ public class UsageDashboardService : IUsageDashboardService
 
             if (IsCustomerTarget(row) && customerNames.TryGetValue(row.TargetId, out var custName))
                 row.TargetName = custName;
-            else if (IsContractTarget(row) && contractNames.TryGetValue(row.TargetId, out var ctName))
-                row.TargetName = ctName;
+            else if (IsContractTarget(row))
+                // A contract click records the SOURCE contract id (e.g. PCW227498), which is readable
+                // enough to be the label on its own and is identical on both data sources, so it is
+                // shown as-is when the lookup has nothing to add. Legacy rows recorded before that
+                // change hold a surrogate id instead, and those are the ones the ODS lookup resolves;
+                // when it cannot (CTRM manufactures ids that were never in ODS) the row is left
+                // unlabelled rather than showing the surrogate, which means nothing to a reader. The
+                // client only renders a label when one is present.
+                if (contractNames.TryGetValue(row.TargetId, out var ctName))
+                    row.TargetName = ctName;
+                else if (!long.TryParse(row.TargetId, out _))
+                    row.TargetName = row.TargetId;
             else if (IsLibraryTarget(row) && libraryNames.TryGetValue(row.TargetId, out var libName))
                 row.TargetName = libName;
         }
