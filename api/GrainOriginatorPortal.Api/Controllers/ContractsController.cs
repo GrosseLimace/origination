@@ -48,6 +48,7 @@ public class ContractsController : ControllerBase
     [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<ContractResponse>>> GetPacingHistorical(long customerId, CancellationToken cancellationToken = default)
     {
+        // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetHistoricalForPacingAsync(customerId, cancellationToken));
     }
 
@@ -70,6 +71,7 @@ public class ContractsController : ControllerBase
     [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<ContractResponse>>> GetByFarm(string farmId, CancellationToken cancellationToken = default)
     {
+        // Open to any rep — no per-farm object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetByFarmAsync(farmId, cancellationToken));
     }
 
@@ -85,6 +87,7 @@ public class ContractsController : ControllerBase
         if (string.IsNullOrWhiteSpace(sourceContractId))
             throw new ValidationException("sourceContractId", "sourceContractId is required.");
 
+        // Open to any rep — no per-contract object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetPricingLinesAsync(sourceContractId, cancellationToken));
     }
 
@@ -99,6 +102,8 @@ public class ContractsController : ControllerBase
         {
             throw new ValidationException("scoularId", "scoularId is required.");
         }
+
+        // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetPricingLinesByCustomerAsync(scoularId, cancellationToken));
     }
 }

@@ -128,6 +128,10 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> DeleteActualHarvest(int id, CancellationToken cancellationToken = default)
     {
+        // The class-level [EnforceTradeUnitAccess] filter can only check a trade-unit value present on
+        // the request, and this route carries none — so it validates nothing here. That is deliberate:
+        // actual-harvest rows follow the shared-record delete model and a per-row trade-unit check was
+        // drafted and reverted on purpose. See SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01, finding H-050).
         await _service.DeleteActualHarvestAsync(id, cancellationToken);
         _logger.LogInformation(
             "Dashboard actual harvest deleted [{ErrorCode}] [{ErrorCategory}]: HarvestId={HarvestId}",
