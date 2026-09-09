@@ -172,5 +172,20 @@ describe('NlqFilterService — DP contracts', () => {
     it('the DP Contracts prompt category scopes crops the same way', () => {
       expect(refine({ _promptCategory: 'DP Contracts', crops: ['YSB'] })).toEqual([2]);
     });
+
+    it('with dimensionContext.commodities, a "Corn" chip catches a code the literal fallback alone would miss', () => {
+      // YCNG isn't in the DP rows above (YC is), so this specifically exercises group resolution:
+      // the chip "Corn" resolves via Commodity.category, and YCNG resolves to the same group.
+      const dpWithAltCode: DpContract[] = [...dp, ...delivery(3, 'c1', { crop: 'YCNG', bushels: 400, days: 10 })];
+      const commodities = [
+        { id: 1, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true },
+        { id: 2, code: 'YCNG', name: 'Yellow Corn NGMO', category: 'Corn', isActive: true },
+        { id: 3, code: 'YSB', name: 'Yellow Soybeans', category: 'Soybeans', isActive: true },
+      ];
+      const result = svc.applyRefinementFilters(all, { hasDpContracts: true, crops: ['Corn'] } as never, [], [],
+        { dpContracts: dpWithAltCode, commodities })
+        .map(c => c.id).sort((a, b) => a - b);
+      expect(result).toEqual([1, 3]);
+    });
   });
 });

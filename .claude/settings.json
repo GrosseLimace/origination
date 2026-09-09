@@ -1,5 +1,16 @@
 {
   "env": {
     "SCOULAR_STYLE_GUIDES_PATH": "style-guides"
+  },
+  "extraKnownMarketplaces": {
+    "scoular": {
+      "source": {
+        "source": "git",
+        "url": "https://scoular.ghe.com/IT/scoular-marketplace.git"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "scoular-skills@scoular": true
   }
 }

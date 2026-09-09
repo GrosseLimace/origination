@@ -113,9 +113,13 @@ public class NoteMentionIdValidationTests
         ctx.Setup(c => c.GetCurrentUser()).Returns("CEgr");
         var groups = new Mock<IDailyRecapGroupService>();
         groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        // Every id asked about is an active user: these tests are about id SHAPE, not identity.
+        var entitlements = new Mock<IEntitlementsRepository>();
+        entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(System.StringComparer.OrdinalIgnoreCase));
 
         var svc = new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
-            groups.Object, new Mock<ILogger<NoteService>>().Object);
+            groups.Object, entitlements.Object, new Mock<ILogger<NoteService>>().Object);
         return (svc, () => json);
     }
 }

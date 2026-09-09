@@ -562,7 +562,8 @@ export class CustomerListComponent {
           dpContracts: this.appStateService.dpContracts(),
           plantingIntentions: this.appStateService.plantingIntentions(),
           commodityConversions: this.appStateService.commodityConversions(),
-          noteLastContacts: this.appStateService.noteLastContacts()
+          noteLastContacts: this.appStateService.noteLastContacts(),
+          commodities: this.appStateService.commodities()
         })
       : result.customers;
     savedList.customerIds = this.nlqFilterService.applyCustomerOverrides(

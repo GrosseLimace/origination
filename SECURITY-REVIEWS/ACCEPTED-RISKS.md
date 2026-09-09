@@ -7,12 +7,14 @@ these patterns; triage against the AR-IDs below before re-opening.
 
 | ID | Title | Severity | CWE | Status | Accepted | Re-review by |
 |----|-------|----------|-----|--------|----------|-------------|
-| AR-01 | Collaborative edit/delete of shared producer data (no per-record ownership check) | Medium | CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
+| AR-01 | Collaborative edit/delete of shared producer data (no per-record ownership check) | Medium | CWE-639 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
 | AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-05 | Bid-sheet location/elevator reads unscoped across trade units (writes are gated) | High | CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
+| AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements | Medium | CWE-284 | Accepted | 2026-08-11 | 2027-08-11 |
+| AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — **security sign-off pending** | 2026-09-01 | 2027-09-01 |
 
 ---
 
@@ -25,7 +27,7 @@ authenticated user may modify or delete any record by enumerating its ID:
 - `NotesController` — `PUT /api/notes/{id}`, `PUT /api/notes/{id}/toggle-pin`, `DELETE /api/notes/{id}`
 - `PlantingIntentionsController` — `PUT /api/plantingintentions/{id}`, `DELETE /api/plantingintentions/{id}`
 - `ProducerDetailsController` — `PUT/DELETE /api/producerdetails/customer/{customerId}`
-- `DashboardPlantingEstimatesController` — `DELETE /api/dashboardplantingestimates/actualharvest/{id}` (added per Codex scan 2026-06-29; re-flagged as **H-050** on 2026-06-29). The controller's `[EnforceTradeUnitAccess]` filter validates the trade-unit-keyed reads and upserts, but the delete-by-id route carries no trade-unit parameter to check. Actual-harvest rows are shared dashboard data of the same nature as the records above, so this delete is **intentionally left matching the shared-record delete model** rather than made stricter than every other delete in the app. A per-row trade-unit check was drafted and **deliberately reverted** to honor this decision — do not re-add without re-opening AR-01.
+- ~~`DashboardPlantingEstimatesController` — `DELETE /api/dashboardplantingestimates/actualharvest/{id}`~~ — **REMOVED FROM THIS ENTRY 2026-09-09 and FIXED in code.** It was added per the Codex scan 2026-06-29 (**H-050**) on the argument that actual-harvest rows are "shared dashboard data of the same nature as the records above". That analogy was wrong, and re-examining it under **H-061** is what finally settled the matter — see the 2026-09-09 update below. This route is now trade-unit authorized; do not cite AR-01 for it.
 
 **Update (2026-08-10):** re-flagged as **M-033** by the GHE security scan (CWE-639, confidence 8/10)
 against the three `NotesController` mutation routes (`PUT {id}`, `PUT {id}/toggle-pin`,
@@ -34,6 +36,68 @@ against the three `NotesController` mutation routes (`PUT {id}`, `PUT {id}/toggl
 set (ownership is meaningful), whereas notes are *shared* producer records — enforcing per-author
 edit/delete is exactly what AR-01 rejects because it breaks coverage/hand-off. All three routes carry
 inline AR-01 citations. Triage future scan hits on these routes against this entry.
+
+**Update (2026-09-01):** re-flagged a third time as **M-035** (Claude scan, CWE-639, confidence
+8/10) against the same three `NotesController` routes, with the same `SavedListRepository`
+`CreatedBy`-match suggestion already answered under M-033 above. **Re-accepted — no change.**
+Nothing in the technical analysis is new or wrong; what it describes is the product's intended
+behaviour, and the client is built on it — `customer-notes.component.html` renders Edit / Delete /
+Pin on **every** note for every user, with no author gate, because reps clean up and correct each
+other's notes on shared producers. Restricting the routes without also changing that UI would give
+users buttons that 403.
+
+The scan's one genuinely new point is **procedural, not technical**: "per the audit mandate a
+project-level acceptance does not suppress the finding." That is fair — every AR entry in this file
+has been accepted by Origination engineering alone, and no IT Security countersignature exists on
+any of them. AR-01 is therefore marked **security sign-off pending** in the summary table, matching
+AR-02. **Action: AR-01 and AR-02 go to asksecurity@scoular.com together** for countersignature or
+rejection; expect a re-flag every release until that signature exists. The compensating control
+this entry leans on was re-verified on 2026-09-01: `AUDIT_UPDATE` / `AUDIT_DELETE` structured log
+entries do fire on all three routes (`NotesController.cs`), so every mutation remains attributable.
+
+**Update (2026-09-09) — AR-01 NARROWED. The actual-harvest delete is FIXED, not accepted.**
+Re-flagged as **H-061** (Claude scan, CWE-639, confidence 9/10) against
+`DELETE /api/dashboardplantingestimates/actualharvest/{id}`, the third pass at that route after
+H-050 (2026-06-29). The first response was another documentation-only pass — adding the inline
+AR-01 citation the route had always been missing. The scanner rejected that on the merge check, and
+it was right to: *"a project-level risk acceptance does not remove the technical exposure and is not
+a compensating control under the mandatory enforcement checklist."*
+
+Re-examined, and **AR-01 never actually fitted this route.** Four things separate it from the notes
+/ planting-intentions / producer-details deletes this entry exists for:
+
+1. **It is not a shared producer record.** Every row is stamped with exactly one `TradeUnitKey` — it
+   is a trade-unit-keyed dashboard aggregate (bushels per trade unit × crop category × year), not a
+   record *about a producer* that reps hand off to each other. AR-01's coverage/hand-off rationale
+   has nothing to bite on.
+2. **Its own controller already disagrees.** Every sibling route — `GetSummary`, `Get`,
+   `GetMarketShares`, `GetActualHarvest` and all three upserts — is trade-unit scoped. Guarding this
+   one makes it *consistent* with its controller, not stricter than the app.
+3. **The data is hand-entered with no upstream system of record.** Unlike contracts and tickets
+   (re-syncable from ODS), these bushels exist nowhere else. AR-01's "changes are reversible
+   (records can be re-entered)" holds only in the sense that someone retypes them — and nobody would
+   know which figures had vanished. They feed the market-share percentage on the Planting Intentions
+   dashboard, so a deletion silently changes a reported number rather than removing visible content.
+4. **No user workflow depended on it.** `deleteHarvestRow()` in `dashboard.component.ts` is not
+   wired to anything — no template binding, no other caller. Reps add and edit these figures through
+   the *upsert* route, which the filter already validates. So the check that was "drafted and
+   reverted" to protect coverage was never protecting any real workflow; the only caller it could
+   ever have refused is a hand-crafted request.
+
+**Fixed** in `DashboardService.DeleteActualHarvestAsync`: resolve the row's own `TradeUnitKey`, then
+`ValidateTradeUnitsOrThrowAsync` before deleting (403 on another trade unit's row). A non-existent id
+stays a silent 204 no-op — returning 403 there would make the route an existence oracle for other
+trade units' ids. An entitlements outage now **fails closed with 503**, mirroring
+`EnforceTradeUnitAccessAttribute` and `DpContractService`, rather than deleting a row it cannot
+authorize. The audit entry records the resolved trade unit, and a miss is logged too, so an
+enumeration sweep leaves a trail. Five tests in `DashboardActualHarvestDeleteTests` pin it, including
+one asserting the trade unit is resolved *before* the delete; the foreign-trade-unit test was
+verified to FAIL with the guard removed.
+
+**The reusable lesson:** H-050 was accepted by *analogy* — "same nature as the records above" — and
+the analogy was never re-checked across three scans. When an entry is extended to a new route, test
+the rationale against that route's actual data model and callers, not against the entry's summary.
+The remaining routes below are genuinely shared producer records; this one never was.
 
 ### Decision: Accepted
 
@@ -77,6 +141,10 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/customers/linked-to/{sourceId}` (reverse linked-producer lookup — links deliberately span trade units)
 - `GET /api/customers/{id}/trade-units` (membership list for the edit dialog)
 - `GET /api/contracts/customer/{customerId}`
+- `GET /api/contracts/pacing/{customerId}` (Contract Pacing year-over-year; reads `base.Contract` for prior-year closed contracts) (added 2026-09-09 — see the update below)
+- `GET /api/contracts/farm/{farmId}` (farm-scoped contracts) (added 2026-09-09 — see the update below)
+- `GET /api/contracts/pricing-lines` (by `sourceContractId`) (added 2026-09-09 — see the update below)
+- `GET /api/contracts/pricing-lines/by-customer` (by `scoularId`) (added 2026-09-09 — see the update below)
 - `GET /api/tickets/customer/{customerId}`
 - `GET /api/notes/customer/{customerId}`
 - `GET /api/plantingintentions/customer/{customerId}`
@@ -162,6 +230,27 @@ authorization finding is a process gap independent of whether the technical judg
 forces the code change.** Until that exists, expect this to re-flag every release. See the pending-
 sign-off note under **Accepted by** below.
 
+**Update (2026-09-09):** re-flagged twice more by the weekly baseline scan — **H-059** against
+`CustomersController` `GetById` / `GetBySourceId` / `GetLinkedTo` / `GetTradeUnits` (a third pass at
+the 2026-08-10 finding) and **H-057** against `GET /api/dpcontracts/customer/{customerId}` (a third
+pass at the two 2026-08-18 findings). Both **re-accepted — no change**; every route named is already
+listed above and already carries an inline AR-02 citation. H-059 restated the process argument —
+that a project-level acceptance does not remove the technical exposure and that AR-02's own sign-off
+is still pending — which remains the genuine open item, not a code defect. That makes **five**
+flags for AR-02 (2026-06-23, 2026-08-10, twice on 2026-08-18, and 2026-09-09).
+
+**H-060 was the one finding in this round that added something.** It flagged `ContractsController`
+and correctly observed that four sibling routes — `pacing/{customerId}`, `farm/{farmId}`,
+`pricing-lines` and `pricing-lines/by-customer` — were **absent from this entry's route list and
+carried no inline AR-02 citation**, while `GetAll` and `GetByCropYear` on the same controller do
+carry `[EnforceTradeUnitAccess]`. The scan read that asymmetry as evidence the boundary was intended
+to apply and had been missed. Those routes were always within AR-02's rationale — they return the
+same `ContractResponse` / `ContractPricingLineResponse` shapes as the already-listed customer route,
+so they cross no boundary the customer route does not already cross — but the silence made them look
+like an oversight rather than a decision. **The documentation was fixed, not the behaviour:** all
+four are now listed above, and each carries an inline AR-02 citation. Triage future hits on them
+against this entry.
+
 ### Decision: Accepted
 
 **Rationale.** Same model as AR-01 — this is an internal collaboration tool for authenticated Scoular
@@ -212,6 +301,22 @@ sets `UserDeactivated` so the nightly sync restores the row when activity return
 reconcile only touches **manual** (`IsManual`) rows — sync-sourced memberships backed by real
 activity can never be stripped. Both endpoints carry inline AR-03 comments. Triage future scan hits
 on these routes against this entry.
+
+**Update (2026-09-09):** re-flagged as **H-058** by the weekly baseline scan (CWE-284, confidence
+8/10) against `PUT /api/customers/{id}/trade-units` and `RemoveDormantTradeUnit`, framed as
+"manipulation of the authorization data plane itself, not merely an unscoped read". **Re-accepted —
+no change.** That framing is fair, and it is the same escalation path the 2026-08-10 update already
+records and re-accepted: assigning a producer into a trade unit the caller holds *is* the New Customer
+Trade Units onboarding flow, so admin-gating or entitlement-validating it removes the feature. Both
+routes already carry inline AR-03 citations.
+
+Worth recording because it will come up again: the suggested fix — calling
+`ValidateTradeUnitsOrThrowAsync` for the customer's *current* trade units as well as the requested
+codes — cannot work for onboarding. A producer being onboarded is by definition not yet in the trade
+unit being assigned, and may be in none at all, so validating the current membership against the
+caller's entitlements fails closed on precisely the case the feature exists to serve. Gating to an
+admin/onboarding role remains the correct move *if* trade-unit membership ever becomes a hard
+security boundary, as the re-evaluation trigger below already states.
 
 ### Decision: Accepted
 
@@ -357,10 +462,11 @@ Vault via the existing provider). This matches the TODO already present in
 **Finding** (self-raised 2026-08-11; MEDIUM; CWE-284). A user can `@`-mention any group they can
 **see** — the ones they created plus the ones they are a member of. The API flattens that group into
 its member references and the Instant Share Note Logic App emails the note to all of them. Those
-members were validated against the **creator's** entitlement overlap when the group was saved
-(`DailyRecapGroupService.BuildValidatedMembersAsync`, fail-closed), so mentioning someone else's
-group can reach people the direct person picker would not have offered the mentioner — that picker is
-scoped to users sharing a trade unit with the caller.
+members were validated against the entitlement overlap of **whoever added them** — originally always
+the creator; since the 2026-09-02 amendment below, whichever member added them
+(`DailyRecapGroupService.BuildValidatedMembersAsync`, fail-closed). Either way it is *somebody else's*
+overlap, so mentioning someone else's group can reach people the direct person picker would not have
+offered the mentioner — that picker is scoped to users sharing a trade unit with the caller.
 
 ### Decision: Accepted
 
@@ -380,18 +486,123 @@ fail-closed entitlements call in the note-save path, which is high-frequency and
 **Scope / compensating controls.** A group the caller can neither see nor own is **rejected** at save
 (`ValidationException`, nothing persisted) — visibility is enforced server-side against the same query
 that builds the picker, so a forged group id in a crafted request does not resolve. Expansion is
-capped at 250 mention rows per note. Group membership is still entitlement-validated fail-closed at
-group-save time, and only the creator can modify a group. All recipients are `@scoular.com` by
-construction.
+capped at 250 mention rows per note. Adding a member is still entitlement-validated fail-closed at
+group-save time. All recipients are `@scoular.com` by construction.
 
 **Residual risk.** An employee can cause an internal note to be emailed to the members of a group they
 belong to but did not create, including people outside their own trade units. Accepted.
 
-**Re-evaluate if:** groups become shareable beyond their membership (e.g. an org-wide directory of
-groups), or note content becomes restricted per producer — at which point AR-02 changes too and the
-mention path should be re-scoped alongside it.
+### Amended 2026-09-02 — shared editing (any member can edit a group)
 
-**Accepted by:** Origination engineering — recorded 2026-08-11.
+An earlier version of this entry listed *"only the creator can modify a group"* among the
+compensating controls. **That is no longer true**, and the sentence has been removed above. Edit
+rights now equal visibility: anyone who can see a recap group — its creator, or a member directly or
+via a member trade unit / trade-unit group — can rename it, add and remove members, change the CC
+list, set the delivery method, and toggle the daily recap. **DELETE remains creator-only**
+(`DailyRecapGroupService.DeleteAsync` throws `ForbiddenException`; previously a non-creator's DELETE
+was a silent no-op that returned 204 and logged a misleading `AUDIT_DELETE`).
+
+**Why this does not widen the finding.** Adding a member is validated against the **editor's**
+entitlement overlap exactly as before, because only the **delta** is checked
+(`DailyRecapGroupService.BuildValidatedMembersAsync`): members already on the group pass through from
+the stored row, and only additions are vetted. So an editor can never introduce a recipient outside
+their own scope. Removing and re-adding the same person in one save is a no-op (the row never left
+the database); doing it across two saves makes the second one an addition, which is validated. Person
+recipient addresses are re-derived server-side as `{MemberId}@scoular.com` for *every* person member
+— pass-through included — so the M-025 / M-025a guarantee is unchanged, and pass-through rows keep
+their stored `MemberName` so an editor cannot relabel someone else's member.
+
+**New capabilities a member gains, ranked.** All are accepted:
+
+1. **Teams-channel redirect.** A member can switch `DeliveryMethod` to `teams` and point the group's
+   recap at a different channel. `RecapGroupRequest.Validate` still pins the destination to the
+   Scoular tenant (`*.scoular.com@*.teams.ms`), so it cannot leave the tenant, but a Scoular channel
+   can carry B2B guests. Mitigation: the `AUDIT_UPDATE` log line now records `ByCreator`,
+   `DeliveryMethod` and `TeamsChannel`, so a redirect by a non-creator is queryable.
+2. **CC widening.** A member can add any `@scoular.com` address. Low impact: the recap workflow
+   already sends one message per group with every member in `toRecipients` and the CC list in
+   `ccRecipients`, so all members already receive the union. This widens the internal recipient set,
+   not the content boundary.
+3. **Enabled toggle.** A member can start or stop the daily send — a nuisance, not a disclosure.
+   Also audit-logged with `ByCreator`.
+4. **Emptying the group.** Closed: `RecapGroupRequest.Members` now carries `[MinLength(1)]`, so a
+   group cannot be stripped to nothing and silently stop being mentionable.
+
+**Re-evaluate if:** groups become shareable beyond their membership (e.g. an org-wide directory of
+groups), note content becomes restricted per producer — at which point AR-02 changes too and the
+mention path should be re-scoped alongside it — or the Teams channel becomes a mention recipient
+rather than recap-only, which would turn capability 1 into a delivery path for note content.
+
+**Accepted by:** Origination engineering — recorded 2026-08-11, amended 2026-09-02.
+
+**Unchanged by H-056 (2026-09-01):** direct person mentions now have to name an active user, but
+group-derived rows are deliberately exempt from that check — they were already validated at
+group-save time, and re-checking them here would silently narrow group mentions. See **AR-08**.
+
+---
+
+## AR-08 — Person mentions are limited to real active users, not to the mentioner's colleagues
+
+**Finding** (scan 2026-08-31; **H-056**; HIGH; CWE-284 / OWASP A01:2021). Any authenticated caller
+could submit a `person` mention whose id was any internal short name / UPN.
+`NoteService.NormalizeMention` verified only the `@scoular.com` domain, so a **hand-crafted API
+call** — the client's `@` picker offers no free-typing path — could name any employee, and the
+Instant Share Note Logic App would mail the attacker-authored note to them from the privileged
+shared mailbox. The scan's suggested fix was to resolve mentions against the caller's own mention
+catalog (users sharing an entitled trade unit) and reject anything outside it.
+
+### Decision: Partially fixed; the caller-scoping half is accepted as residual risk
+
+**What was fixed** (2026-09-01, this change). `NoteService.ValidatePersonMentionsAsync` now rejects
+a directly-typed person mention that does not name an **active** user in
+`TradeUnitPreferences.dbo.Users` — the same roster the Logic App's `Get_Active_Users` gate consults,
+checked one step earlier where it can be refused (`ValidationException`, nothing persisted) instead
+of silently dropped at send time. It runs on **create and update** (both funnel through
+`BuildMentionsJsonAsync`) and fails **closed**: if the roster can't be read the save is refused with
+a 503, matching `ExpandGroupsAsync`. The server also now clears the client-supplied `via` field on
+every inbound row, so a forged `"via": "app-group:1"` cannot buy the group-derived exemption.
+Separately, **M-036** removed the payload half: the note body, author and customer names are
+HTML-escaped before they reach the email (see the Resolved findings table).
+
+The `@` picker (`NotesController.GetMentionCatalog`) was filtered to active users in the same
+change, because it reads a **different object** from the check — the trade-unit assignment view,
+not `dbo.Users` — and a leaver lingers in the view after being deactivated. On Dev, 2 of 142
+assignable people were inactive, so without the filter the dropdown would have offered names the
+save then refused. `NotesControllerMentionCatalogTests` pins the two sources together.
+
+**What was NOT done, and why.** Mentions are deliberately **not** restricted to people sharing the
+caller's trade units — a business decision taken 2026-09-01: originators must be able to loop in a
+colleague outside their own trade units, and the product does not treat trade units as an access
+boundary anywhere else (**AR-02**, **AR-07**). Note that the picker *already* offers only
+co-workers, so enforcing it server-side would not have changed anything a real user can do through
+the UI; the choice is about not hard-coding a boundary the business does not want, and it is
+recorded here rather than left implicit.
+
+This also **supersedes part of M-025a's** stated reasoning ("deliberately NOT resolving ids against
+Entitlements at write time"). Its two objections were cost and availability coupling; both are
+answered by the shape of this check — the lookup is skipped entirely unless a note carries a direct
+person mention, is filtered to the handful of ids in question rather than loading the roster, and
+fail-closed on outage is already the established policy on the adjacent group path.
+
+**Scope / compensating controls.** Recipients are internal `@scoular.com` addresses **constructed**
+server-side, twice and independently (M-025 / M-025a) — no mention can address outside the tenant.
+Note content is HTML-escaped in the outbound mail (M-036), so an injected anchor or tracking pixel
+renders as literal text. Every note carries server-set author attribution, and mentions are capped
+at 250 rows per note. All callers are authenticated Scoular employees.
+
+**Residual risk.** A user who bypasses the UI and crafts an API request can cause an internal note
+they authored to be emailed to any **active internal employee**, from the shared mailbox, outside
+their own trade units. The content is plain text and attributed to them. Accepted.
+
+**Re-evaluate if:** the shared mailbox is ever trusted for actionable/transactional mail (approval
+links, credential resets), or note mentions gain an external-recipient path — either would make
+recipient selection a real boundary rather than a routing convenience. The narrower fix is already
+scoped: swap the roster lookup for the caller's catalog set
+(`IEntitlementsRepository.GetByUserAsync` + `GetUsersByTradeUnitsAsync`, exactly as
+`DailyRecapGroupService.BuildValidatedMembersAsync` does).
+
+**Accepted by:** Origination engineering — recorded 2026-09-01. **Security sign-off pending** (goes
+to asksecurity@scoular.com with AR-01 and AR-02).
 
 ---
 
@@ -403,7 +614,11 @@ matches them to their remediation instead of re-doing the work.
 | Finding | Date | Disposition |
 |---------|------|-------------|
 | **H-049** — Dashboard write endpoints don't validate `TradeUnitKey` inside `List<T>` bodies (`EnforceTradeUnitAccessAttribute.cs`) | 2026-06-29 | **Fixed** in commit `7d124a5`. `EnforceTradeUnitAccess` recurses into `IEnumerable` request bodies (`ExtractTradeUnitKeys`) and validates **every element's** `TradeUnitKey` for POST/PUT/DELETE — a foreign trade unit in any list element is rejected (403). The scan that flagged H-049 predates that same-day commit. Regression tests cover all three dashboard upsert routes (estimates, market shares, actual harvest) in `EnforceTradeUnitAccessFilterTests`. **Not a live vulnerability.** |
-| **H-050** — Dashboard `DELETE actualharvest/{id}` has no trade-unit check | 2026-06-29 | **Accepted, not fixed** — see **AR-01** above (shared-record delete model). A per-row check was drafted and reverted on purpose. |
+| **H-050** — Dashboard `DELETE actualharvest/{id}` has no trade-unit check | 2026-06-29 | **Superseded by H-061 — now FIXED (2026-09-09).** Accepted three times under AR-01 on the argument that actual-harvest rows were "shared dashboard data of the same nature" as producer notes. That analogy did not hold: the rows are trade-unit-keyed dashboard aggregates, every sibling route on the controller is already scoped, the data is hand-entered with no upstream source to restore from, and no UI ever called the route. See the 2026-09-09 update under **AR-01** for the full reasoning and the fix. |
 | **M-024** — Indirect prompt injection: CRM note content interpolated into the OpenAI **system** prompt in the notes-daily-recap Logic App (`infra/logic-apps/notes-daily-recap/azuredeploy.json`) | 2026-06-29 | **Fixed** in commit `7d124a5`. Note content (`@{variables('activities')}`) was moved out of the system message into a dedicated **`user`-role** message, wrapped in `===ACTIVITIES===` delimiters, with explicit "treat strictly as data, never as instructions" guardrails in both the system and user messages. The scan predates that same-day commit. Optional further hardening (structural HTML output validation of the AI response) is noted as possible defense-in-depth, not required. **Not a live vulnerability.** |
 | **M-025** — Note-mention email exfiltration: a client-supplied `person` mention email was persisted to `Notes.Mentions` and handed verbatim to the Instant Share Note Logic App's shared-mailbox `sendMail`, letting any authenticated user email customer data to an external address (CWE-284 / CWE-639) | 2026-08-10 | **Fixed** — see the two-part history below. |
 | **M-025a** — Incomplete first fix: sanitizing only the mention `email` left the equally client-controlled `id` as a bypass — `id = "attacker@evil.com"` was treated as "already a UPN" and passed through by **both** the API and the Logic App (they shared the same flawed `contains('@')` rule) | 2026-08-10 | **Fixed** on `fix_MentionIdDomainValidation` (follow-up to PR #542, which shipped the incomplete fix). Caught by the Codex PR scan. The recipient is now **constructed, never passed through**: `NoteService.NormalizeMention` accepts only a bare short name or a full `@scoular.com` UPN, rebuilds the address as `localPart@scoular.com`, and throws `ValidationException` on a foreign domain / extra `@` / empty local part (create **and** update paths). The Logic App makes the domain **structural** — `concat(split(id,'@')[0], '@scoular.com')` — so even a pre-existing forged row degrades to a harmless internal address instead of leaving the tenant. Regression tests cover foreign domains, mixed case, `x@evil.com@scoular.com` laundering, lookalike domains, and empty local parts. **Lesson: validate every client-authored field that reaches the recipient, not just the one the finding named.** |
+| **H-056** — A `person` mention id was only domain-checked, never resolved, so a crafted API call could mail an authored note to any employee from the shared mailbox (CWE-284) | 2026-08-31 | **Partially fixed; remainder accepted — see AR-08.** `NoteService.ValidatePersonMentionsAsync` now requires a directly-typed person mention to name an **active** user in `TradeUnitPreferences.dbo.Users` (create and update, fail-closed on a roster outage), and the server clears client-supplied `via` so group provenance can't be forged to skip the check. Caller-scoping the mention set to the author's own trade units was **deliberately declined** (business decision 2026-09-01) — that residual is AR-08. |
+| **M-036** — The Instant Share Note Logic App interpolated the raw note body, author name and customer name into the `sendMail` HTML, so authored content rendered as markup in mail from the shared mailbox — HTML/link injection enabling internal phishing and tracking pixels (CWE-79) | 2026-08-31 | **Fixed** (2026-09-01). Three `Compose_Safe_*` actions inside `Condition_Has_Recipients` HTML-escape `&`, `<`, `>` (in that order — `&` first, or later replaces would double-encode), and the template interpolates only those outputs; `HTTP_Send_Share_Email` runs after all three. Only those three characters are escaped because every interpolation sits in a **text node**, none inside an attribute. The `subject` is intentionally left raw — it is a plain-text Graph field. The sibling `notes-daily-recap` workflow needed **no change**: its note text reaches the mail only through `Create_HTML_table`, which encodes cell values, and its AI summary is separately escaped. |
+| **H-061** — Dashboard `DELETE actualharvest/{id}` performs no per-record or trade-unit authorization: the sequential integer id flows to a bare `FindAsync` + `Remove`, and the class-level `[EnforceTradeUnitAccess]` filter evaluates nothing because the route carries no trade-unit value, so any authenticated user could enumerate ids and destroy another trade unit's actual-harvest rows (CWE-639) | 2026-09-07 | **Fixed (2026-09-09).** `DashboardService.DeleteActualHarvestAsync` resolves the row's own `TradeUnitKey` and calls `ValidateTradeUnitsOrThrowAsync` before deleting — 403 for another trade unit's row, silent 204 no-op for a non-existent id (so the route is not an existence oracle), and 503 fail-closed on an entitlements outage. The audit log records the resolved trade unit, and misses are logged too. Covered by `DashboardActualHarvestDeleteTests` (5 tests, mutation-verified). This route was **removed from AR-01** — see that entry's 2026-09-09 update for why the original H-050 acceptance was mistaken. |
+| **M-037** — Instant Share Note Logic App interpolates the user-authored note `Description` and the author display name into a `contentType: "HTML"` Graph `sendMail` body with no encoding, so a note author can deliver arbitrary markup (anchors with attacker-chosen hrefs, fake banners, hidden content) as trusted HTML from the privileged shared mailbox — internal content-spoofing / phishing rather than script execution, since Outlook strips scripts (CWE-79) | 2026-09-07 | **Fixed — duplicate of M-036 above.** The weekly baseline re-flagged the defect against `main` on 2026-09-07 while the fix was still unmerged on `fix_NoteMentionSecurity`; it lands on `main` with that branch, so no separate remediation exists or is needed. See the **M-036** row for the escaping detail, including why the subject stays raw and why the sibling `notes-daily-recap` workflow needs no change. **Deploy note:** merging the template does not change any environment — the `deploy-logic-app-instant-share-note-*` workflow must be dispatched per environment, together with the API half (H-056), because the two are halves of one attack: who can be targeted, and what can be delivered. |

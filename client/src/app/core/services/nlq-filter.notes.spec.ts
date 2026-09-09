@@ -95,6 +95,10 @@ describe('NlqFilterService.extractNoteSearchKeywords (server content-filter sour
     expect(svc.extractNoteSearchKeywords('notes added yesterday')).toEqual([]);   // recency, not content
     expect(svc.extractNoteSearchKeywords('producers with pinned notes')).toEqual([]);
   });
+  it('pins the "Notes mentioning bin" library card\'s literal QueryText — it was broadened from just "bin" to also match the major grain crop names, so a re-wording that drops one of these silently narrows the card', () => {
+    expect(svc.extractNoteSearchKeywords('Notes mentioning bin corn soybeans wheat oats barley sorghum milo canola and sunflower'))
+      .toEqual(['bin', 'corn', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum', 'milo', 'canola', 'sunflower']);
+  });
 });
 
 describe('NlqFilterService.refineFiltersNeedFullNotes', () => {
@@ -202,5 +206,78 @@ describe('NlqFilterService — a note matches regardless of its trade-unit tag',
     const ids = svc.parseAndFilter('notes mentioning milo', ctx([alpha, bravo], notes))
       .customers.map(c => c.id).sort((a, b) => a - b);
     expect(ids).toEqual([1]); // Alpha only; Bravo has no milo note; Alpha's foreign tag is irrelevant
+  });
+});
+
+describe('NlqFilterService.dataNeedsForCriteria', () => {
+  let svc: NlqFilterService;
+  beforeEach(() => { svc = new NlqFilterService(); });
+
+  it('folds query-text needs with flag-derived needs (OR, not replace)', () => {
+    // Query text alone
+    expect(svc.dataNeedsForCriteria('producers with unapplied tickets').tickets).toBe(true);
+    expect(svc.dataNeedsForCriteria('producers in storage').storage).toBe(true);
+    expect(svc.dataNeedsForCriteria('producers on dp').dp).toBe(true);
+    expect(svc.dataNeedsForCriteria('producers planting corn').planting).toBe(true);
+    expect(svc.dataNeedsForCriteria('producers with active contracts').contracts).toBe(true);
+    // A refine-only flag with NO matching query text still reports the need — this is exactly
+    // what build-list's applyFilters() was missing before it routed through this method.
+    expect(svc.dataNeedsForCriteria('', { ticketQuantityOver: 5000 } as never).tickets).toBe(true);
+    expect(svc.dataNeedsForCriteria('', { hasGrainInStorage: true } as never).storage).toBe(true);
+    expect(svc.dataNeedsForCriteria('', { hasDpContracts: true } as never).dp).toBe(true);
+  });
+
+  it('fullNotes is true when EITHER the text or the refine set needs bodies', () => {
+    expect(svc.dataNeedsForCriteria('notes mentioning drought').fullNotes).toBe(true);
+    expect(svc.dataNeedsForCriteria('', { hasPinnedNotes: true } as never).fullNotes).toBe(true);
+    expect(svc.dataNeedsForCriteria('', { noteKeyword: 'drought' } as never).fullNotes).toBe(true);
+  });
+
+  it('fullNotes is false for recency-only refines and plain prompts', () => {
+    expect(svc.dataNeedsForCriteria('', { notContactedDays: 30 } as never).fullNotes).toBe(false);
+    expect(svc.dataNeedsForCriteria('producers with active contracts').fullNotes).toBe(false);
+  });
+
+  it('reports no needs for an unscoped query with no refinements', () => {
+    const needs = svc.dataNeedsForCriteria('producers in Iowa', null);
+    expect(needs).toEqual({ tickets: false, contracts: false, storage: false, dp: false, planting: false, fullNotes: false });
+  });
+});
+
+describe('NlqFilterService.refineDimension', () => {
+  let svc: NlqFilterService;
+  beforeEach(() => { svc = new NlqFilterService(); });
+
+  it('an explicit category always wins over flag inference', () => {
+    expect(svc.refineDimension({ hasGrainInStorage: true } as never, 'Contracts')).toBe('Contracts');
+    expect(svc.refineDimension(null, 'Tickets')).toBe('Tickets');
+  });
+
+  it('ignores an unrecognized explicit category and falls back to flag inference', () => {
+    expect(svc.refineDimension({ hasGrainInStorage: true } as never, 'Not A Real Category')).toBe('Storage');
+  });
+
+  it('infers from flags in DP > Storage > Tickets > Planting > Contracts > Grain on Farm precedence', () => {
+    expect(svc.refineDimension({ hasDpContracts: true, hasGrainInStorage: true } as never)).toBe('DP Contracts');
+    expect(svc.refineDimension({ hasGrainInStorage: true, hasDeliveriesThisYear: true } as never)).toBe('Storage');
+    expect(svc.refineDimension({ hasDeliveriesThisYear: true, hasPlantingIntentions: true } as never)).toBe('Tickets');
+    expect(svc.refineDimension({ hasPlantingIntentions: true, hasActiveContracts: true } as never)).toBe('Planting');
+    expect(svc.refineDimension({ hasActiveContracts: true, hasGrainTarget: true } as never)).toBe('Contracts');
+    expect(svc.refineDimension({ hasGrainTarget: true } as never)).toBe('Grain on Farm');
+  });
+
+  it('downHarvestPace routes to Contracts — the "Down harvest contract pace" card (Category=General) has no explicit-category route, so a crop chip needs the flag to reach the right dimension', () => {
+    expect(svc.refineDimension({ downHarvestPace: true } as never)).toBe('Contracts');
+  });
+
+  it('returns null when no dimension flag is set and no category is known', () => {
+    expect(svc.refineDimension({ acresOver: 500 } as never)).toBe(null);
+    expect(svc.refineDimension(null)).toBe(null);
+    expect(svc.refineDimension(undefined)).toBe(null);
+  });
+
+  it('reads the _promptCategory hint stamped onto a saved list at save time — callers must pass it explicitly (dataNeedsForCriteria does)', () => {
+    const filters = { _promptCategory: 'DP Contracts' } as never;
+    expect(svc.refineDimension(filters, (filters as { _promptCategory?: string })._promptCategory)).toBe('DP Contracts');
   });
 });

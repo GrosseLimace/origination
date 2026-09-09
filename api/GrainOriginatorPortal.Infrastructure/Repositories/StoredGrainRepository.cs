@@ -54,7 +54,7 @@ public class StoredGrainRepository : IStoredGrainRepository
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) + '|' + ISNULL(sg.LOCATION_CODE, '') AS Id,
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) AS ReceiptNumber,
             CAST(0 AS bigint) AS CustomerId,
-            sg.CUSTOMER_ID AS CustomerCode,
+            LTRIM(RTRIM(sg.CUSTOMER_ID)) AS CustomerCode,
             ISNULL(sg.COMMODITY_CODE, '') AS Crop,
             ISNULL(sg.NET_QUANTITY, 0) AS Quantity,
             ISNULL(sg.GROSS_QUANTITY, 0) AS GrossQuantity,

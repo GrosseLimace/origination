@@ -19,7 +19,7 @@ export class AppPage {
     expect(res.status()).toBe(200);
 
     const html = await res.text();
-    expect(html).toContain('<title>Scoular Origination</title>');
+    expect(html).toContain('<title>Scoular Origination Workbench</title>');
     expect(html).toContain('<app-root></app-root>');
   }
 }

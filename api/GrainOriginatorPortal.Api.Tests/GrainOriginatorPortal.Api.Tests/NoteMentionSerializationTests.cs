@@ -128,12 +128,21 @@ public class NoteMentionSerializationTests
 
     private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions(
         params RecapGroupDto[] visibleGroups)
-        => BuildServiceCapturingMentions(out _, visibleGroups);
+        => BuildServiceCapturingMentions(out Mock<IDailyRecapGroupService> _, out Mock<IEntitlementsRepository> _, visibleGroups);
 
     /// <param name="groups">The recap-group service mock, exposed so a test can make it throw or
     /// assert it was never consulted.</param>
     private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions(
         out Mock<IDailyRecapGroupService> groups, params RecapGroupDto[] visibleGroups)
+        => BuildServiceCapturingMentions(out groups, out Mock<IEntitlementsRepository> _, visibleGroups);
+
+    /// <param name="groups">The recap-group service mock, exposed so a test can make it throw or
+    /// assert it was never consulted.</param>
+    /// <param name="entitlements">The user-roster mock. Defaults to treating every id it is asked
+    /// about as an active user, so tests that aren't about H-056 don't have to seed a roster.</param>
+    private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions(
+        out Mock<IDailyRecapGroupService> groups, out Mock<IEntitlementsRepository> entitlements,
+        params RecapGroupDto[] visibleGroups)
     {
         var captured = new List<string?>();
         var repo = new Mock<INoteRepository>();
@@ -158,8 +167,12 @@ public class NoteMentionSerializationTests
         groups = new Mock<IDailyRecapGroupService>();
         groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(visibleGroups.ToList());
 
+        entitlements = new Mock<IEntitlementsRepository>();
+        entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(StringComparer.OrdinalIgnoreCase));
+
         var svc = new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
-            groups.Object, new Mock<ILogger<NoteService>>().Object);
+            groups.Object, entitlements.Object, new Mock<ILogger<NoteService>>().Object);
         return (svc, captured);
     }
 
@@ -517,7 +530,141 @@ public class NoteMentionSerializationTests
         ctx.Setup(c => c.GetCurrentUser()).Returns("CEgr");
         var groups = new Mock<IDailyRecapGroupService>();
         groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var entitlements = new Mock<IEntitlementsRepository>();
+        entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(StringComparer.OrdinalIgnoreCase));
         return new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
-            groups.Object, new Mock<ILogger<NoteService>>().Object);
+            groups.Object, entitlements.Object, new Mock<ILogger<NoteService>>().Object);
+    }
+
+    // ── Person mentions must name a real active user (H-056) ───────────────────────────────────
+    // Domain validation above proves an id is INTERNAL; it never proved the person exists. Any
+    // well-formed short name resolved to a real mailbox, so a hand-crafted API call (the picker
+    // offers no free-typing path) could mail an authored note to any employee from the shared
+    // mailbox. The id is now checked against the same active-user roster the Logic App consults.
+    // Deliberately existence, NOT entitlement: mentions are intentionally not limited to the
+    // caller's trade units — see SECURITY-REVIEWS/ACCEPTED-RISKS.md.
+
+    /// <summary>Builds a service whose roster contains exactly <paramref name="activeUserIds"/>.</summary>
+    private static (NoteService svc, List<string?> captured) BuildServiceWithRoster(
+        params string[] activeUserIds)
+    {
+        var result = BuildServiceCapturingMentions(
+            out Mock<IDailyRecapGroupService> _, out var entitlements);
+        entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) =>
+                ids.Where(id => activeUserIds.Contains(id, StringComparer.OrdinalIgnoreCase))
+                   .ToHashSet(StringComparer.OrdinalIgnoreCase));
+        return result;
+    }
+
+    [Fact]
+    public async Task CreateAsync_RejectsPersonMentionThatIsNotAnActiveUser()
+    {
+        var (svc, captured) = BuildServiceWithRoster("SFletcher");
+        var mentions = new[] { new NoteMention { Type = "person", Id = "CEO", Name = "The Boss" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "Please re-approve your payroll", mentions, CancellationToken.None));
+        Assert.Empty(captured);   // nothing persisted
+    }
+
+    [Fact]
+    public async Task UpdateAsync_AlsoRejectsPersonMentionThatIsNotAnActiveUser()
+    {
+        // The edit path shares BuildMentionsJsonAsync — a note saved clean must not be editable
+        // into a forged recipient afterwards.
+        var (svc, captured) = BuildServiceWithRoster("SFletcher");
+        var mentions = new[] { new NoteMention { Type = "person", Id = "CEO", Name = "The Boss" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.UpdateAsync(1, "edited", mentions, CancellationToken.None));
+        Assert.Empty(captured);
+    }
+
+    [Theory]
+    [InlineData("SFletcher")]              // bare short name, as the catalog emits it
+    [InlineData("SFletcher@scoular.com")]  // full internal UPN — matched on the local part
+    [InlineData("sfletcher")]              // roster lookup is case-insensitive
+    public async Task CreateAsync_AcceptsPersonMentionNamingAnActiveUser(string id)
+    {
+        var (svc, captured) = BuildServiceWithRoster("SFletcher");
+        var mentions = new[] { new NoteMention { Type = "person", Id = id, Name = "Sam Fletcher" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal("person", stored[0].Type);
+        Assert.EndsWith("@scoular.com", stored[0].Email);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DoesNotRevalidateGroupMembers_AgainstTheRoster()
+    {
+        // Group members were validated against the group creator's entitlements when the group was
+        // saved (AR-07). Re-checking them here would silently narrow group mentions.
+        var (svc, captured) = BuildServiceCapturingMentions(
+            out Mock<IDailyRecapGroupService> _, out var entitlements, Group(7, "Corn Belt", PersonMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        Assert.Contains(StoredMentions(captured), m => m.Type == "person" && m.Id == "SFletcher");
+        entitlements.Verify(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAsync_StillValidates_WhenTheClientForgesGroupProvenance()
+    {
+        // `via` marks a row as group-derived and therefore exempt. It is server-set, so a client
+        // that sends its own must not be able to buy that exemption.
+        var (svc, captured) = BuildServiceWithRoster("SFletcher");
+        var mentions = new[] { new NoteMention { Type = "person", Id = "CEO", Name = "The Boss", Via = "app-group:1" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Empty(captured);
+    }
+
+    [Fact]
+    public async Task CreateAsync_FailsClosed_WhenTheUserRosterCannotBeRead()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(
+            out Mock<IDailyRecapGroupService> _, out var entitlements);
+        entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("roster down"));
+        var mentions = new[] { new NoteMention { Type = "person", Id = "SFletcher", Name = "Sam Fletcher" } };
+
+        await Assert.ThrowsAsync<InfrastructureException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Empty(captured);   // an unverifiable recipient is never persisted
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithoutAPersonMention_NeverQueriesTheRoster()
+    {
+        // The hot path — an ordinary note, or one mentioning only a trade unit — pays nothing.
+        var (svc, _) = BuildServiceCapturingMentions(
+            out Mock<IDailyRecapGroupService> _, out var entitlements);
+        var mentions = new[] { new NoteMention { Type = "trade-unit", Id = "1084", Name = "1084" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        entitlements.Verify(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RejectsAnInactiveUser_RatherThanLettingTheSendDropThemSilently()
+    {
+        // The Logic App skips inactive recipients, so this note would have saved looking shared and
+        // notified nobody. Same philosophy as the empty-group guard: reject, never silently drop.
+        var (svc, captured) = BuildServiceWithRoster();   // roster returns nobody as active
+        var mentions = new[] { new NoteMention { Type = "person", Id = "RRetired", Name = "R Retired" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Empty(captured);
     }
 }

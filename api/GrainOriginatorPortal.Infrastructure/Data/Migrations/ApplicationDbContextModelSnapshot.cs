@@ -315,6 +315,16 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("Tier3");
 
+                    b.Property<string>("TradeGroupScope")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("TradeGroupScope");
+
+                    b.Property<string>("TradeUnitScope")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("TradeUnitScope");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")

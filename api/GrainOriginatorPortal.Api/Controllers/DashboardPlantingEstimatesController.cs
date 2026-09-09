@@ -123,15 +123,36 @@ public class DashboardPlantingEstimatesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Deletes a single actual harvest row by ID.</summary>
+    /// <summary>Deletes a single actual harvest row by ID, if it belongs to a trade unit the caller
+    /// is entitled to. Returns 204 whether or not a row existed; 403 when it belongs to another
+    /// trade unit.</summary>
     [HttpDelete("actualharvest/{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> DeleteActualHarvest(int id, CancellationToken cancellationToken = default)
     {
-        await _service.DeleteActualHarvestAsync(id, cancellationToken);
-        _logger.LogInformation(
-            "Dashboard actual harvest deleted [{ErrorCode}] [{ErrorCategory}]: HarvestId={HarvestId}",
-            "AUDIT_DELETE", "DataMutation", id);
+        // The class-level [EnforceTradeUnitAccess] filter cannot guard this route — it only reads a
+        // trade-unit value carried ON the request, and this one carries only the row id. The check
+        // therefore lives in DashboardService, which resolves the row's own TradeUnitKey first
+        // (H-061, 2026-09-09). Do not remove it on the strength of AR-01: these rows are trade-unit
+        // -keyed dashboard aggregates, not the shared producer records that entry covers.
+        var deletedTradeUnitKey = await _service.DeleteActualHarvestAsync(id, cancellationToken);
+
+        // Log the resolved trade unit, not just the id, so the audit trail says WHOSE row went.
+        // A miss is logged too — otherwise an enumeration sweep leaves no trace at all.
+        if (deletedTradeUnitKey is null)
+        {
+            _logger.LogInformation(
+                "Dashboard actual harvest delete found no row [{ErrorCode}] [{ErrorCategory}]: HarvestId={HarvestId}",
+                "AUDIT_DELETE", "DataMutation", id);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Dashboard actual harvest deleted [{ErrorCode}] [{ErrorCategory}]: HarvestId={HarvestId} TradeUnitKey={TradeUnitKey}",
+                "AUDIT_DELETE", "DataMutation", id, deletedTradeUnitKey);
+        }
+
         return NoContent();
     }
 

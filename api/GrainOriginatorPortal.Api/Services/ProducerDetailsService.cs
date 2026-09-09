@@ -3,6 +3,8 @@ using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Exceptions;
+using Microsoft.Data.SqlClient;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -44,12 +46,19 @@ public class ProducerDetailsService : IProducerDetailsService
                 all.Select(p => p.CreatedBy).Concat(all.Select(p => p.ModifiedBy ?? string.Empty)),
                 cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            // ProducerDetails is an app table that should always exist; stay defensive (the prior
-            // SqlDataService behavior) and degrade to an empty list rather than failing the page.
-            _logger.LogWarning(ex, "ProducerDetails not accessible. Returning empty list.");
-            return [];
+            // ProducerDetails is an app table that should always exist, so a SqlException here is
+            // a genuine transient condition (connection failure, timeout, throttling) — not a
+            // permanent schema mismatch. Rethrown as an InfrastructureException (503) instead of a
+            // silent empty list: swallowing this previously zeroed out every grain-on-farm prompt
+            // plus the acres/bin-capacity/primary-contact refines with no signal to the user.
+            // A non-SQL exception here is unexpected and propagates to the global handler as a 500
+            // — that's a real bug, not a condition a retry should paper over.
+            _logger.LogError(ex, "Transient DB error retrieving ProducerDetails — surfacing as retryable");
+            throw new InfrastructureException(
+                "The producer detail data source is temporarily unavailable. Please retry shortly.",
+                "PRODUCER_DETAILS_DB_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
         }
 
         // Entitlement scoping: narrow to producers in the caller's allowed trade units.

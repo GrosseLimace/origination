@@ -188,6 +188,13 @@ public class DashboardRepository : IDashboardRepository
         });
     }
 
+    public Task<string?> GetActualHarvestTradeUnitKeyAsync(int id, CancellationToken cancellationToken) =>
+        _appContext.DashboardActualHarvests
+            .AsNoTracking()
+            .Where(e => e.Id == id)
+            .Select(e => e.TradeUnitKey)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task DeleteActualHarvestAsync(int id, CancellationToken cancellationToken)
     {
         var entity = await _appContext.DashboardActualHarvests.FindAsync([id], cancellationToken);

@@ -10,6 +10,8 @@ import { AccountingCurrencyPipe } from '@shared/pipes/accounting-currency.pipe';
 import { ToastService } from '@core/services/toast.service';
 import { ApiService } from '@core/services/api.service';
 import { Commodity } from '@models';
+import { AppStateService } from '@core/services/app-state.service';
+import { scopeCommodities } from '@shared/utils/commodity-scope';
 
 import { CheckInputs, CheckResult, CheckOffMode, DEFAULT_DAILY_DP_FEE } from '../models/calculator.model';
 import { computeCheck } from '../check.calc';
@@ -61,6 +63,7 @@ export class CheckCalculatorComponent implements OnInit {
   private readonly report = inject(CheckReportService);
   private readonly toast = inject(ToastService);
   private readonly apiService = inject(ApiService);
+  private readonly appState = inject(AppStateService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Name of the producer the calculator was opened for — prefilled into Producer (editable). */
@@ -84,7 +87,9 @@ export class CheckCalculatorComponent implements OnInit {
     const idx = this.openSuggestIndex();
     if (idx === null) return [];
     const query = (this.items()[idx]?.commodity ?? '').trim().toLowerCase();
-    const list = this.commodityOptions();
+    // Hide commodities scoped to a trade group the user isn't in (organics). Covers the
+    // full-list fallback too, since it lands in the same signal.
+    const list = scopeCommodities(this.commodityOptions(), { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() });
     const matches = query
       ? list.filter(c => c.code.toLowerCase().includes(query) || c.name.toLowerCase().includes(query))
       : list;

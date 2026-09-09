@@ -618,7 +618,7 @@
                                 <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-2 @md/profile:grid-cols-4 @4xl/profile:grid-cols-8 gap-4' : 'grid grid-cols-2 @md/profile:grid-cols-4 @4xl/profile:grid-cols-7 gap-4'">
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Ticket Number</p>
-                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ticketNumber }}</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticketDisplayNumber(ticket) }}</p>
                                   </div>
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Date</p>

@@ -19,11 +19,15 @@
 
 /* App chrome metrics.
    --app-header-h must match the rendered height of app-header (see
-   shared/components/header/header.component.html): py-5 + h-11 logo + label row.
+   shared/components/header/header.component.html): py-5 + the 3rem avatar, which is
+   the tallest element in the row (taller than the h-11 lockup and the h-10 buttons).
+   Mobile and desktop are both driven by that same avatar, so one value covers both.
    --app-main-pad mirrors the padding on <main> in app.component.html (p-4 sm:p-6).
    Panes that cannot use a flex min-h-0 chain size themselves off --app-chrome. */
 :root {
-  --app-header-h: 6.5rem;
+  /* py-5 + the 3rem avatar + the 1px border-b. Measured: 89px at a 16px root, 84px at
+     15px — the rem part tracks the fluid root size, the border does not, hence the +1px. */
+  --app-header-h: calc(5.5rem + 1px);
   --app-main-pad: 1rem;
   --app-chrome: calc(var(--app-header-h) + 2 * var(--app-main-pad));
 }
@@ -38,6 +42,16 @@
   --text-fluid-sm: clamp(13px, calc(0.55vw + 5.5px), 16px);
   /* row and card headings, one step above the body: 15px -> 18px */
   --text-fluid-md: clamp(15px, calc(0.55vw + 7.5px), 18px);
+  /* Header product name, in the divider lockup beside the SCOULAR wordmark: 18px -> 24px.
+     It no longer competes for the gap between the logo and the nav, so this is a normal
+     house curve rather than one fitted to the leftover space. Sentence case at
+     font-medium, matching the nav button labels.
+     NOTE 1: must be applied as text-[length:var(--text-fluid-brand)] — without the
+     length: hint Tailwind reads the arbitrary value as a colour, not a font size.
+     NOTE 2: pair it with leading-normal, never leading-none. The name is truncate'd
+     (overflow: hidden) and Open Sans needs ~1.36em of line box, so a 1em line clips
+     the descender on the g in "Origination". */
+  --text-fluid-brand: clamp(18px, calc(1.083vw + 3.21px), 24px);
   /* card padding and list gaps: 12px -> 16px */
   --space-fluid-card: clamp(12px, calc(0.72vw + 2.14px), 16px);
   /* chart plot areas: holds today's laptop size, grows on a monitor */
