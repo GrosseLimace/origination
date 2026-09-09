@@ -16,5 +16,9 @@ public interface IDashboardRepository
     Task UpsertMarketSharesAsync(List<DashboardMarketShare> shares, string username, CancellationToken cancellationToken);
     Task<List<DashboardActualHarvest>> GetActualHarvestAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken);
     Task UpsertActualHarvestAsync(List<DashboardActualHarvest> items, string username, CancellationToken cancellationToken);
+    /// <summary>Returns the trade unit key of a single actual-harvest row, or null when no such row exists.
+    /// Used to authorize the delete-by-id route, which carries no trade-unit value of its own.</summary>
+    Task<string?> GetActualHarvestTradeUnitKeyAsync(int id, CancellationToken cancellationToken);
+
     Task DeleteActualHarvestAsync(int id, CancellationToken cancellationToken);
 }
