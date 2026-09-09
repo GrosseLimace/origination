@@ -4,6 +4,7 @@ using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.Data.SqlClient;
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -80,8 +81,11 @@ public class CustomerService : ICustomerService
         _repository.DeactivateDormantTradeUnitAsync(customerId, tradeUnit, _requestContext.GetCurrentUser(), cancellationToken);
 
     /// <summary>
-    /// Runs a customer list fetch and maps to DTOs, degrading to an empty list on a database error
-    /// (the prior SqlDataService behavior). Non-database exceptions propagate to the global handler.
+    /// Runs a customer list fetch and maps to DTOs. Unlike the ODS-backed Ticket/Contract fetches,
+    /// there is no "missing view column" case here — Customer is an app-owned table, so any
+    /// SqlException reaching this handler (connection failure, timeout, throttling) is a genuine
+    /// transient condition. It is rethrown as an InfrastructureException (503) so the client can
+    /// distinguish "couldn't load" from a real empty result instead of silently degrading to [].
     /// </summary>
     private async Task<List<CustomerResponse>> SafeListAsync(
         Func<CancellationToken, Task<List<Customer>>> fetch, string context, CancellationToken cancellationToken)
@@ -93,8 +97,10 @@ public class CustomerService : ICustomerService
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            _logger.LogWarning(ex, "DB error retrieving {Context} — returning empty list", context);
-            return [];
+            _logger.LogError(ex, "Transient DB error retrieving {Context} — surfacing as retryable", context);
+            throw new InfrastructureException(
+                "The customer data source is temporarily unavailable. Please retry shortly.",
+                "CUSTOMERS_DB_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
         }
     }
 }

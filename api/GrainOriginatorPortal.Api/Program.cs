@@ -87,6 +87,14 @@ builder.Services.AddProblemDetails();
 // Configuration in appsettings.json "AzureAd" section.
 // =============================================================================
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+// Who may read the WHOLE org and pick any manager. Everyone else who can open the dashboard —
+// i.e. everyone else in the Super Users group — is scoped to themselves plus their own reports.
+// Deliberately NOT derived from the Admin role: that role is how the Super Users group grants
+// dashboard access to managers and IT/admin alike, so it answers "may I open this", not "how much
+// should I see". Defaults to empty, which scopes everyone rather than opening up.
+var usageDashboardViewAll = builder.Configuration.GetSection("UsageDashboard:ViewAll").Get<string[]>() ?? [];
+builder.Services.AddSingleton(
+    new GrainOriginatorPortal.Api.Authorization.UsageDashboardViewAllList(usageDashboardViewAll));
 builder.Services.AddAuthorization(options =>
 {
     // RequireRole honors the identity's RoleClaimType so it works whether the
@@ -94,6 +102,14 @@ builder.Services.AddAuthorization(options =>
     // or as `ClaimTypes.Role` (mapped). Both paths resolve to the same "Admin" check.
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireRole("Admin"));
+
+    // Usage-dashboard read surface: Super Users group membership, surfaced as the Admin role.
+    // Equivalent to AdminOnly today; kept as its own named policy so the read surface stays distinct
+    // from exclusion administration (a convention test pins that split), and so how much of the org
+    // a viewer sees can keep changing without touching who may open it.
+    options.AddPolicy(GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.PolicyName, policy =>
+        policy.RequireAssertion(ctx =>
+            GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.CanView(ctx.User)));
 });
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 
@@ -230,6 +246,9 @@ builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
 // Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
+// Scoped (not singleton like IAppAccessService) because it reads through the scoped
+// IUsageRepository/DbContext; the directory itself is shared via IMemoryCache.
+builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();

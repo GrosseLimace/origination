@@ -5,6 +5,7 @@ import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-cov
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
 import { dpTotalBushels, dpTotalCharges, dpContractCount } from '@shared/utils/dp-aggregate';
+import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from '@shared/utils/crop-group-match';
 
 export interface NlqFilterContext {
   customers: Customer[];
@@ -197,6 +198,76 @@ export class NlqFilterService {
       || filters.contactedMoreThan5 === true;
   }
 
+  /** The library-prompt DIMENSION a refine set implies — which dataset a crop-scoped filter
+   *  should be matched against (storage / tickets / DP / planting / contracts / grain-on-farm),
+   *  and which fetches processQuery / applyFilters must wait on. `explicitCategory` (the active
+   *  library prompt's Category, or a saved list's `_promptCategory` hint) wins when present;
+   *  otherwise the dimension is inferred from which refine flags are set. This is the SINGLE
+   *  source for the flag-list + precedence that used to be duplicated between build-list's
+   *  displayedCustomers() and applyRefinementFilters() below — keep the two in sync by always
+   *  routing through this method rather than re-copying the flag lists. */
+  refineDimension(
+    filters: RefinementFilters | null | undefined,
+    explicitCategory?: string | null
+  ): 'Storage' | 'Tickets' | 'DP Contracts' | 'Planting' | 'Contracts' | 'Grain on Farm' | null {
+    if (explicitCategory === 'Storage' || explicitCategory === 'Tickets' || explicitCategory === 'DP Contracts'
+      || explicitCategory === 'Planting' || explicitCategory === 'Contracts' || explicitCategory === 'Grain on Farm') {
+      return explicitCategory;
+    }
+    const r = filters;
+    if (!r) return null;
+    const isDp = !!r.hasDpContracts
+      || r.dpBushelsOver != null || r.dpDaysOver != null || r.dpChargesOver != null;
+    if (isDp) return 'DP Contracts';
+    const isStorage = !!r.hasGrainInStorage
+      || r.storageDaysOver != null || r.storageQuantityOver != null || r.storageReceivableOver != null;
+    if (isStorage) return 'Storage';
+    const isTickets = !!r.hasDeliveriesThisYear
+      || r.ticketQuantityOver != null || r.ticketsInLastDays != null
+      || r.avgMoistureOver != null || r.avgMoistureUnder != null
+      || r.avgTestWeightOver != null || r.avgTestWeightUnder != null
+      || r.avgProteinOver != null || r.avgProteinUnder != null;
+    if (isTickets) return 'Tickets';
+    const isPlanting = !!r.hasPlantingIntentions
+      || r.plantingYear != null || r.irrigatedOnly || r.drylandOnly || r.doubleCropOnly
+      || (r.plantingAcresOver != null && r.plantingAcresOver > 0);
+    if (isPlanting) return 'Planting';
+    const isContracts = !!r.hasActiveContracts || !!r.hasUnsignedContracts || !!r.hasUnpricedContracts
+      || !!r.hasOverdueContracts || !!r.contractsExpiringThisMonth || !!r.multipleCommoditiesContracted
+      || !!r.downHarvestPace
+      || (r.contractQuantityOver != null && r.contractQuantityOver > 0);
+    if (isContracts) return 'Contracts';
+    const isGrainOnFarm = r.grainOnFarmBushelsOver != null || !!r.hasGrainTarget || !!r.noGrainTarget
+      || r.grainTargetOver != null || r.grainTargetUnder != null || !!r.hasGrade
+      || r.gradeOver != null || r.gradeUnder != null;
+    if (isGrainOnFarm) return 'Grain on Farm';
+    return null;
+  }
+
+  /** Which datasets a (query text + refine set) pair must have RESOLVED before it can be
+   *  filtered honestly. Ors the free-text `queryInvolves*` gates with the flag-derived needs
+   *  implied by `refineDimension`, so a refine-only criteria change (no query text) still
+   *  reports the right waits. `fullNotes` folds in `queryNeedsFullNotes` (text) and
+   *  `refineFiltersNeedFullNotes` (flags) — callers should NOT need to call either separately. */
+  dataNeedsForCriteria(
+    query: string,
+    filters?: RefinementFilters | null
+  ): { tickets: boolean; contracts: boolean; storage: boolean; dp: boolean; planting: boolean; fullNotes: boolean } {
+    const dim = this.refineDimension(filters, filters?._promptCategory);
+    // Delivery Location reads Ticket.elevatorCity — needs tickets loaded regardless of the
+    // active prompt's own dimension (e.g. picking it on the "All Producers" card, which has no
+    // ticket-related trigger phrase of its own).
+    const needsDeliveryLocation = !!filters?.deliveryLocations && filters.deliveryLocations.length > 0;
+    return {
+      tickets: this.queryInvolvesTickets(query) || dim === 'Tickets' || needsDeliveryLocation,
+      contracts: this.queryInvolvesContracts(query) || dim === 'Contracts',
+      storage: this.queryInvolvesStorage(query) || dim === 'Storage',
+      dp: this.queryInvolvesDpContracts(query) || dim === 'DP Contracts',
+      planting: this.queryInvolvesPlanting(query) || dim === 'Planting',
+      fullNotes: this.queryNeedsFullNotes(query) || this.refineFiltersNeedFullNotes(filters),
+    };
+  }
+
   /** Returns true if the query involves planting-related patterns that require planting intentions data. */
   queryInvolvesPlanting(query: string): boolean {
     const q = query.toLowerCase();
@@ -250,13 +321,34 @@ export class NlqFilterService {
     'sorghum', 'milo', 'canola', 'sunflower', 'beans'
   ];
 
-  private stateNames: { [key: string]: string } = {
-    'iowa': 'Iowa', 'nebraska': 'Nebraska', 'illinois': 'Illinois',
-    'minnesota': 'Minnesota', 'wisconsin': 'Wisconsin', 'missouri': 'Missouri',
-    'kansas': 'Kansas', 'south dakota': 'South Dakota', 'north dakota': 'North Dakota',
-    'indiana': 'Indiana', 'ohio': 'Ohio', 'michigan': 'Michigan',
-    'texas': 'Texas', 'oklahoma': 'Oklahoma', 'colorado': 'Colorado'
+  // Single canonical source for US state name <-> abbreviation, all 50 states + DC. Previously
+  // three separate 15-state tables (stateNames here, a second abbreviation map in
+  // detectStateInQuery, and a third in getStateAbbreviation) had to stay in sync by hand — a
+  // state present in one but not the others silently broke either detection or matching. The
+  // 15-state subset covered only the states this app's trade units actually operate in; a query
+  // or a producer record naming any OTHER state (a customer's mailing address, a query like
+  // "producers in Georgia") fell through with no match at all, which reads identically to "the
+  // state filter doesn't work."
+  private static readonly STATE_ABBREV: { [name: string]: string } = {
+    'alabama': 'al', 'alaska': 'ak', 'arizona': 'az', 'arkansas': 'ar', 'california': 'ca',
+    'colorado': 'co', 'connecticut': 'ct', 'delaware': 'de', 'florida': 'fl', 'georgia': 'ga',
+    'hawaii': 'hi', 'idaho': 'id', 'illinois': 'il', 'indiana': 'in', 'iowa': 'ia',
+    'kansas': 'ks', 'kentucky': 'ky', 'louisiana': 'la', 'maine': 'me', 'maryland': 'md',
+    'massachusetts': 'ma', 'michigan': 'mi', 'minnesota': 'mn', 'mississippi': 'ms', 'missouri': 'mo',
+    'montana': 'mt', 'nebraska': 'ne', 'nevada': 'nv', 'new hampshire': 'nh', 'new jersey': 'nj',
+    'new mexico': 'nm', 'new york': 'ny', 'north carolina': 'nc', 'north dakota': 'nd', 'ohio': 'oh',
+    'oklahoma': 'ok', 'oregon': 'or', 'pennsylvania': 'pa', 'rhode island': 'ri', 'south carolina': 'sc',
+    'south dakota': 'sd', 'tennessee': 'tn', 'texas': 'tx', 'utah': 'ut', 'vermont': 'vt',
+    'virginia': 'va', 'washington': 'wa', 'west virginia': 'wv', 'wisconsin': 'wi', 'wyoming': 'wy',
+    'district of columbia': 'dc',
   };
+
+  private stateNames: { [key: string]: string } = Object.fromEntries(
+    Object.keys(NlqFilterService.STATE_ABBREV).map(name => [
+      name,
+      name.replace(/\b\w/g, ch => ch.toUpperCase()),
+    ])
+  );
 
   // Maps search crop names to commodity codes and name fragments for matching
   private readonly cropCodeMap: { [crop: string]: string[] } = {
@@ -527,9 +619,16 @@ export class NlqFilterService {
       /** Lightweight last-contact aggregate — source for the recency refines so they don't need
        *  the full note set. Falls back to `notes` if not supplied (older callers). */
       noteLastContacts?: NoteLastContact[];
+      /** Commodities table, for resolving a crop refine chip (a group name like "Wheat") against
+       *  the CODE a contract/ticket/storage/DP/planting row actually carries (e.g. WHTO). Without
+       *  this the crop matcher falls back to literal/token matching only — real but less complete
+       *  than the code→group resolution build-list's chip generator uses to produce the chips. */
+      commodities?: Commodity[];
     }
   ): Customer[] {
     let list = customers;
+    const cropLookup = buildCropGroupLookup(dimensionContext?.commodities);
+    const cropSelection = buildCropSelection(filters.crops, cropLookup);
 
     if (filters.noActiveContracts) {
       list = list.filter(c => !contracts.some(ct =>
@@ -636,15 +735,11 @@ export class NlqFilterService {
       for (const c of customers) {
         if (c.scoularId) codeToId.set(c.scoularId, c.id);
       }
-      // Scope tickets to selected crops, matching build-list._matchesCropFilter (bi-directional includes).
+      // Scope tickets to selected crops via the shared group-resolving matcher — see
+      // crop-group-match.ts for why this replaced a bidirectional-substring check.
       let scopedTickets = tickets;
-      if (filters.crops && filters.crops.length > 0) {
-        const cropsLower = filters.crops.map(c => c.trim().toLowerCase());
-        scopedTickets = tickets.filter(t => {
-          if (!t.productCode) return false;
-          const v = t.productCode.trim().toLowerCase();
-          return cropsLower.some(crop => v.includes(crop) || crop.includes(v));
-        });
+      if (!cropSelection.isEmpty) {
+        scopedTickets = tickets.filter(t => matchesCropSelection(t.productCode, cropSelection, cropLookup));
       }
 
       if (filters.ticketsInLastDays != null && filters.ticketsInLastDays > 0) {
@@ -714,43 +809,16 @@ export class NlqFilterService {
       }
     }
 
-    if (filters.crops && filters.crops.length > 0) {
-      const cropsLower = new Set(filters.crops.map(c => c.trim().toLowerCase()));
-      const matchesCrop = (value: string | null | undefined): boolean => {
-        if (!value) return false;
-        const v = value.trim().toLowerCase();
-        return [...cropsLower].some(crop => v.includes(crop) || crop.includes(v));
-      };
+    if (!cropSelection.isEmpty) {
+      const matchesCrop = (value: string | null | undefined): boolean =>
+        matchesCropSelection(value, cropSelection, cropLookup);
 
-      // Prefer the prompt category hint stored at save time so the dimension-aware crops
-      // filter agrees with build-list. Falls back to flag-only inference for lists saved
-      // before _promptCategory was introduced (those need a one-time re-save to fix).
-      const cat = filters._promptCategory;
-      const isStorage = cat === 'Storage' || filters.hasGrainInStorage
-        || filters.storageDaysOver != null || filters.storageQuantityOver != null
-        || filters.storageReceivableOver != null;
-      const isTickets = cat === 'Tickets' || filters.hasDeliveriesThisYear
-        || filters.ticketQuantityOver != null || filters.ticketsInLastDays != null
-        || filters.avgMoistureOver != null || filters.avgMoistureUnder != null
-        || filters.avgTestWeightOver != null || filters.avgTestWeightUnder != null
-        || filters.avgProteinOver != null || filters.avgProteinUnder != null;
-      const isPlanting = cat === 'Planting' || filters.hasPlantingIntentions
-        || filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly || filters.doubleCropOnly
-        || (filters.plantingAcresOver != null && filters.plantingAcresOver > 0);
-      const isContracts = cat === 'Contracts'
-        || filters.hasActiveContracts || filters.hasUnsignedContracts
-        || filters.hasUnpricedContracts || filters.hasOverdueContracts
-        || filters.contractsExpiringThisMonth || filters.multipleCommoditiesContracted
-        || (filters.contractQuantityOver != null && filters.contractQuantityOver > 0);
-      const isGrainOnFarm = cat === 'Grain on Farm'
-        || filters.grainOnFarmBushelsOver != null || filters.hasGrainTarget || filters.noGrainTarget
-        || filters.grainTargetOver != null || filters.grainTargetUnder != null || filters.hasGrade
-        || filters.gradeOver != null || filters.gradeUnder != null;
-      const isDp = cat === 'DP Contracts' || filters.hasDpContracts
-        || filters.dpBushelsOver != null || filters.dpDaysOver != null
-        || filters.dpChargesOver != null;
+      // Single source of dimension inference — see refineDimension() above. Keeps this
+      // path and build-list's displayedCustomers() in sync by construction rather than by
+      // copy-pasted flag lists.
+      const dim = this.refineDimension(filters, filters._promptCategory);
 
-      if (isDp && dimensionContext?.dpContracts) {
+      if (dim === 'DP Contracts' && dimensionContext?.dpContracts) {
         // Crop-scope a DP prompt against DP positions, not generic customer.commodities.
         const byCust = new Map<number, DpContract[]>();
         for (const d of dimensionContext.dpContracts) {
@@ -758,14 +826,14 @@ export class NlqFilterService {
           byCust.get(d.customerId)!.push(d);
         }
         list = list.filter(c => (byCust.get(c.id) ?? []).some(d => matchesCrop(d.crop)));
-      } else if (isStorage && dimensionContext?.storedGrain) {
+      } else if (dim === 'Storage' && dimensionContext?.storedGrain) {
         const byCust = new Map<number, StoredGrain[]>();
         for (const s of dimensionContext.storedGrain) {
           if (!byCust.has(s.customerId)) byCust.set(s.customerId, []);
           byCust.get(s.customerId)!.push(s);
         }
         list = list.filter(c => (byCust.get(c.id) ?? []).some(s => matchesCrop(s.crop)));
-      } else if (isTickets && dimensionContext?.tickets) {
+      } else if (dim === 'Tickets' && dimensionContext?.tickets) {
         const codeToId = new Map<string, number>();
         for (const c of customers) {
           if (c.scoularId) codeToId.set(c.scoularId, c.id);
@@ -779,14 +847,14 @@ export class NlqFilterService {
           }
         }
         list = list.filter(c => matching.has(c.id));
-      } else if (isPlanting && dimensionContext?.plantingIntentions) {
+      } else if (dim === 'Planting' && dimensionContext?.plantingIntentions) {
         const byCust = new Map<number, PlantingIntention[]>();
         for (const p of dimensionContext.plantingIntentions) {
           if (!byCust.has(p.customerId)) byCust.set(p.customerId, []);
           byCust.get(p.customerId)!.push(p);
         }
         list = list.filter(c => (byCust.get(c.id) ?? []).some(p => matchesCrop(p.crop)));
-      } else if (isContracts) {
+      } else if (dim === 'Contracts') {
         // Only OPEN contracts count toward dimension-aware crop matching — mirrors build-list
         // which uses _openContractsByCustomer. Otherwise a customer with a closed historical
         // YC contract would slip past a "producers with YC contracts" filter even though
@@ -799,12 +867,12 @@ export class NlqFilterService {
             matchesCrop(ct.commodityGroup)
           )
         ));
-      } else if (isGrainOnFarm) {
+      } else if (dim === 'Grain on Farm') {
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
           matchesCrop(g.commodityGroup) && (g.bushelsOnHand ?? 0) > 0
         ));
       } else {
-        list = list.filter(c => (c.commodities ?? []).some(crop => filters.crops!.includes(crop.trim())));
+        list = list.filter(c => (c.commodities ?? []).some(crop => matchesCrop(crop)));
       }
     }
     if (filters.states && filters.states.length > 0) {
@@ -813,17 +881,26 @@ export class NlqFilterService {
         return !!state && filters.states!.includes(state);
       });
     }
+    if (filters.deliveryLocations && filters.deliveryLocations.length > 0) {
+      // Independent of crops/states — mirrors build-list's displayedCustomers() block so a
+      // saved list applies this identically on the home page / customer list.
+      const locationsByCode = new Map<string, Set<string>>();
+      for (const t of (dimensionContext?.tickets ?? [])) {
+        if (!t.customerCode || !t.elevatorCity) continue;
+        if (!locationsByCode.has(t.customerCode)) locationsByCode.set(t.customerCode, new Set());
+        locationsByCode.get(t.customerCode)!.add(t.elevatorCity);
+      }
+      list = list.filter(c => {
+        if (!c.scoularId) return false;
+        const locations = locationsByCode.get(c.scoularId);
+        return !!locations && filters.deliveryLocations!.some(l => locations.has(l));
+      });
+    }
     return list;
   }
 
   private getStateAbbreviation(state: string): string {
-    const abbrevs: { [key: string]: string } = {
-      'iowa': 'ia', 'illinois': 'il', 'nebraska': 'ne', 'minnesota': 'mn',
-      'wisconsin': 'wi', 'missouri': 'mo', 'kansas': 'ks', 'south dakota': 'sd',
-      'north dakota': 'nd', 'indiana': 'in', 'ohio': 'oh', 'michigan': 'mi',
-      'texas': 'tx', 'oklahoma': 'ok', 'colorado': 'co'
-    };
-    return abbrevs[state.toLowerCase()] || '';
+    return NlqFilterService.STATE_ABBREV[state.toLowerCase()] || '';
   }
 
   /** Returns true if the query is a note-focused search (content or author), so other filters (commodity, city) don't misinterpret search terms. */
@@ -1232,6 +1309,12 @@ export class NlqFilterService {
   // ============================================================
 
   private filterCustomers(query: string, context: NlqFilterContext, detectedState: string | null): Customer[] {
+    // The "Start with no producers" blank-start card is the deliberate OPPOSITE of "All
+    // producers": every other unrecognized query defaults to matching everyone (filterCustomers
+    // only ever narrows), so an explicit, exact-match early return is the only way to make a
+    // card mean "match nobody" — the user then builds the list entirely via Manage Members.
+    // Checked before normalizeSynonyms/anything else so no other rule can override it.
+    if (query.trim().toLowerCase() === 'start with no producers') return [];
     // Normalize synonyms before pattern matching
     const lowerQuery = this.normalizeSynonyms(query.toLowerCase());
     let result = [...context.customers];
@@ -1567,8 +1650,15 @@ export class NlqFilterService {
     if (!detectedState) return result;
     const stateAbbrev = this.getStateAbbreviation(detectedState);
     return result.filter(c => {
-      const stateVal = (c.stateProvince || c.extendedStateProvince || c.location || '').toLowerCase();
-      return stateVal.includes(detectedState!) || stateVal.includes(stateAbbrev);
+      // Same field precedence as the refine-panel state chips (extendedStateProvince first) —
+      // previously this read stateProvince first, so a free-text state prompt and a state chip
+      // could disagree about a producer's state on the exact same data.
+      const stateVal = (c.extendedStateProvince || c.stateProvince || c.location || '').toLowerCase();
+      if (!stateVal) return false;
+      // stateAbbrev is '' for any state not in STATE_ABBREV — guard it explicitly rather than
+      // relying on the OR below, since ''.includes('') / anyString.includes('') is always true
+      // and would match every producer regardless of their actual state.
+      return stateVal.includes(detectedState!) || (!!stateAbbrev && stateVal.includes(stateAbbrev));
     });
   }
 

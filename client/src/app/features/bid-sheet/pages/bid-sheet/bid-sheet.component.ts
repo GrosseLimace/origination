@@ -12,6 +12,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { commodityHex } from '@shared/utils/commodity-color';
+import { scopeCommodities } from '@shared/utils/commodity-scope';
 import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
@@ -385,7 +386,11 @@ export class BidSheetComponent {
     const results: { code: string; name: string; rank: number }[] = [];
     // Search the curated Planting Intentions list; fall back to the full list if it's not loaded
     // so the picker never goes blank.
-    const source = this.plantingCommodities().length > 0 ? this.plantingCommodities() : this.allCommodities();
+    // Drop commodities scoped to a trade group the user isn't in (organics). Applied to the
+    // fallback too, or a failed curated fetch would leak them into a conventional picker.
+    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
+    const curated = scopeCommodities(this.plantingCommodities(), inScope);
+    const source = curated.length > 0 ? curated : scopeCommodities(this.allCommodities(), inScope);
     for (const c of source) {
       const code = (c.code ?? '').trim();
       const cat = (c.category ?? '').trim().toUpperCase();

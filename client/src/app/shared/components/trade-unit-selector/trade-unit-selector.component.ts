@@ -1,8 +1,8 @@
 import { Component, inject, input, output, signal, computed, ChangeDetectionStrategy, HostBinding, HostListener, DestroyRef, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
+import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 
 @Component({
   selector: 'app-trade-unit-selector',
@@ -28,7 +28,7 @@ export class TradeUnitSelectorComponent implements OnInit {
       ? 'block w-full space-y-3'
       : 'flex items-center gap-2 flex-wrap';
   }
-  private readonly apiService = inject(ApiService);
+  private readonly userTradeUnits = inject(UserTradeUnitsService);
   private readonly appState = inject(AppStateService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -36,7 +36,13 @@ export class TradeUnitSelectorComponent implements OnInit {
   isTradeUnitDropdownOpen = signal(false);
   isGroupDropdownOpen = signal(false);
   groupsLoading = signal(false);
+  /** The groups request failed — offer Retry. */
   groupsLoadError = signal(false);
+  /** The request succeeded but the user has no trade-unit assignments at all. Driven by shared
+   *  app state (set by UserTradeUnitsService on every load, including the refresh after the
+   *  Trade Unit Preferences popup closes) so it appears/clears no matter which path loaded. */
+  readonly noTradeUnitsAssigned = computed(() =>
+    this.appState.noTradeUnitAssignments() && this.appState.userGroups().length === 0);
 
   // Draft selection used when deferred=true — null means dropdown is closed/no pending edit
   private readonly _draftTradeUnits = signal<string[] | null>(null);
@@ -58,38 +64,24 @@ export class TradeUnitSelectorComponent implements OnInit {
     this._fetchGroups();
   }
 
+  /** Hand off to the Trade Unit Preferences app (popup). The service re-loads the groups when
+   *  the popup closes, which flips noTradeUnitsAssigned off once assignments exist. */
+  openTradeUnitPreferences(): void {
+    this.userTradeUnits.openPreferences();
+  }
+
+  /** Mapping + selection pruning live in UserTradeUnitsService (shared with the
+   *  Trade Unit Preferences popup's refresh-on-close); only the loading/error UI is ours. */
   private _fetchGroups(): void {
     this.groupsLoading.set(true);
-    this.apiService.getUserTradeUnits().pipe(
+    this.userTradeUnits.load().pipe(
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
-      next: (groups) => {
+      next: () => {
+        // Empty is not an error: the user simply has nothing assigned yet. The service flags
+        // that in app state (noTradeUnitAssignments) and leaves userGroupsLoaded false so a page
+        // refresh retries naturally; the template points them at Trade Unit Preferences.
         this.groupsLoading.set(false);
-        if (groups.length === 0) {
-          // Don't mark userGroupsLoaded so a page refresh can retry naturally.
-          // Surface an error so the user knows something went wrong.
-          this.groupsLoadError.set(true);
-          return;
-        }
-        const mapped = groups.map(g => ({
-          groupName: g.groupName,
-          tradeUnitCodes: g.tradeUnitCodes,
-          tradeUnits: g.tradeUnits ?? []
-        }));
-        this.appState.setUserGroups(mapped);
-
-        // Restore group selection, filtering out groups that no longer exist
-        const prevGroups = this.appState.selectedGroupNames();
-        if (prevGroups.length > 0) {
-          const validGroups = prevGroups.filter(g => mapped.some(m => m.groupName === g));
-          this.appState.setSelectedGroupNames(validGroups);
-        }
-        // Restore trade unit selection, keeping only units still available
-        const prevUnits = this.appState.selectedTradeUnits();
-        if (prevUnits.length > 0) {
-          const allAvailable = this._computeAvailableTradeUnits(mapped, this.appState.selectedGroupNames());
-          this.appState.setTradeUnits(prevUnits.filter(u => allAvailable.includes(u)));
-        }
       },
       error: () => {
         this.groupsLoading.set(false);
@@ -110,20 +102,7 @@ export class TradeUnitSelectorComponent implements OnInit {
   // ---- Group helpers ----
 
   getAvailableTradeUnits(): string[] {
-    return this._computeAvailableTradeUnits(this.appState.userGroups(), this.appState.selectedGroupNames());
-  }
-
-  private _computeAvailableTradeUnits(
-    groups: { groupName: string; tradeUnitCodes: string[] }[],
-    selectedGroups: string[]
-  ): string[] {
-    if (groups.length <= 1) return groups[0]?.tradeUnitCodes ?? [];
-    const filterGroups = selectedGroups.length === 0 ? groups : groups.filter(g => selectedGroups.includes(g.groupName));
-    const units = new Set<string>();
-    for (const g of filterGroups) {
-      g.tradeUnitCodes.forEach(u => units.add(u));
-    }
-    return [...units].sort();
+    return this.userTradeUnits.computeAvailableTradeUnits(this.appState.userGroups(), this.appState.selectedGroupNames());
   }
 
   getGroupButtonText(): string {

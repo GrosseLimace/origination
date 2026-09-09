@@ -56,7 +56,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
       @for (group of groups(); track group.id) {
         <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col"
-          [class.opacity-60]="!group.enabled || !group.isOwner">
+          [class.opacity-60]="!group.enabled">
 
           <!-- Card header: title + delivery + actions -->
           <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-3">
@@ -65,10 +65,6 @@
                 <h3 class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ group.name }}</h3>
                 @if (!group.enabled) {
                   <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">No daily recap</span>
-                }
-                @if (!group.isOwner) {
-                  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                    title="You're a member of this group — only its creator can edit it">View only</span>
                 }
               </div>
               <div class="flex items-center gap-1.5 mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -94,22 +90,25 @@
                 }
               </div>
             </div>
-            @if (group.isOwner) {
+            <!-- Edit follows CanEdit (any member); Delete stays with the creator. -->
             <div class="flex items-center gap-1 flex-shrink-0">
-              <button type="button" (click)="openEditDialog(group)" title="Edit group"
-                class="p-1.5 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                </svg>
-              </button>
-              <button type="button" (click)="requestDeleteGroup(group)" title="Delete group"
-                class="p-1.5 rounded-md text-gray-400 hover:text-scoular-red hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                </svg>
-              </button>
+              @if (group.canEdit) {
+                <button type="button" (click)="openEditDialog(group)" title="Edit group"
+                  class="p-1.5 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                  </svg>
+                </button>
+              }
+              @if (group.isOwner) {
+                <button type="button" (click)="requestDeleteGroup(group)" title="Delete group"
+                  class="p-1.5 rounded-md text-gray-400 hover:text-scoular-red hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                  </svg>
+                </button>
+              }
             </div>
-            }
           </div>
 
           <!-- Card body -->
@@ -158,9 +157,9 @@
             }
           </div>
 
-          <!-- Card footer: enable toggle (owner) or read-only status (member) -->
+          <!-- Card footer: recap toggle, plus who created it when that isn't you -->
           <div class="px-5 py-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/20">
-            @if (group.isOwner) {
+            @if (group.canEdit) {
               <label [for]="'enabled-' + group.id" class="flex items-center gap-2 cursor-pointer select-none group/toggle">
                 <span class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
                   [class.bg-scoular-green-accessible]="group.enabled"
@@ -173,14 +172,11 @@
                 <input type="checkbox" [id]="'enabled-' + group.id" [checked]="group.enabled" (change)="toggleGroupEnabled(group)" class="sr-only" />
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Send daily recap</span>
               </label>
-            } @else {
-              <p class="text-xs text-gray-500 dark:text-gray-400">
-                You're a member of this group — only its creator can edit it.
-                @if (group.createdBy) {
-                  <span class="block mt-0.5">
-                    Created by <span class="font-medium text-gray-700 dark:text-gray-300">{{ group.createdBy }}</span>
-                  </span>
-                }
+            }
+            @if (!group.isOwner && group.createdBy) {
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                Created by <span class="font-medium text-gray-700 dark:text-gray-300">{{ group.createdBy }}</span>
+                — only they can delete it.
               </p>
             }
           </div>
@@ -194,7 +190,7 @@
 <!-- closeOnBackdrop=false: this add/edit form must not close on an accidental outside click —
      only the X or Cancel dismiss it (avoids losing in-progress group edits). -->
 <app-dialog [isOpen]="dialogOpen()" size="lg" [closeOnBackdrop]="false" [scrollBody]="true" (close)="closeDialog()">
-  <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+  <div class="shrink-0 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
     <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
       {{ isEditing() ? 'Edit Group' : 'Create Group' }}
     </h3>
@@ -203,7 +199,12 @@
     </p>
   </div>
 
-  <div class="px-6 py-5 space-y-6">
+  <!-- The scroll region. scrollBody makes the panel itself overflow-hidden, so exactly one child
+       has to own the scrolling or the tail of the form becomes unreachable — which is what happened
+       once Teams delivery added the channel-email field and pushed the CC list past the cap.
+       min-h-0 is load-bearing: a flex item defaults to min-height:auto and refuses to shrink below
+       its content, so without it this never scrolls. -->
+  <div class="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6">
     <!-- Name + Delivery (two columns at sm+) -->
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div class="space-y-1.5">
@@ -566,8 +567,8 @@
     </div>
   </div>
 
-  <!-- Footer actions -->
-  <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/20">
+  <!-- Footer actions — shrink-0 keeps Save reachable no matter how tall the form gets. -->
+  <div class="shrink-0 flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/20">
     <button type="button" (click)="closeDialog()"
       class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
       Cancel
@@ -596,6 +597,28 @@
     <button type="button" (click)="confirmDeleteGroup()"
       class="px-4 py-2 text-sm font-medium rounded-md bg-scoular-red text-white hover:bg-scoular-red-accessible transition-colors">
       Delete
+    </button>
+  </app-dialog-footer>
+</app-dialog>
+
+<!-- Self-removal confirmation. Leaving a group you're a member of is allowed, but it takes the
+     group off your Manage Groups page, so it shouldn't happen by accident. -->
+<app-dialog [isOpen]="selfRemovalDialogOpen()" (close)="cancelSelfRemoval()" size="sm" align="top">
+  <app-dialog-header>
+    <app-dialog-title>Remove your own access?</app-dialog-title>
+    <app-dialog-description>
+      These changes take you out of this group, so it will no longer appear on your Manage Groups
+      page and you won't be able to edit it again. Whoever created it can add you back.
+    </app-dialog-description>
+  </app-dialog-header>
+  <app-dialog-footer>
+    <button type="button" (click)="cancelSelfRemoval()"
+      class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+      Keep my access
+    </button>
+    <button type="button" (click)="confirmSelfRemoval()"
+      class="px-4 py-2 text-sm font-medium rounded-md bg-scoular-red text-white hover:bg-scoular-red-accessible transition-colors">
+      Save anyway
     </button>
   </app-dialog-footer>
 </app-dialog>

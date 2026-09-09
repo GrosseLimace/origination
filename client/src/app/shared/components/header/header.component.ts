@@ -23,6 +23,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { UserRolesService } from '@core/services/user-roles.service';
+import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -47,20 +48,22 @@ export class HeaderComponent {
   private readonly http = inject(HttpClient);
   private readonly destroyRef = inject(DestroyRef);
   private readonly userRoles = inject(UserRolesService);
+  private readonly userTradeUnits = inject(UserTradeUnitsService);
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
   // Groups (daily recap + @-mentionable in notes). On in every environment — see
   // environment.dailyDigestEnabled, which still carries the original Daily Digest name.
   readonly dailyDigestEnabled = environment.dailyDigestEnabled;
-  // Gate the Usage Dashboard nav button to users with the `Admin` app role.
-  // The check is purely against the `Admin` role claim on the user's JWT — never
-  // against group membership directly. Each environment has its own Super Users
-  // security group (Origination App Dev / QA / Prod Super Users) that's assigned
-  // the Admin role on that env's API Enterprise Application, and membership flows
-  // into the access token's roles claim. Route still re-enforces via `adminGuard`.
+  // Gate the Usage Dashboard nav button to users who can actually open it: the `Admin` app role.
+  // Group membership is never checked directly — each environment has its own Super Users security
+  // group (Origination App Dev / QA / Prod Super Users), where managers and IT/admin are both
+  // added, that's assigned the Admin role on that env's API Enterprise Application, and membership
+  // flows into the access token's roles claim. Route re-enforces via `usageDashboardGuard`, and
+  // every dashboard endpoint re-enforces the same policy server-side. Note this only decides
+  // whether the page opens; what the caller then SEES is scoped separately (UsageDashboard:ViewAll).
   get usageDashboardEnabled(): boolean {
-    return environment.usageDashboardEnabled && this.isAdmin();
+    return environment.usageDashboardEnabled && this.userRoles.canViewUsageDashboard();
   }
 
   mobileMenuOpen = signal(false);
@@ -148,6 +151,13 @@ export class HeaderComponent {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
     return name.substring(0, 2).toUpperCase();
+  }
+
+  /** Trade-unit / group assignments are managed in the separate Trade Unit Preferences app.
+   *  It refuses to be iframed, so this opens it in a popup window and the service refreshes
+   *  the user's groups when that window closes. */
+  openTradeUnitPreferences(): void {
+    this.userTradeUnits.openPreferences();
   }
 
   signOut(): void {

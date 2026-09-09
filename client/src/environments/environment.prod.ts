@@ -1,6 +1,8 @@
 export const environment = {
   production: true,
-  envName: 'production',
+  // Title case to match Local / Dev / QA — the original value here was lowercase
+  // 'production', which rendered an odd lowercase pill next to the title-cased ones.
+  envName: 'Production',
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
   // Daily Digest (recap groups): ON in PROD. Surfaces the /daily-digest route + the
@@ -12,6 +14,9 @@ export const environment = {
   // Originator Calculators: ON in PROD. Gates the floating calculator launcher on the
   // customer home page (Profitability / Check / Cancel-vs-Roll). Client-side only — no backend.
   calculatorEnabled: true,
+  // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
+  // this app only reads the result). Opened from the profile menu in a popup window.
+  tradeUnitPreferencesUrl: 'https://tradeunitprefs.scoular.com/my-preferences',
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {
