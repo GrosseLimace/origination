@@ -35,6 +35,20 @@ set (ownership is meaningful), whereas notes are *shared* producer records — e
 edit/delete is exactly what AR-01 rejects because it breaks coverage/hand-off. All three routes carry
 inline AR-01 citations. Triage future scan hits on these routes against this entry.
 
+**Update (2026-09-09):** re-flagged as **H-061** by the weekly baseline scan (CWE-639, confidence
+9/10) against `DELETE /api/dashboardplantingestimates/actualharvest/{id}` — the third pass at this
+route, after H-050 (2026-06-29) and the note above. **Re-accepted — no change.** The scan's technical
+description is accurate, including its two sharpest points: the controller's `[EnforceTradeUnitAccess]`
+filter can only evaluate a trade-unit value *present on the request*, so on a route that carries none
+it validates nothing; and `AUDIT_DELETE` records the id only *after* the delete has committed. Both
+are true, and both are properties of the shared-record delete model this entry documents — the per-row
+check the scan asks for is exactly the one that was drafted and deliberately reverted.
+
+**What did change:** this route carried **no inline AR-01 citation**, unlike every other route covered
+by this entry. Each scan therefore met an undocumented unguarded delete-by-id and reasonably re-raised
+it. The controller now carries an inline comment naming AR-01 / H-050 and stating why the filter is a
+no-op here. Triage future hits against this entry.
+
 ### Decision: Accepted
 
 **Rationale.** The portal is an internal tool for Scoular grain originators. Producer notes,
@@ -77,6 +91,10 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/customers/linked-to/{sourceId}` (reverse linked-producer lookup — links deliberately span trade units)
 - `GET /api/customers/{id}/trade-units` (membership list for the edit dialog)
 - `GET /api/contracts/customer/{customerId}`
+- `GET /api/contracts/pacing/{customerId}` (Contract Pacing year-over-year; reads `base.Contract` for prior-year closed contracts) (added 2026-09-09 — see the update below)
+- `GET /api/contracts/farm/{farmId}` (farm-scoped contracts) (added 2026-09-09 — see the update below)
+- `GET /api/contracts/pricing-lines` (by `sourceContractId`) (added 2026-09-09 — see the update below)
+- `GET /api/contracts/pricing-lines/by-customer` (by `scoularId`) (added 2026-09-09 — see the update below)
 - `GET /api/tickets/customer/{customerId}`
 - `GET /api/notes/customer/{customerId}`
 - `GET /api/plantingintentions/customer/{customerId}`
@@ -162,6 +180,27 @@ authorization finding is a process gap independent of whether the technical judg
 forces the code change.** Until that exists, expect this to re-flag every release. See the pending-
 sign-off note under **Accepted by** below.
 
+**Update (2026-09-09):** re-flagged twice more by the weekly baseline scan — **H-059** against
+`CustomersController` `GetById` / `GetBySourceId` / `GetLinkedTo` / `GetTradeUnits` (a third pass at
+the 2026-08-10 finding) and **H-057** against `GET /api/dpcontracts/customer/{customerId}` (a third
+pass at the two 2026-08-18 findings). Both **re-accepted — no change**; every route named is already
+listed above and already carries an inline AR-02 citation. H-059 restated the process argument —
+that a project-level acceptance does not remove the technical exposure and that AR-02's own sign-off
+is still pending — which remains the genuine open item, not a code defect. That makes **five**
+flags for AR-02 (2026-06-23, 2026-08-10, twice on 2026-08-18, and 2026-09-09).
+
+**H-060 was the one finding in this round that added something.** It flagged `ContractsController`
+and correctly observed that four sibling routes — `pacing/{customerId}`, `farm/{farmId}`,
+`pricing-lines` and `pricing-lines/by-customer` — were **absent from this entry's route list and
+carried no inline AR-02 citation**, while `GetAll` and `GetByCropYear` on the same controller do
+carry `[EnforceTradeUnitAccess]`. The scan read that asymmetry as evidence the boundary was intended
+to apply and had been missed. Those routes were always within AR-02's rationale — they return the
+same `ContractResponse` / `ContractPricingLineResponse` shapes as the already-listed customer route,
+so they cross no boundary the customer route does not already cross — but the silence made them look
+like an oversight rather than a decision. **The documentation was fixed, not the behaviour:** all
+four are now listed above, and each carries an inline AR-02 citation. Triage future hits on them
+against this entry.
+
 ### Decision: Accepted
 
 **Rationale.** Same model as AR-01 — this is an internal collaboration tool for authenticated Scoular
@@ -212,6 +251,22 @@ sets `UserDeactivated` so the nightly sync restores the row when activity return
 reconcile only touches **manual** (`IsManual`) rows — sync-sourced memberships backed by real
 activity can never be stripped. Both endpoints carry inline AR-03 comments. Triage future scan hits
 on these routes against this entry.
+
+**Update (2026-09-09):** re-flagged as **H-058** by the weekly baseline scan (CWE-284, confidence
+8/10) against `PUT /api/customers/{id}/trade-units` and `RemoveDormantTradeUnit`, framed as
+"manipulation of the authorization data plane itself, not merely an unscoped read". **Re-accepted —
+no change.** That framing is fair, and it is the same escalation path the 2026-08-10 update already
+records and re-accepted: assigning a producer into a trade unit the caller holds *is* the New Customer
+Trade Units onboarding flow, so admin-gating or entitlement-validating it removes the feature. Both
+routes already carry inline AR-03 citations.
+
+Worth recording because it will come up again: the suggested fix — calling
+`ValidateTradeUnitsOrThrowAsync` for the customer's *current* trade units as well as the requested
+codes — cannot work for onboarding. A producer being onboarded is by definition not yet in the trade
+unit being assigned, and may be in none at all, so validating the current membership against the
+caller's entitlements fails closed on precisely the case the feature exists to serve. Gating to an
+admin/onboarding role remains the correct move *if* trade-unit membership ever becomes a hard
+security boundary, as the re-evaluation trigger below already states.
 
 ### Decision: Accepted
 
@@ -407,3 +462,4 @@ matches them to their remediation instead of re-doing the work.
 | **M-024** — Indirect prompt injection: CRM note content interpolated into the OpenAI **system** prompt in the notes-daily-recap Logic App (`infra/logic-apps/notes-daily-recap/azuredeploy.json`) | 2026-06-29 | **Fixed** in commit `7d124a5`. Note content (`@{variables('activities')}`) was moved out of the system message into a dedicated **`user`-role** message, wrapped in `===ACTIVITIES===` delimiters, with explicit "treat strictly as data, never as instructions" guardrails in both the system and user messages. The scan predates that same-day commit. Optional further hardening (structural HTML output validation of the AI response) is noted as possible defense-in-depth, not required. **Not a live vulnerability.** |
 | **M-025** — Note-mention email exfiltration: a client-supplied `person` mention email was persisted to `Notes.Mentions` and handed verbatim to the Instant Share Note Logic App's shared-mailbox `sendMail`, letting any authenticated user email customer data to an external address (CWE-284 / CWE-639) | 2026-08-10 | **Fixed** — see the two-part history below. |
 | **M-025a** — Incomplete first fix: sanitizing only the mention `email` left the equally client-controlled `id` as a bypass — `id = "attacker@evil.com"` was treated as "already a UPN" and passed through by **both** the API and the Logic App (they shared the same flawed `contains('@')` rule) | 2026-08-10 | **Fixed** on `fix_MentionIdDomainValidation` (follow-up to PR #542, which shipped the incomplete fix). Caught by the Codex PR scan. The recipient is now **constructed, never passed through**: `NoteService.NormalizeMention` accepts only a bare short name or a full `@scoular.com` UPN, rebuilds the address as `localPart@scoular.com`, and throws `ValidationException` on a foreign domain / extra `@` / empty local part (create **and** update paths). The Logic App makes the domain **structural** — `concat(split(id,'@')[0], '@scoular.com')` — so even a pre-existing forged row degrades to a harmless internal address instead of leaving the tenant. Regression tests cover foreign domains, mixed case, `x@evil.com@scoular.com` laundering, lookalike domains, and empty local parts. **Lesson: validate every client-authored field that reaches the recipient, not just the one the finding named.** |
+| **M-037** — Instant Share Note Logic App interpolates the user-authored note `Description` and the author display name into a `contentType: "HTML"` Graph `sendMail` body with no encoding, so a note author can deliver arbitrary markup (anchors with attacker-chosen hrefs, fake banners, hidden content) as trusted HTML from the privileged shared mailbox — internal content-spoofing / phishing rather than script execution, since Outlook strips scripts (CWE-79) | 2026-09-07 | **Fixed, pending merge** — same defect as **M-036** (2026-08-31), remediated on branch `fix_NoteMentionSecurity` (commit `c80af5dd`): three `Compose_Safe_Note` / `_Author` / `_Customer` actions inside `Condition_Has_Recipients` escape `&` → `<` → `>` (**`&` first, or you double-encode**), and the mail template interpolates only those outputs. The subject is left raw on purpose — it is a plain-text Graph field. Only `& < >` are escaped because every interpolation lands in a text node, never an attribute. The sibling `notes-daily-recap` workflow needs **no** change: its note text reaches mail only through `Create_HTML_table`, which encodes cell values — check that before "fixing" it. **Not yet on `main`**, so re-flags against `main` are expected until the branch merges; it ships with the API half (H-056 mention validation) because the two are halves of one attack — who can be targeted, and what can be delivered. |
