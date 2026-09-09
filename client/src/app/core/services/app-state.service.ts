@@ -63,9 +63,15 @@ export class AppStateService {
   userGroups = signal<{ groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]>([]);
   userGroupsLoaded = signal(false);
 
+  /** True once /usertradeunits has answered with NO assignments for this user. Distinct from
+   *  `userGroupsLoaded` (deliberately left false in that case so a retry is natural). Lets the
+   *  preference restore skip re-applying a saved selection the user is no longer entitled to. */
+  noTradeUnitAssignments = signal(false);
+
   setUserGroups(groups: { groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]): void {
     this.userGroups.set(groups);
     this.userGroupsLoaded.set(true);
+    this.noTradeUnitAssignments.set(false);
   }
 
   /** Trade-unit code → description/location (e.g. "2190" → "Pratt, KS"), from the loaded groups.
@@ -92,6 +98,60 @@ export class AppStateService {
   // persisted (localStorage or server preference) and starts false every session, so the
   // user's saved preference always remains a real trade group, never "All Producers".
   allProducersMode = signal(false);
+
+  /**
+   * Trade group names currently in play — used to scope the commodity pickers (Organics & IP).
+   *
+   * Precedence matches the rest of the app: individually selected trade units win (a group counts
+   * if any of its codes is selected), then selected groups, then — per the selector's
+   * _computeAvailableTradeUnits — an empty selection means ALL of the user's groups, not none.
+   * Empty until userGroups loads, at which point every consumer re-filters on its own.
+   *
+   * Selecting an Organics unit alongside a conventional one is additive: both groups come back,
+   * so the organic crops show without hiding anything else.
+   */
+  readonly inScopeGroupNames = computed<readonly string[]>(() => {
+    const groups = this.userGroups();
+    const units = this.selectedTradeUnits();
+    const names = this.selectedGroupNames();
+
+    if (units.length > 0) {
+      const selected = new Set(units.map(u => u.trim()));
+      return groups
+        .filter(g => g.tradeUnitCodes.some(c => selected.has(c.trim())))
+        .map(g => g.groupName);
+    }
+    // Intersect rather than echo the names back, so a stale saved selection can't invent a group.
+    if (names.length > 0) {
+      return groups.filter(g => names.includes(g.groupName)).map(g => g.groupName);
+    }
+    return groups.map(g => g.groupName);
+  });
+
+  /**
+   * Trade unit codes currently in play — the unit-level counterpart to inScopeGroupNames, used to
+   * scope commodities restricted to specific units rather than a whole group.
+   *
+   * Precedence is identical: explicit units win, then selected groups expanded to their member
+   * codes, then — nothing selected means ALL of the user's units, not none. Kept separate from
+   * inScopeGroupNames rather than derived from it because that computed deliberately collapses
+   * units up to their group name, which loses exactly the granularity this needs: selecting 2080
+   * and selecting 2291 both yield 'Organics & IP'.
+   */
+  readonly inScopeTradeUnitCodes = computed<readonly string[]>(() => {
+    const groups = this.userGroups();
+    const units = this.selectedTradeUnits();
+    const names = this.selectedGroupNames();
+
+    if (units.length > 0) return units.map(u => u.trim()).filter(Boolean);
+    if (names.length > 0) {
+      return groups
+        .filter(g => names.includes(g.groupName))
+        .flatMap(g => g.tradeUnitCodes.map(c => c.trim()))
+        .filter(Boolean);
+    }
+    return groups.flatMap(g => g.tradeUnitCodes.map(c => c.trim())).filter(Boolean);
+  });
 
   // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
   lastScrolledCustomerId = signal<number | null>(null);

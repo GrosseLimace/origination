@@ -50,7 +50,7 @@ The app's global state container, built on Angular signals. No NgRx, no Redux �
 | Signal | Type | Notes |
 | --- | --- | --- |
 | `customers` | `Customer[]` | Filtered to selected trade units |
-| `contracts` | `Contract[]` | Open contracts only (from `vw_CurrentContracts`) |
+| `contracts` | `Contract[]` | Open-or-recent purchase contracts for the selected trade units. From CTRM via GraphQL when `Ctrm:Source` is `ctrm` (a cached date-window snapshot), else `vw_CurrentContracts`. See [CTRM GraphQL Data Source](./CTRM%20GraphQL%20Data%20Source.md). |
 | `tickets` | `Ticket[]` | Settled tickets (last N days, depends on screen) |
 | `todaysTickets` | `Ticket[]` | Last 30 days specifically — used by Insights |
 | `notes` | `Note[]` | All notes for selected TUs |
@@ -59,7 +59,7 @@ The app's global state container, built on Angular signals. No NgRx, no Redux �
 | `savedLists` | `SavedList[]` | User's saved Build-a-List queries |
 | `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
 | `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin capacity, etc.) |
-| `pricingLines` | `ContractPricingLine[]` | Pricing breakdowns from ODS |
+| `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer — CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
 | `selectedTradeUnits`, `selectedGroupNames` | `string[]` | The TU selector's current state |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
 | `selectedCustomer` | `Customer \| null` | Driven by Home page navigation |
@@ -71,6 +71,20 @@ The app's global state container, built on Angular signals. No NgRx, no Redux �
 **localStorage persistence:** key `origination_user_prefs` stores `{ groups?, units? }` — the trade-unit selection. Restored on construction.
 
 **Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearBuildListState`, `clearSelection`, `clearAll`.
+
+### `UserTradeUnitsService`
+
+`client/src/app/core/services/user-trade-units.service.ts`
+
+Owns the user's trade-unit groups and the hand-off to the **Trade Unit Preferences** app, where assignments are actually managed (this app only reads `vw_UserTradeUnitPreferences`).
+
+- `load()` — `GET /usertradeunits` → `setUserGroups`, then prunes `selectedGroupNames` / `selectedTradeUnits` to what still exists. The TU selector delegates here and only owns its loading/error UI.
+- **Empty 200 = "no assignments", 503 = outage.** `UserTradeUnitService` (API) throws `InfrastructureException` (503, `ENTITLEMENTS_DB_UNAVAILABLE`) on a TradeUnitPreferences DB outage instead of returning `[]`, so the client can tell the two apart. On an empty 200 the client sets `AppStateService.noTradeUnitAssignments`, empties `userGroups`, and **clears the selection** (localStorage/server-restored). Without that clear the preload kept requesting trade units the user no longer had; `[EnforceTradeUnitAccess]` strips those to an empty list, the customers endpoint treats empty as *unfiltered*, and a user with zero assignments saw every producer plus a never-ending spinner (observed 2026-08-27). `userGroupsLoaded` stays false so a retry is natural.
+- `UserPreferencesService` races `/usertradeunits` on startup. Its restore now skips when `noTradeUnitAssignments` is set and prunes against `userGroups` when they already landed, so a saved selection can't resurrect trade units the user lost.
+- `openPreferences()` — the profile-menu entry **Trade Unit Preferences** (below Manage Groups), also offered by the TU selector's *No trade units assigned* state. Opens `environment.tradeUnitPreferencesUrl` (`tradeunitprefs{-dev|-qa|}.scoular.com/my-preferences`) in a **named popup window** (falls back to a new tab), then polls `closed`.
+- **On popup close** the app refreshes itself without a page reload: `load()` re-fetches groups and prunes stale selections; if the selection changed, the normal TU-change pipeline in `DataPreloadService` reloads the data; if it's unchanged, `DataPreloadService.forceReload()` is called; if the user had **nothing selected** (a new user who just got assignments) they're scoped to their first group so producers appear immediately. All Producers mode is left alone.
+- The TU selector distinguishes a **failed** groups request (*Trade units unavailable · Retry*) from an **empty** one (*No trade units assigned* + *Set up in Trade Unit Preferences* button); the empty callout disappears on its own once groups land.
+- **Why not a dialog/iframe:** the TU Prefs app sends `X-Frame-Options: DENY` + `frame-ancestors 'none'` in every environment (checked 2026-08-27). Don't re-attempt embedding without their team relaxing that policy. `noopener` is deliberately not used (it nulls the `window.open` return and breaks the close-watch); the service sets `win.opener = null` itself.
 
 ### `DataPreloadService`
 

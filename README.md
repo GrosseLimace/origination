@@ -232,11 +232,11 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 | MSAL Browser | ^5.4.0 | Azure AD authentication |
 | RxJS | ^7.8 | Reactive programming |
 | Leaflet | ^1.9.4 | Maps |
-| Vitest | ^4.1.8 | Unit testing |
+| Vitest | ^4.1.11 | Unit testing |
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-08-04
+Last Updated: 2026-09-09
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -272,19 +272,22 @@ Last Updated: 2026-08-04
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |
-| vitest | 4.1.8 | MIT | Unit testing framework (CVE fix: ≥4.1.0) |
+| vitest | 4.1.11 | MIT | Unit testing framework (CVE fix: ≥4.1.0; security fix ≥4.1.11: `@vitest/mocker` registered a redirect-mock target without checking Vite’s file-serving allowlist, so a client reaching the dev server’s unauthenticated HMR socket could read files outside the project root — `@vitest/ui` and `@vitest/coverage-v8` pinned to the same version to keep the family in lockstep) |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
 | esbuild | ≥0.28.1 | MIT | Bundler — transitive (via @angular/build, vitest), pinned in `overrides` (security fix: RCE via NPM_CONFIG_REGISTRY + Windows path traversal, ≥0.28.1) |
 | vite | ≥7.3.5 | MIT | Dev server/bundler — transitive (via @angular/build), pinned in `overrides` (security fix: `server.fs.deny` bypass + launch-editor NTLM disclosure on Windows, ≥7.3.5) |
 | @babel/core | ≥7.29.6 | MIT | JS compiler — transitive (via @angular/build, @angular/compiler-cli), pinned in `overrides` (security fix: arbitrary file read via sourceMappingURL, ≥7.29.6) |
+| browserslist | ≥4.28.7 | MIT | Browser-target resolution — transitive (via @angular/build, @angular/compiler-cli), pinned in `overrides` (security fixes: uncaught crash / prototype write in normalizeStats via an untrusted browserslist-stats.json, unbounded result-cache growth OOM, ≥4.28.7) |
 | tar | ≥7.5.21 | ISC | Tar parser — transitive (via @angular/cli), pinned in `overrides` (security fixes: decompression/parse DoS ≥7.5.19, mapHas/filesFilter stack-overflow DoS ≥7.5.21) |
+| pacote | ≥21.5.1 | ISC | npm package fetcher — transitive (via @angular/cli, which pins it exactly), forced in `overrides` (security fix: addGitSha ReDoS/CPU-exhaustion DoS via crafted spec.rawSpec, ≥21.5.1) |
 | ws | ≥8.21.0 | MIT | WebSocket — transitive (via happy-dom test env), pinned in `overrides` (security fix: memory-exhaustion DoS, ≥8.21.0) |
 | brace-expansion | ≥5.0.9 | MIT | Brace pattern expansion — transitive (via @angular/cli, @analogjs/vite-plugin-angular → minimatch/glob), pinned in `overrides` (security fixes: exponential-time expansion DoS ≥5.0.7, unbounded-length OOM crash ≥5.0.8, unbounded intermediate-array DoS ≥5.0.9) |
 | postcss | 8.5.23 | MIT | CSS processor — direct dev dep (Tailwind/Angular build), pinned to 8.5.23 and forced across transitives via `overrides` `$postcss` (security fixes: sourceMappingURL path-traversal .map disclosure, incomplete-fix follow-up ≥8.5.23) |
 | body-parser | ≥2.3.0 | MIT | HTTP body parsing — transitive (via @angular/cli dev server), pinned in `overrides` (security fix: size-limit enforcement silently disabled on invalid `limit`, ≥2.3.0) |
+| qs | ≥6.16.0 <7 | BSD-3-Clause | Query-string parser — transitive (via @angular/cli → @modelcontextprotocol/sdk → express / body-parser), pinned in `overrides` (security fixes ≥6.16.0: bracket-key comma input bypassing arrayLimit/throwOnLimitExceeded → memory-exhaustion DoS; non-callable `constructor.isBuffer` TypeError in stringify → uncaught-throw DoS; dev-tooling-only, `ng mcp` path, not in the app bundle) |
 | immutable | ≥5.1.8 | MIT | Immutable collections — transitive (via @angular/build → sass), pinned in `overrides` (security fix: hash-collision algorithmic-complexity DoS in Map/Set, CVE-2026-59880, ≥5.1.8) |
-| fast-uri | ≥3.1.5 <4 | BSD-3-Clause | URI parser — transitive (via @angular/build, @angular/cli → ajv), pinned in `overrides` (security fixes: host confusion via failed IDN canonicalization + literal-backslash authority delimiter; backslash authority-introducer host confusion ≥3.1.5; kept on 3.x to avoid the ajv-breaking 4.x major) |
-| hono | ≥4.12.34 <5 | MIT | Web framework — transitive (via @angular/cli dev tooling), pinned in `overrides` (security fixes incl. hono/jsx cross-request context disclosure during SSR, CORS-middleware ReDoS via Access-Control-Request-Headers ≥4.12.34; not used for SSR in this app) |
+| fast-uri | ≥3.1.7 <4 | BSD-3-Clause | URI parser — transitive (via @angular/build, @angular/cli → ajv), pinned in `overrides` (security fixes: host confusion via failed IDN canonicalization + literal-backslash authority delimiter ≥3.1.5; skipped IDN canonicalization on scheme-relative `resolve()`, double hostname percent-decode SSRF, percent-encoded scheme host confusion / CRLF injection, malformed IPv6 literal silently truncated to a valid address ≥3.1.6; unvalidated port authority injection in `serialize()`, unbalanced IP-literal bracket host confusion ≥3.1.7; kept on 3.x to avoid the ajv-breaking 4.x major) |
+| hono | ≥4.13.5 <5 | MIT | Web framework — transitive (via @angular/cli dev tooling), pinned in `overrides` (security fixes incl. hono/jsx cross-request context disclosure during SSR, CORS-middleware ReDoS via Access-Control-Request-Headers ≥4.12.34; query helpers parsing parameters after the URL fragment causing cache-key/proxy interpretation differentials, `toSSG()` still writing outside the output directory on consecutive `..` runs, unbounded `parseBody()` dot-notation nesting OOM ≥4.13.5; not used for SSR in this app) |
 | undici | ≥7.29.0 <8 | MIT | HTTP/1.1 client — transitive (via @angular/build, @angular/cli dev tooling), pinned in `overrides` (security fixes ≥7.29.0: cross-user cache disclosure + parse-time crash, retry-interceptor response desync, Cache-Control whitespace disclosure, CRLF injection via blob body type, cookie attribute injection; dev-tooling-only, not used at runtime) |
 | ip-address | ≥10.3.1 | MIT | IP address parser — transitive (via @angular/cli dev tooling → dns/proxy libs), pinned in `overrides` (security fixes ≥10.3.1: leading-zero octet octal/decimal SSRF, CIDR-suffix special-use suppression, IPv4-mapped/NAT64 misclassification trust-boundary bypass; dev-tooling-only) |
 | @hono/node-server | ≥2.0.5 | MIT | Node adapter for hono — transitive (via @angular/cli dev tooling), pinned in `overrides` (security fix: Windows serve-static path traversal via encoded backslash; dev-server-only, not used to serve this app) |

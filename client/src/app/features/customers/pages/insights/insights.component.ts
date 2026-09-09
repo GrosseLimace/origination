@@ -11,6 +11,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
+import { ticketDisplayNumber } from '@shared/utils/ticket-display';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
@@ -313,19 +314,22 @@ export class InsightsComponent {
             customer,
             category: 'SpotLoads',
             priority: 'Urgent',
-            message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + formatInsightQty(bu) + ' bu' : ''}`,
-            ticketNumber: ticket.ticketNumber,
+            message: `Ticket #${ticketDisplayNumber(ticket)}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + formatInsightQty(bu) + ' bu' : ''}`,
+            ticketNumber: ticketDisplayNumber(ticket),
             productCode: ticket.productCode,
             sortDate: ticket.date,
             quantity: bu ?? 0,
             tags: [
-              { label: `#${ticket.ticketNumber}`, style: 'default' },
+              { label: `#${ticketDisplayNumber(ticket)}`, style: 'default' },
               ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
               ...(bu ? [{ label: `${formatInsightQty(bu)} bu`, style: 'quantity' as InsightTagStyle }] : []),
               { label: dateLabel, style: 'default' },
               { label: 'Spot', style: 'warning' },
             ],
             searchTerms: [
+              // Both forms, so searching the bare sequence still finds a card that displays the
+              // full shipment number.
+              ticketDisplayNumber(ticket),
               ticket.ticketNumber,
               ticket.productCode,
               ticket.productCode ? commodityNameByCode.get(ticket.productCode.trim().toUpperCase()) : undefined,

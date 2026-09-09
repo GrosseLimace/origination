@@ -12,12 +12,19 @@ public record RecapGroupDto
     public List<RecapGroupMemberDto> Members { get; init; } = [];
     public List<string> CcList { get; init; } = [];
 
-    /// <summary>True when the caller created this group (full edit rights). False for groups the
-    /// caller only sees because they're a member — the UI shows those faded and read-only.</summary>
+    /// <summary>True when the caller created this group. Narrower than <see cref="CanEdit"/> — it
+    /// gates DELETE, which stays creator-only, plus the "Created by" label on a group you joined
+    /// rather than made.</summary>
     public bool IsOwner { get; init; } = true;
 
-    /// <summary>The creator's UPN/email. Shown on read-only (member) cards so a member can reach
-    /// out to whoever owns the group.</summary>
+    /// <summary>True when the caller may edit this group: rename it, add or remove members, change
+    /// the CC list, and toggle the daily recap. Edit rights equal visibility, so this is true for
+    /// every group the list returns — kept as an explicit server-computed flag anyway so the policy
+    /// lives here rather than in the client, and so it can be tightened without a client deploy.</summary>
+    public bool CanEdit { get; init; } = true;
+
+    /// <summary>The creator's UPN/email. Shown on groups the caller did not create, so they know who
+    /// set it up and who can delete it.</summary>
     public string CreatedBy { get; init; } = string.Empty;
 }
 

@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { Subject, of } from 'rxjs';
+import { signal } from '@angular/core';
 
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
+import { UserRolesService } from '@core/services/user-roles.service';
 import { UsageDashboardUser } from '@models';
 
 import { UsageDashboardComponent } from './usage-dashboard.component';
@@ -60,6 +62,8 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
         { provide: ApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
+        // UserRolesService reaches for MsalService; the dashboard only needs canViewAllUsage.
+        { provide: UserRolesService, useValue: { canViewAllUsage: signal(true), canViewUsageDashboard: signal(true), isAdmin: signal(true), roles: signal<string[]>([]) } },
       ],
     });
     // happy-dom + JIT can't fetch templateUrl, and the child imports carry their own templateUrls.
@@ -128,6 +132,50 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
 
     expect(api.calls['weeklyTrend']).toBe(1);
   });
+
+  it('refetches every always-visible panel exactly once when the manager filter changes', () => {
+    component = build();
+
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+
+    expect(api.calls['summary']).toBe(2);
+    expect(api.calls['users']).toBe(2);
+    expect(api.calls['dailyActive']).toBe(2);
+    expect(api.calls['featureSessions']).toBe(2);
+    // Unlike the date range, the manager narrows the universe, so the weekly trend refetches too.
+    expect(api.calls['weeklyTrend']).toBe(2);
+  });
+
+  it('includes the manager in the tab dedupe key', () => {
+    component = build();
+    component.onTabChange('whats-doing');
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(1);
+
+    // A manager change invalidates the loaded tab...
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(2);
+
+    // ...but revisiting with the same manager does not refetch.
+    component.onTabChange('whos-using-it');
+    TestBed.tick();
+    component.onTabChange('whats-doing');
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(2);
+  });
+
+  it('clearing the manager filter returns to the unfiltered universe with one more fetch', () => {
+    component = build();
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+
+    component.managerFilter.set(null);
+    TestBed.tick();
+
+    expect(api.calls['users']).toBe(3); // mount, filtered, cleared
+  });
 });
 
 describe('UsageDashboardComponent — loading state', () => {
@@ -140,6 +188,8 @@ describe('UsageDashboardComponent — loading state', () => {
         { provide: ApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
+        // UserRolesService reaches for MsalService; the dashboard only needs canViewAllUsage.
+        { provide: UserRolesService, useValue: { canViewAllUsage: signal(true), canViewUsageDashboard: signal(true), isAdmin: signal(true), roles: signal<string[]>([]) } },
       ],
     });
     TestBed.overrideComponent(UsageDashboardComponent, {
@@ -183,6 +233,8 @@ describe('UsageDashboardComponent — derived values', () => {
         { provide: ApiService, useValue: makeApiStub() },
         { provide: ToastService, useValue: { show: (m: string) => toasts.push(m), error: () => {}, success: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
+        // UserRolesService reaches for MsalService; the dashboard only needs canViewAllUsage.
+        { provide: UserRolesService, useValue: { canViewAllUsage: signal(true), canViewUsageDashboard: signal(true), isAdmin: signal(true), roles: signal<string[]>([]) } },
       ],
     });
     TestBed.overrideComponent(UsageDashboardComponent, {
@@ -229,5 +281,81 @@ describe('UsageDashboardComponent — derived values', () => {
     ]);
 
     expect(component.inactiveOriginators().map(u => u.userId)).toEqual(['d', 'c']);
+  });
+});
+
+/**
+ * Self-scoping presentation (UsageDashboard:ViewAll).
+ *
+ * The scope itself is enforced server-side in UsageDashboardService — see
+ * UsageDashboardServiceTests. These cover only what the client decides: whether to offer the
+ * manager dropdown, and whether to explain the resulting view. The template is stubbed out in this
+ * suite, so they assert the signals the template binds to rather than rendered DOM.
+ */
+describe('UsageDashboardComponent — manager scope', () => {
+  function build(canViewAll: boolean) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: makeApiStub() },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        {
+          provide: UserRolesService,
+          useValue: {
+            canViewAllUsage: signal(canViewAll),
+            canViewUsageDashboard: signal(true),
+            isAdmin: signal(true),
+            roles: signal<string[]>([]),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(UsageDashboardComponent, {
+      set: { template: '', templateUrl: undefined, imports: [] },
+    });
+    TestBed.inject(AppStateService);
+    const fixture = TestBed.createComponent(UsageDashboardComponent);
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  it('offers the manager dropdown and the subtitle to a view-all user', () => {
+    const component = build(true);
+
+    expect(component.canViewAllUsage()).toBe(true);
+  });
+
+  it('hides the manager dropdown from a scoped user', () => {
+    const component = build(false);
+
+    // The template gates both <app-manager-filter> and the page subtitle on canViewAllUsage, so
+    // false removes the control — which matters because the server would discard any managerId
+    // such a user managed to send — and leaves the header with no strapline announcing the scope.
+    expect(component.canViewAllUsage()).toBe(false);
+  });
+
+  it('explains an empty dashboard for a scoped user who manages nobody', () => {
+    const component = build(false);
+    component.summary.set({ totalUsers: 0 } as never);
+
+    // Server-side this is a real state, not an error: a non-manager resolves to an empty universe,
+    // which would otherwise render as a wall of zeros with nothing to explain it.
+    expect(component.scopedToNobody()).toBe(true);
+  });
+
+  it('does not claim "nobody reports to you" when the scoped user does have reports', () => {
+    const component = build(false);
+    component.summary.set({ totalUsers: 4 } as never);
+
+    expect(component.scopedToNobody()).toBe(false);
+  });
+
+  it('never shows the empty-scope message to a view-all user, even with no data', () => {
+    const component = build(true);
+    component.summary.set({ totalUsers: 0 } as never);
+
+    // A view-all user seeing zero users means the org really is empty (or filtered to nothing) —
+    // telling them nobody reports to them would be wrong.
+    expect(component.scopedToNobody()).toBe(false);
   });
 });

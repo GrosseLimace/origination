@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -30,20 +31,58 @@ public class UsageDashboardService : IUsageDashboardService
 
     private readonly IUsageRepository _repo;
     private readonly IAppAccessService _appAccess;
+    private readonly IManagerDirectoryService _managerDirectory;
     private readonly IMemoryCache _cache;
     private readonly UsageUniverseCacheState _cacheState;
+    private readonly IRequestContextService _requestContext;
+    private readonly UsageDashboardViewAllList _viewAll;
 
     public UsageDashboardService(
         IUsageRepository repo,
         IAppAccessService appAccess,
+        IManagerDirectoryService managerDirectory,
         IMemoryCache cache,
-        UsageUniverseCacheState cacheState)
+        UsageUniverseCacheState cacheState,
+        IRequestContextService requestContext,
+        UsageDashboardViewAllList viewAll)
     {
         _repo = repo;
         _appAccess = appAccess;
+        _managerDirectory = managerDirectory;
         _cache = cache;
         _cacheState = cacheState;
+        _requestContext = requestContext;
+        _viewAll = viewAll;
     }
+
+    /// <summary>Whether the caller may read the whole org and choose an arbitrary manager.</summary>
+    private bool CallerCanViewAll()
+        => _viewAll.ShortNames.Contains(_requestContext.GetCurrentUserShortName(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The manager whose subtree this request may actually see — NOT necessarily the one the client
+    /// asked for.
+    /// <para>
+    /// On the <c>UsageDashboard:ViewAll</c> list the requested value passes through untouched, null
+    /// included, so those few people keep the pick-any dropdown and the whole-org default. Everyone
+    /// else is pinned to their OWN short name and the requested value is discarded rather than
+    /// rejected — a scoped user has no dropdown, so a <c>managerId</c> arriving from them is either
+    /// a stale bookmark or someone probing the query string, and neither deserves an error page.
+    /// </para><para>
+    /// THIS IS THE ONLY ENFORCEMENT POINT, and deliberately so. Every read funnels through
+    /// <see cref="GetUserIdSetAsync"/>, so scoping cannot be forgotten on a future endpoint the way
+    /// it could if each of the nine controller actions had to remember to apply it. The per-user
+    /// drill-down inherits the restriction for free: <see cref="GetUserDetailAsync"/> already
+    /// refuses a userId outside the resolved set, so it needs no separate check.
+    /// </para><para>
+    /// A caller who manages nobody resolves to an EMPTY universe, never the whole org:
+    /// <c>GetSubtreeUserIdsAsync</c> returns null for a non-manager and
+    /// <see cref="ResolveUserIdSetAsync"/> turns null into an empty set. Fail-closed by
+    /// construction — the client explains that empty state rather than rendering bare zeros.
+    /// </para>
+    /// </summary>
+    private string? ResolveEffectiveManagerId(string? requestedManagerId)
+        => CallerCanViewAll() ? requestedManagerId : _requestContext.GetCurrentUserShortName();
 
     /// <summary>
     /// Display labels for the features the dashboard reports on. Iterated to build the
@@ -121,13 +160,18 @@ public class UsageDashboardService : IUsageDashboardService
     /// endpoint. See <see cref="UsageUniverseCacheState"/> for how exclusion edits invalidate it.
     /// </para>
     /// </summary>
-    private async Task<HashSet<string>> GetUserIdSetAsync(string? tradeUnitKey, CancellationToken cancellationToken)
+    private async Task<HashSet<string>> GetUserIdSetAsync(string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
-        var cacheKey = $"usage-dash:universe:{_cacheState.Generation}:{NormalizeTradeUnitKey(tradeUnitKey)}";
+        // Resolve BEFORE the cache key is built. The key must describe the universe actually
+        // returned, not the one that was asked for — keying on the requested value would let a
+        // scoped manager's result be served from (or into) another user's cache entry.
+        var effectiveManagerId = ResolveEffectiveManagerId(managerId);
+
+        var cacheKey = $"usage-dash:universe:{_cacheState.Generation}:{NormalizeTradeUnitKey(tradeUnitKey)}:{NormalizeManagerKey(effectiveManagerId)}";
         if (_cache.TryGetValue(cacheKey, out HashSet<string>? cached) && cached is not null)
             return cached;
 
-        var set = await ResolveUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var set = await ResolveUserIdSetAsync(tradeUnitKey, effectiveManagerId, cancellationToken);
 
         // The shared IMemoryCache is registered with a SizeLimit, so every entry must declare a size.
         _cache.Set(cacheKey, set, new MemoryCacheEntryOptions
@@ -138,7 +182,7 @@ public class UsageDashboardService : IUsageDashboardService
         return set;
     }
 
-    private async Task<HashSet<string>> ResolveUserIdSetAsync(string? tradeUnitKey, CancellationToken cancellationToken)
+    private async Task<HashSet<string>> ResolveUserIdSetAsync(string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
         var codes = string.IsNullOrWhiteSpace(tradeUnitKey)
             ? null
@@ -161,6 +205,17 @@ public class UsageDashboardService : IUsageDashboardService
                 set.IntersectWith(access.ShortNames);
         }
 
+        if (!string.IsNullOrWhiteSpace(managerId))
+        {
+            // Narrow to the manager's entire org subtree (manager included). Throws a 503
+            // InfrastructureException on a TradeUnitPreferences outage — fail closed rather than
+            // silently widening "Manager: X" to the whole org.
+            var subtree = await _managerDirectory.GetSubtreeUserIdsAsync(managerId.Trim(), cancellationToken);
+            if (subtree is null)
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase); // unknown/stale manager → empty universe
+            set.IntersectWith(subtree); // set is OrdinalIgnoreCase, so this matches case-insensitively
+        }
+
         // Drop the DB-managed excluded accounts (dbo.UsageDashboardExcludedUsers — IT/dev/admin
         // accounts whose activity would skew adoption) from every dashboard view. set uses
         // OrdinalIgnoreCase, so ExceptWith drops matches case-insensitively.
@@ -181,6 +236,10 @@ public class UsageDashboardService : IUsageDashboardService
             .OrderBy(c => c, StringComparer.Ordinal);
         return string.Join(',', codes);
     }
+
+    /// <summary>Canonicalizes the manager id for the cache key — "KCanning" and "kcanning" share an entry.</summary>
+    private static string NormalizeManagerKey(string? managerId) =>
+        string.IsNullOrWhiteSpace(managerId) ? "__all__" : managerId.Trim().ToUpperInvariant();
 
     private async Task<Dictionary<string, string>> GetDisplayNameDictAsync(HashSet<string> userIds, CancellationToken cancellationToken)
     {
@@ -270,10 +329,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
         var totalUsers = userIds.Count;
 
         // Same classifier the user list uses, so "Active Users" here == the count of Active rows there.
@@ -318,10 +377,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? status, CancellationToken cancellationToken)
+    public async Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, string? status, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
         var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
         // Entra display names fill in for access-group members with no entitlements snapshot row
         // (e.g. admin accounts) — cached, so this is a dictionary lookup, not a Graph call.
@@ -375,10 +434,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
 
         var counts = new Dictionary<DateOnly, int>();
         if (window.HasRollup)
@@ -409,10 +468,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? screen, CancellationToken cancellationToken)
+    public async Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, string? screen, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
 
         var screenMinutes = await GetScreenMinutesByFeatureAsync(window, userIds, cancellationToken);
         var interactionCounts = await GetInteractionCountsAsync(window, userIds, screen, cancellationToken);
@@ -527,10 +586,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? tradeUnitKey, int weeks, CancellationToken cancellationToken)
+    public async Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? tradeUnitKey, string? managerId, int weeks, CancellationToken cancellationToken)
     {
         weeks = Math.Clamp(weeks, 1, 52);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var currentWeekStart = StartOfWeek(today);
@@ -582,12 +641,12 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
         // Reads the raw tables for the whole window: the profiles/contracts columns are
         // distinct-by-producer across the entire range, which per-day rollups cannot reconstruct.
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
         var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
 
         var activityMap = (await _repo.GetActivityBreakdownByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
@@ -624,12 +683,12 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
         // Measured in distinct users, and now honors the trade-unit filter and the excluded-users
         // list — the old per-feature-only rollup had no user dimension, so it could do neither.
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
 
         // Union the (feature, user) pairs from both sources rather than adding their counts, so a
         // user who was active both earlier in the window and today is still one user.
@@ -665,10 +724,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
 
         var rawUsage = await _repo.GetLibraryQueryUsageAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken);
 
@@ -686,14 +745,28 @@ public class UsageDashboardService : IUsageDashboardService
     }
 
     /// <inheritdoc />
-    public async Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken)
+    public async Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        var userIds = await GetUserIdSetAsync(tradeUnitKey, managerId, cancellationToken);
 
         var gaps = await _repo.GetQuerySearchGapsAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken);
         return gaps.Select(g => new QuerySearchGapDto { SearchText = g.SearchText, TimesSearched = g.TimesSearched }).ToList();
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Manager filter
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public Task<List<UsageManagerDto>> GetManagersAsync(CancellationToken cancellationToken)
+        // Empty for a scoped caller. Their dropdown is hidden, so they have no use for the roster —
+        // and this list is the company org chart (every manager's name and short name), which is
+        // not something to hand out just because someone can open the dashboard. Returning empty
+        // rather than 403 keeps the client's "no matching managers" path working if it ever asks.
+        => CallerCanViewAll()
+            ? _managerDirectory.GetManagersAsync(cancellationToken)
+            : Task.FromResult(new List<UsageManagerDto>());
 
     // ─────────────────────────────────────────────────────────────────────────
     // Per-user drill-down
@@ -704,7 +777,8 @@ public class UsageDashboardService : IUsageDashboardService
     {
         var window = BuildWindow(from, to);
 
-        var allowedIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
+        // The manager filter narrows who is listed, not one user's numbers, so it is not threaded here.
+        var allowedIds = await GetUserIdSetAsync(tradeUnitKey, null, cancellationToken);
         if (!allowedIds.Contains(userId))
             return null;
 

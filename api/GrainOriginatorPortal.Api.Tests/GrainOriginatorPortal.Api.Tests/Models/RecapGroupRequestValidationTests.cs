@@ -6,7 +6,8 @@ namespace GrainOriginatorPortal.Api.Tests.Models;
 
 /// <summary>
 /// Data-annotation + IValidatableObject rules on <see cref="RecapGroupRequest"/>: CC addresses are
-/// confined to @scoular.com (no external forwarding) and a Teams group must carry a valid *.teams.ms
+/// confined to @scoular.com (no external forwarding), a group must keep at least one member, and a
+/// Teams group must carry a valid *.teams.ms
 /// channel address (so the workflow never falls back to a shared channel).
 /// </summary>
 public class RecapGroupRequestValidationTests
@@ -18,7 +19,14 @@ public class RecapGroupRequestValidationTests
         return results;
     }
 
-    private static RecapGroupRequest Base() => new() { Name = "Daily", DeliveryMethod = "email" };
+    // Carries one member because an empty group is rejected outright — that keeps every test below
+    // isolated to the rule it is actually about.
+    private static RecapGroupRequest Base() => new()
+    {
+        Name = "Daily",
+        DeliveryMethod = "email",
+        Members = [new RecapGroupMemberRequest { Type = "person", Id = "sam", Name = "Sam Smith" }],
+    };
 
     // ── CC domain ────────────────────────────────────────────────────────────
     [Fact]
@@ -86,5 +94,19 @@ public class RecapGroupRequestValidationTests
         var req = Base() with { DeliveryMethod = "email", TeamsChannelEmail = null };
 
         Assert.Empty(Validate(req));
+    }
+
+    // ── Membership floor ──────────────────────────────────────────────────────
+    [Fact]
+    public void Members_Empty_IsRejected()
+    {
+        // Any member can edit a group, so nothing else stops one from stripping every member and
+        // silently making the group unmentionable and undeliverable. The client already requires at
+        // least one; this is the server-side floor.
+        var req = Base() with { Members = [] };
+
+        var errors = Validate(req);
+
+        Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.Members)));
     }
 }

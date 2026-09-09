@@ -17,6 +17,7 @@ public partial class NoteService : INoteService
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IRequestContextService _requestContext;
     private readonly IDailyRecapGroupService _groups;
+    private readonly IEntitlementsRepository _entitlements;
     private readonly ILogger<NoteService> _logger;
 
     public NoteService(
@@ -25,6 +26,7 @@ public partial class NoteService : INoteService
         IDisplayNameLookupRepository displayNameLookup,
         IRequestContextService requestContext,
         IDailyRecapGroupService groups,
+        IEntitlementsRepository entitlements,
         ILogger<NoteService> logger)
     {
         _repository = repository;
@@ -32,6 +34,7 @@ public partial class NoteService : INoteService
         _displayNameLookup = displayNameLookup;
         _requestContext = requestContext;
         _groups = groups;
+        _entitlements = entitlements;
         _logger = logger;
     }
 
@@ -150,23 +153,96 @@ public partial class NoteService : INoteService
     /// expansion, so one group can multiply well past it. The blow-up guard has to live here.</summary>
     private const int MaxExpandedMentions = 250;
 
-    /// <summary>Expands the caller's own group mentions, then normalizes and serializes everything to
-    /// the JSON stored on the note. Null/empty → null so the column stays NULL rather than "[]".
+    /// <summary>Expands the caller's own group mentions, then validates, normalizes and serializes
+    /// everything to the JSON stored on the note. Null/empty → null so the column stays NULL rather
+    /// than "[]".
     /// <para>
     /// ORDER IS LOAD-BEARING. Expansion runs FIRST and emits raw member references; then EVERY row —
     /// client-sent and expanded alike — goes through <see cref="NormalizeMention"/>. That is what
     /// extends the M-025 guarantees to group members: a person member's address is rebuilt from its
     /// id, non-person rows lose their email, and a member id carrying a foreign domain is rejected.
-    /// Swapping these two lines would make the group path a laundering route around a rule the
-    /// direct path enforces.
+    /// Swapping those two would make the group path a laundering route around a rule the direct
+    /// path enforces. <see cref="ValidatePersonMentionsAsync"/> sits between them and reads the
+    /// provenance expansion just set, which is why the client's own <c>via</c> is cleared up front.
     /// </para></summary>
     private async Task<string?> BuildMentionsJsonAsync(IReadOnlyList<NoteMention>? mentions, CancellationToken cancellationToken)
     {
         if (mentions is not { Count: > 0 }) return null;
-        var expanded = await ExpandGroupsAsync(mentions, cancellationToken);
+        // Via is server-set provenance marking a row as group-derived. ExpandGroupsAsync clears it,
+        // but only on notes that actually carry a group mention — on the hot path a client-sent Via
+        // used to survive. It now decides whether a row skips the identity check below, so clear it
+        // here instead, before anything reads it.
+        var scrubbed = mentions.Select(m => m with { Via = null }).ToList();
+        var expanded = await ExpandGroupsAsync(scrubbed, cancellationToken);
+        await ValidatePersonMentionsAsync(expanded, cancellationToken);
         var normalized = expanded.Select(NormalizeMention).ToList();
         return JsonSerializer.Serialize(normalized);
     }
+
+    /// <summary>Rejects a directly-typed person mention that doesn't name an ACTIVE user in the
+    /// trade-unit preferences roster (H-056).
+    /// <para>
+    /// <see cref="NormalizeMention"/> pins the domain, which stops a mention addressing outside the
+    /// tenant — but any well-formed short name still resolved to a real mailbox, so an id the picker
+    /// never offered could carry an authored note out of the shared mailbox to any employee. This
+    /// checks the id against the same roster the Instant Share Note Logic App consults
+    /// (<c>Get_Active_Users</c>), one step earlier, where it can be refused instead of silently
+    /// dropped at send time.
+    /// </para><para>
+    /// Deliberately an EXISTENCE check, not an entitlement one: mentions are intentionally not
+    /// limited to the caller's own trade units (business decision 2026-09-01, recorded in
+    /// SECURITY-REVIEWS/ACCEPTED-RISKS.md), even though the picker only ever offers co-workers.
+    /// Group-derived rows are exempt — their members were validated against the group creator's
+    /// entitlements when the group was saved (AR-07).
+    /// </para></summary>
+    private async Task ValidatePersonMentionsAsync(IReadOnlyList<NoteMention> mentions, CancellationToken cancellationToken)
+    {
+        var direct = mentions
+            .Where(m => m.Via is null && string.Equals(m.Type, "person", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        // Hot path: a note with no mentions, or only trade-unit / group ones, never touches the DB.
+        if (direct.Count == 0) return;
+
+        // Match on the local part: the catalog emits bare short names, but a hand-written UPN is
+        // accepted too (NormalizeMention allows both), and the roster is keyed on the short name.
+        var shortNames = direct
+            .Select(m => LocalPart(m.Id))
+            .Where(n => n.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        HashSet<string> active;
+        try
+        {
+            active = await _entitlements.GetActiveUserIdsAsync(shortNames, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Fail CLOSED, matching ExpandGroupsAsync: an unverifiable recipient must not be
+            // persisted, and a retryable error the author can see beats a note that quietly mails
+            // someone it shouldn't.
+            _logger.LogWarning(ex, "User roster unavailable while validating note mentions — rejecting the save");
+            throw new InfrastructureException(
+                "Can't verify who you mentioned right now. Please try again in a moment.",
+                "INFRASTRUCTURE_DATABASE_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
+        }
+
+        foreach (var mention in direct)
+        {
+            if (active.Contains(LocalPart(mention.Id))) continue;
+            // ValidationException (400), not ForbiddenException — same reasoning as the group path:
+            // the client's 403 handler raises its own toast and would double up on this one.
+            // Name the person and say exactly how to proceed: on an EDIT this can be a mention that
+            // was valid when the note was written and whose subject has since left, and the client
+            // drops a mention when its "@Name" leaves the text — so that is the way out.
+            var label = string.IsNullOrWhiteSpace(mention.Name) ? mention.Id : mention.Name;
+            throw new ValidationException("mentions",
+                $"'{label}' is no longer an active user, so they can't be notified. Delete \"@{label}\" from the note and save again.");
+        }
+    }
+
+    /// <summary>The short name a person mention id resolves to — "CEgr" from either "CEgr" or
+    /// "CEgr@scoular.com". Shape is validated separately by <see cref="NormalizeMention"/>.</summary>
+    private static string LocalPart(string? id) => (id ?? string.Empty).Trim().Split('@')[0];
 
     /// <summary>Replaces each "app-group" mention with the group's own row PLUS one row per member,
     /// typed with the person / trade-unit / trade-unit-group vocabulary the Instant Share Note Logic
@@ -223,7 +299,8 @@ public partial class NoteService : INoteService
 
         foreach (var mention in mentions)
         {
-            // Via is server-set provenance; clear whatever the client sent so it can't be forged.
+            // Via is server-set provenance. BuildMentionsJsonAsync already cleared it on every
+            // inbound row; kept here so this method holds on its own for any future caller.
             if (!Add(mention with { Via = null })) continue;
             if (!string.Equals(mention.Type, NoteMention.AppGroupType, StringComparison.OrdinalIgnoreCase)) continue;
 
@@ -281,7 +358,9 @@ public partial class NoteService : INoteService
 
     /// <summary>Rebuilds a person mention's email as an internal address derived from its id, and
     /// drops emails from non-person mentions. Throws when the id is not an internal identity —
-    /// the mention catalog only ever emits internal short names/UPNs, so anything else is forged.</summary>
+    /// the mention catalog only ever emits internal short names/UPNs, so anything else is forged.
+    /// <para>Shape only: that the id names a REAL active person is
+    /// <see cref="ValidatePersonMentionsAsync"/>'s job, and it runs first.</para></summary>
     private static NoteMention NormalizeMention(NoteMention mention)
     {
         if (!string.Equals(mention.Type, "person", StringComparison.OrdinalIgnoreCase))

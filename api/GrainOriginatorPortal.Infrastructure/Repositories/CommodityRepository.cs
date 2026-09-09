@@ -84,6 +84,9 @@ public class CommodityRepository : ICommodityRepository
 
         bool changed = false;
 
+        // New rows are inserted with both scope columns left null (visible to everyone) and
+        // ShowInPlantingIntentions false. This sync is additive-only: it must never write any of those
+        // columns, so hand-curated visibility survives every re-sync.
         // Add any contract commodities not yet in the table
         foreach (var item in contractCommodities)
         {

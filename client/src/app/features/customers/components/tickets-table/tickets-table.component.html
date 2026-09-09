@@ -216,7 +216,7 @@
                     <app-table-body>
                       @for (ticket of group.tickets; track ticket.id) {
                         <app-table-row [class]="spotTicketIds.has(ticket.id) ? '!bg-amber-100 dark:!bg-amber-500/15 hover:!bg-amber-100 dark:hover:!bg-amber-500/15' : ''">
-                          <app-table-cell class="text-center">{{ ticket.ticketNumber }}</app-table-cell>
+                          <app-table-cell class="text-center">{{ ticketDisplayNumber(ticket) }}</app-table-cell>
                           <app-table-cell class="text-center">{{ ticket.date | date:'M/d/yyyy' }}</app-table-cell>
                           <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
                           <app-table-cell class="text-center text-xs">{{ ticket.elevatorCity && ticket.elevatorState ? ticket.elevatorCity + ', ' + ticket.elevatorState : ticket.elevatorCity || ticket.elevatorState || '—' }}</app-table-cell>

@@ -1,0 +1,78 @@
+<div class="relative">
+  <button type="button" (click)="toggle()"
+    [attr.aria-expanded]="open()"
+    aria-label="Filter by manager"
+    [class]="selected() || open()
+      ? 'px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white flex items-center gap-1.5'
+      : 'px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1.5'">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+    <span class="max-w-40 truncate">{{ selected()?.displayName ?? 'All Managers' }}</span>
+    @if (selected()) {
+      <!-- Clear without reopening the dropdown; span not button — buttons don't nest. -->
+      <span role="button" tabindex="0" (click)="clear(); $event.stopPropagation()"
+        (keydown.enter)="clear(); $event.stopPropagation()" aria-label="Clear manager filter"
+        class="hover:opacity-70">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </span>
+    } @else {
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    }
+  </button>
+
+  @if (open()) {
+    <div class="absolute right-0 mt-2 w-80 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50">
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Filter by Manager</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Shows the manager's whole team — reports of reports included.
+          </p>
+        </div>
+        <button type="button" (click)="close()" aria-label="Close"
+          class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+
+      @if (loading()) {
+        <p class="text-sm text-gray-500 dark:text-gray-400 py-3">Loading managers…</p>
+      } @else if (loadFailed()) {
+        <div class="py-3 space-y-2">
+          <p class="text-sm text-gray-500 dark:text-gray-400">Managers are temporarily unavailable.</p>
+          <button type="button" (click)="load()"
+            class="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+            Retry
+          </button>
+        </div>
+      } @else {
+        <input type="text" [ngModel]="search()" (ngModelChange)="search.set($event)"
+          name="managerSearch" placeholder="Search managers…" autocomplete="off"
+          class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+        <ul class="mt-2 max-h-64 overflow-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700">
+          @if (managerId()) {
+            <li>
+              <button type="button" (click)="clear()"
+                class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
+                All Managers
+              </button>
+            </li>
+          }
+          @for (m of candidates(); track m.userId) {
+            <li>
+              <button type="button" (click)="select(m)"
+                class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                <span class="font-medium text-gray-900 dark:text-white">{{ m.displayName }}</span>
+                <span class="text-gray-500 dark:text-gray-400"> · {{ m.totalReports }} report{{ m.totalReports === 1 ? '' : 's' }}</span>
+              </button>
+            </li>
+          } @empty {
+            <li class="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">No matching managers</li>
+          }
+        </ul>
+      }
+    </div>
+  }
+</div>

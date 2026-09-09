@@ -7,6 +7,9 @@ export const environment = {
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
   calculatorEnabled: true,
+  // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
+  // this app only reads the result). Opened from the profile menu in a popup window.
+  tradeUnitPreferencesUrl: 'https://tradeunitprefs-dev.scoular.com/my-preferences',
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {

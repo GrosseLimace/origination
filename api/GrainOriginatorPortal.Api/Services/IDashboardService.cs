@@ -15,5 +15,8 @@ public interface IDashboardService
     Task UpsertMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, CancellationToken cancellationToken);
     Task<List<DashboardActualHarvestResponse>> GetActualHarvestAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken);
     Task UpsertActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, CancellationToken cancellationToken);
-    Task DeleteActualHarvestAsync(int id, CancellationToken cancellationToken);
+    /// <summary>Deletes one actual-harvest row after authorizing the row's own trade unit against the
+    /// caller's entitlements. Returns the deleted row's trade unit key for auditing, or null when no
+    /// row with that id exists. Throws ForbiddenException when the row belongs to another trade unit.</summary>
+    Task<string?> DeleteActualHarvestAsync(int id, CancellationToken cancellationToken);
 }

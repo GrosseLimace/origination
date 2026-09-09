@@ -7,6 +7,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Ticket, Contract } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { compareTicketNumbers, compareTicketsByDateThenNumber } from '@shared/utils/ticket-sort';
+import { ticketDisplayNumber } from '@shared/utils/ticket-display';
 
 type SortColumn = 'id' | 'date' | 'crop' | 'location' | 'appliedDockQuantity' | 'moisture' | 'testWeight' | 'protein';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -45,6 +46,9 @@ interface TicketGroup {
 export class TicketsTableComponent {
   private readonly appState = inject(AppStateService);
   private readonly usageTracking = inject(UsageTrackingService);
+
+  /** Exposed for the template — shows the full shipment ticket number (prefix + number + suffix). */
+  readonly ticketDisplayNumber = ticketDisplayNumber;
 
   public isLoading = input(false);
   public tickets = input<Ticket[]>([]);
@@ -185,6 +189,9 @@ export class TicketsTableComponent {
         const fmtDate = this._formatTicketDate(t.date);
         const loc = this._formatLocation(t);
         return terms.some(term =>
+          // Both forms: the grid shows the full shipment number, but people also paste or half-recall
+          // the bare sequence, and a search that only matched what is rendered would break that.
+          ticketDisplayNumber(t).toLowerCase().includes(term) ||
           t.ticketNumber.toLowerCase().includes(term) ||
           fmtDate.includes(term) ||
           this._matchesDate(t.date, term) ||

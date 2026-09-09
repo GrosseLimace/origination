@@ -5,6 +5,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Moq;
 
 // Project namespaces
+using GrainOriginatorPortal.Api.Authorization;
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -20,8 +22,15 @@ public class UsageDashboardServiceTests
 {
     private readonly Mock<IUsageRepository> _repoMock = new();
     private readonly Mock<IAppAccessService> _appAccessMock = new();
+    private readonly Mock<IManagerDirectoryService> _managerDirectoryMock = new();
+    private readonly Mock<IRequestContextService> _requestContextMock = new();
     private readonly UsageUniverseCacheState _cacheState = new();
     private readonly UsageDashboardService _sut;
+
+    /// <summary>The signed-in caller for every test. The default <see cref="_sut"/> puts this name on
+    /// the ViewAll list, so the manager-filter tests below exercise pick-any as they always have;
+    /// <see cref="CreateScopedSut"/> takes it off, which is the self-scoped path.</summary>
+    private const string Caller = "CEgr";
 
     private static readonly DateOnly From = new(2026, 7, 1);
     private static readonly DateOnly To = new(2026, 7, 20);
@@ -56,16 +65,35 @@ public class UsageDashboardServiceTests
         _sut = CreateSut();
     }
 
-    /// <summary>Builds the service, seeding the DB-backed exclusion list
-    /// (dbo.UsageDashboardExcludedUsers) via the repo mock.</summary>
+    /// <summary>Builds the service as a ViewAll caller — they may pick any manager and default to the
+    /// whole org. Seeds the DB-backed exclusion list (dbo.UsageDashboardExcludedUsers) via the repo
+    /// mock.</summary>
     private UsageDashboardService CreateSut(params string[] excludeUsers)
+        => CreateSut(new UsageDashboardViewAllList([Caller]), excludeUsers);
+
+    /// <summary>Builds the service as a SCOPED caller — nobody is on the ViewAll list, so the caller
+    /// is pinned to their own org subtree and any requested managerId is discarded.</summary>
+    private UsageDashboardService CreateScopedSut(params string[] excludeUsers)
+        => CreateSut(UsageDashboardViewAllList.Empty, excludeUsers);
+
+    private UsageDashboardService CreateSut(UsageDashboardViewAllList viewAll, params string[] excludeUsers)
     {
         _repoMock.Setup(r => r.GetExcludedUserIdsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(excludeUsers.ToList());
+        _requestContextMock.Setup(r => r.GetCurrentUserShortName()).Returns(Caller);
         // A real cache (not a mock) so the memoization tests exercise the actual code path. The app's
         // cache is registered with a SizeLimit; setting one here proves entries declare their size.
         var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-        return new UsageDashboardService(_repoMock.Object, _appAccessMock.Object, cache, _cacheState);
+        return new UsageDashboardService(
+            _repoMock.Object, _appAccessMock.Object, _managerDirectoryMock.Object, cache, _cacheState,
+            _requestContextMock.Object, viewAll);
+    }
+
+    private void SetupSubtree(string managerId, params string[] subtreeUserIds)
+    {
+        _managerDirectoryMock
+            .Setup(m => m.GetSubtreeUserIdsAsync(managerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(subtreeUserIds, StringComparer.OrdinalIgnoreCase));
     }
 
     private void SetupAccess(bool available, params string[] shortNames)
@@ -88,7 +116,7 @@ public class UsageDashboardServiceTests
     {
         SetupAccess(true, "CEgr", "admin-CEgr");
 
-        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, status: null, CancellationToken.None);
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
 
         Assert.Equal(2, users.Count);
         Assert.Contains(users, u => u.UserId == "CEgr");
@@ -102,7 +130,7 @@ public class UsageDashboardServiceTests
     {
         SetupAccess(true, "CEgr"); // JNoAccess is entitled (snapshot) but not in the group
 
-        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, status: null, CancellationToken.None);
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
 
         Assert.Single(users);
         Assert.DoesNotContain(users, u => u.UserId == "JNoAccess");
@@ -115,7 +143,7 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.GetSnapshotUserIdsAsync(null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(["CEgr", "JNoAccess"]);
 
-        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, status: null, CancellationToken.None);
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
 
         // Pre-existing behavior: full entitlements directory.
         Assert.Equal(2, users.Count);
@@ -130,7 +158,7 @@ public class UsageDashboardServiceTests
                 It.Is<IReadOnlyCollection<string>>(c => c.Contains("TU1")), It.IsAny<CancellationToken>()))
             .ReturnsAsync(["CEgr", "JNoAccess"]); // both entitled to TU1; only CEgr has access
 
-        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: "TU1", status: null, CancellationToken.None);
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: "TU1", managerId: null, status: null, CancellationToken.None);
 
         Assert.Single(users);
         Assert.Equal("CEgr", users[0].UserId);
@@ -142,7 +170,7 @@ public class UsageDashboardServiceTests
     {
         SetupAccess(true, "CEgr", "admin-CEgr"); // snapshot only knows CEgr's name
 
-        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, status: null, CancellationToken.None);
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
 
         Assert.Equal("Caden Egr", users.Single(u => u.UserId == "CEgr").DisplayName);          // snapshot name wins
         Assert.Equal("admin-CEgr (Entra)", users.Single(u => u.UserId == "admin-CEgr").DisplayName); // Entra fallback
@@ -155,7 +183,7 @@ public class UsageDashboardServiceTests
         // The exclusion rows use different casing than the access set to prove case-insensitive matching.
         var sut = CreateSut("cegr", "ADMIN-CEGR");
 
-        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, status: null, CancellationToken.None);
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
 
         Assert.Single(users);
         Assert.Equal("KHague", users[0].UserId); // only the non-excluded originator remains
@@ -170,7 +198,7 @@ public class UsageDashboardServiceTests
             .ReturnsAsync(["CEgr", "SFletcher"]); // both entitled + have access
         var sut = CreateSut("SFletcher");
 
-        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: "TU1", status: null, CancellationToken.None);
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: "TU1", managerId: null, status: null, CancellationToken.None);
 
         Assert.Single(users);
         Assert.Equal("CEgr", users[0].UserId); // SFletcher excluded even within a TU filter
@@ -186,9 +214,9 @@ public class UsageDashboardServiceTests
         SetupAccess(false);
         _repoMock.Setup(r => r.GetSnapshotUserIdsAsync(null, It.IsAny<CancellationToken>())).ReturnsAsync(["CEgr"]);
 
-        await _sut.GetUsersAsync(From, To, null, null, CancellationToken.None);
-        await _sut.GetSummaryAsync(From, To, null, CancellationToken.None);
-        await _sut.GetDailyActiveAsync(From, To, null, CancellationToken.None);
+        await _sut.GetUsersAsync(From, To, null, null, null, CancellationToken.None);
+        await _sut.GetSummaryAsync(From, To, null, null, CancellationToken.None);
+        await _sut.GetDailyActiveAsync(From, To, null, null, CancellationToken.None);
 
         _repoMock.Verify(r => r.GetSnapshotUserIdsAsync(null, It.IsAny<CancellationToken>()), Times.Once);
         _repoMock.Verify(r => r.GetExcludedUserIdsAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -201,8 +229,8 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.GetSnapshotUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(["CEgr"]);
 
-        await _sut.GetUsersAsync(From, To, "TU1,TU2", null, CancellationToken.None);
-        await _sut.GetUsersAsync(From, To, "tu2, tu1", null, CancellationToken.None);
+        await _sut.GetUsersAsync(From, To, "TU1,TU2", null, null, CancellationToken.None);
+        await _sut.GetUsersAsync(From, To, "tu2, tu1", null, null, CancellationToken.None);
 
         _repoMock.Verify(r => r.GetSnapshotUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -214,8 +242,8 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.GetSnapshotUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(["CEgr"]);
 
-        await _sut.GetUsersAsync(From, To, "TU1", null, CancellationToken.None);
-        await _sut.GetUsersAsync(From, To, "TU2", null, CancellationToken.None);
+        await _sut.GetUsersAsync(From, To, "TU1", null, null, CancellationToken.None);
+        await _sut.GetUsersAsync(From, To, "TU2", null, null, CancellationToken.None);
 
         _repoMock.Verify(r => r.GetSnapshotUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
@@ -228,17 +256,248 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.AddExcludedUserAsync("SFletcher", It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ExcludedUserRow(1, "SFletcher", "dev account", "CEgr", DateTime.UtcNow));
 
-        var before = await _sut.GetUsersAsync(From, To, null, null, CancellationToken.None);
+        var before = await _sut.GetUsersAsync(From, To, null, null, null, CancellationToken.None);
         Assert.Equal(2, before.Count);
 
         await _sut.AddExcludedUserAsync("SFletcher", "dev account", "CEgr", CancellationToken.None);
         // The list the universe subtracts now includes the new exclusion.
         _repoMock.Setup(r => r.GetExcludedUserIdsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(["SFletcher"]);
 
-        var after = await _sut.GetUsersAsync(From, To, null, null, CancellationToken.None);
+        var after = await _sut.GetUsersAsync(From, To, null, null, null, CancellationToken.None);
 
         Assert.Single(after);
         Assert.Equal("CEgr", after[0].UserId);
+    }
+
+    // ── Manager filter ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ManagerFilter_IntersectsTheUniverse_WithTheSubtree()
+    {
+        SetupAccess(true, "CEgr", "AUser", "BUser");
+        // The subtree also contains someone who isn't an app user — they must not appear.
+        SetupSubtree("MgrX", "CEgr", "AUser", "NotAnAppUser");
+
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "MgrX", status: null, CancellationToken.None);
+
+        Assert.Equal(2, users.Count);
+        Assert.Contains(users, u => u.UserId == "CEgr");
+        Assert.Contains(users, u => u.UserId == "AUser");
+    }
+
+    // ── Self-scoping (UsageDashboard:ViewAll) ────────────────────────────────
+    //
+    // A caller who is NOT on the ViewAll list may only ever see their own org subtree. The
+    // enforcement lives in one place — ResolveEffectiveManagerId, called by GetUserIdSetAsync,
+    // which every read funnels through — so these tests pin the funnel rather than each endpoint.
+
+    [Fact]
+    public async Task ScopedCaller_RequestedManagerId_IsIgnored_InFavourOfTheirOwn()
+    {
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree(Caller, Caller, "MyReport");
+        // The manager they asked for. If the request were honoured this user would come back.
+        SetupSubtree("OtherMgr", "SomeoneElse");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "OtherMgr", status: null, CancellationToken.None);
+
+        Assert.Equal(2, users.Count);
+        Assert.Contains(users, u => u.UserId == Caller);
+        Assert.Contains(users, u => u.UserId == "MyReport");
+        Assert.DoesNotContain(users, u => u.UserId == "SomeoneElse");
+    }
+
+    [Fact]
+    public async Task ScopedCaller_SeesOnlyReportsWhoActuallyHaveAppAccess()
+    {
+        // The requirement is the INTERSECTION: someone who reports to me but has no access to the
+        // application is not an app user and has no adoption to measure, so they must not be listed.
+        // Same rule the pick-any path has always applied, asserted here for the scoped path too.
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReportWithAccess");
+        SetupSubtree(Caller, Caller, "MyReportWithAccess", "MyReportNoAccess");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+
+        Assert.Equal(2, users.Count);
+        Assert.Contains(users, u => u.UserId == Caller);
+        Assert.Contains(users, u => u.UserId == "MyReportWithAccess");
+        Assert.DoesNotContain(users, u => u.UserId == "MyReportNoAccess");
+    }
+
+    [Fact]
+    public async Task ScopedCaller_SeesThemselves_NotJustTheirReports()
+    {
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReport");
+        SetupSubtree(Caller, Caller, "MyReport");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+
+        Assert.Contains(users, u => u.UserId == Caller);
+    }
+
+    [Fact]
+    public async Task ScopedCaller_NoManagerRequested_StillGetsOwnSubtree_NotTheWholeOrg()
+    {
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree(Caller, Caller, "MyReport");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+
+        Assert.Equal(2, users.Count);
+        Assert.DoesNotContain(users, u => u.UserId == "SomeoneElse");
+    }
+
+    [Fact]
+    public async Task ScopedCaller_WhoManagesNobody_GetsAnEmptyUniverse_NotTheWholeOrg()
+    {
+        // The regression that matters most: GetSubtreeUserIdsAsync returns null for a non-manager,
+        // and null must not be read as "no filter".
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "SomeoneElse");
+        _managerDirectoryMock
+            .Setup(m => m.GetSubtreeUserIdsAsync(Caller, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((HashSet<string>?)null);
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+
+        Assert.Empty(users);
+    }
+
+    [Fact]
+    public async Task ScopedCaller_CannotDrillIntoSomeoneOutsideTheirSubtree()
+    {
+        var sut = CreateScopedSut();
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree(Caller, Caller, "MyReport");
+
+        var outside = await sut.GetUserDetailAsync("SomeoneElse", From, To, tradeUnitKey: null, CancellationToken.None);
+
+        // Returning null (→ 404) rather than throwing is itself the evidence the gate fired: the
+        // allowedIds check sits before any per-user repo read, and none of those reads are mocked in
+        // this suite, so reaching them would surface as a NullReferenceException instead. The
+        // in-subtree case is deliberately not asserted here — it would need the whole detail
+        // pipeline stubbed and would add no authorization coverage.
+        Assert.Null(outside);
+        _repoMock.Verify(
+            r => r.GetSessionDurationsForUserAsync("SomeoneElse", It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ScopedCaller_DoesNotReceiveTheManagerRoster()
+    {
+        var sut = CreateScopedSut();
+
+        var managers = await sut.GetManagersAsync(CancellationToken.None);
+
+        Assert.Empty(managers);
+        _managerDirectoryMock.Verify(
+            m => m.GetManagersAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ViewAllCaller_KeepsPickAny_AndTheWholeOrgByDefault()
+    {
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree("OtherMgr", "SomeoneElse");
+
+        var all = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
+        var picked = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "OtherMgr", status: null, CancellationToken.None);
+
+        Assert.Equal(3, all.Count);
+        Assert.Single(picked);
+        Assert.Contains(picked, u => u.UserId == "SomeoneElse");
+    }
+
+    [Fact]
+    public async Task ScopedAndViewAllCallers_DoNotShareACacheEntry_ForTheSameRequestedManager()
+    {
+        // The universe cache key is built from the EFFECTIVE manager, not the requested one. Keyed on
+        // the request instead, a scoped caller asking for "OtherMgr" could be served that manager's
+        // universe from a ViewAll caller's earlier lookup.
+        SetupAccess(true, Caller, "MyReport", "SomeoneElse");
+        SetupSubtree(Caller, Caller, "MyReport");
+        SetupSubtree("OtherMgr", "SomeoneElse");
+
+        var asViewAll = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "OtherMgr", status: null, CancellationToken.None);
+
+        var scoped = CreateScopedSut();
+        var asScoped = await scoped.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "OtherMgr", status: null, CancellationToken.None);
+
+        Assert.Contains(asViewAll, u => u.UserId == "SomeoneElse");
+        Assert.DoesNotContain(asScoped, u => u.UserId == "SomeoneElse");
+    }
+
+    [Fact]
+    public async Task ManagerFilter_UnknownManager_YieldsEmptyResults_NotAnError()
+    {
+        SetupAccess(true, "CEgr");
+        _managerDirectoryMock
+            .Setup(m => m.GetSubtreeUserIdsAsync("NotAManager", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((HashSet<string>?)null);
+
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "NotAManager", status: null, CancellationToken.None);
+
+        Assert.Empty(users);
+    }
+
+    [Fact]
+    public async Task ManagerFilter_CombinesWithTradeUnitFilter()
+    {
+        SetupAccess(true, "CEgr", "AUser");
+        _repoMock.Setup(r => r.GetSnapshotUserIdsAsync(
+                It.Is<IReadOnlyCollection<string>>(c => c.Contains("TU1")), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["CEgr", "AUser"]); // both entitled to TU1 and have access
+        SetupSubtree("MgrX", "CEgr");         // but only CEgr is on MgrX's team
+
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: "TU1", managerId: "MgrX", status: null, CancellationToken.None);
+
+        Assert.Single(users);
+        Assert.Equal("CEgr", users[0].UserId);
+    }
+
+    [Fact]
+    public async Task ManagerFilter_SubtreeMatching_IsCaseInsensitive()
+    {
+        SetupAccess(true, "CEgr");
+        SetupSubtree("MgrX", "cegr"); // subtree row cased differently than the access set
+
+        var users = await _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "MgrX", status: null, CancellationToken.None);
+
+        Assert.Single(users);
+    }
+
+    [Fact]
+    public async Task ManagerFilter_DifferentManagers_AreCachedSeparately_AndRepeatsHitTheCache()
+    {
+        SetupAccess(true, "CEgr", "AUser");
+        SetupSubtree("MgrA", "CEgr");
+        SetupSubtree("MgrB", "AUser");
+
+        var a1 = await _sut.GetUsersAsync(From, To, null, "MgrA", null, CancellationToken.None);
+        var b = await _sut.GetUsersAsync(From, To, null, "MgrB", null, CancellationToken.None);
+        var a2 = await _sut.GetUsersAsync(From, To, null, "MgrA", null, CancellationToken.None);
+
+        Assert.Equal("CEgr", a1.Single().UserId);   // managerId is part of the cache key…
+        Assert.Equal("AUser", b.Single().UserId);   // …so the two managers don't share an entry
+        Assert.Equal("CEgr", a2.Single().UserId);
+        _managerDirectoryMock.Verify(m => m.GetSubtreeUserIdsAsync("MgrA", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ManagerFilter_DirectoryOutage_PropagatesThe503_RatherThanFallingOpen()
+    {
+        SetupAccess(true, "CEgr");
+        _managerDirectoryMock
+            .Setup(m => m.GetSubtreeUserIdsAsync("MgrX", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InfrastructureException("down", "ENTITLEMENTS_DB_UNAVAILABLE"));
+
+        await Assert.ThrowsAsync<InfrastructureException>(
+            () => _sut.GetUsersAsync(From, To, tradeUnitKey: null, managerId: "MgrX", status: null, CancellationToken.None));
     }
 
     // ── Summary ──────────────────────────────────────────────────────────────
@@ -251,7 +510,7 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.GetLastActiveByUserAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new UserLastActivity("CEgr", DateTime.UtcNow)]);
 
-        var summary = await _sut.GetSummaryAsync(From, To, tradeUnitKey: null, CancellationToken.None);
+        var summary = await _sut.GetSummaryAsync(From, To, tradeUnitKey: null, managerId: null, CancellationToken.None);
 
         Assert.Equal(3, summary.TotalUsers);   // the access group, not the whole directory
         Assert.Equal(1, summary.ActiveUsers);
@@ -270,7 +529,7 @@ public class UsageDashboardServiceTests
                 new UserLastActivity("LastMonth", now.AddDays(-30)),
             ]);
 
-        var users = await _sut.GetUsersAsync(From, To, null, null, CancellationToken.None);
+        var users = await _sut.GetUsersAsync(From, To, null, null, null, CancellationToken.None);
         var byId = users.ToDictionary(u => u.UserId);
 
         Assert.Equal("Active", byId["Today"].Status);        // used today
@@ -290,7 +549,7 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.GetSessionStatsFromRollupAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new UserSessionStats("CEgr", 20, 10), new UserSessionStats("KHague", 8, 30)]);
 
-        var summary = await _sut.GetSummaryAsync(from, to, tradeUnitKey: null, CancellationToken.None);
+        var summary = await _sut.GetSummaryAsync(from, to, tradeUnitKey: null, managerId: null, CancellationToken.None);
 
         Assert.Equal(7, summary.AvgLoginsPerWeek);
     }
@@ -304,7 +563,7 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.GetSessionStatsFromRollupAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new UserSessionStats("CEgr", 20, 10), new UserSessionStats("KHague", 8, 30)]);
 
-        var summary = await _sut.GetSummaryAsync(From, To, tradeUnitKey: null, CancellationToken.None);
+        var summary = await _sut.GetSummaryAsync(From, To, tradeUnitKey: null, managerId: null, CancellationToken.None);
 
         Assert.Equal(15.7, summary.AvgSessionMinutes);
     }
@@ -314,7 +573,7 @@ public class UsageDashboardServiceTests
     {
         SetupAccess(true, "CEgr");
 
-        var summary = await _sut.GetSummaryAsync(From, To, tradeUnitKey: null, CancellationToken.None);
+        var summary = await _sut.GetSummaryAsync(From, To, tradeUnitKey: null, managerId: null, CancellationToken.None);
 
         Assert.Equal(0, summary.AvgLoginsPerWeek);
         Assert.Equal(0, summary.AvgSessionMinutes);
@@ -333,7 +592,7 @@ public class UsageDashboardServiceTests
             .Callback<DateTime, DateTime, IReadOnlyCollection<string>, CancellationToken>((f, t, _, _) => { capturedFrom = f; capturedTo = t; })
             .ReturnsAsync([]);
 
-        await _sut.GetUsersAsync(day, day, tradeUnitKey: null, status: null, CancellationToken.None);
+        await _sut.GetUsersAsync(day, day, tradeUnitKey: null, managerId: null, status: null, CancellationToken.None);
 
         Assert.Equal(new DateTime(2026, 7, 15, 0, 0, 0, DateTimeKind.Utc), capturedFrom);
         Assert.Equal(new DateTime(2026, 7, 16, 0, 0, 0, DateTimeKind.Utc), capturedTo);
@@ -348,7 +607,7 @@ public class UsageDashboardServiceTests
             .Callback<DateTime, DateTime, IReadOnlyCollection<string>, CancellationToken>((f, t, _, _) => { capturedFrom = f; capturedTo = t; })
             .ReturnsAsync([]);
 
-        await _sut.GetUsersAsync(new DateOnly(2026, 7, 15), new DateOnly(2026, 7, 10), null, null, CancellationToken.None);
+        await _sut.GetUsersAsync(new DateOnly(2026, 7, 15), new DateOnly(2026, 7, 10), null, null, null, CancellationToken.None);
 
         Assert.Equal(new DateTime(2026, 7, 15, 0, 0, 0, DateTimeKind.Utc), capturedFrom);
         Assert.Equal(new DateTime(2026, 7, 16, 0, 0, 0, DateTimeKind.Utc), capturedTo);
@@ -361,7 +620,7 @@ public class UsageDashboardServiceTests
         _repoMock.Setup(r => r.GetDailyActiveCountsFromRollupAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new DailyCount(new DateOnly(2026, 7, 2), 3)]);
 
-        var series = await _sut.GetDailyActiveAsync(new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 3), null, CancellationToken.None);
+        var series = await _sut.GetDailyActiveAsync(new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 3), null, null, CancellationToken.None);
 
         Assert.Equal(3, series.Count);
         Assert.Equal(["2026-07-01", "2026-07-02", "2026-07-03"], series.Select(d => d.Date));
@@ -381,7 +640,7 @@ public class UsageDashboardServiceTests
                 new FeatureUser("bidsheet", "CEgr")
             ]);
 
-        var features = await _sut.GetUnderusedFeaturesAsync(From, To, null, CancellationToken.None);
+        var features = await _sut.GetUnderusedFeaturesAsync(From, To, null, null, CancellationToken.None);
 
         Assert.Equal(0, features[0].UniqueUsers);                                     // least used first
         Assert.Equal(2, features.Single(f => f.FeatureCode == "customers").UniqueUsers);
@@ -401,7 +660,7 @@ public class UsageDashboardServiceTests
 
         // A window ending today spans both the rollups and the raw tables.
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var features = await _sut.GetUnderusedFeaturesAsync(today.AddDays(-7), today, null, CancellationToken.None);
+        var features = await _sut.GetUnderusedFeaturesAsync(today.AddDays(-7), today, null, null, CancellationToken.None);
 
         Assert.Equal(1, features.Single(f => f.FeatureCode == "customers").UniqueUsers);
     }
