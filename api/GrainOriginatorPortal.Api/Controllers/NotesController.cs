@@ -117,8 +117,17 @@ public class NotesController : ControllerBase
                 {
                     // People who share at least one of the caller's trade units. The caller is
                     // INCLUDED so they can @-mention themselves (they're in their own trade units).
+                    //
+                    // Restricted to ACTIVE users in dbo.Users, which is a different table from the
+                    // view driving this query — a leaver can linger in the trade-unit assignments
+                    // after being deactivated. Two reasons this filter matters: NoteService rejects a
+                    // mention of an inactive user on save (H-056), so offering one here would put a
+                    // name in the picker that the save then refuses; and even before that check
+                    // existed, the Logic App skipped inactive recipients at send time, so mentioning
+                    // one produced a note the author believed was shared with nobody notified.
                     var peopleRows = await _entitlementsDb.UserTradeUnitPreferences
                         .Where(u => callerTuCodes.Contains(u.TradeUnitCode))
+                        .Where(u => _entitlementsDb.Users.Any(a => a.UserId == u.UserId && a.IsActive))
                         .Select(u => new { u.UserId, u.DisplayName })
                         .Distinct()
                         .ToListAsync(cancellationToken);
