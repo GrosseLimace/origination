@@ -134,11 +134,6 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(component.boardConsensus('HRWW', 2026, 12)).toBe('KEZ26');
   });
 
-  it('has no consensus for a Year column, whose value is per-location by construction', () => {
-    seed(location('A', [bid({ month: 0 })]));
-    expect(component.boardConsensus('YC', 2026, 0)).toBe('');
-  });
-
   it('ignores manual cells when deciding the column board', () => {
     seed(
       location('A', [bid({ locationId: 1, underlyingFuture: 'ZCU26' })]),
@@ -163,11 +158,6 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(component.cellBoardFor('Typed', 2026, 'YC', 8)).toBe('');
   });
 
-  it('names the contract on a fed Year cell', () => {
-    seed(location('A', [bid({ month: 0, underlyingFuture: 'KEU26' })]));
-    expect(component.yearContractFor('A', 2026, 'YC', 0)).toBe('KEU26');
-  });
-
   // ── what a printed cell says ─────────────────────────────────────────────────────────────────
 
   /** A grid row as _buildEditGrid produces it, with the cell clean (current === original). */
@@ -176,7 +166,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       name, type: 'entry' as const,
       bids: { [key]: value }, originalBids: { [key]: value },
       basisBids: {}, originalBasisBids: {},
-      yearFrom: {}, boardChips: { [key]: board },
+      coverageChips: {}, boardChips: { [key]: board },
       agingCells: new Set<string>(), isBarchartLinked: true,
     };
   }
@@ -194,16 +184,6 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     // widened the columns enough to shrink the whole printed sheet.
     expect(component.printCellValue(row('Majority', 'YC#2026#8', '4.98') as never, col)).toBe('4.98');
     expect(component.printCellValue(row('Rolled', 'YC#2026#8', '5.02') as never, col)).toBe('5.02 (ZCZ26)');
-  });
-
-  it('prints the contract on every fed Year cell, which has no column board to lean on', () => {
-    seed(location('A', [bid({ month: 0, underlyingFuture: 'ZCZ26' })]));
-    component.editBidsYears.set([2026]);
-
-    const printed = component.printCellValue(
-      row('A', 'YC#2026#0', '4.30') as never, { crop: 'YC', month: 0, year: 2026 });
-
-    expect(printed).toBe('4.30 (ZCZ26)');
   });
 
   // The value comes from the live grid so unsaved edits print; the board comes from the saved entry.
@@ -1310,11 +1290,21 @@ describe('BidSheetComponent — bid moved in the last 24 hours', () => {
     })._locationChangedWithin24h('Elevator A', 2026, 'YC', 8);
   }
 
-  it('flags a fed bid the feed republished within 24h, and not one from three days ago', () => {
-    seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(2), createdAt: '2026-08-01T00:00:00Z' });
+  // A fed cell is judged by basisChangedAt, which the bridge sets only when the value really differs.
+  // quoteAsOf is the vendor's re-post stamp: it refreshed on 410 of 431 Dev cells while only 64 basis
+  // values had moved, so reading it lit up nearly every pin every day.
+  it('flags a fed bid whose basis changed within 24h, and not one that only got re-posted', () => {
+    seedBid({ source: 'Barchart', basisChangedAt: hoursAgo(2), quoteAsOf: hoursAgo(2), createdAt: '2026-08-01T00:00:00Z' });
     expect(moved()).toBe(true);
 
-    seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(72), createdAt: '2026-08-01T00:00:00Z' });
+    // Re-posted an hour ago, unchanged for three days.
+    seedBid({ source: 'Barchart', basisChangedAt: hoursAgo(72), quoteAsOf: hoursAgo(1), createdAt: '2026-08-01T00:00:00Z' });
+    expect(moved()).toBe(false);
+  });
+
+  // A brand-new fed cell has no basisChangedAt at all -- nothing to have moved from.
+  it('does not flag a fed cell that has never changed', () => {
+    seedBid({ source: 'Barchart', basisChangedAt: undefined, quoteAsOf: hoursAgo(1), createdAt: hoursAgo(1) });
     expect(moved()).toBe(false);
   });
 
@@ -1336,8 +1326,9 @@ describe('BidSheetComponent — bid moved in the last 24 hours', () => {
     expect(moved()).toBe(false);
   });
 
-  it('flags a basis-only move, which has its own timestamp', () => {
-    seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(90), basisQuoteAsOf: hoursAgo(4), createdAt: '2026-08-01T00:00:00Z' });
+  // Basis is the elevator's own decision, so a basis move flags even while the cash side sits still.
+  it('flags a basis move on a cell whose cash has not moved in months', () => {
+    seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(90 * 24), basisChangedAt: hoursAgo(4), createdAt: '2026-08-01T00:00:00Z' });
     expect(moved()).toBe(true);
   });
 
@@ -1689,5 +1680,107 @@ describe('BidSheetComponent — removing locations from the sheet', () => {
     component.confirmRemoveLocations();
 
     expect(removeBidSheetLocations).not.toHaveBeenCalled();
+  });
+});
+
+describe('BidSheetComponent — the Yearly period is retired', () => {
+  let component: BidSheetComponent;
+
+  function fedBid(overrides: Partial<BidSheetLocationBid>): BidSheetLocationBid {
+    return bid({ source: 'Barchart', commodityCode: 'YC', cropYear: 2026, month: 10, ...overrides });
+  }
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  function seed(...bids: BidSheetLocationBid[]): void {
+    const loc = location('A', bids);
+    component.allMapLocations.set([loc]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [], locations: [loc],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+  }
+
+  // The business dropped the Yearly period: a fed Year cell meant the nearest open month and a typed one
+  // the crop year, and the two sat side by side as if comparable. Every view now opens on a real month.
+  it('opens on the current month everywhere the Yearly period used to be the default', () => {
+    const now = new Date().getMonth() + 1;
+    expect(component.selectedMonth()).toBe(now);
+    expect(component.editBidsMonths()).toEqual([now]);
+    expect(component.pendingMonths()).toEqual([now]);
+    expect(component.editBidsMonthsLabel()).toBe('1 Month');
+  });
+
+  // Preferences saved before the change carry 0, alone or mixed in with real months.
+  it('cleans a saved month selection: no 0, no junk, never empty', () => {
+    expect(BidSheetComponent.cleanMonths([0, 3, 3, 15, 'x', 11])).toEqual([3, 11]);
+    expect(BidSheetComponent.cleanMonths([0])).toEqual([new Date().getMonth() + 1]);
+    expect(BidSheetComponent.cleanMonths('nonsense')).toEqual([new Date().getMonth() + 1]);
+  });
+
+  it('keeps the last ticked month rather than falling back to Yearly', () => {
+    component.pendingMonths.set([10]);
+    component.toggleEditMonth(10);
+    expect(component.pendingMonths()).toEqual([10]);
+  });
+
+  it('orders months by calendar, with nothing pinned in front', () => {
+    component.pendingMonths.set([11, 3, 10]);
+    component.editBidsMonths.set([1]);
+    component.confirmMonthSelection();
+    expect(component.editBidsMonths()).toEqual([3, 10, 11]);
+  });
+
+  // One vendor bid in five delivers before its contract month; the bridge fills those months with the
+  // covering bid and marks them. The grid says which month the number really belongs to.
+  it('labels a covered cell with the covering contract month, and an own bid with nothing', () => {
+    const covered = fedBid({ month: 10, coveredByCropYear: 2026, coveredByMonth: 11, underlyingFuture: 'ZCZ26' });
+    const own = fedBid({ month: 11, underlyingFuture: 'ZCZ26' });
+    seed(covered, own);
+    expect(component.coverageLabelFor('A', 2026, 'YC', 10)).toBe('Nov');
+    expect(component.coverageLabelFor('A', 2026, 'YC', 11)).toBe('');
+    expect(component.coverageChipFor(null)).toBe('');
+    expect(component.coverageChipFor({ ...component.bidEntries()[0], source: 'Manual' })).toBe('');
+  });
+
+  // The vendor re-stamps most bids daily whether or not they moved; only a real basis change pulses.
+  it('pulses a fed cell only when its basis actually changed, ignoring the re-post stamp', () => {
+    const justNow = new Date().toISOString();
+    const lastWeek = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    seed(
+      fedBid({ month: 10, quoteAsOf: justNow, basisQuoteAsOf: justNow, modifiedAt: justNow, basisChangedAt: lastWeek }),
+      fedBid({ month: 11, quoteAsOf: lastWeek, basisChangedAt: justNow }),
+    );
+    const moved = (month: number) => (component as any)._locationChangedWithin24h('A', 2026, 'YC', month) as boolean;
+    expect(moved(10)).toBe(false);  // fresh stamps, stale basis: a re-post
+    expect(moved(11)).toBe(true);   // stale stamp, fresh basis: a move
+  });
+
+  it('still pulses a manual cell on an edit', () => {
+    seed(bid({ source: 'Manual', commodityCode: 'YC', cropYear: 2026, month: 10, modifiedAt: new Date().toISOString() }));
+    expect((component as any)._locationChangedWithin24h('A', 2026, 'YC', 10)).toBe(true);
   });
 });

@@ -27,9 +27,9 @@ export interface ExportColumn {
   key: string;
   crop: string;
   year: number;
-  /** 0 = the Year (yearly) column, 1-12 = a delivery month. */
+  /** Delivery month, 1-12. */
   month: number;
-  /** Column-wide board consensus, '' where the grid names none (Year columns). */
+  /** Column-wide board consensus, '' where the column's fed cells do not agree on one. */
   board: string;
 }
 
@@ -119,7 +119,7 @@ export function periodSubColumns(mode: ExportPriceMode): Array<'Cash' | 'Basis' 
 }
 
 export function buildBidSheetExport(input: BidSheetExportInput): BidSheetExportModel {
-  const periodName = (c: ExportColumn) => (c.month === 0 ? 'Year' : input.monthNames[c.month] ?? String(c.month));
+  const periodName = (c: ExportColumn) => input.monthNames[c.month] ?? String(c.month);
   const periodLabel = (c: ExportColumn) => `${c.crop} ${periodName(c)} ${c.year}`;
   const symbolOf = (row: ExportRow, c: ExportColumn) => row.boardChips[c.key] || c.board || null;
   const subs = periodSubColumns(input.priceMode);

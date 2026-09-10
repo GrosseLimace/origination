@@ -19,6 +19,13 @@ export interface BidSheetLocationBid {
   basisSymbol?: string;
   /** When the elevator last updated the basis bid. */
   basisQuoteAsOf?: string;
+  /** Set when this cell shows a LATER contract month's bid whose delivery window covers this month
+   *  (October showing the "Nov 26" bid that delivers from 1 Oct). Absent = the elevator's own bid. */
+  coveredByCropYear?: number;
+  coveredByMonth?: number;
+  /** UTC time the cash / basis value last actually changed -- not the vendor's re-post stamp. */
+  cashChangedAt?: string;
+  basisChangedAt?: string;
   /**
    * Futures contract the bid is quoted against, e.g. `ZCZ26`. Absent on manual cells.
    *
@@ -84,6 +91,13 @@ export interface BidSheetEntry {
   cashBid?: string;
   basisBid?: string;
   basisQuoteAsOf?: string;
+  /** Set when this cell shows a LATER contract month's bid whose delivery window covers this month
+   *  (October showing the "Nov 26" bid that delivers from 1 Oct). Absent = the elevator's own bid. */
+  coveredByCropYear?: number;
+  coveredByMonth?: number;
+  /** UTC time the cash / basis value last actually changed -- not the vendor's re-post stamp. */
+  cashChangedAt?: string;
+  basisChangedAt?: string;
   /** Futures contract behind the bid, e.g. `ZCZ26`. */
   underlyingFuture?: string;
   createdBy: string;

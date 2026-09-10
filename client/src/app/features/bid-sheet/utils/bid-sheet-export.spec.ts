@@ -13,11 +13,11 @@ function input(overrides: Partial<BidSheetExportInput> = {}): BidSheetExportInpu
     exportedAt: new Date(2026, 8, 10, 9, 30),
     priceMode: 'both',
     columns: [
-      { key: 'ZC#2026#0', crop: 'Corn', year: 2026, month: 0, board: '' },
+      { key: 'ZC#2026#9', crop: 'Corn', year: 2026, month: 9, board: 'ZCZ26' },
       { key: 'ZC#2027#1', crop: 'Corn', year: 2027, month: 1, board: 'ZCH27' },
     ],
     rows: [
-      { name: 'AA Belpre', bids: { 'ZC#2026#0': '4.25', 'ZC#2027#1': '4.6075' }, basisBids: { 'ZC#2027#1': '-30' }, boardChips: {} },
+      { name: 'AA Belpre', bids: { 'ZC#2026#9': '4.25', 'ZC#2027#1': '4.6075' }, basisBids: { 'ZC#2027#1': '-30' }, boardChips: {} },
       { name: 'Kanza Belmont', bids: { 'ZC#2027#1': 'call' }, basisBids: {}, boardChips: { 'ZC#2027#1': 'ZCK27' } },
       { name: 'Empty Row', bids: {}, basisBids: {}, boardChips: {} },
     ],
@@ -66,7 +66,7 @@ describe('bid-sheet export — Both mode mirrors the grid with cash and basis si
   });
 
   it('carries the year in every period header, since the file has no year band to lean on', () => {
-    expect(sheet.headerRows[0].slice(1)).toEqual(['Corn Year 2026', null, null, 'Corn Jan 2027', null, null]);
+    expect(sheet.headerRows[0].slice(1)).toEqual(['Corn Sep 2026', null, null, 'Corn Jan 2027', null, null]);
     expect(sheet.headerRows[1].slice(1)).toEqual(['Cash', 'Basis', 'Symbol', 'Cash', 'Basis', 'Symbol']);
   });
 
@@ -75,9 +75,9 @@ describe('bid-sheet export — Both mode mirrors the grid with cash and basis si
   });
 
   it('writes numbers as numbers, keeps words, and leaves empty cells blank', () => {
-    expect(sheet.rows[0]).toEqual(['AA Belpre', 4.25, null, null, 4.6075, -30, 'ZCH27']);
+    expect(sheet.rows[0]).toEqual(['AA Belpre', 4.25, null, 'ZCZ26', 4.6075, -30, 'ZCH27']);
     expect(sheet.rows[1][4]).toBe('call');
-    expect(sheet.rows[2]).toEqual(['Empty Row', null, null, null, null, null, 'ZCH27']);
+    expect(sheet.rows[2]).toEqual(['Empty Row', null, null, 'ZCZ26', null, null, 'ZCH27']);
   });
 
   // A fed cell that deviates from the column names its own contract; everyone else inherits the column's.
@@ -99,14 +99,14 @@ describe('bid-sheet export — a single-price mode exports only that price', () 
     const sheet = buildBidSheetExport(input({ priceMode: 'cash' })).sheet;
     expect(sheet.headerRows[1].slice(1)).toEqual(['Cash', 'Symbol', 'Cash', 'Symbol']);
     expect(sheet.merges).toEqual(['A1:A2', 'B1:C1', 'D1:E1']);
-    expect(sheet.rows[0]).toEqual(['AA Belpre', 4.25, null, 4.6075, 'ZCH27']);
+    expect(sheet.rows[0]).toEqual(['AA Belpre', 4.25, 'ZCZ26', 4.6075, 'ZCH27']);
     expect(sheet.numberFormats).toEqual({ 2: '0.00##', 4: '0.00##' });
   });
 
   it('Basis: the basis and the Symbol, cash left out entirely', () => {
     const sheet = buildBidSheetExport(input({ priceMode: 'basis' })).sheet;
     expect(sheet.headerRows[1].slice(1)).toEqual(['Basis', 'Symbol', 'Basis', 'Symbol']);
-    expect(sheet.rows[0]).toEqual(['AA Belpre', null, null, -30, 'ZCH27']);
+    expect(sheet.rows[0]).toEqual(['AA Belpre', null, 'ZCZ26', -30, 'ZCH27']);
     expect(sheet.numberFormats).toEqual({ 2: 'General', 4: 'General' });
   });
 });
@@ -123,7 +123,7 @@ describe('bid-sheet export — written workbook round-trips through exceljs', ()
     expect(wb.worksheets.map(w => w.name)).toEqual(['Bid Sheet']);
     const ws = wb.getWorksheet('Bid Sheet')!;
     expect(ws.getCell('A1').value).toBe('Location');
-    expect(ws.getCell('B1').value).toBe('Corn Year 2026');
+    expect(ws.getCell('B1').value).toBe('Corn Sep 2026');
     expect(ws.getCell('B2').value).toBe('Cash');
     expect(ws.getCell('D2').value).toBe('Symbol');
     expect(ws.getCell('B1').isMerged).toBe(true);

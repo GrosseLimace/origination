@@ -44,23 +44,16 @@ interface EditBidsRow {
   /** Basis value per column. Editable on manual cells: originators quote on basis as often as cash. */
   basisBids: Record<string, string>;
   originalBasisBids: Record<string, string>;
-  /** Source month of a fed Year value, per column. Empty unless the column is Year and the cell fed. */
-  yearFrom: Record<string, string>;
+  /** Column key -> the covering contract's month ("Nov") on a cell that shows a LATER month's bid because
+   *  that bid's delivery window covers this month; '' on the elevator's own bid for the month. Fills the
+   *  cell's tooltip and nothing else: a covered month reads as an ordinary bid, because it is one. */
+  coverageChips: Record<string, string>;
   /** Column key -> the board this fed cell is quoted against; '' on manual cells. */
   boardChips: Record<string, string>;
   /** Column keys whose fed bid hasn't moved in a while — shown muted so it can't read as today's price. */
   agingCells: Set<string>;
   /** True when the whole location is linked to a BarChart listing. */
   isBarchartLinked: boolean;
-}
-
-/** One row in the Yearly print columns builder. The resolved crop year = editBidsYear() + offset
- *  (relative, so it rolls over). oldNew picks the header style: '' = just the year, 'old'/'new' = "Old/New Crop (YYYY)". */
-interface PrintYearRow {
-  id: string;
-  enabled: boolean;
-  offset: number;            // -2..+2 relative to the viewed year
-  oldNew: '' | 'old' | 'new';
 }
 
 /** Status for a bid value vs the session reference. */
@@ -77,12 +70,19 @@ interface BidSheetPanelItem {
   /** Numeric value, used for status comparison. */
   oldBid: string;
   newBid: string;
-  /** What the panel prints -- the same value in cash or basis mode, the pair in Both. */
+  /** What the panel prints -- the same value in cash or basis mode, the pair in Both. The contract is
+   *  NOT baked in: it renders separately, smaller and muted, so "5.38 / 6 ZCZ26" fits one line in a
+   *  narrow column instead of wrapping onto two. */
   oldBidLabel?: string;
   newBidLabel?: string;
+  oldBidContract?: string;
+  newBidContract?: string;
   oldStatus?: BidStatus;
   newStatus?: BidStatus;
   status: BidStatus;
+  /** "Nov" when the column's value is really the November contract's bid covering this month. */
+  oldCoveredBy?: string;
+  newCoveredBy?: string;
 }
 
 /** Width threshold (px) below which the filter bar wraps the search/clear group to a centered second row. */
@@ -134,7 +134,28 @@ export class BidSheetComponent {
    * row, so switching is a display change with no refetch.
    */
   priceMode = signal<'cash' | 'basis' | 'both'>('cash');
-  selectedMonth = signal<number>(0); // 0=yearly, 1-12=monthly
+  /**
+   * The delivery month the map and panel show, 1-12. Defaults to the current month, which is where the
+   * feed's spot bids live. The "Yearly" period (0) was retired in September 2026: for a fed location it
+   * meant the nearest open month, for a hand-typed one the crop year, and the two sat side by side as
+   * if comparable. Saved preferences that still carry 0 are cleaned on load.
+   */
+  selectedMonth = signal<number>(BidSheetComponent.currentMonth());
+
+  /** 1-12 for today. A function, not a constant, so a long-open tab does not freeze on the month it loaded in. */
+  static currentMonth(): number { return new Date().getMonth() + 1; }
+
+  /**
+   * A saved month selection made safe to show: integers 1-12 only, de-duplicated, in the order given;
+   * the current month when nothing survives. Preferences written before the Yearly period was retired
+   * carry 0, and a grid with no columns has nothing to edit.
+   */
+  static cleanMonths(raw: unknown): number[] {
+    const months = Array.isArray(raw)
+      ? [...new Set(raw.map(Number).filter(m => Number.isInteger(m) && m >= 1 && m <= 12))]
+      : [];
+    return months.length > 0 ? months : [BidSheetComponent.currentMonth()];
+  }
 
   // --- Data ---
   allMapLocations = signal<BidSheetLocation[]>([]); // every added location, company-wide (for map)
@@ -486,6 +507,10 @@ export class BidSheetComponent {
         // consumer reading it silently got undefined. "Did this move today?" needs both sides: cash and
         // basis are independent instruments, so a basis-only move must still flag while in Cash mode.
         basisQuoteAsOf: bid.basisQuoteAsOf,
+        coveredByCropYear: bid.coveredByCropYear,
+        coveredByMonth: bid.coveredByMonth,
+        cashChangedAt: bid.cashChangedAt,
+        basisChangedAt: bid.basisChangedAt,
         underlyingFuture: bid.underlyingFuture,
         createdBy: bid.createdBy,
         createdAt: bid.createdAt,
@@ -578,32 +603,15 @@ export class BidSheetComponent {
     const idx = years.length - 1 + this.yearOffset();
     return idx >= 0 && idx < years.length ? years[idx] : null;
   });
-  canShiftYearsBack = computed(() => {
-    if (this.selectedMonth() > 0) return true; // monthly mode always allows shift back
-    const years = this.cropYears();
-    return years.length >= 2 && (years.length - 2 + this.yearOffset()) > 0;
-  });
-  canShiftYearsForward = computed(() => {
-    if (this.selectedMonth() > 0) return true; // monthly mode always allows shift forward
-    return this.yearOffset() < 0;
-  });
-
   // --- Old/New (month, year) pair for the panel comparison columns ---
-  // Yearly mode: returns just years (month=0).
-  // Monthly mode: returns the previous month vs selected month, rolling years over at January.
+  // The previous month vs the selected month, rolling the year over at January.
   newDisplay = computed(() => ({ month: this.selectedMonth(), year: this.selectedYear() }));
   oldDisplay = computed(() => {
     const month = this.selectedMonth();
     const year = this.selectedYear();
-    if (month === 0) {
-      // Yearly mode — old year column (one less than new)
-      return { month: 0, year: this.oldYear() ?? year - 1 };
-    }
-    // Monthly mode — previous month, rolling year at January
     if (month === 1) return { month: 12, year: year - 1 };
     return { month: month - 1, year };
   });
-  /** Returns "Mar 26" / "Apr 26" / "2025" / "2026" depending on month context. */
   /** Whether the BarChart picker and fed-bid display are turned on for this environment. */
   readonly barchartEnabled = environment.barchartBidsEnabled === true;
 
@@ -646,20 +654,23 @@ export class BidSheetComponent {
   /**
    * Whether an ADDED location's bid for this period moved in the last 24 hours.
    *
-   * Covers MANUAL cells as well as fed ones, and that is the point of reading three timestamps rather
-   * than just the feed's: a hand-typed bid has no quoteAsOf at all, so it is caught by modifiedAt (an
-   * edit) or createdAt (first entry). A manually added location's bids therefore flag exactly like an
-   * elevator's, which is what makes the badge mean "this number moved" rather than "the feed ran".
+   * Fed cells: the BASIS actually changing. Not quoteAsOf -- that is the vendor's re-post stamp and
+   * refreshes most days whether or not the number moved. On 2026-09-10, 410 of 431 fed cells carried a
+   * fresh stamp; 404 cash prices had moved, because cash follows the board every day, but only 64 basis
+   * values had. Basis is the elevator's own decision, so that is the move worth a pulse, and the bridge
+   * records exactly when it last changed (basisChangedAt) rather than when it was last re-posted.
    *
-   * Falls back to createdAt only when there is no modifiedAt: a cell entered for the first time an hour
-   * ago has changed just as much as one edited an hour ago. With no crop or period selected there is no
-   * single cell to judge, so it answers false rather than picking one arbitrarily.
+   * Manual cells: an edit (modifiedAt), or first entry (createdAt) -- a cell typed an hour ago has
+   * changed as much as one edited an hour ago. With no crop or period selected there is no single cell
+   * to judge, so it answers false rather than picking one arbitrarily.
    */
   private _locationChangedWithin24h(name: string, year: number | null, crop: string, month: number): boolean {
     if (!crop || !year) return false;
     const entry = this._getLatestEntry(name, year, crop, month);
     if (!entry) return false;
-    return this._changedWithin24h(entry.quoteAsOf, entry.basisQuoteAsOf, entry.modifiedAt ?? entry.createdAt);
+    return entry.source === 'Barchart'
+      ? this._changedWithin24h(entry.basisChangedAt)
+      : this._changedWithin24h(entry.modifiedAt ?? entry.createdAt);
   }
 
   /**
@@ -705,7 +716,6 @@ export class BidSheetComponent {
 
   formatMonthYear(month: number, year: number | null): string {
     if (year == null) return '';
-    if (month === 0) return year.toString();
     const names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${names[month]} ${year.toString().slice(-2)}`;
   }
@@ -773,8 +783,10 @@ export class BidSheetComponent {
       const fedEntry = newEntry?.source === 'Barchart' ? newEntry : (oldEntry?.source === 'Barchart' ? oldEntry : null);
       return {
         crop: crop!, oldBid, newBid, oldStatus, newStatus,
-        oldBidLabel: this._getDisplayBid(name, oldD.year, crop!, oldD.month),
-        newBidLabel: this._getDisplayBid(name, newD.year, crop!, newD.month),
+        oldBidLabel: this._getDisplayBid(name, oldD.year, crop!, oldD.month, false),
+        newBidLabel: this._getDisplayBid(name, newD.year, crop!, newD.month, false),
+        oldBidContract: this.panelContractFor(name, oldD.year, crop!, oldD.month),
+        newBidContract: this.panelContractFor(name, newD.year, crop!, newD.month),
         isFed: !!fedEntry, fedAsOf: fedEntry?.quoteAsOf
       };
     });
@@ -848,23 +860,20 @@ export class BidSheetComponent {
     return [...new Set([...this.filterableYears(), ...base, next])].sort((a, b) => a - b);
   });
 
-  editBidsMonths = signal<number[]>([0]); // [0]=yearly, [4,5,6]=Apr+May+Jun
+  /** Delivery months shown as grid columns, 1-12, in column order. Defaults to the current month; see
+   *  selectedMonth for why there is no Yearly (0) any more. */
+  editBidsMonths = signal<number[]>([BidSheetComponent.currentMonth()]);
 
-  /** Label shown on the month-selector button.
-   *  Year-only → "Year". Months only → "N Months". Mixed → "N Months + Year". */
+  /** Label shown on the month-selector button: "1 Month" / "N Months". */
   readonly editBidsMonthsLabel = computed(() => {
-    const months = this.editBidsMonths();
-    const hasYearly = months.includes(0);
-    const specificCount = months.filter(m => m !== 0).length;
-    if (specificCount === 0) return 'Year';
-    const base = `${specificCount} Month${specificCount === 1 ? '' : 's'}`;
-    return hasYearly ? `${base} + Year` : base;
+    const count = this.editBidsMonths().length;
+    return `${count} Month${count === 1 ? '' : 's'}`;
   });
   showMonthDropdown = signal(false);
   /** Crop code currently being dragged (for group highlight). Empty when not dragging. */
   draggingCrop = signal<string>('');
   /** Pending month selection (staged until user clicks Done). */
-  pendingMonths = signal<number[]>([0]);
+  pendingMonths = signal<number[]>([BidSheetComponent.currentMonth()]);
   /** Pending hidden crop selection (staged until user clicks Done). */
   pendingHiddenCrops = signal<Set<string>>(new Set());
   editBidsRows = signal<EditBidsRow[]>([]);
@@ -920,7 +929,7 @@ export class BidSheetComponent {
     const crops = this.editBidsCrops();
     const years = this.editBidsYears();
     const multiYear = years.length > 1;
-    // editBidsMonths is the canonical month order (Yearly first by default, reorderable via the print
+    // editBidsMonths is the canonical month order (calendar order by default, reorderable via the print
     // dialog's Months list); editBidsYears is the canonical year order.
     return crops.flatMap(crop =>
       months.flatMap(m =>
@@ -933,11 +942,10 @@ export class BidSheetComponent {
           // headers carries it instead -- repeating it per column would trip over itself in the width
           // a bid column has.
           label: multiYear
-            ? (m === 0 ? crop : `${crop} ${BidSheetComponent.MONTH_NAMES[m]}`)
-            : (m === 0 ? `${crop} ${year}` : `${crop} ${BidSheetComponent.MONTH_NAMES[m]} ${year}`),
-          // Named once here; only deviating cells repeat a board. Year columns have no consensus --
-          // their value is per-location by construction, so each cell names its own contract.
-          board: m === 0 ? '' : this.boardConsensus(crop, year, m)
+            ? `${crop} ${BidSheetComponent.MONTH_NAMES[m]}`
+            : `${crop} ${BidSheetComponent.MONTH_NAMES[m]} ${year}`,
+          // Named once here; only deviating cells repeat a board.
+          board: this.boardConsensus(crop, year, m)
         }))
       )
     );
@@ -1646,7 +1654,8 @@ export class BidSheetComponent {
           // Apply month (always valid 0-12)
           const desiredMonth = pref?.month ?? null;
           if (desiredMonth != null && this.selectedMonth() !== desiredMonth) {
-            this.selectedMonth.set(desiredMonth);
+            // 0 is the retired Yearly period: a preference from before it went falls back to today.
+            this.selectedMonth.set(desiredMonth > 0 ? desiredMonth : BidSheetComponent.currentMonth());
             changed = true;
           }
 
@@ -1672,8 +1681,9 @@ export class BidSheetComponent {
           // Apply selected months if available
           const selectedMonthsJson = pref?.selectedMonths ?? null;
           if (selectedMonthsJson) {
-            try { this.editBidsMonths.set(JSON.parse(selectedMonthsJson)); }
-            catch { this.editBidsMonths.set([0]); }
+            // Cleaned, not trusted: a preference saved before the Yearly period was retired carries 0.
+            try { this.editBidsMonths.set(BidSheetComponent.cleanMonths(JSON.parse(selectedMonthsJson))); }
+            catch { this.editBidsMonths.set([BidSheetComponent.currentMonth()]); }
           }
 
           // Apply the Edit Bids year selection. Sanitized rather than trusted, like the print layout is:
@@ -1720,16 +1730,7 @@ export class BidSheetComponent {
           if (printLayoutJson) {
             try {
               const l = JSON.parse(printLayoutJson);
-              if (Array.isArray(l?.yearlyRows) && l.yearlyRows.length) {
-                this.printYearlyRows.set(
-                  l.yearlyRows.slice(0, BidSheetComponent.MAX_PRINT_YEARLY_ROWS).map((r: { enabled?: unknown; offset?: unknown; oldNew?: unknown }) => ({
-                    id: this._newRowId(),
-                    enabled: r?.enabled !== false,
-                    offset: Math.max(-2, Math.min(2, Math.trunc(Number(r?.offset)) || 0)),
-                    oldNew: (r?.oldNew === 'old' || r?.oldNew === 'new') ? r.oldNew : '' as const
-                  }))
-                );
-              }
+              // yearlyRows, when present, belongs to the retired Yearly period and is ignored.
               if (typeof l?.address === 'string') this.printAddress.set(l.address);
               if (typeof l?.phone === 'string') this.printPhone.set(l.phone);
               if (typeof l?.highlightScoular === 'boolean') this.printHighlightScoularLocations.set(l.highlightScoular);
@@ -1862,52 +1863,31 @@ export class BidSheetComponent {
   }
 
   shiftYearsBack(): void {
-    // Monthly mode: shift by one month (rolling year at January)
-    if (this.selectedMonth() > 0) {
-      const m = this.selectedMonth();
-      if (m === 1) {
-        this.selectedMonth.set(12);
-        this.selectedYear.update(y => y - 1);
-      } else {
-        this.selectedMonth.set(m - 1);
-      }
-      this.onFilterChange();
-      this._savePreference();
-      this._loadCatalogLocations();
-      return;
+    // One month back, rolling the year at January.
+    const m = this.selectedMonth();
+    if (m === 1) {
+      this.selectedMonth.set(12);
+      this.selectedYear.update(y => y - 1);
+    } else {
+      this.selectedMonth.set(m - 1);
     }
-    // Yearly mode: shift the year offset
-    if (this.canShiftYearsBack()) {
-      this.yearOffset.update(o => o - 1);
-      const yr = this.newYear();
-      if (yr) this.selectedYear.set(yr);
-      this.onFilterChange();
-      this._loadCatalogLocations();
-    }
+    this.onFilterChange();
+    this._savePreference();
+    this._loadCatalogLocations();
   }
 
   shiftYearsForward(): void {
-    // Monthly mode: shift by one month forward (rolling year at December)
-    if (this.selectedMonth() > 0) {
-      const m = this.selectedMonth();
-      if (m === 12) {
-        this.selectedMonth.set(1);
-        this.selectedYear.update(y => y + 1);
-      } else {
-        this.selectedMonth.set(m + 1);
-      }
-      this.onFilterChange();
-      this._savePreference();
-      this._loadCatalogLocations();
-      return;
+    // One month forward, rolling the year at December.
+    const m = this.selectedMonth();
+    if (m === 12) {
+      this.selectedMonth.set(1);
+      this.selectedYear.update(y => y + 1);
+    } else {
+      this.selectedMonth.set(m + 1);
     }
-    if (this.canShiftYearsForward()) {
-      this.yearOffset.update(o => o + 1);
-      const yr = this.newYear();
-      if (yr) this.selectedYear.set(yr);
-      this.onFilterChange();
-      this._loadCatalogLocations();
-    }
+    this.onFilterChange();
+    this._savePreference();
+    this._loadCatalogLocations();
   }
 
   /** Search filters map pins (panel stays full) and re-queries the catalog layer, debounced 250ms. */
@@ -2011,8 +1991,12 @@ export class BidSheetComponent {
           longitude: entryWithCoords?.longitude ?? null,
           oldBid,
           newBid,
-          oldBidLabel: this._getDisplayBid(name, oldD.year, crop, oldD.month),
-          newBidLabel: this._getDisplayBid(name, newD.year, crop, newD.month),
+          oldBidLabel: this._getDisplayBid(name, oldD.year, crop, oldD.month, false),
+          newBidLabel: this._getDisplayBid(name, newD.year, crop, newD.month, false),
+          oldBidContract: this.panelContractFor(name, oldD.year, crop, oldD.month),
+          newBidContract: this.panelContractFor(name, newD.year, crop, newD.month),
+          oldCoveredBy: this.coverageLabelFor(name, oldD.year, crop, oldD.month),
+          newCoveredBy: this.coverageLabelFor(name, newD.year, crop, newD.month),
           oldStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(oldBid, false, oldRefBid) : 'none'),
           newStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(newBid, false, newRefBid) : 'none'),
           status: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(selectedBid, false, selectedRefBid) : 'none')
@@ -2080,7 +2064,7 @@ export class BidSheetComponent {
   private readonly _columnBoards = computed(() => {
     const counts = new Map<string, Map<string, number>>();
     for (const e of this.bidLookup().values()) {
-      if (e.source !== 'Barchart' || e.month === 0) continue;
+      if (e.source !== 'Barchart') continue;
       const board = e.underlyingFuture?.trim();
       if (!board) continue;
       const key = `${e.commodityCode}|${e.cropYear}|${e.month}`;
@@ -2101,7 +2085,7 @@ export class BidSheetComponent {
 
   /** The column's consensus board, or '' when the column has no fed bids (or is the Year column). */
   boardConsensus(crop: string, year: number | null, month: number): string {
-    if (!year || month === 0) return '';
+    if (!year) return '';
     return this._columnBoards().get(`${crop}|${year}|${month}`) ?? '';
   }
 
@@ -2112,7 +2096,6 @@ export class BidSheetComponent {
    * label, so a cell against a different board than its column still declares it.
    */
   cellBoardFor(name: string, year: number | null, crop: string, month: number): string {
-    if (month === 0) return '';
     const entry = this._getLatestEntry(name, year, crop, month);
     if (entry?.source !== 'Barchart') return '';
     return entry.underlyingFuture?.trim() ?? '';
@@ -2151,32 +2134,46 @@ export class BidSheetComponent {
     // denser candidate, and the Dev feedback round decides between them. The full form also never
     // hides a cross-exchange split -- KEU26 and ZWU26 share a letter but not a market.
     const contract = value
-      ? (month === 0 ? this.yearContractFor(name, year, crop, month) : this.cellBoardFor(name, year, crop, month))
+      ? this.cellBoardFor(name, year, crop, month)
       : '';
     return contract ? `${value} (${contract})` : value;
   }
 
   /**
-   * The futures contract a fed Year value is quoted against, e.g. "ZCZ26".
+   * The contract a panel value is quoted against, or '' when there is no value or the cell is manual.
    *
-   * The feed has no year-level bid, so the Year cell borrows the nearest delivery month still open.
-   * Naming the source is the difference between a number an originator can trust and one they cannot:
-   * a bare 4.305 in the Year column looks like an elevator's year price when it is really one month.
-   *
-   * It names the CONTRACT rather than the month because that is what makes two bids comparable. The
-   * contract is not always the delivery month -- Kansas City wheat delivering in January trades
-   * against the March board -- so two elevators quoting the same month can be quoting different
-   * boards, which a month label made look like a like-for-like comparison when it was not.
+   * Mirrors the suffix _getDisplayBid used to append. Split out so the panel can render it as its own
+   * small muted span: a combined "5.38 / 6 (ZCZ26)" is wider than the column and wrapped onto a second
+   * line, which turned a list you scan into a stack you read.
    */
-  yearContract(entry: BidSheetEntry | null): string {
-    return entry?.underlyingFuture?.trim() ?? '';
+  panelContractFor(name: string, year: number | null, crop: string, month: number): string {
+    if (!this._getDisplayBid(name, year, crop, month, false)) return '';
+    return this.cellBoardFor(name, year, crop, month);
   }
 
-  /** The Year cell's contract for a given crop/period, or '' when it is not a fed Year cell. */
-  yearContractFor(name: string, year: number | null, crop: string, month: number): string {
-    if (month !== 0) return '';
-    const entry = this._getLatestEntry(name, year, crop, month);
-    return entry?.source === 'Barchart' ? this.yearContract(entry) : '';
+  /**
+   * The contract month a fed cell is really showing, when it is not the cell's own -- '' otherwise.
+   *
+   * One vendor bid in five opens its delivery window before its contract month, so the bridge fills every
+   * month the window covers with that bid.
+   *
+   * Deliberately invisible except in the tooltip. October's 5.38 IS Cargill's price for October delivery
+   * -- one bid, one window running 1 Oct to 30 Nov, which the vendor happens to name after the November
+   * futures contract -- so marking it on the face of the grid would imply a substitute where there is
+   * none. Both attempts at marking it (a month tag, then italics) were dropped for exactly that. What the
+   * tooltip adds is that the elevator posted no SEPARATE October price: worth knowing on a call, noise
+   * otherwise. The chip beside the value is the board symbol, as on every fed cell -- and could not carry
+   * this anyway, since a covering contract and the month it covers trade against the same board.
+   */
+  coverageChipFor(entry: BidSheetEntry | null | undefined): string {
+    if (!entry || entry.source !== 'Barchart' || !entry.coveredByMonth) return '';
+    return BidSheetComponent.MONTH_NAMES[entry.coveredByMonth] ?? '';
+  }
+
+  /** coverageChipFor, looked up by cell. */
+  coverageLabelFor(name: string, year: number | null, crop: string, month: number): string {
+    if (!crop) return '';
+    return this.coverageChipFor(this._getLatestEntry(name, year, crop, month));
   }
 
   private _parseBid(bid: string): number | null {
@@ -2540,11 +2537,9 @@ export class BidSheetComponent {
       search: this.searchQuery().trim() || undefined,
     };
 
-    // The "Year" column (month 0) is a materialized cell the feed bridge resolves onto an ADDED
-    // location's own board once ingested -- there is no calendar month to price a not-yet-added
-    // listing against, so catalog pins fall back to a plain dot in Year view, same as with no crop
-    // selected. Only a real 1-12 month names a single instrument this endpoint can price.
-    if (!crop || month === 0) {
+    // With no crop there is no instrument to price a listing against, so catalog pins fall back to a
+    // plain dot.
+    if (!crop) {
       this.apiService.searchBarchartLocations(baseParams).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (rows) => {
           if (gen !== this._catalogLoadGen) return; // a newer pan/zoom/filter already superseded this
@@ -2890,10 +2885,8 @@ export class BidSheetComponent {
     // deliberate arrangement, and openEditBids runs on every re-entry -- including the add-location
     // round trip -- so re-seeding unconditionally would silently collapse their columns back to one.
     if (this.editBidsYears().length <= 1) this.editBidsYears.set([year]);
-    if (this.editBidsMonths().length === 1 && this.editBidsMonths()[0] === 0 && this.selectedMonth() > 0) {
-      // No persisted multi-month — initialize from the panel's single month
-      this.editBidsMonths.set([this.selectedMonth()]);
-    }
+    // Same rule as the years just above: a single month follows the panel, several are the user's own.
+    if (this.editBidsMonths().length <= 1) this.editBidsMonths.set([this.selectedMonth()]);
     this._buildEditGrid();
     this._editBidsSavedKeys.clear();
     this.editBidsMode.set(true);
@@ -2946,7 +2939,7 @@ export class BidSheetComponent {
       const bids: Record<string, string> = {};
       const basisBids: Record<string, string> = {};
       const originalBasisBids: Record<string, string> = {};
-      const yearFrom: Record<string, string> = {};
+      const coverageChips: Record<string, string> = {};
       const boardChips: Record<string, string> = {};
       const agingCells = new Set<string>();
       for (const col of columns) {
@@ -2957,13 +2950,13 @@ export class BidSheetComponent {
         bids[col.key] = entry?.cashBid ?? '';
         basisBids[col.key] = entry?.basisBid ?? '';
         originalBasisBids[col.key] = basisBids[col.key];
-        yearFrom[col.key] = col.month === 0 && entry?.source === 'Barchart' ? this.yearContract(entry) : '';
+        coverageChips[col.key] = this.coverageChipFor(entry);
         boardChips[col.key] = this.cellBoardFor(name, col.year, col.crop, col.month);
         // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
         // months the vendor doesn't publish, and those age independently.
         if (entry?.source === 'Barchart' && this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
       }
-      rows.push({ name, locationId: rep?.locationId, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, yearFrom, boardChips, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ name, locationId: rep?.locationId, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, coverageChips, boardChips, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -2972,7 +2965,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, locationId: loc.id, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, yearFrom: {}, boardChips: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ name: loc.name, locationId: loc.id, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, coverageChips: {}, boardChips: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // No re-sort here. Row order used to be a separate, per-user, name-keyed lookup applied on top --
@@ -3203,7 +3196,7 @@ export class BidSheetComponent {
     this.showMonthDropdown.set(true);
   }
 
-  /** Toggles a month in the pending selection (not yet applied). Yearly (0) can be selected alongside specific months. */
+  /** Toggles a month in the pending selection (not yet applied). */
   toggleEditMonth(month: number): void {
     this.pendingMonths.update(arr => {
       let updated = [...arr];
@@ -3212,14 +3205,14 @@ export class BidSheetComponent {
       } else {
         updated.push(month);
       }
-      // If nothing selected, fall back to yearly
-      return updated.length === 0 ? [0] : updated;
+      // Never empty: a grid with no columns has nothing to edit, so the last month stays ticked.
+      return updated.length === 0 ? arr : updated;
     });
   }
 
-  /** Default month ordering: Yearly (0) first, then months in calendar order. Custom order comes from drag. */
+  /** Default month ordering: calendar order. Custom order comes from drag in the print dialog. */
   private _defaultMonthOrder(months: number[]): number[] {
-    return [...new Set(months)].sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : a - b));
+    return [...new Set(months)].sort((a, b) => a - b);
   }
 
   /** Applies the pending month selection and closes the dropdown. */
@@ -3227,7 +3220,7 @@ export class BidSheetComponent {
     const changed = JSON.stringify(this.pendingMonths()) !== JSON.stringify(this.editBidsMonths());
     // Save edits against the CURRENT columns before editBidsMonths changes (which reshapes editGridColumns).
     this._saveDirtyBids(() => {
-      // Selecting months (re)applies the default order (Yearly first); drag in the print dialog customizes it.
+      // Selecting months (re)applies the default order (calendar); drag in the print dialog customizes it.
       this.editBidsMonths.set(this._defaultMonthOrder(this.pendingMonths()));
       this.showMonthDropdown.set(false);
       this._buildEditGrid();
@@ -3450,23 +3443,22 @@ export class BidSheetComponent {
       // Everything that described the FEED's number has to go, because the cell is the user's now and
       // the row counts as clean again the moment originalBids is updated below. Three separate stores:
       //   boardChips  - the month-column board symbol
-      //   yearFrom    - the SAME thing for a Year column, which cellBoardFor never fills (Yearly is the
-      //                 default view, so missing this left the headline case broken)
+      //   coverageChips - the "this is really November's bid" marker, which a typed value is not
       //   agingCells  - the "hasn't moved in a while" mute, which would otherwise fade the value the
       //                 user just typed, usually typed BECAUSE the fed one was stale
       // Per cell, not per side: the upsert writes both prices and the server flips the whole row to
       // Manual, so a basis-only edit takes the cash side with it.
       const boardChips = { ...row.boardChips };
-      const yearFrom = { ...row.yearFrom };
+      const coverageChips = { ...row.coverageChips };
       const agingCells = new Set(row.agingCells);
       for (const [colKey, val] of saved) {
         originalBids[colKey] = val.bid;
         originalBasisBids[colKey] = val.basisBid;
         delete boardChips[colKey];
-        delete yearFrom[colKey];
+        delete coverageChips[colKey];
         agingCells.delete(colKey);
       }
-      return { ...row, originalBids, originalBasisBids, boardChips, yearFrom, agingCells };
+      return { ...row, originalBids, originalBasisBids, boardChips, coverageChips, agingCells };
     }));
   }
 
@@ -3725,23 +3717,8 @@ export class BidSheetComponent {
   /** Template hooks onto the shared renderers (the preview binds these with `[style]`). */
   readonly printCellStyle = cellStyleMap;
   readonly printColWidths = tableColWidthPcts;
-  // Yearly export columns: a builder of rows the user adds (each = enable toggle + year + Old/New choice).
-  // Year is an offset from the viewed year (rolls over). Header reads "Old Crop (2025)" / "New Crop (2025)"
-  // or just "2025" when neither is picked. Persisted per trade unit.
-  printYearlyRows = signal<PrintYearRow[]>([
-    { id: 'yr-old', enabled: true, offset: -1, oldNew: 'old' },
-    { id: 'yr-new', enabled: true, offset: 0, oldNew: 'new' }
-  ]);
-  static readonly MAX_PRINT_YEARLY_ROWS = 5;
   // Monthly columns have no separate config: each month picked in the Months list prints as "May (2026)"
-  // for the viewed year. Year offsets are only used by the Yearly columns' year dropdown.
-  static readonly PRINT_YEAR_OFFSETS: number[] = [-2, -1, 0, 1, 2];
-
-  /** Stable id for a year row. Uses crypto.randomUUID where available (secure context), else a counter. */
-  private _printRowSeq = 0;
-  private _newRowId(): string {
-    try { return crypto.randomUUID(); } catch { return `yr-${Date.now()}-${this._printRowSeq++}`; }
-  }
+  // for the viewed year.
 
   onPrintPhoneInput(event: Event): void {
     const raw = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 10);
@@ -3763,7 +3740,6 @@ export class BidSheetComponent {
     const selectedCrops = this.printSelectedCrops();
     const selectedMonths = this.printSelectedMonths();
     const viewedYear = this.editBidsYear();
-    const yearlyRows = this.printYearlyRows().filter(r => r.enabled);
     // Preserve crop + month order from the grid (editBidsMonths is the canonical, user-orderable order).
     const crops = this.editBidsCrops().filter(c => selectedCrops.has(c));
     const months = this.editBidsMonths().filter(m => selectedMonths.has(m));
@@ -3771,50 +3747,24 @@ export class BidSheetComponent {
     return crops.map<PrintCropGroup>(crop => {
       const columns: PrintColumn[] = [];
       for (const m of months) {
-        if (m === 0) {
-          // Yearly: one column per enabled row. Header = "Old Crop (2025)" / "New Crop (2025)" / "2025".
-          for (const row of yearlyRows) {
-            const resolved = viewedYear + row.offset;
-            const label = row.oldNew === 'old' ? `Old Crop (${resolved})`
-              : row.oldNew === 'new' ? `New Crop (${resolved})`
-              : String(resolved);
-            // compactLabel is for the side-by-side layout, where a column is only a few percent of
-            // the page and "Old Crop (2026)" overflows into its neighbour. It ABBREVIATES the same
-            // column the user configured — it never renames it — so old crop still reads as old
-            // crop, not as some other word.
-            const yy = String(resolved).slice(-2);
-            const compactLabel = row.oldNew === 'old' ? `O/C ${yy}`
-              : row.oldNew === 'new' ? `N/C ${yy}`
-              : String(resolved);
-            for (const pt of this.printPriceTypes()) {
-              columns.push({
-                key: `${crop}#0#${row.id}${pt ? '#' + pt : ''}`, crop, month: 0, year: resolved,
-                label: pt ? `${label} ${pt === 'cash' ? 'Cash' : 'Basis'}` : label,
-                compactLabel: pt ? `${compactLabel} ${pt === 'cash' ? 'Cash' : 'Basis'}` : compactLabel,
-                priceType: pt
-              });
-            }
-          }
-        } else {
-          // Monthly: one column per selected month for the viewed year, headed "May (2026)".
-          //
-          // The board deliberately does NOT go in compactLabel, even though that is the only header the
-          // renderer prints. compactLabel is also what the fit-first sizing MEASURES: " · ZCU26" doubles
-          // a column's width, which pushes four commodities off a single band and splits the sheet in
-          // two -- the stacked layout users rejected. Paper therefore names a board only on the cells
-          // that DISAGREE with their column (see printCellValue), so a cross-exchange outlier is never
-          // silently comparable, and the common case stays as compact as the layout was tuned for.
-          // `label` keeps the full text for any future header that is not width-measured.
-          const board = this.boardConsensus(crop, viewedYear, m);
-          for (const pt of this.printPriceTypes()) {
-            const suffix = pt ? (pt === 'cash' ? ' Cash' : ' Basis') : '';
-            columns.push({
-              key: `${crop}#${m}${pt ? '#' + pt : ''}`, crop, month: m, year: viewedYear,
-              label: `${this.getMonthName(m)} (${viewedYear})${suffix}${board ? ' · ' + board : ''}`,
-              compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}${suffix}`,
-              priceType: pt
-            });
-          }
+        // Monthly: one column per selected month for the viewed year, headed "May (2026)".
+        //
+        // The board deliberately does NOT go in compactLabel, even though that is the only header the
+        // renderer prints. compactLabel is also what the fit-first sizing MEASURES: " · ZCU26" doubles
+        // a column's width, which pushes four commodities off a single band and splits the sheet in
+        // two -- the stacked layout users rejected. Paper therefore names a board only on the cells
+        // that DISAGREE with their column (see printCellValue), so a cross-exchange outlier is never
+        // silently comparable, and the common case stays as compact as the layout was tuned for.
+        // `label` keeps the full text for any future header that is not width-measured.
+        const board = this.boardConsensus(crop, viewedYear, m);
+        for (const pt of this.printPriceTypes()) {
+          const suffix = pt ? (pt === 'cash' ? ' Cash' : ' Basis') : '';
+          columns.push({
+            key: `${crop}#${m}${pt ? '#' + pt : ''}`, crop, month: m, year: viewedYear,
+            label: `${this.getMonthName(m)} (${viewedYear})${suffix}${board ? ' · ' + board : ''}`,
+            compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}${suffix}`,
+            priceType: pt
+          });
         }
       }
       return { crop, columns };
@@ -3855,12 +3805,7 @@ export class BidSheetComponent {
     // Paper says it once in the header and only repeats it on a cell that disagrees -- unlike the
     // screen, which labels every fed bid. Print cannot afford the repetition: the values feed the
     // fit-first column sizing, and a symbol on all of them widened columns enough to drop the whole
-    // sheet to 9px type, or overflow the page outright in Both mode. A Year column has no consensus
-    // to lean on (each location's value is its own nearest month), so those always name their own.
-    if (col.month === 0) {
-      const yearContract = this.yearContractFor(row.name, col.year, col.crop, 0);
-      return yearContract ? `${value} (${yearContract})` : value;
-    }
+    // sheet to 9px type, or overflow the page outright in Both mode.
     const cellBoard = this.cellBoardFor(row.name, col.year, col.crop, col.month);
     const consensus = this.boardConsensus(col.crop, col.year, col.month);
     return cellBoard && cellBoard !== consensus ? `${value} (${cellBoard})` : value;
@@ -3935,55 +3880,9 @@ export class BidSheetComponent {
     this.showPrintDialog.set(true);
   }
 
-  /** True when the Yearly period (month 0) is among the selected print periods. */
-  readonly printHasYearly = computed(() => this.printSelectedMonths().has(0));
-  /** Candidate crop years for the Yearly year picker (viewed year ±2) — shown as concrete years, stored as offsets. */
-  readonly printYearChoices = computed(() => {
-    const y = this.editBidsYear();
-    return BidSheetComponent.PRINT_YEAR_OFFSETS.map(offset => ({ offset, year: y + offset }));
-  });
-
-  // --- Yearly columns builder ---
-  onPrintYearlyRowDrop(event: CdkDragDrop<PrintYearRow[]>): void {
-    if (event.previousIndex === event.currentIndex) return;
-    this.printYearlyRows.update(rows => {
-      const updated = [...rows];
-      moveItemInArray(updated, event.previousIndex, event.currentIndex);
-      return updated;
-    });
-    this._savePrintLayout();
-  }
-
-  addPrintYearlyRow(): void {
-    this.printYearlyRows.update(rows => {
-      if (rows.length >= BidSheetComponent.MAX_PRINT_YEARLY_ROWS) return rows;
-      return [...rows, { id: this._newRowId(), enabled: true, offset: 0, oldNew: '' as const }];
-    });
-    this._savePrintLayout();
-  }
-  removePrintYearlyRow(id: string): void {
-    this.printYearlyRows.update(rows => rows.length <= 1 ? rows : rows.filter(r => r.id !== id));
-    this._savePrintLayout();
-  }
-  togglePrintYearlyRow(id: string): void {
-    this.printYearlyRows.update(rows => rows.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
-    this._savePrintLayout();
-  }
-  setPrintYearlyRowOffset(id: string, offset: number): void {
-    const clamped = Math.max(-2, Math.min(2, offset));
-    this.printYearlyRows.update(rows => rows.map(r => r.id === id ? { ...r, offset: clamped } : r));
-    this._savePrintLayout();
-  }
-  setPrintYearlyRowOldNew(id: string, value: string): void {
-    const oldNew: '' | 'old' | 'new' = value === 'old' || value === 'new' ? value : '';
-    this.printYearlyRows.update(rows => rows.map(r => r.id === id ? { ...r, oldNew } : r));
-    this._savePrintLayout();
-  }
-
-  /** Persists the print layout (Yearly columns + contact info + highlight) per-TU and globally (fire-and-forget). */
+  /** Persists the print layout (contact info + highlight + layout style) per-TU and globally (fire-and-forget). */
   private _savePrintLayout(): void {
     const layout = JSON.stringify({
-      yearlyRows: this.printYearlyRows().map(({ enabled, offset, oldNew }) => ({ enabled, offset, oldNew })),
       address: this.printAddress(),
       phone: this.printPhone(),
       highlightScoular: this.printHighlightScoularLocations(),
@@ -4025,7 +3924,6 @@ export class BidSheetComponent {
   }
 
   getMonthName(month: number): string {
-    if (month === 0) return 'Year';
     return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1] ?? '';
   }
 
