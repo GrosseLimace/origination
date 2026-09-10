@@ -467,6 +467,41 @@ describe('BidSheetComponent — filter dropdown sources', () => {
     expect(component.filterableCrops()).toEqual(['DNGS']);
   });
 
+  // The map's crop filter answers to what the map is SHOWING. On a sheet it must offer only what that
+  // sheet has priced -- a commodity nobody on it quotes can only produce an empty panel with no
+  // visible cause. In "All locations" it has to offer everything, because the catalog layer draws
+  // elevators nobody has added and narrowing those by commodity is the point of the filter there.
+  it('offers only the open sheet\'s commodities, and every commodity in All locations', () => {
+    component.plantingCommodities.set([
+      { id: 1, code: 'YC', name: 'Yellow Corn' },
+      { id: 2, code: 'HRWW', name: 'Hard Red Winter Wheat' },
+      { id: 3, code: 'SOR', name: 'Sorghum' },
+    ]);
+    // What this sheet actually has priced.
+    component.crops.set(['YC']);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+
+    expect(component.mapCropChoices()).toEqual(['YC']);
+
+    component.setMapScope('all');
+
+    expect(component.mapCropChoices()).toEqual(['HRWW', 'SOR', 'YC']);
+  });
+
+  // With no sheet open there is nothing to narrow to, so the wider list is the only sensible answer --
+  // the same fallback showingAllLocations() makes everywhere else.
+  it('offers every commodity when no sheet is open at all', () => {
+    component.plantingCommodities.set([{ id: 1, code: 'YC', name: 'Yellow Corn' }]);
+    component.crops.set([]);
+    component.activeSheetId.set(null);
+
+    expect(component.mapCropChoices()).toEqual(['YC']);
+  });
+
   // Last year / this year / next year: the old crop still being priced out, the current one, and the
   // new crop being booked forward. Deliberately not a year further out -- that only appears if a bid
   // genuinely exists for it (next test), rather than offering a year with nothing behind it.
@@ -836,6 +871,34 @@ describe('BidSheetComponent — the "+ Add" menu and building a sheet from a bat
     expect(component.showCreateSheet()).toBe(false);
   });
 
+  // A manually pin-dropped location has to land ON the open sheet, not just in the company-wide list --
+  // otherwise the person who added it sees nothing appear, and nobody sharing the sheet ever sees it.
+  it('links a manually added location to the open sheet, so everyone sharing it sees the location', () => {
+    component.sheets.set([NEW_SHEET]);
+    component.activeSheetId.set(NEW_SHEET.id);
+    component.newLocationName.set('Back Forty Bin');
+    component.newLocationLat.set(41.5);
+    component.newLocationLng.set(-93.6);
+
+    component.confirmAddLocation();
+
+    // location() gives the created row id 1, since its first bid has no locationId override.
+    expect(addBidSheetLocation).toHaveBeenCalledWith(NEW_SHEET.id, 1);
+  });
+
+  // The guard that makes the above possible: with no sheet there is nowhere for the location to go, so
+  // it must refuse rather than create an orphan row nobody can see.
+  it('refuses a manual add when no sheet is open, instead of creating an orphan', () => {
+    component.activeSheetId.set(null);
+    component.newLocationName.set('Back Forty Bin');
+    component.newLocationLat.set(41.5);
+    component.newLocationLng.set(-93.6);
+
+    component.confirmAddLocation();
+
+    expect(addBidSheetLocation).not.toHaveBeenCalled();
+  });
+
   it('cancelling the name drops the parked batch but leaves the picker open to re-pick', () => {
     component.chooseBuildSheet();
     component.onBarchartAddMany(BATCH);
@@ -905,7 +968,7 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
     component.activeSheetId.set(1);
 
     expect(component.mapScope()).toBe('sheet');
-    expect(component.mapLocations().map(l => l.name)).toEqual(['On The Sheet']);
+    expect(component.scopedLocations().map(l => l.name)).toEqual(['On The Sheet']);
   });
 
   it('draws every added location once scope is switched to All', () => {
@@ -913,23 +976,61 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
 
     component.setMapScope('all');
 
-    expect(component.mapLocations().map(l => l.name)).toEqual(['On The Sheet', "Someone Else's"]);
+    expect(component.scopedLocations().map(l => l.name)).toEqual(['On The Sheet', "Someone Else's"]);
   });
 
-  // Guards the trap that made "All locations" a no-op: map pins are pruned to whatever the panel's
-  // filters left, but the panel only ever lists the SHEET's locations -- so an off-sheet pin, which by
-  // construction has no panel row, was pruned every time and All rendered exactly what Sheet did.
-  it('exempts off-sheet locations from the panel-parity prune, which never lists them', () => {
-    const component_ = component as unknown as {
-      _passesPanelPrune(n: string[], p: ReadonlySet<string>, s: ReadonlySet<string>): boolean;
-    };
-    const panelNames = new Set(['On The Sheet']);
-    const sheetNames = new Set(['On The Sheet']);
+  // The scope switch has to reach the DATA the map prices from, not just which pins get drawn.
+  // bidEntries feeds the lookup behind every pin's price, hover and status colour -- so when it stayed
+  // on the sheet, "All locations" drew other people's locations as bidless dots. The panel and grid
+  // also read it, but they're hidden in All scope, so this only ever shows on the map.
+  it('prices every added location\'s pins in All scope, only the sheet\'s otherwise', () => {
+    component.activeSheetId.set(1);
 
-    expect(component_._passesPanelPrune(["Someone Else's"], panelNames, sheetNames)).toBe(true);
-    // On-sheet locations still answer to the panel, so a status filter narrows map and panel together.
-    expect(component_._passesPanelPrune(['On The Sheet'], panelNames, sheetNames)).toBe(true);
-    expect(component_._passesPanelPrune(['On The Sheet'], new Set<string>(), sheetNames)).toBe(false);
+    expect(component.bidEntries().map(e => e.name)).toEqual(['On The Sheet']);
+
+    component.setMapScope('all');
+
+    expect(component.bidEntries().map(e => e.name).sort()).toEqual(['On The Sheet', "Someone Else's"]);
+  });
+
+  // The grid is the SHEET's. If it could open in All scope it would build rows from everyone's
+  // locations with no sheet to own their order -- so opening it narrows the map back first, whatever
+  // path got there (the panel's Edit button is hidden in All scope, but add-location flows also open it).
+  it('narrows back to the sheet before opening the Edit Bids grid', () => {
+    component.activeSheetId.set(1);
+    component.setMapScope('all');
+    expect(component.mapScope()).toBe('all');
+
+    component.openEditBids();
+
+    expect(component.mapScope()).toBe('sheet');
+    expect(component.bidEntries().map(e => e.name)).toEqual(['On The Sheet']);
+  });
+
+  // Nothing is "open in the panel" when the panel shows nothing -- otherwise the pin for whatever WAS
+  // open stays drawn in its expanded, hover-style form among the dots.
+  it('clears the panel selection when widening to All locations', () => {
+    component.activeSheetId.set(1);
+    component.panelSelectedLocation.set('On The Sheet');
+
+    component.setMapScope('all');
+
+    expect(component.panelSelectedLocation()).toBe('');
+  });
+
+  // The panel's own sheet menu calls selectSheet directly. In All scope the sheet is usually still
+  // active underneath, so a version that checked "same id -> return" BEFORE narrowing did nothing at
+  // all: the panel kept saying "Showing all locations" and the user had to reach for the map dropdown.
+  it('narrows back to the sheet when the already-active sheet is re-picked from the panel menu', () => {
+    component.activeSheetId.set(1);
+    component.setMapScope('all');
+    expect(component.mapScope()).toBe('all');
+
+    component.selectSheet(1); // same sheet -- the only thing that should change is the scope
+
+    expect(component.mapScope()).toBe('sheet');
+    expect(component.activeSheetId()).toBe(1);
+    expect(component.scopedLocations().map(l => l.name)).toEqual(['On The Sheet']);
   });
 
   it('drives the toolbar dropdown from the scope, so "All locations" shows as selected', () => {
@@ -951,14 +1052,14 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
     component.onSheetDropdownChange('1');
 
     expect(component.mapScope()).toBe('sheet');
-    expect(component.mapLocations().map(l => l.name)).toEqual(['On The Sheet']);
+    expect(component.scopedLocations().map(l => l.name)).toEqual(['On The Sheet']);
   });
 
   it('falls back to everything when no sheet is open, since there is nothing to narrow to', () => {
     component.activeSheetId.set(null);
 
     expect(component.mapScope()).toBe('sheet'); // the setting stands…
-    expect(component.mapLocations()).toHaveLength(2); // …but has nothing to apply to
+    expect(component.scopedLocations()).toHaveLength(2); // …but has nothing to apply to
   });
 });
 
@@ -1152,7 +1253,441 @@ describe('BidSheetComponent — added pins match catalog pins in All scope', () 
   it('keeps the sheet view grey for both shapes, where there is no catalog to match', () => {
     expect(component.mapScope()).toBe('sheet');
 
-    expect(neutral('dot')).toEqual({ bg: '#9ca3af', border: '#6b7280' });
-    expect(neutral('pill')).toEqual({ bg: '#9ca3af', border: '#6b7280' });
+    expect(neutral('dot')).toEqual({ bg: '#6b7280', border: '#4b5563' });
+    expect(neutral('pill')).toEqual({ bg: '#6b7280', border: '#4b5563' });
+  });
+});
+
+/**
+ * "Which of these moved today?" — the map badge. Reads three timestamps rather than just the feed's,
+ * because a MANUAL bid has no quoteAsOf at all: it has to be caught by modifiedAt (an edit) or
+ * createdAt (first entry), or a hand-typed location would never flag while the elevator beside it did.
+ */
+describe('BidSheetComponent — bid moved in the last 24 hours', () => {
+  let component: BidSheetComponent;
+
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  /** Seeds one location whose single bid carries the given timestamps. */
+  function seedBid(overrides: Partial<BidSheetLocationBid>): void {
+    const loc = location('Elevator A', [bid({ locationId: 1, ...overrides })]);
+    component.allMapLocations.set([loc]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [loc],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+  }
+
+  function moved(): boolean {
+    return (component as unknown as {
+      _locationChangedWithin24h(n: string, y: number | null, c: string, m: number): boolean;
+    })._locationChangedWithin24h('Elevator A', 2026, 'YC', 8);
+  }
+
+  it('flags a fed bid the feed republished within 24h, and not one from three days ago', () => {
+    seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(2), createdAt: '2026-08-01T00:00:00Z' });
+    expect(moved()).toBe(true);
+
+    seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(72), createdAt: '2026-08-01T00:00:00Z' });
+    expect(moved()).toBe(false);
+  });
+
+  // The case the feed timestamp alone would miss entirely.
+  it('flags a MANUAL bid edited within 24h, which carries no quoteAsOf at all', () => {
+    seedBid({ source: 'Manual', quoteAsOf: undefined, modifiedAt: hoursAgo(3), createdAt: '2026-08-01T00:00:00Z' });
+    expect(moved()).toBe(true);
+  });
+
+  it('flags a manual bid entered for the first time within 24h', () => {
+    seedBid({ source: 'Manual', quoteAsOf: undefined, modifiedAt: undefined, createdAt: hoursAgo(1) });
+    expect(moved()).toBe(true);
+  });
+
+  // modifiedAt is the live value once a cell has been edited, so an old edit must not be rescued by a
+  // recent createdAt -- that would flag every row on a freshly imported sheet forever.
+  it('prefers modifiedAt over createdAt, so an old edit does not read as fresh', () => {
+    seedBid({ source: 'Manual', quoteAsOf: undefined, modifiedAt: hoursAgo(100), createdAt: hoursAgo(1) });
+    expect(moved()).toBe(false);
+  });
+
+  it('flags a basis-only move, which has its own timestamp', () => {
+    seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(90), basisQuoteAsOf: hoursAgo(4), createdAt: '2026-08-01T00:00:00Z' });
+    expect(moved()).toBe(true);
+  });
+
+  it('says no when there is no crop or period to judge a cell by', () => {
+    seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(1), createdAt: '2026-08-01T00:00:00Z' });
+    const check = (component as unknown as {
+      _locationChangedWithin24h(n: string, y: number | null, c: string, m: number): boolean;
+    })._locationChangedWithin24h;
+    expect(check.call(component, 'Elevator A', 2026, '', 8)).toBe(false);
+    expect(check.call(component, 'Elevator A', null, 'YC', 8)).toBe(false);
+  });
+});
+
+/**
+ * Sharing a sheet with a person, a desk, a trade-unit group, or a Daily Recap group. The picker is
+ * tabbed like Manage Groups because a bare name means something different in each list.
+ *
+ * The recap-group rule the user asked for — "only if that user is inside that group" — is enforced by
+ * the SERVER: getRecapGroups() already returns only groups the caller created or belongs to. So these
+ * tests pin that the client shows exactly what that endpoint gave it and invents nothing.
+ */
+describe('BidSheetComponent — sharing with people, desks and groups', () => {
+  let component: BidSheetComponent;
+
+  const SHEET: BidSheet = {
+    id: 1, name: 'West Desk', ownerUserId: 'CEgr', isOwner: true,
+    createdBy: 'CEgr', createdAt: '2026-09-01T00:00:00Z', shares: [], locations: [],
+  } as BidSheet;
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({
+        people: [
+          { userId: 'JDoe', displayName: 'Jane Doe', email: 'JDoe@scoular.com', tradeUnitCodes: ['2190'] },
+          { userId: 'CEgr', displayName: 'Caden Egr', email: 'CEgr@scoular.com', tradeUnitCodes: ['2190'] },
+        ],
+        tradeUnits: [{ code: '2190', description: 'Kansas West' }],
+        groups: [{ groupId: 7, name: 'Organics & IP', tradeUnitCodes: ['2090', '2093'] }],
+      }),
+      // Stands in for the server's own filtering: only groups this caller is in come back.
+      getRecapGroups: () => of([
+        { id: '9', name: 'Iowa Territory', deliveryMethod: 'email', members: [{ id: 'm1' }], ccList: [], enabled: true, isOwner: true, canEdit: true, createdBy: 'CEgr' },
+      ]),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+    component.sheets.set([SHEET]);
+    component.activeSheetId.set(1);
+    component.openShareSheet();
+  });
+
+  it('offers all four kinds, each on its own tab', () => {
+    expect(component.shareTab()).toBe('person');
+    // The owner is filtered out — sharing a sheet with its own owner is a no-op the server drops.
+    expect(component.shareOptions().map(o => o.memberId)).toEqual(['JDoe']);
+
+    component.shareTab.set('trade-unit');
+    expect(component.shareOptions().map(o => o.memberId)).toEqual(['2190']);
+
+    component.shareTab.set('trade-unit-group');
+    expect(component.shareOptions().map(o => o.memberId)).toEqual(['7']);
+
+    component.shareTab.set('recap-group');
+    expect(component.shareOptions().map(o => o.memberId)).toEqual(['9']);
+  });
+
+  it('stages a desk share with its type, not as a person', () => {
+    component.shareTab.set('trade-unit');
+
+    component.addShareCandidate(component.shareOptions()[0]);
+
+    const staged = component.pendingShares();
+    expect(staged).toHaveLength(1);
+    expect(staged[0].memberType).toBe('trade-unit');
+    expect(staged[0].memberId).toBe('2190');
+    // userId must stay empty for a non-person, or a desk code reads as somebody's user id.
+    expect(staged[0].userId).toBe('');
+  });
+
+  it('keeps a person and a desk that share an id string apart', () => {
+    component.shareTab.set('trade-unit');
+    component.addShareCandidate({ memberType: 'trade-unit', memberId: '2190', label: 'Kansas West' });
+    component.addShareCandidate({ memberType: 'person', memberId: '2190', label: 'Odd Name' });
+    expect(component.pendingShares()).toHaveLength(2);
+
+    // Removing one must not take the other with it — hence keying on type AND id.
+    component.removeShareCandidate('trade-unit', '2190');
+
+    expect(component.pendingShares().map(s => s.memberType)).toEqual(['person']);
+  });
+
+  it('drops an already-staged member from the list, so it cannot be added twice', () => {
+    component.shareTab.set('recap-group');
+    const group = component.shareOptions()[0];
+
+    component.addShareCandidate(group);
+
+    expect(component.shareOptions()).toHaveLength(0);
+  });
+
+  it('labels each staged kind, since an id alone is ambiguous', () => {
+    expect(component.shareKindLabel('person')).toBe('Person');
+    expect(component.shareKindLabel('trade-unit')).toBe('Trade unit');
+    expect(component.shareKindLabel('trade-unit-group')).toBe('Group');
+    expect(component.shareKindLabel('recap-group')).toBe('Recap group');
+  });
+});
+
+/**
+ * Renaming a location must stay ON THE SHEET, from BOTH places it can be done — the side panel and the
+ * Edit Bids grid.
+ *
+ * The grid's rename was missed when the per-sheet rename went in: it still wrote the shared location
+ * row, so a private label became the elevator's REAL name for every sheet holding it. The user caught
+ * it by removing a location and re-adding it from the catalog — the old label came back, because it had
+ * become the canonical name. These tests pin both paths at the API boundary.
+ */
+describe('BidSheetComponent — renaming a location stays on the sheet', () => {
+  let component: BidSheetComponent;
+  let setBidSheetLocationName: ReturnType<typeof vi.fn>;
+  let updateBidSheetLocation: ReturnType<typeof vi.fn>;
+
+  const CANONICAL = 'GPC-MUSCATINE';
+  const SHEET_LABEL = 'My Own Label';
+
+  beforeEach(() => {
+    setBidSheetLocationName = vi.fn(() => of({
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [], locations: [],
+    } as BidSheet));
+    updateBidSheetLocation = vi.fn(() => of(location(CANONICAL, [])));
+
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+      setBidSheetLocationName: (s: number, l: number, n: string | null) => setBidSheetLocationName(s, l, n),
+      updateBidSheetLocation: (id: number, body: unknown) => updateBidSheetLocation(id, body),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    // The company-wide row keeps its canonical name; the SHEET shows a per-sheet label, which is what
+    // the server's DisplayName ?? Name resolution produces.
+    component.allMapLocations.set([location(CANONICAL, [])]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [],
+      locations: [location(SHEET_LABEL, [])],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+  });
+
+  // The bug the user hit: this used to call updateBidSheetLocation, renaming the shared row.
+  it('renames from the Edit Bids grid via the per-sheet endpoint, not the shared row', () => {
+    component.renameRowDraft.set('Renamed In Grid');
+
+    component.saveRenameRow(SHEET_LABEL);
+
+    expect(setBidSheetLocationName).toHaveBeenCalledWith(1, 1, 'Renamed In Grid');
+    expect(updateBidSheetLocation).not.toHaveBeenCalled();
+  });
+
+  it('renames from the side panel via the same endpoint', () => {
+    component.panelSelectedLocation.set(SHEET_LABEL);
+    component.editLocationNameValue.set('Renamed In Panel');
+
+    component.saveLocationName();
+
+    expect(setBidSheetLocationName).toHaveBeenCalledWith(1, 1, 'Renamed In Panel');
+    expect(updateBidSheetLocation).not.toHaveBeenCalled();
+  });
+
+  // Names are identity on this screen (grid rows are tracked by name, lookups resolve by name), so a
+  // rename that would give two rows one name is refused before any request goes out. Case-insensitive
+  // and trimmed, matching the server's own check.
+  describe('refuses a name another location on the sheet already shows', () => {
+    const OTHER_LABEL = 'Other Label';
+
+    beforeEach(() => {
+      component.sheets.update(list => list.map(s => ({
+        ...s, locations: [location(SHEET_LABEL, []), { ...location(OTHER_LABEL, []), id: 2 }],
+      })));
+    });
+
+    it('from the grid, with a toast naming the clash', () => {
+      const error = vi.spyOn(TestBed.inject(ToastService), 'error');
+      component.renameRowDraft.set('  other label ');
+
+      component.saveRenameRow(SHEET_LABEL);
+
+      expect(setBidSheetLocationName).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('other label'));
+    });
+
+    it('from the panel, leaving the edit box open so it can be corrected', () => {
+      component.panelSelectedLocation.set(SHEET_LABEL);
+      component.editingLocationName.set(true);
+      component.editLocationNameValue.set('OTHER LABEL');
+
+      component.saveLocationName();
+
+      expect(setBidSheetLocationName).not.toHaveBeenCalled();
+      expect(component.editingLocationName()).toBe(true);
+    });
+
+    // The location itself is excluded from the comparison, so re-casing its own name is a rename, not
+    // a collision with itself.
+    it('but not the location itself, re-cased', () => {
+      component.renameRowDraft.set(SHEET_LABEL.toUpperCase());
+
+      component.saveRenameRow(SHEET_LABEL);
+
+      expect(setBidSheetLocationName).toHaveBeenCalledWith(1, 1, SHEET_LABEL.toUpperCase());
+    });
+  });
+
+  // The second leak: the Scoular toggle DOES write the shared row (that flag is genuinely global), and
+  // the endpoint replaces the whole record — so it has to send the CANONICAL name. Sending the sheet's
+  // label would publish one sheet's private name as the elevator's real one.
+  it('sends the canonical name when toggling Scoular, never the sheet label', () => {
+    component.toggleRowScoular(SHEET_LABEL);
+
+    expect(updateBidSheetLocation).toHaveBeenCalledTimes(1);
+    const [, body] = updateBidSheetLocation.mock.calls[0];
+    expect((body as { name: string }).name).toBe(CANONICAL);
+    expect((body as { isScoularFacility: boolean }).isScoularFacility).toBe(true);
+  });
+
+  // Lookups searched only the company-wide list by name, so once a location had a per-sheet label
+  // nothing matched it and the toggle silently did nothing on exactly the rows the user had renamed.
+  it('finds a location by its per-sheet label, not just its canonical name', () => {
+    const find = (component as unknown as {
+      _findLocationByName(n: string): BidSheetLocation | undefined;
+    })._findLocationByName.bind(component);
+
+    expect(find(SHEET_LABEL)?.id).toBe(1);
+    expect(find(CANONICAL)?.id).toBe(1);
+  });
+});
+
+describe('BidSheetComponent — removing locations from the sheet', () => {
+  let component: BidSheetComponent;
+  let removeBidSheetLocations: ReturnType<typeof vi.fn>;
+
+  const sheetOf = (locations: BidSheetLocation[]): BidSheet => ({
+    id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+    createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [], locations,
+  } as BidSheet);
+
+  beforeEach(() => {
+    removeBidSheetLocations = vi.fn(() => of(sheetOf([])));
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      removeBidSheetLocations: (s: number, ids: number[]) => removeBidSheetLocations(s, ids),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    const rows = [location('A', []), { ...location('B', []), id: 2 }];
+    component.allMapLocations.set(rows);
+    component.sheets.set([sheetOf(rows)]);
+    component.activeSheetId.set(1);
+  });
+
+  // _saveDirtyBids deliberately never calls back when the bid save fails (it keeps the edit and aborts
+  // whatever was queued behind it). The busy flag therefore has to be raised INSIDE the callback: set
+  // before the flush, a failed save left "Removing..." up and the button dead until a reload.
+  it('does not get stuck in the removing state when the bid flush never completes', () => {
+    (component as any)._saveDirtyBids = vi.fn(); // a failed flush: the callback is never invoked
+    component.showRemoveLocations.set(true);
+    component.removeLocationIds.set(new Set([1]));
+
+    component.confirmRemoveLocations();
+
+    expect(removeBidSheetLocations).not.toHaveBeenCalled();
+    expect(component.removingLocations()).toBe(false);
+    expect(component.showRemoveLocations()).toBe(true); // still there, ready to retry
+  });
+
+  it('removes every ticked location in one request once the flush completes, and clears the dialog', () => {
+    (component as any)._saveDirtyBids = vi.fn((done: () => void) => done());
+    component.showRemoveLocations.set(true);
+    component.removeLocationIds.set(new Set([1, 2]));
+
+    component.confirmRemoveLocations();
+
+    expect(removeBidSheetLocations).toHaveBeenCalledTimes(1);
+    expect(removeBidSheetLocations.mock.calls[0][0]).toBe(1);
+    expect([...removeBidSheetLocations.mock.calls[0][1]].sort()).toEqual([1, 2]);
+    expect(component.removingLocations()).toBe(false);
+    expect(component.showRemoveLocations()).toBe(false);
+    expect(component.removeLocationIds().size).toBe(0);
+    expect(component.bidLocations()).toEqual([]); // the response's sheet is what the screen now shows
+  });
+
+  // The UI disables the button with nothing ticked; this is the backstop behind it.
+  it('does nothing with nothing ticked', () => {
+    (component as any)._saveDirtyBids = vi.fn((done: () => void) => done());
+
+    component.confirmRemoveLocations();
+
+    expect(removeBidSheetLocations).not.toHaveBeenCalled();
   });
 });

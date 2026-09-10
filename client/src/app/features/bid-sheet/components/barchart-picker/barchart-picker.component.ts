@@ -8,7 +8,7 @@ import {
   BarchartCatalogLocation,
   BarchartCoverage
 } from '@models';
-import { barchartDisplayName, barchartSaveName, barchartSiteLabel } from '../../utils/barchart-location-name';
+import { barchartDisplayName, barchartSaveName, barchartSiteLabel, isScoularListing } from '../../utils/barchart-location-name';
 
 /** Map centre + radius the picker searches around, supplied by the bid sheet map. */
 export interface BarchartSearchArea {
@@ -162,7 +162,7 @@ export class BarchartPickerComponent {
    * The user can still correct it on the Edit Bids screen.
    */
   isScoularListing(location: BarchartCatalogLocation): boolean {
-    return (location.elevator ?? '').toLowerCase().includes('scoular');
+    return isScoularListing(location);
   }
 
   /**

@@ -170,9 +170,18 @@ export interface BidSheet {
   locations: BidSheetLocation[];
 }
 
-/** One person a sheet is shared with. They get full edit rights on its contents. */
+/** What a share points at. Membership is re-resolved on every read, so a desk or group share follows
+ *  whoever is in it rather than freezing today's list. */
+export type BidSheetShareType = 'person' | 'trade-unit' | 'trade-unit-group' | 'recap-group';
+
+/** One member a sheet is shared with — a person, a whole desk, a trade-unit group, or a Daily Recap
+ *  group ("Manage Groups"). Everyone a share resolves to gets full edit rights; no view-only tier. */
 export interface BidSheetShare {
-  /** Short UPN, e.g. `JDoe`. */
+  memberType: BidSheetShareType;
+  /** Short UPN, trade-unit code, entitlements group id, or recap group id — per `memberType`. */
+  memberId: string;
+  /** Short UPN, e.g. `JDoe`. Populated only for a person share and empty for the other three, so a
+   *  desk code can never be mistaken for a user id. New code should read memberType + memberId. */
   userId: string;
   /** Display name captured when shared, so the list reads without a directory lookup. */
   name?: string;

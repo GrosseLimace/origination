@@ -72,13 +72,16 @@
                  class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
         </div>
       </div>
+      <!-- The ONLY status worth saying: it's already on the sheet you're adding to, so the checkbox is
+           disabled. There used to be a second note whenever the elevator existed as a company-wide row
+           at all — i.e. somebody had added it once, maybe on a sheet you can't even see. That is
+           nobody's concern while picking locations: reusing the shared row instead of duplicating it is
+           what SHOULD happen, it happens either way (see existingLocationId in addSelected), and saying
+           so out loud only raised a question the user has no reason to think about. In new-sheet mode
+           nothing is on the sheet yet, so nothing is dimmed or annotated. -->
       @if (alreadyOnSheet(loc)) {
         <p class="mt-1 text-[10px] text-scoular-green-accessible dark:text-scoular-green">
           Already on this sheet
-        </p>
-      } @else if (existingLocationId(loc)) {
-        <p class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-          Already added — will link to this sheet
         </p>
       }
     </button>

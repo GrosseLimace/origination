@@ -4,18 +4,22 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin, map, Subject, switchMap, catchError, of, retry, timer } from 'rxjs';
 import { CdkDragDrop, CdkDrag, CdkDropList, CdkDragHandle, moveItemInArray } from '@angular/cdk/drag-drop';
+// CdkScrollable is what lets a row drag auto-scroll the grid: the CDK only scrolls ancestors that are
+// registered as scrollable, and marking the container with the class alone does nothing.
+import { CdkScrollable } from '@angular/cdk/scrolling';
 import type * as Leaflet from 'leaflet';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { BidSheet, BidSheetEntry, BidSheetLayoutUpdate, BidSheetLocation, BidSheetLocationBid, BidSheetShare, Elevator, Commodity } from '@models';
-import type { EntitlementPerson } from '@features/daily-digest/models/entitlements-catalog.model';
+import { BidSheet, BidSheetEntry, BidSheetLayoutUpdate, BidSheetLocation, BidSheetLocationBid, BidSheetShare, BidSheetShareType, Elevator, Commodity } from '@models';
+import type { EntitlementPerson, EntitlementTradeUnit, EntitlementTradeUnitGroup } from '@features/daily-digest/models/entitlements-catalog.model';
+import type { RecapGroup } from '@features/daily-digest/models/recap-group.model';
 import { environment } from '@env/environment';
 import { BarchartPickerComponent, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
 import { BarchartCatalogLocation, BarchartCatalogLocationDetail } from '@models';
 import { commodityHex } from '@shared/utils/commodity-color';
-import { barchartDisplayName, barchartSaveName } from '../../utils/barchart-location-name';
+import { barchartDisplayName, barchartSaveName, isScoularListing } from '../../utils/barchart-location-name';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
@@ -86,7 +90,7 @@ const FILTER_BAR_WRAP_WIDTH = 1050;
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
-  imports: [CommonModule, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, BarchartPickerComponent],
+  imports: [CommonModule, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, CdkScrollable, BarchartPickerComponent],
   templateUrl: './bid-sheet.component.html',
   styleUrl: './bid-sheet.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -154,7 +158,14 @@ export class BidSheetComponent {
     const sheet = this.activeSheet();
     if (!sheet) return [];
     const live = new Map(this.allMapLocations().map(l => [l.id, l]));
-    return sheet.locations.map(l => live.get(l.id) ?? l);
+    // The live row supplies fresh DATA (bids, coordinates, the Scoular flag), but the SHEET owns the
+    // NAME: sheet.locations already carries DisplayName ?? canonical, resolved server-side. Taking the
+    // live row wholesale -- which this used to do -- threw that away and reverted every per-sheet
+    // rename to the canonical name the moment allMapLocations loaded.
+    return sheet.locations.map(l => {
+      const fresh = live.get(l.id);
+      return fresh ? { ...fresh, name: l.name } : l;
+    });
   });
 
   /** Ids on the active sheet, for the BarChart picker's "already here" checkbox state. */
@@ -162,28 +173,37 @@ export class BidSheetComponent {
     new Set(this.bidLocations().map(l => l.id)));
 
   /**
-   * Which added locations the MAP draws as bid pins: the open sheet's, or every one company-wide.
+   * What the MAP is scoped to: the open sheet, or every added location company-wide.
    *
-   * Defaults to the sheet because the panel has always been sheet-scoped, and a map showing everyone
-   * else's locations beside a panel showing only yours reads as a bug -- you pick a sheet to compare
-   * a set of elevators, then the map answers with bids from elevators that aren't in it.
+   * The map is the only surface that follows this. The side panel and the Edit Bids grid are the
+   * SHEET's -- a sheet is the thing you compare and edit -- so in "All locations" they show nothing
+   * but a prompt to pick one, and opening the grid narrows back to the sheet first (openEditBids).
+   * That is the user's call after trying the alternative: with the panel and grid following the
+   * scope too, "All" became a company-wide bid editor with no sheet to own its row order, and a panel
+   * whose rows had no relation to what you were about to edit.
    *
-   * "All" is the browse mode that behaviour used to be: every added location, whoever's sheet it is on.
-   * It governs the MAP only. The panel and the Edit Bids grid stay the sheet's, because the sheet is
-   * the thing with a shared row order and column layout -- widening those would mean reordering rows
-   * that don't belong to it.
+   * What DOES follow the scope, deliberately, is the bid data (bidEntries): every pin's price, hover
+   * and status colour comes from it, and if it stayed on the sheet then "All" only widened which pins
+   * got DRAWN while other people's locations rendered as bidless dots.
+   *
+   * Defaults to the sheet. The sheet stays open underneath in either mode, so Add always has a
+   * destination and switching back is one click.
    */
   readonly mapScope = signal<'sheet' | 'all'>('sheet');
 
   /**
-   * True when the map is showing everything rather than one sheet -- either "All locations" is picked
-   * or there is no sheet to narrow to. The catalog layer rides on this too: with a sheet open the map
-   * is meant to be JUST that sheet, and a few thousand catalog dots underneath is the opposite of that.
+   * True when the screen is showing everything rather than one sheet -- either "All locations" is
+   * picked or there is no sheet to narrow to. The catalog layer rides on this too: with a sheet open
+   * the map is meant to be JUST that sheet, and a few thousand catalog dots underneath is the opposite.
    */
   readonly showingAllLocations = computed<boolean>(() => this.mapScope() === 'all' || !this.activeSheet());
 
-  /** The added locations the map should draw, per mapScope. */
-  readonly mapLocations = computed<BidSheetLocation[]>(() =>
+  /**
+   * The locations the MAP draws and prices: the sheet's, or every added one. bidEntries flattens this,
+   * so every pin's price, hover and status colour follows the scope. The panel and grid do NOT read it
+   * -- they are the sheet's (bidLocations) and are hidden in All scope.
+   */
+  readonly scopedLocations = computed<BidSheetLocation[]>(() =>
     this.showingAllLocations() ? this.allMapLocations() : this.bidLocations());
 
   /** Stable identity for "no sheet to be already-on" (the picker's new-sheet mode), so binding it
@@ -221,16 +241,175 @@ export class BidSheetComponent {
   readonly pendingShares = signal<BidSheetShare[]>([]);
   readonly savingShares = signal<boolean>(false);
 
-  /** People with access who aren't already staged and aren't the owner, matching the search. */
-  readonly shareCandidates = computed<EntitlementPerson[]>(() => {
+  /** Which list the picker is showing. Tabs rather than one mixed list, matching Manage Groups: the
+   *  four kinds are searched differently and a name means a different thing in each. */
+  readonly shareTab = signal<BidSheetShareType>('person');
+  readonly shareTradeUnits = signal<EntitlementTradeUnit[]>([]);
+  readonly shareTradeUnitGroups = signal<EntitlementTradeUnitGroup[]>([]);
+  /** Recap groups from "Manage Groups". The endpoint already returns ONLY the ones the caller created
+   *  or belongs to, which is exactly the rule wanted here -- no client-side filtering needed. */
+  readonly shareRecapGroups = signal<RecapGroup[]>([]);
+
+  /** One row in the picker, whichever tab it came from — so the template renders all four the same. */
+  readonly shareOptions = computed<{ memberType: BidSheetShareType; memberId: string; label: string; sub: string }[]>(() => {
     const q = this.shareSearch().trim().toLowerCase();
-    const already = new Set(this.pendingShares().map(s => s.userId.toLowerCase()));
+    const staged = new Set(this.pendingShares().map(s => `${s.memberType}|${s.memberId.toLowerCase()}`));
     const owner = (this.activeSheet()?.ownerUserId ?? '').toLowerCase();
-    return this.shareCatalog()
-      .filter(p => !already.has(p.userId.toLowerCase()) && p.userId.toLowerCase() !== owner)
-      .filter(p => !q || p.displayName.toLowerCase().includes(q) || p.userId.toLowerCase().includes(q))
-      .slice(0, 8);
+    const hit = (...fields: (string | undefined)[]) =>
+      !q || fields.some(f => (f ?? '').toLowerCase().includes(q));
+
+    let rows: { memberType: BidSheetShareType; memberId: string; label: string; sub: string }[];
+    switch (this.shareTab()) {
+      case 'trade-unit':
+        rows = this.shareTradeUnits()
+          .filter(t => hit(t.code, t.description ?? undefined))
+          .map(t => ({ memberType: 'trade-unit' as const, memberId: t.code, label: t.code, sub: t.description ?? 'Trade unit' }));
+        break;
+      case 'trade-unit-group':
+        rows = this.shareTradeUnitGroups()
+          .filter(g => hit(g.name))
+          .map(g => ({
+            memberType: 'trade-unit-group' as const, memberId: String(g.groupId), label: g.name,
+            sub: `${g.tradeUnitCodes.length} trade unit${g.tradeUnitCodes.length === 1 ? '' : 's'}`,
+          }));
+        break;
+      case 'recap-group':
+        rows = this.shareRecapGroups()
+          .filter(g => hit(g.name))
+          .map(g => ({
+            memberType: 'recap-group' as const, memberId: g.id, label: g.name,
+            sub: `${g.members.length} member${g.members.length === 1 ? '' : 's'}`,
+          }));
+        break;
+      default:
+        rows = this.shareCatalog()
+          // The owner already sees the sheet, so offering to share it with them is a no-op the server
+          // drops anyway -- better not to offer it than to have it silently vanish on save.
+          .filter(p => p.userId.toLowerCase() !== owner)
+          .filter(p => hit(p.displayName, p.userId))
+          .map(p => ({ memberType: 'person' as const, memberId: p.userId, label: p.displayName, sub: p.userId }));
+    }
+    // Already-staged rows stay OUT of the list rather than showing as ticked: the staged list is right
+    // there beneath, so a row in both places just reads as a duplicate.
+    return rows.filter(r => !staged.has(`${r.memberType}|${r.memberId.toLowerCase()}`)).slice(0, 30);
   });
+
+  /** Tab labels + counts, so an empty tab says so before you search it. */
+  readonly shareTabs = computed<{ id: BidSheetShareType; label: string; count: number }[]>(() => [
+    { id: 'person', label: 'People', count: this.shareCatalog().length },
+    { id: 'trade-unit', label: 'Trade Units', count: this.shareTradeUnits().length },
+    { id: 'trade-unit-group', label: 'Groups', count: this.shareTradeUnitGroups().length },
+    { id: 'recap-group', label: 'Recap Groups', count: this.shareRecapGroups().length },
+  ]);
+
+  // ---- Delete / remove-locations, from the Edit Bids header ------------------------------------
+  // One Delete button that asks WHICH first. Deleting the sheet and taking locations off it differ
+  // enormously in blast radius, and they used to live in completely different places (the sheet menu
+  // vs. clicking one location in the side panel), so there was no way to remove several at once.
+
+  readonly showDeleteChoice = signal<boolean>(false);
+  readonly showRemoveLocations = signal<boolean>(false);
+  /** Location ids ticked for removal. A Set so the template row toggle stays O(1). */
+  readonly removeLocationIds = signal<ReadonlySet<number>>(new Set());
+  readonly removingLocations = signal<boolean>(false);
+
+  /** The open sheet's locations, in row order, for the removal list. */
+  readonly removableLocations = computed<BidSheetLocation[]>(() => this.bidLocations());
+
+  readonly allRemovableSelected = computed<boolean>(() => {
+    const rows = this.removableLocations();
+    return rows.length > 0 && rows.every(l => this.removeLocationIds().has(l.id));
+  });
+
+  openDeleteChoice(): void {
+    if (!this.activeSheet()) return;
+    this.showDeleteChoice.set(true);
+    this.showSheetMenu.set(false);
+  }
+
+  cancelDeleteChoice(): void {
+    this.showDeleteChoice.set(false);
+  }
+
+  /** Into the existing owner-only sheet-delete confirmation, which already names the consequences. */
+  chooseDeleteSheet(): void {
+    this.showDeleteChoice.set(false);
+    this.openDeleteSheetConfirm();
+  }
+
+  chooseRemoveLocations(): void {
+    this.showDeleteChoice.set(false);
+    this.removeLocationIds.set(new Set());
+    this.showRemoveLocations.set(true);
+  }
+
+  cancelRemoveLocations(): void {
+    this.showRemoveLocations.set(false);
+    this.removeLocationIds.set(new Set());
+  }
+
+  toggleRemoveLocation(locationId: number): void {
+    this.removeLocationIds.update(ids => {
+      const next = new Set(ids);
+      if (!next.delete(locationId)) next.add(locationId);
+      return next;
+    });
+  }
+
+  toggleAllRemoveLocations(): void {
+    this.removeLocationIds.set(this.allRemovableSelected()
+      ? new Set()
+      : new Set(this.removableLocations().map(l => l.id)));
+  }
+
+  /**
+   * Takes the ticked locations off the sheet -- one request, so a batch cannot half-apply.
+   *
+   * Flushes pending bid edits FIRST: the grid is rebuilt from the response, so an unsaved cell on a
+   * row that survives would otherwise be thrown away along with the removed ones.
+   */
+  confirmRemoveLocations(): void {
+    const sheetId = this.activeSheetId();
+    const ids = [...this.removeLocationIds()];
+    if (sheetId == null || ids.length === 0 || this.removingLocations()) return;
+
+    this._saveDirtyBids(() => {
+      // Raised HERE, not before the flush: _saveDirtyBids never calls back when the bid save fails (it
+      // keeps the edit and aborts whatever was queued behind it), so a flag set earlier stayed up --
+      // "Removing..." forever, button dead until a reload. A second click during the flush is
+      // harmless: _saveDirtyBids coalesces and fires only the latest callback.
+      this.removingLocations.set(true);
+      this.apiService.removeBidSheetLocations(sheetId, ids)
+        .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          next: (sheet) => {
+            this.removingLocations.set(false);
+            this.showRemoveLocations.set(false);
+            this.removeLocationIds.set(new Set());
+            this._applySheet(sheet);
+            this._applyBidFilterSources();
+            this.filterBids();
+            this._refreshMapMarkers();
+            if (this.editBidsMode()) this._buildEditGrid();
+            this.toastService.success(ids.length === 1
+              ? 'Removed 1 location from this sheet'
+              : `Removed ${ids.length} locations from this sheet`);
+          },
+          error: () => {
+            this.removingLocations.set(false);
+            this.toastService.error('Failed to remove the locations');
+          }
+        });
+    });
+  }
+  /** How a staged share reads in the list -- the kind matters, since "2190" alone is ambiguous. */
+  shareKindLabel(type: BidSheetShareType): string {
+    switch (type) {
+      case 'trade-unit': return 'Trade unit';
+      case 'trade-unit-group': return 'Group';
+      case 'recap-group': return 'Recap group';
+      default: return 'Person';
+    }
+  }
 
   /** Sheet-count behind the delete-location confirmation, fetched when the confirm dialog opens. */
   readonly deleteLocationSheetCount = signal<number | null>(null);
@@ -260,14 +439,16 @@ export class BidSheetComponent {
     return this.allMapLocations().some(l => l.name === name && l.isScoularFacility);
   });
   /**
-   * Flattened view of every location and its bids.
+   * Flattened view of every in-scope location and its bids.
    *
-   * bidLocations used to hold the selected desks' locations and allMapLocations everything, and this
-   * chose between them. They are the same list now. The distinction survives because it is what a
-   * SHEET will restore: bidLocations becomes the sheet's locations and the map keeps everything.
+   * Reads scopedLocations(), not bidLocations(), for the MAP's sake: bidLookup is built from this, and
+   * it is what every pin's price, hover and status colour comes from. If it stayed on the sheet then
+   * "All locations" only widened which pins got drawn while other people's locations rendered as
+   * bidless dots. The panel and grid also read this, but they are hidden in All scope (they are the
+   * sheet's), so in every state where they render the two lists are the same.
    */
   readonly bidEntries = computed<BidSheetEntry[]>(() => {
-    const source = this.bidLocations();
+    const source = this.scopedLocations();
     // 'both' resolves to cash here: the map colours, side panel and print each need one number.
     const basisMode = this.priceMode() === 'basis';
     return source.flatMap(loc =>
@@ -299,6 +480,11 @@ export class BidSheetComponent {
         // without re-deriving anything. Only Both mode reads these.
         cashBid: bid.bid,
         basisBid: bid.basisBid,
+        // The basis timestamp, always -- unlike quoteAsOf above, which is whichever side the toggle is
+        // showing. BidSheetEntry has declared this field all along but nothing populated it, so a
+        // consumer reading it silently got undefined. "Did this move today?" needs both sides: cash and
+        // basis are independent instruments, so a basis-only move must still flag while in Cash mode.
+        basisQuoteAsOf: bid.basisQuoteAsOf,
         underlyingFuture: bid.underlyingFuture,
         createdBy: bid.createdBy,
         createdAt: bid.createdAt,
@@ -324,10 +510,9 @@ export class BidSheetComponent {
   isLoading = signal<boolean>(false);
 
   /**
-   * Every commodity the crop FILTER can narrow by -- not just the ones the active sheet happens to
-   * have bids for (that's crops(), which is a different thing: the Edit Bids grid's column order,
-   * saved per sheet). The catalog map shows locations nobody has priced yet, so the filter has to
-   * offer commodities before any sheet does, not after.
+   * Every commodity that EXISTS to filter by -- the whole planting list, not just what some sheet has
+   * priced. Only "All locations" uses this directly (see mapCropChoices): the catalog layer shows
+   * elevators nobody has added, so there the filter has to offer a commodity before any sheet does.
    */
   readonly filterableCrops = computed<string[]>(() => {
     const source = this.plantingCommodities().length > 0 ? this.plantingCommodities() : this.allCommodities();
@@ -342,6 +527,25 @@ export class BidSheetComponent {
     }
     return codes.sort();
   });
+
+  /**
+   * What the MAP's crop filter actually offers, which depends on what the map is showing.
+   *
+   * With a SHEET open: only the commodities that sheet's own locations have priced (`crops()`). The
+   * sheet is the thing you're comparing, so offering a commodity nobody on it quotes can only produce
+   * an empty panel with no visible cause. An empty sheet therefore offers just "All Crops" — correct,
+   * because nothing is priced on it yet; commodities are added from the Edit Bids crop dropdown, which
+   * has its own "Add a commodity…" search and is unaffected by this.
+   *
+   * In "All locations": every possible commodity (`filterableCrops`). That was the original reason
+   * this list existed at all — the catalog layer draws elevators nobody has added, and narrowing THOSE
+   * by commodity is the whole point of the filter there, so it can't wait for a sheet to price one.
+   *
+   * (Years deliberately do NOT work this way: `filterableYears` always offers last/this/next, because
+   * looking at a year before anyone has priced it is normal and was asked for explicitly.)
+   */
+  readonly mapCropChoices = computed<string[]>(() =>
+    this.showingAllLocations() ? this.filterableCrops() : this.crops());
 
   /**
    * Every year the YEAR filter offers: a sensible default span around today plus whatever years the
@@ -417,6 +621,60 @@ export class BidSheetComponent {
     if (isNaN(when.getTime())) return false;
     const days = (Date.now() - when.getTime()) / 86_400_000;
     return days > BidSheetComponent.AGING_QUOTE_DAYS;
+  }
+
+  /** How recent counts as "just moved". A trading day: what changed since you last looked. */
+  private static readonly CHANGED_WITHIN_HOURS = 24;
+
+  /**
+   * True when ANY of these timestamps is inside the last 24 hours.
+   *
+   * Takes several because a cell can move for different reasons and each records its own time: the feed
+   * republishing cash (quoteAsOf) or basis (basisQuoteAsOf), or somebody typing over it (modifiedAt).
+   * Undefined and unparseable are simply "no", so a location with no timestamps never claims freshness.
+   */
+  private _changedWithin24h(...timestamps: (string | undefined)[]): boolean {
+    const cutoff = Date.now() - BidSheetComponent.CHANGED_WITHIN_HOURS * 3_600_000;
+    return timestamps.some(ts => {
+      if (!ts) return false;
+      const when = new Date(ts).getTime();
+      return !isNaN(when) && when >= cutoff;
+    });
+  }
+
+  /**
+   * Whether an ADDED location's bid for this period moved in the last 24 hours.
+   *
+   * Covers MANUAL cells as well as fed ones, and that is the point of reading three timestamps rather
+   * than just the feed's: a hand-typed bid has no quoteAsOf at all, so it is caught by modifiedAt (an
+   * edit) or createdAt (first entry). A manually added location's bids therefore flag exactly like an
+   * elevator's, which is what makes the badge mean "this number moved" rather than "the feed ran".
+   *
+   * Falls back to createdAt only when there is no modifiedAt: a cell entered for the first time an hour
+   * ago has changed just as much as one edited an hour ago. With no crop or period selected there is no
+   * single cell to judge, so it answers false rather than picking one arbitrarily.
+   */
+  private _locationChangedWithin24h(name: string, year: number | null, crop: string, month: number): boolean {
+    if (!crop || !year) return false;
+    const entry = this._getLatestEntry(name, year, crop, month);
+    if (!entry) return false;
+    return this._changedWithin24h(entry.quoteAsOf, entry.basisQuoteAsOf, entry.modifiedAt ?? entry.createdAt);
+  }
+
+  /**
+   * The "moved in the last 24h" marker: a slow brightness pulse on the pin itself.
+   *
+   * Returns a CSS class, not markup. A first attempt used a small white corner dot; it was fussy at pin
+   * scale and needed its own legend swatch, which had to be drawn on some colour -- and whichever
+   * colour it borrowed then looked like a status of its own. Pulsing the pin needs no extra geometry
+   * and no fourth colour: the fill still says the status, the ring still says Scoular, and brightness is
+   * the one channel neither of them uses.
+   *
+   * Keyframes live in global styles.css (Leaflet builds these elements outside the component template,
+   * so a scoped rule would never reach them) -- see the comment there for why it is slow and shallow.
+   */
+  private _movedPulseClass(hasMoved: boolean): string {
+    return hasMoved ? ' bid-moved-pulse' : '';
   }
 
   /**
@@ -581,7 +839,12 @@ export class BidSheetComponent {
     const known = this.cropYears();
     const base = known.length > 0 ? [...known] : [this.selectedYear() || new Date().getFullYear()];
     const next = Math.max(...base) + 1;
-    return [...new Set([...base, next])].sort((a, b) => a - b);
+    // Last / this / next calendar year are always offered (filterableYears, the map dropdown's own
+    // rule), so a sheet priced only for the new crop can still open last year's -- the old crop being
+    // priced out is exactly what an originator compares against. Before this the list was only the
+    // years the sheet had already priced plus one forward, so there was no way BACK to a year with no
+    // bids yet. Priced years and one beyond the latest stay in.
+    return [...new Set([...this.filterableYears(), ...base, next])].sort((a, b) => a - b);
   });
 
   editBidsMonths = signal<number[]>([0]); // [0]=yearly, [4,5,6]=Apr+May+Jun
@@ -733,7 +996,11 @@ export class BidSheetComponent {
   /** Candidate markers by location key, so the selected one can be re-styled without a full redraw. */
   private _barchartMarkers = new Map<string, Leaflet.Marker>();
   /** Keys already on some bid sheet — they draw hollow, and stay hollow when selected. */
-  private _barchartPlacedKeys = new Set<string>();
+  /** Candidate keys already on the sheet being added to -- drawn hollow, since ticking them is a no-op. */
+  private _barchartOnSheetKeys = new Set<string>();
+  /** Candidate keys that are Scoular sites -- drawn green. Cached because _highlightBarchartPin only
+   *  has the key to work from, not the listing. */
+  private _barchartScoularKeys = new Set<string>();
   private _barchartMoveTimer: ReturnType<typeof setTimeout> | null = null;
   private _pickerRef = viewChild<BarchartPickerComponent>('picker');
 
@@ -966,9 +1233,11 @@ export class BidSheetComponent {
    * the screen no longer has to make, and it cannot disagree with what is on the map -- the old pair
    * could, whenever a desk's list and the map's locations were fetched a moment apart.
    *
-   * Reads bidLocations(), the ACTIVE SHEET's locations -- not allMapLocations(), which is everything
-   * company-wide. A crop dropdown built from every location would routinely offer a crop nobody on
-   * this sheet has priced, and picking it would show an empty panel with no visible cause.
+   * Reads bidLocations(), the ACTIVE SHEET's locations -- not scopedLocations(), which the map follows.
+   * These lists drive the grid's columns and the panel's empty states, and both of those are the
+   * sheet's (hidden in All scope), so they describe the sheet. A crop list built from every location
+   * would offer crops nobody on this sheet has priced, and picking one would show an empty grid with
+   * no visible cause. (The MAP's crop dropdown is filterableCrops, a separate all-possible list.)
    */
   private _applyBidFilterSources(): void {
     const bids = this.bidLocations().flatMap(l => l.bids ?? []);
@@ -1037,6 +1306,12 @@ export class BidSheetComponent {
 
   selectSheet(id: number): void {
     this.showSheetMenu.set(false);
+    // Picking a sheet ANYWHERE means "show me this sheet", so it narrows the map back from "All
+    // locations" too. This used to live only in the map dropdown's handler, and choosing a sheet from
+    // the panel's own menu in All scope did nothing visible: the sheet was usually already active
+    // underneath, so the early return below fired and mapScope stayed 'all'. Must run BEFORE that
+    // return for exactly that reason.
+    if (this.mapScope() === 'all') this.setMapScope('sheet');
     if (this.activeSheetId() === id) return;
     this.activeSheetId.set(id);
     this._applyBidFilterSources();
@@ -1052,8 +1327,8 @@ export class BidSheetComponent {
   /**
    * The map toolbar's sheet dropdown, whose options are the user's sheets plus "All locations" --
    * one control answering "what am I looking at", rather than a sheet picker beside a scope switch
-   * saying the same thing twice. "All locations" widens the MAP only; the sheet stays open underneath
-   * so the panel, the grid and Add all still have their destination.
+   * saying the same thing twice. "All locations" widens the MAP; the panel and grid are the sheet's and
+   * show a prompt instead. The sheet stays open underneath so Add still has a destination.
    */
   readonly sheetDropdownValue = computed<string>(() =>
     this.mapScope() === 'all' ? 'all' : String(this.activeSheetId() ?? ''));
@@ -1062,8 +1337,7 @@ export class BidSheetComponent {
     if (value === 'all') { this.setMapScope('all'); return; }
     const id = Number(value);
     if (!id) return;
-    this.setMapScope('sheet');
-    this.selectSheet(id);
+    this.selectSheet(id); // narrows back to sheet scope itself -- one rule for every way of picking a sheet
   }
 
   /**
@@ -1080,18 +1354,6 @@ export class BidSheetComponent {
   }
 
   /**
-   * Whether a coordinate group survives the panel-parity prune -- the rule that keeps the map showing
-   * what the panel's filters left, so a Matching/Beating filter narrows both together.
-   *
-   * A group NOT on the open sheet is exempt: the panel never lists it, so it has no row to be filtered
-   * out of. That only arises in "All" map scope, which exists precisely to show those locations.
-   */
-  private _passesPanelPrune(names: string[], panelNames: ReadonlySet<string>, sheetNames: ReadonlySet<string>): boolean {
-    if (!names.some(n => sheetNames.has(n))) return true;
-    return names.some(n => panelNames.has(n));
-  }
-
-  /**
    * The "nothing to compare against" pin colour, for an added location that is neither the reference
    * nor a Scoular site.
    *
@@ -1103,7 +1365,7 @@ export class BidSheetComponent {
    * shared status palette, so they already agree from there on.
    */
   private _neutralPinColors(shape: 'pill' | 'dot' = 'pill'): { bg: string; border: string } {
-    if (!this.showingAllLocations()) return { bg: '#9ca3af', border: '#6b7280' };
+    if (!this.showingAllLocations()) return { bg: '#6b7280', border: '#4b5563' };
     // Matched per shape, not just per layer: the catalog draws its dots lighter than its pills, so
     // borrowing the pill colour for an added DOT made that one pin visibly darker than every catalog
     // dot around it -- the same "why is mine different" the colour split caused in the first place.
@@ -1112,7 +1374,13 @@ export class BidSheetComponent {
       : { bg: BidSheetComponent.CATALOG_PILL_BG, border: BidSheetComponent.CATALOG_PILL_BORDER };
   }
 
-  /** Narrows the map to the open sheet, or widens it back to every added location plus the catalog. */
+  /**
+   * Narrows the map to the open sheet, or widens it to every added location plus the catalog. The
+   * panel re-filters because bidEntries follows the scope (the panel is hidden in All scope, but its
+   * filtered list is still what sheet-scope pins are pruned against on the way back). The grid is not
+   * touched: it only ever opens in sheet scope (openEditBids), and it is a full-screen overlay, so this
+   * cannot be reached while it is up.
+   */
   setMapScope(scope: 'sheet' | 'all'): void {
     if (this.mapScope() === scope) return;
     this.mapScope.set(scope);
@@ -1124,12 +1392,17 @@ export class BidSheetComponent {
     if (scope === 'sheet') {
       this.catalogDetailKey.set(null);
       this.catalogDetail.set(null);
-      if (this.catalogReferenceKey()) {
-        this.catalogReferenceKey.set(null);
-        this.filterBids();
-      }
+      if (this.catalogReferenceKey()) this.catalogReferenceKey.set(null);
+    } else {
+      // The panel shows nothing in All scope, so nothing is "open in the panel" -- and the pin for
+      // whatever was open would otherwise stay drawn in its expanded, hover-style form.
+      this.panelSelectedLocation.set('');
     }
 
+    // bidEntries follows the scope, so the panel's filtered list (the model sheet-scope pins are pruned
+    // against) and the pins themselves both need recomputing. Crop/year lists are the sheet's and
+    // don't change here.
+    this.filterBids();
     this._refreshMapMarkers();
     // Widening needs the catalog fetched (sheet scope skips it); narrowing clears what it left behind.
     this._loadCatalogLocations();
@@ -1248,6 +1521,9 @@ export class BidSheetComponent {
         this.showDeleteSheetConfirm.set(false);
         this.sheets.update(list => list.filter(s => s.id !== sheet.id));
         this.activeSheetId.set(null);
+        // Delete is reachable from the Edit Bids header now. The grid is the sheet's, and the sheet
+        // is gone -- leaving it open would show an empty grid under a blank dropdown.
+        if (this.editBidsMode()) this.closeEditBids();
         this.toastService.success(`Deleted "${sheet.name}"`);
         this._applyBidFilterSources();
         this.filterBids();
@@ -1269,17 +1545,27 @@ export class BidSheetComponent {
     this.shareSearch.set('');
     this.showShareSheet.set(true);
     this.showSheetMenu.set(false);
+    this.shareTab.set('person');
     if (!this.shareCatalogLoaded() && !this.shareCatalogLoading()) {
       this.shareCatalogLoading.set(true);
-      this.apiService.getEntitlementsCatalog().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (catalog) => {
+      // Two calls, not one: people/desks/groups come from the entitlements catalog, while recap
+      // groups come from their own endpoint -- which already returns ONLY the ones this caller
+      // created or belongs to, so "groups I am in" needs no filtering on this side.
+      forkJoin({
+        catalog: this.apiService.getEntitlementsCatalog(),
+        recapGroups: this.apiService.getRecapGroups().pipe(catchError(() => of([] as RecapGroup[]))),
+      }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: ({ catalog, recapGroups }) => {
           this.shareCatalog.set(catalog.people ?? []);
+          this.shareTradeUnits.set(catalog.tradeUnits ?? []);
+          this.shareTradeUnitGroups.set(catalog.groups ?? []);
+          this.shareRecapGroups.set(recapGroups);
           this.shareCatalogLoaded.set(true);
           this.shareCatalogLoading.set(false);
         },
         error: () => {
           this.shareCatalogLoading.set(false);
-          this.toastService.error('Failed to load the people directory');
+          this.toastService.error('Failed to load the directory');
         }
       });
     }
@@ -1289,20 +1575,29 @@ export class BidSheetComponent {
     this.showShareSheet.set(false);
   }
 
-  addShareCandidate(person: EntitlementPerson): void {
-    this.pendingShares.update(list => [...list, { userId: person.userId, name: person.displayName, sharedBy: '', sharedAt: '' }]);
+  addShareCandidate(option: { memberType: BidSheetShareType; memberId: string; label: string }): void {
+    this.pendingShares.update(list => [...list, {
+      memberType: option.memberType,
+      memberId: option.memberId,
+      // userId only means something for a person; leaving a desk code here would read as a user id.
+      userId: option.memberType === 'person' ? option.memberId : '',
+      name: option.label,
+      sharedBy: '', sharedAt: '',
+    }]);
     this.shareSearch.set('');
   }
 
-  removeShareCandidate(userId: string): void {
-    this.pendingShares.update(list => list.filter(s => s.userId !== userId));
+  /** Keyed on type AND id: a desk and a person can share an id string. */
+  removeShareCandidate(memberType: BidSheetShareType, memberId: string): void {
+    this.pendingShares.update(list =>
+      list.filter(s => !(s.memberType === memberType && s.memberId === memberId)));
   }
 
   confirmShareSheet(): void {
     const sheet = this.activeSheet();
     if (!sheet || this.savingShares()) return;
     this.savingShares.set(true);
-    const members = this.pendingShares().map(s => ({ userId: s.userId, name: s.name }));
+    const members = this.pendingShares().map(s => ({ memberType: s.memberType, memberId: s.memberId, name: s.name }));
     this.apiService.setBidSheetShares(sheet.id, members).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
         this.savingShares.set(false);
@@ -1965,6 +2260,9 @@ export class BidSheetComponent {
   /** Build a new sheet from a batch of catalog locations. The sheet is created on confirm, not now. */
   chooseBuildSheet(): void {
     this.showAddSourceChoice.set(false);
+    // Also reachable from the panel's sheet menu now, which would otherwise stay open floating over
+    // the map you are about to pick locations from.
+    this.showSheetMenu.set(false);
     // No feed means no catalog to pick from, so there is nothing to build a sheet OUT of -- fall back
     // to naming an empty one, which is the only way to get a sheet at all in that configuration.
     if (!this.barchartEnabled) { this.openCreateSheet(); return; }
@@ -2309,18 +2607,23 @@ export class BidSheetComponent {
     const L = this._L;
     this._clearBarchartPins();
     this._barchartLayer = L.layerGroup().addTo(this._map);
-    // Hollow means the elevator is already on the sheet. It used to mean "already on one of the desks
-    // I am adding to", because the same listing was stored once per desk; there is one row per
-    // elevator now, so any placement at all is THE placement.
-    this._barchartPlacedKeys = new Set(rows
-      .filter(r => r.placements.length > 0)
+    // Hollow means "already on the sheet you are adding to" -- not "on any sheet anywhere", which is
+    // what it used to mean and is information about other people's sheets. In new-sheet mode there is
+    // no sheet yet, so nothing is hollow.
+    const sheetIds: ReadonlySet<number> = this.barchartSheetMode() === 'new'
+      ? this.emptyLocationIds
+      : this.activeSheetLocationIds();
+    this._barchartOnSheetKeys = new Set(rows
+      .filter(r => r.placements.some(p => sheetIds.has(p.locationId)))
       .map(r => r.locationKey));
+    // Cached per result set rather than re-derived in _highlightBarchartPin, which only has the key.
+    this._barchartScoularKeys = new Set(rows.filter(isScoularListing).map(r => r.locationKey));
 
     for (const loc of rows) {
       if (loc.latitude == null || loc.longitude == null) continue;
-      const placed = this._barchartPlacedKeys.has(loc.locationKey);
+      const onThisSheet = this._barchartOnSheetKeys.has(loc.locationKey);
       const marker = L.marker([loc.latitude, loc.longitude],
-          { icon: this._barchartPinIcon(placed, loc.locationKey === this.barchartSelectedKey(), this.barchartTickedKeys().has(loc.locationKey)) })
+          { icon: this._barchartPinIcon(onThisSheet, loc.locationKey === this.barchartSelectedKey(), this.barchartTickedKeys().has(loc.locationKey), this._barchartScoularKeys.has(loc.locationKey)) })
         // Company first, matching the panel — the vendor's site name is sometimes another company's
         // name, so leading with it on a pin would misattribute the bid.
         .bindTooltip(
@@ -2336,20 +2639,40 @@ export class BidSheetComponent {
   }
 
   /**
-   * Candidate pin. Green = a location in the feed, hollow = already on someone's bid sheet, and BLUE =
-   * the one whose details are open in the panel, so it's obvious which pin the name on screen refers to.
-   * Blue matches the reference-location colour the rest of the map already uses for "this is the one".
+   * Candidate pin while picking locations.
+   *
+   * Colour says WHAT the elevator is, and it means the same thing here as everywhere else on the map:
+   *   blue  = ticked for adding (the action state, so it wins over the other two)
+   *   green = a Scoular site -- the same green the main map uses for "ours"
+   *   grey  = anybody else's, the same neutral the main map uses
+   *
+   * Green used to be the default for EVERY candidate, standing for "is in the feed" -- which is true of
+   * all of them, so it said nothing, and it spent the one colour that already means "ours" elsewhere.
+   *
+   * Size is a separate channel: the bigger pin is the one whose detail is open in the panel. Keeping
+   * that off the colour means a pin can be focused AND ticked without the two states fighting.
+   *
+   * Hollow = already on THIS sheet, so ticking it could only be a no-op -- matching the disabled row in
+   * the picker list. It used to mean "on ANY sheet, anywhere", which told the user about other people's
+   * sheets; that is exactly the distinction they said they don't care about while picking.
    */
-  private _barchartPinIcon(placed: boolean, focused: boolean, ticked = false): any {
+  private _barchartPinIcon(onThisSheet: boolean, focused: boolean, ticked = false, isScoular = false): any {
     const L = this._L!;
-    // Two independent states. Blue says ticked for adding; the larger size says this is the pin whose
-    // detail is open. Keeping them on different channels means a pin can be both without ambiguity.
     const size = focused ? 26 : 20;
-    const border = ticked ? '#1d4ed8' : '#00875F';
-    const fill = placed ? 'transparent' : (ticked ? '#2563eb' : '#00A36F');
+    let fill: string, border: string;
+    if (ticked) {
+      fill = '#2563eb'; border = '#1d4ed8';
+    } else if (isScoular) {
+      fill = BidSheetComponent.SCOULAR_RING; border = BidSheetComponent.SCOULAR_BORDER;
+    } else {
+      // Same grey as the map's neutral pin (_neutralPinColors), darkened in step with it so a
+      // candidate and an added location still read as the same colour.
+      fill = '#6b7280'; border = '#4b5563';
+    }
+    // Border keeps its colour when hollow, so an unavailable pin still says whether it's ours.
     return L.divIcon({
       className: 'custom-marker',
-      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${border};background:${fill};box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>`,
+      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${border};background:${onThisSheet ? 'transparent' : fill};box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>`,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2]
     });
@@ -2360,7 +2683,7 @@ export class BidSheetComponent {
     const ticked = this.barchartTickedKeys();
     for (const [key, marker] of this._barchartMarkers) {
       const focused = key === selectedKey;
-      marker.setIcon(this._barchartPinIcon(this._barchartPlacedKeys.has(key), focused, ticked.has(key)));
+      marker.setIcon(this._barchartPinIcon(this._barchartOnSheetKeys.has(key), focused, ticked.has(key), this._barchartScoularKeys.has(key)));
       // Focused pin on top, so a neighbouring pin can't sit over the one being described in the panel.
       marker.setZIndexOffset(focused ? 1000 : 0);
     }
@@ -2378,7 +2701,8 @@ export class BidSheetComponent {
     }
     this._barchartLayer = null;
     this._barchartMarkers.clear();
-    this._barchartPlacedKeys.clear();
+    this._barchartOnSheetKeys.clear();
+    this._barchartScoularKeys.clear();
   }
 
   /**
@@ -2554,6 +2878,9 @@ export class BidSheetComponent {
   // =========================================================================
 
   openEditBids(focusLocationName?: string): void {
+    // The grid is the SHEET's. Every path in here narrows the map back to it first, so the rows the
+    // grid builds from bidEntries are the sheet's rows -- in All scope they would be everyone's.
+    if (this.mapScope() === 'all') this.setMapScope('sheet');
     const year = this.selectedYear();
     // Focus target for the grid: an explicit name (e.g. a just-added location) or, by default, the
     // panel's selected location. Passing it as an argument avoids forcing the panel into detail mode.
@@ -2648,8 +2975,9 @@ export class BidSheetComponent {
     }
 
     // No re-sort here. Row order used to be a separate, per-user, name-keyed lookup applied on top --
-    // bidLocations() is already in the active sheet's own order (its SortOrder, shared with everyone
-    // on it), because rows above were built by iterating bidEntries(), which flattens bidLocations().
+    // the sheet's locations already arrive in its own order (SortOrder, shared with everyone on it),
+    // because rows above were built by iterating bidEntries(). The grid only ever opens in sheet scope
+    // (openEditBids narrows first), so that order is always the one to keep.
     this.editBidsRows.set(rows);
   }
 
@@ -3846,9 +4174,44 @@ export class BidSheetComponent {
    * toggle both do.
    */
   private _findLocationByName(name: string): BidSheetLocation | undefined {
+    // The SHEET first: its names are what the grid and panel actually display, which since per-sheet
+    // renames may be a DisplayName that no canonical row carries. Searching only allMapLocations
+    // (canonical names) meant a renamed location could not be found at all, so the Scoular toggle and
+    // the grid rename silently did nothing on exactly the rows the user had bothered to rename.
+    const onSheet = this.bidLocations()
+      .filter(l => l.name === name)
+      .sort((a, b) => a.id - b.id)[0];
+    if (onSheet) return onSheet;
     return this.allMapLocations()
       .filter(l => l.name === name)
       .sort((a, b) => a.id - b.id)[0];
+  }
+
+  /**
+   * The location's own, company-wide name -- never a per-sheet DisplayName.
+   *
+   * Needed because the update endpoint replaces the whole record, so every write has to send a name;
+   * sending the name the SHEET shows would silently publish one sheet's private label as the
+   * elevator's real name for everybody. That is precisely the bug the per-sheet rename exists to
+   * prevent, and it leaked back in through the Scoular toggle.
+   */
+  private _canonicalNameFor(locationId: number, fallback: string): string {
+    return this.allMapLocations().find(l => l.id === locationId)?.name ?? fallback;
+  }
+
+  /**
+   * Whether another location on the open sheet already shows this name (trimmed, case-insensitive).
+   *
+   * Names are identity on this screen: the grid tracks its rows by name, and every rename, Scoular
+   * toggle and delete resolves its target through _findLocationByName. Two rows with one name would
+   * give Angular duplicate keys and send those actions to whichever row has the lower id. Per-sheet
+   * renames made that a two-click accident, so both rename paths ask this first. Compared against what
+   * the sheet DISPLAYS (DisplayName ?? canonical) because that is what the lookups match. The server
+   * enforces the same rule; this only says why before the round trip.
+   */
+  private _nameTakenOnSheet(name: string, exceptLocationId: number): boolean {
+    const wanted = name.trim().toLowerCase();
+    return this.bidLocations().some(l => l.id !== exceptLocationId && l.name.trim().toLowerCase() === wanted);
   }
 
   // -------------------------------------------------------------------------
@@ -3900,9 +4263,15 @@ export class BidSheetComponent {
 
     const loc = this._findLocationByName(oldName);
     if (!loc) return;
-    // Row order is keyed by location id now, not name, so a rename cannot orphan it -- nothing to
-    // carry over, unlike the old per-user JSON order this replaced.
-    this._saveLocationFields(loc, { name: newName }, `Renamed to ${newName}`, 'Failed to rename location');
+    if (this._nameTakenOnSheet(newName, loc.id)) {
+      this.toastService.error(`Another location on this sheet is already called "${newName}"`);
+      return;
+    }
+    // PER-SHEET, like the side panel's rename. This used to go through _saveLocationFields, which
+    // writes the shared location row -- so renaming a row in the grid renamed that elevator for
+    // EVERY sheet holding it, and the new name survived being removed and re-added because it had
+    // become the elevator's real name. Row order is keyed by location id, so nothing to carry over.
+    this._renameLocationOnSheet(loc.id, newName);
   }
 
   isRowScoular(name: string): boolean {
@@ -3931,7 +4300,10 @@ export class BidSheetComponent {
   private _saveLocationFields(
     loc: BidSheetLocation, changes: Partial<BidSheetLocation>, successMessage: string, failureMessage: string): void {
     this.apiService.updateBidSheetLocation(loc.id, {
-      name: loc.name,
+      // The CANONICAL name, never the sheet's display name -- see _canonicalNameFor. loc may have come
+      // from the sheet's list, where name is already DisplayName ?? canonical, and sending that would
+      // publish one sheet's private label as the elevator's real name for everybody.
+      name: this._canonicalNameFor(loc.id, loc.name),
       address: loc.address,
       city: loc.city,
       state: loc.state,
@@ -3969,31 +4341,65 @@ export class BidSheetComponent {
     }
     const loc = this._findLocationByName(oldName);
     if (!loc) return;
+    // Refused with the edit box left OPEN so the name can be corrected -- unlike the grid, where blur
+    // has already committed by the time this check runs.
+    if (this._nameTakenOnSheet(newName, loc.id)) {
+      this.toastService.error(`Another location on this sheet is already called "${newName}"`);
+      return;
+    }
+    const sheetId = this.activeSheetId();
+    if (sheetId == null) { this.toastService.error('Open a bid sheet to rename a location'); return; }
 
-    this.apiService.updateBidSheetLocation(loc.id, {
-      name: newName,
-      address: loc.address,
-      city: loc.city,
-      state: loc.state,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      elevatorCode: loc.elevatorCode,
-      tradeUnitCode: loc.tradeUnitCode,
-      groupName: loc.groupName,
-      isScoularFacility: loc.isScoularFacility ?? false,
-      bids: []
-    } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => {
+    // Renames on THIS SHEET only. It used to PUT the shared location row, and locations are
+    // company-wide -- so the name changed on every sheet holding that elevator, last write wins, with
+    // no warning. Two originators with the same elevator overwrote each other's label. The canonical
+    // name (what "All locations" shows, and what the BarChart bridge matches on) is left alone.
+    this.apiService.setBidSheetLocationName(sheetId, loc.id, newName)
+      .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (sheet) => {
         this.editingLocationName.set(false);
         this.editLocationNameValue.set('');
         this.panelSelectedLocation.set(newName);
-        this.selectedLocationName.set(newName);
-        this.toastService.success(`Location renamed to ${newName}`);
-        // Reload data to reflect the change
-        this._loadAllMapLocations();
+        // Only re-point the reference if it WAS this location -- otherwise renaming one location
+        // silently moved the comparison reference onto it.
+        if (this.selectedLocationName() === oldName) this.selectedLocationName.set(newName);
+        this.toastService.success(`Renamed to ${newName} on this sheet`);
+        // The response carries the sheet with its resolved names, so the panel and grid update from
+        // it directly. No _loadAllMapLocations(): the canonical row did not change.
+        this._applySheet(sheet);
+        this._applyBidFilterSources();
+        this.filterBids();
+        this._refreshMapMarkers();
       },
       error: () => this.toastService.error('Failed to rename location')
     });
+  }
+
+  /**
+   * Renames a location on the OPEN SHEET only, and refreshes everything derived from the sheet.
+   *
+   * Shared by the side panel and the Edit Bids grid. The grid used to write the shared location row
+   * instead, which renamed the elevator for every sheet holding it -- and because that became its real
+   * name, the label came back even after removing and re-adding the location from the catalog.
+   */
+  private _renameLocationOnSheet(locationId: number, newName: string): void {
+    const sheetId = this.activeSheetId();
+    if (sheetId == null) { this.toastService.error('Open a bid sheet to rename a location'); return; }
+
+    this.apiService.setBidSheetLocationName(sheetId, locationId, newName)
+      .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (sheet) => {
+          this.toastService.success(`Renamed to ${newName} on this sheet`);
+          // The response carries the sheet with its names already resolved, so everything downstream
+          // rebuilds from it. No _loadAllMapLocations(): the canonical row did not change.
+          this._applySheet(sheet);
+          this._applyBidFilterSources();
+          this.filterBids();
+          this._refreshMapMarkers();
+          if (this.editBidsMode()) this._buildEditGrid();
+        },
+        error: () => this.toastService.error('Failed to rename location')
+      });
   }
 
   toggleLocationScoularStatus(): void {
@@ -4004,7 +4410,10 @@ export class BidSheetComponent {
     const newValue = !(loc.isScoularFacility ?? false);
 
     this.apiService.updateBidSheetLocation(loc.id, {
-      name: loc.name,
+      // The CANONICAL name, never the sheet's display name -- see _canonicalNameFor. loc may have come
+      // from the sheet's list, where name is already DisplayName ?? canonical, and sending that would
+      // publish one sheet's private label as the elevator's real name for everybody.
+      name: this._canonicalNameFor(loc.id, loc.name),
       address: loc.address,
       city: loc.city,
       state: loc.state,
@@ -4259,6 +4668,7 @@ export class BidSheetComponent {
     const locKey = (lat: number, lng: number) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
     const crop = this.selectedCrop();
     const year = this.selectedYear();
+    const basis = this.selectedBasis();
 
     // refName identifies which ADDED-location pin, if any, IS the reference itself (its own special
     // styling below) -- a catalog reference is never one of these pins, so this stays tied to
@@ -4270,8 +4680,8 @@ export class BidSheetComponent {
 
     const statusColors: Record<string, { bg: string; border: string }> = {
       reference: { bg: '#2563eb', border: '#1d4ed8' },
-      beating:   { bg: '#dc2626', border: '#991b1b' },
-      matching:  { bg: '#eab308', border: '#a16207' },
+      beating:   { bg: '#b91c1c', border: '#7f1d1d' },
+      matching:  { bg: '#ca8a04', border: '#854d0e' },
       none:      { bg: '#6b7280', border: '#4b5563' }
     };
 
@@ -4292,7 +4702,7 @@ export class BidSheetComponent {
 
     // Group the in-scope locations by coordinates -- the open sheet's, or everything, per mapScope.
     const locsByPos = new Map<string, BidSheetLocation[]>();
-    for (const loc of this.mapLocations()) {
+    for (const loc of this.scopedLocations()) {
       if (!loc.latitude || !loc.longitude) continue;
       const key = locKey(loc.latitude, loc.longitude);
       const arr = locsByPos.get(key) || [];
@@ -4303,12 +4713,10 @@ export class BidSheetComponent {
     const selectedName = this.selectedLocationName();
     const panelOpenName = this.panelSelectedLocation();
 
-    // Build set of location names visible in the panel (respects crop/TU/search filters)
+    // Build set of location names visible in the panel (respects crop/TU/search filters). The panel
+    // now lists exactly the scoped locations -- the same set drawn below -- so it speaks for every pin
+    // in either mode, and a Matching/Beating filter narrows map and panel together.
     const panelNames = new Set(this.filteredBidItems().map(i => i.name));
-    // The panel lists the SHEET's locations, so it can only speak for those. In "All" scope the map
-    // also draws locations that are on nobody's open sheet -- they have no panel row by construction,
-    // and pruning them by one would silently make All identical to Sheet.
-    const sheetNames = new Set(this.bidLocations().map(l => l.name));
 
     // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
     // Was "a trade unit is selected, OR we are in All Producers with data" -- both branches are
@@ -4327,10 +4735,22 @@ export class BidSheetComponent {
       const isActiveTu = true;
       const isRef = !!(hasIndividualTu && refName && names.includes(refName));
       const isPanelOpen = !!(panelOpenName && names.includes(panelOpenName));
-      // When filters are active, only show locations that appear in the panel
-      if (hasTu && !this._passesPanelPrune(names, panelNames, sheetNames)) continue;
-      // Skip locations with no bid for the selected crop/year/month
-      if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
+      if (this.showingAllLocations()) {
+        // All scope: the panel is empty by design, so it can't be the filter model. Apply the Status
+        // filter directly, by filterBids' own rule (keep the reference and the chosen status), and ONLY
+        // to groups with a bid to be judged by. A group with no bid for this period is not failing the
+        // filter -- it has nothing to say -- and draws as a dot, exactly like a catalog listing with no
+        // matched price. Skipping it here was why some added pins simply vanished in All locations.
+        if (basis !== 'all' && crop && !isRef) {
+          const judged = names.map(n => this._getLatestBid(n, year, crop, month)).filter(Boolean);
+          if (judged.length > 0 && !judged.some(b => this._computeItemStatus(b, false, refBid) === basis)) continue;
+        }
+      } else {
+        // Sheet scope: the panel IS the filter model -- show what its filters left, and only what has a
+        // bid for the selected period. A sheet with a crop picked lists who is bidding it.
+        if (hasTu && !names.some(n => panelNames.has(n))) continue;
+        if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
+      }
       renderGroups.push({ locs, names, isActiveTu, isRef, isPanelOpen });
     }
 
@@ -4368,11 +4788,11 @@ export class BidSheetComponent {
         return;
       }
 
-      // Below the bid-pin zoom threshold: colored dot — but when searching, always show name labels.
-      // Lowered from 8 → 6 so the bid-value pins appear sooner (esp. in All Producers, which opens at
-      // the wider US overview). Zoom 5 = national overview keeps dots; 6+ shows the bid pins. In "All
-      // locations" this defers to the catalog's threshold so both layers change together.
-      if (zoom < labelZoom && !searchQ) {
+      // A plain dot for this group. ONE builder, shared by both places that draw one -- the wide-zoom
+      // tier just below, and the "nothing to label" fallback further down -- so the two can never
+      // disagree about colour or size. Every mismatch between a sheet pin and a catalog pin so far has
+      // been two rendering tiers drifting apart; this is the tier that keeps drifting.
+      const drawDot = (): void => {
         // Dot stands for the whole coordinate group, so it counts as ours if ANY location here is.
         const dotIsScoular = names.some(n => scoularNames.has(n));
         // Compute dot color from bid status (matches the pill colors used when zoomed in)
@@ -4396,7 +4816,7 @@ export class BidSheetComponent {
         const dotPx = this.showingAllLocations() ? BidSheetComponent.CATALOG_DOT_SIZE : 14;
         const dotBorderPx = this.showingAllLocations() ? 1.5 : 2;
         const dotIcon = L.divIcon({
-          className: 'custom-marker',
+          className: 'custom-marker' + this._movedPulseClass(names.some(n => this._locationChangedWithin24h(n, year, crop, month))),
           html: `<div style="width:${dotPx}px;height:${dotPx}px;background:${color};border:${dotBorderPx}px solid ${border};border-radius:50%;box-shadow:${this._scoularRing(comparingToRef && dotIsScoular)}0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`,
           iconSize: [dotPx, dotPx], iconAnchor: [dotPx / 2, dotPx / 2]
         });
@@ -4405,8 +4825,13 @@ export class BidSheetComponent {
         const hoverBid2 = crop ? this._getDisplayBid(locs[0].name, year, crop, month) : '';
         this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border);
         this._clusterGroup.addLayer(m);
-        return;
-      }
+      };
+
+      // Below the bid-pin zoom threshold: colored dot — but when searching, always show name labels.
+      // Lowered from 8 → 6 so the bid-value pins appear sooner (esp. in All Producers, which opens at
+      // the wider US overview). Zoom 5 = national overview keeps dots; 6+ shows the bid pins. In "All
+      // locations" this defers to the catalog's threshold so both layers change together.
+      if (zoom < labelZoom && !searchQ) { drawDot(); return; }
 
       if (showBidValues) {
         // Active TU with crop selected — show bid values with status colors
@@ -4448,13 +4873,14 @@ export class BidSheetComponent {
             const isGrey = bg === '#d1d5db';
             const pillBg = isGrey ? '#6b7280' : bg;
             const pillBorder = isGrey ? '#4b5563' : border;
-            return `<div style="background:${pillBg};border:2px solid ${pillBorder};border-radius:6px;padding:5px 6px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:${this._scoularRing(comparingToRef && isScoular)}0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>`;
+            return `<div style="background:${pillBg};border:2px solid ${pillBorder};border-radius:6px;padding:5px 6px;font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,0.45);white-space:nowrap;box-shadow:${this._scoularRing(comparingToRef && isScoular)}0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>`;
           }).join('');
           const maxWidth = Math.max(58, ...bidItems.map(({ label }) => label.length * 7 + 16));
           const height = bidItems.length * 28 + 16;
           const primaryBg = bidItems[0].bg;
           const divIcon = L.divIcon({
-            className: 'custom-marker',
+            // One pulse for the whole coordinate group, like the Scoular ring: "something here moved".
+            className: 'custom-marker' + this._movedPulseClass(names.some(n => this._locationChangedWithin24h(n, year, crop, month))),
             html: `<div style="position:relative;width:${maxWidth}px;text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center;">
               ${linesHtml}
               <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${primaryBg};margin:-1px auto 0;"></div>
@@ -4470,6 +4896,15 @@ export class BidSheetComponent {
           return;
         }
       }
+
+      // Nothing to label -- no crop selected, or none of these locations has a bid for this period.
+      //
+      // In "All locations" that is a DOT, exactly as it is for a catalog listing with no matched price.
+      // A name card here was the "why does my sheet's location look hovered" report: the hover icon is
+      // also a name card, so a pin wearing one permanently reads as stuck mid-hover, when the only
+      // thing different about it is that somebody put it on a sheet. Name labels stay for sheet scope,
+      // where every pin is one the user chose and the names are what they are there to read.
+      if (this.showingAllLocations()) { drawDot(); return; }
 
       // Default: name labels — match the pill color story used elsewhere
       // Keyed to locs[0] specifically, not "any name here": this bg also drives the hover icon,
@@ -4493,7 +4928,7 @@ export class BidSheetComponent {
       // vendor name anchored ~110px off from the text actually drawn.
       const maxWidth = Math.min(150, Math.max(85, ...names.map(n => n.length * 7 + 22)));
       const nameIcon = L.divIcon({
-        className: 'custom-marker',
+        className: 'custom-marker' + this._movedPulseClass(names.some(n => this._locationChangedWithin24h(n, year, crop, month))),
         html: this._buildStackedLabel(names, bg, border, comparingToRef),
         iconSize: [maxWidth, names.length * 26 + 8],
         iconAnchor: [maxWidth / 2, names.length * 26 + 8]
@@ -4553,11 +4988,11 @@ export class BidSheetComponent {
    *
    * This is the one thing that genuinely needs holding back: the contract roughly doubles a pill's
    * width, and it is what tipped the map from busy into cramped once catalog pins started carrying it.
-   * It is also the least urgent part of the label -- the price is what you scan across a region, the
-   * board is what you check before trusting one specific comparison, and by then you are zoomed in on
-   * it. Hover shows it at any zoom.
+   * It was 10, which meant zooming in further than anyone wants just to read a symbol; 8 is one step
+   * above the price threshold (6), so a regional view shows boards while the national overview stays
+   * readable. Hover shows it at any zoom regardless.
    */
-  private static readonly BOARD_SYMBOL_ZOOM = 10;
+  private static readonly BOARD_SYMBOL_ZOOM = 8;
 
   private _renderCatalogMarkers(): void {
     if (!this._map || !this._catalogLayer || !this._L) return;
@@ -4576,11 +5011,12 @@ export class BidSheetComponent {
     // Same reference value the added-location pass compares against, so a catalog pin recolors
     // consistently with everything else on the map when either kind of reference is set.
     const refBid = hasReference ? this._referenceBid(year, crop, month) : null;
+    const basis = this.selectedBasis();
 
     // Skip only what the pin pass ACTUALLY drew, not everything that has ever been added. In sheet
     // scope an added location that isn't on the open sheet is drawn by neither pass otherwise, and
     // simply vanishes; as a catalog dot it stays findable, and clicking it offers to add it.
-    const drawnIds = new Set(this.mapLocations().map(l => l.id));
+    const drawnIds = new Set(this.scopedLocations().map(l => l.id));
 
     const zoom = this._map.getZoom();
     const showLabels = zoom >= BidSheetComponent.LABEL_ZOOM;
@@ -4595,6 +5031,13 @@ export class BidSheetComponent {
       const isRef = loc.locationKey === refKey;
       const selected = loc.locationKey === detailKey || isRef;
       const price = loc.matchedBidPrice;
+      // Status filter, by the same rule the added-location pass uses: only a pin with a price can be
+      // judged, the reference always stays, and a dot has nothing to say so it is left alone. Without
+      // this the filter narrowed one layer and not the other, which read as pins randomly missing.
+      if (basis !== 'all' && price != null && !isRef) {
+        const status = hasReference ? this._computeItemStatus(price.toString(), false, refBid) : 'none';
+        if (status !== basis) continue;
+      }
       // Two separate gates, so the label grows in stages as you close in: nothing at a wide zoom, the
       // price once pills have room, the board once the price alone has room to spare.
       const label = showLabels ? this._catalogPriceLabel(loc, showBoard) : null;
@@ -4644,7 +5087,11 @@ export class BidSheetComponent {
     const dotColor = selected ? '#2563eb' : BidSheetComponent.CATALOG_DOT_BG;
     const dotBorder = selected ? '#1d4ed8' : BidSheetComponent.CATALOG_DOT_BORDER;
     const icon = L.divIcon({
-      className: 'custom-marker',
+      // A catalog listing's only timestamp is latestQuoteAsOf: the freshest quote across the WHOLE
+      // SITE, not this crop and period. So a pulsing catalog pin means "this elevator published
+      // something today" -- the most this endpoint can say. An added location's pulse is exact,
+      // because there the cell carries its own time.
+      className: 'custom-marker' + this._movedPulseClass(this._changedWithin24h(loc.latestQuoteAsOf)),
       html: `<div style="width:${box}px;height:${box}px;display:flex;align-items:center;justify-content:center;">
         <div style="width:${dotSize}px;height:${dotSize}px;background:${dotColor};border:1.5px solid ${dotBorder};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
       </div>`,
@@ -4672,7 +5119,7 @@ export class BidSheetComponent {
       // basis-only listing (no cash for this period) has nothing to compare, so it reads as 'none'.
       const status = cashPrice != null ? this._computeItemStatus(cashPrice.toString(), false, refBid) : 'none';
       const colors: Record<string, [string, string]> = {
-        beating: ['#dc2626', '#991b1b'], matching: ['#eab308', '#a16207'], none: ['#6b7280', '#4b5563'], reference: ['#2563eb', '#1d4ed8']
+        beating: ['#b91c1c', '#7f1d1d'], matching: ['#ca8a04', '#854d0e'], none: ['#6b7280', '#4b5563'], reference: ['#2563eb', '#1d4ed8']
       };
       [bg, border] = colors[status] ?? colors['none'];
     } else {
@@ -4681,9 +5128,10 @@ export class BidSheetComponent {
     const width = Math.max(44, label.length * 8 + 16);
     const height = selected ? 34 : 28;
     const icon = L.divIcon({
-      className: 'custom-marker',
+      // Site-wide freshness, not this period's -- see the dot marker above for why.
+      className: 'custom-marker' + this._movedPulseClass(this._changedWithin24h(loc.latestQuoteAsOf)),
       html: `<div style="position:relative;text-align:center;">
-        <div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 6px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>
+        <div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 6px;font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,0.45);white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>
         <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${bg};margin:-1px auto 0;"></div>
       </div>`,
       iconSize: [width, height],
@@ -4935,7 +5383,10 @@ export class BidSheetComponent {
   }
 
   private _buildStackedLabel(names: string[], bg: string, border: string, statusDriven = false): string {
-    const isGrey = bg === '#d1d5db' || bg === '#9ca3af';
+    // Both greys the map can hand us: the light sentinel, and the neutral itself (darkened alongside
+    // _neutralPinColors -- these two MUST move together or this stops matching and the substitution
+    // below silently never fires).
+    const isGrey = bg === '#d1d5db' || bg === '#6b7280';
     const textColor = '#fff';
     const labelBg = isGrey ? '#6b7280' : bg;
     const labelBorder = isGrey ? '#4b5563' : border;

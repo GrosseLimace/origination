@@ -993,7 +993,7 @@ export class ApiService {
   }
 
   /** Replaces who a sheet is shared with. Owner only. An empty list unshares it. */
-  setBidSheetShares(sheetId: number, members: Array<{ userId: string; name?: string }>): Observable<BidSheet> {
+  setBidSheetShares(sheetId: number, members: Array<{ memberType: string; memberId: string; name?: string }>): Observable<BidSheet> {
     return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/shares`, { members })
       .pipe(catchError(e => this.handleError(e)));
   }
@@ -1024,6 +1024,27 @@ export class ApiService {
    */
   setBidSheetRowOrder(sheetId: number, locationIds: number[]): Observable<BidSheet> {
     return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/location-order`, { locationIds })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * Takes several locations off a sheet in one transaction — unlinking, not deleting. The locations
+   * and their bids survive; other sheets holding them are untouched. One call rather than N so a
+   * multi-select cannot half-apply. (Deleting an elevator outright is deleteBidSheetLocation, which
+   * is restricted to its creator and warns how many sheets hold it.)
+   */
+  removeBidSheetLocations(sheetId: number, locationIds: number[]): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/remove`, { locationIds })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * Renames a location ON ONE SHEET. Locations are company-wide, so updateBidSheetLocation's rename
+   * lands on every sheet holding that elevator; this stores the sheet's own display name and leaves
+   * the canonical row alone. A null or blank name clears the override, back to the canonical name.
+   */
+  setBidSheetLocationName(sheetId: number, locationId: number, name: string | null): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/${locationId}/name`, { name })
       .pipe(catchError(e => this.handleError(e)));
   }
 

@@ -54,7 +54,7 @@
 
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               <option value="">All Crops</option>
-              @for (crop of filterableCrops(); track crop) {
+              @for (crop of mapCropChoices(); track crop) {
                 <option [value]="crop">{{ crop }}</option>
               }
             </select>
@@ -182,11 +182,11 @@
                 <span class="text-sm text-gray-700 dark:text-gray-300">Reference</span>
               </div>
               <div class="flex items-center gap-2">
-                <div class="w-4 h-4 rounded shrink-0" style="background:#dc2626; border:1.5px solid #991b1b;"></div>
+                <div class="w-4 h-4 rounded shrink-0" style="background:#b91c1c; border:1.5px solid #7f1d1d;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Beating</span>
               </div>
               <div class="flex items-center gap-2">
-                <div class="w-4 h-4 rounded shrink-0" style="background:#eab308; border:1.5px solid #a16207;"></div>
+                <div class="w-4 h-4 rounded shrink-0" style="background:#ca8a04; border:1.5px solid #854d0e;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Matching</span>
               </div>
               <!-- Scoular: green fill when no reference is set, green ring once status owns the fill.
@@ -196,9 +196,20 @@
                 <div class="w-4 h-4 rounded shrink-0" style="background:#00875F; border:1.5px solid #006B4C;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Scoular facility</span>
               </div>
+              <!-- Dropped the "Catalog (not yet added)" swatch: a pale blue dot is what a pin looks like
+                   when it has nothing to say, which needs no explaining, and in "All locations" added
+                   pins share that exact colour now anyway — so the row was describing a distinction the
+                   map no longer draws. -->
+              <!-- No swatch on this row, deliberately. The first version drew a grey square with a
+                   corner dot, and grey is what a pin looks like with NO reference set -- so the row
+                   read as "grey means changed", inventing a colour meaning that doesn't exist. What
+                   marks a changed pin is motion, not colour, so the row describes the motion and the
+                   sample pulses with the same animation the pins use. -->
               <div class="flex items-center gap-2 pt-1 mt-1 border-t border-gray-200 dark:border-gray-700">
-                <div class="w-3 h-3 rounded-full shrink-0 ml-0.5" style="background:#93c5fd; border:1.5px solid #60a5fa;"></div>
-                <span class="text-sm text-gray-700 dark:text-gray-300">Catalog (not yet added)</span>
+                <div class="bid-moved-pulse w-4 h-4 rounded shrink-0 flex items-center justify-center" style="background:#6b7280; border:1.5px solid #4b5563;">
+                  <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(255,255,255,0.85);"></div>
+                </div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Pulsing = bid moved in last 24h</span>
               </div>
             </div>
             }
@@ -445,14 +456,35 @@
             <!-- ========== LIST VIEW ========== -->
 
             <!-- Sheet bar: which sheet is open, and the menu to switch/create/rename/share/delete. -->
-            <div class="shrink-0 relative px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-              <button (click)="toggleSheetMenu()" class="w-full flex items-center gap-1.5 text-left group">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400"><path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/></svg>
-                <span class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate group-hover:text-scoular-green-accessible transition-colors">
-                  {{ activeSheet()?.name ?? (sheets().length === 0 ? 'No bid sheets yet' : 'Choose a bid sheet') }}
-                </span>
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400 ml-auto"><polyline points="6 9 12 15 18 9"/></svg>
-              </button>
+            <div class="shrink-0 relative px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <!-- Styled as an actual control -- bordered, on a white field, with a caption above it.
+                   It used to be bare text on the panel's own background at the same size as a row, so it
+                   read as a heading rather than something you could click to switch sheets. -->
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Bid sheet</p>
+              <!-- Edit sits beside the sheet it edits. It used to be a row lower, next to the crop/period
+                   heading, which put the sheet's name and the button that opens it in separate rows. -->
+              <div class="flex items-center gap-1.5">
+                @if (cropYears().length > 0 && mapScope() !== 'all') {
+                  <button (click)="openEditBids()" title="Edit bids"
+                          class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold text-scoular-green-accessible dark:text-scoular-green bg-white dark:bg-gray-900 border border-scoular-green-accessible/40 dark:border-scoular-green/40 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 shadow-sm transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    Edit
+                  </button>
+                }
+
+                <button (click)="toggleSheetMenu()"
+                        class="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 text-left rounded-md bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:border-scoular-green-accessible dark:hover:border-scoular-green shadow-sm transition-colors group">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400"><path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/></svg>
+                  <span class="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-white truncate group-hover:text-scoular-green-accessible transition-colors">
+                    @if (mapScope() === 'all') {
+                      All locations
+                    } @else {
+                      {{ activeSheet()?.name ?? (sheets().length === 0 ? 'No bid sheets yet' : 'Choose a bid sheet') }}
+                    }
+                  </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400 group-hover:text-scoular-green-accessible transition-colors"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+              </div>
 
               @if (showSheetMenu()) {
                 <div class="absolute left-3 right-3 top-full mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[1200] overflow-hidden">
@@ -471,7 +503,11 @@
                     </div>
                     <div class="border-t border-gray-200 dark:border-gray-700"></div>
                   }
-                  <button (click)="openCreateSheet()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-scoular-green-accessible dark:text-scoular-green hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                  <!-- Into the pick-then-name flow, the same one "+ Add > Build a bid sheet" and the
+                       empty state's own button use. This opened the name dialog straight away, so the
+                       only way to get a sheet from here was to name an empty one and then go hunting
+                       for locations. Naming comes last. -->
+                  <button (click)="chooseBuildSheet()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-scoular-green-accessible dark:text-scoular-green hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                     New bid sheet
                   </button>
@@ -498,17 +534,8 @@
 
             <!-- Panel Header -->
             <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[52px]">
-              @if (cropYears().length > 0) {
-              <button (click)="openEditBids()" title="Edit bids" class="shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-md text-sm font-semibold text-scoular-green-accessible dark:text-scoular-green border border-scoular-green-accessible/30 dark:border-scoular-green/30 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 transition-colors">
-                @if (false) {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                  View Bids
-                } @else {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  Edit
-                }
-              </button>
-              }
+              <!-- Edit moved up beside the sheet dropdown. This row is now just what you're looking at
+                   (crop and period) plus the close button. -->
               <h3 class="text-base font-bold text-gray-900 dark:text-white truncate flex-1">
                 @if (selectedCrop() && cropYears().length > 0) {
                   {{ selectedCrop() }} · {{ formatMonthYear(selectedMonth(), selectedYear()) }}
@@ -527,6 +554,17 @@
               @if (!sheetsLoaded()) {
                 <div class="flex flex-col items-center justify-center h-full px-6 text-center">
                   <div class="inline-block animate-spin rounded-full h-6 w-6 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
+                </div>
+              } @else if (mapScope() === 'all') {
+                <!-- The panel is the SHEET's comparison list. In All locations the map is browsing
+                     everything and there is no sheet to compare against, so the panel says so rather
+                     than list rows that have nothing to do with what you'd be about to edit. -->
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Showing all locations</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Pick a bid sheet from the dropdown above the map to compare and edit its bids. Click any pin to see its live prices.</p>
                 </div>
               } @else if (sheets().length === 0) {
                 <div class="flex flex-col items-center justify-center h-full px-6 text-center">
@@ -669,8 +707,11 @@
           }
 
           <!-- Create Bid Sheet -->
+          <!-- Sheet modals sit at z-[1200], one step above the Edit Bids overlay (z-[1100]): they
+               come BEFORE it in the DOM, so at equal z-index the grid would paint over them, and Share /
+               Rename / Delete are reachable from the grid's own header. -->
           @if (showCreateSheet()) {
-            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
               <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
                 <div class="px-5 pt-5 pb-4">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">{{ namingSheetForBatch() ? 'Name your bid sheet' : 'New Bid Sheet' }}</h4>
@@ -702,7 +743,7 @@
 
           <!-- Rename Bid Sheet -->
           @if (showRenameSheet()) {
-            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
               <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
                 <div class="px-5 pt-5 pb-4">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Rename Bid Sheet</h4>
@@ -724,9 +765,114 @@
             </div>
           }
 
+          <!-- Delete: which one? Deleting the sheet and taking locations off it differ enormously in
+               blast radius, so the button asks before doing either. -->
+          @if (showDeleteChoice()) {
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+                 (click)="cancelDeleteChoice()">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md"
+                   (click)="$event.stopPropagation()">
+                <div class="px-5 pt-5 pb-3">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Remove what?</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Taking locations off this sheet leaves them for everyone else. Deleting the sheet cannot be undone.</p>
+                </div>
+                <div class="p-3 pt-0 space-y-2">
+                  <button (click)="chooseRemoveLocations()"
+                          class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
+                    <div class="flex items-start gap-3">
+                      <span class="shrink-0 mt-0.5 text-gray-500 dark:text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                      </span>
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-gray-900 dark:text-white">Remove locations from this sheet</span>
+                        <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Pick one or several. They stay company-wide with their bids, and any other sheet holding them is untouched — you can add them back any time.
+                        </span>
+                      </span>
+                    </div>
+                  </button>
+
+                  <!-- Owner-only, matching the server guard. A member sees only the option they can use. -->
+                  @if (activeSheet()?.isOwner) {
+                    <button (click)="chooseDeleteSheet()"
+                            class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-red hover:bg-scoular-red/5 dark:hover:bg-scoular-red/10 transition-colors">
+                      <div class="flex items-start gap-3">
+                        <span class="shrink-0 mt-0.5 text-scoular-red-accessible dark:text-scoular-red">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                        </span>
+                        <span class="min-w-0">
+                          <span class="block text-sm font-medium text-gray-900 dark:text-white">Delete the whole bid sheet</span>
+                          <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Removes "{{ activeSheet()?.name }}" and unshares it. The locations themselves stay.
+                          </span>
+                        </span>
+                      </div>
+                    </button>
+                  }
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                  <button (click)="cancelDeleteChoice()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Multi-select removal. Unlinking, not deleting -- said plainly, because "remove" next to a
+               list of locations could easily be read as destroying them. -->
+          @if (showRemoveLocations()) {
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md max-h-[80vh] flex flex-col">
+                <div class="px-5 pt-5 pb-3 shrink-0">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Remove locations from "{{ activeSheet()?.name }}"</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                    They come off this sheet only. The locations and their bids stay, and anyone else's sheet holding them is unaffected.
+                  </p>
+                </div>
+
+                @if (removableLocations().length === 0) {
+                  <div class="px-5 pb-4 shrink-0">
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic">This sheet has no locations on it.</p>
+                  </div>
+                } @else {
+                  <div class="px-5 pb-2 shrink-0 flex items-center justify-between">
+                    <button (click)="toggleAllRemoveLocations()"
+                            class="text-xs font-medium text-scoular-green-accessible dark:text-scoular-green hover:underline">
+                      {{ allRemovableSelected() ? 'Clear all' : 'Select all' }}
+                    </button>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">{{ removeLocationIds().size }} selected</span>
+                  </div>
+
+                  <div class="flex-1 overflow-auto px-5 pb-3 space-y-1">
+                    @for (loc of removableLocations(); track loc.id) {
+                      <label class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors">
+                        <input type="checkbox"
+                               [checked]="removeLocationIds().has(loc.id)"
+                               (change)="toggleRemoveLocation(loc.id)"
+                               class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
+                        <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ loc.name }}</span>
+                        @if (loc.isScoularFacility) {
+                          <span class="shrink-0 text-[10px] uppercase tracking-wide text-scoular-green-accessible dark:text-scoular-green">Scoular</span>
+                        }
+                      </label>
+                    }
+                  </div>
+                }
+
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 shrink-0">
+                  <button (click)="cancelRemoveLocations()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmRemoveLocations()"
+                          [disabled]="removeLocationIds().size === 0 || removingLocations()"
+                          class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-red-accessible hover:bg-scoular-red rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ removingLocations() ? 'Removing…' : 'Remove' + (removeLocationIds().size > 0 ? ' (' + removeLocationIds().size + ')' : '') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
           <!-- Delete Bid Sheet Confirmation -->
           @if (showDeleteSheetConfirm()) {
-            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
               <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
                 <div class="px-5 pt-5 pb-4">
                   <div class="flex items-start gap-3">
@@ -755,41 +901,71 @@
 
           <!-- Share Bid Sheet -->
           @if (showShareSheet()) {
-            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
-              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4 max-h-[80vh] flex flex-col">
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md mx-4 max-h-[80vh] flex flex-col">
                 <div class="px-5 pt-5 pb-3 shrink-0">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Share "{{ activeSheet()?.name }}"</h4>
                   <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">Everyone you add can edit this sheet — its locations, columns and order.</p>
                 </div>
-                <div class="px-5 pb-3 shrink-0 relative">
+                <!-- Tabbed picker, mirroring Manage Groups: the four kinds are searched differently and
+                     a bare name means something different in each, so one mixed list would be worse. -->
+                <div class="px-5 pb-2 shrink-0 flex flex-wrap gap-1">
+                  @for (tab of shareTabs(); track tab.id) {
+                    <button (click)="shareTab.set(tab.id); shareSearch.set('')"
+                            [class]="shareTab() === tab.id
+                              ? 'px-2.5 py-1 rounded-md text-xs font-semibold bg-scoular-green-accessible text-white'
+                              : 'px-2.5 py-1 rounded-md text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'">
+                      {{ tab.label }}
+                      <span class="opacity-70">{{ tab.count }}</span>
+                    </button>
+                  }
+                </div>
+
+                <div class="px-5 pb-3 shrink-0">
                   <input
                     type="text"
                     [ngModel]="shareSearch()"
                     (ngModelChange)="shareSearch.set($event)"
-                    placeholder="Search people…"
+                    [placeholder]="shareTab() === 'person' ? 'Search people…'
+                      : shareTab() === 'trade-unit' ? 'Search trade units…'
+                      : shareTab() === 'trade-unit-group' ? 'Search groups…' : 'Search recap groups…'"
                     class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
                   />
-                  @if (shareSearch() && shareCandidates().length > 0) {
-                    <div class="absolute left-5 right-5 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto z-10">
-                      @for (person of shareCandidates(); track person.userId) {
-                        <button (click)="addShareCandidate(person)" class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                          <span class="text-gray-900 dark:text-white">{{ person.displayName }}</span>
-                          <span class="text-gray-400 dark:text-gray-500 ml-1">{{ person.userId }}</span>
-                        </button>
-                      }
-                    </div>
-                  } @else if (shareSearch() && shareCatalogLoaded()) {
-                    <div class="absolute left-5 right-5 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-3 py-2 text-xs text-gray-400 dark:text-gray-500 z-10">No match</div>
+                </div>
+
+                <!-- The list is always visible, not a search dropdown: you can browse the desks and
+                     groups you have without knowing their names, which is the point of the tabs. -->
+                <div class="px-5 pb-3 shrink-0 max-h-40 overflow-auto border-b border-gray-200 dark:border-gray-700">
+                  @if (shareCatalogLoading()) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 py-2">Loading…</p>
+                  } @else if (shareOptions().length === 0) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 py-2">
+                      @if (shareSearch()) { No match for “{{ shareSearch() }}”. }
+                      @else if (shareTab() === 'recap-group') { You are not in any recap groups yet. }
+                      @else { Nothing left to add here. }
+                    </p>
+                  }
+                  @for (option of shareOptions(); track option.memberType + option.memberId) {
+                    <button (click)="addShareCandidate(option)"
+                            class="w-full text-left px-2 py-1.5 rounded-md text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-baseline gap-2">
+                      <span class="text-gray-900 dark:text-white truncate">{{ option.label }}</span>
+                      <span class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ option.sub }}</span>
+                    </button>
                   }
                 </div>
-                <div class="flex-1 overflow-auto px-5 pb-3 space-y-1.5">
+
+                <div class="flex-1 overflow-auto px-5 py-3 space-y-1.5">
                   @if (pendingShares().length === 0) {
                     <p class="text-xs text-gray-400 dark:text-gray-500 italic">Not shared with anyone yet.</p>
                   }
-                  @for (share of pendingShares(); track share.userId) {
+                  @for (share of pendingShares(); track share.memberType + share.memberId) {
                     <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800">
-                      <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ share.name || share.userId }}</span>
-                      <button (click)="removeShareCandidate(share.userId)" class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-red hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                      <span class="min-w-0">
+                        <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ share.name || share.memberId }}</span>
+                        <!-- The kind is spelled out: "2190" alone could be a desk or a person. -->
+                        <span class="ml-1.5 text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">{{ shareKindLabel(share.memberType) }}</span>
+                      </span>
+                      <button (click)="removeShareCandidate(share.memberType, share.memberId)" class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-red hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                       </button>
                     </div>
@@ -840,10 +1016,21 @@
                  (click)="$event.stopPropagation()">
               <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Add</h4>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Build a sheet from the map, or add a single location yourself.</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  @if (addLocationOrigin() === 'editBids') {
+                    Add locations to the sheet you're editing, or create one yourself.
+                  } @else {
+                    Build a sheet from the map, or add a single location yourself.
+                  }
+                </p>
               </div>
 
               <div class="p-3 space-y-2">
+                <!-- "Build a bid sheet" is hidden when this was opened from the Edit Bids grid. You can
+                     only be on that screen with a sheet already open and in front of you, so offering
+                     to go build a DIFFERENT one is an answer to a question nobody asked there. From the
+                     map it stays, because starting a new sheet is a perfectly normal thing to want. -->
+                @if (addLocationOrigin() !== 'editBids') {
                 <button (click)="chooseBuildSheet()"
                         class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
                   <div class="flex items-start gap-3">
@@ -858,6 +1045,7 @@
                     </span>
                   </div>
                 </button>
+                }
 
                 @if (activeSheet(); as sheet) {
                   <button (click)="chooseAddToSheet()"
@@ -1036,6 +1224,42 @@
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                 </svg>
                 <h4 class="text-xl font-bold text-gray-900 dark:text-white">Edit Bids</h4>
+                <!-- Which sheet is being edited. No "All locations" here, unlike the map's copy of this
+                     dropdown: the grid is the sheet's (openEditBids narrows the map back to it first),
+                     so it always edits exactly one sheet. -->
+                @if (sheets().length > 0) {
+                  <select [ngModel]="activeSheetId()" (ngModelChange)="onEditBidsSheetChange(+$event)"
+                          title="The bid sheet you're editing"
+                          class="max-w-[30rem] px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base font-medium text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-scoular-green">
+                    @for (sheet of sheets(); track sheet.id) {
+                      <option [value]="sheet.id">{{ sheet.name }}{{ sheet.isOwner ? '' : ' (shared)' }}</option>
+                    }
+                  </select>
+                }
+
+                <!-- Sheet actions, beside the sheet they act on. The panel's sheet menu has the same
+                     ones; repeating them here means you don't have to leave the grid to share what
+                     you're editing.
+                     RENAME is deliberately NOT here: it sits on the Locations column header, next to
+                     the sheet name it changes, rather than as an anonymous pencil among the toolbar.
+                     DELETE opens a choice (sheet vs. locations) and so is NOT owner-gated any more --
+                     removing locations is ordinary member editing. The sheet-delete option inside that
+                     dialog is still owner-only, matching the server's RequireSheetOwnerAsync. -->
+                @if (activeSheet(); as sheet) {
+                  <div class="flex items-center gap-1.5">
+                    <button (click)="openShareSheet()" [title]="sheet.shares.length > 0 ? 'Share (' + sheet.shares.length + ' people)' : 'Share'"
+                      class="flex items-center gap-1.5 px-2.5 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      @if (sheet.shares.length > 0) { <span class="text-xs text-gray-500 dark:text-gray-400">{{ sheet.shares.length }}</span> }
+                    </button>
+                    <button (click)="openDeleteChoice()" title="Remove locations from this sheet, or delete the sheet"
+                      class="p-2 text-scoular-red-accessible dark:text-scoular-red bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors shadow-sm">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    </button>
+                  </div>
+                }
+
+                <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
                 <!-- Years. Replaces the old ‹ 2026 › stepper: one control instead of two governing the
                      same concept, and it covers what the arrows did (pick 2027 rather than step to it).
                      Same staged Cancel/Done shape as Months and Crops. -->
@@ -1071,23 +1295,6 @@
                     </div>
                   }
                 </div>
-                <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-                <!-- Same control as the sheet header, with Both added: an originator comparing elevators
-                     wants the flat price and the basis side by side, not one flip at a time. -->
-                @if (barchartEnabled) {
-                  <div class="flex shrink-0 items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
-                       title="Cash is the posted flat price. Basis is cents against the futures board, so -30 is thirty under. Both shows cash with basis beneath it.">
-                    @for (m of ['cash', 'basis', 'both']; track m) {
-                      <button (click)="setPriceMode($any(m))"
-                              [class]="priceMode() === m
-                                ? 'px-2.5 py-1.5 text-sm font-medium bg-scoular-green-accessible text-white capitalize'
-                                : 'px-2.5 py-1.5 text-sm font-medium bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 capitalize'">
-                        {{ m }}
-                      </button>
-                    }
-                  </div>
-                  <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-                }
                 <div class="relative">
                   <button (click)="openMonthDropdown()"
                     class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
@@ -1221,26 +1428,30 @@
                     </div>
                   }
                 </div>
-
-                <!-- Which sheet is being edited. No "All locations" here, unlike the map's copy of this
-                     dropdown: the grid's rows carry the sheet's own shared order and column layout, so
-                     it always edits exactly one sheet. -->
-                @if (sheets().length > 0) {
-                  <select [ngModel]="activeSheetId()" (ngModelChange)="onEditBidsSheetChange(+$event)"
-                          title="The bid sheet you're editing"
-                          class="max-w-[220px] px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base font-medium text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-scoular-green">
-                    @for (sheet of sheets(); track sheet.id) {
-                      <option [value]="sheet.id">{{ sheet.name }}{{ sheet.isOwner ? '' : ' (shared)' }}</option>
+                <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+                <!-- Same control as the sheet header, with Both added: an originator comparing elevators
+                     wants the flat price and the basis side by side, not one flip at a time. -->
+                @if (barchartEnabled) {
+                  <div class="flex shrink-0 items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
+                       title="Cash is the posted flat price. Basis is cents against the futures board, so -30 is thirty under. Both shows cash with basis beneath it.">
+                    @for (m of ['cash', 'basis', 'both']; track m) {
+                      <button (click)="setPriceMode($any(m))"
+                              [class]="priceMode() === m
+                                ? 'px-2.5 py-1.5 text-sm font-medium bg-scoular-green-accessible text-white capitalize'
+                                : 'px-2.5 py-1.5 text-sm font-medium bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 capitalize'">
+                        {{ m }}
+                      </button>
                     }
-                  </select>
+                  </div>
+                  <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
                 }
-              </div>
 
-              <!-- Print (right). No trade-unit selector: the sheet is not scoped by desk, and no
-                   refresh button either -- opening the grid trues itself up in the background. -->
-              <div class="flex flex-wrap items-center gap-2.5 gap-y-2.5">
+                <!-- Print sits in this same row now, right after the cash/basis divider, instead of
+                     its own group pushed to the far right. No trade-unit selector: the sheet is not
+                     scoped by desk, and no refresh button either -- opening the grid trues itself
+                     up in the background. -->
                 <button (click)="printEditBids()" title="Print Bids"
-                  class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
+                  class="flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>
                   </svg>
@@ -1268,7 +1479,11 @@
                 </button>
               </div>
             } @else {
-              <div class="flex-1 overflow-auto">
+              <!-- cdkScrollable is what makes a row drag auto-scroll this container. Without it the CDK
+                   has no registered scrollable ancestor to scroll, so dragging a row to the top or
+                   bottom edge just sat there: you had to drop, scroll by hand, pick the row up again,
+                   and repeat. The class alone doesn't do it -- the directive has to be present. -->
+              <div class="flex-1 overflow-auto" cdkScrollable>
                 <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
                   <thead>
                     <!-- Year band, only with several years selected. Columns run crop -> month -> year,
@@ -1289,7 +1504,18 @@
                       <!-- Names the sheet in the corner cell: with several sheets in play, the grid
                            otherwise looks identical whichever one is open. -->
                       <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[240px] lg:min-w-[340px]">
-                        Locations@if (activeSheet(); as sheet) { <span class="normal-case text-gray-700 dark:text-gray-200"> — {{ sheet.name }}</span> }
+                        <span class="inline-flex items-center gap-1.5 align-middle">
+                          <span>Locations@if (activeSheet(); as sheet) { <span class="normal-case text-gray-700 dark:text-gray-200"> — {{ sheet.name }}</span> }</span>
+                          <!-- Rename lives here rather than in the toolbar: it is the name right beside
+                               it that changes, so the pencil needs no label to explain itself. Owner
+                               only, matching the panel's menu. -->
+                          @if (activeSheet()?.isOwner) {
+                            <button (click)="openRenameSheet()" title="Rename this bid sheet"
+                              class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                          }
+                        </span>
                       </th>
                       @for (col of editGridColumns(); track col.key) {
                         <th cdkDrag cdkDragLockAxis="x"
@@ -1314,7 +1540,9 @@
                       }
                     </tr>
                   </thead>
-                  <tbody cdkDropList (cdkDropListDropped)="onRowDrop($event)">
+                  <!-- autoScrollStep defaults to 2px per frame, which on a long sheet is a crawl. 18
+                       covers a tall list in a couple of seconds while still being steerable. -->
+                  <tbody cdkDropList [cdkDropListAutoScrollStep]="18" (cdkDropListDropped)="onRowDrop($event)">
                     @for (row of editBidsRows(); track row.name; let rowIdx = $index) {
                       <tr cdkDrag class="border-b border-gray-100 dark:border-gray-800 transition-colors"
                           [ngClass]="scoularLocationNames().has(row.name)
@@ -1602,7 +1830,10 @@
                     </div>
 
                     <!-- Options (right) -->
-                    <div class="w-72 shrink-0 p-5 overflow-auto space-y-5">
+                    <!-- cdkScrollable for the same reason as the grid: this column holds the crop,
+                         month and location drag lists, and without it a drag to either edge won't
+                         scroll the column. -->
+                    <div class="w-72 shrink-0 p-5 overflow-auto space-y-5" cdkScrollable>
                       <!-- Contact info -->
                       <div>
                         <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Contact Info</h4>

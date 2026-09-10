@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BarchartCatalogLocation } from '@models';
-import { barchartDisplayName, barchartSaveName, barchartSiteLabel } from './barchart-location-name';
+import { barchartDisplayName, barchartSaveName, barchartSiteLabel, isScoularListing } from './barchart-location-name';
 
 function location(overrides: Partial<BarchartCatalogLocation> = {}): BarchartCatalogLocation {
   return {
@@ -67,5 +67,25 @@ describe('barchartSaveName', () => {
 
   it('falls back to the location key when there is nothing else to name it', () => {
     expect(barchartSaveName(location({ elevator: undefined, locationName: undefined, city: undefined }))).toBe('BarChart 82259');
+  });
+});
+
+describe('isScoularListing', () => {
+  // Six naming variants exist in the live catalog, so a substring match on the PUBLISHER is the rule.
+  it('matches the publishing company however it is spelled', () => {
+    for (const elevator of ['The Scoular Company', 'Scoular Co - West', 'SCOULAR COMPANY - NEBRASKA', 'scoular']) {
+      expect(isScoularListing(location({ elevator }))).toBe(true);
+    }
+  });
+
+  it('does not match somebody else', () => {
+    expect(isScoularListing(location({ elevator: 'Kanza Cooperative' }))).toBe(false);
+    expect(isScoularListing(location({ elevator: undefined }))).toBe(false);
+  });
+
+  // Checks the publisher, NOT the site name -- a vendor site name is sometimes another company's name,
+  // so reading it would mark somebody else's elevator as ours.
+  it('ignores the site name', () => {
+    expect(isScoularListing(location({ elevator: 'Kanza Cooperative', locationName: 'SCOULAR-SALINA' }))).toBe(false);
   });
 });

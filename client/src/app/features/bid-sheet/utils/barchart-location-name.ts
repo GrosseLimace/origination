@@ -56,3 +56,18 @@ export function barchartSaveName(location: BarchartCatalogLocation): string {
   if (company && site) return `${company} - ${site}`;
   return company || site || `BarChart ${location.locationKey}`;
 }
+
+/**
+ * Whether a catalog listing is one of ours.
+ *
+ * A name match on the publishing company, which is all the vendor feed gives us -- there is no
+ * ownership flag on a BarChart listing. Deliberately checks `elevator` (the publisher) and not
+ * `locationName`, because a site name is sometimes another company's name entirely.
+ *
+ * Shared rather than duplicated: the picker uses it to set isScoularFacility when adding, and the map
+ * uses it to colour candidate pins green. Two copies of a rule this loose would drift, and then a pin
+ * would disagree with the row that added it.
+ */
+export function isScoularListing(location: BarchartCatalogLocation): boolean {
+  return (location.elevator ?? '').toLowerCase().includes('scoular');
+}
