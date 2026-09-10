@@ -2,6 +2,7 @@ using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+
 using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Infrastructure.Repositories;
@@ -30,14 +31,27 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
     {
         var query = _appContext.BarchartLocationSummaries.AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(search))
+        // Every word must match SOMETHING, but not the same something. An originator names a site by
+        // combining things that live in different columns -- "alliance belpre" is the company plus the
+        // town, "belpre ks" the town plus the state -- and this used to be one Contains of the whole
+        // phrase against one field at a time, so anything spanning two columns found nothing at all.
+        //
+        // Fields searched: the publishing company, the site name, the town, the state (by code OR full
+        // name, since the catalog only stores codes and "kansas" would otherwise match nothing) and the
+        // zip by prefix. Street address is deliberately out: a road name is not how anyone looks for an
+        // elevator, and matching it would put "Main" hits in front of real ones.
+        var terms = BarchartLocationSearch.ParseTerms(search);
+        foreach (var parsed in terms)
         {
-            var term = search.Trim();
-            // Originators search by whoever they know the site as — the company, the site name, or the town.
+            // Copied per iteration so each predicate closes over its own values.
+            var term = parsed.Text;
+            var stateCode = parsed.StateCode;
             query = query.Where(l =>
                 (l.Elevator != null && l.Elevator.Contains(term)) ||
                 (l.LocationName != null && l.LocationName.Contains(term)) ||
-                (l.City != null && l.City.Contains(term)));
+                (l.City != null && l.City.Contains(term)) ||
+                (l.ZipCode != null && l.ZipCode.StartsWith(term)) ||
+                (stateCode != null && l.State == stateCode));
         }
 
         if (!string.IsNullOrWhiteSpace(state))
@@ -69,8 +83,21 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
 
         // Busiest sites first: instrument count is a decent proxy for how much a location trades, so the
         // most useful candidates surface before the row cap bites. A radius search re-sorts by distance.
-        return await query
-            .OrderByDescending(l => l.ActiveInstrumentCount)
+        //
+        // With a search typed, a site whose name or town contains the WHOLE phrase leads: searching
+        // "alliance ag" should put Alliance Ag & Grain above a busier elevator that happens to sit in a
+        // town called Alliance. Only ranking changes -- both still match, and the row cap is what makes
+        // the difference visible.
+        var phrase = terms.Count > 1 ? search!.Trim() : null;
+        var ordered = phrase == null
+            ? query.OrderByDescending(l => l.ActiveInstrumentCount)
+            : query
+                .OrderByDescending(l => (l.Elevator != null && l.Elevator.Contains(phrase))
+                                     || (l.LocationName != null && l.LocationName.Contains(phrase))
+                                     || (l.City != null && l.City.Contains(phrase)))
+                .ThenByDescending(l => l.ActiveInstrumentCount);
+
+        return await ordered
             .ThenBy(l => l.Elevator)
             .Take(take)
             .ToListAsync(cancellationToken);
