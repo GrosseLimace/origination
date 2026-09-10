@@ -1,4 +1,6 @@
 // Third-party namespaces
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Moq;
 
 // Project namespaces
@@ -17,6 +19,7 @@ public class BidSheetServiceTests
     private readonly Mock<IUserEntitlementService> _entitlementService = new();
     private readonly Mock<IBarchartCatalogRepository> _barchartCatalog = new();
     private readonly Mock<IBarchartIngestRepository> _barchartIngest = new();
+    private readonly Mock<IEntitlementsRepository> _entitlements = new();
     private readonly BidSheetService _sut;
 
     public BidSheetServiceTests()
@@ -24,7 +27,8 @@ public class BidSheetServiceTests
         _requestContext.Setup(r => r.GetCurrentUser()).Returns("user@x.com");
         _sut = new BidSheetService(
             _repo.Object, _requestContext.Object, _entitlementService.Object,
-            _barchartCatalog.Object, _barchartIngest.Object);
+            _barchartCatalog.Object, _barchartIngest.Object,
+            _entitlements.Object, NullLogger<BidSheetService>.Instance);
     }
 
     private static CreateBidSheetLocationRequest Request(string name = "Kansas West", string tu = "TU1") => new()

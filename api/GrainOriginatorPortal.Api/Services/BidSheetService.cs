@@ -17,19 +17,80 @@ public class BidSheetService : IBidSheetService
     private readonly IUserEntitlementService _entitlementService;
     private readonly IBarchartCatalogRepository _barchartCatalog;
     private readonly IBarchartIngestRepository _barchartIngest;
+    private readonly IEntitlementsRepository _entitlements;
+    private readonly ILogger<BidSheetService> _logger;
+
+    /// <summary>Resolved once per request — the service is scoped, so this lives exactly as long as the
+    /// request does and several methods share the two queries behind it.</summary>
+    private BidSheetAccess? _access;
 
     public BidSheetService(
         IBidSheetRepository repository,
         IRequestContextService requestContext,
         IUserEntitlementService entitlementService,
         IBarchartCatalogRepository barchartCatalog,
-        IBarchartIngestRepository barchartIngest)
+        IBarchartIngestRepository barchartIngest,
+        IEntitlementsRepository entitlements,
+        ILogger<BidSheetService> logger)
     {
         _repository = repository;
         _requestContext = requestContext;
         _entitlementService = entitlementService;
         _barchartCatalog = barchartCatalog;
         _barchartIngest = barchartIngest;
+        _entitlements = entitlements;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Who the caller is, for deciding which sheets they may see: their identity, their desks, their
+    /// trade-unit groups, and the recap groups they belong to. Resolved once per request and cached for
+    /// its lifetime, because several methods need it and it costs two queries.
+    /// </summary>
+    /// <remarks>
+    /// Fails CLOSED. If entitlements or recap groups can't be read we fall back to
+    /// <see cref="BidSheetAccess.OwnerAndSelfOnly"/>, which narrows the predicate to sheets the caller
+    /// owns or is named on personally. That can only ever take access away -- an owner keeps working, a
+    /// desk-share member is denied -- whereas assuming entitlement on failure would hand every shared
+    /// sheet to everyone. Same reasoning, and the same shape, as DailyRecapGroupService.GetAccessAsync.
+    /// </remarks>
+    private async Task<BidSheetAccess> GetAccessAsync(CancellationToken cancellationToken)
+    {
+        if (_access != null) return _access;
+
+        var callerUpn = _requestContext.GetCurrentUser();
+        var personId = _requestContext.GetCurrentUserShortName();
+
+        try
+        {
+            var rows = await _entitlements.GetByUserAsync(personId, cancellationToken);
+            var tuCodes = rows
+                .Where(r => !string.IsNullOrWhiteSpace(r.TradeUnitCode))
+                .Select(r => r.TradeUnitCode)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var groupIds = rows
+                .Where(r => r.GroupId.HasValue)
+                .Select(r => r.GroupId!.Value.ToString())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // The second hop: which recap groups this person is in, resolved from the desks and groups
+            // above, because recap-group membership is itself people/units/groups.
+            var recapGroupIds = await _repository.GetCallerRecapGroupIdsAsync(
+                callerUpn, personId, tuCodes, groupIds, cancellationToken);
+
+            _access = new BidSheetAccess(callerUpn, personId, tuCodes, groupIds, recapGroupIds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Could not resolve bid sheet access for {UserId} — limited to sheets they own or are named on",
+                personId);
+            _access = BidSheetAccess.OwnerAndSelfOnly(callerUpn, personId);
+        }
+
+        return _access;
     }
 
     /// <summary>
@@ -300,8 +361,8 @@ public class BidSheetService : IBidSheetService
     /// </summary>
     private async Task<Infrastructure.Data.Entities.BidSheet> RequireVisibleSheetAsync(int sheetId, CancellationToken cancellationToken)
     {
-        var user = _requestContext.GetCurrentUserShortName();
-        var sheet = await _repository.GetVisibleSheetAsync(sheetId, user, cancellationToken);
+        var access = await GetAccessAsync(cancellationToken);
+        var sheet = await _repository.GetVisibleSheetAsync(sheetId, access, cancellationToken);
         if (sheet != null) return sheet;
 
         if (await _repository.SheetExistsAsync(sheetId, cancellationToken))
@@ -331,18 +392,18 @@ public class BidSheetService : IBidSheetService
     /// than having to reload. Cheap: it is the same query the screen already runs on open.</summary>
     private async Task<BidSheetResponse> ReloadSheetAsync(int sheetId, CancellationToken cancellationToken)
     {
-        var user = _requestContext.GetCurrentUserShortName();
-        var sheet = await _repository.GetVisibleSheetAsync(sheetId, user, cancellationToken)
+        var access = await GetAccessAsync(cancellationToken);
+        var sheet = await _repository.GetVisibleSheetAsync(sheetId, access, cancellationToken)
             ?? throw new NotFoundException("Bid sheet", sheetId);
-        return sheet.ToResponse(user);
+        return sheet.ToResponse(access.PersonId);
     }
 
     /// <inheritdoc />
     public async Task<List<BidSheetResponse>> GetSheetsAsync(CancellationToken cancellationToken)
     {
-        var user = _requestContext.GetCurrentUserShortName();
-        var sheets = await _repository.GetVisibleSheetsAsync(user, cancellationToken);
-        return sheets.Select(s => s.ToResponse(user)).ToList();
+        var access = await GetAccessAsync(cancellationToken);
+        var sheets = await _repository.GetVisibleSheetsAsync(access, cancellationToken);
+        return sheets.Select(s => s.ToResponse(access.PersonId)).ToList();
     }
 
     /// <inheritdoc />
@@ -418,11 +479,22 @@ public class BidSheetService : IBidSheetService
 
         var user = _requestContext.GetCurrentUserShortName();
         var now = DateTime.UtcNow;
+        // Rejected rather than silently dropped: an unknown discriminator can never grant access (the
+        // visibility predicate only matches the four it knows), so storing one would put a row in the
+        // share list that looks like somebody was given access and does nothing.
+        var unknown = request.Members
+            .Select(m => m.ResolvedMemberType)
+            .FirstOrDefault(t => !BidSheetShareTypes.IsKnown(t));
+        if (unknown != null)
+            throw new ValidationException("members",
+                $"'{unknown}' is not a kind of member a bid sheet can be shared with.");
+
         var shares = request.Members
-            .Where(m => !string.IsNullOrWhiteSpace(m.UserId))
+            .Where(m => !string.IsNullOrWhiteSpace(m.ResolvedMemberId))
             .Select(m => new Infrastructure.Data.Entities.BidSheetShare
             {
-                MemberUserId = m.UserId.Trim(),
+                MemberType = m.ResolvedMemberType,
+                MemberId = m.ResolvedMemberId,
                 MemberName = string.IsNullOrWhiteSpace(m.Name) ? null : m.Name.Trim(),
                 SharedBy = user,
                 SharedAt = now,
@@ -455,6 +527,49 @@ public class BidSheetService : IBidSheetService
     {
         await RequireVisibleSheetAsync(sheetId, cancellationToken);
         await _repository.RemoveSheetLocationAsync(sheetId, locationId, cancellationToken);
+        return await ReloadSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> RemoveSheetLocationsAsync(int sheetId, BidSheetRemoveLocationsRequest request, CancellationToken cancellationToken)
+    {
+        // Any member, like the single remove and like adding: taking a location off a shared sheet is
+        // ordinary editing. It is NOT the destructive delete -- that one lives on the location itself,
+        // is creator-or-Admin only, and warns how many sheets hold it first.
+        await RequireVisibleSheetAsync(sheetId, cancellationToken);
+        await _repository.RemoveSheetLocationsAsync(sheetId, request.LocationIds, cancellationToken);
+        return await ReloadSheetAsync(sheetId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<BidSheetResponse> SetSheetLocationNameAsync(int sheetId, int locationId, BidSheetLocationNameRequest request, CancellationToken cancellationToken)
+    {
+        var sheet = await RequireVisibleSheetAsync(sheetId, cancellationToken);
+        // Blank clears the override instead of storing an empty name -- it is the only way back to the
+        // canonical name. Trimmed so a whitespace-only value can't masquerade as a real rename.
+        var name = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
+
+        // A name must be unique ON THE SHEET. The client keys grid rows, and every rename / Scoular /
+        // delete lookup, by the displayed name, so two rows sharing one would send those actions to the
+        // wrong location. Compared against what each row DISPLAYS (its own override, else the canonical
+        // name), case-insensitively, skipping the location being renamed so renaming to its own name is
+        // a no-op rather than a collision. Enforced here and not only in the client because a second
+        // member, or a stale client, can rename the same sheet.
+        //
+        // Clearing (null) is exempt: it is the only way back to the canonical name, and refusing it
+        // would leave a user unable to undo a rename.
+        if (name != null)
+        {
+            var clash = sheet.Locations
+                .Where(l => l.BidSheetLocationId != locationId && l.Location != null)
+                .Select(l => l.DisplayName ?? l.Location!.Name)
+                .FirstOrDefault(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+            if (clash != null)
+                throw new ValidationException("name",
+                    $"Another location on this sheet is already called \"{clash}\".");
+        }
+
+        await _repository.SetSheetLocationNameAsync(sheetId, locationId, name, cancellationToken);
         return await ReloadSheetAsync(sheetId, cancellationToken);
     }
 

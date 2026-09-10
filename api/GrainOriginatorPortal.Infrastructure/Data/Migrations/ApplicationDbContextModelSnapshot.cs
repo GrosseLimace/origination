@@ -665,6 +665,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<int>("BidSheetLocationId")
                         .HasColumnType("int");
 
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<int>("SortOrder")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
@@ -800,14 +804,19 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<int>("BidSheetId")
                         .HasColumnType("int");
 
+                    b.Property<string>("MemberId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("MemberName")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("MemberUserId")
+                    b.Property<string>("MemberType")
                         .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTime>("SharedAt")
                         .ValueGeneratedOnAdd()
@@ -821,10 +830,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MemberUserId")
-                        .HasDatabaseName("IX_BidSheetShares_MemberUserId");
+                    b.HasIndex("MemberType", "MemberId")
+                        .HasDatabaseName("IX_BidSheetShares_Member");
 
-                    b.HasIndex("BidSheetId", "MemberUserId")
+                    b.HasIndex("BidSheetId", "MemberType", "MemberId")
                         .IsUnique()
                         .HasDatabaseName("UQ_BidSheetShares_Sheet_Member");
 

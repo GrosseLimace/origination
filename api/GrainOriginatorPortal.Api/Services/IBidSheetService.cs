@@ -61,6 +61,14 @@ public interface IBidSheetService
     /// <summary>Takes a location off the sheet. The location itself is untouched.</summary>
     Task<BidSheetResponse> RemoveSheetLocationAsync(int sheetId, int locationId, CancellationToken cancellationToken);
 
+    /// <summary>Takes several locations off the sheet at once. Any member; the locations themselves are
+    /// company-wide and survive, so this is unlinking rather than deleting.</summary>
+    Task<BidSheetResponse> RemoveSheetLocationsAsync(int sheetId, BidSheetRemoveLocationsRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Renames a location ON THIS SHEET only, leaving the shared row's canonical name alone.
+    /// Blank clears the override. Any member may; the name is shared with the sheet.</summary>
+    Task<BidSheetResponse> SetSheetLocationNameAsync(int sheetId, int locationId, BidSheetLocationNameRequest request, CancellationToken cancellationToken);
+
     /// <summary>Saves the row order for the sheet. Any member may; the order is shared.</summary>
     Task<BidSheetResponse> SetSheetLocationOrderAsync(int sheetId, BidSheetLocationOrderRequest request, CancellationToken cancellationToken);
 

@@ -291,6 +291,33 @@ public class BidSheetController : ControllerBase
     public async Task<ActionResult<BidSheetResponse>> RemoveSheetLocation(int sheetId, int locationId, CancellationToken cancellationToken = default)
         => Ok(await _service.RemoveSheetLocationAsync(sheetId, locationId, cancellationToken));
 
+    /// <summary>
+    /// Takes several locations off the sheet in one go. Any member.
+    /// </summary>
+    /// <remarks>
+    /// PUT with a body rather than DELETE: a multi-select needs a list, and DELETE-with-body is poorly
+    /// supported across proxies. One transaction, so a batch cannot half-apply. The locations survive —
+    /// deleting an elevator outright is a different endpoint with a different, stricter guard.
+    /// </remarks>
+    [HttpPut("sheets/{sheetId:int}/locations/remove")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BidSheetResponse>> RemoveSheetLocations(int sheetId, [FromBody] BidSheetRemoveLocationsRequest request, CancellationToken cancellationToken = default)
+        => Ok(await _service.RemoveSheetLocationsAsync(sheetId, request, cancellationToken));
+
+    /// <summary>
+    /// Renames a location ON THIS SHEET only. Any member.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately separate from PUT locations/{id}, which writes the shared row. Locations are
+    /// company-wide, so that endpoint's rename hit every sheet holding the elevator, last-write-wins:
+    /// two originators with the same elevator overwrote each other's label. This writes the sheet's own
+    /// display name and leaves the canonical row -- and the BarChart bridge's match on it -- alone.
+    /// </remarks>
+    [HttpPut("sheets/{sheetId:int}/locations/{locationId:int}/name")]
+    [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BidSheetResponse>> SetSheetLocationName(int sheetId, int locationId, [FromBody] BidSheetLocationNameRequest request, CancellationToken cancellationToken = default)
+        => Ok(await _service.SetSheetLocationNameAsync(sheetId, locationId, request, cancellationToken));
+
     /// <summary>Saves the shared row order for the sheet. Any member.</summary>
     [HttpPut("sheets/{sheetId:int}/location-order")]
     [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]

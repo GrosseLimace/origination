@@ -116,22 +116,31 @@ public static class BidSheetMappings
         ModifiedBy = s.ModifiedBy,
         ModifiedAt = s.ModifiedAt,
         Shares = s.Shares
-            .OrderBy(sh => sh.MemberName ?? sh.MemberUserId, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(sh => sh.MemberName ?? sh.MemberId, StringComparer.OrdinalIgnoreCase)
             .Select(sh => sh.ToResponse())
             .ToList(),
         // Order again here rather than trusting the include: a sheet built in memory (a fresh create,
         // a test) has no ordering applied, and a row order that only holds when it came from SQL is
         // the kind of thing that works until it quietly does not.
+        // The link's DisplayName wins over the shared row's canonical Name. Locations are company-wide,
+        // so a rename has to stay private to the sheet that made it, or two originators holding the
+        // same elevator overwrite each other's label. Null means "never renamed here", which keeps
+        // following the canonical name as the feed corrects it. Everything else -- id, coords, bids --
+        // is still the shared row's.
         Locations = s.Locations
             .OrderBy(l => l.SortOrder)
             .Where(l => l.Location != null)
-            .Select(l => l.Location!.ToResponse())
+            .Select(l => l.Location!.ToResponse() with { Name = l.DisplayName ?? l.Location!.Name })
             .ToList(),
     };
 
     public static BidSheetShareResponse ToResponse(this BidSheetShare sh) => new()
     {
-        UserId = sh.MemberUserId,
+        MemberType = sh.MemberType,
+        MemberId = sh.MemberId,
+        // Only a person share fills UserId. A desk or group id in that field would read to any older
+        // caller as somebody's user id, which is worse than an empty string.
+        UserId = sh.MemberType == BidSheetShareTypes.Person ? sh.MemberId : string.Empty,
         Name = sh.MemberName,
         SharedBy = sh.SharedBy,
         SharedAt = sh.SharedAt,

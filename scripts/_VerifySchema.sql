@@ -261,8 +261,9 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- BidSheetShares
 ('dbo', 'BidSheetShares', 'Id',           'int',           0),
 ('dbo', 'BidSheetShares', 'BidSheetId',   'int',           0),
+('dbo', 'BidSheetShares', 'MemberId',     'nvarchar(256)', 0),
 ('dbo', 'BidSheetShares', 'MemberName',   'nvarchar(256)', 1),
-('dbo', 'BidSheetShares', 'MemberUserId', 'nvarchar(256)', 0),
+('dbo', 'BidSheetShares', 'MemberType',   'nvarchar(20)',  0),
 ('dbo', 'BidSheetShares', 'SharedAt',     'datetime2',     0),
 ('dbo', 'BidSheetShares', 'SharedBy',     'nvarchar(255)', 0),
 -- BidSheetLocationLinks
@@ -271,6 +272,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocationLinks', 'AddedBy',            'nvarchar(255)', 0),
 ('dbo', 'BidSheetLocationLinks', 'BidSheetId',         'int',           0),
 ('dbo', 'BidSheetLocationLinks', 'BidSheetLocationId', 'int',           0),
+('dbo', 'BidSheetLocationLinks', 'DisplayName',        'nvarchar(200)', 1),
 ('dbo', 'BidSheetLocationLinks', 'SortOrder',          'int',           0),
 -- BidSheetLocationOrders
 ('dbo', 'BidSheetLocationOrders', 'Id',           'int',           0),

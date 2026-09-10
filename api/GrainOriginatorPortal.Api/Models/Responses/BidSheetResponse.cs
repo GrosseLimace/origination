@@ -37,7 +37,17 @@ public record BidSheetResponse
 
 public record BidSheetShareResponse
 {
+    /// <summary>What <see cref="MemberId"/> means: person / trade-unit / trade-unit-group / recap-group.</summary>
+    public string MemberType { get; init; } = string.Empty;
+
+    /// <summary>Short UPN, trade-unit code, entitlements group id, or recap group id — per MemberType.</summary>
+    public string MemberId { get; init; } = string.Empty;
+
+    /// <summary>The person's short UPN, populated ONLY for a person share and empty for the other three.
+    /// Retained so a caller written against the people-only shape reads nothing rather than mistaking a
+    /// desk code for a user id; new code should read MemberType + MemberId.</summary>
     public string UserId { get; init; } = string.Empty;
+
     public string? Name { get; init; }
     public string SharedBy { get; init; } = string.Empty;
     public DateTime SharedAt { get; init; }

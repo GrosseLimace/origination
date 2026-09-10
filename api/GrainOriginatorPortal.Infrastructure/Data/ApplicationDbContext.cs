@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
@@ -1014,14 +1015,19 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.BidSheetId).IsRequired();
-            entity.Property(e => e.MemberUserId).HasMaxLength(256).IsRequired();
+            // 20 matches DailyRecapGroupMembers.MemberType -- the same discriminator values live in both,
+            // and a column that could hold a longer string than the other invites them to diverge.
+            entity.Property(e => e.MemberType).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.MemberId).HasMaxLength(256).IsRequired();
             entity.Property(e => e.MemberName).HasMaxLength(256).IsRequired(false);
             entity.Property(e => e.SharedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.SharedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.HasIndex(e => e.MemberUserId).HasDatabaseName("IX_BidSheetShares_MemberUserId");
-            // Sharing with the same person twice is a no-op, not a second row. DailyRecapGroupMembers
-            // allows the duplicate and shows the person twice in its list.
-            entity.HasIndex(e => new { e.BidSheetId, e.MemberUserId })
+            // Covers the visibility predicate's lookups, which filter on type + id together.
+            entity.HasIndex(e => new { e.MemberType, e.MemberId }).HasDatabaseName("IX_BidSheetShares_Member");
+            // Sharing with the same member twice is a no-op, not a second row. TYPE is part of the key
+            // now: desk "2190" and a person who happens to be called "2190" are different members, and
+            // without the type in the index the second would collide with the first.
+            entity.HasIndex(e => new { e.BidSheetId, e.MemberType, e.MemberId })
                   .HasDatabaseName("UQ_BidSheetShares_Sheet_Member")
                   .IsUnique();
         });
@@ -1034,6 +1040,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.BidSheetId).IsRequired();
             entity.Property(e => e.BidSheetLocationId).IsRequired();
             entity.Property(e => e.SortOrder).HasDefaultValue(0).IsRequired();
+            // Same 200 as BidSheetLocations.Name -- it stands in for that value, so it must not be
+            // able to hold a name the canonical column could not.
+            entity.Property(e => e.DisplayName).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.AddedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.AddedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             // A location appears on a sheet once. The old JSON-array order had no such guard, so a

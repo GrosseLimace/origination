@@ -25,6 +25,20 @@ public class BidSheetLocationLink
     /// <summary>Position in the grid. Gaps are fine; only the relative order is read.</summary>
     public int SortOrder { get; set; }
 
+    /// <summary>
+    /// What THIS sheet calls the location, or null to use the location's own canonical name.
+    /// </summary>
+    /// <remarks>
+    /// Locations are company-wide -- one row per elevator, DB-enforced for BarChart listings -- so a
+    /// rename used to change the name on EVERY sheet holding that elevator, last-write-wins, with no
+    /// warning: two originators with the same elevator overwrote each other's label. The per-sheet name
+    /// lives here instead. Renaming affects only the sheet you renamed it on, and the shared row's
+    /// canonical Name -- what "All locations" shows, and what the BarChart bridge matches on -- is
+    /// never touched. Null rather than a copy of the canonical name on purpose: an un-renamed location
+    /// keeps following the canonical name as the feed corrects it.
+    /// </remarks>
+    public string? DisplayName { get; set; }
+
     public string AddedBy { get; set; } = string.Empty;
     public DateTime AddedAt { get; set; }
 

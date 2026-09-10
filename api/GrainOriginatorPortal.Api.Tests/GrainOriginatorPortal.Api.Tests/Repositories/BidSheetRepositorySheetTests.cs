@@ -1,6 +1,8 @@
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -89,6 +91,11 @@ public class BidSheetRepositorySheetTests : IAsyncLifetime
         return loc.Id;
     }
 
+    /// <summary>A caller who is only themselves: no desk, group or recap-group membership. Keeps these
+    /// tests about the person arm of the predicate, which is the one they were written for.</summary>
+    private static BidSheetAccess AccessFor(string personId) =>
+        BidSheetAccess.OwnerAndSelfOnly($"{personId}@scoular.com", personId);
+
     private async Task<List<int>> OrderedLocationIdsAsync(int sheetId) =>
         await _context.BidSheetLocationLinks.AsNoTracking()
             .Where(l => l.BidSheetId == sheetId)
@@ -110,10 +117,10 @@ public class BidSheetRepositorySheetTests : IAsyncLifetime
         var mine = await NewSheetAsync();
         var shared = await NewSheetAsync(owner: "__ITSomeoneElse");
         await _sut.SetSheetSharesAsync(shared.Id,
-            [new BidSheetShare { MemberUserId = Owner, SharedBy = "__ITSomeoneElse", SharedAt = DateTime.UtcNow }], default);
+            [new BidSheetShare { MemberId = Owner, SharedBy = "__ITSomeoneElse", SharedAt = DateTime.UtcNow }], default);
         var theirs = await NewSheetAsync(owner: "__ITSomeoneElse");
 
-        var visible = await _sut.GetVisibleSheetsAsync(Owner, default);
+        var visible = await _sut.GetVisibleSheetsAsync(AccessFor(Owner), default);
         var ids = visible.Select(s => s.Id).ToHashSet();
 
         Assert.Contains(mine.Id, ids);
@@ -121,10 +128,203 @@ public class BidSheetRepositorySheetTests : IAsyncLifetime
         Assert.DoesNotContain(theirs.Id, ids);
     }
 
+    // Each of the four share kinds, against the real predicate. These are the tests that matter most in
+    // this file: the predicate decides who may READ and EDIT a sheet, and getting it wrong widens access
+    // silently rather than failing, so every arm is exercised and every one is also checked NEGATIVELY.
+    [Fact]
+    public async Task GetVisibleSheets_MatchesEachKindOfShare_AndNothingElse()
+    {
+        if (!Enabled) return;
+
+        var byPerson = await NewSheetAsync(owner: "__ITSomeoneElse");
+        var byDesk = await NewSheetAsync(owner: "__ITSomeoneElse");
+        var byTuGroup = await NewSheetAsync(owner: "__ITSomeoneElse");
+        var byRecap = await NewSheetAsync(owner: "__ITSomeoneElse");
+        var unshared = await NewSheetAsync(owner: "__ITSomeoneElse");
+
+        await ShareAsync(byPerson, BidSheetShareTypes.Person, Owner);
+        await ShareAsync(byDesk, BidSheetShareTypes.TradeUnit, "__IT2190");
+        await ShareAsync(byTuGroup, BidSheetShareTypes.TradeUnitGroup, "__ITGRP7");
+        await ShareAsync(byRecap, BidSheetShareTypes.RecapGroup, "__ITRECAP9");
+        // Same ids under the WRONG type must not match -- that is what the type column is for.
+        await ShareAsync(unshared, BidSheetShareTypes.Person, "__IT2190");
+
+        var access = new BidSheetAccess($"{Owner}@scoular.com", Owner,
+            ["__IT2190"], ["__ITGRP7"], ["__ITRECAP9"]);
+        var ids = (await _sut.GetVisibleSheetsAsync(access, default)).Select(s => s.Id).ToHashSet();
+
+        Assert.Contains(byPerson.Id, ids);
+        Assert.Contains(byDesk.Id, ids);
+        Assert.Contains(byTuGroup.Id, ids);
+        Assert.Contains(byRecap.Id, ids);
+        Assert.DoesNotContain(unshared.Id, ids);
+    }
+
+    // The fail-closed fallback. OwnerAndSelfOnly carries no desk, group or recap membership, so a sheet
+    // shared with the caller's DESK must disappear while one naming them personally survives. This is
+    // what makes degrading on an entitlements outage safe: it can only ever take access away.
+    [Fact]
+    public async Task GetVisibleSheets_DegradedAccess_KeepsPersonalSharesAndDropsDeskShares()
+    {
+        if (!Enabled) return;
+
+        var byPerson = await NewSheetAsync(owner: "__ITSomeoneElse");
+        var byDesk = await NewSheetAsync(owner: "__ITSomeoneElse");
+        var mine = await NewSheetAsync();
+        await ShareAsync(byPerson, BidSheetShareTypes.Person, Owner);
+        await ShareAsync(byDesk, BidSheetShareTypes.TradeUnit, "__IT2190");
+
+        var ids = (await _sut.GetVisibleSheetsAsync(AccessFor(Owner), default)).Select(s => s.Id).ToHashSet();
+
+        Assert.Contains(mine.Id, ids);      // owner arm is unaffected
+        Assert.Contains(byPerson.Id, ids);  // named personally
+        Assert.DoesNotContain(byDesk.Id, ids);
+    }
+
+    // A desk share means the AUDIENCE moves with entitlements -- somebody who joins 2190 tomorrow gets
+    // the sheet without anyone editing it. That is the deliberate trade-off of resolving on read, so it
+    // is worth pinning: the same sheet, two different callers, decided only by what they are entitled to.
+    [Fact]
+    public async Task GetVisibleSheets_DeskShare_FollowsWhoeverIsOnThatDesk()
+    {
+        if (!Enabled) return;
+
+        var sheet = await NewSheetAsync(owner: "__ITSomeoneElse");
+        await ShareAsync(sheet, BidSheetShareTypes.TradeUnit, "__IT2190");
+
+        var onDesk = new BidSheetAccess($"{Member}@scoular.com", Member, ["__IT2190"], [], []);
+        var offDesk = new BidSheetAccess($"{Member}@scoular.com", Member, ["__IT9999"], [], []);
+
+        Assert.NotNull(await _sut.GetVisibleSheetAsync(sheet.Id, onDesk, default));
+        Assert.Null(await _sut.GetVisibleSheetAsync(sheet.Id, offDesk, default));
+    }
+
+    /// <summary>Adds one share of a given kind, bypassing SetSheetSharesAsync so a test can write an
+    /// arbitrary type/id pair directly.</summary>
+    private async Task ShareAsync(BidSheet sheet, string memberType, string memberId)
+    {
+        _context.BidSheetShares.Add(new BidSheetShare
+        {
+            BidSheetId = sheet.Id,
+            MemberType = memberType,
+            MemberId = memberId,
+            SharedBy = "__ITSomeoneElse",
+            SharedAt = DateTime.UtcNow,
+        });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+    }
     // =========================================================================
     // Row order
     // =========================================================================
 
+    // The whole point of a per-sheet name: locations are company-wide, so renaming one on YOUR sheet
+    // must not reach anyone else's. Two sheets holding the same location, renamed on one only.
+    [Fact]
+    public async Task SetSheetLocationName_RenamesOnOneSheetAndLeavesTheOtherAlone()
+    {
+        if (!Enabled) return;
+
+        var mine = await NewSheetAsync();
+        var theirs = await NewSheetAsync();
+        var locationId = await NewLocationAsync();
+        await _sut.AddSheetLocationAsync(mine.Id, locationId, Owner, default);
+        await _sut.AddSheetLocationAsync(theirs.Id, locationId, Member, default);
+        var canonical = (await _context.BidSheetLocations.FindAsync(locationId))!.Name;
+
+        await _sut.SetSheetLocationNameAsync(mine.Id, locationId, "My Own Label", default);
+
+        Assert.Equal("My Own Label", await LinkDisplayNameAsync(mine.Id, locationId));
+        Assert.Null(await LinkDisplayNameAsync(theirs.Id, locationId));
+        // And the shared row itself is untouched -- it is what the map and the BarChart bridge use.
+        _context.ChangeTracker.Clear();
+        Assert.Equal(canonical, (await _context.BidSheetLocations.FindAsync(locationId))!.Name);
+    }
+
+    // Blank clears the override. It is the only way back to the canonical name, so it must store NULL
+    // rather than an empty string -- an empty name would render as a blank row.
+    [Fact]
+    public async Task SetSheetLocationName_ClearsTheOverrideWhenGivenNull()
+    {
+        if (!Enabled) return;
+
+        var sheet = await NewSheetAsync();
+        var locationId = await NewLocationAsync();
+        await _sut.AddSheetLocationAsync(sheet.Id, locationId, Owner, default);
+        await _sut.SetSheetLocationNameAsync(sheet.Id, locationId, "Temporary", default);
+
+        await _sut.SetSheetLocationNameAsync(sheet.Id, locationId, null, default);
+
+        Assert.Null(await LinkDisplayNameAsync(sheet.Id, locationId));
+    }
+
+    private async Task<string?> LinkDisplayNameAsync(int sheetId, int locationId)
+    {
+        _context.ChangeTracker.Clear();
+        var link = await _context.BidSheetLocationLinks.AsNoTracking()
+            .FirstAsync(l => l.BidSheetId == sheetId && l.BidSheetLocationId == locationId);
+        return link.DisplayName;
+    }
+
+    // Removing locations from a sheet must NEVER touch the locations themselves -- they are company-
+    // wide and other sheets hold them. This is the test that would catch a cascade being loosened.
+    [Fact]
+    public async Task RemoveSheetLocations_UnlinksFromThisSheetOnly_AndKeepsTheLocations()
+    {
+        if (!Enabled) return;
+
+        var mine = await NewSheetAsync();
+        var theirs = await NewSheetAsync();
+        var a = await NewLocationAsync();
+        var b = await NewLocationAsync();
+        var c = await NewLocationAsync();
+        foreach (var id in new[] { a, b, c }) await _sut.AddSheetLocationAsync(mine.Id, id, Owner, default);
+        await _sut.AddSheetLocationAsync(theirs.Id, a, Member, default);
+
+        var removed = await _sut.RemoveSheetLocationsAsync(mine.Id, [a, b], default);
+
+        Assert.Equal(2, removed);
+        Assert.Equal([c], await OrderedLocationIdsAsync(mine.Id));
+        // The other sheet still holds A ...
+        Assert.Equal([a], await OrderedLocationIdsAsync(theirs.Id));
+        // ... and every location row survives, ready to be added back.
+        _context.ChangeTracker.Clear();
+        foreach (var id in new[] { a, b, c })
+            Assert.NotNull(await _context.BidSheetLocations.FindAsync(id));
+    }
+
+    // A stale client can send an id that has already been removed, or one from another sheet. Ignoring
+    // those beats failing the whole batch and leaving the user unsure what happened.
+    [Fact]
+    public async Task RemoveSheetLocations_IgnoresIdsNotOnTheSheet()
+    {
+        if (!Enabled) return;
+
+        var sheet = await NewSheetAsync();
+        var onSheet = await NewLocationAsync();
+        var elsewhere = await NewLocationAsync();
+        await _sut.AddSheetLocationAsync(sheet.Id, onSheet, Owner, default);
+
+        var removed = await _sut.RemoveSheetLocationsAsync(sheet.Id, [onSheet, elsewhere, 999999], default);
+
+        Assert.Equal(1, removed);
+        Assert.Empty(await OrderedLocationIdsAsync(sheet.Id));
+    }
+
+    // An empty selection is a no-op, not a "remove everything" -- the UI disables the button, this is
+    // the backstop behind it.
+    [Fact]
+    public async Task RemoveSheetLocations_EmptyList_RemovesNothing()
+    {
+        if (!Enabled) return;
+
+        var sheet = await NewSheetAsync();
+        var id = await NewLocationAsync();
+        await _sut.AddSheetLocationAsync(sheet.Id, id, Owner, default);
+
+        Assert.Equal(0, await _sut.RemoveSheetLocationsAsync(sheet.Id, [], default));
+        Assert.Equal([id], await OrderedLocationIdsAsync(sheet.Id));
+    }
     // The order is stored as positions on link rows, so it reads back exactly as sent.
     [Fact]
     public async Task SetSheetLocationOrder_AppliesTheGivenOrder()
@@ -233,14 +433,14 @@ public class BidSheetRepositorySheetTests : IAsyncLifetime
 
         await _sut.SetSheetSharesAsync(sheet.Id,
         [
-            new BidSheetShare { MemberUserId = Owner,             SharedBy = Owner, SharedAt = DateTime.UtcNow },
-            new BidSheetShare { MemberUserId = Member,            SharedBy = Owner, SharedAt = DateTime.UtcNow },
-            new BidSheetShare { MemberUserId = Member.ToUpper(),  SharedBy = Owner, SharedAt = DateTime.UtcNow },
+            new BidSheetShare { MemberId = Owner,             SharedBy = Owner, SharedAt = DateTime.UtcNow },
+            new BidSheetShare { MemberId = Member,            SharedBy = Owner, SharedAt = DateTime.UtcNow },
+            new BidSheetShare { MemberId = Member.ToUpper(),  SharedBy = Owner, SharedAt = DateTime.UtcNow },
         ], default);
 
         var stored = await _context.BidSheetShares.AsNoTracking()
             .Where(sh => sh.BidSheetId == sheet.Id)
-            .Select(sh => sh.MemberUserId)
+            .Select(sh => sh.MemberId)
             .ToListAsync();
 
         Assert.Equal([Member], stored);
@@ -254,12 +454,12 @@ public class BidSheetRepositorySheetTests : IAsyncLifetime
 
         var sheet = await NewSheetAsync();
         await _sut.SetSheetSharesAsync(sheet.Id,
-            [new BidSheetShare { MemberUserId = Member, SharedBy = Owner, SharedAt = DateTime.UtcNow }], default);
+            [new BidSheetShare { MemberId = Member, SharedBy = Owner, SharedAt = DateTime.UtcNow }], default);
 
         await _sut.SetSheetSharesAsync(sheet.Id, [], default);
 
         Assert.Empty(await _context.BidSheetShares.AsNoTracking().Where(sh => sh.BidSheetId == sheet.Id).ToListAsync());
-        Assert.Null(await _sut.GetVisibleSheetAsync(sheet.Id, Member, default));
+        Assert.Null(await _sut.GetVisibleSheetAsync(sheet.Id, AccessFor(Member), default));
     }
 
     // =========================================================================
@@ -295,7 +495,7 @@ public class BidSheetRepositorySheetTests : IAsyncLifetime
         var locationId = await NewLocationAsync();
         await _sut.AddSheetLocationAsync(sheet.Id, locationId, Owner, default);
         await _sut.SetSheetSharesAsync(sheet.Id,
-            [new BidSheetShare { MemberUserId = Member, SharedBy = Owner, SharedAt = DateTime.UtcNow }], default);
+            [new BidSheetShare { MemberId = Member, SharedBy = Owner, SharedAt = DateTime.UtcNow }], default);
 
         await _sut.DeleteSheetAsync(sheet.Id, default);
 

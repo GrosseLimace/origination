@@ -57,12 +57,19 @@ public interface IBidSheetRepository
 
     /// <summary>Sheets the caller owns or has been shared on, with shares and location links
     /// (locations themselves included), ordered by name.</summary>
-    Task<List<BidSheet>> GetVisibleSheetsAsync(string userId, CancellationToken cancellationToken);
+    Task<List<BidSheet>> GetVisibleSheetsAsync(BidSheetAccess access, CancellationToken cancellationToken);
+
+    /// <summary>The Daily Recap group ids the caller is in, for BidSheetAccess.RecapGroupIds. Resolved
+    /// separately because recap-group membership is itself people/units/groups, which the sheet
+    /// visibility predicate cannot nest.</summary>
+    Task<List<string>> GetCallerRecapGroupIdsAsync(
+        string callerUpn, string personId, IReadOnlyCollection<string> tradeUnitCodes,
+        IReadOnlyCollection<string> groupIds, CancellationToken cancellationToken);
 
     /// <summary>One sheet the caller owns or is shared on, fully loaded, or null when it does not
     /// exist OR they cannot see it. The service turns those two cases into 404 and 403 separately,
     /// so it asks <see cref="SheetExistsAsync"/> before deciding.</summary>
-    Task<BidSheet?> GetVisibleSheetAsync(int sheetId, string userId, CancellationToken cancellationToken);
+    Task<BidSheet?> GetVisibleSheetAsync(int sheetId, BidSheetAccess access, CancellationToken cancellationToken);
 
     /// <summary>True if the sheet row exists at all, regardless of who can see it. Lets the service
     /// answer 403 for a real sheet the caller is not on, rather than the recap-group style 404 that
@@ -108,6 +115,16 @@ public interface IBidSheetRepository
     /// on the sheet are ignored; ones on the sheet but absent from the list keep their relative order
     /// at the end, so a stale client cannot silently drop rows off someone else's view.</summary>
     Task SetSheetLocationOrderAsync(int sheetId, IReadOnlyList<int> orderedLocationIds, CancellationToken cancellationToken);
+
+    /// <summary>Takes several locations off a sheet in one transaction, returning how many links went.
+    /// Only the links are removed -- the locations are company-wide and survive. Ids not on the sheet
+    /// are ignored, so a stale client cannot fail the whole batch.</summary>
+    Task<int> RemoveSheetLocationsAsync(int sheetId, IReadOnlyCollection<int> locationIds, CancellationToken cancellationToken);
+
+    /// <summary>Sets what THIS sheet calls a location, or null to fall back to the location's canonical
+    /// name. Locations are company-wide, so this is the only rename that does not reach everyone else's
+    /// sheets. A location that is not on the sheet is a no-op.</summary>
+    Task SetSheetLocationNameAsync(int sheetId, int locationId, string? displayName, CancellationToken cancellationToken);
 
     /// <summary>How many sheets hold this location. The delete confirmation says the number out loud,
     /// and the delete itself is refused while it is non-zero (the link FK is RESTRICT).</summary>

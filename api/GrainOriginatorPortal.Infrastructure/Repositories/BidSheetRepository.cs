@@ -3,6 +3,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Exceptions;
+
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -486,11 +487,30 @@ public class BidSheetRepository : IBidSheetRepository
     // =============================================================================================
 
     /// <summary>
-    /// Owner OR shared-with. This one predicate is the whole visibility rule; every sheet read goes
-    /// through it so there is no second place to keep in step.
+    /// Owner OR shared-with, where "shared-with" now means any of four things. This one predicate is
+    /// the whole visibility rule; every sheet read goes through it, so there is no second place to keep
+    /// in step and no way for a caller to reach a sheet that this did not admit.
     /// </summary>
-    private static IQueryable<BidSheet> VisibleTo(IQueryable<BidSheet> query, string userId) =>
-        query.Where(s => s.OwnerUserId == userId || s.Shares.Any(sh => sh.MemberUserId == userId));
+    /// <remarks>
+    /// Membership is re-resolved on every read rather than stored: a new hire on desk 2190 sees the
+    /// sheet shared with 2190 without anyone editing it, and somebody who moves desks stops seeing it.
+    ///
+    /// The recap-group arm is the caller's OWN group ids, resolved before this runs
+    /// (<see cref="BidSheetAccess.RecapGroupIds"/>) rather than joined here. Membership of a recap group
+    /// is itself people/units/groups, so doing it inline would nest a second EXISTS over
+    /// DailyRecapGroupMembers inside this one and the whole predicate would stop translating cleanly.
+    ///
+    /// Every arm is an equality test against a pre-computed list, so an EMPTY list matches nothing --
+    /// which is exactly what makes <see cref="BidSheetAccess.OwnerAndSelfOnly"/> safe to degrade to.
+    /// </remarks>
+    private static IQueryable<BidSheet> VisibleTo(IQueryable<BidSheet> query, BidSheetAccess access) =>
+        query.Where(s =>
+            s.OwnerUserId == access.PersonId
+            || s.Shares.Any(sh =>
+                   (sh.MemberType == BidSheetShareTypes.Person && sh.MemberId == access.PersonId)
+                || (sh.MemberType == BidSheetShareTypes.TradeUnit && access.TradeUnitCodes.Contains(sh.MemberId))
+                || (sh.MemberType == BidSheetShareTypes.TradeUnitGroup && access.GroupIds.Contains(sh.MemberId))
+                || (sh.MemberType == BidSheetShareTypes.RecapGroup && access.RecapGroupIds.Contains(sh.MemberId))));
 
     /// <summary>Shares, links, and the location behind each link with its bids -- everything the
     /// screen needs to render a sheet without a second round trip.</summary>
@@ -500,17 +520,37 @@ public class BidSheetRepository : IBidSheetRepository
                  .ThenInclude(l => l.Location!)
                      .ThenInclude(loc => loc.Bids);
 
-    public async Task<List<BidSheet>> GetVisibleSheetsAsync(string userId, CancellationToken cancellationToken)
+    public async Task<List<BidSheet>> GetVisibleSheetsAsync(BidSheetAccess access, CancellationToken cancellationToken)
     {
-        return await WithContents(VisibleTo(_appContext.BidSheets.AsNoTracking(), userId))
+        return await WithContents(VisibleTo(_appContext.BidSheets.AsNoTracking(), access))
             .OrderBy(s => s.Name)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<BidSheet?> GetVisibleSheetAsync(int sheetId, string userId, CancellationToken cancellationToken)
+    public async Task<BidSheet?> GetVisibleSheetAsync(int sheetId, BidSheetAccess access, CancellationToken cancellationToken)
     {
-        return await WithContents(VisibleTo(_appContext.BidSheets.AsNoTracking(), userId))
+        return await WithContents(VisibleTo(_appContext.BidSheets.AsNoTracking(), access))
             .FirstOrDefaultAsync(s => s.Id == sheetId, cancellationToken);
+    }
+
+    /// <summary>
+    /// The Daily Recap group ids this caller is in — the second hop the visibility predicate can't do
+    /// itself. Mirrors DailyRecapGroupRepository's own visibility rule (created it, or a member by
+    /// person / trade-unit / trade-unit-group), so "groups I'm in" means the same thing on both screens.
+    /// </summary>
+    public async Task<List<string>> GetCallerRecapGroupIdsAsync(
+        string callerUpn, string personId, IReadOnlyCollection<string> tradeUnitCodes,
+        IReadOnlyCollection<string> groupIds, CancellationToken cancellationToken)
+    {
+        var ids = await _appContext.DailyRecapGroups.AsNoTracking()
+            .Where(g => g.CreatedBy == callerUpn
+                     || g.Members.Any(m =>
+                            (m.MemberType == "person" && m.MemberId == personId)
+                         || (m.MemberType == "trade-unit" && tradeUnitCodes.Contains(m.MemberId))
+                         || (m.MemberType == "trade-unit-group" && groupIds.Contains(m.MemberId))))
+            .Select(g => g.Id)
+            .ToListAsync(cancellationToken);
+        return ids.Select(id => id.ToString()).ToList();
     }
 
     public async Task<bool> SheetExistsAsync(int sheetId, CancellationToken cancellationToken)
@@ -592,13 +632,24 @@ public class BidSheetRepository : IBidSheetRepository
 
         // Sharing a sheet with its own owner is a no-op, not a row -- the owner already sees it, and
         // storing it would make the list read as if they had been invited to a sheet they created.
-        // De-duplicate case-insensitively too, so "cegr" and "CEgr" do not both hit the unique index.
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { sheet.OwnerUserId };
+        // Only the PERSON share can be the owner; a desk or group that happens to contain them is a
+        // genuinely different audience and must survive.
+        // De-duplicating on type+id, not id alone: desk "2190" and a person id "2190" are different
+        // members, and collapsing them would silently drop one (and hit the unique index either way).
+        // Case-insensitive so "cegr" and "CEgr" do not both land.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            $"{BidSheetShareTypes.Person}|{sheet.OwnerUserId}"
+        };
         var kept = new List<BidSheetShare>();
         foreach (var share in shares)
         {
-            if (string.IsNullOrWhiteSpace(share.MemberUserId)) continue;
-            if (!seen.Add(share.MemberUserId.Trim())) continue;
+            if (string.IsNullOrWhiteSpace(share.MemberId)) continue;
+            // Unknown discriminators are dropped rather than stored: the visibility predicate only
+            // matches the four it knows, so an unrecognised row could never grant access anyway -- but
+            // it WOULD sit in the list looking like somebody had been given some.
+            if (!BidSheetShareTypes.IsKnown(share.MemberType)) continue;
+            if (!seen.Add($"{share.MemberType}|{share.MemberId.Trim()}")) continue;
             share.BidSheetId = sheetId;
             kept.Add(share);
         }
@@ -654,6 +705,37 @@ public class BidSheetRepository : IBidSheetRepository
             .FirstOrDefaultAsync(l => l.BidSheetId == sheetId && l.BidSheetLocationId == locationId, cancellationToken);
         if (link == null) return;
         _appContext.BidSheetLocationLinks.Remove(link);
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> RemoveSheetLocationsAsync(int sheetId, IReadOnlyCollection<int> locationIds, CancellationToken cancellationToken)
+    {
+        if (locationIds.Count == 0) return 0;
+
+        var links = await _appContext.BidSheetLocationLinks
+            .Where(l => l.BidSheetId == sheetId && locationIds.Contains(l.BidSheetLocationId))
+            .ToListAsync(cancellationToken);
+        if (links.Count == 0) return 0;
+
+        // One SaveChanges, so a multi-select either comes off the sheet entirely or not at all. Doing
+        // it as N single removes could half-fail and leave the user guessing which ones went.
+        //
+        // Only the LINKS go. The locations are company-wide and other sheets may hold them, which is
+        // why the link->location FK is Restrict: this can never take an elevator away from anybody.
+        // SortOrder gaps are left behind on purpose -- only the relative order is ever read.
+        _appContext.BidSheetLocationLinks.RemoveRange(links);
+        await _appContext.SaveChangesAsync(cancellationToken);
+        return links.Count;
+    }
+
+    public async Task SetSheetLocationNameAsync(int sheetId, int locationId, string? displayName, CancellationToken cancellationToken)
+    {
+        var link = await _appContext.BidSheetLocationLinks
+            .FirstOrDefaultAsync(l => l.BidSheetId == sheetId && l.BidSheetLocationId == locationId, cancellationToken);
+        // Not on this sheet, nothing to name. Silent like RemoveSheetLocationAsync above: the caller is
+        // already authorized for the sheet, so this is a stale client rather than an access problem.
+        if (link == null) return;
+        link.DisplayName = displayName;
         await _appContext.SaveChangesAsync(cancellationToken);
     }
 

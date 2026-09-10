@@ -1,4 +1,6 @@
 // Third-party namespaces
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Moq;
 
 // Project namespaces
@@ -35,6 +37,7 @@ public class BidSheetServiceSheetsTests
     private readonly Mock<IUserEntitlementService> _entitlementService = new();
     private readonly Mock<IBarchartCatalogRepository> _barchartCatalog = new();
     private readonly Mock<IBarchartIngestRepository> _barchartIngest = new();
+    private readonly Mock<IEntitlementsRepository> _entitlements = new();
     private readonly BidSheetService _sut;
 
     private const string Owner = "CEgr";
@@ -47,7 +50,8 @@ public class BidSheetServiceSheetsTests
         _requestContext.Setup(r => r.GetCurrentUserShortName()).Returns(Owner);
         _sut = new BidSheetService(
             _repo.Object, _requestContext.Object, _entitlementService.Object,
-            _barchartCatalog.Object, _barchartIngest.Object);
+            _barchartCatalog.Object, _barchartIngest.Object,
+            _entitlements.Object, NullLogger<BidSheetService>.Instance);
     }
 
     private void CallerIs(string shortName) =>
@@ -60,7 +64,7 @@ public class BidSheetServiceSheetsTests
         OwnerUserId = owner,
         CreatedBy = owner,
         CreatedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
-        Shares = sharedWith.Select(u => new BidSheetShare { BidSheetId = id, MemberUserId = u, SharedBy = owner }).ToList(),
+        Shares = sharedWith.Select(u => new BidSheetShare { BidSheetId = id, MemberId = u, SharedBy = owner }).ToList(),
     };
 
     /// <summary>The repository's visibility predicate, mirrored so a test can say who can see what.</summary>
@@ -68,9 +72,12 @@ public class BidSheetServiceSheetsTests
     {
         _repo.Setup(r => r.SheetExistsAsync(sheet.Id, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _repo.Setup(r => r.GetSheetOwnerAsync(sheet.Id, It.IsAny<CancellationToken>())).ReturnsAsync(sheet.OwnerUserId);
-        _repo.Setup(r => r.GetVisibleSheetAsync(sheet.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((int _, string user, CancellationToken _) =>
-                users.Contains(user, StringComparer.OrdinalIgnoreCase) ? sheet : null);
+        _repo.Setup(r => r.GetVisibleSheetAsync(sheet.Id, It.IsAny<BidSheetAccess>(), It.IsAny<CancellationToken>()))
+            // Matches on PersonId, the arm of the predicate these tests are about (403-vs-404 and
+            // owner gating). The desk / group / recap-group arms are covered in
+            // BidSheetRepositorySheetTests, against a real database where the predicate actually runs.
+            .ReturnsAsync((int _, BidSheetAccess access, CancellationToken _) =>
+                users.Contains(access.PersonId, StringComparer.OrdinalIgnoreCase) ? sheet : null);
     }
 
     // =========================================================================
@@ -81,7 +88,7 @@ public class BidSheetServiceSheetsTests
     [Fact]
     public async Task GetSheetAsync_SheetDoesNotExist_Throws404NotFound()
     {
-        _repo.Setup(r => r.GetVisibleSheetAsync(99, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.GetVisibleSheetAsync(99, It.IsAny<BidSheetAccess>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((BidSheet?)null);
         _repo.Setup(r => r.SheetExistsAsync(99, It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
@@ -313,7 +320,7 @@ public class BidSheetServiceSheetsTests
     {
         var mine = Sheet(1);
         var theirs = Sheet(2, owner: Member, sharedWith: Owner);
-        _repo.Setup(r => r.GetVisibleSheetsAsync(Owner, It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.GetVisibleSheetsAsync(It.IsAny<BidSheetAccess>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([mine, theirs]);
 
         var result = await _sut.GetSheetsAsync(CancellationToken.None);
@@ -344,8 +351,82 @@ public class BidSheetServiceSheetsTests
 
         Assert.NotNull(captured);
         var only = Assert.Single(captured!);
-        Assert.Equal(Member, only.MemberUserId);
+        Assert.Equal(Member, only.MemberId);
         Assert.Equal("Jane Doe", only.MemberName);
         Assert.Equal(Owner, only.SharedBy);
+    }
+
+    // =========================================================================
+    // Per-sheet names: unique on the sheet
+    // =========================================================================
+
+    private static BidSheetLocationLink Link(int locationId, string canonical, string? displayName = null) => new()
+    {
+        BidSheetLocationId = locationId,
+        DisplayName = displayName,
+        Location = new BidSheetLocation { Id = locationId, Name = canonical },
+    };
+
+    // Names are identity on the client (grid rows are tracked by name; every rename / Scoular / delete
+    // lookup resolves through the displayed name), so the server refuses a duplicate rather than trusting
+    // the client's own check. Compared against what each row DISPLAYS, trimmed and case-insensitively --
+    // here the other row's override, not its canonical name.
+    [Fact]
+    public async Task SetSheetLocationName_RejectsANameAnotherLocationOnTheSheetAlreadyShows()
+    {
+        var sheet = Sheet();
+        sheet.Locations = [Link(1, "Alpha"), Link(2, "Beta", displayName: "My Beta")];
+        SheetIsVisibleTo(sheet, Owner);
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => _sut.SetSheetLocationNameAsync(
+            sheet.Id, 1, new BidSheetLocationNameRequest { Name = "  my beta " }, CancellationToken.None));
+
+        Assert.Contains("My Beta", ex.Message);
+        Assert.True(ex.Errors.ContainsKey("name"));
+        _repo.Verify(r => r.SetSheetLocationNameAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A row that was never renamed still SHOWS its canonical name, so that counts too.
+    [Fact]
+    public async Task SetSheetLocationName_RejectsAnotherLocationsCanonicalName()
+    {
+        var sheet = Sheet();
+        sheet.Locations = [Link(1, "Alpha"), Link(2, "Beta")];
+        SheetIsVisibleTo(sheet, Owner);
+
+        await Assert.ThrowsAsync<ValidationException>(() => _sut.SetSheetLocationNameAsync(
+            sheet.Id, 1, new BidSheetLocationNameRequest { Name = "BETA" }, CancellationToken.None));
+
+        _repo.Verify(r => r.SetSheetLocationNameAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // The location being renamed is excluded from the comparison, so renaming it to the name it already
+    // shows is a no-op write rather than a collision with itself -- and a genuinely new name goes through.
+    [Fact]
+    public async Task SetSheetLocationName_AllowsItsOwnNameAndAUniqueOne()
+    {
+        var sheet = Sheet();
+        sheet.Locations = [Link(1, "Alpha", displayName: "Mine"), Link(2, "Beta")];
+        SheetIsVisibleTo(sheet, Owner);
+
+        await _sut.SetSheetLocationNameAsync(sheet.Id, 1, new BidSheetLocationNameRequest { Name = "mine" }, CancellationToken.None);
+        await _sut.SetSheetLocationNameAsync(sheet.Id, 1, new BidSheetLocationNameRequest { Name = "Gamma" }, CancellationToken.None);
+
+        _repo.Verify(r => r.SetSheetLocationNameAsync(sheet.Id, 1, "mine", It.IsAny<CancellationToken>()), Times.Once);
+        _repo.Verify(r => r.SetSheetLocationNameAsync(sheet.Id, 1, "Gamma", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // Clearing is the only way back to the canonical name, so it is never refused -- even where the
+    // canonical name it falls back to matches another row. Refusing would trap the user.
+    [Fact]
+    public async Task SetSheetLocationName_AlwaysAllowsClearingTheOverride()
+    {
+        var sheet = Sheet();
+        sheet.Locations = [Link(1, "Alpha", displayName: "Renamed"), Link(2, "Beta", displayName: "Alpha")];
+        SheetIsVisibleTo(sheet, Owner);
+
+        await _sut.SetSheetLocationNameAsync(sheet.Id, 1, new BidSheetLocationNameRequest { Name = "  " }, CancellationToken.None);
+
+        _repo.Verify(r => r.SetSheetLocationNameAsync(sheet.Id, 1, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 }
