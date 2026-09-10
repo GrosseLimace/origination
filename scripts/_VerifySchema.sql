@@ -246,6 +246,10 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocationBids', 'BasisSymbol',       'nvarchar(100)', 1),
 ('dbo', 'BidSheetLocationBids', 'BasisQuoteAsOf',    'datetime2',     1),
 ('dbo', 'BidSheetLocationBids', 'UnderlyingFuture',  'nvarchar(20)',  1),
+('dbo', 'BidSheetLocationBids', 'CoveredByCropYear', 'int',           1),
+('dbo', 'BidSheetLocationBids', 'CoveredByMonth',    'int',           1),
+('dbo', 'BidSheetLocationBids', 'CashChangedAt',     'datetime2',     1),
+('dbo', 'BidSheetLocationBids', 'BasisChangedAt',    'datetime2',     1),
 -- BidSheets
 ('dbo', 'BidSheets', 'Id',             'int',           0),
 ('dbo', 'BidSheets', 'CreatedAt',      'datetime2',     0),
@@ -862,7 +866,15 @@ INSERT INTO @Findings (SortBucket, Category, Item, Expected, Actual, Status)
        AND b.Source        = N'Barchart'
     WHERE v.WinnerRank = 1
       AND EXISTS (SELECT 1 FROM dbo.BidSheetLocationBids WHERE Source = N'Barchart')
-      AND (b.Id IS NULL OR b.Bid <> FORMAT(v.LastPrice, N'0.00##', N'en-US'))
+      -- Compared against the column the winner actually feeds. This used to test every winner against
+      -- Bid, the CASH column, so all 431 basis winners on Dev reported as drift for having a basis in
+      -- them -- a false alarm since basis joined the view (AddBasisToPublishableBidView). Each side now
+      -- gets its own column and its own format: cash renders as money, basis as whole cents.
+      AND (b.Id IS NULL
+           OR (v.PriceType = N'basis'
+               AND ISNULL(b.BasisBid, N'') <> FORMAT(v.LastPrice, N'0.####', N'en-US'))
+           OR (v.PriceType <> N'basis'
+               AND b.Bid <> FORMAT(v.LastPrice, N'0.00##', N'en-US')))
       -- A user override is not drift. Users may now type over a fed cell, which flips it to
       -- Source='Manual' until the feed's next run reclaims it -- so the join above finds nothing and
       -- the cell looked like a missing publish. Only cells with no row of EITHER ownership count.

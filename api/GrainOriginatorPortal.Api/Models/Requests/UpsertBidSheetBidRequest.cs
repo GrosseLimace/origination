@@ -41,7 +41,13 @@ public record UpsertBidSheetBidRequest
     [Required]
     public int CropYear { get; init; }
 
-    public int Month { get; init; } = 0; // 0=yearly, 1-12=monthly
+    /// <summary>
+    /// Delivery month, 1-12. Zero -- the old "Yearly" period -- is refused: the business retired it in
+    /// September 2026 because a fed Year cell (nearest open month) and a typed one (the crop year) meant
+    /// different things while sitting side by side. A bid now always names its month.
+    /// </summary>
+    [Range(1, 12, ErrorMessage = "Month must be 1-12. The Yearly period has been retired; choose the delivery month.")]
+    public int Month { get; init; }
 
     /// <summary>Flat cash price. Empty is allowed: a location may be quoted on basis alone.</summary>
     [MaxLength(50)]

@@ -27,7 +27,12 @@ public class BidSheetLocationBid
     public string? CommodityName { get; set; }
     public string? CommodityCategory { get; set; }
     public int CropYear { get; set; }
-    public int Month { get; set; } // 0=yearly, 1-12=monthly
+    /// <summary>
+    /// Delivery month, 1-12. The value 0 was the retired "Yearly" period: the sheet no longer offers it
+    /// and the feed no longer writes it, but hand-typed rows carrying 0 may still exist in a database
+    /// until they are converted or removed -- they are simply never shown.
+    /// </summary>
+    public int Month { get; set; }
     public string Bid { get; set; } = string.Empty;
 
     /// <summary>Who owns this cell: <see cref="BidSources.Manual"/> (user) or <see cref="BidSources.Barchart"/> (feed).</summary>
@@ -60,6 +65,29 @@ public class BidSheetLocationBid
     /// Year cell showing a price without it is not comparable to anything.
     /// </summary>
     public string? UnderlyingFuture { get; set; }
+
+    /// <summary>
+    /// Set when this cell's price is not the elevator's own bid for this month but the bid for a LATER
+    /// contract month whose delivery window covers this one -- Cargill's "Nov 26" corn delivers from
+    /// 1 Oct, so October shows November's price with these pointing at (2026, 11). Null means the cell
+    /// is the elevator's own bid for the month. One in five vendor bids opens its window before the
+    /// contract month; without this those months read as if the elevator had no bid at all.
+    /// </summary>
+    public int? CoveredByCropYear { get; set; }
+
+    /// <summary>The contract month (1-12) whose bid covers this cell. See <see cref="CoveredByCropYear"/>.</summary>
+    public int? CoveredByMonth { get; set; }
+
+    /// <summary>
+    /// UTC time the CASH value last actually changed, maintained by the feed's MERGE. Distinct from
+    /// <see cref="QuoteAsOf"/> on purpose: that is the vendor's re-post stamp and refreshes most days
+    /// whether or not the number moved, so "moved in the last 24h" reads this instead. Null until the
+    /// first change after the cell appeared -- a brand-new cell has nothing to have moved from.
+    /// </summary>
+    public DateTime? CashChangedAt { get; set; }
+
+    /// <summary>UTC time the basis value last actually changed. See <see cref="CashChangedAt"/>.</summary>
+    public DateTime? BasisChangedAt { get; set; }
 
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

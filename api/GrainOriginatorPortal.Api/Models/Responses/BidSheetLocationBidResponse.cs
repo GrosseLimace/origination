@@ -39,6 +39,17 @@ public record BidSheetLocationBidResponse
     /// <summary>When the elevator last updated the basis bid.</summary>
     public DateTime? BasisQuoteAsOf { get; init; }
 
+
+    /// <summary>When set, this cell shows a LATER contract month's bid whose delivery window covers this
+    /// month (e.g. October showing the "Nov 26" bid that delivers from 1 Oct). Null = the elevator's own
+    /// bid for the month.</summary>
+    public int? CoveredByCropYear { get; init; }
+    public int? CoveredByMonth { get; init; }
+
+    /// <summary>UTC time the cash / basis value last actually changed -- not the vendor's re-post stamp.
+    /// What "moved in the last 24h" is judged by for fed cells.</summary>
+    public DateTime? CashChangedAt { get; init; }
+    public DateTime? BasisChangedAt { get; init; }
     /// <summary>
     /// Futures contract the bid is quoted against, e.g. <c>ZCZ26</c>. Like the symbols above, it is
     /// retained through a user override — gate on <see cref="Source"/> before showing it.

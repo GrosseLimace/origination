@@ -592,6 +592,10 @@ public class ApplicationDbContext : DbContext
             // Widest value seen in the catalog is 6 characters (MWOU26); 20 leaves room for a longer root.
             entity.Property(e => e.UnderlyingFuture).HasMaxLength(20).IsRequired(false);
             entity.Property(e => e.QuoteAsOf).IsRequired(false);
+            entity.Property(e => e.CoveredByCropYear).IsRequired(false);
+            entity.Property(e => e.CoveredByMonth).IsRequired(false);
+            entity.Property(e => e.CashChangedAt).IsRequired(false);
+            entity.Property(e => e.BasisChangedAt).IsRequired(false);
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);

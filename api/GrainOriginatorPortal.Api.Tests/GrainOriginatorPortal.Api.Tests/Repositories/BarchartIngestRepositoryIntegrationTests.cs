@@ -1,6 +1,7 @@
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Repositories;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -270,10 +271,10 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Null(manual.QuoteAsOf);
 
         // Re-running changes nothing: no duplicate rows, no ModifiedAt churn.
-        // Five now: GPC's fed cell and its Year row, Sioux's fed cell and its Year row, and Sioux's
-        // untouched manual March.
+        // Three: GPC's fed December, Sioux's fed December, and Sioux's untouched manual March. (GPC's
+        // October-to-December Variant bid covers no other month because its commodity is unmapped.)
         await _sut.ApplyBidsToBidSheetAsync(null, "bidCash", "barchart-feed");
-        Assert.Equal(5, await _context.BidSheetLocationBids
+        Assert.Equal(3, await _context.BidSheetLocationBids
             .CountAsync(b => b.LocationId == gpcLocation.Id || b.LocationId == siouxLocation.Id));
     }
 
@@ -512,11 +513,13 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Equal(BidSources.Manual, cell.Source);
     }
 
-    // The sheet has a Year column and the vendor has no year-level bid, so the nearest delivery month
-    // still open stands in for one. Without it the feed never appears in the Year view -- which is
-    // where hand-typed bids live, so a fed and a manual location could never be compared.
+    // One vendor bid in five opens its delivery window before its contract month (Cargill East St. Louis's
+    // "Nov 26" corn delivers from 1 October). Keying cells off the contract month alone left those months
+    // blank, as if the elevator would not take the grain -- it will, at the contract's price. So every
+    // month inside the window gets the bid, marked with the contract it came from, while the contract
+    // month itself is the elevator's own bid and carries no marker.
     [Fact]
-    public async Task ApplyBids_WritesAYearRowFromTheNearestOpenMonth()
+    public async Task ApplyBids_FillsTheMonthsAWindowCovers_MarkedWithTheCoveringContract()
     {
         if (!Enabled) return;
 
@@ -524,18 +527,167 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
 
-        // IT_SPLIT publishes two half-month windows in December 2027; the whole-month rule picks the
-        // later half, and that same winner is what the Year row carries.
-        var december = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 12);
-        var year = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 0);
+        // ZCPZ27 is the December contract delivering 1 Oct - 31 Dec: December is its own; October and
+        // November are covered by it.
+        var flex = await _context.BidSheetLocationBids.AsNoTracking()
+            .Where(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX")
+            .OrderBy(b => b.Month)
+            .ToListAsync();
+        Assert.Equal([10, 11, 12], flex.Select(b => b.Month).ToArray());
+        Assert.All(flex, b =>
+        {
+            Assert.Equal(2027, b.CropYear);
+            Assert.Equal("4.47", b.Bid);
+            Assert.Equal("ZCPZ27-990001-990010.CM", b.BarchartSymbol);
+            Assert.Equal(BidSources.Barchart, b.Source);
+        });
+        Assert.Equal((2027, 12), (flex[0].CoveredByCropYear, flex[0].CoveredByMonth));
+        Assert.Equal((2027, 12), (flex[1].CoveredByCropYear, flex[1].CoveredByMonth));
+        Assert.Null(flex[2].CoveredByCropYear);
+        Assert.Null(flex[2].CoveredByMonth);
 
-        Assert.Equal(december.Bid, year.Bid);
-        // The source month travels with it via the symbol, so the UI can say where the year came from.
-        Assert.Equal(december.BarchartSymbol, year.BarchartSymbol);
-        Assert.Equal(BidSources.Barchart, year.Source);
+        // The half-month bids sit inside December, so they cover nothing else -- and there is no Year row.
+        var split = await _context.BidSheetLocationBids.AsNoTracking()
+            .Where(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT")
+            .Select(b => b.Month)
+            .ToListAsync();
+        Assert.Equal([12], split);
+        Assert.False(await _context.BidSheetLocationBids.AnyAsync(b => b.LocationId == location.Id && b.Month == 0));
     }
+
+    // A month whose delivery window has closed keeps its cells for good. They used to be pruned the day
+    // the window elapsed -- the sheet was "today's bids" and tidied up behind itself -- so the record of
+    // what a month paid vanished exactly when someone might want to look back at it. Pruning still
+    // applies to the current month and later, which is what keeps a rolled-off contract from lingering.
+    [Fact]
+    public async Task ApplyBids_LeavesAPastMonthsCellsAlone_ButStillPrunesLiveOnes()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+        var lastMonth = DateTime.UtcNow.AddMonths(-1);
+        var nextMonth = DateTime.UtcNow.AddMonths(1);
+
+        // Two feed-owned cells the bridge will find no winner for: one behind us, one ahead.
+        _context.BidSheetLocationBids.AddRange(
+            new BidSheetLocationBid
+            {
+                LocationId = location.Id,
+                CommodityCode = "IT_FLEX",
+                CropYear = lastMonth.Year,
+                Month = lastMonth.Month,
+                Bid = "3.11",
+                Source = BidSources.Barchart,
+                CreatedBy = "integration-test",
+                CreatedAt = DateTime.UtcNow,
+            },
+            new BidSheetLocationBid
+            {
+                LocationId = location.Id,
+                CommodityCode = "IT_FLEX",
+                CropYear = nextMonth.Year,
+                Month = nextMonth.Month,
+                Bid = "3.22",
+                Source = BidSources.Barchart,
+                CreatedBy = "integration-test",
+                CreatedAt = DateTime.UtcNow,
+            });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var past = await _context.BidSheetLocationBids.AsNoTracking().SingleOrDefaultAsync(
+            b => b.LocationId == location.Id && b.CropYear == lastMonth.Year && b.Month == lastMonth.Month);
+        Assert.NotNull(past);
+        Assert.Equal("3.11", past!.Bid);   // frozen exactly as it last published
+
+        var live = await _context.BidSheetLocationBids.AsNoTracking().SingleOrDefaultAsync(
+            b => b.LocationId == location.Id && b.CropYear == nextMonth.Year && b.Month == nextMonth.Month);
+        Assert.Null(live);                 // no winner, still a live month, so it goes
+    }
+
+    // The elevator's own bid for a month beats a covering one, so a covered month that later gets its
+    // own contract switches to it and drops the marker.
+    [Fact]
+    public async Task ApplyBids_PrefersTheMonthsOwnBidOverACoveringOne()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+        // A November contract of its own, priced differently from the covering December bid.
+        await _sut.LoadInstrumentsAsync("""
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPX27-990001-990010.CM", "symbolDescription": "IT Contract Month Elevator Corn (IT Flexible) Nov 27 Cash",
+                "elevator": "IT Contract Month Elevator", "commodity": "Corn (IT Flexible)", "underlyingFuture": "ZCZ27",
+                "deliveryStart": "2027-11-01T00:00:00-05:00", "deliveryEnd": "2027-12-01T00:00:00-05:00",
+                "location": "IT-CONTRACT-MONTH", "facilityType": "Country Elevator", "address": "1 Test Road",
+                "city": "Testville", "state": "IA", "zipCode": "50001" }
+            ] }
+            """);
+        await _sut.LoadQuotesAsync("""
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPX27-990001-990010.CM", "lastPrice": "4.39",
+                "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 }
+            ] }
+            """, BusinessDate);
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var november = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 11);
+        Assert.Equal("4.39", november.Bid);
+        Assert.Equal("ZCPX27-990001-990010.CM", november.BarchartSymbol);
+        Assert.Null(november.CoveredByMonth);
+
+        // October is still only reachable through December's window.
+        var october = await _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 10);
+        Assert.Equal("4.47", october.Bid);
+        Assert.Equal(12, october.CoveredByMonth);
+    }
+
+    // QuoteAsOf is the vendor's re-post stamp: on the live feed 240 of 478 bids whose price had NOT moved
+    // day over day still carried a fresh stamp, which made "moved in the last 24h" light up nearly every
+    // pin. CashChangedAt is set only when the stored value actually differs -- never on first insert, and
+    // never on a re-post of the same number.
+    [Fact]
+    public async Task ApplyBids_StampsCashChangedAtOnlyWhenThePriceActuallyMoves()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var fresh = await December(location.Id);
+        Assert.Null(fresh.CashChangedAt);              // just appeared: nothing to have moved from
+
+        // Same price, newer stamp -- a re-post. QuoteAsOf moves, CashChangedAt must not.
+        await _sut.LoadQuotesAsync(Quote("4.47", "2026-07-23T12:00:00-05:00"), BusinessDate.AddDays(1));
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+        var reposted = await December(location.Id);
+        Assert.NotEqual(fresh.QuoteAsOf, reposted.QuoteAsOf);
+        Assert.Null(reposted.CashChangedAt);
+
+        // A different price: this is a move.
+        await _sut.LoadQuotesAsync(Quote("4.52", "2026-07-24T12:00:00-05:00"), BusinessDate.AddDays(2));
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+        var moved = await December(location.Id);
+        Assert.Equal("4.52", moved.Bid);
+        Assert.NotNull(moved.CashChangedAt);
+        Assert.InRange(moved.CashChangedAt!.Value, DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow.AddMinutes(1));
+
+        static string Quote(string price, string stamp) => $$"""
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPZ27-990001-990010.CM", "lastPrice": "{{price}}",
+                "tradeTimestamp": "{{stamp}}", "mode": "i", "unitCode": "4", "code": 200 }
+            ] }
+            """;
+    }
+
+    private Task<BidSheetLocationBid> December(int locationId) =>
+        _context.BidSheetLocationBids.AsNoTracking()
+            .SingleAsync(b => b.LocationId == locationId && b.CommodityCode == "IT_FLEX" && b.Month == 12);
 
     // Mode reports how BarChart delivered the quote -- real-time, delayed, or end-of-day -- not whether
     // the bid is any good. We used to block mode d believing it meant a dead record, which suppressed
@@ -773,7 +925,9 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
         {
-            BarchartCommodity = "Corn (IT Standard)", CommodityCode = "IT_CORN", CreatedBy = "integration-test"
+            BarchartCommodity = "Corn (IT Standard)",
+            CommodityCode = "IT_CORN",
+            CreatedBy = "integration-test"
         });
         var loc = NewLinkedLocation("__IT Basis Manual", "990202");
         _context.BidSheetLocations.Add(loc);
@@ -781,8 +935,14 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         _context.BidSheetLocationBids.Add(new BidSheetLocationBid
         {
-            LocationId = loc.Id, CommodityCode = "IT_CORN", CropYear = 2027, Month = 12,
-            Bid = "9.99", Source = BidSources.Manual, CreatedBy = "integration-test", CreatedAt = DateTime.UtcNow
+            LocationId = loc.Id,
+            CommodityCode = "IT_CORN",
+            CropYear = 2027,
+            Month = 12,
+            Bid = "9.99",
+            Source = BidSources.Manual,
+            CreatedBy = "integration-test",
+            CreatedAt = DateTime.UtcNow
         });
         await _context.SaveChangesAsync();
 
@@ -808,11 +968,8 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         var december = await _context.BidSheetLocationBids.AsNoTracking()
             .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 12);
-        var year = await _context.BidSheetLocationBids.AsNoTracking()
-            .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_SPLIT" && b.Month == 0);
 
         Assert.Equal("ZCZ27", december.UnderlyingFuture);
-        Assert.Equal("ZCZ27", year.UnderlyingFuture);
     }
 
     private const string ShortYearInstrumentsJson = """

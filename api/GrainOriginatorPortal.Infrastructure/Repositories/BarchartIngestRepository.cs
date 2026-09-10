@@ -1,9 +1,11 @@
 using System.Data;
 using System.Data.Common;
+
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -467,6 +469,8 @@ DECLARE @winners TABLE
     BasisText         nvarchar(50)  NULL,
     BasisQuoteAsOf    datetime2     NULL,
     UnderlyingFuture  nvarchar(20)  NULL,
+    CoveredByCropYear int           NULL,
+    CoveredByMonth    int           NULL,
     PRIMARY KEY (LocationId, CommodityCode, CropYear, BidMonth)
 );
 
@@ -477,8 +481,12 @@ DECLARE @winners TABLE
         CommodityCode     = m.CommodityCode,
         CommodityName     = m.CommodityName,
         CommodityCategory = m.CommodityCategory,
-        CropYear          = cmo.CropYear,
-        BidMonth          = cmo.BidMonth,
+        CropYear          = cell.CellYear,
+        BidMonth          = cell.CellMonth,
+        -- Null on the elevator's own bid for the month; the contract month on a cell that only shows a
+        -- later contract's bid because that contract's window covers this month.
+        CoveredByCropYear = CASE WHEN cell.Coverage = 1 THEN cmo.CropYear END,
+        CoveredByMonth    = CASE WHEN cell.Coverage = 1 THEN cmo.BidMonth END,
         Symbol            = i.Symbol,
         PriceType         = i.InstrumentType,
         -- Cash renders as money; basis is whole cents against the board, so trailing zeros are noise:
@@ -510,10 +518,16 @@ DECLARE @winners TABLE
         -- widest window, which covers more of the month. Symbol last makes the order total, so the
         -- winner never flip-flops between runs.
         -- Partitioned by type as well, so cash and basis each get their own winner for the cell.
+        -- The elevator's OWN bid for the month always beats a covering bid, even a half-month one: an
+        -- explicit price for the month is the elevator's word on it. Among covering bids the nearest
+        -- contract wins -- a March-covers-January bid loses to a February-covers-January one.
         rn = ROW_NUMBER() OVER (
-                 PARTITION BY loc.Id, m.CommodityCode, cmo.CropYear, cmo.BidMonth,
+                 PARTITION BY loc.Id, m.CommodityCode, cell.CellYear, cell.CellMonth,
                               i.InstrumentType
-                 ORDER BY CASE WHEN i.DeliveryWindowFlag IS NULL THEN 0 ELSE 1 END,
+                 ORDER BY cell.Coverage ASC,
+                          ABS(DATEDIFF(MONTH, DATEFROMPARTS(cell.CellYear, cell.CellMonth, 1),
+                                              DATEFROMPARTS(cmo.CropYear, cmo.BidMonth, 1))) ASC,
+                          CASE WHEN i.DeliveryWindowFlag IS NULL THEN 0 ELSE 1 END,
                           q.TradeTimestamp DESC,
                           DATEDIFF(DAY, i.DeliveryStart, i.DeliveryEnd) DESC,
                           i.DeliveryStart ASC,
@@ -573,14 +587,38 @@ DECLARE @winners TABLE
                                               WHEN N'N' THEN 7  WHEN N'Q' THEN 8  WHEN N'U' THEN 9
                                               WHEN N'V' THEN 10 WHEN N'X' THEN 11 WHEN N'Z' THEN 12
                                           END, MONTH(i.DeliveryStart))) AS cmo
+    -- Every month the bid can be DELIVERED into: the contract month itself (Coverage 0), plus each other
+    -- calendar month inside the delivery window (Coverage 1). One vendor bid in five opens its window
+    -- before the contract month -- Cargill East St. Louis's ZCPX26 (Nov 26) delivers 1 Oct - 30 Nov,
+    -- Dorchester's from 1 Sep -- and keying only the contract month left those months blank, as if the
+    -- elevator would not take the grain. It will, at the November price, so October shows it, marked.
+    -- The window end is exclusive (1 Dec means through 30 Nov), hence the day step back. Twelve
+    -- offsets cover the longest window in the catalog (five months) with room to spare.
+    CROSS APPLY (
+        SELECT CellYear = cmo.CropYear, CellMonth = cmo.BidMonth, Coverage = 0
+        UNION ALL
+        SELECT YEAR(mo.d), MONTH(mo.d), 1
+        FROM (SELECT d = DATEADD(MONTH, n.k, DATEFROMPARTS(YEAR(i.DeliveryStart), MONTH(i.DeliveryStart), 1))
+              FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11)) AS n(k)) AS mo
+        WHERE i.DeliveryEnd IS NOT NULL
+          AND mo.d <= DATEADD(DAY, -1, i.DeliveryEnd)
+          AND NOT (YEAR(mo.d) = cmo.CropYear AND MONTH(mo.d) = cmo.BidMonth)
+    ) AS cell
     WHERE loc.BarchartLocationKey IS NOT NULL
       AND (@locationId IS NULL OR loc.Id = @locationId)
+      -- A month already behind us gets no cell, own or covering: nothing can be delivered into it. The
+      -- window test above lets a September contract linger into 1 October (its end is midnight Central,
+      -- stored as 05:00 UTC); this closes that day, and a window that genuinely runs on past its contract
+      -- month shows up as coverage in the later month instead.
+      AND DATEFROMPARTS(cell.CellYear, cell.CellMonth, 1)
+          >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1)
 )
 -- One row per cell carrying both prices. A cell with only one of the two still produces a row; the
 -- other side stays NULL and the sheet simply has nothing to show for that mode.
 INSERT @winners
     (LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
-     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture)
+     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture,
+     CoveredByCropYear, CoveredByMonth)
 SELECT
     c.LocationId, c.CommodityCode,
     MAX(c.CommodityName), MAX(c.CommodityCategory),
@@ -594,38 +632,25 @@ SELECT
     -- Cash and basis agree on the contract in 39,095 of the 39,096 windows that carry both, so one
     -- value per cell is safe; cash leads only so a basis-only cell still gets one.
     UnderlyingFuture = ISNULL(MAX(CASE WHEN c.PriceType = @cashType  THEN c.UnderlyingFuture END),
-                              MAX(CASE WHEN c.PriceType = @basisType THEN c.UnderlyingFuture END))
+                              MAX(CASE WHEN c.PriceType = @basisType THEN c.UnderlyingFuture END)),
+    -- The cash side says whether the cell is covering; basis only speaks when there is no cash. Not
+    -- ISNULL like the contract above: an own cash bid carries NULL here on purpose, and falling through
+    -- to a covering basis would mark the elevator's own price as borrowed.
+    CoveredByCropYear = CASE WHEN MAX(CASE WHEN c.PriceType = @cashType THEN 1 ELSE 0 END) = 1
+                             THEN MAX(CASE WHEN c.PriceType = @cashType  THEN c.CoveredByCropYear END)
+                             ELSE MAX(CASE WHEN c.PriceType = @basisType THEN c.CoveredByCropYear END) END,
+    CoveredByMonth    = CASE WHEN MAX(CASE WHEN c.PriceType = @cashType THEN 1 ELSE 0 END) = 1
+                             THEN MAX(CASE WHEN c.PriceType = @cashType  THEN c.CoveredByMonth END)
+                             ELSE MAX(CASE WHEN c.PriceType = @basisType THEN c.CoveredByMonth END) END
 FROM candidate AS c
 WHERE c.rn = 1
 GROUP BY c.LocationId, c.CommodityCode, c.CropYear, c.BidMonth;
 
--- Year rows. The sheet has a Year column (Month = 0) and the vendor has no year-level bid, so the
--- nearest delivery month still open stands in for one. Without this the feed can never appear in the
--- Year view at all, which is where hand-typed bids live -- so a fed location and a manual one could
--- never be compared, which is the whole purpose of the screen.
---
--- Nearest rather than best or latest: it answers what an elevator will pay for the soonest delivery
--- still available, it cannot be accused of cherry-picking the flattering month, and it rolls forward
--- on its own as months elapse. Elapsed windows are already excluded above, so the lowest remaining
--- month IS the nearest. The row keeps the source month's symbol, so the UI can say which month the
--- year value came from rather than leaving the user to guess.
-INSERT @winners
-    (LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
-     Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture)
-SELECT
-    n.LocationId, n.CommodityCode, n.CommodityName, n.CommodityCategory, n.CropYear, 0,
-    n.Symbol, n.BidText, n.QuoteAsOf, n.BasisSymbol, n.BasisText, n.BasisQuoteAsOf, n.UnderlyingFuture
-FROM
-(
-    SELECT
-        w.LocationId, w.CommodityCode, w.CommodityName, w.CommodityCategory, w.CropYear,
-        w.Symbol, w.BidText, w.QuoteAsOf, w.BasisSymbol, w.BasisText, w.BasisQuoteAsOf, w.UnderlyingFuture,
-        rn = ROW_NUMBER() OVER (PARTITION BY w.LocationId, w.CommodityCode, w.CropYear
-                                ORDER BY w.BidMonth)
-    FROM @winners AS w
-    WHERE w.BidMonth > 0
-) AS n
-WHERE n.rn = 1;
+-- No Year rows. The sheet used to carry a Yearly period (Month 0) that the feed filled with the nearest
+-- open month's price; the business retired the period in September 2026 because it meant one thing for a
+-- fed location (the nearest month) and another for a hand-typed one (the crop year), and the two sat side
+-- by side as if comparable. Every fed cell is now a named month. The prune below removes any fed Month 0
+-- rows still standing on the first run; hand-typed Month 0 rows are left for their owners to convert.
 
 DECLARE @written int = 0;
 DECLARE @pruned  int = 0;
@@ -636,7 +661,8 @@ MERGE dbo.BidSheetLocationBids WITH (HOLDLOCK) AS t
 USING
 (
     SELECT LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
-           Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture
+           Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture,
+           CoveredByCropYear, CoveredByMonth
     FROM @winners
 ) AS s
    ON t.LocationId    = s.LocationId
@@ -657,7 +683,9 @@ WHEN MATCHED AND (t.Source <> N'Barchart'
                   OR ISNULL(t.BasisBid, N'') <> ISNULL(s.BasisText, N'')
                   OR ISNULL(t.BasisSymbol, N'') <> ISNULL(s.BasisSymbol, N'')
                   OR ISNULL(t.BasisQuoteAsOf, N'19000101') <> ISNULL(s.BasisQuoteAsOf, N'19000101')
-                  OR ISNULL(t.UnderlyingFuture, N'') <> ISNULL(s.UnderlyingFuture, N''))
+                  OR ISNULL(t.UnderlyingFuture, N'') <> ISNULL(s.UnderlyingFuture, N'')
+                  OR ISNULL(t.CoveredByCropYear, -1) <> ISNULL(s.CoveredByCropYear, -1)
+                  OR ISNULL(t.CoveredByMonth, -1) <> ISNULL(s.CoveredByMonth, -1))
     THEN UPDATE SET
         t.Bid               = ISNULL(s.BidText, N''),
         t.Source            = N'Barchart',
@@ -675,25 +703,47 @@ WHEN MATCHED AND (t.Source <> N'Barchart'
         t.BasisSymbol       = s.BasisSymbol,
         t.BasisQuoteAsOf    = s.BasisQuoteAsOf,
         t.UnderlyingFuture  = s.UnderlyingFuture,
+        t.CoveredByCropYear = s.CoveredByCropYear,
+        t.CoveredByMonth    = s.CoveredByMonth,
+        -- Real moves only. QuoteAsOf is the vendor's re-post stamp and refreshes most days whether or not
+        -- the number changed (240 of 478 unchanged instruments carried a fresh stamp on 2026-09-10), so
+        -- the sheet's moved-in-the-last-24h marker reads these. Compared as stored, so a takeover from a
+        -- manual value counts as a move -- the number on screen did change -- and a re-post does not.
+        t.CashChangedAt     = CASE WHEN t.Bid <> ISNULL(s.BidText, N'') THEN SYSUTCDATETIME() ELSE t.CashChangedAt END,
+        t.BasisChangedAt    = CASE WHEN ISNULL(t.BasisBid, N'') <> ISNULL(s.BasisText, N'') THEN SYSUTCDATETIME() ELSE t.BasisChangedAt END,
         t.ModifiedBy        = @appliedBy,
         t.ModifiedAt        = SYSUTCDATETIME()
 WHEN NOT MATCHED BY TARGET THEN INSERT
 (
     LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, Month,
     Bid, Source, BarchartSymbol, QuoteAsOf, BasisBid, BasisSymbol, BasisQuoteAsOf, UnderlyingFuture,
+    CoveredByCropYear, CoveredByMonth,
     CreatedBy, CreatedAt
 )
+-- CashChangedAt / BasisChangedAt stay NULL on insert: a cell that has just appeared has nothing to have
+-- moved from, and stamping it would make every newly linked location pulse for a day.
 VALUES
 (
     s.LocationId, s.CommodityCode, s.CommodityName, s.CommodityCategory, s.CropYear, s.BidMonth,
     ISNULL(s.BidText, N''), N'Barchart', s.Symbol, s.QuoteAsOf,
-    s.BasisText, s.BasisSymbol, s.BasisQuoteAsOf, s.UnderlyingFuture, @appliedBy, SYSUTCDATETIME()
+    s.BasisText, s.BasisSymbol, s.BasisQuoteAsOf, s.UnderlyingFuture,
+    s.CoveredByCropYear, s.CoveredByMonth, @appliedBy, SYSUTCDATETIME()
 );
 
 SET @written = @@ROWCOUNT;
 
 -- Prune feed-owned cells with no current winner. Scoped to linked locations (and to the single
 -- location when one was requested) so another trade unit's rows are never in range.
+--
+-- A PAST month is never pruned. Its cells freeze exactly as they last published and stay on the sheet
+-- for good, so picking August next year still shows what everyone was bidding for August delivery. They
+-- used to be deleted the moment the delivery window closed -- the sheet was todays-bids-only and tidied up
+-- behind itself -- which meant the record of a month vanished the day it stopped being tradeable, and an
+-- originator looking back at what the market did found nothing. Growth is negligible: roughly 500 rows a
+-- month, and the existing purge job can trim them if that ever changes.
+--
+-- Integer month keys rather than DATEFROMPARTS: legacy hand-typed rows can still carry Month 0 (the
+-- retired Yearly period), and DATEFROMPARTS would raise on that rather than simply sorting it as past.
 DELETE b
   FROM dbo.BidSheetLocationBids AS b
  INNER JOIN dbo.BidSheetLocations AS l
@@ -701,6 +751,8 @@ DELETE b
  WHERE b.Source = N'Barchart'
    AND l.BarchartLocationKey IS NOT NULL
    AND (@locationId IS NULL OR l.Id = @locationId)
+   AND (b.CropYear * 100 + b.[Month])
+       >= (YEAR(SYSUTCDATETIME()) * 100 + MONTH(SYSUTCDATETIME()))
    AND NOT EXISTS
        (
            SELECT 1

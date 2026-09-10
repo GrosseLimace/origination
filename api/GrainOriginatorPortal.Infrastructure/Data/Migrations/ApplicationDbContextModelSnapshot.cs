@@ -565,6 +565,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<DateTime?>("BasisChangedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("BasisQuoteAsOf")
                         .HasColumnType("datetime2");
 
@@ -576,6 +579,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("CashChangedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("CommodityCategory")
                         .HasMaxLength(100)
@@ -589,6 +595,12 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<string>("CommodityName")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("CoveredByCropYear")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CoveredByMonth")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
