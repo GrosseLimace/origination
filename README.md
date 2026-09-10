@@ -236,7 +236,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -269,6 +269,8 @@ Last Updated: 2026-09-09
 | rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |
 | jspdf | 4.2.1 | MIT | Client-side PDF generation (Profitability calculator report) |
 | jspdf-autotable | 5.0.8 | MIT | Tabular layout for jsPDF (calculator report tables) |
+| exceljs | ^4.4.0 | MIT | Bid sheet "Export to Excel" (.xlsx workbook: grid, one-row-per-bid, locations). Lazy-loaded on first use, not in the initial bundle |
+| uuid | ≥11.1.1 <12 | MIT | UUID generation — transitive (via exceljs, which pins ^8), forced in `overrides` (security fix: missing buffer bounds check in v3/v5/v6 when `buf` is provided, GHSA-w5hq-g745-h8pq, ≥11.1.1; exceljs only calls v4). Held below 12: uuid 13+ is ESM-only and exceljs `require()`s it |
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |

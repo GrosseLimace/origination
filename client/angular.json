@@ -26,6 +26,7 @@
             "polyfills": [],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
+            "allowedCommonJsDependencies": ["exceljs"],
             "assets": [
               {
                 "glob": "**/*",

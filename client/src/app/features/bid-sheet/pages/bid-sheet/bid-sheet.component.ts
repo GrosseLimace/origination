@@ -20,6 +20,7 @@ import { BarchartPickerComponent, BarchartBulkAddRequest, BarchartSearchArea } f
 import { BarchartCatalogLocation, BarchartCatalogLocationDetail } from '@models';
 import { commodityHex } from '@shared/utils/commodity-color';
 import { barchartDisplayName, barchartSaveName, isScoularListing } from '../../utils/barchart-location-name';
+import { buildBidSheetExport, downloadWorkbook, writeBidSheetWorkbook, ExcelJSModule } from '../../utils/bid-sheet-export';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
@@ -3872,6 +3873,59 @@ export class BidSheetComponent {
    */
   private readonly printPriceTypes = computed<(('cash' | 'basis') | undefined)[]>(() =>
     this.priceMode() === 'both' ? ['cash', 'basis'] : [undefined]);
+
+  // ---------------------------------------------------------------------------
+  // Export to Excel
+  // ---------------------------------------------------------------------------
+
+  readonly exporting = signal<boolean>(false);
+
+  /**
+   * The open sheet as an Excel workbook: the grid exactly as displayed -- location names, and under each
+   * period the price(s) the Cash/Basis/Both toggle is showing plus the contract symbol. Nothing more, by
+   * request. Beside Print because it answers the same question -- "give me this sheet to take away" --
+   * for the person who wants to sort or paste rather than read.
+   *
+   * Unsaved cells are saved FIRST, the same rule removing locations follows: the file must never show
+   * a value the database doesn't. If that save fails, no file is produced (the toast says why), rather
+   * than a spreadsheet that quietly disagrees with the sheet.
+   */
+  exportEditBids(): void {
+    if (this.exporting() || !this.activeSheet()) return;
+    this._saveDirtyBids(() => { void this._runExport(); });
+  }
+
+  private async _runExport(): Promise<void> {
+    const sheet = this.activeSheet();
+    if (!sheet) return;
+    this.exporting.set(true);
+    try {
+      // exceljs is ~1MB, so it is loaded on first use rather than shipped in the initial bundle. It is
+      // a CommonJS module: under esbuild's interop the namespace may arrive on .default or as the
+      // namespace itself, hence the fallback.
+      const loaded: unknown = await import('exceljs');
+      const ExcelJS = ((loaded as { default?: ExcelJSModule }).default ?? loaded) as ExcelJSModule;
+
+      const model = buildBidSheetExport({
+        sheetName: sheet.name,
+        exportedAt: new Date(),
+        // The toggle decides what each period exports: Cash or Basis alone, or both side by side.
+        priceMode: this.priceMode(),
+        columns: this.editGridColumns().map(c => ({ key: c.key, crop: c.crop, year: c.year, month: c.month, board: c.board })),
+        rows: this.editBidsRows().map(r => ({ name: r.name, bids: r.bids, basisBids: r.basisBids, boardChips: r.boardChips })),
+        monthNames: BidSheetComponent.MONTH_NAMES,
+      });
+
+      downloadWorkbook(await writeBidSheetWorkbook(model, ExcelJS), model.fileName);
+      this.usageTracking.postClickEvent('interaction', 'bidsheet', 'exported-excel');
+      this.toastService.success(`Exported "${sheet.name}"`);
+    } catch (err) {
+      if (isDevMode()) console.error('[BidSheet] export failed', err);
+      this.toastService.error('Failed to export the bid sheet');
+    } finally {
+      this.exporting.set(false);
+    }
+  }
 
   printEditBids(): void {
     // Initialize period (crop/month) selection with whatever is currently visible on the edit grid.
