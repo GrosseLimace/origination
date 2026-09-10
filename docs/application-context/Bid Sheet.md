@@ -68,12 +68,12 @@ flowchart LR
 
 **`BidSheetLocations`** — `Id`, `Name`, `Address`, `City`, `State`, `Latitude`, `Longitude`, `ElevatorCode`, `TradeUnitCode`, `GroupName`, `IsScoularFacility`, audit columns.
 
-**`BidSheetLocationBids`** — `Id`, `LocationId`, `CommodityCode`, `CommodityName`, `CommodityCategory`, `CropYear`, `Month` (0 = yearly, 1–12 = monthly), `Bid` (string-formatted price), audit columns.
+**`BidSheetLocationBids`** — `Id`, `LocationId`, `CommodityCode`, `CommodityName`, `CommodityCategory`, `CropYear`, `Month` (1–12; 0 was the retired Yearly period), `Bid` (string-formatted price), audit columns.
 
 **`BidSheetLocationOrders`** — Per-user persisted drag-drop order, keyed by `(UserId, TradeUnitKey)`, stored as JSON.
 
 **`BidSheetPreferences`** — Per-user, per-trade-unit:
-`CropCode?`, `Month?` (`null` = no preference, `0` = yearly, `1–12` = monthly), `CropYear?`, `CropOrder` (JSON array), `HiddenCrops` (JSON array), `SelectedMonths` (JSON array), `PrintLayout` (JSON — see [Print / export](#print--export)).
+`CropCode?`, `Month?` (`null` = no preference, `1–12`; a stored `0` is a pre-retirement Yearly value, cleaned on load), `CropYear?`, `CropOrder` (JSON array), `HiddenCrops` (JSON array), `SelectedMonths` (JSON array), `PrintLayout` (JSON — see [Print / export](#print--export)).
 
 ## State and caching
 
@@ -221,35 +221,66 @@ there when the panel closes instead of appearing after the next pipeline run.
 placement and its fed bids, while the catalog and price history persist — so re-adding it refills
 instantly, and other trade units' placements are untouched.
 
-### Finding fed bids (why an empty sheet doesn't mean a broken feed)
+### Which month a fed bid lands on
 
-The feed writes each bid at its **contract month** (1-12) and **crop year**, both read from the symbol
-rather than from the delivery window. A symbol is `{root}{P|B}{monthCode}{yy}[F|L]-{location}-{map}.CM`,
-and BarChart publishes one symbol per contract month; the window only says how much delivery flexibility
-that contract carries. The two disagree on about one instrument in six, so keying off the window start
-mis-filed those bids -- Herkimer's `ZCPX26` (November, delivering 1 Oct - 1 Dec) landed November's price
-in the October cell and left November blank. It never writes
-month 0. The map, side panel and Edit Bids grid all default to month 0 ("Year"), and the bid lookup keys
-on `name|crop|year|month` with an exact match — so **on the default view, a sheet full of BarChart bids
-renders completely empty**. Pins go grey, the panel shows `--`, the grid has no cells. Nothing is wrong;
-the user is looking at a period the feed never publishes.
+The feed writes each bid at the **contract month** (1-12) and **crop year** read from the symbol, not
+from the delivery window. A symbol is `{root}{P|B}{monthCode}{yy}[F|L]-{location}-{map}.CM`, and BarChart
+publishes one symbol per contract month; the vendor's own name for it agrees -- `ZCPX26` is
+"Corn #2 Yellow **Nov 26** Cash". Keying off the window start mis-filed those bids: Herkimer's `ZCPX26`
+(November, delivering 1 Oct - 1 Dec) landed November's price in the October cell and left November blank.
 
-Rather than change what the screen opens with (which would override saved month preferences for every
-user, fed bids or not), the **Edit Bids grid** shows a prompt above the table when fed bids exist in
-months it isn't displaying: "BarChart has bids for months not shown here — Show them". It adds those
-delivery months to the grid's columns through the normal apply path, so the choice persists like any
-other month selection, and it disappears once the columns cover the fed months.
+**A bid also fills every other month its delivery window covers**, marked with the contract it came from
+(`CoveredByCropYear` / `CoveredByMonth` on the cell). One instrument in five opens its window before its
+contract month -- Cargill East St. Louis's "Nov 26" corn delivers from 1 October, Dorchester's from
+1 September -- and the contract month alone left those months blank, reading as if the elevator would not
+take the grain. It will, at that contract's price. The elevator's OWN bid for a month always wins the cell
+over a covering one, and among covering bids the nearest contract wins. On Dev this turned 431 fed cells
+into 551, 120 of them covering.
 
-Driven by `fedPeriods`, computed from the already-loaded bids rather than a separate query.
+**A covered month reads as an ordinary bid** -- same type, same board-symbol chip as every other fed cell,
+no scoring difference. It is not a substitute or an estimate. Cargill posts ONE bid of 5.38 for delivery
+any time between 1 Oct and 30 Nov, which the vendor names after the November futures contract, so 5.38 is
+genuinely the October price; there is no separate October bid to prefer. Marking it on the face of the grid
+was tried twice (a month tag, then italics) and dropped both times for implying a substitution that is not
+happening. Only the tooltip names the covering contract, for the one case it matters: the elevator posted
+no separate price for this month.
 
-A matching set of shortcut chips on the map was tried and **removed** (2026-08-21) — an unprompted panel
-over the map was more intrusive than the problem warranted. The grid prompt covers the same need at the
-point where someone is actually looking for the numbers.
+The board symbol could not carry the distinction anyway -- a covering contract and the month it covers
+trade against the same board, and all 120 covered cells on Dev match their covering month's symbol exactly.
 
-Also worth knowing when checking a feed location: the grid shows **one crop year at a time**, and feed
-bids routinely span two or three (Oct 2026 and Feb 2027 and May 2027 on the same location), so a location
-can look half-empty until the year is switched.
+**There is no Year period.** It was retired in September 2026: a fed Year cell held the nearest open
+month's price while a hand-typed one meant the crop year, and the two sat side by side as if comparable.
+Every cell now names its delivery month, the map and grid open on the current month, the API refuses
+`Month = 0`, and multi-month / multi-year selection is unchanged. Hand-typed `Month = 0` rows in QA (98 of
+them, six originators) are left in place, unshown, for the business to convert or drop.
 
+### Past months stay on the sheet
+
+A month's fed bids **freeze when its delivery window closes** and stay for good, so picking August next
+year still shows what every elevator was bidding for August delivery. Pruning still applies to the
+current month and later, which is what stops a rolled-off contract lingering as if it were live.
+
+It did not always work this way. The bridge used to delete a feed-owned cell the day its window elapsed
+-- the sheet was built as "today's bids" and tidied up behind itself -- so the record of a month vanished
+exactly when somebody might want to look back at it. Growth from keeping them is negligible: roughly 500
+rows a month, and `purge-history` can trim them if that ever changes.
+
+Months lost before the change are recoverable from the daily price history, which keeps two years of
+prices per symbol: `scripts/Restore-ElapsedBidMonths.sql` rebuilds each cell at the price its elevator
+was showing on the last day the window was open. It defaults to a dry run, only ever INSERTs where no
+cell exists (so a hand-typed bid always wins), and tags what it writes `CreatedBy =
+'barchart-history-restore'` so a run is identifiable and reversible. Run on Dev 2026-09-10: 81 cells
+across 33 locations, all August 2026. Each environment recovers as far back as its own history goes.
+### What "moved in the last 24 hours" means
+
+A fed cell is judged by `BasisChangedAt`, which the bridge sets only when the stored value really differs,
+never on first insert. `QuoteAsOf` is the vendor's re-post stamp and refreshes most days whether or not the
+number moved: on 2026-09-10, 410 of 431 fed cells carried a fresh stamp, 404 cash prices had moved (cash
+follows the board daily) and only 64 basis values had. Basis is the elevator's own decision, so that is the
+move worth a pulse. A manual cell still flags on its own edit (`ModifiedAt`, else `CreatedAt`).
+
+Consequence worth knowing after a deploy: the change stamps start empty, so **nothing pulses until the
+first real move** — one nightly run, at most.
 ### What the feed refuses to publish
 
 The bridge publishes a price it would stand behind, and **shows an old one rather than hiding it**.
