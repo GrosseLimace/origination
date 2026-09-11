@@ -1496,11 +1496,11 @@
                          columns beneath it belongs to -- the column headers themselves drop the year in
                          multi-year mode, because it will not fit twice in a bid column's width. -->
                     @if (editGridYearBands().length > 1) {
-                      <tr class="bg-gray-100 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
-                        <th class="sticky top-0 left-0 z-30 px-4 py-1.5 border-r border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/80"></th>
+                      <tr class="bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                        <th class="sticky top-0 left-0 z-30 px-4 py-1.5 border-r border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"></th>
                         @for (band of editGridYearBands(); track $index) {
                           <th [attr.colspan]="band.span"
-                              class="sticky top-0 z-20 px-2 py-1.5 text-center text-xs font-bold tabular-nums text-gray-500 dark:text-gray-400 border-b border-l border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/80">{{ band.year }}</th>
+                              class="sticky top-0 z-20 px-2 py-1.5 text-center text-xs font-bold tabular-nums text-gray-500 dark:text-gray-400 border-b border-l border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">{{ band.year }}</th>
                         }
                       </tr>
                     }
