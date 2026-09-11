@@ -167,7 +167,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       bids: { [key]: value }, originalBids: { [key]: value },
       basisBids: {}, originalBasisBids: {},
       coverageChips: {}, boardChips: { [key]: board },
-      agingCells: new Set<string>(), isBarchartLinked: true,
+      isBarchartLinked: true,
     };
   }
 

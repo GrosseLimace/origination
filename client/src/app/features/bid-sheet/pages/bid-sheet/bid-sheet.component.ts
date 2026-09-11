@@ -50,8 +50,6 @@ interface EditBidsRow {
   coverageChips: Record<string, string>;
   /** Column key -> the board this fed cell is quoted against; '' on manual cells. */
   boardChips: Record<string, string>;
-  /** Column keys whose fed bid hasn't moved in a while — shown muted so it can't read as today's price. */
-  agingCells: Set<string>;
   /** True when the whole location is linked to a BarChart listing. */
   isBarchartLinked: boolean;
 }
@@ -616,21 +614,11 @@ export class BidSheetComponent {
   readonly barchartEnabled = environment.barchartBidsEnabled === true;
 
 
-  /**
-   * How long a fed bid can sit unchanged before the UI mutes it. This is presentation only — the feed
-   * publishes live quotes at any age, because an elevator leaving a new-crop bid alone for weeks is
-   * normal. Muting means an old price can never be mistaken for today's without hiding it.
-   */
-  private static readonly AGING_QUOTE_DAYS = 7;
-
-  /** True when a fed bid hasn't been touched by the elevator in a while. */
-  isAgingQuote(asOf: string | undefined): boolean {
-    if (!asOf) return false;
-    const when = new Date(asOf);
-    if (isNaN(when.getTime())) return false;
-    const days = (Date.now() - when.getTime()) / 86_400_000;
-    return days > BidSheetComponent.AGING_QUOTE_DAYS;
-  }
+  // A fed bid that had sat unchanged for a while used to render at half opacity. It is gone: every bid
+  // reads the same whether it is this morning's or August's. For a past month the month itself already
+  // says the price is history, so the mute only made a correct number look degraded; for a live month
+  // it was the one hint that an elevator had gone quiet, but opacity cannot say HOW quiet -- the as-of
+  // date is on every cell and would answer that properly if it is ever wanted on screen.
 
   /** How recent counts as "just moved". A trading day: what changed since you last looked. */
   private static readonly CHANGED_WITHIN_HOURS = 24;
@@ -2941,7 +2929,6 @@ export class BidSheetComponent {
       const originalBasisBids: Record<string, string> = {};
       const coverageChips: Record<string, string> = {};
       const boardChips: Record<string, string> = {};
-      const agingCells = new Set<string>();
       for (const col of columns) {
         const entry = lookup.get(`${name}|${col.crop}|${col.year}|${col.month}`);
         // Each price lives in its own field whatever the toggle says. The template picks which to
@@ -2952,11 +2939,8 @@ export class BidSheetComponent {
         originalBasisBids[col.key] = basisBids[col.key];
         coverageChips[col.key] = this.coverageChipFor(entry);
         boardChips[col.key] = this.cellBoardFor(name, col.year, col.crop, col.month);
-        // Cell-level, not row-level: a feed-linked location can still carry manual bids for crops or
-        // months the vendor doesn't publish, and those age independently.
-        if (entry?.source === 'Barchart' && this.isAgingQuote(entry.quoteAsOf)) agingCells.add(col.key);
       }
-      rows.push({ name, locationId: rep?.locationId, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, coverageChips, boardChips, agingCells, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ name, locationId: rep?.locationId, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, coverageChips, boardChips, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -2965,7 +2949,7 @@ export class BidSheetComponent {
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, locationId: loc.id, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, coverageChips: {}, boardChips: {}, agingCells: new Set<string>(), isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ name: loc.name, locationId: loc.id, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, coverageChips: {}, boardChips: {}, isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // No re-sort here. Row order used to be a separate, per-user, name-keyed lookup applied on top --
@@ -3424,7 +3408,7 @@ export class BidSheetComponent {
     for (const b of dirty) {
       if (!b.name) continue;
       // The year is part of the identity. Without it, saving 2026 corn would mark the 2027 corn cell
-      // clean too: its highlight would clear, its board symbol and aging mute would be deleted, and
+      // clean too: its highlight would clear, its board symbol would be deleted, and
       // _buildDirtyBids would stop reporting it -- which also re-arms the background refresh that is
       // gated on a clean grid, so the rebuild would land on top of the still-unsaved edit.
       const colKey = this._colKey(b.commodityCode, b.cropYear, b.month ?? 0);
@@ -3441,24 +3425,20 @@ export class BidSheetComponent {
       // later blur would re-send it, and _buildDirtyBids would never report zero again -- which silently
       // switches off the background refresh that runs when the grid is open.
       // Everything that described the FEED's number has to go, because the cell is the user's now and
-      // the row counts as clean again the moment originalBids is updated below. Three separate stores:
-      //   boardChips  - the month-column board symbol
+      // the row counts as clean again the moment originalBids is updated below. Two separate stores:
+      //   boardChips    - the month-column board symbol
       //   coverageChips - the "this is really November's bid" marker, which a typed value is not
-      //   agingCells  - the "hasn't moved in a while" mute, which would otherwise fade the value the
-      //                 user just typed, usually typed BECAUSE the fed one was stale
       // Per cell, not per side: the upsert writes both prices and the server flips the whole row to
       // Manual, so a basis-only edit takes the cash side with it.
       const boardChips = { ...row.boardChips };
       const coverageChips = { ...row.coverageChips };
-      const agingCells = new Set(row.agingCells);
       for (const [colKey, val] of saved) {
         originalBids[colKey] = val.bid;
         originalBasisBids[colKey] = val.basisBid;
         delete boardChips[colKey];
         delete coverageChips[colKey];
-        agingCells.delete(colKey);
       }
-      return { ...row, originalBids, originalBasisBids, boardChips, coverageChips, agingCells };
+      return { ...row, originalBids, originalBasisBids, boardChips, coverageChips };
     }));
   }
 

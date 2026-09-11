@@ -1652,7 +1652,6 @@
                               (blur)="onBidBlur()"
                               [readonly]="cellReadOnly()"
                               placeholder="—"
-                              [class.opacity-50]="row.agingCells.has(col.key)"
                               [title]="row.coverageChips[col.key] ? row.coverageChips[col.key] + ' contract: its delivery window covers this month' : ''"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="cellReadOnly()
@@ -1691,7 +1690,6 @@
                                 (blur)="onBidBlur()"
                                 [readonly]="cellReadOnly()"
                                 placeholder="—"
-                                [class.opacity-50]="row.agingCells.has(col.key)"
                                 [title]="row.coverageChips[col.key] ? row.coverageChips[col.key] + ' contract: its delivery window covers this month' : ''"
                                 class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                                 [ngClass]="cellReadOnly()
