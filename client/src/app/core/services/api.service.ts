@@ -156,6 +156,9 @@ export class ApiService {
       members: dto.members ?? [],
       ccList: dto.ccList ?? [],
       teamsChannelEmail: dto.teamsChannelEmail,
+      // Defaults false so a response older than this client reads as "mentions email the members",
+      // which is the pre-existing behaviour.
+      mentionsToChannel: dto.mentionsToChannel ?? false,
       enabled: dto.enabled,
       // Both flags are server-computed on every response now, including create/update. The `?? true`
       // fallbacks only cover a response shape older than this client.

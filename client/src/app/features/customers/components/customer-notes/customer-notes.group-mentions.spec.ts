@@ -112,4 +112,58 @@ describe('CustomerNotesComponent — group mentions', () => {
     expect(mentions).toEqual(['@1084']);
     expect(mentions).not.toContain('Sam Fletcher');
   });
+
+  // ── Channel-routed groups ────────────────────────────────────────────────
+  // Mentioning one posts the note to a Teams channel instead of emailing the members, so the
+  // picker labels it by destination. A member count would be actively misleading here: such an
+  // entry can have zero members and still notify a whole channel.
+
+  it('labels a channel-routed group by its destination, not a member count', () => {
+    component.mentionCatalog.set({
+      ...catalog,
+      appGroups: [{ groupId: 9, name: 'Grain Desk', memberCount: 4, isOwner: true, mentionsToChannel: true }],
+    });
+
+    const group = optionsFor('grain').find(o => o.type === 'app-group');
+
+    expect(group!.secondary).toBe('Group · Posts to Teams channel');
+    expect(group!.secondary).not.toContain('member');
+  });
+
+  it('offers a channel-routed group that has no members at all', () => {
+    component.mentionCatalog.set({
+      ...catalog,
+      appGroups: [{ groupId: 9, name: 'Grain Desk', memberCount: 0, isOwner: true, mentionsToChannel: true }],
+    });
+
+    const group = optionsFor('grain').find(o => o.type === 'app-group');
+
+    expect(group).toBeDefined();
+    expect(group!.id).toBe('9');
+  });
+
+  it('still shows a member count for an ordinary group', () => {
+    // Regression guard: the new label must key off the flag, not off every app-group.
+    component.mentionCatalog.set({
+      ...catalog,
+      appGroups: [{ groupId: 7, name: 'Corn Belt', memberCount: 3, isOwner: true, mentionsToChannel: false }],
+    });
+
+    expect(optionsFor('corn').find(o => o.type === 'app-group')!.secondary).toBe('Group · 3 members');
+  });
+
+  it('carries no address on the channel option, so none can reach the saved note', () => {
+    // The note must never record a destination: selectMention copies only type/id/name/email off
+    // the option, and the workflow re-reads the channel address from the group at send time. That
+    // is what keeps a client-authored address out of the delivery path.
+    component.mentionCatalog.set({
+      ...catalog,
+      appGroups: [{ groupId: 9, name: 'Grain Desk', memberCount: 0, isOwner: true, mentionsToChannel: true }],
+    });
+
+    const group = optionsFor('grain').find(o => o.type === 'app-group')!;
+
+    expect(group.email).toBeUndefined();
+    expect(JSON.stringify(group)).not.toContain('teams.ms');
+  });
 });

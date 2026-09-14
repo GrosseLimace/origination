@@ -318,6 +318,18 @@ public partial class NoteService : INoteService
                     $"The group '{mention.Name}' is no longer available to you. Remove the mention, or refresh the page and try again.");
             }
 
+            // Channel-routed entries stop here: the app-group row IS the recipient. The Instant
+            // Share Note workflow re-reads DailyRecapGroups.TeamsChannelEmail for this id at send
+            // time and posts there, so the note's own mention JSON still carries no address
+            // (M-025 / M-025a). Members are visibility, not recipients, so they are NOT expanded —
+            // that is the whole point of "post to the channel instead of emailing members".
+            if (group.MentionsToChannel)
+            {
+                // Authoritative name — never persist the client's label for a row we own.
+                result[^1] = result[^1] with { Name = group.Name };
+                continue;
+            }
+
             // An empty group contributes no resolvable rows, and the app-group row itself resolves
             // to nobody — so this would save a note the author believes was shared and notify no
             // one. The picker omits empty groups; this catches one emptied since it was loaded.

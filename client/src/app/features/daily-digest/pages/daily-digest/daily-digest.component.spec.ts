@@ -5,7 +5,7 @@ import { of } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { RecapGroup, RecapMember } from '@features/daily-digest/models/recap-group.model';
+import { RecapGroup, RecapGroupSaveRequest, RecapMember } from '@features/daily-digest/models/recap-group.model';
 
 import { DailyDigestComponent } from './daily-digest.component';
 
@@ -36,6 +36,16 @@ interface Internals {
   deleteDialogOpen: () => boolean;
   selfRemovalDialogOpen: () => boolean;
   formMembers: { (): RecapMember[]; set(value: RecapMember[]): void };
+  formName: { (): string; set(value: string): void };
+  formTeamsEmail: { (): string; set(value: string): void };
+  formEnabled: { (): boolean; set(value: boolean): void };
+  formMentionsToChannel: { (): boolean; set(value: boolean): void };
+  selectDelivery(value: 'email' | 'teams'): void;
+  isChannelRouted: () => boolean;
+  canEnableRecap: () => boolean;
+  canSubmit: () => boolean;
+  canToggleRecap(group: RecapGroup): boolean;
+  openCreateDialog(): void;
   openEditDialog(group: RecapGroup): void;
   requestDeleteGroup(group: RecapGroup): void;
   toggleGroupEnabled(group: RecapGroup): void;
@@ -56,6 +66,7 @@ function group(overrides: Partial<RecapGroup> = {}): RecapGroup {
     deliveryMethod: 'email',
     members: [member('person', 'mgr')],
     ccList: [],
+    mentionsToChannel: false,
     enabled: true,
     isOwner: false,
     canEdit: true,
@@ -67,21 +78,28 @@ function group(overrides: Partial<RecapGroup> = {}): RecapGroup {
 function makeApiStub(initial: RecapGroup[]) {
   const calls: Record<string, number> = {};
   const count = (name: string) => { calls[name] = (calls[name] ?? 0) + 1; };
-  return {
+  const stub = {
     calls,
+    /** The body of the most recent createRecapGroup call, so a test can assert the payload. */
+    lastCreate: undefined as RecapGroupSaveRequest | undefined,
     getEntitlementsCatalog: () => of(CATALOG),
     getRecapGroups: () => of(initial),
     updateRecapGroup: (id: string, body: Partial<RecapGroup>) => {
       count('update');
       return of(group({ ...body, id }));
     },
-    createRecapGroup: () => { count('create'); return of(group()); },
+    createRecapGroup: (body: RecapGroupSaveRequest) => {
+      count('create');
+      stub.lastCreate = body;
+      return of(group());
+    },
     setRecapGroupEnabled: (id: string, enabled: boolean) => {
       count('setEnabled');
       return of(group({ id, enabled }));
     },
     deleteRecapGroup: () => { count('delete'); return of(void 0); },
   };
+  return stub;
 }
 
 describe('DailyDigestComponent — shared editing', () => {
@@ -236,5 +254,108 @@ describe('DailyDigestComponent — shared editing', () => {
 
     expect(c.selfRemovalDialogOpen()).toBe(false);
     expect(api.calls['update']).toBe(1);
+  });
+
+  // ── @-mentions routed to a Teams channel ──────────────────────────────────
+  // A channel entry is a recipient in its own right, so it may have no members — which in turn
+  // means it has nobody whose notes a daily recap could summarise.
+
+  const CHANNEL = 'abcd1234.scoular.com@amer.teams.ms';
+
+  /** A new channel-routed entry with no members — the shape the feature exists to allow. */
+  function fillChannelForm(c: Internals): void {
+    c.openCreateDialog();
+    c.formName.set('Grain Desk');
+    c.selectDelivery('teams');
+    c.formTeamsEmail.set(CHANNEL);
+    c.formMentionsToChannel.set(true);
+    c.formMembers.set([]);
+  }
+
+  it('lets a channel-routed entry be saved with no members', () => {
+    const c = build([]);
+
+    fillChannelForm(c);
+
+    expect(c.isChannelRouted()).toBe(true);
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  it('still requires members when the entry is not channel-routed', () => {
+    const c = build([]);
+    c.openCreateDialog();
+    c.formName.set('Grain Desk');
+    c.selectDelivery('teams');
+    c.formTeamsEmail.set(CHANNEL);
+    c.formMentionsToChannel.set(false);
+    c.formMembers.set([]);
+
+    expect(c.canSubmit()).toBe(false);
+  });
+
+  it('clears channel routing when delivery switches back to email', () => {
+    // Otherwise a form that looks like plain email delivery would post a flag the server rejects.
+    const c = build([]);
+    fillChannelForm(c);
+
+    c.selectDelivery('email');
+
+    expect(c.formMentionsToChannel()).toBe(false);
+    expect(c.isChannelRouted()).toBe(false);
+  });
+
+  it('sends mentionsToChannel on the save payload', () => {
+    const c = build([]);
+    fillChannelForm(c);
+
+    c.saveGroup();
+
+    expect(api.calls['create']).toBe(1);
+    expect(api.lastCreate?.mentionsToChannel).toBe(true);
+    expect(api.lastCreate?.teamsChannelEmail).toBe(CHANNEL);
+  });
+
+  it('blocks the daily recap on a memberless entry', () => {
+    const c = build([]);
+    fillChannelForm(c);
+
+    expect(c.canEnableRecap()).toBe(false);
+
+    // ...and if the flag were set anyway, the form refuses to submit rather than 400ing.
+    c.formEnabled.set(true);
+    expect(c.canSubmit()).toBe(false);
+  });
+
+  it('allows the daily recap again once the entry has a member', () => {
+    const c = build([]);
+    fillChannelForm(c);
+
+    c.formMembers.set([member('person', 'sam')]);
+
+    expect(c.canEnableRecap()).toBe(true);
+  });
+
+  it('will not turn a memberless group\'s recap on from the card, but will turn one off', () => {
+    const c = build([
+      group({ id: '5', members: [], enabled: false, mentionsToChannel: true }),
+      group({ id: '6', members: [], enabled: true, mentionsToChannel: true }),
+    ]);
+
+    // Off -> on is refused: there are no members whose notes it would summarise.
+    expect(c.canToggleRecap(c.groups()[0])).toBe(false);
+    c.toggleGroupEnabled(c.groups()[0]);
+    expect(api.calls['setEnabled']).toBeUndefined();
+
+    // On -> off stays available, so a bad state is always recoverable.
+    expect(c.canToggleRecap(c.groups()[1])).toBe(true);
+  });
+
+  it('loads mentionsToChannel into the form when editing', () => {
+    const c = build([group({ deliveryMethod: 'teams', teamsChannelEmail: CHANNEL, mentionsToChannel: true })]);
+
+    c.openEditDialog(c.groups()[0]);
+
+    expect(c.formMentionsToChannel()).toBe(true);
+    expect(c.isChannelRouted()).toBe(true);
   });
 });

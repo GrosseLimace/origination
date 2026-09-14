@@ -26,7 +26,13 @@ public record RecapGroupRequest : IValidatableObject
     [StringLength(256)]
     public string? TeamsChannelEmail { get; init; }
 
-    [MinLength(1, ErrorMessage = "A recap group needs at least one member.")]
+    /// <summary>When true, an @-mention of this group posts the note to <see cref="TeamsChannelEmail"/>
+    /// and its members are NOT emailed. Requires "teams" delivery. Members stay meaningful as who can
+    /// see and mention the entry, so a channel-only entry is allowed to have none.</summary>
+    public bool MentionsToChannel { get; init; }
+
+    // No [MinLength(1)]: a channel-routed entry may legitimately have no members (Validate() below
+    // still requires at least one for every other shape).
     [MaxLength(500, ErrorMessage = "A recap group cannot have more than 500 members.")]
     public List<RecapGroupMemberRequest> Members { get; init; } = [];
 
@@ -46,7 +52,34 @@ public record RecapGroupRequest : IValidatableObject
     /// keeps the destination inside Scoular and blocks cross-tenant exfiltration.</summary>
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (!string.Equals(DeliveryMethod, "teams", StringComparison.OrdinalIgnoreCase))
+        var isTeams = string.Equals(DeliveryMethod, "teams", StringComparison.OrdinalIgnoreCase);
+
+        // Channel routing is a property of the Teams destination, so it cannot ride on email
+        // delivery — there would be no channel to post to.
+        if (MentionsToChannel && !isTeams)
+        {
+            yield return new ValidationResult(
+                "Sending @-mentions to a channel requires Microsoft Teams delivery.", [nameof(MentionsToChannel)]);
+        }
+
+        // Members are optional ONLY for a channel-routed entry, where they grant visibility rather
+        // than receive anything. Every other shape still needs someone to deliver to.
+        if (Members.Count == 0 && !(MentionsToChannel && isTeams))
+        {
+            yield return new ValidationResult(
+                "A recap group needs at least one member.", [nameof(Members)]);
+        }
+
+        // The daily recap is built from the notes of the producers its MEMBERS can see, so a
+        // memberless entry would send an empty recap every evening to nobody.
+        if (Enabled && Members.Count == 0)
+        {
+            yield return new ValidationResult(
+                "A group with no members cannot send a daily recap. Add members, or turn the recap off.",
+                [nameof(Enabled)]);
+        }
+
+        if (!isTeams)
             yield break;
 
         var channel = TeamsChannelEmail?.Trim();

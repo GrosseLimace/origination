@@ -17,6 +17,11 @@ public class DailyRecapGroup
     public string? TeamsChannelEmail { get; set; }
     /// <summary>UI on/off toggle. The Logic App only sends for enabled groups.</summary>
     public bool Enabled { get; set; } = true;
+    /// <summary>When true, an @-mention of this group in a note posts to <see cref="TeamsChannelEmail"/>
+    /// instead of emailing the members. The API keeps the app-group mention row unexpanded, and the
+    /// Instant Share Note Logic App re-reads the channel address from this row at send time — so the
+    /// note's own mention JSON never carries an address. Only valid when DeliveryMethod is "teams".</summary>
+    public bool MentionsToChannel { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }

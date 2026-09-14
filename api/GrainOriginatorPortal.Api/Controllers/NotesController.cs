@@ -172,17 +172,19 @@ public class NotesController : ControllerBase
         // Same visibility query NoteService expands with, so the picker can never offer a group the
         // save would reject. NOT filtered on Enabled — that flag means "send the daily recap",
         // which is orthogonal to being mentionable. Empty groups are omitted: mentioning one would
-        // notify nobody.
+        // notify nobody — UNLESS it routes mentions to a Teams channel, which is a recipient in its
+        // own right, so a channel entry with no members is still worth offering.
         try
         {
             response.AppGroups = (await _recapGroups.GetAllAsync(cancellationToken))
-                .Where(g => g.Members.Count > 0)
+                .Where(g => g.Members.Count > 0 || g.MentionsToChannel)
                 .Select(g => new MentionCatalogAppGroup
                 {
                     GroupId = g.Id,
                     Name = g.Name,
                     MemberCount = g.Members.Count,
                     IsOwner = g.IsOwner,
+                    MentionsToChannel = g.MentionsToChannel,
                 })
                 .OrderBy(g => g.Name)
                 .ToList();

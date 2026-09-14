@@ -667,4 +667,102 @@ public class NoteMentionSerializationTests
             () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
         Assert.Empty(captured);
     }
+
+    // ── Channel-routed groups: the app-group row IS the recipient ──────────────────────────────
+    // A group flagged MentionsToChannel posts the note to its Teams channel INSTEAD of emailing its
+    // members, so expansion must stop at the group row. The workflow re-reads the channel address
+    // from DailyRecapGroups for that id at send time, which is why the stored row still carries no
+    // address — the M-025 property holds for the channel exactly as it does for people.
+
+    private static RecapGroupDto ChannelGroup(int id, string name, params RecapGroupMemberDto[] members) => new()
+    {
+        Id = id,
+        Name = name,
+        DeliveryMethod = "teams",
+        TeamsChannelEmail = "abcd1234.scoular.com@amer.teams.ms",
+        MentionsToChannel = true,
+        Members = members.ToList(),
+    };
+
+    [Fact]
+    public async Task CreateAsync_ChannelRoutedGroup_StoresOnlyTheGroupRow_AndExpandsNobody()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(
+            ChannelGroup(7, "Grain Desk", PersonMember, TradeUnitMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Grain Desk" } };
+
+        await svc.CreateAsync(100, "note body", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        var only = Assert.Single(stored);
+        Assert.Equal("app-group", only.Type);
+        Assert.Equal("7", only.Id);
+        Assert.Equal("Grain Desk", only.Name);   // authoritative server-side name
+        Assert.Null(only.Via);
+        Assert.Null(only.Email);                 // the address is never persisted on the note
+    }
+
+    [Fact]
+    public async Task CreateAsync_ChannelRoutedGroup_WithNoMembers_IsAccepted()
+    {
+        // The empty-group guard must not fire here: the channel is the recipient, so an entry with
+        // nobody in it still notifies someone.
+        var (svc, captured) = BuildServiceCapturingMentions(ChannelGroup(7, "Grain Desk"));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Grain Desk" } };
+
+        await svc.CreateAsync(100, "note body", mentions, CancellationToken.None);
+
+        Assert.Single(StoredMentions(captured));
+    }
+
+    [Fact]
+    public async Task CreateAsync_ChannelRoutedGroup_NeverStoresTheChannelAddress_EvenIfTheClientSendsOne()
+    {
+        // The client cannot smuggle a destination onto the note: NormalizeMention drops email on
+        // every non-person row, and the workflow reads the address from the DB regardless.
+        var (svc, captured) = BuildServiceCapturingMentions(ChannelGroup(7, "Grain Desk"));
+        var mentions = new[]
+        {
+            new NoteMention { Type = "app-group", Id = "7", Name = "Grain Desk", Email = "attacker@evil.com" }
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        Assert.Null(Assert.Single(StoredMentions(captured)).Email);
+        Assert.DoesNotContain("evil.com", captured[0]);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ChannelRoutedGroup_AlongsideAPersonMention_KeepsBoth()
+    {
+        // Mentioning a channel and a person in one note must still notify the person — the two
+        // delivery paths are independent in the workflow.
+        var (svc, captured) = BuildServiceCapturingMentions(ChannelGroup(7, "Grain Desk"));
+        var mentions = new[]
+        {
+            new NoteMention { Type = "person", Id = "SFletcher", Name = "Sam Fletcher" },
+            new NoteMention { Type = "app-group", Id = "7", Name = "Grain Desk" },
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal(2, stored.Count);
+        Assert.Equal("SFletcher@scoular.com", stored[0].Email);
+        Assert.Equal("app-group", stored[1].Type);
+    }
+
+    [Fact]
+    public async Task CreateAsync_NonChannelGroup_StillExpandsItsMembers()
+    {
+        // Regression guard: the new branch must be reached only on the flag.
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal(2, stored.Count);
+        Assert.Equal("app-group:7", stored[1].Via);
+    }
 }

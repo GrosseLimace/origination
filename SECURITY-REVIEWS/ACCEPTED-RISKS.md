@@ -13,7 +13,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-05 | Bid-sheet **location** reads unscoped across trade units (writes are gated; the elevators half was fixed 2026-09-14) | High | CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
-| AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements | Medium | CWE-284 | Accepted | 2026-08-11 | 2027-08-11 |
+| AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements — and, since 2026-09-14, may post the note to its Teams channel instead | Medium | CWE-284 | Accepted — amendment **security sign-off pending** | 2026-08-11 (amended 2026-09-14) | 2027-08-11 |
 | AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — **security sign-off pending** | 2026-09-01 | 2027-09-01 |
 
 ---
@@ -661,22 +661,58 @@ their stored `MemberName` so an editor cannot relabel someone else's member.
    recap at a different channel. `RecapGroupRequest.Validate` still pins the destination to the
    Scoular tenant (`*.scoular.com@*.teams.ms`), so it cannot leave the tenant, but a Scoular channel
    can carry B2B guests. Mitigation: the `AUDIT_UPDATE` log line now records `ByCreator`,
-   `DeliveryMethod` and `TeamsChannel`, so a redirect by a non-creator is queryable.
+   `DeliveryMethod`, `TeamsChannel` and `MentionsToChannel`, so a redirect by a non-creator is
+   queryable. **Widened 2026-09-14 — this is now a delivery path for note content; see the
+   amendment below.**
 2. **CC widening.** A member can add any `@scoular.com` address. Low impact: the recap workflow
    already sends one message per group with every member in `toRecipients` and the CC list in
    `ccRecipients`, so all members already receive the union. This widens the internal recipient set,
    not the content boundary.
 3. **Enabled toggle.** A member can start or stop the daily send — a nuisance, not a disclosure.
    Also audit-logged with `ByCreator`.
-4. **Emptying the group.** Closed: `RecapGroupRequest.Members` now carries `[MinLength(1)]`, so a
-   group cannot be stripped to nothing and silently stop being mentionable.
+4. **Emptying the group.** Still closed, by a narrower rule since 2026-09-14: `[MinLength(1)]` was
+   replaced by a check in `RecapGroupRequest.Validate` that permits an empty member list **only**
+   when the entry routes @-mentions to a Teams channel (where the channel, not the members, is the
+   recipient). Every other shape still requires at least one member, so an ordinary group cannot be
+   stripped to nothing and silently stop being mentionable.
+
+---
+
+### Amendment 2026-09-14 — the Teams channel IS now a mention recipient
+
+The trigger this entry named has occurred, deliberately: a group may set **`MentionsToChannel`**, and
+@-mentioning it then **posts the note to its Teams channel instead of emailing its members**
+(`NoteService.ExpandGroupsAsync` skips expansion; the Instant Share Note workflow's
+`HTTP_Send_Channel_Post` delivers it). Capability 1 above therefore now redirects **note content**,
+not just the daily recap. Re-assessed and **still accepted**, on these grounds:
+
+- **The destination is never client-authored.** The stored mention row is `{type:"app-group","id":"7"}`
+  with no address — `NormalizeMention` drops `email` on every non-person row. The workflow reads
+  `TeamsChannelEmail` from `dbo.DailyRecapGroups` at send time. This is the same property M-025 /
+  M-025a established for person recipients, reached the same way.
+- **The tenant pin is enforced twice, by different code.** `RecapGroupRequest.Validate` rejects a
+  non-Scoular channel on save; the workflow independently re-checks the shape it read before sending,
+  so a row edited directly in SQL cannot become an exfiltration path. A channel-routed group with a
+  missing or malformed address **fails the run** rather than silently notifying nobody.
+- **The content boundary is unchanged.** A note is already visible to every authenticated user
+  (AR-02), and every recipient remains inside the Scoular tenant.
+- **It is visible, not covert.** The picker labels such an entry "Posts to Teams channel", the card
+  carries an "@-mentions post to channel" badge, and create/update are audit-logged with the flag.
+
+**Residual, accepted:** a Scoular Teams channel may contain B2B guests, so a note can reach a guest
+who would not receive the equivalent email. Unchanged in kind from the recap path accepted in 2026-08;
+what changed is the volume and immediacy of what flows through it. No per-channel allowlist and no
+approval step on registering a channel — any user may point an entry at any Scoular channel, which is
+the behaviour the business asked for.
 
 **Re-evaluate if:** groups become shareable beyond their membership (e.g. an org-wide directory of
 groups), note content becomes restricted per producer — at which point AR-02 changes too and the
-mention path should be re-scoped alongside it — or the Teams channel becomes a mention recipient
-rather than recap-only, which would turn capability 1 into a delivery path for note content.
+mention path should be re-scoped alongside it — or Scoular begins admitting B2B guests to channels
+that carry producer data, which would make the residual above material rather than theoretical.
 
-**Accepted by:** Origination engineering — recorded 2026-08-11, amended 2026-09-02.
+**Accepted by:** Origination engineering — recorded 2026-08-11, amended 2026-09-02 and 2026-09-14.
+**Security sign-off pending** — take this amendment to asksecurity@scoular.com together with AR-01,
+AR-02 and AR-08.
 
 **Unchanged by H-056 (2026-09-01):** direct person mentions now have to name an active user, but
 group-derived rows are deliberately exempt from that check — they were already validated at

@@ -55,6 +55,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
             Name = request.Name.Trim(),
             DeliveryMethod = request.DeliveryMethod,
             TeamsChannelEmail = request.DeliveryMethod == "teams" ? request.TeamsChannelEmail?.Trim() : null,
+            MentionsToChannel = request.DeliveryMethod == "teams" && request.MentionsToChannel,
             Enabled = request.Enabled,
             CreatedBy = _requestContext.GetCurrentUser(),
             CreatedAt = DateTime.UtcNow,
@@ -81,6 +82,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
             request.Name.Trim(),
             request.DeliveryMethod,
             request.DeliveryMethod == "teams" ? request.TeamsChannelEmail?.Trim() : null,
+            request.DeliveryMethod == "teams" && request.MentionsToChannel,
             members,
             BuildCcEmails(request));
 
@@ -92,6 +94,20 @@ public class DailyRecapGroupService : IDailyRecapGroupService
     public async Task<RecapGroupDto?> SetEnabledAsync(int groupId, bool enabled, CancellationToken cancellationToken)
     {
         var (access, degraded) = await GetAccessAsync(cancellationToken);
+
+        // Turning the recap ON needs members: the digest is built from the notes the members can
+        // see, so a memberless entry (which channel routing now permits) would schedule a nightly
+        // send with nothing in it. Costs one extra read on a low-frequency toggle.
+        if (enabled)
+        {
+            var current = await _repository.GetVisibleByIdAsync(groupId, access, cancellationToken);
+            if (current == null)
+                return NotVisible<RecapGroupDto>(degraded);
+            if (current.Members.Count == 0)
+                throw new ValidationException(nameof(RecapGroupEnabledRequest.Enabled),
+                    "A group with no members cannot send a daily recap. Add members first.");
+        }
+
         var group = await _repository.SetEnabledAsync(groupId, access, enabled, cancellationToken);
         if (group == null)
             return NotVisible<RecapGroupDto>(degraded);
@@ -356,6 +372,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
         Name = g.Name,
         DeliveryMethod = g.DeliveryMethod,
         TeamsChannelEmail = g.TeamsChannelEmail,
+        MentionsToChannel = g.MentionsToChannel,
         Enabled = g.Enabled,
         Members = g.Members
             .Select(m => new RecapGroupMemberDto { Type = m.MemberType, Id = m.MemberId, Name = m.MemberName, Email = m.Email })

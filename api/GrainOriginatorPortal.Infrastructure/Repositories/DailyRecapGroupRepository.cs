@@ -81,6 +81,7 @@ public class DailyRecapGroupRepository : IDailyRecapGroupRepository
         group.Name = values.Name;
         group.DeliveryMethod = values.DeliveryMethod;
         group.TeamsChannelEmail = values.TeamsChannelEmail;
+        group.MentionsToChannel = values.MentionsToChannel;
         // The editor, who may not be the creator — CreatedBy is never reassigned.
         group.ModifiedBy = access.CallerUpn;
         group.ModifiedAt = DateTime.UtcNow;

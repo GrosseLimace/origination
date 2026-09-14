@@ -48,8 +48,8 @@ public class DailyRecapGroupsController : ControllerBase
     {
         var group = await _service.CreateAsync(request, cancellationToken);
         _logger.LogInformation(
-            "Recap group created [{ErrorCode}] [{ErrorCategory}]: GroupId={GroupId}, Name={Name}",
-            "AUDIT_CREATE", "DataMutation", group.Id, request.Name);
+            "Recap group created [{ErrorCode}] [{ErrorCategory}]: GroupId={GroupId}, Name={Name}, DeliveryMethod={DeliveryMethod}, TeamsChannel={TeamsChannel}, MentionsToChannel={MentionsToChannel}",
+            "AUDIT_CREATE", "DataMutation", group.Id, request.Name, group.DeliveryMethod, group.TeamsChannelEmail ?? "-", group.MentionsToChannel);
         return Created($"/api/dailyrecapgroups/{group.Id}", group);
     }
 
@@ -66,8 +66,8 @@ public class DailyRecapGroupsController : ControllerBase
         var updated = await _service.UpdateAsync(id, request, cancellationToken)
             ?? throw new NotFoundException("DailyRecapGroup", id);
         _logger.LogInformation(
-            "Recap group updated [{ErrorCode}] [{ErrorCategory}]: GroupId={GroupId}, Name={Name}, ByCreator={ByCreator}, DeliveryMethod={DeliveryMethod}, TeamsChannel={TeamsChannel}",
-            "AUDIT_UPDATE", "DataMutation", id, request.Name, updated.IsOwner, updated.DeliveryMethod, updated.TeamsChannelEmail ?? "-");
+            "Recap group updated [{ErrorCode}] [{ErrorCategory}]: GroupId={GroupId}, Name={Name}, ByCreator={ByCreator}, DeliveryMethod={DeliveryMethod}, TeamsChannel={TeamsChannel}, MentionsToChannel={MentionsToChannel}",
+            "AUDIT_UPDATE", "DataMutation", id, request.Name, updated.IsOwner, updated.DeliveryMethod, updated.TeamsChannelEmail ?? "-", updated.MentionsToChannel);
         return Ok(updated);
     }
 

@@ -51,4 +51,9 @@ public class MentionCatalogAppGroup
 
     /// <summary>False for a group the caller only sees because they're a member of it.</summary>
     public bool IsOwner { get; set; }
+
+    /// <summary>True when mentioning this entry posts the note to its Teams channel instead of
+    /// emailing the members. The picker labels these "Teams channel" rather than a member count,
+    /// and such an entry may have zero members — so it is listed on this flag alone.</summary>
+    public bool MentionsToChannel { get; set; }
 }

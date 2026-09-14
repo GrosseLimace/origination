@@ -39,6 +39,10 @@ export interface MentionCatalogAppGroup {
    *  everyone in that trade unit when the note is sent. */
   memberCount: number;
   isOwner: boolean;
+  /** True when mentioning this entry posts the note to its Teams channel instead of emailing the
+   *  members. Such an entry may have zero members, so the picker labels it by destination rather
+   *  than by member count. */
+  mentionsToChannel?: boolean;
 }
 
 export interface MentionCatalog {

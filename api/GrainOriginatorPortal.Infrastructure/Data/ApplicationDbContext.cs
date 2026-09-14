@@ -776,6 +776,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.DeliveryMethod).HasMaxLength(20).IsRequired();
             entity.Property(e => e.TeamsChannelEmail).HasMaxLength(256).IsRequired(false);
             entity.Property(e => e.Enabled).HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.MentionsToChannel).HasDefaultValue(false).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);

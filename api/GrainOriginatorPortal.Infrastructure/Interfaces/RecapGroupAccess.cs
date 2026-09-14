@@ -35,5 +35,6 @@ public sealed record RecapGroupValues(
     string Name,
     string DeliveryMethod,
     string? TeamsChannelEmail,
+    bool MentionsToChannel,
     List<DailyRecapGroupMember> Members,
     List<DailyRecapGroupCcEmail> CcEmails);
