@@ -1,7 +1,4 @@
 {
-  "env": {
-    "SCOULAR_STYLE_GUIDES_PATH": "style-guides"
-  },
   "extraKnownMarketplaces": {
     "scoular": {
       "source": {
