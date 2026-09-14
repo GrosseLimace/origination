@@ -4461,6 +4461,18 @@ export class BidSheetComponent {
     this.selectedLocationName.set(alreadySelected ? '' : loc.name);
     // Mutually exclusive with a catalog reference -- only one comparison anchor at a time.
     this.catalogReferenceKey.set(null);
+
+    // An open published-bids popup follows the selection. It is driven by its own key, not by the
+    // selected location, so clicking a pin used to leave it sitting there showing the elevator you
+    // had just navigated away from -- indistinguishable from a popup that had refused to switch. It
+    // is only ever re-pointed, never opened here: opening on every pin click was considered and
+    // turned down, because the panel is what a click on your own sheet is for.
+    if (this.catalogDetailKey()) {
+      const key = alreadySelected ? null : loc.barchartLocationKey;
+      if (key) this.openCatalogDetail(key);
+      else this.closeCatalogDetail(); // deselected, or a hand-made location with no vendor book
+    }
+
     if (alreadySelected) {
       this._refreshMapMarkers();
       return;

@@ -2111,3 +2111,84 @@ describe('BidSheetComponent — the popup follows the last pin clicked', () => {
     expect(component.catalogDetail()).toBeNull();
   });
 });
+
+/**
+ * The popup is driven by its own key, not by the selected location. Clicking a pin on your own sheet
+ * runs _selectMapLocation, which never touched that key -- so an open popup sat there showing the
+ * elevator you had just navigated away from. Kanza Garden Plain is on the sheet, which is why
+ * clicking it while a popup was open appeared to do nothing at all.
+ */
+describe('BidSheetComponent — an open popup follows the pin you click', () => {
+  let component: BidSheetComponent;
+
+  const sheetLoc = (name: string, key: string | null): BidSheetLocation => ({
+    id: name.length, name, barchartLocationKey: key, latitude: 38, longitude: -98, bids: [],
+  } as unknown as BidSheetLocation);
+
+  const select = (loc: BidSheetLocation) =>
+    (component as unknown as { _selectMapLocation(l: BidSheetLocation): void })._selectMapLocation(loc);
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+      getBarchartLocationDetail: (key: string) => of({
+        location: { locationKey: key, instrumentCount: 1, commodityCount: 1, placements: [] },
+        bids: [], unmappedBidCount: 0,
+      }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  it('re-points an open popup at the location just clicked', () => {
+    component.openCatalogDetail('CATALOG-1');
+    expect(component.catalogDetailKey()).toBe('CATALOG-1');
+
+    select(sheetLoc('Kanza Garden Plain', '85722'));
+
+    expect(component.catalogDetailKey()).toBe('85722');
+    expect(component.catalogDetail()?.location.locationKey).toBe('85722');
+  });
+
+  it('leaves the popup shut when it was not open', () => {
+    select(sheetLoc('Kanza Garden Plain', '85722'));
+
+    expect(component.catalogDetailKey()).toBeNull();
+  });
+
+  it('closes an open popup for a hand-made location, which has no vendor book', () => {
+    component.openCatalogDetail('CATALOG-1');
+
+    select(sheetLoc('Hand Typed Elevator', null));
+
+    expect(component.catalogDetailKey()).toBeNull();
+  });
+
+  it('closes an open popup when the same pin is clicked again to deselect', () => {
+    const loc = sheetLoc('Kanza Garden Plain', '85722');
+    select(loc);
+    component.openCatalogDetail('85722');
+
+    select(loc); // second click deselects
+
+    expect(component.selectedLocationName()).toBe('');
+    expect(component.catalogDetailKey()).toBeNull();
+  });
+});
