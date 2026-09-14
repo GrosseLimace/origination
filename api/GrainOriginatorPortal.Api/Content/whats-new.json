@@ -2,13 +2,13 @@
   {
     "version": "2026.09.2",
     "releasedOn": "2026-09-15",
-    "title": "See what's new without hunting for the email",
-    "summary": "Release notes now live in the app, saved lists show where your trade units overlap, and the Usage Dashboard status column is accurate again.",
+    "title": "Release notes in the app, trade unit overlap on saved lists",
+    "summary": "A short note on what changed after each release, and a way to spot producers a saved list is hiding.",
     "items": [
       {
         "group": "What's New panel",
         "kind": "added",
-        "text": "After each release the app tells you what changed. The notice appears once, and you can reopen it any time from the megaphone button in the header or the What's New row in your profile menu."
+        "text": "After each release the app tells you what changed. The notice appears once, and you can reopen it any time from the What's New row in your profile menu."
       },
       {
         "group": "What's New panel",

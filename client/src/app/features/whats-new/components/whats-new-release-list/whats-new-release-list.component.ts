@@ -22,6 +22,13 @@ import { WHATS_NEW_KIND_LABELS, WHATS_NEW_KIND_PILL_CLASSES } from '../../whats-
 export class WhatsNewReleaseListComponent {
   readonly releases = input.required<WhatsNewRelease[]>();
 
+  /**
+   * Whether to print each release's title and summary above its items. On the history page yes,
+   * because the releases need telling apart. In the dialog no: its own header already says what
+   * the panel is, so a second heading would only push the features down.
+   */
+  readonly showReleaseHeadings = input<boolean>(true);
+
   /** Grouped once per input change rather than on every render pass. */
   readonly groupedReleases = computed(() => groupReleases(this.releases()));
 

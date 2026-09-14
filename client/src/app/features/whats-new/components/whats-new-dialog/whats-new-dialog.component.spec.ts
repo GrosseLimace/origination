@@ -31,19 +31,26 @@ describe('WhatsNewDialogComponent', () => {
   it('renders nothing while closed', async () => {
     await renderDialog(false);
 
-    expect(screen.queryByText('A September release')).toBeNull();
+    expect(screen.queryByText(/Bid sheets gained a thing/)).toBeNull();
   });
 
-  it('renders the release with its grouped items and kind labels', async () => {
+  it('renders the grouped items and kind labels', async () => {
     await renderDialog(true);
 
-    expect(screen.getByText('A September release')).toBeTruthy();
-    expect(screen.getByText('Two areas changed.')).toBeTruthy();
+    expect(screen.getByText(/Bid sheets gained a thing/)).toBeTruthy();
     expect(screen.getByText('Bid Sheet')).toBeTruthy();
     expect(screen.getByText('Notes')).toBeTruthy();
     // "added" and "fixed" are developer words — the user sees New and Fixed.
     expect(screen.getByText('New')).toBeTruthy();
     expect(screen.getByText('Fixed')).toBeTruthy();
+  });
+
+  it('omits the release title and summary, which the dialog header already covers', async () => {
+    // Repeating them here would only push the features further down.
+    await renderDialog(true);
+
+    expect(screen.queryByText('A September release')).toBeNull();
+    expect(screen.queryByText('Two areas changed.')).toBeNull();
   });
 
   it('renders nothing when open with no releases', async () => {

@@ -1,16 +1,26 @@
 <div class="space-y-6">
   @for (grouped of groupedReleases(); track grouped.release.version) {
     <section>
-      <div class="flex items-baseline justify-between gap-3">
-        <h4 class="font-semibold text-gray-900 dark:text-white">{{ grouped.release.title }}</h4>
-        <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ grouped.release.releasedOn }}</span>
-      </div>
-      @if (grouped.release.summary) {
-        <p class="mt-1 text-[length:var(--text-fluid-sm)] text-gray-600 dark:text-gray-400">{{ grouped.release.summary }}</p>
+      <!--
+        The dialog turns headings off: it already says "What's New in the Origination Workbench"
+        and "Here's what changed since you were last here", so repeating a release title and
+        summary underneath only pushes the actual features down the page. The date still shows
+        when several releases are stacked, so someone who skipped one can tell them apart.
+      -->
+      @if (showReleaseHeadings()) {
+        <div class="flex items-baseline justify-between gap-3">
+          <h4 class="font-semibold text-gray-900 dark:text-white">{{ grouped.release.title }}</h4>
+          <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ grouped.release.releasedOn }}</span>
+        </div>
+        @if (grouped.release.summary) {
+          <p class="mt-1 text-[length:var(--text-fluid-sm)] text-gray-600 dark:text-gray-400">{{ grouped.release.summary }}</p>
+        }
+      } @else if (groupedReleases().length > 1) {
+        <p class="text-xs text-gray-500 dark:text-gray-400">{{ grouped.release.releasedOn }}</p>
       }
 
       <!-- One block per group. A release with no groups yields a single heading-less block. -->
-      <div class="mt-3 space-y-4">
+      <div class="space-y-4" [class.mt-3]="showReleaseHeadings() || groupedReleases().length > 1">
         @for (group of grouped.groups; track $index) {
           <div>
             @if (group.heading) {

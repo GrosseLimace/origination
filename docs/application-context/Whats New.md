@@ -19,9 +19,8 @@ a dialog once after a deploy that carried notes, then a permanent page listing e
 
 - **The dialog** opens by itself on the first load after a deploy that added a release entry. It
   closes on "Got it", the X, the backdrop, or Escape — all four record the acknowledgment.
-- **The megaphone button** in the header, on both the desktop and mobile layouts. It carries a red
-  dot while there is something unread.
-- **The "What's New" row** in the profile menu, and an entry in the mobile drawer.
+- **The "What's New" row** in the profile menu, directly under Light/Dark Mode. This is the only
+  way in — there is deliberately no header icon. It carries a red dot while something is unread.
 - **The build line** at the foot of the profile menu (`Release 2026.09.1 · Build a1b2c3d`) and at the
   foot of the page, where it also names the workflow run and environment.
 
@@ -90,7 +89,7 @@ flowchart TD
   VC --> SVC
   SVC --> DLG[WhatsNewDialogComponent<br/>unseen releases only]
   SVC --> PAGE["WhatsNewComponent<br/>/whats-new — all releases"]
-  SVC --> HDR[HeaderComponent<br/>megaphone + dot + build line]
+  SVC --> HDR[HeaderComponent<br/>profile-menu row + dot + build line]
   LS[(localStorage<br/>lastSeenVersion)] <--> SVC
 ```
 
@@ -157,7 +156,7 @@ The same values are logged once at startup, so App Insights shows which build is
 | `client/src/app/features/whats-new/components/whats-new-dialog/` | The once-per-deploy dialog |
 | `client/src/app/features/whats-new/pages/whats-new/` | The `/whats-new` page |
 | `client/src/app/app.component.ts` / `.html` | Loads once authenticated, owns the open state, `@defer`s the dialog |
-| `client/src/app/shared/components/header/header.component.*` | Megaphone, dot, menu row, build line |
+| `client/src/app/shared/components/header/header.component.*` | Profile-menu row, dot, build line |
 
 ## Troubleshooting
 
