@@ -11,6 +11,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
+import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
@@ -233,12 +234,18 @@ export class CustomerListComponent {
       if (!_tuInitialized) { _tuInitialized = true; return; }
       untracked(() => {
         if (this.searchInputValue) this.clearSearch();
-        // Reset saved list if the current selection isn't visible for the new TUs
+        // A saved list that still overlaps the new selection STAYS selected and re-runs under it —
+        // its cached customerIds belong to the old roster, so drop them (the customers effect
+        // re-enters applyFilters once the new roster lands). A list that no longer overlaps can't
+        // be shown, so fall back to All Producers.
         const currentList = this.selectedListId();
         if (currentList && currentList !== 'all') {
-          const visible = this.getVisibleSavedLists();
-          if (!visible.some(l => String(l.id) === currentList)) {
-            this._cancelSavedList$.next();
+          this._cancelSavedList$.next();
+          if (this.getVisibleSavedLists().some(l => String(l.id) === currentList)) {
+            const savedList = this.savedLists().find(l => String(l.id) === currentList);
+            if (savedList) savedList.customerIds = undefined as any;
+            this.savedListLoading.set(true);
+          } else {
             this.savedListLoading.set(false);
             this.selectedListId.set('all');
             this.appStateService.setSelectedSavedListId('all');
@@ -370,17 +377,11 @@ export class CustomerListComponent {
     this.filteredCustomers.set(result);
   }
 
-  /** Returns saved lists whose trade units exactly match the currently selected trade units. */
+  /** Saved lists sharing at least one trade unit with the current selection (see
+   *  saved-list-trade-units.ts). Trade units govern visibility only — picking one runs its query
+   *  against the currently loaded roster (_runSavedListNlq fetches with the current selection). */
   getVisibleSavedLists(): SavedList[] {
-    const selectedTU = this.appStateService.selectedTradeUnits();
-    if (selectedTU.length === 0) return [];
-    const selectedSet = new Set(selectedTU);
-    return this.savedLists().filter(list => {
-      if (!list.tradeUnits) return false;
-      const listUnits = list.tradeUnits.split(',').map(u => u.trim()).filter(Boolean);
-      if (listUnits.length !== selectedSet.size) return false;
-      return listUnits.every(u => selectedSet.has(u));
-    });
+    return filterSavedListsByTradeUnitOverlap(this.savedLists(), this.appStateService.selectedTradeUnits());
   }
 
   /** Called when the user selects a saved list from the dropdown. */
