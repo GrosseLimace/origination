@@ -869,6 +869,64 @@ describe('BidSheetComponent — the catalog popup answers the price toggle', () 
     expect(rows[0].basis).toBe(-30);
   });
 
+  it('narrows to the crop the dropdown has chosen, and shows the whole book on All Crops', () => {
+    component.catalogDetail.set({
+      location: { locationKey: 'K1', instrumentCount: 4, commodityCount: 2, placements: [] },
+      bids: [
+        bid({ price: 4.98 }), bid({ price: -30, isBasis: true }),
+        bid({ price: 11.2, commodityCode: 'YSB' }), bid({ price: -45, commodityCode: 'YSB', isBasis: true }),
+      ],
+      unmappedBidCount: 0,
+    });
+    component.priceMode.set('both');
+
+    component.selectedCrop.set('');
+    expect(component.catalogDetailRows().length).toBe(2);
+
+    component.selectedCrop.set('YSB');
+    const rows = component.catalogDetailRows();
+    expect(rows.length).toBe(1);
+    expect(rows[0]).toMatchObject({ crop: 'YSB', cash: 11.2, basis: -45 });
+  });
+
+  // An unmapped vendor commodity has no code to match, and cannot reach the sheet either.
+  it('drops an unmapped commodity once a crop is chosen, but keeps it on All Crops', () => {
+    component.catalogDetail.set({
+      location: { locationKey: 'K1', instrumentCount: 2, commodityCount: 2, placements: [] },
+      bids: [bid({ price: 4.98 }), bid({ price: 9.1, commodityCode: undefined, vendorCommodity: 'Rye', isMapped: false })],
+      unmappedBidCount: 1,
+    });
+    component.priceMode.set('cash');
+
+    component.selectedCrop.set('');
+    expect(component.catalogDetailRows().length).toBe(2);
+
+    component.selectedCrop.set('YC');
+    expect(component.catalogDetailRows().map(r => r.crop)).toEqual(['YC']);
+  });
+
+  it('says why the table is empty — quiet elevator, wrong crop, or wrong price type', () => {
+    component.selectedCrop.set('');
+    component.priceMode.set('cash');
+    component.catalogDetail.set({
+      location: { locationKey: 'K1', instrumentCount: 0, commodityCount: 0, placements: [] },
+      bids: [], unmappedBidCount: 0,
+    });
+    expect(component.catalogDetailEmptyMessage()).toBe('No active bids published right now.');
+
+    component.catalogDetail.set({
+      location: { locationKey: 'K1', instrumentCount: 1, commodityCount: 1, placements: [] },
+      bids: [bid({ price: -30, isBasis: true })], unmappedBidCount: 0,
+    });
+    expect(component.catalogDetailEmptyMessage()).toBe('No cash bids published right now.');
+
+    component.selectedCrop.set('YSB');
+    expect(component.catalogDetailEmptyMessage()).toBe('No YSB cash bids published right now.');
+
+    component.priceMode.set('both');
+    expect(component.catalogDetailEmptyMessage()).toBe('No YSB cash or basis bids published right now.');
+  });
+
   it('knows when the listing is already on the open sheet, so Add is not offered twice', () => {
     component.allMapLocations.set([]);
     expect(component.catalogDetailOnActiveSheet()).toBe(false);

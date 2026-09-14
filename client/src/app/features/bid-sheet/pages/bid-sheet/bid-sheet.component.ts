@@ -1019,6 +1019,25 @@ export class BidSheetComponent {
   readonly catalogDetailLoading = signal<boolean>(false);
   readonly catalogDetail = signal<BarchartCatalogLocationDetail | null>(null);
 
+  /**
+   * Why the catalog popup's table is empty, in the user's terms.
+   *
+   * Three different reasons land in the same blank space -- the elevator publishes nothing at all, it
+   * publishes nothing in the selected crop, or nothing of the selected price type -- and saying which
+   * is the difference between "this elevator is quiet" and "I have a filter on".
+   */
+  readonly catalogDetailEmptyMessage = computed<string>(() => {
+    const detail = this.catalogDetail();
+    if (!detail || detail.bids.length === 0) return 'No active bids published right now.';
+
+    const mode = this.priceMode();
+    const priced = mode === 'both' ? 'cash or basis' : mode;
+    const crop = this.selectedCrop();
+    return crop
+      ? `No ${crop} ${priced} bids published right now.`
+      : `No ${priced} bids published right now.`;
+  });
+
   /** The same choice as a sentence, for the printed sheet's header. */
   readonly printPriceModeCaption = computed<string>(() => {
     const mode = this.priceMode();
@@ -1080,13 +1099,20 @@ export class BidSheetComponent {
    * Pairing them by crop and period lets the table answer the toggle: one column of the selected
    * price, or both side by side. A period the elevator only quotes one way keeps its row and shows a
    * dash for the other -- dropping it would hide a real bid.
+   *
+   * The crop dropdown narrows it the same way it narrows everything else on the screen: All Crops
+   * shows the elevator's whole book, a chosen crop shows only that one. A vendor commodity we have no
+   * mapping for can never match a chosen crop, so it drops out -- which is right, since it cannot
+   * reach the sheet either.
    */
   readonly catalogDetailRows = computed<{ crop: string; cropYear: number; month: number; cash: number | null; basis: number | null }[]>(() => {
     const detail = this.catalogDetail();
     if (!detail) return [];
     const mode = this.priceMode();
+    const onlyCrop = this.selectedCrop();
     const byPeriod = new Map<string, { crop: string; cropYear: number; month: number; cash: number | null; basis: number | null }>();
     for (const bid of detail.bids) {
+      if (onlyCrop && bid.commodityCode !== onlyCrop) continue;
       const crop = bid.commodityCode || bid.vendorCommodity;
       const key = `${crop}|${bid.cropYear}|${bid.month}`;
       let row = byPeriod.get(key);

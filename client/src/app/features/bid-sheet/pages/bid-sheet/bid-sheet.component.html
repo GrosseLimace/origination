@@ -240,10 +240,7 @@
                   </div>
                 } @else if (catalogDetail(); as detail) {
                   @if (catalogDetailRows().length === 0) {
-                    <p class="text-xs text-gray-400 dark:text-gray-500 italic py-3">
-                      @if (detail.bids.length === 0) { No active bids published right now. }
-                      @else { No {{ priceModeLabel().toLowerCase() }} bids published right now. }
-                    </p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic py-3">{{ catalogDetailEmptyMessage() }}</p>
                   } @else {
                     <!-- The header names the price the Cash/Basis/Both toggle is showing, rather than
                          saying "Price" over whichever one happened to come first. -->
