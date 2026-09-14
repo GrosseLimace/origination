@@ -192,6 +192,53 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(printed).toBe('9.99');
   });
 
+  // row.bids is always the CASH column and row.basisBids always the basis one -- the grid keeps both.
+  // A single-price print column carries no priceType, so printCellValue has to take the type from the
+  // toggle; reading row.bids regardless is what printed a Basis sheet full of cash prices.
+  it('prints the basis figure when the sheet is showing basis', () => {
+    seed(location('A', [bid({ underlyingFuture: 'ZCU26' })]));
+    component.editBidsYears.set([2026]);
+    const both = {
+      ...row('A', 'YC#2026#8', '4.98'),
+      basisBids: { 'YC#2026#8': '-30' }, originalBasisBids: { 'YC#2026#8': '-30' },
+    };
+    const col = { crop: 'YC', month: 8, year: 2026 };
+
+    component.priceMode.set('cash');
+    expect(component.printCellValue(both as never, col)).toBe('4.98');
+
+    component.priceMode.set('basis');
+    expect(component.printCellValue(both as never, col)).toBe('-30');
+  });
+
+  it('still splits the pair apart when the column names its own price type', () => {
+    seed(location('A', [bid({ underlyingFuture: 'ZCU26' })]));
+    component.editBidsYears.set([2026]);
+    const both = {
+      ...row('A', 'YC#2026#8', '4.98'),
+      basisBids: { 'YC#2026#8': '-30' }, originalBasisBids: { 'YC#2026#8': '-30' },
+    };
+    component.priceMode.set('both');
+
+    expect(component.printCellValue(both as never, { crop: 'YC', month: 8, year: 2026, priceType: 'cash' })).toBe('4.98');
+    expect(component.printCellValue(both as never, { crop: 'YC', month: 8, year: 2026, priceType: 'basis' })).toBe('-30');
+  });
+
+  // The override check picks the store to compare against, so it has to follow the same type -- or a
+  // saved basis value looks overridden and loses its board.
+  it('judges an override against the price type actually being printed', () => {
+    seed(location('A', [bid({ underlyingFuture: 'ZCZ26' })]));
+    component.editBidsYears.set([2026]);
+    component.priceMode.set('basis');
+    const edited = {
+      ...row('A', 'YC#2026#8', '4.98'),
+      basisBids: { 'YC#2026#8': '-12' }, originalBasisBids: { 'YC#2026#8': '-30' },
+    };
+
+    // Basis was typed over, so no board is stamped on it.
+    expect(component.printCellValue(edited as never, { crop: 'YC', month: 8, year: 2026 })).toBe('-12');
+  });
+
   it('leaves an empty cell empty rather than printing a bare board', () => {
     seed(location('A', [bid()]));
     component.editBidsYears.set([2026]);

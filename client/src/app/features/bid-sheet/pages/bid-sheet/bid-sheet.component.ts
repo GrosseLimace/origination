@@ -3873,16 +3873,23 @@ export class BidSheetComponent {
   printCellValue(row: EditBidsRow, col: { crop: string; month: number; year: number; priceType?: 'cash' | 'basis' }): string {
     const gridKey = this._colKey(col.crop, col.year, col.month);
     const live = this.editBidsYears().includes(col.year);
-    // In cash or basis mode row.bids already holds whichever price is selected, so priceType is
-    // absent and this reads exactly as it always did. Both mode sets it and splits the two apart.
+
+    // row.bids is ALWAYS the cash column and row.basisBids ALWAYS the basis one -- the grid keeps
+    // both side by side so it can render either without rebuilding. A single-price column carries no
+    // priceType (adding one would suffix every header and cost font size in the fit-first sizing), so
+    // the type has to come from the toggle instead. Reading row.bids whenever priceType was absent is
+    // what printed a Basis sheet full of cash prices.
+    const wantBasis = col.priceType ? col.priceType === 'basis' : this.priceMode() === 'basis';
+
     let value: string;
-    if (col.priceType === 'basis') {
+    if (wantBasis) {
       value = live
         ? (row.basisBids[gridKey] ?? '').trim()
         : (this._getLatestEntry(row.name, col.year, col.crop, col.month)?.basisBid ?? '').trim();
     } else if (live) {
       value = (row.bids[gridKey] ?? '').trim();
     } else {
+      // Mode-aware, but only cash reaches it: basis took the branch above.
       value = this._getLatestBid(row.name, col.year, col.crop, col.month).trim();
     }
     if (!value) return value;
@@ -3890,7 +3897,7 @@ export class BidSheetComponent {
     // The board describes the FED number, and for the viewed year the value above may be an unsaved
     // override. Printing the two together stamped a hand-typed price with a board it was never quoted
     // against; the grid guards this the same way before showing its own symbol.
-    const overridden = live && (col.priceType === 'basis'
+    const overridden = live && (wantBasis
       ? value !== (row.originalBasisBids[gridKey] ?? '').trim()
       : value !== (row.originalBids[gridKey] ?? '').trim());
     if (overridden) return value;
