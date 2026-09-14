@@ -24,6 +24,8 @@ import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
+import { WhatsNewService } from '@core/services/whats-new.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -49,6 +51,9 @@ export class HeaderComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly userRoles = inject(UserRolesService);
   private readonly userTradeUnits = inject(UserTradeUnitsService);
+  /** Public: the template reads hasUnseen() and version() straight off it. */
+  readonly whatsNew = inject(WhatsNewService);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
@@ -151,6 +156,26 @@ export class HeaderComponent {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
     return name.substring(0, 2).toUpperCase();
+  }
+
+  /** Opens the release notes. Counts as an acknowledgment, so the unread dot clears. */
+  openWhatsNew(): void {
+    this.usageTracking.trackWhatsNewOpened();
+    this.router.navigate(['/whats-new']);
+  }
+
+  /** Spoken label for the megaphone button, so screen readers hear that updates are waiting. */
+  whatsNewLabel(): string {
+    return this.whatsNew.hasUnseen() ? "What's New, updates available" : "What's New";
+  }
+
+  /** The build line at the foot of the profile menu, or null before the version call lands. */
+  buildLine(): string | null {
+    const v = this.whatsNew.version();
+    if (v === null) return null;
+
+    const release = v.releaseVersion ? 'Release ' + v.releaseVersion : 'Unreleased';
+    return release + ' · Build ' + v.shortSha;
   }
 
   /** Trade-unit / group assignments are managed in the separate Trade Unit Preferences app.

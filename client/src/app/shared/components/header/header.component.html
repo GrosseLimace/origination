@@ -26,17 +26,30 @@
             </span>
           }
       </div>
-      <!-- Profile avatar -->
-      <div class="relative shrink-0" (click)="$event.stopPropagation()">
-        <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()"
-          class="flex items-center justify-center w-12 h-12 rounded-full bg-scoular-green-accessible hover:bg-scoular-green focus:outline-none focus:ring-2 focus:ring-scoular-green focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors overflow-hidden">
-          @if (profilePhotoUrl()) {
-            <img [src]="profilePhotoUrl()" alt="" class="w-full h-full object-cover">
-          } @else {
-            <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
+      <div class="flex items-center gap-1 shrink-0">
+        <!-- What's New. The dot is the only thing that says "there is something to read"; it
+             clears as soon as the user opens the notes or dismisses the dialog. -->
+        <button type="button" (click)="openWhatsNew()" title="What's New" [attr.aria-label]="whatsNewLabel()"
+          class="relative p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
+          </svg>
+          @if (whatsNew.hasUnseen()) {
+            <span class="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-scoular-red-accessible ring-2 ring-white dark:ring-gray-800"></span>
           }
         </button>
-        <ng-container [ngTemplateOutlet]="profileMenu"></ng-container>
+        <!-- Profile avatar -->
+        <div class="relative shrink-0" (click)="$event.stopPropagation()">
+          <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()"
+            class="flex items-center justify-center w-12 h-12 rounded-full bg-scoular-green-accessible hover:bg-scoular-green focus:outline-none focus:ring-2 focus:ring-scoular-green focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors overflow-hidden">
+            @if (profilePhotoUrl()) {
+              <img [src]="profilePhotoUrl()" alt="" class="w-full h-full object-cover">
+            } @else {
+              <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
+            }
+          </button>
+          <ng-container [ngTemplateOutlet]="profileMenu"></ng-container>
+        </div>
       </div>
     </div>
 
@@ -102,6 +115,17 @@
             <span class="hidden 2xl:inline">{{ isActive('/bid-sheet') ? 'Back to Producers' : 'Bid Sheet' }}</span>
           </app-button>
           }
+          <!-- What's New. The dot is the only thing that says "there is something to read"; it
+               clears as soon as the user opens the notes or dismisses the dialog. -->
+          <button type="button" (click)="openWhatsNew()" title="What's New" [attr.aria-label]="whatsNewLabel()"
+            class="relative p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
+            </svg>
+            @if (whatsNew.hasUnseen()) {
+              <span class="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-scoular-red-accessible ring-2 ring-white dark:ring-gray-800"></span>
+            }
+          </button>
           <!-- Profile -->
           <div class="relative" (click)="$event.stopPropagation()">
             <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()"
@@ -180,6 +204,15 @@
           <span>Bid Sheet</span>
         </button>
         }
+        <button type="button" [class]="getMobileNavClass('/whats-new')" (click)="mobileNavigate('/whats-new')">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
+          </svg>
+          <span>What's New</span>
+          @if (whatsNew.hasUnseen()) {
+            <span class="ml-auto h-2 w-2 rounded-full bg-scoular-red-accessible"></span>
+          }
+        </button>
       </nav>
 
       <!-- Footer: user info + actions -->
@@ -263,6 +296,13 @@
             Manage Groups
           </button>
         }
+        <button type="button" (click)="openWhatsNew(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+          What's New
+          @if (whatsNew.hasUnseen()) {
+            <span class="ml-auto h-2 w-2 rounded-full bg-scoular-red-accessible"></span>
+          }
+        </button>
         <!-- Opens the separate Trade Unit Preferences app in a popup window (it can't be
              iframed — X-Frame-Options: DENY). Groups refresh when the popup closes. -->
         <button type="button" (click)="openTradeUnitPreferences(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
@@ -272,6 +312,10 @@
           <span class="sr-only">(opens in a new window)</span>
         </button>
       </div>
+      @if (buildLine(); as line) {
+        <!-- Quote this line in a bug report and we can tell exactly which build you were on. -->
+        <div class="px-5 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400 dark:text-gray-500">{{ line }}</div>
+      }
     </div>
   }
 </ng-template>

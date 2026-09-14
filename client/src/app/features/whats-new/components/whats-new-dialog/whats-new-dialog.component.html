@@ -1,0 +1,30 @@
+<!--
+  Also gated on having releases so the dialog disappears on its own if the list empties
+  underneath it — opening the What's New page marks the release seen, which is what happens when
+  the user clicks the header button instead of dismissing.
+-->
+@if (isOpen() && releases().length > 0) {
+  <app-dialog [isOpen]="true" size="md" [scrollBody]="true" (close)="onClose()">
+    <app-dialog-header>
+      <app-dialog-title>What's New in the Origination Workbench</app-dialog-title>
+      <app-dialog-description>Here's what changed since you were last here.</app-dialog-description>
+    </app-dialog-header>
+
+    <app-dialog-content>
+      <app-whats-new-release-list [releases]="releases()" />
+    </app-dialog-content>
+
+    <!-- app-dialog-footer right-aligns its children, so the secondary link sits beside the
+         primary action rather than opposite it. -->
+    <app-dialog-footer>
+      <a
+        routerLink="/whats-new"
+        (click)="onClose()"
+        class="self-center text-sm font-medium text-scoular-green-accessible hover:underline cursor-pointer"
+      >
+        See all updates
+      </a>
+      <app-button variant="primary" (onClick)="onClose()">Got it</app-button>
+    </app-dialog-footer>
+  </app-dialog>
+}
