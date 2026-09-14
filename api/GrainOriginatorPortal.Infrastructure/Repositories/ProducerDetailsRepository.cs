@@ -339,26 +339,33 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         return cleaned;
     }
 
-    public async Task DeleteAsync(long customerId, CancellationToken cancellationToken)
+    public async Task<bool> DeleteAsync(long customerId, CancellationToken cancellationToken)
     {
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
-        if (existing != null)
-        {
-            // Child rows FK to dbo.Customer (not ProducerDetails), so they don't cascade — remove
-            // them explicitly or they'd silently reattach if details are ever re-created.
-            var contacts = await _appContext.ProducerContacts
-                .Where(c => c.CustomerId == customerId)
-                .ToListAsync(cancellationToken);
-            if (contacts.Count > 0) _appContext.ProducerContacts.RemoveRange(contacts);
-            var grain = await _appContext.ProducerGrainOnFarm
-                .Where(g => g.CustomerId == customerId)
-                .ToListAsync(cancellationToken);
-            if (grain.Count > 0) _appContext.ProducerGrainOnFarm.RemoveRange(grain);
+        if (existing == null) return false;
 
-            _appContext.ProducerDetails.Remove(existing);
-            await _appContext.SaveChangesAsync(cancellationToken);
-            _logger.LogInformation("Deleted ProducerDetails for customer {CustomerId}", customerId);
-        }
+        // Child rows FK to dbo.Customer (not ProducerDetails), so they don't cascade — remove
+        // them explicitly or they'd silently reattach if details are ever re-created.
+        var contacts = await _appContext.ProducerContacts
+            .Where(c => c.CustomerId == customerId)
+            .ToListAsync(cancellationToken);
+        if (contacts.Count > 0) _appContext.ProducerContacts.RemoveRange(contacts);
+        var grain = await _appContext.ProducerGrainOnFarm
+            .Where(g => g.CustomerId == customerId)
+            .ToListAsync(cancellationToken);
+        if (grain.Count > 0) _appContext.ProducerGrainOnFarm.RemoveRange(grain);
+
+        _appContext.ProducerDetails.Remove(existing);
+        await _appContext.SaveChangesAsync(cancellationToken);
+
+        // Structured AUDIT_DELETE, matching CustomerRepository. This delete hand-cascades to child
+        // rows that exist nowhere upstream, so the cascade counts belong in the audit trail — a
+        // plain LogInformation left AR-01's stated "every mutation is attributable" control
+        // unsatisfied for this route (H-062, 2026-09-14).
+        _logger.LogInformation(
+            "Producer details deleted [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} ContactsRemoved={ContactsRemoved} GrainRowsRemoved={GrainRowsRemoved}",
+            "AUDIT_DELETE", "DataMutation", customerId, contacts.Count, grain.Count);
+        return true;
     }
 
     /// <summary>

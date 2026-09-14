@@ -120,6 +120,9 @@ public class CustomersController : ControllerBase
     public async Task<ActionResult<CustomerResponse>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may act on any customer.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
+        // Listed there from 2026-09-14 (M-039) — it was always in scope of that entry's rationale but
+        // absent from its route list, so each scan met an apparently-undocumented unguarded mutation.
         var updated = await _service.UpdateAsync(
             id,
             request.Location ?? string.Empty,
