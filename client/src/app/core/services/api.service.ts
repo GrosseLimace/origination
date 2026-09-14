@@ -820,12 +820,12 @@ export class ApiService {
   // Bid Sheet Operations
   // =========================================================================
 
-  /** Gets elevators from ODS. If tradeUnitCode omitted, returns all. */
-  getElevators(tradeUnitCode?: string): Observable<Elevator[]> {
-    const params: any = {};
-    if (tradeUnitCode) params.tradeUnitCode = tradeUnitCode;
-    return this._dedupe(`bidsheet-elevators-${tradeUnitCode ?? 'all'}`,
-      this.http.get<Elevator[]>(`${this.baseUrl}/bidsheet/elevators`, { params })
+  /** Gets elevators from ODS for a trade unit. tradeUnitCode is REQUIRED — the server rejects a
+   *  blank or missing scope with a 400 (H-066). Unlike getAllBidSheetLocations, there is no
+   *  unscoped variant: the map needs every location, but nothing needs every elevator. */
+  getElevators(tradeUnitCode: string): Observable<Elevator[]> {
+    return this._dedupe(`bidsheet-elevators-${tradeUnitCode}`,
+      this.http.get<Elevator[]>(`${this.baseUrl}/bidsheet/elevators`, { params: { tradeUnitCode } })
         .pipe(catchError(e => this.handleError(e)))
     );
   }

@@ -11,10 +11,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class ProducerDetailsController : ControllerBase
 {
     private readonly IProducerDetailsService _service;
+    private readonly ILogger<ProducerDetailsController> _logger;
 
-    public ProducerDetailsController(IProducerDetailsService service)
+    public ProducerDetailsController(IProducerDetailsService service, ILogger<ProducerDetailsController> logger)
     {
         _service = service;
+        _logger = logger;
     }
 
     // -------------------------------------------------------------------------
@@ -34,6 +36,7 @@ public class ProducerDetailsController : ControllerBase
     [ProducesResponseType(typeof(ProducerDetailsResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<ProducerDetailsResponse>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        // No per-producer object-level authz is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetByCustomerAsync(customerId, cancellationToken));
     }
 
@@ -51,14 +54,28 @@ public class ProducerDetailsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Deletes producer details for a customer.</summary>
+    /// <summary>Deletes producer details for a customer, if that producer is in a trade unit the
+    /// caller is entitled to. Returns 204 whether or not a record existed; 403 when it belongs to
+    /// another trade unit.</summary>
     [HttpDelete("customer/{customerId:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(long customerId, CancellationToken cancellationToken = default)
     {
-        // Trade units are a UX filter, not an access boundary — any rep may delete any producer's details.
-        await _service.DeleteAsync(customerId, cancellationToken);
+        // Do NOT re-cite AR-01 here. Unlike the sibling PUT above, this route was removed from that
+        // entry on 2026-09-14 (H-062) and is trade-unit authorized in ProducerDetailsService: it has
+        // no client caller, it hand-cascades to contact and grain-on-farm rows that exist nowhere
+        // upstream, and AR-01's audit compensating control was not actually implemented for it.
+        var deleted = await _service.DeleteAsync(customerId, cancellationToken);
+
+        // A miss is logged too, so an enumeration sweep leaves a trail rather than silence.
+        if (!deleted)
+        {
+            _logger.LogInformation(
+                "Producer details delete found no record [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId}",
+                "AUDIT_DELETE", "DataMutation", customerId);
+        }
+
         return NoContent();
     }
 }

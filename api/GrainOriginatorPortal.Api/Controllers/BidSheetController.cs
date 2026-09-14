@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
@@ -23,15 +24,25 @@ public class BidSheetController : ControllerBase
     // Elevators (from dbo.ElevatorCache)
     // -------------------------------------------------------------------------
 
-    /// <summary>Gets elevators. If tradeUnitCode is omitted, returns all elevators.</summary>
+    /// <summary>Gets elevators for a trade unit. tradeUnitCode is required and validated against the
+    /// caller's entitlements.</summary>
     [HttpGet("elevators")]
     [ProducesResponseType(typeof(List<ElevatorCacheResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<ElevatorCacheResponse>>> GetElevators([FromQuery] string? tradeUnitCode = null, CancellationToken cancellationToken = default)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<List<ElevatorCacheResponse>>> GetElevators([FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        // Reads are intentionally unscoped when tradeUnitCode is omitted (cross-TU visibility is a
-        // feature; only writes are entitlement-gated). Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-05).
-        if (!string.IsNullOrEmpty(tradeUnitCode))
-            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        // H-066 (2026-09-14): scoped, unlike the sibling locations read below. AR-05 covered both,
+        // but its justification — the bid-sheet map needs every location — only ever applied to
+        // locations. Nothing in the client calls this route, so requiring a scope costs no
+        // behaviour. AR-05 was narrowed off it; do not re-open it to an unscoped read.
+        //
+        // Reject blank explicitly: ValidateTradeUnitsOrThrowAsync returns early on an empty set, so
+        // `?tradeUnitCode=` would otherwise pass validation vacuously and fall through unscoped.
+        if (string.IsNullOrWhiteSpace(tradeUnitCode))
+            throw new ValidationException("tradeUnitCode", "tradeUnitCode is required.");
+
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
         return Ok(await _service.GetElevatorsAsync(tradeUnitCode, cancellationToken));
     }
 
