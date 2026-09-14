@@ -4,6 +4,10 @@ export const environment = {
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
+  // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
+  // on THIS environment's SPA app registration; without it the channel lookup returns nothing, so
+  // the flag stays off rather than showing an empty, apparently-broken picker section.
+  teamsChannelMentionsEnabled: false,
   calculatorEnabled: true,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.

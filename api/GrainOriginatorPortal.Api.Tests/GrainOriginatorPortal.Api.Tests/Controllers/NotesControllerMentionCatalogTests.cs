@@ -28,11 +28,16 @@ public class NotesControllerMentionCatalogTests
 {
     private static NotesController CreateSut(TradeUnitPreferencesDbContext db, string callerUpn = "CEgr@scoular.com",
         params RecapGroupDto[] visibleGroups)
+        => CreateSut(db, callerUpn, visibleGroups, []);
+
+    private static NotesController CreateSut(TradeUnitPreferencesDbContext db, string callerUpn,
+        RecapGroupDto[] visibleGroups, TeamsChannelDto[] registeredChannels)
     {
         var groups = new Mock<IDailyRecapGroupService>();
         groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(visibleGroups.ToList());
 
         var sut = new NotesController(new Mock<INoteService>().Object, db, groups.Object,
+            MentionTestDoubles.TeamsChannelStub(registeredChannels),
             new Mock<ILogger<NotesController>>().Object);
 
         var identity = new ClaimsIdentity([new Claim("preferred_username", callerUpn)], "test");

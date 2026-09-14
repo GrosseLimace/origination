@@ -381,6 +381,81 @@
                           },
                           "case": "trade-unit-group"
                         },
+                        "Case_teams-channel": {
+                          "actions": {
+                            "Get_Teams_Channel": {
+                              "inputs": {
+                                "host": {
+                                  "connection": {
+                                    "name": "@parameters('$connections')['sql']['connectionId']"
+                                  }
+                                },
+                                "method": "get",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[TeamsChannels]'))}/items",
+                                "queries": {
+                                  "$filter": "Id eq @{item()?['id']}",
+                                  "$select": "Id,DisplayName,ChannelEmail"
+                                }
+                              },
+                              "type": "ApiConnection"
+                            },
+                            "Condition_Registered_Channel_Is_Scoular": {
+                              "actions": {
+                                "Append_Registered_Channel_Recipient": {
+                                  "inputs": {
+                                    "name": "channelRecipient",
+                                    "value": {
+                                      "emailAddress": {
+                                        "address": "@{trim(first(body('Get_Teams_Channel')?['value'])?['ChannelEmail'])}"
+                                      }
+                                    }
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                }
+                              },
+                              "else": {
+                                "actions": {
+                                  "Append_Unresolved_Registered_Channel": {
+                                    "inputs": {
+                                      "name": "unresolvedTypes",
+                                      "value": "@concat('teams-channel:', item()?['id'], ' (not registered, or its address is not a Scoular Teams channel)')"
+                                    },
+                                    "type": "AppendToArrayVariable"
+                                  }
+                                }
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "greater": [
+                                      "@length(trim(coalesce(first(body('Get_Teams_Channel')?['value'])?['ChannelEmail'], '')))",
+                                      0
+                                    ]
+                                  },
+                                  {
+                                    "endsWith": [
+                                      "@toLower(trim(coalesce(first(body('Get_Teams_Channel')?['value'])?['ChannelEmail'], '')))",
+                                      ".teams.ms"
+                                    ]
+                                  },
+                                  {
+                                    "endsWith": [
+                                      "@toLower(first(split(trim(coalesce(first(body('Get_Teams_Channel')?['value'])?['ChannelEmail'], 'x@y')), '@')))",
+                                      ".scoular.com"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "runAfter": {
+                                "Get_Teams_Channel": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "If"
+                            }
+                          },
+                          "case": "teams-channel"
+                        },
                         "Case_app-group": {
                           "actions": {
                             "Get_App_Group": {

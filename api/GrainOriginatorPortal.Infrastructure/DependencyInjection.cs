@@ -129,6 +129,7 @@ public static class DependencyInjection
         services.AddScoped<IUsageRepository, UsageRepository>();
         services.AddScoped<ICustomerSyncRepository, CustomerSyncRepository>();
         services.AddScoped<IDailyRecapGroupRepository, DailyRecapGroupRepository>();
+        services.AddScoped<ITeamsChannelRepository, TeamsChannelRepository>();
         services.AddScoped<IMbpLocationSynonymRepository, MbpLocationSynonymRepository>();
 
         return services;

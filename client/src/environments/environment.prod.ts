@@ -11,6 +11,10 @@ export const environment = {
   // recaps), and the recap migrations (CreateDailyRecapGroups, AddGetRecapNotesProc)
   // must be applied to the prod DB. Merge this branch as part of that launch.
   dailyDigestEnabled: true,
+  // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
+  // on THIS environment's SPA app registration; without it the channel lookup returns nothing, so
+  // the flag stays off rather than showing an empty, apparently-broken picker section.
+  teamsChannelMentionsEnabled: false,
   // Originator Calculators: ON in PROD. Gates the floating calculator launcher on the
   // customer home page (Profitability / Check / Cancel-vs-Roll). Client-side only — no backend.
   calculatorEnabled: true,

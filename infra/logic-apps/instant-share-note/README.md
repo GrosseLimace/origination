@@ -18,6 +18,11 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    - `person` → **always `<local part of id>@scoular.com`** — the id's domain, if any, is discarded;
    - `trade-unit` → members of `[dbo].[UserTradeUnitAssignments]` (Entitlements), each `<UserId>@scoular.com`;
    - `trade-unit-group` → members of `[dbo].[UserGroupAssignments]` (Entitlements), each `<UserId>@scoular.com`;
+   - `teams-channel` → a **registered Teams channel** (`[dbo].[TeamsChannels]`), picked straight from
+     the composer's "@" menu. `Get_Teams_Channel` reads the row by its integer id and appends its
+     `ChannelEmail` to `channelRecipient`. Same address handling as below: the note carries only the
+     id, the workflow re-checks the Scoular-tenant shape of what it read, and a missing or foreign
+     address collects into `unresolvedTypes` and fails the run.
    - `app-group` → **two outcomes, decided by the group's delivery method.** `Get_App_Group` reads
      `[dbo].[DailyRecapGroups]` for the mention's id (a numeric key the API pins, so it is safe to
      interpolate into the `$filter`). Delivery method is the group's whole routing decision — there
@@ -132,7 +137,9 @@ The Logic App reads `dbo.Notes.Mentions` (`nvarchar(max)`), which the API writes
   { "id": "SFletcher", "name": "Sam Fletcher", "type": "person", "email": "SFletcher@scoular.com", "via": "app-group:7" },
   { "id": "1084",  "name": "1084",        "type": "trade-unit", "via": "app-group:7" },
 
-  { "id": "9",     "name": "Grain Desk",  "type": "app-group" }
+  { "id": "9",     "name": "Grain Desk",  "type": "app-group" },
+
+  { "id": "12",    "name": "Grain Desk",  "type": "teams-channel" }
 ]
 ```
 
@@ -142,10 +149,18 @@ expansions therefore means "post this to that group's channel" — the workflow 
 `DailyRecapGroups` and emails nobody. Note it carries **no `email` field**; the destination lives
 only in the database.
 
-> **Deploy order: API first, then this workflow.** `Get_App_Group` reads columns that already exist
-> (`DeliveryMethod`, `TeamsChannelEmail`), so the workflow is safe to deploy on its own. Shipping the
-> API first is still the right order, because until it ships a Teams group is still expanded into
-> member rows and the channel branch would post a *duplicate* alongside those member emails.
+The **final row** is a registered Teams channel: `id` is the `dbo.TeamsChannels` key, and again there
+is no `email` field — the address lives only in the database.
+
+> ⚠ **Deploy order for `teams-channel`: THIS WORKFLOW FIRST, then the API.** Unlike `app-group`,
+> which an older workflow skipped harmlessly, an unrecognised type hits the `default` branch and
+> **Terminate-Fails the run**. So a note carrying a `teams-channel` mention fails outright until the
+> workflow knows the type. Ship the workflow to an environment before enabling
+> `teamsChannelMentionsEnabled` there. (The flag is off in QA and prod, which is the safety net.)
+>
+> The `app-group` half is the other way round: `Get_App_Group` reads columns that already exist
+> (`DeliveryMethod`, `TeamsChannelEmail`), so it is safe on its own, and shipping the API first
+> merely avoids a Teams group briefly producing both member emails and a channel post.
 
 The last three rows show a group mention: the API writes the `app-group` row **plus** one row per
 member. Note the member rows are ordinary mentions — a `trade-unit` member stays a single row that

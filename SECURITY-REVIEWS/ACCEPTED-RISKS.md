@@ -707,6 +707,22 @@ what changed is the volume and immediacy of what flows through it. No per-channe
 approval step on registering a channel — any user may point an entry at any Scoular channel, which is
 the behaviour the business asked for.
 
+**Extended 2026-09-14 (same day) — channels are now mentionable directly.** A second, lighter path
+was added: the composer lists the Teams channels the SIGNED-IN USER belongs to (delegated
+`Channel.ReadBasic.All`) and picking one registers it in `dbo.TeamsChannels`, after which **anyone**
+may mention it. Assessed as no material change to this entry's risk:
+
+- **Scoping is stronger, not weaker, than the group path.** A user is only ever offered channels they
+  personally belong to, enforced by Microsoft rather than by our code. The registry is then open to
+  everyone, which is the same "a group addresses its own members, not yours" property already
+  accepted here.
+- **The address handling is identical.** The note stores the registry id; the workflow reads the
+  address and re-checks the Scoular-tenant shape; a bad row fails the run.
+- **No new write capability.** `ChannelSettings.ReadWrite.All`, which would let the app create channel
+  email addresses, was deliberately NOT requested. Channels without an address simply do not appear.
+
+Gated behind `teamsChannelMentionsEnabled`, off in QA and production until consent is granted.
+
 **Migration note for whoever ships this.** Because routing now rides on `DeliveryMethod`, every
 PRE-EXISTING group already set to `teams` silently changes behaviour on deploy: its @-mentions stop
 emailing its members and start posting to its channel. Dev held exactly one such group at the time of

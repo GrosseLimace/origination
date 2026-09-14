@@ -18,17 +18,20 @@ public class NotesController : ControllerBase
     private readonly INoteService _service;
     private readonly TradeUnitPreferencesDbContext _entitlementsDb;
     private readonly IDailyRecapGroupService _recapGroups;
+    private readonly ITeamsChannelService _teamsChannels;
     private readonly ILogger<NotesController> _logger;
 
     public NotesController(
         INoteService service,
         TradeUnitPreferencesDbContext entitlementsDb,
         IDailyRecapGroupService recapGroups,
+        ITeamsChannelService teamsChannels,
         ILogger<NotesController> logger)
     {
         _service = service;
         _entitlementsDb = entitlementsDb;
         _recapGroups = recapGroups;
+        _teamsChannels = teamsChannels;
         _logger = logger;
     }
 
@@ -197,6 +200,26 @@ public class NotesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Mention catalog: groups unavailable for user {UserId} — omitting them", userId);
+        }
+
+        // ── Source 3: registered Teams channels ───────────────────────────────────────────────
+        // Same independent-failure-domain treatment: losing the registry must not empty the rest of
+        // the picker. Deliberately unscoped — see MentionCatalogResponse.TeamsChannels.
+        try
+        {
+            response.TeamsChannels = (await _teamsChannels.GetAllAsync(cancellationToken))
+                .Select(c => new MentionCatalogTeamsChannel
+                {
+                    ChannelDbId = c.Id,
+                    DisplayName = c.DisplayName,
+                    TeamName = c.TeamName,
+                    ChannelId = c.ChannelId,
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Mention catalog: Teams channels unavailable — omitting them");
         }
 
         return Ok(response);

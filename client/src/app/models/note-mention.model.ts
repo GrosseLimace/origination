@@ -1,4 +1,4 @@
-export type NoteMentionType = 'person' | 'trade-unit' | 'trade-unit-group' | 'app-group';
+export type NoteMentionType = 'person' | 'trade-unit' | 'trade-unit-group' | 'app-group' | 'teams-channel';
 
 /** A single "@" mention saved with a note. Mirrors the backend NoteMention record. */
 export interface NoteMention {
@@ -45,6 +45,16 @@ export interface MentionCatalogAppGroup {
   postsToChannel?: boolean;
 }
 
+/** A Teams channel someone has already registered, so it is mentionable by anyone. */
+export interface MentionCatalogTeamsChannel {
+  /** Registry row id — what a mention stores. Never the channel address. */
+  channelDbId: number;
+  displayName: string;
+  teamName: string;
+  /** Graph channel id, used to tell which channels read from Graph are already registered. */
+  channelId: string;
+}
+
 export interface MentionCatalog {
   people: MentionCatalogPerson[];
   tradeUnits: MentionCatalogTradeUnit[];
@@ -52,4 +62,7 @@ export interface MentionCatalog {
   /** Optional: the API gathers these from a different database and omits them if it's unreachable,
    *  so the picker simply offers no groups rather than breaking. */
   appGroups?: MentionCatalogAppGroup[];
+  /** Optional for the same reason as appGroups: the API omits the section rather than failing the
+   *  whole picker when the registry can't be read. */
+  teamsChannels?: MentionCatalogTeamsChannel[];
 }
