@@ -2028,6 +2028,7 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
 describe('BidSheetComponent — the popup follows the last pin clicked', () => {
   let component: BidSheetComponent;
   let pending: Map<string, Subject<BarchartCatalogLocationDetail>>;
+  let requests: string[];
 
   const detailFor = (key: string): BarchartCatalogLocationDetail => ({
     location: { locationKey: key, instrumentCount: 1, commodityCount: 1, placements: [] },
@@ -2037,6 +2038,7 @@ describe('BidSheetComponent — the popup follows the last pin clicked', () => {
 
   beforeEach(() => {
     pending = new Map();
+    requests = [];
     const api = {
       getAllBidSheetLocations: () => of([]),
       getCommodities: () => of([]),
@@ -2048,6 +2050,7 @@ describe('BidSheetComponent — the popup follows the last pin clicked', () => {
       getBidSheets: () => of([]),
       getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
       getBarchartLocationDetail: (key: string) => {
+        requests.push(key);
         const subject = new Subject<BarchartCatalogLocationDetail>();
         pending.set(key, subject);
         return subject.asObservable();
@@ -2099,6 +2102,43 @@ describe('BidSheetComponent — the popup follows the last pin clicked', () => {
     pending.get('A')!.error(new Error('slow request failed'));
 
     expect(component.catalogDetailKey()).toBe('B');
+  });
+
+  // One click used to fire the same request twice -- the reference toggle warms the cache and the
+  // popup opens, and neither could see the other's request because the cache is written on response.
+  // Two identical calls doubled the chance one failed, and the popup's failure path closes it, so a
+  // click whose data had already arrived could still end with an empty screen.
+  it('asks for a listing once per click, however many callers want it', () => {
+    (component as unknown as { _selectCatalogLocation(l: BarchartCatalogLocation): void })
+      ._selectCatalogLocation({ locationKey: 'K1', instrumentCount: 1, commodityCount: 1, placements: [] });
+
+    expect(requests).toEqual(['K1']);
+  });
+
+  it('serves a second caller from the request already in flight', () => {
+    component.openCatalogDetail('K1');
+    component.openCatalogDetail('K1');
+
+    expect(requests).toEqual(['K1']);
+  });
+
+  it('lets a location that failed be retried on the next click', () => {
+    component.openCatalogDetail('K1');
+    pending.get('K1')!.error(new Error('network'));
+    pending.delete('K1');
+
+    component.openCatalogDetail('K1');
+
+    expect(requests).toEqual(['K1', 'K1']);
+  });
+
+  it('turns the spinner off when the popup is closed mid-load', () => {
+    component.openCatalogDetail('K1');
+    expect(component.catalogDetailLoading()).toBe(true);
+
+    component.closeCatalogDetail();
+
+    expect(component.catalogDetailLoading()).toBe(false);
   });
 
   it('does not repopulate a popup that has been closed', () => {

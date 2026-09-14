@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, effect, HostListener, i
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { forkJoin, map, Subject, switchMap, catchError, of, retry, timer } from 'rxjs';
+import { forkJoin, map, Observable, Subject, switchMap, catchError, finalize, of, retry, shareReplay, tap, timer } from 'rxjs';
 import { CdkDragDrop, CdkDrag, CdkDropList, CdkDragHandle, moveItemInArray } from '@angular/cdk/drag-drop';
 // CdkScrollable is what lets a row drag auto-scroll the grid: the CDK only scrolls ancestors that are
 // registered as scrollable, and marking the container with the class alone does nothing.
@@ -1144,6 +1144,38 @@ export class BidSheetComponent {
    *  catalog reference's bid for any period without a new fetch each time the filters change, and
    *  the click-to-detail popup reuse whatever a prior click already has. */
   private readonly _catalogDetailCache = new Map<string, BarchartCatalogLocationDetail>();
+
+  /**
+   * Detail requests currently in flight, one per location key.
+   *
+   * A single click on a catalog dot asked for the same listing TWICE: the reference toggle warms the
+   * cache, and the popup opens, and neither could see the other's request because the cache is only
+   * written on response. Two identical calls doubled the chance one of them failed -- and the popup's
+   * failure path closes the popup, so a click whose data had already arrived on the other request
+   * could still end with nothing on screen. Sharing the request makes a second caller wait on the
+   * first instead of racing it.
+   */
+  private readonly _catalogDetailInFlight = new Map<string, Observable<BarchartCatalogLocationDetail>>();
+
+  /**
+   * One shared fetch per location key: the cache if it is warm, the in-flight request if there is
+   * one, otherwise a new request that fills both.
+   */
+  private _fetchCatalogDetail(locationKey: string): Observable<BarchartCatalogLocationDetail> {
+    const inFlight = this._catalogDetailInFlight.get(locationKey);
+    if (inFlight) return inFlight;
+
+    const request = this.apiService.getBarchartLocationDetail(locationKey).pipe(
+      takeUntilDestroyed(this.destroyRef),
+      tap(detail => this._catalogDetailCache.set(locationKey, detail)),
+      // Cleared on success AND on failure, so a location that failed once can be retried by clicking
+      // it again rather than replaying the error for the rest of the session.
+      finalize(() => this._catalogDetailInFlight.delete(locationKey)),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this._catalogDetailInFlight.set(locationKey, request);
+    return request;
+  }
 
   /**
    * Where a BARCHART add places its locations: whatever trade units are selected, and nothing else.
@@ -5179,11 +5211,10 @@ export class BidSheetComponent {
 
     this.catalogDetail.set(null);
     this.catalogDetailLoading.set(true);
-    this.apiService.getBarchartLocationDetail(locationKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this._fetchCatalogDetail(locationKey).subscribe({
       next: (detail) => {
-        // Cached even when superseded: the fetch succeeded and the data is good, so the next click on
+        // The shared fetch has already cached it -- good even when superseded, so the next click on
         // that pin is instant. Only the DISPLAY is stale, and that is what the ticket guards.
-        this._catalogDetailCache.set(locationKey, detail);
         if (gen !== this._catalogDetailGen) return;
         this.catalogDetailLoading.set(false);
         this.catalogDetail.set(detail);
@@ -5202,6 +5233,9 @@ export class BidSheetComponent {
     this._catalogDetailGen++;
     this.catalogDetailKey.set(null);
     this.catalogDetail.set(null);
+    // Cleared too: the guard above makes the in-flight response a no-op, so nothing else would ever
+    // turn the spinner off, and the next open of an already-cached location would flash it.
+    this.catalogDetailLoading.set(false);
     this._refreshMapMarkers();
   }
 
@@ -5237,8 +5271,8 @@ export class BidSheetComponent {
    *  uncached -- callers just see no bid data, same as a listing with nothing published. */
   private _ensureCatalogDetailCached(locationKey: string, then: () => void): void {
     if (this._catalogDetailCache.has(locationKey)) { then(); return; }
-    this.apiService.getBarchartLocationDetail(locationKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (detail) => { this._catalogDetailCache.set(locationKey, detail); then(); },
+    this._fetchCatalogDetail(locationKey).subscribe({
+      next: () => then(), // the shared fetch does the caching
       error: () => { /* stays uncached */ }
     });
   }
