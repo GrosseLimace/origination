@@ -53,17 +53,11 @@ describe('BidSheetComponent — board symbols and printed values', () => {
 
   beforeEach(() => {
     const api = {
-      getBidSheetLocations: () => of([]),
       getAllBidSheetLocations: () => of([]),
-      getBidCropYears: () => of([2026]),
-      getBidCommodities: () => of(['YC']),
       getCommodities: () => of([]),
       getPlantingCommodities: () => of([]),
       getBidSheetPreference: () => of(null),
       setBidSheetPreference: () => of(null),
-      getBidSheetLocationOrder: () => of(null),
-      setBidSheetLocationOrder: () => of(null),
-      getElevators: () => of([]),
       getBarchartCoverage: () => of(null),
       searchBarchartLocations: () => of([]),
       getBidSheets: () => of([]),

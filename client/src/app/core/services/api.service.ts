@@ -30,7 +30,6 @@ import {
   BarchartCatalogLocationDetail,
   BarchartCoverage,
   BarchartLocationSearchParams,
-  Elevator,
   CommodityConversion,
   HarvestWindow,
   UsageDashboardSummary,
@@ -827,24 +826,6 @@ export class ApiService {
   // Bid Sheet Operations
   // =========================================================================
 
-  /** Gets elevators from ODS. If tradeUnitCode omitted, returns all. */
-  getElevators(tradeUnitCode?: string): Observable<Elevator[]> {
-    const params: any = {};
-    if (tradeUnitCode) params.tradeUnitCode = tradeUnitCode;
-    return this._dedupe(`bidsheet-elevators-${tradeUnitCode ?? 'all'}`,
-      this.http.get<Elevator[]>(`${this.baseUrl}/bidsheet/elevators`, { params })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Gets bid sheet locations (with nested bids) for a trade unit */
-  getBidSheetLocations(tradeUnitCode: string): Observable<BidSheetLocation[]> {
-    return this._dedupe(`bidsheet-locations-${tradeUnitCode}`,
-      this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`, { params: { tradeUnitCode } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
   /** Gets all bid sheet locations across all trade units (for map display) */
   getAllBidSheetLocations(): Observable<BidSheetLocation[]> {
     return this._dedupe('bidsheet-all-locations',
@@ -892,44 +873,6 @@ export class ApiService {
     cropYear: number; bid: string; basisBid?: string; month?: number;
   }>): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/bidsheet/bids/bulk`, bids)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Gets distinct crop years from bids for a trade unit */
-  getBidCropYears(tradeUnitCode: string): Observable<number[]> {
-    return this._dedupe(`bidsheet-cropyears-${tradeUnitCode}`,
-      this.http.get<number[]>(`${this.baseUrl}/bidsheet/cropyears`, { params: { tradeUnitCode } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Gets distinct commodity codes from bids for a trade unit */
-  getBidCommodities(tradeUnitCode: string): Observable<string[]> {
-    return this._dedupe(`bidsheet-commodities-${tradeUnitCode}`,
-      this.http.get<string[]>(`${this.baseUrl}/bidsheet/commodities`, { params: { tradeUnitCode } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Gets distinct bid months for a trade unit and crop year */
-  getBidMonths(tradeUnitCode: string, cropYear: number): Observable<number[]> {
-    return this._dedupe(`bidsheet-months-${tradeUnitCode}-${cropYear}`,
-      this.http.get<number[]>(`${this.baseUrl}/bidsheet/bidmonths`, { params: { tradeUnitCode, cropYear: cropYear.toString() } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Gets the saved location order for the current user and a trade unit key. Returns null if not set. */
-  getBidSheetLocationOrder(tradeUnitKey: string): Observable<{ locationOrder: string } | null> {
-    return this._dedupe(`bidsheet-location-order-${tradeUnitKey}`,
-      this.http.get<{ locationOrder: string }>(`${this.baseUrl}/bidsheet/location-order`, { params: { tradeUnitKey } })
-        .pipe(catchError(() => of(null)))
-    );
-  }
-
-  /** Saves the location order for the current user and a trade unit key. */
-  setBidSheetLocationOrder(tradeUnitKey: string, locationOrder: string): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/location-order`, { tradeUnitKey, locationOrder })
       .pipe(catchError(e => this.handleError(e)));
   }
 
