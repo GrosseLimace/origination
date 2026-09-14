@@ -543,9 +543,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasDatabaseName("UQ_BidSheetLocations_BarchartKey")
                         .HasFilter("[BarchartLocationKey] IS NOT NULL");
 
-                    b.HasIndex("TradeUnitCode")
-                        .HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
-
                     b.ToTable("BidSheetLocations", "dbo");
                 });
 
@@ -695,47 +692,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasDatabaseName("UQ_BidSheetLocationLinks_Sheet_Location");
 
                     b.ToTable("BidSheetLocationLinks", "dbo");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocationOrder", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("LocationOrder")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
-
-                    b.Property<DateTime>("ModifiedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<string>("TradeUnitKey")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .HasDatabaseName("IX_BidSheetLocationOrders_UserId");
-
-                    b.HasIndex("UserId", "TradeUnitKey")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_BidSheetLocationOrders_User_TradeUnitKey");
-
-                    b.ToTable("BidSheetLocationOrders", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetPreference", b =>

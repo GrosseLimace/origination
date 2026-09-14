@@ -34,7 +34,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
-    public DbSet<BidSheetLocationOrder> BidSheetLocationOrders => Set<BidSheetLocationOrder>();
     public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
     public DbSet<BidSheet> BidSheets => Set<BidSheet>();
     public DbSet<BidSheetShare> BidSheetShares => Set<BidSheetShare>();
@@ -556,7 +555,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
-            entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
             // ONE row per BarChart listing, company-wide. This replaced a per-trade-unit uniqueness rule:
             // the same elevator used to be stored once per desk, so the map showed it several times over
             // and the bridge wrote the identical fed price into every copy. Enforced by the database and
@@ -601,19 +599,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
             entity.HasIndex(e => new { e.LocationId, e.CommodityCode, e.CropYear, e.Month }).IsUnique().HasDatabaseName("UQ_BidSheetLocationBids_Location_Commodity_Year_Month");
-        });
-
-        modelBuilder.Entity<BidSheetLocationOrder>(entity =>
-        {
-            entity.ToTable("BidSheetLocationOrders", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.TradeUnitKey).HasMaxLength(500).IsRequired();
-            entity.Property(e => e.LocationOrder).HasColumnType("nvarchar(max)").HasDefaultValue("[]").IsRequired();
-            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetLocationOrders_User_TradeUnitKey");
-            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetLocationOrders_UserId");
         });
 
         modelBuilder.Entity<BidSheetPreference>(entity =>

@@ -71,15 +71,6 @@ public static class BidSheetMappings
         Bids = l.Bids.Select(b => b.ToResponse()).ToList(),
     };
 
-    public static BidSheetLocationOrderResponse ToResponse(this BidSheetLocationOrder o) => new()
-    {
-        Id = o.Id,
-        UserId = o.UserId,
-        TradeUnitKey = o.TradeUnitKey,
-        LocationOrder = o.LocationOrder,
-        ModifiedAt = o.ModifiedAt,
-    };
-
     public static BidSheetPreferenceResponse ToResponse(this BidSheetPreference p) => new()
     {
         Id = p.Id,

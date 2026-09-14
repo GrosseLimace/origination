@@ -126,18 +126,9 @@ public class BidSheetService : IBidSheetService
     }
 
     /// <inheritdoc />
-    public async Task<List<ElevatorCacheResponse>> GetElevatorsAsync(string? tradeUnitCode, CancellationToken cancellationToken)
+    public async Task<List<BidSheetLocationResponse>> GetLocationsAsync(CancellationToken cancellationToken)
     {
-        var elevators = await _repository.GetElevatorsAsync(tradeUnitCode, cancellationToken);
-        return elevators.Select(e => e.ToResponse()).ToList();
-    }
-
-    /// <inheritdoc />
-    public async Task<List<BidSheetLocationResponse>> GetLocationsAsync(string? tradeUnitCode, CancellationToken cancellationToken)
-    {
-        var locations = string.IsNullOrWhiteSpace(tradeUnitCode)
-            ? await _repository.GetAllLocationsAsync(cancellationToken)
-            : await _repository.GetLocationsAsync(tradeUnitCode, cancellationToken);
+        var locations = await _repository.GetAllLocationsAsync(cancellationToken);
         return locations.Select(l => l.ToResponse()).ToList();
     }
 
@@ -309,29 +300,6 @@ public class BidSheetService : IBidSheetService
             }
         }
     }
-
-    /// <inheritdoc />
-    public Task<List<int>> GetCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken) =>
-        _repository.GetBidCropYearsAsync(tradeUnitCode, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<List<string>> GetCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken) =>
-        _repository.GetBidCommoditiesAsync(tradeUnitCode, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken) =>
-        _repository.GetBidMonthsAsync(tradeUnitCode, cropYear, cancellationToken);
-
-    /// <inheritdoc />
-    public async Task<BidSheetLocationOrderResponse?> GetLocationOrderAsync(string tradeUnitKey, CancellationToken cancellationToken)
-    {
-        var order = await _repository.GetLocationOrderAsync(_requestContext.GetCurrentUser(), tradeUnitKey, cancellationToken);
-        return order?.ToResponse();
-    }
-
-    /// <inheritdoc />
-    public Task SetLocationOrderAsync(string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken) =>
-        _repository.SetLocationOrderAsync(_requestContext.GetCurrentUser(), tradeUnitKey, locationOrderJson, cancellationToken);
 
     /// <inheritdoc />
     public async Task<BidSheetPreferenceResponse?> GetPreferenceAsync(string tradeUnitKey, CancellationToken cancellationToken)

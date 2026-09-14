@@ -91,7 +91,6 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'BarchartQuoteSnapshot'),
 ('dbo', 'BidSheetLocationBids'),
 ('dbo', 'BidSheetLocationLinks'),
-('dbo', 'BidSheetLocationOrders'),
 ('dbo', 'BidSheetLocations'),
 ('dbo', 'BidSheetPreferences'),
 ('dbo', 'BidSheets'),
@@ -278,12 +277,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocationLinks', 'BidSheetLocationId', 'int',           0),
 ('dbo', 'BidSheetLocationLinks', 'DisplayName',        'nvarchar(200)', 1),
 ('dbo', 'BidSheetLocationLinks', 'SortOrder',          'int',           0),
--- BidSheetLocationOrders
-('dbo', 'BidSheetLocationOrders', 'Id',           'int',           0),
-('dbo', 'BidSheetLocationOrders', 'LocationOrder', 'nvarchar(max)', 0),
-('dbo', 'BidSheetLocationOrders', 'ModifiedAt',    'datetime2',     0),
-('dbo', 'BidSheetLocationOrders', 'TradeUnitKey',  'nvarchar(500)', 0),
-('dbo', 'BidSheetLocationOrders', 'UserId',        'nvarchar(256)', 0),
 -- BidSheetPreferences
 ('dbo', 'BidSheetPreferences', 'Id',             'int',           0),
 ('dbo', 'BidSheetPreferences', 'CropCode',       'nvarchar(50)',  1),
@@ -578,7 +571,6 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 -- migration and declared by no model, so expecting it would report a FAIL (this check has no warning
 -- severity) in every environment that is CORRECT per the repo. Declaring it properly needs a
 -- duplicate-name sweep of QA and PROD first; see the note in BidSheetRepository.LocationNameExistsAsync.
-('dbo', 'BidSheetLocationOrders',      'UQ_BidSheetLocationOrders_User_TradeUnitKey'),
 ('dbo', 'BidSheetPreferences',         'UQ_BidSheetPreferences_User_TradeUnitKey'),
 -- Sheets: the three UNIQUE constraints the DailyRecapGroup family it copies does not have.
 ('dbo', 'BidSheets',                   'UQ_BidSheets_Owner_Name'),

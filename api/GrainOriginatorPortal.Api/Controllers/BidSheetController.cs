@@ -20,35 +20,18 @@ public class BidSheetController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    // Elevators (from dbo.ElevatorCache)
-    // -------------------------------------------------------------------------
-
-    /// <summary>Gets elevators. If tradeUnitCode is omitted, returns all elevators.</summary>
-    [HttpGet("elevators")]
-    [ProducesResponseType(typeof(List<ElevatorCacheResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<ElevatorCacheResponse>>> GetElevators([FromQuery] string? tradeUnitCode = null, CancellationToken cancellationToken = default)
-    {
-        // Reads are intentionally unscoped when tradeUnitCode is omitted (cross-TU visibility is a
-        // feature; only writes are entitlement-gated). Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-05).
-        if (!string.IsNullOrEmpty(tradeUnitCode))
-            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
-        return Ok(await _service.GetElevatorsAsync(tradeUnitCode, cancellationToken));
-    }
-
-    // -------------------------------------------------------------------------
     // Locations
     // -------------------------------------------------------------------------
 
-    /// <summary>Gets bid sheet locations. If tradeUnitCode is provided, filters to that TU; otherwise returns all.</summary>
+    /// <summary>Gets every bid sheet location, with its bids.</summary>
     [HttpGet("locations")]
     [ProducesResponseType(typeof(List<BidSheetLocationResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<BidSheetLocationResponse>>> GetLocations([FromQuery] string? tradeUnitCode = null, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<BidSheetLocationResponse>>> GetLocations(CancellationToken cancellationToken = default)
     {
-        // Reads are intentionally unscoped when tradeUnitCode is omitted (cross-TU visibility is a
-        // feature; only writes are entitlement-gated). Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-05).
-        if (!string.IsNullOrWhiteSpace(tradeUnitCode))
-            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
-        return Ok(await _service.GetLocationsAsync(tradeUnitCode, cancellationToken));
+        // A location is company-wide, so this read is unscoped by design: everyone sees the same
+        // catalog and a sheet decides what they work from. Only writes are entitlement-gated.
+        // Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-05).
+        return Ok(await _service.GetLocationsAsync(cancellationToken));
     }
 
     /// <summary>Creates a new bid sheet location with optional initial bids.</summary>
@@ -120,70 +103,9 @@ public class BidSheetController : ControllerBase
         return NoContent();
     }
 
-    // -------------------------------------------------------------------------
-    // Metadata
-    // -------------------------------------------------------------------------
-
-    /// <summary>Gets distinct crop years from bids for a trade unit.</summary>
-    [HttpGet("cropyears")]
-    [ProducesResponseType(typeof(List<int>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<int>>> GetCropYears([FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
-    {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
-        return Ok(await _service.GetCropYearsAsync(tradeUnitCode, cancellationToken));
-    }
-
-    /// <summary>Gets distinct commodity codes from bids for a trade unit.</summary>
-    [HttpGet("commodities")]
-    [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<string>>> GetBidCommodities([FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
-    {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
-        return Ok(await _service.GetCommoditiesAsync(tradeUnitCode, cancellationToken));
-    }
-
     /// <summary>Parses a composite trade-unit key ("2040,2050") into individual codes for entitlement validation.</summary>
     private static IEnumerable<string> ParseTradeUnitKey(string tradeUnitCode) =>
         tradeUnitCode.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-    // -------------------------------------------------------------------------
-    // Bid Months
-    // -------------------------------------------------------------------------
-
-    /// <summary>Gets distinct months that have bids for a trade unit and crop year.</summary>
-    [HttpGet("bidmonths")]
-    [ProducesResponseType(typeof(List<int>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<int>>> GetBidMonths([FromQuery] string tradeUnitCode, [FromQuery] int cropYear, CancellationToken cancellationToken = default)
-    {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
-        return Ok(await _service.GetBidMonthsAsync(tradeUnitCode, cropYear, cancellationToken));
-    }
-
-    // -------------------------------------------------------------------------
-    // Location Order (drag-to-reorder persistence)
-    // -------------------------------------------------------------------------
-
-    /// <summary>Gets the saved location order for the current user and a trade unit key (may be composite).</summary>
-    [HttpGet("location-order")]
-    [ProducesResponseType(typeof(BidSheetLocationOrderResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<ActionResult<BidSheetLocationOrderResponse>> GetLocationOrder([FromQuery] string tradeUnitKey, CancellationToken cancellationToken = default)
-    {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitKey), cancellationToken);
-        var order = await _service.GetLocationOrderAsync(tradeUnitKey, cancellationToken);
-        if (order is null) return NoContent();
-        return Ok(order);
-    }
-
-    /// <summary>Saves the location order for the current user and a trade unit key.</summary>
-    [HttpPut("location-order")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> SetLocationOrder([FromBody] SetBidSheetLocationOrderRequest request, CancellationToken cancellationToken = default)
-    {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), cancellationToken);
-        await _service.SetLocationOrderAsync(request.TradeUnitKey, request.LocationOrder, cancellationToken);
-        return NoContent();
-    }
 
     // -------------------------------------------------------------------------
     // Bid Sheet Preferences (per-user per-TU UI preferences, e.g. selected crop)

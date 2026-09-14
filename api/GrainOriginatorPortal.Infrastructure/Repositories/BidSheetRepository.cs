@@ -21,26 +21,6 @@ public class BidSheetRepository : IBidSheetRepository
         _logger = logger;
     }
 
-    public async Task<List<ElevatorCache>> GetElevatorsAsync(string? tradeUnitCode, CancellationToken cancellationToken)
-    {
-        var query = _appContext.ElevatorCaches.AsNoTracking().Where(e => e.IsActive);
-
-        if (!string.IsNullOrEmpty(tradeUnitCode))
-            query = query.Where(e => e.TradeUnitCode == tradeUnitCode);
-
-        return await query.ToListAsync(cancellationToken);
-    }
-
-    public async Task<List<BidSheetLocation>> GetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken)
-    {
-        return await _appContext.BidSheetLocations
-            .AsNoTracking()
-            .Include(l => l.Bids)
-            .Where(l => l.TradeUnitCode == tradeUnitCode)
-            .OrderBy(l => l.Name)
-            .ToListAsync(cancellationToken);
-    }
-
     public async Task<List<BidSheetLocation>> GetAllLocationsAsync(CancellationToken cancellationToken)
     {
         return await _appContext.BidSheetLocations
@@ -322,70 +302,6 @@ public class BidSheetRepository : IBidSheetRepository
                 await _appContext.SaveChangesAsync(cancellationToken);
             else throw;
         }
-    }
-
-    public async Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken)
-    {
-        return await _appContext.BidSheetLocationBids
-            .AsNoTracking()
-            .Where(b => b.Location.TradeUnitCode == tradeUnitCode)
-            .Select(b => b.CropYear)
-            .Distinct()
-            .OrderBy(y => y)
-            .ToListAsync(cancellationToken);
-    }
-
-    public async Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken)
-    {
-        return await _appContext.BidSheetLocationBids
-            .AsNoTracking()
-            .Where(b => b.Location.TradeUnitCode == tradeUnitCode)
-            .Select(b => b.CommodityCode)
-            .Distinct()
-            .OrderBy(c => c)
-            .ToListAsync(cancellationToken);
-    }
-
-    public async Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken)
-    {
-        return await _appContext.BidSheetLocationBids
-            .AsNoTracking()
-            .Where(b => b.Location.TradeUnitCode == tradeUnitCode && b.CropYear == cropYear)
-            .Select(b => b.Month)
-            .Distinct()
-            .OrderBy(m => m)
-            .ToListAsync(cancellationToken);
-    }
-
-    public async Task<BidSheetLocationOrder?> GetLocationOrderAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken)
-    {
-        return await _appContext.BidSheetLocationOrders
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitKey == tradeUnitKey, cancellationToken);
-    }
-
-    public async Task SetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken)
-    {
-        var existing = await _appContext.BidSheetLocationOrders
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitKey == tradeUnitKey, cancellationToken);
-
-        if (existing is not null)
-        {
-            existing.LocationOrder = locationOrderJson;
-            existing.ModifiedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            _appContext.BidSheetLocationOrders.Add(new BidSheetLocationOrder
-            {
-                UserId = userId,
-                TradeUnitKey = tradeUnitKey,
-                LocationOrder = locationOrderJson,
-                ModifiedAt = DateTime.UtcNow
-            });
-        }
-
-        await _appContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<BidSheetPreference?> GetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken)
