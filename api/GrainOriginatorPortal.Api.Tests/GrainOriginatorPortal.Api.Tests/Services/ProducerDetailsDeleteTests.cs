@@ -5,12 +5,13 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
 /// <summary>
-/// H-062 (CWE-639). DELETE /api/producerdetails/customer/{customerId} carries no trade-unit value,
+/// H-062 (CWE-639). The producer-details by-customer routes carry no trade-unit value,
 /// so [EnforceTradeUnitAccess] could not guard it even if the controller applied the filter — the
 /// check has to resolve the customer's own entitlement. These tests pin that guard.
 ///
@@ -105,6 +106,50 @@ public class ProducerDetailsDeleteTests
         Assert.Equal("ENTITLEMENTS_DB_UNAVAILABLE", ex.ErrorCode);
         _repositoryMock.Verify(
             r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ---- GET (added 2026-09-14, after the scan flagged the read as the remaining unguarded path)
+    //
+    // The read carries ProducerContact PII — name, phone and email for each contact. It was left
+    // under AR-02 in the first pass on the belief that the linked-producer profile view needed it
+    // cross-trade-unit. Tracing every path showed that is false: the cross-TU linked-producer cache
+    // feeds only the last-contact badge, never a selectable row, and deep links resolve through the
+    // entitled roster. So the check costs nothing.
+
+    [Fact]
+    public async Task GetByCustomerAsync_WhenCustomerIsInAnEntitledTradeUnit_Returns()
+    {
+        _repositoryMock
+            .Setup(r => r.GetAsync(EntitledCustomerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProducerDetails?)null);
+
+        var result = await _sut.GetByCustomerAsync(EntitledCustomerId, CancellationToken.None);
+
+        Assert.Equal(EntitledCustomerId, result.CustomerId);
+    }
+
+    [Fact]
+    public async Task GetByCustomerAsync_WhenCustomerIsOutsideEntitlements_ThrowsAndReadsNothing()
+    {
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _sut.GetByCustomerAsync(ForeignCustomerId, CancellationToken.None));
+
+        // The PII must never leave the repository, not merely be filtered afterwards.
+        _repositoryMock.Verify(
+            r => r.GetAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetByCustomerAsync_WhenEntitlementsUnavailable_FailsClosedWith503()
+    {
+        _entitlementMock.SetupGet(e => e.EntitlementsAvailable).Returns(false);
+
+        var ex = await Assert.ThrowsAsync<InfrastructureException>(
+            () => _sut.GetByCustomerAsync(EntitledCustomerId, CancellationToken.None));
+
+        Assert.Equal("ENTITLEMENTS_DB_UNAVAILABLE", ex.ErrorCode);
+        _repositoryMock.Verify(
+            r => r.GetAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // Guards the ordering the fix depends on: entitlement must resolve BEFORE the delete, never

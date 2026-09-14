@@ -29,14 +29,18 @@ public class ProducerDetailsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets producer details for a specific customer. Returns an empty record if not yet saved.
-    /// Open to any authenticated originator — trade-unit entitlements are a UX default,
-    /// not an access-control boundary.</summary>
+    /// <summary>Gets producer details for a specific customer, if that producer is in a trade unit
+    /// the caller is entitled to. Returns an empty record if none is saved; 403 when the producer
+    /// belongs to another trade unit.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(ProducerDetailsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<ProducerDetailsResponse>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        // No per-producer object-level authz is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        // Do NOT re-cite AR-02 here. This route was removed from that entry on 2026-09-14 and is
+        // trade-unit authorized in ProducerDetailsService — the response carries ProducerContact
+        // PII (names, phones, emails) and no client path needs it cross-trade-unit. The sibling
+        // PUT is a different case and stays under AR-01; see the service for why.
         return Ok(await _service.GetByCustomerAsync(customerId, cancellationToken));
     }
 
