@@ -221,8 +221,14 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
         // several overlapping instruments for that month (whole-month plus first/last-half splits). The
         // bridge picks exactly one, so the preview applies the same ranking — otherwise the user is shown
         // two January corn rows and only ever gets one. Done in memory: this is a single location's bids.
+        // IsBasis belongs in the KEY, not just the ranking. Cash and basis are separate instruments
+        // with independent quotes for the same commodity and month, so grouping without it collapsed
+        // the pair into a single row and left the tie-break to decide which one survived -- and the
+        // last tie-break is the symbol, where ZCB... sorts ahead of ZCP..., so basis won nearly every
+        // group. The caller was handed a list it could not answer a Cash/Basis/Both toggle from: on the
+        // Dev catalog 3,720 of 3,988 locations had no cash row left at all.
         return rows
-            .GroupBy(p => new { Cell = p.CommodityCode ?? p.VendorCommodity, p.CropYear, p.Month })
+            .GroupBy(p => new { Cell = p.CommodityCode ?? p.VendorCommodity, p.CropYear, p.Month, p.IsBasis })
             .Select(g => g
                 .OrderBy(p => p.DeliveryWindowFlag == null ? 0 : 1)
                 .ThenByDescending(p => (p.DeliveryEnd - p.DeliveryStart) ?? TimeSpan.Zero)
@@ -233,6 +239,7 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
             .OrderBy(p => p.CropYear)
             .ThenBy(p => p.Month)
             .ThenBy(p => p.VendorCommodity)
+            .ThenBy(p => p.IsBasis) // cash first, so a paired row reads cash-then-basis
             .ToList();
     }
 
