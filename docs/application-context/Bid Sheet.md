@@ -29,24 +29,22 @@ This is the merchandiser's competitive-pricing view. It overlays bid locations o
 ```mermaid
 flowchart LR
     UI[Bid Sheet component]
-    Elev[apiService.getElevators]
-    Locs[apiService.getBidSheetLocations / getAllBidSheetLocations]
+    Locs[apiService.getAllBidSheetLocations]
     SaveLoc[apiService.createBidSheetLocation / update / delete]
     Bids[apiService.bulkUpsertBidSheetBids / deleteBidSheetBids]
-    Order[apiService.getBidSheetLocationOrder / setBidSheetLocationOrder]
+    Order[apiService.setBidSheetLocationOrder on the sheet]
     Pref[apiService.getBidSheetPreference / setBidSheetPreference]
     Geo[apiService.geocodeSearch]
+    Sheets[apiService.getBidSheets / createBidSheet / shares / links]
     CTL[BidSheetController]
     SVC[SqlDataService]
-    ODS[(ctrm.vw_GNP026 — Elevators)]
-    APP[(dbo.BidSheetLocations<br/>dbo.BidSheetLocationBids<br/>dbo.BidSheetLocationOrders<br/>dbo.BidSheetPreferences<br/>dbo.ElevatorCache)]
+    APP[(dbo.BidSheetLocations<br/>dbo.BidSheetLocationBids<br/>dbo.BidSheets<br/>dbo.BidSheetShares<br/>dbo.BidSheetLocationLinks<br/>dbo.BidSheetPreferences)]
 
-    UI -- "init / TU change" --> Elev & Locs & Order & Pref
+    UI -- "init" --> Locs & Sheets & Pref
     UI -- "user edits a bid" --> SaveLoc & Bids
     UI -- "drag-drop reorder" --> Order
     UI -- "address search" --> Geo
-    Elev --> CTL --> SVC --> ODS
-    Locs & SaveLoc & Bids & Order & Pref --> CTL --> SVC --> APP
+    Locs & SaveLoc & Bids & Order & Pref & Sheets --> CTL --> SVC --> APP
 ```
 
 ## Files
@@ -59,31 +57,33 @@ flowchart LR
 | BarChart picker | `client/src/app/features/bid-sheet/components/barchart-picker/barchart-picker.component.ts` (+ `.html`, `.spec.ts`) |
 | Controller | `api/GrainOriginatorPortal.Api/Controllers/BidSheetController.cs` |
 | BarChart catalog controller | `api/GrainOriginatorPortal.Api/Controllers/BarchartController.cs` |
-| Service methods (group: BidSheet) | `GetElevatorsAsync`, `GetBidSheetLocationsAsync`, `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `DeleteBidSheetBidsAsync`, `GetBidCropYearsAsync`, `GetBidCommoditiesAsync`, `GetBidMonthsAsync`, `GetBidSheetLocationOrderAsync`, `SetBidSheetLocationOrderAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync` |
-| ODS view | `ctrm.vw_GNP026` (elevators with lat/lon, address, TU code, group name, IsScoularFacility flag) |
-| App tables | `dbo.BidSheetLocations`, `dbo.BidSheetLocationBids`, `dbo.BidSheetLocationOrders`, `dbo.BidSheetPreferences`, `dbo.ElevatorCache` |
+| Service methods (group: BidSheet) | `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `DeleteBidSheetBidsAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync`, plus the sheet family (`GetSheetsAsync`, `CreateSheetAsync`, `RenameSheetAsync`, `SetSheetLayoutAsync`, `SetSheetSharesAsync`, `AddSheetLocationAsync`, `DeleteSheetAsync`) |
+| App tables | `dbo.BidSheetLocations`, `dbo.BidSheetLocationBids`, `dbo.BidSheets`, `dbo.BidSheetShares`, `dbo.BidSheetLocationLinks`, `dbo.BidSheetPreferences` |
 | Geocode endpoint | `GET /api/geocode/search` (free-text search, returns lat/lon) |
 
 ### App-DB tables
 
-**`BidSheetLocations`** — `Id`, `Name`, `Address`, `City`, `State`, `Latitude`, `Longitude`, `ElevatorCode`, `TradeUnitCode`, `GroupName`, `IsScoularFacility`, audit columns.
+**`BidSheetLocations`** — `Id`, `Name`, `Address`, `City`, `State`, `Latitude`, `Longitude`, `ElevatorCode`, `BarchartLocationKey` (unique where set — one row per vendor listing, company-wide), `TradeUnitCode` (**provenance only**: which desk first added it, read by the picker to show where a listing is already in use; nothing filters on it), `GroupName`, `IsScoularFacility`, audit columns.
 
 **`BidSheetLocationBids`** — `Id`, `LocationId`, `CommodityCode`, `CommodityName`, `CommodityCategory`, `CropYear`, `Month` (1–12; 0 was the retired Yearly period), `Bid` (string-formatted price), audit columns.
 
-**`BidSheetLocationOrders`** — Per-user persisted drag-drop order, keyed by `(UserId, TradeUnitKey)`, stored as JSON.
+**`BidSheets` / `BidSheetShares` / `BidSheetLocationLinks`** — A sheet is a named, shareable working
+set of locations: the sheet row, who it is shared with, and one link row per location on it. The link
+carries `SortOrder` (the drag-drop order, shared with everyone on the sheet) and `DisplayName` (a
+per-sheet rename). This replaced `dbo.BidSheetLocationOrders`, which held one private JSON blob of
+location ids per user per trade unit and was dropped by `RetireBidSheetLocationOrders`.
 
-**`BidSheetPreferences`** — Per-user, per-trade-unit:
+**`BidSheetPreferences`** — Per-user, one row under the key `__global__`:
 `CropCode?`, `Month?` (`null` = no preference, `1–12`; a stored `0` is a pre-retirement Yearly value, cleaned on load), `CropYear?`, `CropOrder` (JSON array), `HiddenCrops` (JSON array), `SelectedMonths` (JSON array), `PrintLayout` (JSON — see [Print / export](#print--export)).
 
 ## State and caching
 
-- `allElevators` — fetched once per session via `getElevators` (deduped via `ApiService._dedupe`).
-- Locations are scoped to the selected trade unit; switching TU triggers a re-fetch.
+- Every location is loaded once, unscoped: a location is one company-wide row, and a sheet decides which of them you work from.
 - `mapGeocodeCache` (a `Map` on `AppStateService`) caches geocoded address → lat/lon results, capped at 500 entries.
 
 ## Drag-drop reordering
 
-CDK drag-drop (`@angular/cdk/drag-drop`). User reorders locations in the bids panel; the new order is persisted via `setBidSheetLocationOrder` (JSON-encoded array of location ids), and re-applied on next load via `getBidSheetLocationOrder`. State stored per trade unit.
+CDK drag-drop (`@angular/cdk/drag-drop`). The user reorders locations in the bids panel and the new order is persisted on the sheet — `BidSheetLocationLinks.SortOrder`, saved through `PUT /bidsheet/sheets/{id}/location-order` — so it is shared with everyone the sheet is shared with rather than being one person's private arrangement. The order travels with the sheet, not with a desk.
 
 ## Map view
 
@@ -158,24 +158,20 @@ map's own controls while active, so without it the panel's small X is the only e
 
 The name is display only. The feed link is `BarchartLocationKey`, and the bridge joins on that, so
 renaming — in the picker before adding, or later from the panel — never affects whether bids arrive.
-`UpdateLocationAsync` doesn't touch the key either. The one rule that applies is the existing unique
-(Name, TradeUnitCode) index: reusing a name already on that trade unit comes back as a 400 naming the
-clash.
+`UpdateLocationAsync` doesn't touch the key either. Reusing a name already in use comes back as a 400
+naming the clash; that is a courtesy check in the repository rather than a database constraint, because
+the old unique (Name, TradeUnitCode) index went when locations became company-wide.
 
-**Renames, deletes and the Scoular toggle are scoped to the trade unit in view.** Location names are
-only unique *within* a trade unit, so the panel's name-based lookup used to be able to resolve to a row
-on a different desk — and then rename, un-Scoular or delete that one instead. All four mutation paths
-now go through `_findLocationByName`, which prefers a row in the trade units currently in view (lowest
-id first, so repeat actions are stable) before falling back to any match.
+**A rename is per sheet.** The name lives on the link between a sheet and a location
+(`BidSheetLocationLinks.DisplayName`), so calling an elevator something of your own does not rename it
+on anyone else's sheet. The location row keeps its own name as the default for sheets that have not
+overridden it.
 
-This was reachable before the feed existed — nothing stopped two trade units having a location of the
-same name — but adding one location to several trade units from the picker creates identical names *by
-design*, which turned a corner case into the normal case.
-
-Renaming therefore affects **only your trade unit's row**; the other placements keep their own names.
-That matches how the rest of the screen is scoped. If names drifting apart between desks turns out to
-be a nuisance, "apply to all trade units" is an easy addition — the rows share a `BarchartLocationKey`,
-so they're trivially findable.
+**Deleting, and the Scoular toggle, are company-wide** — there is one row per elevator now, so both
+affect everyone. Delete is therefore restricted to whoever added the location, or an admin, and its
+confirmation counts the sheets holding it. All mutation paths key off the location **id** rather than
+its name: the name-based lookup they used to share could resolve to the wrong row once two desks had a
+location of the same name, which the bulk add made routine.
 
 **Listings are labelled "Company - Site" with the town underneath** — "Farmers Cooperative Dorchester -
 HERKIMER" over "Marysville, KS" — and that label is also exactly what gets saved, so nothing is renamed
@@ -197,8 +193,8 @@ These proportions held when the catalog nearly doubled (60% redundant at 2,894 l
 so the rule isn't fitted to one sample of the data.
 
 **The saved name always keeps a site or town**, even where the label drops it — a bid sheet row has no
-second line for the town, and names are unique per trade unit, so a company with several town-named
-sites would otherwise want one row name for all of them. It's an editable field on the confirm step, so
+second line for the town, and a company with several town-named sites would otherwise want one row
+name for all of them. It's an editable field on the confirm step, so
 it is never a hidden rename.
 
 **Scoular facilities are markable from the picker.** Scoular's own elevators come through the feed like
@@ -206,20 +202,20 @@ anyone else's — 45 listings in the catalog — so the confirm step has a "This
 checkbox, ticked automatically when the vendor's company name matches `/scoular/i` and editable either
 way. It was hard-coded false until 2026-08-24, which put Salina and Pratt on the sheet as competitors.
 
-**Trade units are chosen from a searchable multi-select.** The picker is normally opened from the map
-with no trade unit selected, in which case every trade unit on the user's account is offered — which can
-be a long list, so it searches by code *and* by location description ("pratt" finds 2190), shows chips
-for multiple selections, and disables any desk the location is already on. Descriptions come from
-`AppStateService.tradeUnitDescriptions`.
+**Search matches on any of the words you type.** Terms are split on spaces, commas and slashes, and each
+one has to match something — the elevator, the site name, the town, a zip prefix or the state — so
+"alliance belpre" (company plus town) and "belpre ks" (town plus state) both find the same listing. A
+state can be named or abbreviated, and the ten two-word states stay together. See
+`BarchartLocationSearch` in the Infrastructure project.
 
-Confirming an add creates **one bid sheet location per chosen trade unit**, all sharing the same
-`BarchartLocationKey` — that per-TU row *is* the placement record. The server prefills blank address
-and coordinate fields from the vendor record and runs the feed bridge on each create, so the bids are
-there when the panel closes instead of appearing after the next pipeline run.
+Confirming an add creates **one bid sheet location**, company-wide, keyed by `BarchartLocationKey`, and
+puts it on the current sheet. The server prefills blank address and coordinate fields from the vendor
+record and runs the feed bridge on create, so the bids are there when the panel closes instead of
+appearing after the next pipeline run. Adding an elevator someone else already added is just a new link
+row — its bids and its frozen past months are already there.
 
-**Removing one** needs no special path: deleting the bid sheet location removes that trade unit's
-placement and its fed bids, while the catalog and price history persist — so re-adding it refills
-instantly, and other trade units' placements are untouched.
+**Removing one** takes it off your sheet. Deleting the location itself is the company-wide act, and is
+restricted accordingly; the catalog and price history persist either way, so re-adding refills instantly.
 
 ### Which month a fed bid lands on
 
@@ -373,8 +369,7 @@ under. Two consequences:
 basis is displayed would silently overwrite that cell's cash price with a basis number. Entering basis by
 hand needs its own write path; until then the safe behaviour is to refuse.
 
-**The choice persists** in `BidSheetPreferences.PriceMode`, per trade unit and globally, alongside crop,
-month and year. An unrecognised stored value falls back to cash rather than leaving the sheet in a mode
+**The choice persists** in `BidSheetPreferences.PriceMode`, alongside crop, month and year. An unrecognised stored value falls back to cash rather than leaving the sheet in a mode
 nothing renders.
 
 Only fed bids carry a basis, so a sheet of hand-typed bids goes largely blank in basis mode. That's the
@@ -403,14 +398,19 @@ data being honest rather than a fault.
 `BidSheetPreferences` persists per-user, per-trade-unit selections so the screen opens with the user's last-used filters. Fields:
 
 - `CropCode` — selected commodity (e.g., `CORN`).
-- `Month` — `null` = no month preference, `0` = yearly view, `1–12` = a specific month.
+- `Month` — `null` = no month preference, `1–12` = a specific delivery month. (`0` meant the retired Yearly view; the API rejects it and no row carries it.)
 - `CropYear`.
 - `CropOrder` — JSON array of commodity codes for display ordering.
 - `HiddenCrops` — JSON array of dehidden commodities.
 - `SelectedMonths` — JSON array (e.g., `[3, 6, 9, 12]`).
-- `PrintLayout` — JSON blob of the print dialog's options (below). Saved per trade unit AND under the `__global__` key, so a new TU inherits the user's last layout.
+- `PrintLayout` — JSON blob of the print dialog's options (below).
 
-Persisted via `setBidSheetPreference`.
+Persisted via `setBidSheetPreference`, under a single key per user — the constant `__global__`. There
+used to be one row per trade unit (and one per combination of them), so each desk kept its own
+arrangement; with the sheet no longer scoped by trade unit there is one arrangement per person. The
+`RetireBidSheetLocationOrders` migration deleted the rows saved under the old keys, which nothing could
+read any more. Column order, hidden crops, months and years that belong to a *sheet* rather than to a
+person live on the sheet and are shared with its members.
 
 ## Print / export
 
@@ -453,7 +453,7 @@ phone, highlightScoular, layoutStyle }`. `parsePrintLayoutStyle` maps the retire
 
 - `authGuard` — required.
 - **`environment.bidSheetEnabled`** — checked in [`client/src/app/app.routes.ts`](../../client/src/app/app.routes.ts) (around line 30). When false, the route isn't registered (deep links 404 / redirect home) and the sidebar doesn't show the link.
-- `[Authorize]` on `BidSheetController`. TU validation per call via `IUserEntitlementService.ValidateTradeUnitsOrThrowAsync` (the only endpoint family in the app where TU access is enforced — bids are TU-scoped business data).
+- `[Authorize]` on `BidSheetController`. Creating or updating a location still validates the trade unit it is attributed to via `IUserEntitlementService.ValidateTradeUnitsOrThrowAsync`; reads are unscoped by design, and the two destructive operations (deleting a location, deleting a commodity's bids) are restricted to the row's creator or an admin. See AR-05 in `SECURITY-REVIEWS/ACCEPTED-RISKS.md`.
 - **`environment.barchartBidsEnabled`** — gates the "Add from BarChart" entry point and the fed-bid badges. Read directly by the component (not the router), so the screen still works normally when it's off. Currently **on for local and dev, off for QA and prod**, since the vendor feed is only loaded in dev.
 - `[Authorize]` on `BarchartController` too, but catalog reads are deliberately **not** TU-scoped: the catalog is global vendor data with no Scoular customer information in it. TU entitlement is enforced on the write that creates a placement, and on `refresh-bids`, against the row's persisted trade unit.
 
@@ -482,8 +482,8 @@ phone, highlightScoular, layoutStyle }`. `parsePrintLayoutStyle` maps the retire
 | --- | --- | --- |
 | Map blank, no markers | Locations didn't load (TU not selected, or `getBidSheetLocations` returned empty) | TU selector + Network tab |
 | Markers all in the wrong location | Geocode result mis-cached. Each location's lat/lon is stored on the row; re-geocode by editing the address. | `BidSheetLocations.Latitude/Longitude` |
-| Bid edits don't appear after save | `bulkUpsertBidSheetBids` succeeded but UI cache didn't refresh | Verify the post-save `getBidSheetLocations` re-fetch fires |
-| Drag-drop order doesn't stick across sessions | `setBidSheetLocationOrder` failed silently | Network tab; check `BidSheetLocationOrders` row exists for `(UserId, TradeUnitKey)` |
+| Bid edits don't appear after save | `bulkUpsertBidSheetBids` succeeded but UI cache didn't refresh | Verify the post-save `getAllBidSheetLocations` re-fetch fires |
+| Drag-drop order doesn't stick across sessions | The sheet order save failed silently | Network tab for `PUT /bidsheet/sheets/{id}/location-order`; check `BidSheetLocationLinks.SortOrder` for that sheet |
 | Sidebar link missing | `environment.bidSheetEnabled === false` for this build | `client/src/environments/environment.ts` |
 | 403 on a `/api/bidsheet/...` call | User isn't entitled to the requested TU | `UserEntitlementService.ValidateTradeUnitsOrThrowAsync` — check the user's entitlement set |
 | Printed sheet has no logo | Relative asset path inside the `about:blank` popup | `printLogoUrl` must be `window.location.origin` + path |
