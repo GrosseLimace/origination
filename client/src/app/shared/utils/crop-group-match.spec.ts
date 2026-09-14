@@ -135,3 +135,73 @@ describe('crop-group-match — bug-fix regressions', () => {
     expect(matchesCropSelection('HRW WHEAT 11.5PRO', wheat)).toBe(true);
   });
 });
+
+/**
+ * The Crops refine chips are commodity CODES (YC, HRWW), not categories. A code chip must stay
+ * precise — widening it to its crop group would make every code in that group return identical
+ * results, which is the entire reason for showing codes. Group chips (what saved lists stored
+ * before codes existed) must keep behaving exactly as they always did.
+ */
+describe('crop-group-match — code chips are precise, group chips still widen', () => {
+  const lookup = buildCropGroupLookup([
+    commodity('HRWW', 'Hard Red Winter Wheat', 'Wheat'),
+    commodity('SRWW', 'Soft Red Winter Wheat', 'Wheat'),
+    commodity('YC', 'Yellow Corn', 'Corn'),
+    commodity('YCO', 'Yellow Corn Organic', 'Corn'),
+    // Ticket-only codes sync with a null Category — a code chip must still work for them.
+    commodity('DMGC', 'Damaged Corn', undefined),
+  ]);
+
+  it('a code chip matches its own code and not a sibling code in the same group', () => {
+    const sel = buildCropSelection(['HRWW'], lookup);
+    expect(matchesCropSelection('HRWW', sel, lookup)).toBe(true);
+    expect(matchesCropSelection('SRWW', sel, lookup)).toBe(false);
+  });
+
+  it('a code chip matches the commodity name as well as the code', () => {
+    const sel = buildCropSelection(['YC'], lookup);
+    expect(matchesCropSelection('Yellow Corn', sel, lookup)).toBe(true);
+    expect(matchesCropSelection('Yellow Corn Organic', sel, lookup)).toBe(false);
+  });
+
+  it('a code chip does NOT match a bare group label on a row that also carries a code', () => {
+    // A contract exposes commodityCode AND commodityGroup; matching the group would let an HRWW
+    // chip pull in every wheat contract.
+    const sel = buildCropSelection(['HRWW'], lookup);
+    expect(matchesCropSelection('Wheat', sel, lookup)).toBe(false);
+  });
+
+  it('a code chip DOES match a group-only value when the caller opts in (grain on farm)', () => {
+    const sel = buildCropSelection(['HRWW'], lookup);
+    expect(matchesCropSelection('Wheat', sel, lookup, { groupOnlyValue: true })).toBe(true);
+    expect(matchesCropSelection('Corn', sel, lookup, { groupOnlyValue: true })).toBe(false);
+  });
+
+  it('works for a code whose Category is null (ticket-only codes)', () => {
+    const sel = buildCropSelection(['DMGC'], lookup);
+    expect(matchesCropSelection('DMGC', sel, lookup)).toBe(true);
+    expect(matchesCropSelection('YC', sel, lookup)).toBe(false);
+  });
+
+  it('selecting several codes matches any of them, still without widening', () => {
+    const sel = buildCropSelection(['HRWW', 'YC'], lookup);
+    expect(matchesCropSelection('HRWW', sel, lookup)).toBe(true);
+    expect(matchesCropSelection('YC', sel, lookup)).toBe(true);
+    expect(matchesCropSelection('SRWW', sel, lookup)).toBe(false);
+    expect(matchesCropSelection('YCO', sel, lookup)).toBe(false);
+  });
+
+  it('a legacy group chip still widens to every code in that group', () => {
+    const sel = buildCropSelection(['Wheat'], lookup);
+    expect(matchesCropSelection('HRWW', sel, lookup)).toBe(true);
+    expect(matchesCropSelection('SRWW', sel, lookup)).toBe(true);
+    expect(matchesCropSelection('YC', sel, lookup)).toBe(false);
+  });
+
+  it('a mixed selection keeps each chip on its own rules', () => {
+    const sel = buildCropSelection(['Wheat', 'YC'], lookup);
+    expect(matchesCropSelection('SRWW', sel, lookup)).toBe(true);  // via the group chip
+    expect(matchesCropSelection('YC', sel, lookup)).toBe(true);    // via the code chip
+    expect(matchesCropSelection('YCO', sel, lookup)).toBe(false);  // corn, but not the picked code
+  });
+});

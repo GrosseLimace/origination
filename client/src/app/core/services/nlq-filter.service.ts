@@ -812,6 +812,10 @@ export class NlqFilterService {
     if (!cropSelection.isEmpty) {
       const matchesCrop = (value: string | null | undefined): boolean =>
         matchesCropSelection(value, cropSelection, cropLookup);
+      /** Grain-on-farm rows record a crop GROUP ("Corn"), never a code, so a precise code chip has
+       *  to fall back to its own group there — see matchesCropSelection's groupOnlyValue. */
+      const matchesCropGroupOnly = (value: string | null | undefined): boolean =>
+        matchesCropSelection(value, cropSelection, cropLookup, { groupOnlyValue: true });
 
       // Single source of dimension inference — see refineDimension() above. Keeps this
       // path and build-list's displayedCustomers() in sync by construction rather than by
@@ -869,7 +873,7 @@ export class NlqFilterService {
         ));
       } else if (dim === 'Grain on Farm') {
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          matchesCrop(g.commodityGroup) && (g.bushelsOnHand ?? 0) > 0
+          matchesCropGroupOnly(g.commodityGroup) && (g.bushelsOnHand ?? 0) > 0
         ));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => matchesCrop(crop)));
