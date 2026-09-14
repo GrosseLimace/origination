@@ -1013,6 +1013,7 @@ export class BidSheetComponent {
   private catalogLocations = signal<BarchartCatalogLocation[]>([]);
   private _catalogMoveTimer: ReturnType<typeof setTimeout> | null = null;
   private _catalogLoadGen = 0; // guards against a slow request landing after a newer one
+  private _catalogDetailGen = 0; // the same guard for the popup: clicking a second pin supersedes the first
 
   /** The catalog pin the user clicked -- drives the detail popup. Null closes it. */
   readonly catalogDetailKey = signal<string | null>(null);
@@ -5153,6 +5154,11 @@ export class BidSheetComponent {
    * first, so a pin already inspected via hover (or a prior click) doesn't fetch twice.
    */
   openCatalogDetail(locationKey: string): void {
+    // Every open takes a ticket. Without one, clicking a second pin while the first is still in
+    // flight left the slower response to win: it wrote its bids into a popup whose header already
+    // named the other location, so the popup looked like it had refused to switch. A failed stale
+    // request was worse -- its error handler closed the popup the user had just opened.
+    const gen = ++this._catalogDetailGen;
     this.catalogDetailKey.set(locationKey);
     this._refreshMapMarkers(); // re-draw so the clicked pin highlights immediately
 
@@ -5163,11 +5169,15 @@ export class BidSheetComponent {
     this.catalogDetailLoading.set(true);
     this.apiService.getBarchartLocationDetail(locationKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (detail) => {
+        // Cached even when superseded: the fetch succeeded and the data is good, so the next click on
+        // that pin is instant. Only the DISPLAY is stale, and that is what the ticket guards.
         this._catalogDetailCache.set(locationKey, detail);
+        if (gen !== this._catalogDetailGen) return;
         this.catalogDetailLoading.set(false);
         this.catalogDetail.set(detail);
       },
       error: () => {
+        if (gen !== this._catalogDetailGen) return;
         this.catalogDetailLoading.set(false);
         this.toastService.error('Failed to load this location');
         this.closeCatalogDetail();
@@ -5176,6 +5186,8 @@ export class BidSheetComponent {
   }
 
   closeCatalogDetail(): void {
+    // Bumped so a request still in flight cannot repopulate a popup the user has closed.
+    this._catalogDetailGen++;
     this.catalogDetailKey.set(null);
     this.catalogDetail.set(null);
     this._refreshMapMarkers();

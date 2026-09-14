@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { BarchartCatalogBid, BarchartCatalogLocation, BidSheet, BidSheetLocation, BidSheetLocationBid } from '@models';
+import { BarchartCatalogBid, BarchartCatalogLocation, BarchartCatalogLocationDetail, BidSheet, BidSheetLocation, BidSheetLocationBid } from '@models';
 
 import { BidSheetComponent } from './bid-sheet.component';
 
@@ -2014,5 +2014,100 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
   it('still pulses a manual cell on an edit', () => {
     seed(bid({ source: 'Manual', commodityCode: 'YC', cropYear: 2026, month: 10, modifiedAt: new Date().toISOString() }));
     expect((component as any)._locationChangedWithin24h('A', 2026, 'YC', 10)).toBe(true);
+  });
+});
+
+/**
+ * Clicking a second pin while the first is still loading.
+ *
+ * The catalog SEARCH has carried a generation guard for a while; the detail popup did not. So the
+ * slower of two overlapping requests won: it wrote its bids into a popup whose header already named
+ * the other location, which looked exactly like the popup refusing to switch. A stale FAILED request
+ * was worse -- its error handler closed the popup the user had just opened.
+ */
+describe('BidSheetComponent — the popup follows the last pin clicked', () => {
+  let component: BidSheetComponent;
+  let pending: Map<string, Subject<BarchartCatalogLocationDetail>>;
+
+  const detailFor = (key: string): BarchartCatalogLocationDetail => ({
+    location: { locationKey: key, instrumentCount: 1, commodityCount: 1, placements: [] },
+    bids: [],
+    unmappedBidCount: 0,
+  });
+
+  beforeEach(() => {
+    pending = new Map();
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+      getBarchartLocationDetail: (key: string) => {
+        const subject = new Subject<BarchartCatalogLocationDetail>();
+        pending.set(key, subject);
+        return subject.asObservable();
+      },
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  it('shows the second location even when the first response lands last', () => {
+    component.openCatalogDetail('A');
+    component.openCatalogDetail('B');
+
+    pending.get('B')!.next(detailFor('B'));
+    pending.get('A')!.next(detailFor('A')); // the slow one, arriving after it was superseded
+
+    expect(component.catalogDetailKey()).toBe('B');
+    expect(component.catalogDetail()?.location.locationKey).toBe('B');
+    expect(component.catalogDetailLoading()).toBe(false);
+  });
+
+  it('still caches a superseded response, so going back to that pin is instant', () => {
+    component.openCatalogDetail('A');
+    component.openCatalogDetail('B');
+    pending.get('A')!.next(detailFor('A'));
+    pending.get('B')!.next(detailFor('B'));
+
+    pending.delete('A');
+    component.openCatalogDetail('A');
+
+    expect(component.catalogDetail()?.location.locationKey).toBe('A');
+    expect(component.catalogDetailLoading()).toBe(false);
+    expect(pending.has('A')).toBe(false); // served from cache, no second request
+  });
+
+  it('does not let a stale failure close the popup the user just opened', () => {
+    component.openCatalogDetail('A');
+    component.openCatalogDetail('B');
+
+    pending.get('A')!.error(new Error('slow request failed'));
+
+    expect(component.catalogDetailKey()).toBe('B');
+  });
+
+  it('does not repopulate a popup that has been closed', () => {
+    component.openCatalogDetail('A');
+    component.closeCatalogDetail();
+
+    pending.get('A')!.next(detailFor('A'));
+
+    expect(component.catalogDetailKey()).toBeNull();
+    expect(component.catalogDetail()).toBeNull();
   });
 });
