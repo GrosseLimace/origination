@@ -668,11 +668,12 @@ public class NoteMentionSerializationTests
         Assert.Empty(captured);
     }
 
-    // ── Channel-routed groups: the app-group row IS the recipient ──────────────────────────────
-    // A group flagged MentionsToChannel posts the note to its Teams channel INSTEAD of emailing its
-    // members, so expansion must stop at the group row. The workflow re-reads the channel address
-    // from DailyRecapGroups for that id at send time, which is why the stored row still carries no
-    // address — the M-025 property holds for the channel exactly as it does for people.
+    // ── Teams groups: the app-group row IS the recipient ───────────────────────────────────────
+    // Delivery method is the whole routing decision. A "teams" group posts the note to its channel
+    // INSTEAD of emailing its members, so expansion must stop at the group row. The workflow
+    // re-reads the channel address from DailyRecapGroups for that id at send time, which is why the
+    // stored row still carries no address — the M-025 property holds for the channel exactly as it
+    // does for people.
 
     private static RecapGroupDto ChannelGroup(int id, string name, params RecapGroupMemberDto[] members) => new()
     {
@@ -680,12 +681,11 @@ public class NoteMentionSerializationTests
         Name = name,
         DeliveryMethod = "teams",
         TeamsChannelEmail = "abcd1234.scoular.com@amer.teams.ms",
-        MentionsToChannel = true,
         Members = members.ToList(),
     };
 
     [Fact]
-    public async Task CreateAsync_ChannelRoutedGroup_StoresOnlyTheGroupRow_AndExpandsNobody()
+    public async Task CreateAsync_TeamsGroup_StoresOnlyTheGroupRow_AndExpandsNobody()
     {
         var (svc, captured) = BuildServiceCapturingMentions(
             ChannelGroup(7, "Grain Desk", PersonMember, TradeUnitMember));
@@ -703,7 +703,7 @@ public class NoteMentionSerializationTests
     }
 
     [Fact]
-    public async Task CreateAsync_ChannelRoutedGroup_WithNoMembers_IsAccepted()
+    public async Task CreateAsync_TeamsGroup_WithNoMembers_IsAccepted()
     {
         // The empty-group guard must not fire here: the channel is the recipient, so an entry with
         // nobody in it still notifies someone.
@@ -716,7 +716,7 @@ public class NoteMentionSerializationTests
     }
 
     [Fact]
-    public async Task CreateAsync_ChannelRoutedGroup_NeverStoresTheChannelAddress_EvenIfTheClientSendsOne()
+    public async Task CreateAsync_TeamsGroup_NeverStoresTheChannelAddress_EvenIfTheClientSendsOne()
     {
         // The client cannot smuggle a destination onto the note: NormalizeMention drops email on
         // every non-person row, and the workflow reads the address from the DB regardless.
@@ -733,7 +733,7 @@ public class NoteMentionSerializationTests
     }
 
     [Fact]
-    public async Task CreateAsync_ChannelRoutedGroup_AlongsideAPersonMention_KeepsBoth()
+    public async Task CreateAsync_TeamsGroup_AlongsideAPersonMention_KeepsBoth()
     {
         // Mentioning a channel and a person in one note must still notify the person — the two
         // delivery paths are independent in the workflow.
@@ -753,9 +753,9 @@ public class NoteMentionSerializationTests
     }
 
     [Fact]
-    public async Task CreateAsync_NonChannelGroup_StillExpandsItsMembers()
+    public async Task CreateAsync_EmailGroup_StillExpandsItsMembers()
     {
-        // Regression guard: the new branch must be reached only on the flag.
+        // Regression guard: the new branch must be reached only for Teams delivery.
         var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
         var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
 

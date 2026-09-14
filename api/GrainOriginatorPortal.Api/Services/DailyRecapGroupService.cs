@@ -55,7 +55,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
             Name = request.Name.Trim(),
             DeliveryMethod = request.DeliveryMethod,
             TeamsChannelEmail = request.DeliveryMethod == "teams" ? request.TeamsChannelEmail?.Trim() : null,
-            MentionsToChannel = request.DeliveryMethod == "teams" && request.MentionsToChannel,
+
             Enabled = request.Enabled,
             CreatedBy = _requestContext.GetCurrentUser(),
             CreatedAt = DateTime.UtcNow,
@@ -82,7 +82,6 @@ public class DailyRecapGroupService : IDailyRecapGroupService
             request.Name.Trim(),
             request.DeliveryMethod,
             request.DeliveryMethod == "teams" ? request.TeamsChannelEmail?.Trim() : null,
-            request.DeliveryMethod == "teams" && request.MentionsToChannel,
             members,
             BuildCcEmails(request));
 
@@ -372,7 +371,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
         Name = g.Name,
         DeliveryMethod = g.DeliveryMethod,
         TeamsChannelEmail = g.TeamsChannelEmail,
-        MentionsToChannel = g.MentionsToChannel,
+
         Enabled = g.Enabled,
         Members = g.Members
             .Select(m => new RecapGroupMemberDto { Type = m.MemberType, Id = m.MemberId, Name = m.MemberName, Email = m.Email })

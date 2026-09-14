@@ -110,19 +110,18 @@ public class RecapGroupRequestValidationTests
         Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.Members)));
     }
 
-    // ── @-mentions routed to the Teams channel ────────────────────────────────
+    // ── Teams delivery: the channel is the recipient ──────────────────────────
+    // Delivery method is the whole routing decision. "teams" means the channel receives both the
+    // daily recap and any @-mention, so such an entry needs nobody in it.
     private const string ScoularChannel = "abcd1234.scoular.com@amer.teams.ms";
 
     [Fact]
-    public void MentionsToChannel_WithNoMembers_IsAccepted()
+    public void TeamsDelivery_WithNoMembers_IsAccepted()
     {
-        // The whole point of the feature: a channel entry is a recipient in its own right, so it
-        // needs nobody in it. Members stay optional and mean "who can see and mention this".
         var req = Base() with
         {
             DeliveryMethod = "teams",
             TeamsChannelEmail = ScoularChannel,
-            MentionsToChannel = true,
             Members = [],
         };
 
@@ -130,25 +129,24 @@ public class RecapGroupRequestValidationTests
     }
 
     [Fact]
-    public void MentionsToChannel_WithEmailDelivery_IsRejected()
+    public void EmailDelivery_WithNoMembers_IsStillRejected()
     {
-        // There is no channel to post to, so the flag would silently do nothing.
-        var req = Base() with { DeliveryMethod = "email", MentionsToChannel = true };
+        // The members exemption is bought by having a channel, nothing else.
+        var req = Base() with { DeliveryMethod = "email", Members = [] };
 
         var errors = Validate(req);
 
-        Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.MentionsToChannel)));
+        Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.Members)));
     }
 
     [Fact]
-    public void MentionsToChannel_StillRequiresAScoularChannelAddress()
+    public void TeamsDelivery_StillRequiresAScoularChannelAddress()
     {
-        // Channel routing must not become a way around the tenant pin.
+        // Dropping the members floor must not become a way around the tenant pin.
         var req = Base() with
         {
             DeliveryMethod = "teams",
             TeamsChannelEmail = "abcd1234.contoso.com@amer.teams.ms",
-            MentionsToChannel = true,
             Members = [],
         };
 
@@ -158,32 +156,14 @@ public class RecapGroupRequestValidationTests
     }
 
     [Fact]
-    public void Members_Empty_WithoutChannelRouting_IsStillRejected()
-    {
-        // Teams delivery alone does not buy the members exemption — only channel routing does.
-        var req = Base() with
-        {
-            DeliveryMethod = "teams",
-            TeamsChannelEmail = ScoularChannel,
-            MentionsToChannel = false,
-            Members = [],
-        };
-
-        var errors = Validate(req);
-
-        Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.Members)));
-    }
-
-    [Fact]
     public void DailyRecap_OnAMemberlessGroup_IsRejected()
     {
-        // The recap is built from the notes the MEMBERS can see, so a memberless channel entry
-        // would schedule an empty send every evening.
+        // The recap is built from the notes the MEMBERS can see, so a memberless Teams entry would
+        // schedule an empty send every evening.
         var req = Base() with
         {
             DeliveryMethod = "teams",
             TeamsChannelEmail = ScoularChannel,
-            MentionsToChannel = true,
             Members = [],
             Enabled = true,
         };

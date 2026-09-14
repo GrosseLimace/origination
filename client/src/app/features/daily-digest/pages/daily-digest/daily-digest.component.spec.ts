@@ -39,7 +39,7 @@ interface Internals {
   formName: { (): string; set(value: string): void };
   formTeamsEmail: { (): string; set(value: string): void };
   formEnabled: { (): boolean; set(value: boolean): void };
-  formMentionsToChannel: { (): boolean; set(value: boolean): void };
+
   selectDelivery(value: 'email' | 'teams'): void;
   isChannelRouted: () => boolean;
   canEnableRecap: () => boolean;
@@ -66,7 +66,6 @@ function group(overrides: Partial<RecapGroup> = {}): RecapGroup {
     deliveryMethod: 'email',
     members: [member('person', 'mgr')],
     ccList: [],
-    mentionsToChannel: false,
     enabled: true,
     isOwner: false,
     canEdit: true,
@@ -256,23 +255,23 @@ describe('DailyDigestComponent — shared editing', () => {
     expect(api.calls['update']).toBe(1);
   });
 
-  // ── @-mentions routed to a Teams channel ──────────────────────────────────
-  // A channel entry is a recipient in its own right, so it may have no members — which in turn
-  // means it has nobody whose notes a daily recap could summarise.
+  // ── Teams delivery ────────────────────────────────────────────────────────
+  // Delivery method is the whole routing decision: 'teams' sends the recap AND any @-mention to the
+  // channel, so such an entry may have no members — which in turn means it has nobody whose notes a
+  // daily recap could summarise.
 
   const CHANNEL = 'abcd1234.scoular.com@amer.teams.ms';
 
-  /** A new channel-routed entry with no members — the shape the feature exists to allow. */
+  /** A new Teams entry with no members — the shape the feature exists to allow. */
   function fillChannelForm(c: Internals): void {
     c.openCreateDialog();
     c.formName.set('Grain Desk');
     c.selectDelivery('teams');
     c.formTeamsEmail.set(CHANNEL);
-    c.formMentionsToChannel.set(true);
     c.formMembers.set([]);
   }
 
-  it('lets a channel-routed entry be saved with no members', () => {
+  it('lets a Teams entry be saved with no members', () => {
     const c = build([]);
 
     fillChannelForm(c);
@@ -281,37 +280,36 @@ describe('DailyDigestComponent — shared editing', () => {
     expect(c.canSubmit()).toBe(true);
   });
 
-  it('still requires members when the entry is not channel-routed', () => {
+  it('still requires members for email delivery', () => {
     const c = build([]);
     c.openCreateDialog();
-    c.formName.set('Grain Desk');
-    c.selectDelivery('teams');
-    c.formTeamsEmail.set(CHANNEL);
-    c.formMentionsToChannel.set(false);
+    c.formName.set('Corn Belt');
+    c.selectDelivery('email');
     c.formMembers.set([]);
 
+    expect(c.isChannelRouted()).toBe(false);
     expect(c.canSubmit()).toBe(false);
   });
 
-  it('clears channel routing when delivery switches back to email', () => {
-    // Otherwise a form that looks like plain email delivery would post a flag the server rejects.
+  it('stops being channel-routed when delivery switches back to email', () => {
     const c = build([]);
     fillChannelForm(c);
 
     c.selectDelivery('email');
 
-    expect(c.formMentionsToChannel()).toBe(false);
     expect(c.isChannelRouted()).toBe(false);
+    // ...and with no members it can no longer be saved, because email delivery needs recipients.
+    expect(c.canSubmit()).toBe(false);
   });
 
-  it('sends mentionsToChannel on the save payload', () => {
+  it('sends the channel address on the save payload', () => {
     const c = build([]);
     fillChannelForm(c);
 
     c.saveGroup();
 
     expect(api.calls['create']).toBe(1);
-    expect(api.lastCreate?.mentionsToChannel).toBe(true);
+    expect(api.lastCreate?.deliveryMethod).toBe('teams');
     expect(api.lastCreate?.teamsChannelEmail).toBe(CHANNEL);
   });
 
@@ -337,8 +335,8 @@ describe('DailyDigestComponent — shared editing', () => {
 
   it('will not turn a memberless group\'s recap on from the card, but will turn one off', () => {
     const c = build([
-      group({ id: '5', members: [], enabled: false, mentionsToChannel: true }),
-      group({ id: '6', members: [], enabled: true, mentionsToChannel: true }),
+      group({ id: '5', members: [], enabled: false, deliveryMethod: 'teams' }),
+      group({ id: '6', members: [], enabled: true, deliveryMethod: 'teams' }),
     ]);
 
     // Off -> on is refused: there are no members whose notes it would summarise.
@@ -350,12 +348,12 @@ describe('DailyDigestComponent — shared editing', () => {
     expect(c.canToggleRecap(c.groups()[1])).toBe(true);
   });
 
-  it('loads mentionsToChannel into the form when editing', () => {
-    const c = build([group({ deliveryMethod: 'teams', teamsChannelEmail: CHANNEL, mentionsToChannel: true })]);
+  it('loads Teams delivery into the form when editing', () => {
+    const c = build([group({ deliveryMethod: 'teams', teamsChannelEmail: CHANNEL })]);
 
     c.openEditDialog(c.groups()[0]);
 
-    expect(c.formMentionsToChannel()).toBe(true);
+    expect(c.formTeamsEmail()).toBe(CHANNEL);
     expect(c.isChannelRouted()).toBe(true);
   });
 });

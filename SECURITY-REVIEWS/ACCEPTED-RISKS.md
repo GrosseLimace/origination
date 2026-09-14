@@ -661,9 +661,8 @@ their stored `MemberName` so an editor cannot relabel someone else's member.
    recap at a different channel. `RecapGroupRequest.Validate` still pins the destination to the
    Scoular tenant (`*.scoular.com@*.teams.ms`), so it cannot leave the tenant, but a Scoular channel
    can carry B2B guests. Mitigation: the `AUDIT_UPDATE` log line now records `ByCreator`,
-   `DeliveryMethod`, `TeamsChannel` and `MentionsToChannel`, so a redirect by a non-creator is
-   queryable. **Widened 2026-09-14 — this is now a delivery path for note content; see the
-   amendment below.**
+   `DeliveryMethod` and `TeamsChannel`, so a redirect by a non-creator is queryable.
+   **Widened 2026-09-14 — this is now a delivery path for note content; see the amendment below.**
 2. **CC widening.** A member can add any `@scoular.com` address. Low impact: the recap workflow
    already sends one message per group with every member in `toRecipients` and the CC list in
    `ccRecipients`, so all members already receive the union. This widens the internal recipient set,
@@ -672,19 +671,22 @@ their stored `MemberName` so an editor cannot relabel someone else's member.
    Also audit-logged with `ByCreator`.
 4. **Emptying the group.** Still closed, by a narrower rule since 2026-09-14: `[MinLength(1)]` was
    replaced by a check in `RecapGroupRequest.Validate` that permits an empty member list **only**
-   when the entry routes @-mentions to a Teams channel (where the channel, not the members, is the
-   recipient). Every other shape still requires at least one member, so an ordinary group cannot be
-   stripped to nothing and silently stop being mentionable.
+   under Teams delivery, where the channel rather than the members is the recipient. Email delivery
+   still requires at least one member, so such a group cannot be stripped to nothing and silently
+   stop being mentionable.
 
 ---
 
 ### Amendment 2026-09-14 — the Teams channel IS now a mention recipient
 
-The trigger this entry named has occurred, deliberately: a group may set **`MentionsToChannel`**, and
-@-mentioning it then **posts the note to its Teams channel instead of emailing its members**
-(`NoteService.ExpandGroupsAsync` skips expansion; the Instant Share Note workflow's
-`HTTP_Send_Channel_Post` delivers it). Capability 1 above therefore now redirects **note content**,
-not just the daily recap. Re-assessed and **still accepted**, on these grounds:
+The trigger this entry named has occurred, deliberately. A group's **`DeliveryMethod`** is now its
+whole routing decision: setting it to `teams` sends **both** the daily recap and any @-mention of the
+group to its channel, and the members are not emailed at all (`NoteService.ExpandGroupsAsync` skips
+expansion; the Instant Share Note workflow's `HTTP_Send_Channel_Post` delivers it). Capability 1
+above therefore now redirects **note content**, not just the daily recap — and because it rides on
+the existing delivery method rather than a new opt-in flag, **an existing Teams group's @-mentions
+change destination from its members to its channel the moment this ships.** Re-assessed and **still
+accepted**, on these grounds:
 
 - **The destination is never client-authored.** The stored mention row is `{type:"app-group","id":"7"}`
   with no address — `NormalizeMention` drops `email` on every non-person row. The workflow reads
@@ -692,8 +694,8 @@ not just the daily recap. Re-assessed and **still accepted**, on these grounds:
   M-025a established for person recipients, reached the same way.
 - **The tenant pin is enforced twice, by different code.** `RecapGroupRequest.Validate` rejects a
   non-Scoular channel on save; the workflow independently re-checks the shape it read before sending,
-  so a row edited directly in SQL cannot become an exfiltration path. A channel-routed group with a
-  missing or malformed address **fails the run** rather than silently notifying nobody.
+  so a row edited directly in SQL cannot become an exfiltration path. A Teams group with a missing or
+  malformed address **fails the run** rather than silently notifying nobody.
 - **The content boundary is unchanged.** A note is already visible to every authenticated user
   (AR-02), and every recipient remains inside the Scoular tenant.
 - **It is visible, not covert.** The picker labels such an entry "Posts to Teams channel", the card
@@ -704,6 +706,13 @@ who would not receive the equivalent email. Unchanged in kind from the recap pat
 what changed is the volume and immediacy of what flows through it. No per-channel allowlist and no
 approval step on registering a channel — any user may point an entry at any Scoular channel, which is
 the behaviour the business asked for.
+
+**Migration note for whoever ships this.** Because routing now rides on `DeliveryMethod`, every
+PRE-EXISTING group already set to `teams` silently changes behaviour on deploy: its @-mentions stop
+emailing its members and start posting to its channel. Dev held exactly one such group at the time of
+writing (`Intermountain`, one member). **Count the `teams` groups in QA and PROD before promoting**
+(`SELECT Id, Name, Enabled FROM dbo.DailyRecapGroups WHERE DeliveryMethod = 'teams'`) and tell their
+creators, or the change looks like mentions silently going missing.
 
 **Re-evaluate if:** groups become shareable beyond their membership (e.g. an org-wide directory of
 groups), note content becomes restricted per producer — at which point AR-02 changes too and the

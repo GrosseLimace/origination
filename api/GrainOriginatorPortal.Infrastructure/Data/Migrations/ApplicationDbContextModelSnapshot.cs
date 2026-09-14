@@ -623,11 +623,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
 
-                    b.Property<bool>("MentionsToChannel")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
                     b.Property<DateTime?>("ModifiedAt")
                         .HasColumnType("datetime2");
 

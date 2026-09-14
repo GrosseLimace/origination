@@ -141,58 +141,57 @@ public class NotesControllerMentionCatalogTests
 
     // ── App groups: what the picker is allowed to offer ───────────────────────
     // Mentioning something that notifies nobody is the failure this filter exists to prevent. A
-    // channel-routed entry notifies its channel, so it qualifies even with no members.
+    // Teams group notifies its channel, so it qualifies even with no members.
 
-    private static RecapGroupDto AppGroup(int id, string name, bool mentionsToChannel, int memberCount) => new()
+    private static RecapGroupDto AppGroup(int id, string name, bool teamsDelivery, int memberCount) => new()
     {
         Id = id,
         Name = name,
-        DeliveryMethod = mentionsToChannel ? "teams" : "email",
-        TeamsChannelEmail = mentionsToChannel ? "abcd1234.scoular.com@amer.teams.ms" : null,
-        MentionsToChannel = mentionsToChannel,
+        DeliveryMethod = teamsDelivery ? "teams" : "email",
+        TeamsChannelEmail = teamsDelivery ? "abcd1234.scoular.com@amer.teams.ms" : null,
         Members = Enumerable.Range(0, memberCount)
             .Select(i => new RecapGroupMemberDto { Type = "person", Id = $"member{i}", Name = $"Member {i}" })
             .ToList(),
     };
 
     [Fact]
-    public async Task GetMentionCatalog_OffersAChannelRoutedGroupThatHasNoMembers()
+    public async Task GetMentionCatalog_OffersATeamsGroupThatHasNoMembers()
     {
-        using var db = Db(nameof(GetMentionCatalog_OffersAChannelRoutedGroupThatHasNoMembers));
+        using var db = Db(nameof(GetMentionCatalog_OffersATeamsGroupThatHasNoMembers));
         Seed(db, assignments: [("CEgr", "1084")], roster: [("CEgr", true)]);
 
         var catalog = Body(await CreateSut(db, "CEgr@scoular.com",
-            AppGroup(7, "Grain Desk", mentionsToChannel: true, memberCount: 0)).GetMentionCatalog());
+            AppGroup(7, "Grain Desk", teamsDelivery: true, memberCount: 0)).GetMentionCatalog());
 
         var group = Assert.Single(catalog.AppGroups);
         Assert.Equal(7, group.GroupId);
-        Assert.True(group.MentionsToChannel);
+        Assert.True(group.PostsToChannel);
         Assert.Equal(0, group.MemberCount);
     }
 
     [Fact]
-    public async Task GetMentionCatalog_StillOmitsAnOrdinaryGroupThatHasNoMembers()
+    public async Task GetMentionCatalog_StillOmitsAnEmailGroupThatHasNoMembers()
     {
-        using var db = Db(nameof(GetMentionCatalog_StillOmitsAnOrdinaryGroupThatHasNoMembers));
+        using var db = Db(nameof(GetMentionCatalog_StillOmitsAnEmailGroupThatHasNoMembers));
         Seed(db, assignments: [("CEgr", "1084")], roster: [("CEgr", true)]);
 
         var catalog = Body(await CreateSut(db, "CEgr@scoular.com",
-            AppGroup(8, "Empty", mentionsToChannel: false, memberCount: 0)).GetMentionCatalog());
+            AppGroup(8, "Empty", teamsDelivery: false, memberCount: 0)).GetMentionCatalog());
 
         Assert.Empty(catalog.AppGroups);
     }
 
     [Fact]
-    public async Task GetMentionCatalog_MarksOrdinaryGroupsAsNotChannelRouted()
+    public async Task GetMentionCatalog_MarksEmailGroupsAsNotPostingToAChannel()
     {
-        using var db = Db(nameof(GetMentionCatalog_MarksOrdinaryGroupsAsNotChannelRouted));
+        using var db = Db(nameof(GetMentionCatalog_MarksEmailGroupsAsNotPostingToAChannel));
         Seed(db, assignments: [("CEgr", "1084")], roster: [("CEgr", true)]);
 
         var catalog = Body(await CreateSut(db, "CEgr@scoular.com",
-            AppGroup(9, "Corn Belt", mentionsToChannel: false, memberCount: 3)).GetMentionCatalog());
+            AppGroup(9, "Corn Belt", teamsDelivery: false, memberCount: 3)).GetMentionCatalog());
 
         var group = Assert.Single(catalog.AppGroups);
-        Assert.False(group.MentionsToChannel);
+        Assert.False(group.PostsToChannel);
         Assert.Equal(3, group.MemberCount);
     }
 }

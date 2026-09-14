@@ -140,9 +140,7 @@ export class DailyDigestComponent implements OnInit {
   protected readonly newCcEmail = signal('');
   // Microsoft Teams channel email — only used/required when deliveryMethod is 'teams'.
   protected readonly formTeamsEmail = signal('');
-  /** Route @-mentions of this entry to the Teams channel instead of emailing its members. Only
-   *  meaningful with Teams delivery; selectDelivery() clears it when the method goes back to Email. */
-  protected readonly formMentionsToChannel = signal(false);
+
   /** Daily-recap opt-in, honoured on CREATE only (after that the card toggle owns it). Defaults to
    *  false so a group made purely to @-mention doesn't quietly start emailing everyone in it. */
   protected readonly formEnabled = signal(false);
@@ -214,16 +212,13 @@ export class DailyDigestComponent implements OnInit {
 
   protected selectDelivery(value: DeliveryMethod): void {
     this.formDeliveryMethod.set(value);
-    // Channel routing has no meaning without a channel, and leaving it set would let a form that
-    // looks like plain email delivery save a flag the server then rejects.
-    if (value !== 'teams') this.formMentionsToChannel.set(false);
     this.deliveryDropdownOpen.set(false);
   }
 
-  /** True when this entry delivers @-mentions to its Teams channel — the shape that makes members
-   *  optional and the daily recap unavailable. */
-  protected readonly isChannelRouted = computed(() =>
-    this.formDeliveryMethod() === 'teams' && this.formMentionsToChannel());
+  /** True when this entry delivers to a Teams channel. Delivery method is the whole routing
+   *  decision: the channel receives both the recap and any @-mention, which is what makes members
+   *  optional here. */
+  protected readonly isChannelRouted = computed(() => this.formDeliveryMethod() === 'teams');
 
   /** The daily recap is built from the notes the MEMBERS can see, so a memberless entry cannot
    *  send one. Mirrors the server rule rather than letting the user submit and get a 400. */
@@ -323,7 +318,7 @@ export class DailyDigestComponent implements OnInit {
     this.formCcList.set([...group.ccList]);
     this.newCcEmail.set('');
     this.formTeamsEmail.set(group.teamsChannelEmail ?? '');
-    this.formMentionsToChannel.set(group.mentionsToChannel);
+
     this.editingGroupId.set(group.id);
     this.dialogOpen.set(true);
   }
@@ -473,7 +468,7 @@ export class DailyDigestComponent implements OnInit {
       ccList: this.formCcList(),
       // Only persist the Teams email for Teams groups; clear it if the method is Email.
       teamsChannelEmail: this.formDeliveryMethod() === 'teams' ? this.formTeamsEmail().trim() : undefined,
-      mentionsToChannel: this.isChannelRouted(),
+
       // Create-only — the API ignores this on update, where the card's toggle is the source of truth.
       enabled: this.formEnabled(),
     };
@@ -571,7 +566,7 @@ export class DailyDigestComponent implements OnInit {
     this.formCcList.set([]);
     this.newCcEmail.set('');
     this.formTeamsEmail.set('');
-    this.formMentionsToChannel.set(false);
+
     this.formEnabled.set(false);
     this.memberPickerTab.set('people');
     this.memberSearch.set('');

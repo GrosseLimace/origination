@@ -18,14 +18,15 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    - `person` → **always `<local part of id>@scoular.com`** — the id's domain, if any, is discarded;
    - `trade-unit` → members of `[dbo].[UserTradeUnitAssignments]` (Entitlements), each `<UserId>@scoular.com`;
    - `trade-unit-group` → members of `[dbo].[UserGroupAssignments]` (Entitlements), each `<UserId>@scoular.com`;
-   - `app-group` → **two outcomes, decided by the group row itself.** `Get_App_Group` reads
+   - `app-group` → **two outcomes, decided by the group's delivery method.** `Get_App_Group` reads
      `[dbo].[DailyRecapGroups]` for the mention's id (a numeric key the API pins, so it is safe to
-     interpolate into the `$filter`).
-     - **`MentionsToChannel = 0` (the common case): resolves to nothing here.** The API already
+     interpolate into the `$filter`). Delivery method is the group's whole routing decision — there
+     is no separate per-group mention switch.
+     - **`DeliveryMethod = 'email'` (the common case): resolves to nothing here.** The API already
        flattened the group into member rows of the three types above before the note was stored, so
        the recipients are present as siblings. The branch is explicit rather than an accident of
        `default`.
-     - **`MentionsToChannel = 1`: the group's `TeamsChannelEmail` becomes the recipient** and its
+     - **`DeliveryMethod = 'teams'`: the group's `TeamsChannelEmail` becomes the recipient** and its
        members are *not* expanded — the note is posted to the channel **instead of** being emailed to
        them. The address is appended to a separate `channelRecipient` variable and sent by
        `HTTP_Send_Channel_Post`, so a note mentioning both a person and a channel produces one
@@ -38,8 +39,8 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    > M-025 / M-025a established for person recipients. The workflow **re-checks the shape** it reads
    > (`*.teams.ms` host, local part ending `.scoular.com`) even though `RecapGroupRequest.Validate`
    > already enforced it on save — a row edited directly in SQL must not become an exfiltration path.
-   > A channel-routed group whose address is missing or fails that check appends to `unresolvedTypes`
-   > and **fails the run** rather than silently notifying nobody.
+   > A Teams group whose address is missing or fails that check appends to `unresolvedTypes` and
+   > **fails the run** rather than silently notifying nobody.
 
    > **Unknown types fail the run.** The `default` branch collects the type into `unresolvedTypes`
    > and `Condition_Unresolved_Mention_Types` then terminates the run as **Failed**. Previously
@@ -112,8 +113,8 @@ strictly read-only (`db_datareader`).
 > **v1 limitation:** only note **creation** is watched. Mentions added by **editing** an existing note are
 > not delivered. Adding that would require the SQL "when an item is modified" trigger plus a
 > `MentionsNotifiedAt` column and write-back (the identity would then need write access). Tracked as a
-> future enhancement. This applies to channel posts exactly as it does to emails: mentioning a
-> channel while **editing** an existing note posts nothing.
+> future enhancement. This applies to channel posts exactly as it does to emails: mentioning a Teams
+> group while **editing** an existing note posts nothing.
 
 ## Mentions JSON contract
 
@@ -135,17 +136,16 @@ The Logic App reads `dbo.Notes.Mentions` (`nvarchar(max)`), which the API writes
 ]
 ```
 
-The **last row on its own** is a channel-routed group: no `via` siblings follow it, because the API
-deliberately does **not** expand a group whose `MentionsToChannel` is set. One bare `app-group` row
-with no expansions therefore means "post this to that group's channel" — the workflow reads the
-address from `DailyRecapGroups` and emails nobody. Note it carries **no `email` field**; the
-destination lives only in the database.
+The **last row on its own** is a Teams-delivery group: no `via` siblings follow it, because the API
+deliberately does **not** expand a group that delivers to a channel. One bare `app-group` row with no
+expansions therefore means "post this to that group's channel" — the workflow reads the address from
+`DailyRecapGroups` and emails nobody. Note it carries **no `email` field**; the destination lives
+only in the database.
 
-> **Deploy order for the channel feature: API first, then this workflow.** `Get_App_Group` selects
-> `MentionsToChannel`, a column the `AddRecapGroupMentionsToChannel` migration adds. Deploying the
-> workflow to an environment whose database predates that migration fails every `app-group` run.
-> The reverse order is safe: the API can store channel-routed mentions before the workflow knows
-> what to do with them, and the old `Case_app-group` no-op simply notifies nobody until it ships.
+> **Deploy order: API first, then this workflow.** `Get_App_Group` reads columns that already exist
+> (`DeliveryMethod`, `TeamsChannelEmail`), so the workflow is safe to deploy on its own. Shipping the
+> API first is still the right order, because until it ships a Teams group is still expanded into
+> member rows and the channel branch would post a *duplicate* alongside those member emails.
 
 The last three rows show a group mention: the API writes the `app-group` row **plus** one row per
 member. Note the member rows are ordinary mentions — a `trade-unit` member stays a single row that

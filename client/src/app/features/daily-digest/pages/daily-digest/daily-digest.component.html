@@ -66,7 +66,7 @@
                 @if (!group.enabled) {
                   <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">No daily recap</span>
                 }
-                @if (group.mentionsToChannel) {
+                @if (group.deliveryMethod === 'teams') {
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-scoular-green/10 dark:bg-scoular-green/20 text-scoular-green-accessible dark:text-scoular-green">
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -342,29 +342,8 @@
           class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
         />
         <p class="text-xs text-gray-400 dark:text-gray-500">
-          The daily recap will be posted to this Teams channel's email address.
-        </p>
-      </div>
-
-      <!-- Route @-mentions to the channel. Same switch treatment as "Send daily recap" so the two
-           opt-in behaviours on a group read alike. -->
-      <div class="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/20 px-4 py-3">
-        <label for="mentions-to-channel" class="flex items-center gap-2 cursor-pointer select-none group/toggle">
-          <span class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0"
-            [class.bg-scoular-green-accessible]="formMentionsToChannel()"
-            [class.bg-gray-300]="!formMentionsToChannel()"
-            [class.dark:bg-gray-600]="!formMentionsToChannel()">
-            <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
-              [class.translate-x-5]="formMentionsToChannel()"
-              [class.translate-x-1]="!formMentionsToChannel()"></span>
-          </span>
-          <input type="checkbox" id="mentions-to-channel" [checked]="formMentionsToChannel()"
-            (change)="formMentionsToChannel.set(!formMentionsToChannel())" class="sr-only" />
-          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Send &#64;-mentions to this channel</span>
-        </label>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 ml-11">
-          When someone &#64;-mentions this group in a note, the note is posted to the channel instead of
-          emailed to the members. Members can still see and &#64;-mention it; they just aren't emailed.
+          Everything for this group goes to the channel: the daily recap, and any note where someone
+          &#64;-mentions it. Members below aren't emailed; they only control who can see and use it.
         </p>
       </div>
     }

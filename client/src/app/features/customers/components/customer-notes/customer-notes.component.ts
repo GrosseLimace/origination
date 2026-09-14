@@ -117,11 +117,11 @@ export class CustomerNotesComponent {
     }
     for (const g of cat.appGroups ?? []) {
       const s = score([g.name], []);
-      // A channel-routed entry is labelled by its DESTINATION, not a member count: mentioning it
-      // posts to the Teams channel and emails nobody, and it may legitimately have no members at
-      // all — "0 members" would read as "this will notify no one", the opposite of the truth.
+      // A Teams entry is labelled by its DESTINATION, not a member count: mentioning it posts to
+      // the channel and emails nobody, and it may legitimately have no members at all —
+      // "0 members" would read as "this will notify no one", the opposite of the truth.
       const members = `${g.memberCount} member${g.memberCount === 1 ? '' : 's'}`;
-      const secondary = g.mentionsToChannel ? 'Group · Posts to Teams channel' : `Group · ${members}`;
+      const secondary = g.postsToChannel ? 'Group · Posts to Teams channel' : `Group · ${members}`;
       if (s >= 0) ranked.push({ opt: { type: 'app-group', id: String(g.groupId), name: g.name, secondary }, score: s });
     }
 

@@ -9,6 +9,9 @@
  * People, code for TradeUnit, name for TradeUnitGroup).
  */
 
+/** Where EVERYTHING for a group goes. 'email' sends the daily recap and any @-mention of the group
+ *  to its members. 'teams' sends both to the group's channel instead, and the members are not
+ *  emailed at all — they only grant visibility. This one field is the whole routing decision. */
 export type DeliveryMethod = 'email' | 'teams';
 
 export type MemberType = 'person' | 'trade-unit' | 'trade-unit-group';
@@ -33,10 +36,7 @@ export interface RecapGroup {
   /** Microsoft Teams channel email — populated only when deliveryMethod is 'teams'.
    *  The Logic App posts the recap to this channel address. */
   teamsChannelEmail?: string;
-  /** True when @-mentioning this entry in a note posts to `teamsChannelEmail` INSTEAD of emailing
-   *  its members. Requires `deliveryMethod === 'teams'`. Members stay meaningful as who can see and
-   *  mention the entry, so a channel entry is allowed to have none. */
-  mentionsToChannel: boolean;
+
   enabled: boolean;
   /** True when the current user created this group. Narrower than `canEdit`: it gates the Delete
    *  button and the "Created by" line, because deleting stays creator-only. */
@@ -56,8 +56,7 @@ export interface RecapGroupSaveRequest {
   name: string;
   deliveryMethod: DeliveryMethod;
   teamsChannelEmail?: string;
-  /** Route @-mentions of this entry to the Teams channel instead of emailing members. */
-  mentionsToChannel?: boolean;
+
   members: RecapMember[];
   ccList: string[];
   /** Whether the new group also receives the daily recap email. Defaults to false: a group is a

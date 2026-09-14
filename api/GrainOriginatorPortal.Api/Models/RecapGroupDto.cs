@@ -9,10 +9,6 @@ public record RecapGroupDto
     public string DeliveryMethod { get; init; } = "email";
     public string? TeamsChannelEmail { get; init; }
 
-    /// <summary>True when an @-mention of this group posts to the Teams channel instead of emailing
-    /// its members. Drives the picker's "Teams channel" label and NoteService's decision not to
-    /// expand the group into member rows.</summary>
-    public bool MentionsToChannel { get; init; }
 
     public bool Enabled { get; init; }
     public List<RecapGroupMemberDto> Members { get; init; } = [];

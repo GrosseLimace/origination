@@ -51,7 +51,7 @@ public class DailyRecapGroupRepositoryTests
         new(callerUpn, "mgr", ["TU1"], ["7"]);
 
     private static RecapGroupValues Values(params DailyRecapGroupMember[] members) =>
-        new("Renamed", "email", null, false, members.ToList(), [new DailyRecapGroupCcEmail { Email = "new@scoular.com" }]);
+        new("Renamed", "email", null, members.ToList(), [new DailyRecapGroupCcEmail { Email = "new@scoular.com" }]);
 
     // ── Visibility, which is also editability ────────────────────────────────
     [Theory]

@@ -153,6 +153,10 @@ public partial class NoteService : INoteService
     /// expansion, so one group can multiply well past it. The blow-up guard has to live here.</summary>
     private const int MaxExpandedMentions = 250;
 
+    /// <summary>Delivery method that routes a group's notes to its Teams channel instead of to its
+    /// members. Mirrors RecapGroupRequest's allowed values.</summary>
+    private const string TeamsDeliveryMethod = "teams";
+
     /// <summary>Expands the caller's own group mentions, then validates, normalizes and serializes
     /// everything to the JSON stored on the note. Null/empty → null so the column stays NULL rather
     /// than "[]".
@@ -318,12 +322,12 @@ public partial class NoteService : INoteService
                     $"The group '{mention.Name}' is no longer available to you. Remove the mention, or refresh the page and try again.");
             }
 
-            // Channel-routed entries stop here: the app-group row IS the recipient. The Instant
-            // Share Note workflow re-reads DailyRecapGroups.TeamsChannelEmail for this id at send
-            // time and posts there, so the note's own mention JSON still carries no address
-            // (M-025 / M-025a). Members are visibility, not recipients, so they are NOT expanded —
-            // that is the whole point of "post to the channel instead of emailing members".
-            if (group.MentionsToChannel)
+            // A Teams group stops here: the app-group row IS the recipient. Delivery method is the
+            // whole routing decision, so "teams" means this note goes to the channel and its members
+            // are NOT expanded. The Instant Share Note workflow re-reads
+            // DailyRecapGroups.TeamsChannelEmail for this id at send time and posts there, so the
+            // note's own mention JSON still carries no address (M-025 / M-025a).
+            if (string.Equals(group.DeliveryMethod, TeamsDeliveryMethod, StringComparison.OrdinalIgnoreCase))
             {
                 // Authoritative name — never persist the client's label for a row we own.
                 result[^1] = result[^1] with { Name = group.Name };
