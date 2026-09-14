@@ -241,7 +241,7 @@ public class BarchartCatalogServiceTests
     public async Task GetLocationAsync_CountsUnmappedBids()
     {
         _catalog.GetLocationAsync("82259", Arg.Any<CancellationToken>()).Returns(Summary("82259"));
-        _catalog.GetBidPreviewAsync("82259", "bidCash", Arg.Any<CancellationToken>())
+        _catalog.GetBidPreviewAsync("82259", null, Arg.Any<CancellationToken>())
             .Returns([
                 new BarchartBidPreview { VendorCommodity = "Corn (#2 Yellow)", CommodityCode = "CORN", IsMapped = true },
                 new BarchartBidPreview { VendorCommodity = "Rye", IsMapped = false }
@@ -252,6 +252,35 @@ public class BarchartCatalogServiceTests
         Assert.NotNull(result);
         Assert.Equal(2, result!.Bids.Count);
         Assert.Equal(1, result.UnmappedBidCount);
+    }
+
+    // -------------------------------------------------------------------------
+    // The map popup shows a listing’s whole book and has to answer a Cash/Basis/Both toggle, so the
+    // detail read must NOT default to one instrument type the way the search does. It used to default
+    // to cash, so the popup never received a basis row: switching to Basis emptied it while the map
+    // pin beside it showed a basis price, because the pin comes from the search endpoint instead.
+    [Fact]
+    public async Task GetLocationAsync_WithNoInstrumentType_AsksForEveryType()
+    {
+        _catalog.GetLocationAsync("82259", Arg.Any<CancellationToken>()).Returns(Summary("82259"));
+        _catalog.GetBidPreviewAsync("82259", null, Arg.Any<CancellationToken>()).Returns([]);
+
+        await _sut.GetLocationAsync("82259", null, CancellationToken.None);
+
+        await _catalog.Received(1).GetBidPreviewAsync("82259", null, Arg.Any<CancellationToken>());
+        await _catalog.DidNotReceive().GetBidPreviewAsync(
+            Arg.Any<string>(), "bidCash", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetLocationAsync_PassesAnExplicitInstrumentTypeStraightThrough()
+    {
+        _catalog.GetLocationAsync("82259", Arg.Any<CancellationToken>()).Returns(Summary("82259"));
+        _catalog.GetBidPreviewAsync("82259", "bidBasis", Arg.Any<CancellationToken>()).Returns([]);
+
+        await _sut.GetLocationAsync("82259", "bidBasis", CancellationToken.None);
+
+        await _catalog.Received(1).GetBidPreviewAsync("82259", "bidBasis", Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------

@@ -128,8 +128,13 @@ public class BarchartCatalogService : IBarchartCatalogService
         var summary = await _catalog.GetLocationAsync(locationKey, cancellationToken);
         if (summary is null) return null;
 
-        var bids = await _catalog.GetBidPreviewAsync(
-            locationKey, instrumentType ?? DefaultInstrumentType, cancellationToken);
+        // No default here, unlike the search above. The search prices one instrument at a time, so it
+        // has to pick a type; this is the detail table behind the map popup, which shows a listing's
+        // whole book and has to answer a Cash/Basis/Both toggle. Defaulting to cash meant the popup
+        // never received a single basis row -- switching the toggle to Basis emptied it, while the map
+        // pin beside it showed a basis price quite happily, because the pin comes from the search.
+        // A caller that does want one type still says so and still gets it.
+        var bids = await _catalog.GetBidPreviewAsync(locationKey, instrumentType, cancellationToken);
 
         var location = summary.ToResponse(null);
         var wrapper = new List<BarchartCatalogLocationResponse> { location };
