@@ -38,5 +38,7 @@ public interface IProducerDetailsRepository
     Task<ProducerDetails?> GetAsync(long customerId, CancellationToken cancellationToken);
     Task<List<ProducerDetails>> GetAllAsync(CancellationToken cancellationToken);
     Task<ProducerDetails> UpsertAsync(ProducerDetailsUpsertArgs args, string currentUser, CancellationToken cancellationToken);
-    Task DeleteAsync(long customerId, CancellationToken cancellationToken);
+    /// <summary>Deletes a producer's details and hand-cascades the ProducerContacts and
+    /// ProducerGrainOnFarm child rows. Returns false when no details row existed.</summary>
+    Task<bool> DeleteAsync(long customerId, CancellationToken cancellationToken);
 }

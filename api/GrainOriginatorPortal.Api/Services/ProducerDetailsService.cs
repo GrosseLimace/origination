@@ -78,6 +78,9 @@ public class ProducerDetailsService : IProducerDetailsService
     /// <inheritdoc />
     public async Task<ProducerDetailsResponse> GetByCustomerAsync(long customerId, CancellationToken cancellationToken)
     {
+        // Unscoped by design. GetAllAsync above filters to entitled trade units and this does not:
+        // that asymmetry is the app-wide pattern (list views are a relevance default, by-id reads
+        // are open), not an oversight. See SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         var pd = await _repository.GetAsync(customerId, cancellationToken);
         if (pd is null)
             return new ProducerDetailsResponse { CustomerId = customerId };
@@ -90,6 +93,11 @@ public class ProducerDetailsService : IProducerDetailsService
     /// <inheritdoc />
     public async Task<ProducerDetailsResponse> UpsertAsync(long customerId, UpsertProducerDetailsRequest request, CancellationToken cancellationToken)
     {
+        // Deliberately unscoped; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01). Unlike the sibling
+        // DeleteAsync below, this one has live cross-trade-unit callers: home.component.ts writes
+        // producer details to LINKED producers outside the caller's selected trade units, and the
+        // onboarding flow saves details immediately after assigning membership. An entitlement
+        // check here would break both — do not add one without re-opening AR-01.
         var grainEntries = (request.GrainOnFarm ?? [])
             .Select(g => new GrainOnFarmEntry
             {
@@ -133,6 +141,38 @@ public class ProducerDetailsService : IProducerDetailsService
     }
 
     /// <inheritdoc />
-    public Task DeleteAsync(long customerId, CancellationToken cancellationToken) =>
-        _repository.DeleteAsync(customerId, cancellationToken);
+    public async Task<bool> DeleteAsync(long customerId, CancellationToken cancellationToken)
+    {
+        // H-062 (CWE-639). This route carries no trade-unit value, so [EnforceTradeUnitAccess]
+        // could not guard it even if the controller applied the filter — it only reads a
+        // `tradeUnits` list, a `tradeUnitKey`, or a [FromBody] DTO carrying TradeUnitKey, and a
+        // DELETE by customer id exposes none of those. The check therefore lives here.
+        //
+        // Deliberately NOT covered by AR-01, which still covers the sibling PUT. Three things
+        // separate the delete: it has no client caller at all (deleteProducerDetails in
+        // api.service.ts is dead code), it hand-cascades to ProducerContacts and
+        // ProducerGrainOnFarm, and the producer contact/grain-on-farm rows it destroys are
+        // hand-entered with no upstream system of record to restore from. AR-01's collaboration
+        // rationale protects a hand-off workflow that does not exist on this route.
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+
+        // Fail CLOSED on an entitlements outage rather than deleting data we cannot authorize
+        // (CWE-285) — mirrors GetAllAsync above and EnforceTradeUnitAccessAttribute.
+        if (!_entitlementService.EntitlementsAvailable)
+            throw new InfrastructureException(
+                "Authorization data is temporarily unavailable. Please retry shortly.",
+                "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
+
+        var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
+        if (!allowedCustomerIds.Contains(customerId))
+        {
+            _logger.LogWarning(
+                "Producer details delete denied [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User}",
+                "AUTHORIZATION_FORBIDDEN", "Authorization", customerId, _requestContext.GetCurrentUser());
+            throw new ForbiddenException(
+                "Access denied: you are not authorized for this producer's trade unit(s).");
+        }
+
+        return await _repository.DeleteAsync(customerId, cancellationToken);
+    }
 }

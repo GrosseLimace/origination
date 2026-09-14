@@ -56,8 +56,14 @@ jobs:
         run: npm run test:coverage
         working-directory: client
 
-      - name: Frontend build
-        run: npx ng build --configuration development
+      # Build the PRODUCTION configuration, not development. Budgets are declared only on the
+      # production config (angular.json), so a bundle-size regression used to pass CI, pass the Dev
+      # and QA deploys — which build `dev` / `qa`, also budget-free — and fail for the first time at
+      # the PROD deploy, which is the only workflow that builds `production`. Production is a strict
+      # superset of the development check here: it compiles the same code, plus optimization and
+      # budgets, so nothing is lost by not also building development.
+      - name: Frontend build (production — also enforces bundle budgets)
+        run: npx ng build --configuration production
         working-directory: client
 
       - name: Restore .NET solution

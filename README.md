@@ -210,7 +210,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-11
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -231,10 +231,11 @@ Last Updated: 2026-09-09
 
 | Package | Version | License | Purpose |
 |---------|---------|---------|---------|
-| @angular/core | 21.2.19 | MIT | UI framework (security fix: hydration DOM-clobbering / HttpTransferCache poisoning ≥21.2.17; HttpTransferCache cache-key ambiguity / cross-request response reuse ≥21.2.19) |
-| @angular/router | 21.2.19 | MIT | Client-side routing |
-| @angular/forms | 21.2.19 | MIT | Reactive forms |
-| @angular/animations | 21.2.19 | MIT | Animation support |
+| @angular/core | 21.2.23 | MIT | UI framework (security fixes: hydration DOM-clobbering / HttpTransferCache poisoning ≥21.2.17; HttpTransferCache cache-key ambiguity / cross-request response reuse ≥21.2.19; sanitization bypass via directive host bindings on concrete host elements, GHSA-hh8m-fm6v-7cvg, ≥21.2.20 — not exploitable here, no security-sensitive host bindings exist) |
+| @angular/common | 21.2.23 | MIT | Common directives, pipes and HttpClient (security fix: HttpTransferCache bypass leaking authenticated responses when a child client uses withRequestsMadeViaParent, GHSA-p297-fm68-3q8c, ≥21.2.20 — not applicable here, the app does no SSR/hydration) |
+| @angular/router | 21.2.23 | MIT | Client-side routing |
+| @angular/forms | 21.2.23 | MIT | Reactive forms |
+| @angular/animations | 21.2.23 | MIT | Animation support |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |

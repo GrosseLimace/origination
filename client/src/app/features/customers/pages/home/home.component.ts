@@ -15,6 +15,7 @@ import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, S
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
+import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
 import { environment } from '@env/environment';
@@ -161,19 +162,11 @@ export class HomeComponent {
   readonly pendingPlantingYear = signal<number | null>(null);
   readonly pendingTicketCrop = signal<string | null>(null);
   readonly selectedTradeUnits = signal<string[]>([]);
-  /** Saved lists whose trade units EXACTLY match the current selection — these are the lists the
-   *  producer can be quick-added to from the profile header. Reads the enriched savedLists() so the
+  /** Saved lists sharing at least one trade unit with the current selection — the lists a producer
+   *  can be quick-added to from the profile header. Reads the enriched savedLists() so the
    *  Add-to-List checkboxes stay reactive after a toggle. */
-  readonly savedListsForSelectedCustomer = computed<SavedList[]>(() => {
-    const sel = this.selectedTradeUnits();
-    if (sel.length === 0) return [];
-    const set = new Set(sel);
-    return this.savedLists().filter(l => {
-      if (!l.tradeUnits) return false;
-      const u = l.tradeUnits.split(',').map(x => x.trim()).filter(Boolean);
-      return u.length === set.size && u.every(x => set.has(x));
-    });
-  });
+  readonly savedListsForSelectedCustomer = computed<SavedList[]>(() =>
+    filterSavedListsByTradeUnitOverlap(this.savedLists(), this.selectedTradeUnits()));
   /** Manager-only team lists the producer can be quick-added to. Already TU-scoped (overlap) by the
    *  server; enriched locally so the checkboxes reflect query-derived membership too. */
   readonly teamListsForSelectedCustomer = computed<SavedList[]>(() =>

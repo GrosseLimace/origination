@@ -124,7 +124,8 @@ export class CustomerProfileComponent {
   /** True when the contracts table wants the page at full width (columns expanded on the
    *  contracts tab) so the host page can drop the Notes sidebar below the profile. */
   public onContractsWideChange = output<boolean>();
-  /** Saved lists (already TU-matched + enriched) the current producer can be quick-added to. */
+  /** The user's own saved lists (enriched) the current producer can be quick-added to. Saved lists
+   *  are originator-owned, so every list is offered regardless of the trade-unit selection. */
   public savedListsForCustomer = input<SavedList[]>([]);
   /** Manager-only: team lists (all lists tied to the TU, any creator) for the Add-to-List Team tab. */
   public teamListsForCustomer = input<SavedList[]>([]);

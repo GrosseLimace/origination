@@ -12,7 +12,7 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
 import { dpTotalBushels, dpTotalCharges, dpBreakdownByCrop } from '@shared/utils/dp-aggregate';
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
@@ -26,10 +26,12 @@ import { CustomerMapComponent } from '@features/customers/components/map/custome
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
-import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, resolveCropGroup, CropSelection, CROP_CHIP_GROUPS } from '@shared/utils/crop-group-match';
+import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
+import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
+import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 
 @Component({
   selector: 'app-build-list',
@@ -326,18 +328,12 @@ export class BuildListComponent {
   readonly isBlankStartQuery = computed(() =>
     this.queryText().trim().toLowerCase() === 'start with no producers');
 
-  /** Only show saved lists whose trade units exactly match the currently selected TUs. */
-  readonly visibleSavedLists = computed(() => {
-    const selectedTus = this.appState.selectedTradeUnits();
-    if (selectedTus.length === 0) return [];
-    const selectedSet = new Set(selectedTus);
-    return this.savedLists().filter(list => {
-      if (!list.tradeUnits) return false;
-      const listTus = list.tradeUnits.split(',').map(t => t.trim()).filter(Boolean);
-      if (listTus.length !== selectedSet.size) return false;
-      return listTus.every(tu => selectedSet.has(tu));
-    });
-  });
+  /** Saved lists sharing at least one trade unit with the current selection (see
+   *  saved-list-trade-units.ts). Trade units govern VISIBILITY only — opening a list runs its query
+   *  against whatever is selected now (see loadSavedList), so the same list is reusable across
+   *  trade units. */
+  readonly visibleSavedLists = computed(() =>
+    filterSavedListsByTradeUnitOverlap(this.savedLists(), this.appState.selectedTradeUnits()));
 
   readonly activeRefinementCount = computed(() => {
     const r = this.appliedRefinements();
@@ -378,12 +374,16 @@ export class BuildListComponent {
     ].filter(Boolean).length;
   });
 
-  /** Matches a commodity string against selected crop filters. Delegates to the shared
-   *  group-resolving matcher (crop-group-match.ts) — kept as a 2-arg wrapper so the ~14 call
-   *  sites below didn't need to change. */
-  private _matchesCropFilter(value: string, selectedCrops: CropSelection): boolean {
-    return matchesCropSelection(value, selectedCrops, this._cropGroupLookup());
+  /** Matches a commodity string against selected crop filters. Delegates to the shared matcher
+   *  (crop-group-match.ts); `opts` is only passed by the grain-on-farm call sites, whose values are
+   *  crop GROUPS rather than codes. */
+  private _matchesCropFilter(value: string, selectedCrops: CropSelection, opts?: MatchCropOptions): boolean {
+    return matchesCropSelection(value, selectedCrops, this._cropGroupLookup(), opts);
   }
+
+  /** Grain-on-farm rows record a crop GROUP ("Corn"), never a code, so a precise code chip has to
+   *  fall back to its group there — see matchesCropSelection's groupOnlyValue. */
+  private static readonly GROUP_ONLY: MatchCropOptions = { groupOnlyValue: true };
 
 
   // Progressive rendering: paint the result list in batches so a huge match (e.g. "producers with
@@ -633,7 +633,7 @@ export class BuildListComponent {
       const grainRowsFor = (c: Customer) => {
         const rows = c.grainOnFarm ?? [];
         return !selectedCrops.isEmpty
-          ? rows.filter(g => !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops))
+          ? rows.filter(g => !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops, BuildListComponent.GROUP_ONLY))
           : rows;
       };
       // Grade is free text — pull the first number out ("4.4%" -> 4.4, "TW 58" -> 58) for over/under.
@@ -927,7 +927,7 @@ export class BuildListComponent {
       } else if (dim === 'Grain on Farm') {
         // Scope crop matching to the producer's grain-on-farm rows (with bushels on hand).
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops) && (g.bushelsOnHand ?? 0) > 0
+          !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops, BuildListComponent.GROUP_ONLY) && (g.bushelsOnHand ?? 0) > 0
         ));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => this._matchesCropFilter(crop, selectedCrops)));
@@ -1066,51 +1066,63 @@ export class BuildListComponent {
    *  produced it (the round-trip invariant crop-group-match.ts documents). */
   private readonly _cropGroupLookup = computed(() => buildCropGroupLookup(this.appState.commodities()));
 
+  /** Curated crop list from GET /api/commodities/planting — the catalog behind the Crops chips. */
+  readonly plantingCommodities = signal<Commodity[]>([]);
+
+  /**
+   * The Crops refine chips: every commodity CODE (YC, HRWW, …) the selected trade units are set to
+   * see, taken from the curated crop list and narrowed by scopeCommodities — the same catalog and
+   * scoping the Planting Intentions and Bid Sheet crop pickers use.
+   *
+   * Codes, not categories (Corn, Wheat), because a category can't separate HRWW from SRWW. Chips
+   * are offered for the whole scoped catalog, not just the codes present in the current results,
+   * so the choices don't shift as the query changes — a chip that matches nobody is expected.
+   *
+   * Falls back to the codes actually present in the results when the curated list is unavailable,
+   * so the filter degrades to something usable rather than disappearing.
+   */
   readonly availableCrops = computed(() => {
-    // Show the crop GROUP (Corn, Wheat, Soybeans) rather than the raw commodity codes (YC, HRWW)
-    // the producers actually carry — that's the vocabulary users pick by.
-    const lookup = this._cropGroupLookup();
-    const groups = new Set<string>();
-    const labelFor = (group: string, fallback: string): string =>
-      lookup.labelByGroup.get(group) ?? fallback;
-    const addCrop = (raw: string) => {
-      const trimmed = raw.trim();
-      if (!trimmed) return;
-      const group = resolveCropGroup(trimmed, lookup);
-      // Only offer a chip for a real field-crop group (CROP_CHIP_GROUPS) — dbo.Commodities is a
-      // company-wide master shared with Scoular's other business lines (marine protein, animal
-      // feed ingredients, freight, "Processed Co-Product", etc.), so most categories a producer's
-      // commodity code could map to aren't crops at all. An unresolved or non-crop code is
-      // skipped entirely rather than falling back to a raw-code chip — see CROP_CHIP_GROUPS.
-      if (!group || !CROP_CHIP_GROUPS.has(group)) return;
-      groups.add(labelFor(group, trimmed));
+    const scoped = scopeCommodities(this.plantingCommodities(), {
+      groupNames: this.appState.inScopeGroupNames(),
+      tradeUnitCodes: this.appState.inScopeTradeUnitCodes(),
+    });
+    if (scoped.length > 0) {
+      const codes = new Set<string>();
+      for (const c of scoped) {
+        const code = (c.code || '').trim();
+        if (code) codes.add(code.toUpperCase());
+      }
+      return [...codes].sort();
+    }
+    return this._cropsPresentInResults();
+  });
+
+  /** Fallback chip source: the distinct commodity codes carried by the current results (plus the
+   *  grain-on-farm and DP crops those rows hold, which needn't appear in customer.commodities). */
+  private _cropsPresentInResults(): string[] {
+    const codes = new Set<string>();
+    const add = (raw: string | null | undefined) => {
+      const trimmed = (raw || '').trim();
+      if (trimmed) codes.add(trimmed.toUpperCase());
     };
     for (const c of this.filteredCustomers()) {
-      for (const crop of (c.commodities ?? [])) addCrop(crop);
+      for (const crop of (c.commodities ?? [])) add(crop);
     }
-    // On Grain on Farm lists the relevant crops are what producers hold on the farm, which
-    // may not appear in c.commodities (a producer can have grain on farm with no ticket or
-    // contract for that crop — e.g. Canola). Union in each grain-on-farm commodity group that
-    // has bushels on hand so it's offered as a refine option, mirroring the isGrainOnFarm crop
-    // filter (matches g.commodityGroup where bushelsOnHand > 0).
     if (this.showGrainOnFarmFilters()) {
       for (const c of this.filteredCustomers()) {
         for (const g of (c.grainOnFarm ?? [])) {
-          if ((g.bushelsOnHand ?? 0) <= 0) continue;
-          addCrop(g.commodityGroup || '');
+          if ((g.bushelsOnHand ?? 0) > 0) add(g.commodityGroup);
         }
       }
     }
-    // Same reasoning for DP: a producer can hold a commodity on DP without it appearing in
-    // c.commodities, so union in the crops actually on DP — mirroring the isDp crop filter.
     if (this.showDpFilters()) {
       const dpByCustomer = this._dpByCustomerId();
       for (const c of this.filteredCustomers()) {
-        for (const d of (dpByCustomer.get(c.id) ?? [])) addCrop(d.crop || '');
+        for (const d of (dpByCustomer.get(c.id) ?? [])) add(d.crop);
       }
     }
-    return [...groups].sort();
-  });
+    return [...codes].sort();
+  }
 
   readonly availableStates = computed(() => {
     const states = new Set<string>();
@@ -1769,9 +1781,9 @@ export class BuildListComponent {
     return lists;
   });
 
-  /** Saved lists shown in the library — user-owned (API filters by createdBy already), scoped
-   *  to the current TU (via visibleSavedLists), and matched against the library search text.
-   *  Hidden when a non-'Saved Lists' category is selected. */
+  /** Saved lists shown in the library — user-owned (API filters by createdBy already), overlap-
+   *  scoped to the selected trade units (via visibleSavedLists), and matched against the library
+   *  search text. Hidden when a non-'Saved Lists' category is selected. */
   readonly librarySavedLists = computed(() => {
     const cat = this.selectedCategory();
     if (cat && cat !== 'Saved Lists') return [];
@@ -1940,6 +1952,14 @@ export class BuildListComponent {
       });
     }
 
+    // Curated crop list — the source for the Crops refine chips. Scoped to the selected trade
+    // units in availableCrops(); failure just leaves the chips falling back to the codes present
+    // in the current results.
+    this.apiService.getPlantingCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (commodities) => this.plantingCommodities.set(commodities ?? []),
+      error: () => this.plantingCommodities.set([])
+    });
+
     // Load all user-accessible trade units so the TU selector works without prior home page visit
     this.apiService.getUserTradeUnits().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (groups) => {
@@ -2028,7 +2048,7 @@ export class BuildListComponent {
           appliedRefinements: this.appliedRefinements(),
           notContactedDaysInput: this.notContactedDaysInput(),
           showRefinePanel: this.showRefinePanel(),
-          manuallyIncludedCustomerIds: this.manuallyIncludedCustomers().map(c => c.id),
+          manuallyIncludedCustomerIds: this._allIncludedCustomerIds(),
           manuallyExcludedCustomerIds: [...this.manuallyExcludedCustomerIds()],
           showManageMembersPanel: this.showManageMembersPanel(),
           selectedLibraryQuery: this.selectedLibraryQuery(),
@@ -2349,6 +2369,7 @@ export class BuildListComponent {
     this.notContactedDaysInput.set('');
     this.showManageMembersPanel.set(false);
     this.manuallyIncludedCustomers.set([]);
+    this._pendingIncludedIds = [];
     this.manuallyExcludedCustomerIds.set(new Set());
     this.memberSearchTerm.set('');
     this.memberSearchResults.set([]);
@@ -2371,6 +2392,7 @@ export class BuildListComponent {
     this.notContactedDaysInput.set('');
     this.showManageMembersPanel.set(false);
     this.manuallyIncludedCustomers.set([]);
+    this._pendingIncludedIds = [];
     this.manuallyExcludedCustomerIds.set(new Set());
     this.memberSearchTerm.set('');
     this.memberSearchResults.set([]);
@@ -2828,14 +2850,27 @@ export class BuildListComponent {
   private _resolvePendingIncludes(): void {
     if (this._pendingIncludedIds.length === 0) return;
     const customerMap = new Map(this.customers().map(c => [c.id, c]));
-    this.manuallyIncludedCustomers.set(
-      this._pendingIncludedIds.map(id => customerMap.get(id)).filter((c): c is Customer => !!c)
-    );
-    this._pendingIncludedIds = [];
+    const resolved = this._pendingIncludedIds
+      .map(id => customerMap.get(id))
+      .filter((c): c is Customer => !!c);
+    // KEEP the ids this roster can't resolve. A producer hand-added under a trade unit that isn't
+    // loaded right now has to survive until a roster containing them loads — and _allIncludedCustomerIds
+    // re-persists them meanwhile. Dropping them here is what silently lost hand-added producers
+    // whenever a list was re-saved while a different trade unit was selected.
+    this._pendingIncludedIds = this._pendingIncludedIds.filter(id => !customerMap.has(id));
+    if (resolved.length === 0) return;
+    const known = new Set(this.manuallyIncludedCustomers().map(c => c.id));
+    const added = resolved.filter(c => !known.has(c.id));
+    if (added.length > 0) this.manuallyIncludedCustomers.update(list => [...list, ...added]);
     // Auto-open panel now that included customers are resolved
-    if (this.manuallyIncludedCustomers().length > 0) {
-      this.showManageMembersPanel.set(true);
-    }
+    this.showManageMembersPanel.set(true);
+  }
+
+  /** Every producer hand-added to the active list: those resolved against the loaded roster PLUS any
+   *  still-unresolved ids (members whose trade unit isn't currently loaded). Persist this, never the
+   *  resolved half alone, or saving under a different trade unit erases the rest. */
+  private _allIncludedCustomerIds(): number[] {
+    return [...this.manuallyIncludedCustomers().map(c => c.id), ...this._pendingIncludedIds];
   }
 
   private _resolveUserReferences(query: string): string {
@@ -2998,13 +3033,10 @@ export class BuildListComponent {
     // enriched cache that home page customer visits leave in appState.contracts.
     this.filteredCustomers.set([]);
     this.hasGenerated.set(false);
-    // Always use the trade units saved with the list, not the current UI selection.
-    // This ensures the results are deterministic regardless of what trade units are
-    // currently selected in the header — the list was built against specific trade units.
-    const savedTradeUnits = list.tradeUnits
-      ? list.tradeUnits.split(',').map(t => t.trim()).filter(Boolean)
-      : [];
-    this.processQuery(savedTradeUnits);
+    // Run against the CURRENTLY selected trade units, not the ones the list was saved under: a
+    // saved list is a reusable question, so the same list can be re-run under whatever trade unit
+    // the user has switched to. (This is how the home page has always run saved lists.)
+    this.processQuery(this.effectiveTradeUnits());
   }
 
   /** Are all datasets the given (current query text + refinements) pair needs RESOLVED? Never
@@ -3228,6 +3260,9 @@ export class BuildListComponent {
   }
 
   excludeCustomerFromList(customerId: number): void {
+    // Drop any unresolved hand-add for this producer too, so removing them sticks even if a copy is
+    // still parked in the pending set from a trade unit that wasn't loaded.
+    this._pendingIncludedIds = this._pendingIncludedIds.filter(id => id !== customerId);
     // If this was a manually added customer, just remove the add
     const wasManualAdd = this.manuallyIncludedCustomers().some(c => c.id === customerId);
     if (wasManualAdd) {
@@ -3578,7 +3613,7 @@ export class BuildListComponent {
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'save-list');
 
     const tradeUnits = this.effectiveTradeUnits();
-    const includedIds = this.manuallyIncludedCustomers().map(c => c.id);
+    const includedIds = this._allIncludedCustomerIds();
     const excludedIds = [...this.manuallyExcludedCustomerIds()];
     // Resolve the prompt's library category (Contracts / Tickets / etc.) and persist it as a
     // private hint on the filters so home/customer-list can run the dimension-aware crops filter
@@ -3667,7 +3702,7 @@ export class BuildListComponent {
   openFinalizeAssign(): void {
     if (this.buildingForMembers().length === 0 || this.displayedCustomers().length === 0) return;
     const tradeUnits = this.effectiveTradeUnits();
-    const includedIds = this.manuallyIncludedCustomers().map(c => c.id);
+    const includedIds = this._allIncludedCustomerIds();
     const excludedIds = [...this.manuallyExcludedCustomerIds()];
     const category = this.effectiveLibraryCategory();
     const baseFilters = this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : null;

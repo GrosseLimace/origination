@@ -190,8 +190,11 @@ public partial class NoteService : INoteService
     /// dropped at send time.
     /// </para><para>
     /// Deliberately an EXISTENCE check, not an entitlement one: mentions are intentionally not
-    /// limited to the caller's own trade units (business decision 2026-09-01, recorded in
-    /// SECURITY-REVIEWS/ACCEPTED-RISKS.md), even though the picker only ever offers co-workers.
+    /// limited to the caller's own trade units — accepted risk, see SECURITY-REVIEWS/ACCEPTED-RISKS.md
+    /// (<b>AR-08</b>), business decision 2026-09-01, re-confirmed 2026-09-14 after H-063 re-flagged it.
+    /// The picker only ever offers co-workers, so this costs real UI users nothing; the residual is a
+    /// hand-crafted API call. If this is ever reversed, the fix is GetByUserAsync +
+    /// GetUsersByTradeUnitsAsync, exactly as DailyRecapGroupService.BuildValidatedMembersAsync does.
     /// Group-derived rows are exempt — their members were validated against the group creator's
     /// entitlements when the group was saved (AR-07).
     /// </para></summary>

@@ -69,6 +69,12 @@ export interface CropGroupLookup {
   readonly keysByGroup: ReadonlyMap<string, ReadonlySet<string>>;
   /** group (lowered) → a display label (the first non-blank category spelling seen for it). */
   readonly labelByGroup: ReadonlyMap<string, string>;
+  /** Every commodity CODE (lowered). Lets buildCropSelection tell a code chip ("yc") from a group
+   *  chip ("corn") — a code chip filters to that one code instead of widening to its whole group. */
+  readonly codes: ReadonlySet<string>;
+  /** Commodity NAME (lowered) → its code (lowered), so a code chip still matches data carrying the
+   *  description ("yellow corn") rather than the code. */
+  readonly codeByName: ReadonlyMap<string, string>;
   /** Every active code/name (lowered), longest first — for free-text term detection. */
   readonly terms: readonly string[];
 }
@@ -77,6 +83,8 @@ const EMPTY_LOOKUP: CropGroupLookup = {
   groupByKey: new Map(),
   keysByGroup: new Map(),
   labelByGroup: new Map(),
+  codes: new Set(),
+  codeByName: new Map(),
   terms: [],
 };
 
@@ -88,6 +96,8 @@ export function buildCropGroupLookup(commodities: readonly Commodity[] | null | 
   const groupByKey = new Map<string, string>();
   const keysByGroup = new Map<string, Set<string>>();
   const labelByGroup = new Map<string, string>();
+  const codes = new Set<string>();
+  const codeByName = new Map<string, string>();
   const terms = new Set<string>();
 
   for (const c of commodities) {
@@ -96,6 +106,9 @@ export function buildCropGroupLookup(commodities: readonly Commodity[] | null | 
     const category = (c.category || '').trim();
     if (code) terms.add(code);
     if (name) terms.add(name);
+    // Recorded before the category guard: a code chip is precise and needs no group to work.
+    if (code) codes.add(code);
+    if (code && name) codeByName.set(name, code);
     if (!category) continue; // no group to record — falls through to the token map at match time
 
     const group = category.toLowerCase();
@@ -111,6 +124,8 @@ export function buildCropGroupLookup(commodities: readonly Commodity[] | null | 
     groupByKey,
     keysByGroup,
     labelByGroup,
+    codes,
+    codeByName,
     terms: [...terms].sort((a, b) => b.length - a.length),
   };
 }
@@ -126,6 +141,12 @@ export function resolveCropGroup(value: string | null | undefined, lookup?: Crop
 }
 
 export interface CropSelection {
+  /** Chips recognised as commodity CODES (lowered) — matched EXACTLY, never widened to their group,
+   *  so picking HRWW returns hard red winter wheat and not every wheat code. */
+  readonly codes: ReadonlySet<string>;
+  /** The groups those code chips belong to (lowered). Used only to match data that records a crop
+   *  at GROUP level with no code to be precise about — see matchesCropSelection's `groupOnlyValue`. */
+  readonly codeGroups: ReadonlySet<string>;
   /** The selected chips, resolved to canonical groups (lowered). */
   readonly groups: ReadonlySet<string>;
   /** The chip strings exactly as stored/selected (lowered) — covers a saved list holding a raw
@@ -143,6 +164,8 @@ export function buildCropSelection(
   chips: readonly string[] | null | undefined,
   lookup?: CropGroupLookup | null
 ): CropSelection {
+  const codes = new Set<string>();
+  const codeGroups = new Set<string>();
   const groups = new Set<string>();
   const literals = new Set<string>();
   const tokens = new Set<string>();
@@ -150,6 +173,15 @@ export function buildCropSelection(
     const v = raw.trim().toLowerCase();
     if (!v) continue;
     literals.add(v);
+    // A chip that IS a commodity code stays precise: no group, no tokens. Widening it would make
+    // every code in a group return identical results, which is the whole reason to show codes.
+    // (Group chips — what saved lists stored before codes existed — keep the old behaviour.)
+    if (lookup?.codes.has(v)) {
+      codes.add(v);
+      const codeGroup = resolveCropGroup(v, lookup);
+      if (codeGroup) codeGroups.add(codeGroup);
+      continue;
+    }
     const group = resolveCropGroup(v, lookup);
     if (group) {
       groups.add(group);
@@ -159,7 +191,20 @@ export function buildCropSelection(
       tokens.add(v);
     }
   }
-  return { groups, literals, tokens, isEmpty: groups.size === 0 && literals.size === 0 };
+  return {
+    codes,
+    codeGroups,
+    groups,
+    literals,
+    tokens,
+    isEmpty: groups.size === 0 && literals.size === 0,
+  };
+}
+
+export interface MatchCropOptions {
+  /** Set ONLY when the value is a crop GROUP with no code recorded alongside it (grain-on-farm
+   *  rows). Lets a precise code chip still match those rows via its own group. */
+  readonly groupOnlyValue?: boolean;
 }
 
 /** Does one data value (a commodity code, name, description, or group string) satisfy the
@@ -177,12 +222,28 @@ export function buildCropSelection(
 export function matchesCropSelection(
   value: string | null | undefined,
   sel: CropSelection,
-  lookup?: CropGroupLookup | null
+  lookup?: CropGroupLookup | null,
+  opts?: MatchCropOptions
 ): boolean {
   if (sel.isEmpty) return true;
   const v = (value || '').trim().toLowerCase();
   if (!v) return false;
   if (sel.literals.has(v)) return true;
+
+  // Code chips: exact on the code, or on the commodity name that code belongs to.
+  if (sel.codes.size > 0) {
+    const codeForName = lookup?.codeByName.get(v);
+    if (codeForName && sel.codes.has(codeForName)) return true;
+    // Only for a field that records the crop as a GROUP and nothing finer (grain-on-farm rows hold
+    // "Corn", never "YC"). There is no code-level detail there to be precise about, so a code chip
+    // matches its own group. Never enable this for a row that also carries a code — it would let a
+    // HRWW chip match an SRWW contract through its shared "Wheat" group.
+    if (opts?.groupOnlyValue) {
+      const valueGroup = resolveCropGroup(v, lookup);
+      if (valueGroup && valueGroup === v && sel.codeGroups.has(valueGroup)) return true;
+    }
+  }
+
   const group = resolveCropGroup(v, lookup);
   if (group && sel.groups.has(group)) return true;
   for (const token of sel.tokens) {
