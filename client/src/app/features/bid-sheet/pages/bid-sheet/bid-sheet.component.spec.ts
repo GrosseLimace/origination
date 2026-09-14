@@ -869,6 +869,22 @@ describe('BidSheetComponent — the catalog popup answers the price toggle', () 
     expect(rows[0].basis).toBe(-30);
   });
 
+  it('knows when the listing is already on the open sheet, so Add is not offered twice', () => {
+    component.allMapLocations.set([]);
+    expect(component.catalogDetailOnActiveSheet()).toBe(false);
+
+    const loc: BidSheetLocation = {
+      id: 7, name: 'Already Added', barchartLocationKey: 'K1', bids: [],
+    } as unknown as BidSheetLocation;
+    const sheet: BidSheet = {
+      id: 1, name: 'S', ownerUserId: 'u', isOwner: true, shares: [], locations: [loc],
+    } as unknown as BidSheet;
+    component.sheets.set([sheet]);
+    component.activeSheetId.set(1);
+
+    expect(component.catalogDetailOnActiveSheet()).toBe(true);
+  });
+
   it('keeps separate crops and separate months apart', () => {
     component.catalogDetail.set({
       location: { locationKey: 'K1', instrumentCount: 3, commodityCount: 2, placements: [] },

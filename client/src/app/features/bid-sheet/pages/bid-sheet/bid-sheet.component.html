@@ -290,10 +290,10 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
                   {{ catalogReferenceKey() === catalogDetailKey() ? 'Remove as comparison reference' : 'Compare other bids to this one' }}
                 </button>
-                <button (click)="addCatalogDetailToSheet()" [disabled]="catalogDetailLoading() || catalogDetailAdding() || !catalogDetail()"
+                <button (click)="addCatalogDetailToSheet()" [disabled]="catalogDetailLoading() || catalogDetailAdding() || !catalogDetail() || catalogDetailOnActiveSheet()"
                   class="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                  {{ catalogDetailAdding() ? 'Adding…' : (activeSheet() ? 'Add to "' + activeSheet()!.name + '"' : 'Add to a bid sheet') }}
+                  {{ catalogDetailAdding() ? 'Adding…' : catalogDetailOnActiveSheet() ? 'Already on this sheet' : (activeSheet() ? 'Add to "' + activeSheet()!.name + '"' : 'Add to a bid sheet') }}
                 </button>
               </div>
             </div>
@@ -463,6 +463,17 @@
                 </button>
               </div>
               }
+              }
+
+              @if (panelSelectedBarchartKey()) {
+                <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+                  <button (click)="openPublishedBidsForPanelLocation()"
+                    title="Every delivery period this elevator publishes, not just the months on your sheet"
+                    class="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                    See all published bids
+                  </button>
+                </div>
               }
             </div>
 

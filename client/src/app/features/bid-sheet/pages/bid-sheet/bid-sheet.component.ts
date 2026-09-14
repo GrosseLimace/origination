@@ -1025,6 +1025,44 @@ export class BidSheetComponent {
     return mode === 'basis' ? 'Basis bids' : mode === 'both' ? 'Cash and basis bids' : 'Cash bids';
   });
 
+  /**
+   * The BarChart key behind the location the panel is showing, or null for a hand-made one.
+   *
+   * The published-bids popup is keyed on the vendor's listing, not on our row, so a manual location
+   * has nothing to open -- there is no vendor book behind it.
+   */
+  readonly panelSelectedBarchartKey = computed<string | null>(() => {
+    const name = this.panelSelectedLocation();
+    if (!name) return null;
+    return this._findLocationByName(name)?.barchartLocationKey ?? null;
+  });
+
+  /**
+   * True when the listing in the popup is already on the open sheet.
+   *
+   * The popup used to be reachable only from a catalog dot, which by definition was not on the sheet,
+   * so Add was always the right offer. It opens from the panel now, where the location always IS on
+   * the sheet -- and adding a second time collides with UQ_BidSheetLocations_BarchartKey and comes
+   * back an error rather than doing anything useful.
+   */
+  readonly catalogDetailOnActiveSheet = computed<boolean>(() => {
+    const key = this.catalogDetail()?.location.locationKey;
+    if (!key) return false;
+    return (this.activeSheet()?.locations ?? []).some(l => l.barchartLocationKey === key);
+  });
+
+  /**
+   * Opens the published-bids popup for the location the panel is showing.
+   *
+   * Deliberately not _selectCatalogLocation, which also toggles the comparison reference: from a dot
+   * on the map those two go together, but from the panel the user asked to look at a book, not to
+   * re-anchor every other pin's colour.
+   */
+  openPublishedBidsForPanelLocation(): void {
+    const key = this.panelSelectedBarchartKey();
+    if (key) this.openCatalogDetail(key);
+  }
+
   /** What the Cash/Basis/Both toggle is currently showing, for a column header to name. */
   readonly priceModeLabel = computed<string>(() => {
     const mode = this.priceMode();
