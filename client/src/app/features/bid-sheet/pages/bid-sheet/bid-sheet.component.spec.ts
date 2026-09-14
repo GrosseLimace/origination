@@ -2197,6 +2197,36 @@ describe('BidSheetComponent — an open popup follows the pin you click', () => 
     component = TestBed.createComponent(BidSheetComponent).componentInstance;
   });
 
+  // In All locations the panel renders only "pick a bid sheet" -- it is the SHEET's comparison list,
+  // and there is no Edit Bids to go on to -- so opening it on a pin click covered half the map with a
+  // message about something else. Browsing shows the listing's published bids instead.
+  it('browsing shows the bids popup and leaves the panel shut', () => {
+    component.mapScope.set('all');
+
+    select(sheetLoc('Kanza Garden Plain', '85722'));
+
+    expect(component.showPanel()).toBe(false);
+    expect(component.catalogDetailKey()).toBe('85722');
+  });
+
+  it('browsing a hand-made location opens nothing, rather than an empty popup', () => {
+    component.mapScope.set('all');
+
+    select(sheetLoc('Hand Typed Elevator', null));
+
+    expect(component.showPanel()).toBe(false);
+    expect(component.catalogDetailKey()).toBeNull();
+  });
+
+  it('with a sheet open the panel still opens, unchanged', () => {
+    component.mapScope.set('sheet');
+
+    select(sheetLoc('Kanza Garden Plain', '85722'));
+
+    expect(component.showPanel()).toBe(true);
+    expect(component.catalogDetailKey()).toBeNull(); // not opened from here, only re-pointed
+  });
+
   it('re-points an open popup at the location just clicked', () => {
     component.openCatalogDetail('CATALOG-1');
     expect(component.catalogDetailKey()).toBe('CATALOG-1');

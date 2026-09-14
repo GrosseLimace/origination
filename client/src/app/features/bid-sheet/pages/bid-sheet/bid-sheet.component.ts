@@ -4494,12 +4494,15 @@ export class BidSheetComponent {
     // Mutually exclusive with a catalog reference -- only one comparison anchor at a time.
     this.catalogReferenceKey.set(null);
 
-    // An open published-bids popup follows the selection. It is driven by its own key, not by the
-    // selected location, so clicking a pin used to leave it sitting there showing the elevator you
-    // had just navigated away from -- indistinguishable from a popup that had refused to switch. It
-    // is only ever re-pointed, never opened here: opening on every pin click was considered and
-    // turned down, because the panel is what a click on your own sheet is for.
-    if (this.catalogDetailKey()) {
+    // In All locations the map is a catalog to browse, not a sheet to work. Two things follow.
+    //
+    // The published-bids popup opens on any pin, exactly as it does for a catalog dot -- there is no
+    // other place for a location's bids to appear while browsing. With a sheet open it is only ever
+    // re-pointed, never opened from here: the panel is what a click on your own sheet is for, and
+    // opening the popup on every click was offered and turned down. Either way an open popup follows
+    // the selection rather than sitting there naming the elevator you just navigated away from.
+    const browsing = this.mapScope() === 'all';
+    if (browsing || this.catalogDetailKey()) {
       const key = alreadySelected ? null : loc.barchartLocationKey;
       if (key) this.openCatalogDetail(key);
       else this.closeCatalogDetail(); // deselected, or a hand-made location with no vendor book
@@ -4510,9 +4513,15 @@ export class BidSheetComponent {
       return;
     }
 
-    // Open the panel BEFORE flying so the offset calculation knows about it
     this.panelSelectedLocation.set('');
-    this.showPanel.set(true);
+    // And the panel stays shut. It is the SHEET's comparison list; in All locations it renders only
+    // "pick a bid sheet", so opening it on a pin click covers half the map with a message about
+    // something else, and there is no Edit Bids to go on to. _offsetCenter reads showPanel, so
+    // leaving it closed also stops the map flying to an off-centre position to clear a panel that
+    // is not there.
+    if (!browsing) {
+      this.showPanel.set(true); // before flying, so the offset calculation knows about it
+    }
     if (loc.latitude && loc.longitude) {
       this._flyToLocation(loc.latitude, loc.longitude);
     }
