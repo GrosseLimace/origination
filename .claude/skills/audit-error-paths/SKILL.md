@@ -111,5 +111,5 @@ Report findings or completed fixes by severity with file references, then summar
 
 - `style-guides/error-smells-guide.md`
 - `style-guides/refactoring-guide.md` (for E1-E7)
-- `style-guides/error-handling.md` (complementary standards)
+- `error-handling.md` from the scoular-skills plugin snapshot (complementary standards)
 - `.claude/rules/project-config.md` (when present)
