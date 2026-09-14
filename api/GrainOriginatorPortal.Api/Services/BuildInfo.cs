@@ -5,18 +5,22 @@ namespace GrainOriginatorPortal.Api.Services;
 /// <summary>
 /// Identifies the build the process is running, read once from assembly attributes.
 /// <para>
-/// CI stamps these: Directory.Build.props sets SourceRevisionId from GITHUB_SHA (the SDK appends
-/// it to InformationalVersion as "+&lt;sha&gt;") and adds an AssemblyMetadata item for the workflow
-/// run number. A developer build leaves both unset, so everything reads "local" — which is the
-/// useful answer, not a missing one.
+/// Directory.Build.props sets SourceRevisionId from GITHUB_SHA and adds an AssemblyMetadata item
+/// for the workflow run number. The SDK appends the revision to InformationalVersion as
+/// "+&lt;sha&gt;", which is where CommitSha reads it back from.
+/// </para>
+/// <para>
+/// On a developer machine the SDK still fills SourceRevisionId from the local git checkout, so
+/// the commit is reported there too. Only the run number falls back to "local", because it has
+/// no local equivalent.
 /// </para>
 /// </summary>
 public static class BuildInfo
 {
-    /// <summary>Value reported when a build was not stamped by CI.</summary>
+    /// <summary>Reported when there is nothing to report — see <see cref="BuildNumber"/>.</summary>
     public const string Local = "local";
 
-    /// <summary>Full git SHA the assembly was built from, or "local".</summary>
+    /// <summary>Full git SHA the assembly was built from, or "local" outside a git checkout.</summary>
     public static string CommitSha { get; } = ReadCommitSha();
 
     /// <summary>First seven characters of <see cref="CommitSha"/>, for display.</summary>

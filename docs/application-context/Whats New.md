@@ -131,9 +131,12 @@ Two different notions of version, deliberately kept separate:
   environment variables as properties, so **CI stamps every build with no workflow changes**. The
   SDK appends the SHA to `InformationalVersion` as `+<sha>`; `BuildInfo` reads it back.
 
-A developer build leaves both variables unset and reports `local`, which is the useful answer
-rather than a missing one. The same values are logged once at startup, so App Insights shows which
-build is serving.
+A developer build has neither variable, but the SDK fills `SourceRevisionId` from the local git
+checkout anyway, so a local run still names the exact commit it was built from. Only the run
+number falls back to `local`, because it has no local equivalent — a dev box prints something
+like `Release 2026.09.1 · Build 09bc3fb (#local) · Development`.
+
+The same values are logged once at startup, so App Insights shows which build is serving.
 
 ## Files
 
@@ -168,8 +171,9 @@ deploy until it reloads.
 the JSON no longer deserializes. The resource name is root namespace plus path with `/` → `.`
 (`GrainOriginatorPortal.Api.Content.whats-new.json`). `dotnet test` catches both before deploy.
 
-**The build line says "local" in a deployed environment.** The build was not produced by GitHub
-Actions, or `Directory.Build.props` lost the `SourceRevisionId` block.
+**The build line shows `#local` in a deployed environment.** The run number is missing, so the
+build was not produced by GitHub Actions or `Directory.Build.props` lost its `AssemblyMetadata`
+item. A commit reading `local` as well means the build ran outside a git checkout entirely.
 
 **The unread dot will not clear.** The browser is refusing `localStorage` writes (private browsing).
 The dialog is suppressed for the session but the state cannot survive a reload; this is expected
