@@ -1,6 +1,6 @@
 [
   {
-    "version": "2026.09.1",
+    "version": "2026.09.2",
     "releasedOn": "2026-09-15",
     "title": "See what's new without hunting for the email",
     "summary": "Release notes now live in the app, saved lists show where your trade units overlap, and the Usage Dashboard status column is accurate again.",
@@ -24,6 +24,71 @@
         "group": "Usage Dashboard",
         "kind": "fixed",
         "text": "The activity status column no longer shows stale values for originators who have signed in recently."
+      }
+    ]
+  },
+  {
+    "version": "2026.09.1",
+    "releasedOn": "2026-09-10",
+    "title": "Shared recap groups and crop lists that match your trade units",
+    "summary": "Recap groups can be edited by more than their creator, and crop dropdowns now reflect the trade units you work in.",
+    "items": [
+      {
+        "group": "Daily Recap groups",
+        "kind": "changed",
+        "text": "A recap group is no longer editable only by the person who made it, so a team can keep a shared group current without going through one owner."
+      },
+      {
+        "group": "Commodities",
+        "kind": "changed",
+        "text": "Crop dropdowns show the commodities that belong to your trade units, so specialty and organic crops appear for the people who trade them and stay out of everyone else's way."
+      }
+    ]
+  },
+  {
+    "version": "2026.08.2",
+    "releasedOn": "2026-08-27",
+    "title": "A cleaner Bid Sheet print view and a layout built for laptops",
+    "items": [
+      {
+        "group": "Bid Sheet",
+        "kind": "changed",
+        "text": "The print view was rebuilt to fit the page first: it sizes itself to the columns you actually use and drops empty ones instead of stretching them across the sheet."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "changed",
+        "text": "The daily layout and commodity colours were reworked so the sheet stays readable at a glance."
+      },
+      {
+        "group": "Across the app",
+        "kind": "changed",
+        "text": "Screens now adapt to laptop-width displays rather than assuming a large monitor, so less is squeezed or cut off."
+      },
+      {
+        "group": "Trade units",
+        "kind": "added",
+        "text": "Your profile menu links straight to the Trade Unit Preferences app, and your groups refresh here as soon as you close it."
+      }
+    ]
+  },
+  {
+    "version": "2026.08.1",
+    "releasedOn": "2026-08-18",
+    "title": "Mention a group in a note",
+    "summary": "Plus several smaller producer-page improvements.",
+    "items": [
+      {
+        "kind": "added",
+        "text": "Typing @ in a note offers your Daily Recap groups as well as individual people, so one mention reaches everyone in the group."
+      },
+      {
+        "kind": "added",
+        "text": "A producer can carry more than one contact, with a primary contact shown on the profile."
+      },
+      {
+        "kind": "fixed",
+        "text": "Bushel conversions now use each commodity's own weight rather than a single shared factor."
       }
     ]
   }
