@@ -164,11 +164,6 @@ export class HeaderComponent {
     this.router.navigate(['/whats-new']);
   }
 
-  /** Spoken label for the megaphone button, so screen readers hear that updates are waiting. */
-  whatsNewLabel(): string {
-    return this.whatsNew.hasUnseen() ? "What's New, updates available" : "What's New";
-  }
-
   /** The build line at the foot of the profile menu, or null before the version call lands. */
   buildLine(): string | null {
     const v = this.whatsNew.version();

@@ -1,30 +1,37 @@
-<div class="max-w-3xl">
-  <h2 class="text-2xl font-bold text-gray-900 dark:text-white">What's New</h2>
-  <p class="mt-1 text-[length:var(--text-fluid-sm)] text-gray-500 dark:text-gray-400">
-    Recent updates to the Origination Workbench, newest first.
-  </p>
+<!-- Centered across the full content width. The notes are the whole point of this screen, so
+     nothing competes with them and the column is not pinned to the left edge. -->
+<div class="w-full">
+  <div class="text-center">
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white">What's New</h2>
+    <p class="mt-1 text-[length:var(--text-fluid-sm)] text-gray-500 dark:text-gray-400">
+      Recent updates to the Origination Workbench, newest first.
+    </p>
+  </div>
 
   @if (loading()) {
-    <p class="mt-8 text-sm text-gray-500 dark:text-gray-400">Loading release notes…</p>
+    <p class="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading release notes…</p>
   } @else if (loadFailed()) {
-    <p class="mt-8 text-sm text-scoular-red-accessible">
+    <p class="mt-8 text-center text-sm text-scoular-red-accessible">
       Release notes could not be loaded. Refresh to try again.
     </p>
   } @else if (releases().length === 0) {
-    <p class="mt-8 text-sm text-gray-500 dark:text-gray-400">No updates have been published yet.</p>
+    <p class="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">No updates have been published yet.</p>
   } @else {
-    <app-card class="mt-6">
-      <app-card-header>
+    <!-- The card fills the width; the notes inside stay left-aligned, because centred bullet
+         lists are hard to read. -->
+    <app-card class="mt-6 block">
+      <app-card-header class="items-center text-center">
         <app-card-title>Release history</app-card-title>
       </app-card-header>
       <app-card-content>
         <app-whats-new-release-list [releases]="releases()" />
       </app-card-content>
+      @if (buildLine(); as line) {
+        <!-- Quote this line in a bug report and we can tell exactly which build you were on. -->
+        <app-card-footer class="justify-center">
+          <span class="text-xs text-gray-400 dark:text-gray-500">{{ line }}</span>
+        </app-card-footer>
+      }
     </app-card>
-  }
-
-  @if (buildLine(); as line) {
-    <!-- Quote this line in a bug report and we can tell exactly which build you were on. -->
-    <p class="mt-6 text-xs text-gray-400 dark:text-gray-500">{{ line }}</p>
   }
 </div>

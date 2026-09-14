@@ -5,6 +5,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import {
   CardComponent,
   CardContentComponent,
+  CardFooterComponent,
   CardHeaderComponent,
   CardTitleComponent
 } from '@shared/components/card/card.component';
@@ -16,9 +17,9 @@ import { WhatsNewService } from '@core/services/whats-new.service';
 import { WhatsNewReleaseListComponent } from '../../components/whats-new-release-list/whats-new-release-list.component';
 
 /**
- * The permanent home for release notes, reached from the megaphone button in the header or the
- * What's New row in the profile menu. Visiting counts as acknowledging the current release, so
- * the unread dot clears here as well as from the dialog.
+ * The permanent home for release notes, reached from the What's New row in the profile menu.
+ * Visiting counts as acknowledging the current release, so the unread dot clears here as well as
+ * from the dialog.
  */
 @Component({
   selector: 'app-whats-new',
@@ -28,6 +29,7 @@ import { WhatsNewReleaseListComponent } from '../../components/whats-new-release
     CardHeaderComponent,
     CardTitleComponent,
     CardContentComponent,
+    CardFooterComponent,
     WhatsNewReleaseListComponent
   ],
   templateUrl: './whats-new.component.html',
