@@ -5,7 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap, map } from 'rxjs/operators';
 import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
-import { Customer, SavedList, Note, NoteLastContact, ProducerDetails } from '@models';
+import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -15,6 +15,12 @@ import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-tra
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+
+/** The follow-up badge on a producer row — the signed-in user's next open reminder for them. */
+interface ReminderBadge {
+  text: string;
+  cssClass: string;
+}
 
 interface LastContactInfo {
   text: string;
@@ -39,6 +45,9 @@ export class CustomerListComponent {
   /** Per-customer "last contacted" aggregate (all trade units, one row per customer with
    *  notes) — feeds the badge cache without the full note download. */
   public noteLastContacts = input<NoteLastContact[]>([]);
+  /** The signed-in user's OWN open follow-ups (all producers). Private per user — the API only
+   *  returns the caller's — so this badge never reveals another originator's plans. */
+  public myReminders = input<ReminderDue[]>([]);
   public loading = input(false);
   public producerDetailsMap = input(new Map<number, ProducerDetails>());
   /** Extra customers fetched for incoming/outgoing linked-producer lookups (populated by the home
@@ -72,6 +81,8 @@ export class CustomerListComponent {
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.
   lastContactCache = signal(new Map<number, LastContactInfo>());
+  /** Per-customer follow-up badge, keyed by customer id. Rebuilt with the last-contact cache. */
+  reminderCache = signal(new Map<number, ReminderBadge>());
 
   private _scrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -170,6 +181,15 @@ export class CustomerListComponent {
       this.noteLastContacts();
       this.linkedProducerCustomers();
       this._rebuildLastContactCache();
+    });
+
+    // The follow-up badge rebuilds on its own so adding or completing a reminder repaints the
+    // list without redoing the (much larger) last-contact pass over every producer.
+    effect(() => {
+      this.customers();
+      this.filteredCustomers();
+      this.myReminders();
+      this._rebuildReminderCache();
     });
 
     // Re-run the active saved list's NLQ when tickets / stored grain / planting
@@ -585,6 +605,70 @@ export class CustomerListComponent {
     this.appStateService.setSelectedGroupNames([]);
     this.filteredCustomers.set([]);
     this.clearSelection.emit();
+  }
+
+  /**
+   * Builds the follow-up badge for each visible producer: the SOONEST open reminder the signed-in
+   * user has for them.
+   *
+   * Keyed on customerId rather than customerCode, and deliberately NOT walked across the
+   * linked-producer group the way last-contact is. A reminder is a personal to-do about the one
+   * producer it was set on — surfacing it on a linked producer's row would send the user to the
+   * wrong page when they click it.
+   */
+  private _rebuildReminderCache(): void {
+    const rows = this.myReminders();
+    if (rows.length === 0) {
+      // Skip the allocation entirely in the common case: most producers have no follow-up, and
+      // for a brand-new user this runs on every list render.
+      if (this.reminderCache().size > 0) this.reminderCache.set(new Map());
+      return;
+    }
+
+    const soonestByCustomer = new Map<number, number>();
+    for (const row of rows) {
+      const due = this._parseUtcMs(row.dueAt);
+      const existing = soonestByCustomer.get(row.customerId);
+      if (existing === undefined || due < existing) soonestByCustomer.set(row.customerId, due);
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const newCache = new Map<number, ReminderBadge>();
+    for (const [customerId, dueMs] of soonestByCustomer) {
+      const dueDay = new Date(dueMs);
+      dueDay.setHours(0, 0, 0, 0);
+      const days = Math.round((dueDay.getTime() - today.getTime()) / 86_400_000);
+
+      let text: string;
+      let cssClass: string;
+      if (days < 0) {
+        const overdue = Math.abs(days);
+        text = overdue === 1 ? 'Follow-up overdue by 1 day' : `Follow-up overdue by ${overdue} days`;
+        cssClass = 'text-red-600 dark:text-red-400';
+      } else if (days === 0) {
+        text = 'Follow-up today';
+        cssClass = 'text-amber-600 dark:text-amber-400';
+      } else if (days === 1) {
+        text = 'Follow-up tomorrow';
+        cssClass = 'text-scoular-green-accessible dark:text-scoular-green';
+      } else {
+        text = `Follow-up in ${days} days`;
+        cssClass = 'text-gray-500 dark:text-gray-400';
+      }
+
+      newCache.set(customerId, { text, cssClass });
+    }
+
+    // New Map reference so the OnPush template re-renders.
+    this.reminderCache.set(newCache);
+  }
+
+  /** Bare ISO strings from the API are UTC without a Z suffix. */
+  private _parseUtcMs(ts: string): number {
+    const raw = !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+    return new Date(raw).getTime();
   }
 
   /**

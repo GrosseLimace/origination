@@ -1,0 +1,159 @@
+<div class="space-y-4">
+  <!-- Add / edit form -->
+  @if (formOpen()) {
+    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 space-y-3">
+      <div class="flex gap-3">
+        <div class="flex-1">
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-date">Date</label>
+          <input
+            id="reminder-date"
+            type="date"
+            [min]="todayIso"
+            [ngModel]="formDate()"
+            (ngModelChange)="formDate.set($event)"
+            [disabled]="isSaving()"
+            class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 dark:[color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60"
+          />
+        </div>
+        <div class="w-32">
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-time">Time</label>
+          <input
+            id="reminder-time"
+            type="time"
+            [ngModel]="formTime()"
+            (ngModelChange)="formTime.set($event)"
+            [disabled]="isSaving()"
+            class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 dark:[color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-subject">Subject</label>
+        <input
+          id="reminder-subject"
+          type="text"
+          maxlength="200"
+          [ngModel]="formSubject()"
+          (ngModelChange)="formSubject.set($event)"
+          [disabled]="isSaving()"
+          [placeholder]="'Follow up with ' + customer().name"
+          class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60"
+        />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-notes">Notes</label>
+        <textarea
+          id="reminder-notes"
+          rows="2"
+          maxlength="2000"
+          [ngModel]="formNotes()"
+          (ngModelChange)="formNotes.set($event)"
+          [disabled]="isSaving()"
+          placeholder="What do you need to cover?"
+          class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-none disabled:opacity-60"
+        ></textarea>
+      </div>
+
+      <p class="text-xs text-gray-500 dark:text-gray-400">
+        Saving also puts this on your Outlook calendar, with a reminder 15 minutes before.
+      </p>
+
+      <div class="flex justify-end gap-2">
+        <app-button variant="ghost" [disabled]="isSaving()" (onClick)="closeForm()">Cancel</app-button>
+        <app-button variant="default" [disabled]="!canSave()" (onClick)="submit()">
+          {{ isSaving() ? 'Saving...' : (editingId() === null ? 'Add Follow-Up' : 'Save Changes') }}
+        </app-button>
+      </div>
+    </div>
+  } @else {
+    <div class="flex justify-end">
+      <app-button variant="default" (onClick)="openAdd()">Add Follow-Up</app-button>
+    </div>
+  }
+
+  <!-- Reminder list -->
+  @if (reminders().length === 0) {
+    @if (isLoading()) {
+      <!-- Reminders load per-producer on selection — don't flash the empty state mid-fetch -->
+      <div class="text-center py-6 text-gray-500 dark:text-gray-400">
+        <p class="text-sm">Loading follow-ups...</p>
+      </div>
+    } @else {
+      <div class="text-center py-6 text-gray-500 dark:text-gray-400">
+        <p class="text-sm">No follow-ups scheduled for this producer.</p>
+      </div>
+    }
+  } @else {
+    <div class="space-y-2">
+      @for (reminder of reminders(); track trackById($index, reminder)) {
+        <div
+          class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-white dark:bg-gray-800"
+          [class.opacity-60]="reminder.isCompleted"
+        >
+          <div class="flex items-start gap-3">
+            <input
+              type="checkbox"
+              [checked]="reminder.isCompleted"
+              (change)="toggleComplete.emit(reminder)"
+              [attr.aria-label]="reminder.isCompleted ? 'Reopen follow-up' : 'Mark follow-up complete'"
+              class="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 dark:border-gray-600 text-scoular-green focus:ring-scoular-green"
+            />
+
+            <div class="min-w-0 flex-1">
+              <p
+                class="text-sm font-medium text-gray-900 dark:text-gray-100 break-words"
+                [class.line-through]="reminder.isCompleted"
+              >{{ reminder.subject }}</p>
+
+              <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span [class]="dueClass(reminder)">
+                  {{ dueLabel(reminder) }} &middot; {{ reminder.dueAt | date:'MMM d, y, h:mm a' }}
+                </span>
+
+                @if (reminder.outlookEventId) {
+                  <span class="text-gray-400 dark:text-gray-500">On your Outlook calendar</span>
+                } @else if (!reminder.isCompleted) {
+                  <button
+                    type="button"
+                    (click)="addToOutlook.emit(reminder)"
+                    class="text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer"
+                  >Add to Outlook</button>
+                }
+              </div>
+
+              @if (reminder.notes) {
+                <p class="mt-1 text-sm text-gray-600 dark:text-gray-300 break-words whitespace-pre-wrap">{{ reminder.notes }}</p>
+              }
+            </div>
+
+            <div class="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                (click)="openEdit(reminder)"
+                aria-label="Edit follow-up"
+                class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                </svg>
+              </button>
+              <button
+                type="button"
+                (click)="remove.emit(reminder)"
+                aria-label="Delete follow-up"
+                class="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
