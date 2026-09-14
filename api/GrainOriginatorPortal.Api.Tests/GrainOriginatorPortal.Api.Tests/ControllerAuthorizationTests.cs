@@ -43,6 +43,8 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(UsageDashboardController) };
         yield return new object[] { typeof(UserPreferencesController) };
         yield return new object[] { typeof(UserTradeUnitsController) };
+        yield return new object[] { typeof(VersionController) };
+        yield return new object[] { typeof(WhatsNewController) };
     }
 
     [Theory]

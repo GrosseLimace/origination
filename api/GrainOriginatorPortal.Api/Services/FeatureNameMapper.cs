@@ -98,6 +98,12 @@ public static class FeatureNameMapper
         if (p == "/api/me" || p.StartsWith("/api/me/"))
             return ("system", "identity");
 
+        // Release notes and the build stamp: both are app-chrome reads, not a screen of their own.
+        if (p.StartsWith("/api/whats-new"))
+            return ("system", "whats-new");
+        if (p.StartsWith("/api/version"))
+            return ("system", "version");
+
         return ("other", null);
     }
 

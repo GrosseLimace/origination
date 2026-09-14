@@ -400,6 +400,15 @@ builder.Services.AddHealthChecks()
 
 var app = builder.Build();
 
+// Record which build is serving, so App Insights can tie a request or an error back to an exact
+// commit and workflow run. Stamped by CI via Directory.Build.props; reads "local" on a dev box.
+app.Logger.LogInformation(
+    "Origination API starting. Release {ReleaseVersion}, build {CommitSha} (#{BuildNumber}), environment {Environment}.",
+    GrainOriginatorPortal.Api.Controllers.WhatsNewController.Releases.Value.FirstOrDefault()?.Version ?? "none",
+    BuildInfo.CommitSha,
+    BuildInfo.BuildNumber,
+    app.Environment.EnvironmentName);
+
 // =============================================================================
 // Development: Warm up all three DB connections in parallel at startup.
 // Token acquisition and connection pool setup happen here (hidden in startup time)

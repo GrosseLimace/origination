@@ -15,4 +15,21 @@
     -->
     <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>
+
+  <!--
+    Build stamp. GitHub Actions exposes GITHUB_SHA and GITHUB_RUN_NUMBER as environment
+    variables, and MSBuild reads environment variables as properties, so CI stamps every
+    build with no workflow changes. The SDK appends SourceRevisionId to
+    InformationalVersion as "+<sha>"; BuildInfo reads it back and GET /api/version reports
+    it alongside the release number from the What's New notes. A developer build leaves
+    both variables unset and reports "local", which is the useful answer rather than a
+    missing one.
+  -->
+  <PropertyGroup Condition="'$(GITHUB_SHA)' != ''">
+    <SourceRevisionId>$(GITHUB_SHA)</SourceRevisionId>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(GITHUB_RUN_NUMBER)' != ''">
+    <AssemblyMetadata Include="BuildNumber" Value="$(GITHUB_RUN_NUMBER)" />
+  </ItemGroup>
 </Project>
