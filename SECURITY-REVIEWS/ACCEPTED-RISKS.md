@@ -125,8 +125,12 @@ not; `NotesController`, `PlantingIntentionsController`, `StoredGrainController` 
 also reads the `GetAllAsync`-scoped / `GetByCustomerAsync`-open split as an oversight; that split is
 the documented app-wide pattern recorded under AR-02 below.
 
-- **`GET`** stays accepted under **AR-02** — narrowing it would break the linked-producer profile
-  view, which deliberately reaches producers outside the caller's selected trade units.
+- **`GET`** — ⚠ **this bullet was WRONG when first written, and is corrected here rather than
+  quietly edited.** It originally read "stays accepted under AR-02 — narrowing it would break the
+  linked-producer profile view". That claim was never verified: the linked-producer cache feeds only
+  the last-contact badge, not a selectable row, so no such breakage existed. The PR scan flagged the
+  read as the remaining unguarded path and was right. **The GET is now scoped and removed from
+  AR-02** — see AR-02's 2026-09-14 update for the trace and the criterion it established.
 - **`PUT`** stays accepted under this entry. It has **six live call sites**, and two of them
   (`home.component.ts` `_propagatePrimaryContact` and the removed-incoming-links path) write to
   **linked producers in other trade units by design**, with inline comments saying so. A third runs
@@ -208,7 +212,7 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/tickets/customer/{customerId}`
 - `GET /api/notes/customer/{customerId}`
 - `GET /api/plantingintentions/customer/{customerId}`
-- `GET /api/producerdetails/customer/{customerId}`
+- ~~`GET /api/producerdetails/customer/{customerId}`~~ — **REMOVED FROM THIS ENTRY 2026-09-14 and FIXED in code.** See the update below. Do not cite AR-02 for it.
 - `GET /api/dpcontracts/customer/{customerId}` (added 2026-08-18 — see the update below)
 
 **Update (2026-07-21):** the notes list/search endpoints are no longer trade-unit-filtered on the
@@ -313,9 +317,34 @@ against this entry.
 
 **Update (2026-09-14):** re-flagged as **H-067** (`codex`) against `GET /api/customers/{id}` "and
 related customer-scoped endpoints", and again as the GET half of **H-062** against
-`GET /api/producerdetails/customer/{customerId}`. **Re-accepted — no change.** Both routes are
-already listed above and inline-cited; H-067 explicitly acknowledges the AR-02 citation and argues
-the exposure remains concrete, which is true and is exactly what this entry accepts.
+`GET /api/producerdetails/customer/{customerId}`.
+
+**H-067 re-accepted — no change.** Its routes are listed above and inline-cited; it explicitly
+acknowledges the AR-02 citation and argues the exposure remains concrete, which is true and is
+exactly what this entry accepts.
+
+⚠ **The producer-details GET was NOT re-accepted — it is now FIXED, and this entry was wrong about
+it for a day.** The first pass kept it here on the stated grounds that scoping it "would break the
+linked-producer profile view". The PR scan pushed back, and re-tracing every client path showed that
+claim was false:
+
+- the read fires only from `selectCustomer`, and both `filteredCustomers` sources start from
+  `customers()` — the entitled roster;
+- deep links resolve via `customers().find()` and give up after 5s rather than widening the set;
+- the cross-trade-unit linked-producer cache feeds **only** the last-contact badge, never a
+  selectable row.
+
+So no client path needed the cross-TU read, and the response carries `ProducerContact` PII — contact
+names, phones and emails. `ProducerDetailsService.GetByCustomerAsync` now resolves entitlement before
+touching the repository (403 out of scope, 503 fail-closed), sharing one `EnsureCustomerEntitledAsync`
+helper with the delete. Three tests, mutation-verified.
+
+**The criterion this establishes, and the reason the other by-customer routes stay:** what earns the
+AR-02 exception is *a real client path that depends on the cross-trade-unit read*, not the shape of
+the route. `GET /api/notes/customer/{id}` has one — `_ensureCustomerNotes` fetches notes for every
+linked-group member, with an inline comment saying the endpoint has no TU filter so linked producers
+in unselected trade units are covered. Producer details had no equivalent. Apply that test, per
+route, before assuming this entry covers something.
 
 That makes **six** flags for AR-02 — 2026-06-23, 2026-08-10, twice on 2026-08-18, 2026-09-09 and
 2026-09-14 — every one self-accepted by engineering. The finding's own suggestion ("obtain formal
@@ -749,5 +778,5 @@ matches them to their remediation instead of re-doing the work.
 | **M-036** — The Instant Share Note Logic App interpolated the raw note body, author name and customer name into the `sendMail` HTML, so authored content rendered as markup in mail from the shared mailbox — HTML/link injection enabling internal phishing and tracking pixels (CWE-79) | 2026-08-31 | **Fixed** (2026-09-01). Three `Compose_Safe_*` actions inside `Condition_Has_Recipients` HTML-escape `&`, `<`, `>` (in that order — `&` first, or later replaces would double-encode), and the template interpolates only those outputs; `HTTP_Send_Share_Email` runs after all three. Only those three characters are escaped because every interpolation sits in a **text node**, none inside an attribute. The `subject` is intentionally left raw — it is a plain-text Graph field. The sibling `notes-daily-recap` workflow needed **no change**: its note text reaches the mail only through `Create_HTML_table`, which encodes cell values, and its AI summary is separately escaped. |
 | **H-061** — Dashboard `DELETE actualharvest/{id}` performs no per-record or trade-unit authorization: the sequential integer id flows to a bare `FindAsync` + `Remove`, and the class-level `[EnforceTradeUnitAccess]` filter evaluates nothing because the route carries no trade-unit value, so any authenticated user could enumerate ids and destroy another trade unit's actual-harvest rows (CWE-639) | 2026-09-07 | **Fixed (2026-09-09).** `DashboardService.DeleteActualHarvestAsync` resolves the row's own `TradeUnitKey` and calls `ValidateTradeUnitsOrThrowAsync` before deleting — 403 for another trade unit's row, silent 204 no-op for a non-existent id (so the route is not an existence oracle), and 503 fail-closed on an entitlements outage. The audit log records the resolved trade unit, and misses are logged too. Covered by `DashboardActualHarvestDeleteTests` (5 tests, mutation-verified). This route was **removed from AR-01** — see that entry's 2026-09-09 update for why the original H-050 acceptance was mistaken. |
 | **M-037** — Instant Share Note Logic App interpolates the user-authored note `Description` and the author display name into a `contentType: "HTML"` Graph `sendMail` body with no encoding, so a note author can deliver arbitrary markup (anchors with attacker-chosen hrefs, fake banners, hidden content) as trusted HTML from the privileged shared mailbox — internal content-spoofing / phishing rather than script execution, since Outlook strips scripts (CWE-79) | 2026-09-07 | **Fixed — duplicate of M-036 above.** The weekly baseline re-flagged the defect against `main` on 2026-09-07 while the fix was still unmerged on `fix_NoteMentionSecurity`; it lands on `main` with that branch, so no separate remediation exists or is needed. See the **M-036** row for the escaping detail, including why the subject stays raw and why the sibling `notes-daily-recap` workflow needs no change. **Deploy note:** merging the template does not change any environment — the `deploy-logic-app-instant-share-note-*` workflow must be dispatched per environment, together with the API half (H-056), because the two are halves of one attack: who can be targeted, and what can be delivered. |
-| **H-062 (DELETE half)** — `DELETE /api/producerdetails/customer/{customerId}` performed no trade-unit authorization at any layer: the sequential `customerId` path segment reached a bare repository delete that hand-cascades to the `ProducerContacts` and `ProducerGrainOnFarm` child rows, so any authenticated user could enumerate ids and destroy another trade unit's producer contact PII and grain-on-farm positions (CWE-639) | 2026-09-14 | **Fixed (2026-09-14).** `ProducerDetailsService.DeleteAsync` resolves the caller's entitled trade units, confirms membership via `GetActiveCustomerIdsInTradeUnitsAsync`, and returns 403 otherwise — with 503 fail-closed on an entitlements outage and a silent no-op when no details row exists, so the route is not an existence oracle. The repository now emits a structured `AUDIT_DELETE` including the cascade counts, and the controller logs misses. Covered by `ProducerDetailsDeleteTests` (5 tests, mutation-verified). **Only the DELETE was fixed** — `GET` remains accepted under AR-02 and `PUT` under AR-01, because the PUT has six live callers, two writing to cross-trade-unit linked producers by design. See AR-01's 2026-09-14 update. |
+| **H-062 (DELETE + GET halves)** — `DELETE /api/producerdetails/customer/{customerId}` performed no trade-unit authorization at any layer: the sequential `customerId` path segment reached a bare repository delete that hand-cascades to the `ProducerContacts` and `ProducerGrainOnFarm` child rows, so any authenticated user could enumerate ids and destroy another trade unit's producer contact PII and grain-on-farm positions (CWE-639) | 2026-09-14 | **Fixed (2026-09-14).** `ProducerDetailsService.DeleteAsync` resolves the caller's entitled trade units, confirms membership via `GetActiveCustomerIdsInTradeUnitsAsync`, and returns 403 otherwise — with 503 fail-closed on an entitlements outage and a silent no-op when no details row exists, so the route is not an existence oracle. The repository now emits a structured `AUDIT_DELETE` including the cascade counts, and the controller logs misses. Covered by `ProducerDetailsDeleteTests` (5 tests, mutation-verified). **The `GET` was fixed too, one day later.** The first pass left it under AR-02 believing the linked-producer profile view needed the cross-trade-unit read; the PR scan pushed back and re-tracing every client path showed that was false — the cross-TU cache feeds only the last-contact badge, and deep links resolve through the entitled roster. `GetByCustomerAsync` now runs the same `EnsureCustomerEntitledAsync` check before touching the repository, so the `ProducerContact` PII never leaves it for an out-of-scope producer. **`PUT` remains accepted under AR-01** — it has six live callers, two writing to cross-trade-unit linked producers by design, plus an onboarding path that would race freshly-written membership. See AR-01's and AR-02's 2026-09-14 updates. |
 | **H-066 (elevators half)** — `GET /api/bidsheet/elevators` returned every elevator across every trade unit when `tradeUnitCode` was omitted, with no entitlement validation (CWE-284) | 2026-09-14 | **Fixed (2026-09-14).** `tradeUnitCode` is now required and validated, and blank is rejected explicitly *before* `ValidateTradeUnitsOrThrowAsync` — which filters blanks and returns early, so `?tradeUnitCode=` would otherwise have passed validation vacuously and fallen through unscoped. Nothing in the client called this route, so the fix costs no behaviour; the client signature was tightened to a required parameter so a future caller fails at compile time. Covered by `BidSheetElevatorScopeTests` (5 cases, mutation-verified). **Only the elevators half was fixed** — `GET /api/bidsheet/locations` remains accepted under AR-05 because the bid-sheet map genuinely needs the unscoped read. |
