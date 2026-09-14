@@ -239,23 +239,38 @@
                     <div class="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
                   </div>
                 } @else if (catalogDetail(); as detail) {
-                  @if (detail.bids.length === 0) {
-                    <p class="text-xs text-gray-400 dark:text-gray-500 italic py-3">No active bids published right now.</p>
+                  @if (catalogDetailRows().length === 0) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic py-3">
+                      @if (detail.bids.length === 0) { No active bids published right now. }
+                      @else { No {{ priceModeLabel().toLowerCase() }} bids published right now. }
+                    </p>
                   } @else {
+                    <!-- The header names the price the Cash/Basis/Both toggle is showing, rather than
+                         saying "Price" over whichever one happened to come first. -->
                     <table class="w-full text-xs">
                       <thead>
                         <tr class="text-gray-400 dark:text-gray-500">
                           <th class="text-left font-medium pb-1">Crop</th>
                           <th class="text-right font-medium pb-1">Delivery</th>
-                          <th class="text-right font-medium pb-1">Price</th>
+                          @if (priceMode() === 'both') {
+                            <th class="text-right font-medium pb-1">Cash</th>
+                            <th class="text-right font-medium pb-1">Basis</th>
+                          } @else {
+                            <th class="text-right font-medium pb-1">{{ priceModeLabel() }}</th>
+                          }
                         </tr>
                       </thead>
                       <tbody>
-                        @for (bid of detail.bids; track bid.symbol) {
+                        @for (row of catalogDetailRows(); track row.crop + '|' + row.cropYear + '|' + row.month) {
                           <tr class="border-t border-gray-100 dark:border-gray-800">
-                            <td class="py-1 text-gray-700 dark:text-gray-300">{{ bid.commodityCode || bid.vendorCommodity }}</td>
-                            <td class="py-1 text-right text-gray-500 dark:text-gray-400">{{ formatMonthYear(bid.month, bid.cropYear) }}</td>
-                            <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ bid.price != null ? bid.price : '--' }}</td>
+                            <td class="py-1 text-gray-700 dark:text-gray-300">{{ row.crop }}</td>
+                            <td class="py-1 text-right text-gray-500 dark:text-gray-400">{{ formatMonthYear(row.month, row.cropYear) }}</td>
+                            @if (priceMode() === 'both') {
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ row.cash != null ? row.cash : '--' }}</td>
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ row.basis != null ? row.basis : '--' }}</td>
+                            } @else {
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ (priceMode() === 'basis' ? row.basis : row.cash) ?? '--' }}</td>
+                            }
                           </tr>
                         }
                       </tbody>
@@ -1781,6 +1796,7 @@
                             <img [src]="printLogoUrl" alt="Scoular" style="height:32px;width:auto;" />
                           </div>
                           <div style="text-align:right;font-size:10px;color:#4b5563;line-height:1.6;">
+                            <p style="font-weight:600;color:#1a1a1a;">{{ printPriceModeCaption() }}</p>
                             @if (printAddress().trim()) { <p>{{ printAddress().trim() }}</p> }
                             @if (printPhone().trim()) { <p>{{ printPhone().trim() }}</p> }
                           </div>

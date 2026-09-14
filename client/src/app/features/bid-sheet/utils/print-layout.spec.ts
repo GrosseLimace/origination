@@ -723,7 +723,8 @@ describe('renderPrintDocument', () => {
     address: '123 Test Road <Anytown>',
     phone: '(555) 123-4567',
     dateText: 'Friday, August 21, 2026',
-    logoUrl: 'https://app.example.com/assets/images/scoular-logo-dark.webp'
+    logoUrl: 'https://app.example.com/assets/images/scoular-logo-dark.webp',
+    priceModeLabel: 'Cash bids'
   };
 
   it('escapes user text, carries the page setup and chrome, and never prints dashes for blanks', () => {
@@ -740,6 +741,8 @@ describe('renderPrintDocument', () => {
     expect(html).toContain(`@page { margin: ${G.PAGE_MARGIN_IN}in; size: landscape; }`);
     expect(html).toContain('print-color-adjust:exact');
     expect(html).toContain('Confidential');
+    // A printed basis sheet must not read as a cash sheet.
+    expect(html).toContain('Cash bids');
     expect(html).not.toContain('&mdash;</td>');
     expect(html).not.toContain('&nbsp;');
   });
@@ -747,9 +750,10 @@ describe('renderPrintDocument', () => {
   it('omits empty address/phone lines and sizes a partial band below 100%', () => {
     const wide = Array.from({ length: 5 }, (_, i) => realGroup(`Crop${i}`, 4));
     const model = buildPrintLayout({ style: 'locationsDown', groups: wide, locations: [loc('Short', wide, REAL_VALUE)], cropColors });
-    const html = renderPrintDocument(model, { ...chrome, address: '  ', phone: '' });
+    const html = renderPrintDocument(model, { ...chrome, address: '  ', phone: '', priceModeLabel: 'Basis bids' });
 
     expect(html).not.toContain('<p></p>');
+    expect(html).toContain('Basis bids');
     expect(html).toContain('width:100.000%');
     expect(html).toMatch(/<table style="width:(?!100\.000%)\d+\.\d{3}%/);
     expect(html).toContain('page-break-inside:avoid');

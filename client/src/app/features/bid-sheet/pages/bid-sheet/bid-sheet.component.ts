@@ -1018,6 +1018,53 @@ export class BidSheetComponent {
   readonly catalogDetailKey = signal<string | null>(null);
   readonly catalogDetailLoading = signal<boolean>(false);
   readonly catalogDetail = signal<BarchartCatalogLocationDetail | null>(null);
+
+  /** The same choice as a sentence, for the printed sheet's header. */
+  readonly printPriceModeCaption = computed<string>(() => {
+    const mode = this.priceMode();
+    return mode === 'basis' ? 'Basis bids' : mode === 'both' ? 'Cash and basis bids' : 'Cash bids';
+  });
+
+  /** What the Cash/Basis/Both toggle is currently showing, for a column header to name. */
+  readonly priceModeLabel = computed<string>(() => {
+    const mode = this.priceMode();
+    return mode === 'basis' ? 'Basis' : mode === 'both' ? 'Cash / Basis' : 'Cash';
+  });
+
+  /**
+   * The catalog popup's bid table, one row per crop and delivery period.
+   *
+   * The vendor publishes cash and basis as separate instruments, so detail.bids arrives as two flat
+   * rows for the same crop and month, told apart only by isBasis. Printed straight out that read as a
+   * duplicated crop under a column headed "Price", with no way to tell which number was which -- and
+   * whatever the Cash/Basis/Both toggle said, the list showed everything.
+   *
+   * Pairing them by crop and period lets the table answer the toggle: one column of the selected
+   * price, or both side by side. A period the elevator only quotes one way keeps its row and shows a
+   * dash for the other -- dropping it would hide a real bid.
+   */
+  readonly catalogDetailRows = computed<{ crop: string; cropYear: number; month: number; cash: number | null; basis: number | null }[]>(() => {
+    const detail = this.catalogDetail();
+    if (!detail) return [];
+    const mode = this.priceMode();
+    const byPeriod = new Map<string, { crop: string; cropYear: number; month: number; cash: number | null; basis: number | null }>();
+    for (const bid of detail.bids) {
+      const crop = bid.commodityCode || bid.vendorCommodity;
+      const key = `${crop}|${bid.cropYear}|${bid.month}`;
+      let row = byPeriod.get(key);
+      if (!row) {
+        row = { crop, cropYear: bid.cropYear, month: bid.month, cash: null, basis: null };
+        byPeriod.set(key, row);
+      }
+      if (bid.isBasis) row.basis = bid.price ?? null;
+      else row.cash = bid.price ?? null;
+    }
+    const rows = [...byPeriod.values()];
+    // In a single-price mode a period the elevator does not quote that way has nothing to say here.
+    if (mode === 'basis') return rows.filter(r => r.basis != null);
+    if (mode === 'cash') return rows.filter(r => r.cash != null);
+    return rows.filter(r => r.cash != null || r.basis != null);
+  });
   readonly catalogDetailAdding = signal<boolean>(false);
 
   /**
@@ -1706,9 +1753,14 @@ export class BidSheetComponent {
             } catch { /* invalid JSON — skip */ }
           }
 
-          // Restore the cash/basis choice. Validated rather than trusted: an unrecognised value falls
-          // back to cash rather than putting the sheet in a mode nothing renders.
-          this.priceMode.set(pref?.priceMode === 'basis' ? 'basis' : 'cash');
+          // Restore the cash/basis/both choice. Validated rather than trusted: an unrecognised value
+          // falls back to cash rather than putting the sheet in a mode nothing renders.
+          //
+          // 'both' used to fall into that fallback, so it saved correctly and then came back as cash on
+          // every load -- which is why a sheet set to Both printed cash, and why the map, panel and
+          // export all quietly dropped the basis half after a refresh.
+          const savedMode = pref?.priceMode;
+          this.priceMode.set(savedMode === 'basis' || savedMode === 'both' ? savedMode : 'cash');
 
           // Apply saved print/export layout if available. Sanitize on read so malformed/out-of-range
           // persisted data can't break the year pickers.
@@ -3876,7 +3928,8 @@ export class BidSheetComponent {
       address: this.printAddress(),
       phone: this.printPhone(),
       dateText: this.todayFormatted(),
-      logoUrl: this.printLogoUrl
+      logoUrl: this.printLogoUrl,
+      priceModeLabel: this.printPriceModeCaption()
     });
 
     const printWindow = window.open('', '_blank');

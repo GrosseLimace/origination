@@ -114,6 +114,14 @@ export interface PrintChrome {
   address: string;
   phone: string;
   dateText: string;
+  /**
+   * Which price the sheet carries -- "Cash bids", "Basis bids", "Cash and basis bids".
+   *
+   * Printed once in the header rather than on every column: in Both mode the columns already say it,
+   * and in a single mode a suffix on each one feeds the fit-first width sizing and costs font size.
+   * Without it a printed basis sheet is indistinguishable from a cash sheet.
+   */
+  priceModeLabel: string;
   /** Absolute URL — the popup document is `about:blank`, so a relative asset path 404s. */
   logoUrl: string;
 }
@@ -594,6 +602,7 @@ export function renderPrintTableHtml(table: PrintTable): string {
 export function renderPrintDocument(model: PrintLayoutModel, chrome: PrintChrome): string {
   const address = chrome.address.trim();
   const phone = chrome.phone.trim();
+  const priceModeLabel = chrome.priceModeLabel.trim();
   // Tables FLOW down the page (a spacer between them, not a forced page break): a band is only as
   // tall as the location list, so several usually share a sheet. page-break-inside:avoid on each
   // table stops the browser cutting one in half.
@@ -612,6 +621,7 @@ export function renderPrintDocument(model: PrintLayoutModel, chrome: PrintChrome
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid ${PRINT_COLORS.brandRule};">
         <img src="${escapeHtml(chrome.logoUrl)}" alt="Scoular" style="height:40px;width:auto;" />
         <div style="text-align:right;font-size:12px;color:#4b5563;line-height:1.6;">
+          ${priceModeLabel ? `<p style="font-weight:600;color:#1a1a1a;">${escapeHtml(priceModeLabel)}</p>` : ''}
           ${address ? `<p>${escapeHtml(address)}</p>` : ''}
           ${phone ? `<p>${escapeHtml(phone)}</p>` : ''}
         </div>

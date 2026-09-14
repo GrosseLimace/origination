@@ -7,7 +7,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { BarchartCatalogLocation, BidSheet, BidSheetLocation, BidSheetLocationBid } from '@models';
+import { BarchartCatalogBid, BarchartCatalogLocation, BidSheet, BidSheetLocation, BidSheetLocationBid } from '@models';
 
 import { BidSheetComponent } from './bid-sheet.component';
 
@@ -713,6 +713,170 @@ describe('BidSheetComponent — catalog pin price label in Both mode', () => {
     const label = (component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation): string | null })
       ._catalogPriceLabel(catalogLoc());
     expect(label).toBeNull();
+  });
+});
+
+/**
+ * The Cash/Basis/Both choice is saved per user and restored on load. Both was saved correctly and then
+ * restored as cash, because the guard only recognised 'basis' and sent everything else to the
+ * fallback -- so a sheet set to Both came back cash on every visit, and printed, exported and coloured
+ * its pins as cash. Dev had a user in exactly that state.
+ */
+describe('BidSheetComponent — the saved price mode survives a reload', () => {
+  let component: BidSheetComponent;
+  let savedMode: string | null;
+
+  /** Re-reads the preference with whatever savedMode currently holds. */
+  function reload(saved: string | null): BidSheetComponent {
+    savedMode = saved;
+    (component as unknown as { _loadPreference(): void })._loadPreference();
+    return component;
+  }
+
+  beforeEach(() => {
+    savedMode = null;
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(savedMode === null ? null : { priceMode: savedMode }),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+  });
+
+  it('restores Both rather than quietly downgrading it to cash', () => {
+    expect(reload('both').priceMode()).toBe('both');
+  });
+
+  it('restores basis and cash', () => {
+    expect(reload('basis').priceMode()).toBe('basis');
+    expect(reload('cash').priceMode()).toBe('cash');
+  });
+
+  it('falls back to cash for a missing or unrecognised value', () => {
+    expect(reload(null).priceMode()).toBe('cash');
+    expect(reload('').priceMode()).toBe('cash');
+    expect(reload('futures').priceMode()).toBe('cash');
+  });
+
+  it('names the mode on the printed sheet, so a basis sheet cannot read as a cash one', () => {
+    reload('cash');
+    expect(component.printPriceModeCaption()).toBe('Cash bids');
+    component.priceMode.set('basis');
+    expect(component.printPriceModeCaption()).toBe('Basis bids');
+    expect(component.priceModeLabel()).toBe('Basis');
+    component.priceMode.set('both');
+    expect(component.printPriceModeCaption()).toBe('Cash and basis bids');
+    expect(component.priceModeLabel()).toBe('Cash / Basis');
+  });
+});
+
+/**
+ * The catalog popup lists every bid a listing publishes, across future months. The vendor sends cash
+ * and basis as separate instruments, so the same crop and month arrives as two rows told apart only by
+ * isBasis -- which the popup printed as duplicate crops under a column headed "Price", ignoring the
+ * Cash/Basis/Both toggle entirely.
+ */
+describe('BidSheetComponent — the catalog popup answers the price toggle', () => {
+  let component: BidSheetComponent;
+
+  const bid = (over: Partial<BarchartCatalogBid> = {}): BarchartCatalogBid => ({
+    vendorCommodity: 'Corn', commodityCode: 'YC', cropYear: 2026, month: 9,
+    symbol: 'ZCPU26-1-1.CM', isMapped: true, isBasis: false, ...over,
+  });
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+    component.catalogDetail.set({
+      location: { locationKey: 'K1', instrumentCount: 2, commodityCount: 1, placements: [] },
+      bids: [bid({ price: 4.98 }), bid({ price: -30, isBasis: true, symbol: 'ZCBU26-1-1.CM' })],
+      unmappedBidCount: 0,
+    });
+  });
+
+  it('pairs the vendor cash and basis rows into one row per crop and period', () => {
+    component.priceMode.set('both');
+    const rows = component.catalogDetailRows();
+    expect(rows.length).toBe(1);
+    expect(rows[0]).toMatchObject({ crop: 'YC', cropYear: 2026, month: 9, cash: 4.98, basis: -30 });
+  });
+
+  it('shows only the selected price in a single-price mode', () => {
+    component.priceMode.set('cash');
+    expect(component.catalogDetailRows()[0].cash).toBe(4.98);
+    component.priceMode.set('basis');
+    expect(component.catalogDetailRows()[0].basis).toBe(-30);
+  });
+
+  it('drops a period the elevator does not quote in the selected mode', () => {
+    component.catalogDetail.set({
+      location: { locationKey: 'K1', instrumentCount: 1, commodityCount: 1, placements: [] },
+      bids: [bid({ price: 4.98 })],
+      unmappedBidCount: 0,
+    });
+    component.priceMode.set('basis');
+    expect(component.catalogDetailRows()).toEqual([]);
+    component.priceMode.set('cash');
+    expect(component.catalogDetailRows().length).toBe(1);
+  });
+
+  it('keeps a half-quoted period in Both mode rather than hiding a real bid', () => {
+    component.catalogDetail.set({
+      location: { locationKey: 'K1', instrumentCount: 1, commodityCount: 1, placements: [] },
+      bids: [bid({ price: -30, isBasis: true })],
+      unmappedBidCount: 0,
+    });
+    component.priceMode.set('both');
+    const rows = component.catalogDetailRows();
+    expect(rows.length).toBe(1);
+    expect(rows[0].cash).toBeNull();
+    expect(rows[0].basis).toBe(-30);
+  });
+
+  it('keeps separate crops and separate months apart', () => {
+    component.catalogDetail.set({
+      location: { locationKey: 'K1', instrumentCount: 3, commodityCount: 2, placements: [] },
+      bids: [bid({ price: 4.98 }), bid({ price: 5.06, month: 10 }), bid({ price: 11.2, commodityCode: 'YSB' })],
+      unmappedBidCount: 0,
+    });
+    component.priceMode.set('cash');
+    expect(component.catalogDetailRows().length).toBe(3);
   });
 });
 
