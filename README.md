@@ -168,6 +168,8 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 | GET | `/geocode?address={address}` | Geocode an address via Azure Maps |
 | GET | `/diagnostics/health` | Health check |
 | GET | `/diagnostics/ping` | Ping |
+| GET | `/whats-new` | Curated release notes, newest first — see [What's New](docs/application-context/Whats%20New.md) |
+| GET | `/version` | Running release number plus the CI-stamped commit and workflow run |
 
 ## Data Sources
 

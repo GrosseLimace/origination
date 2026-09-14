@@ -27,6 +27,7 @@ This folder is the canonical reference for **what each screen of the Origination
 | [Bid Sheet](./Bid%20Sheet.md) | `/bid-sheet` _(env-gated)_ | Map-based competitor bid tracking and management |
 | [Usage Dashboard](./Usage%20Dashboard.md) | `/usage-dashboard` _(admin-only, env-gated)_ | Adoption metrics, originator-level activity, query-library usage and gaps |
 | [App Access Graph Check](./App%20Access%20Graph%20Check.md) | _(backend + diagnostic)_ | Entra access group read via managed identity; usage-dashboard/digest filtering; IT grants + outcome table |
+| [What's New](./Whats%20New.md) | `/whats-new` | In-app release notes and the build stamp — how to write the entry before a PROD deploy |
 
 ## Conventions used in these docs
 
