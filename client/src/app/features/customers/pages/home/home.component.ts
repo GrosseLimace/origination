@@ -679,6 +679,7 @@ export class HomeComponent {
       // Last-contact aggregate (always loaded) — powers recency/"never contacted" resolution
       // without the full note set.
       noteLastContacts: this.appState.noteLastContacts(),
+      myReminders: this.appState.myReminders(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       dpContracts: this.dpContracts(),

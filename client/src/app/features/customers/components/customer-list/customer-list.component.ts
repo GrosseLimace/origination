@@ -543,6 +543,7 @@ export class CustomerListComponent {
       tickets: this.appStateService.tickets(),
       notes,
       noteLastContacts: this.appStateService.noteLastContacts(),
+      myReminders: this.appStateService.myReminders(),
       plantingIntentions: this.appStateService.plantingIntentions(),
       storedGrain: this.appStateService.storedGrain(),
       dpContracts: this.appStateService.dpContracts(),

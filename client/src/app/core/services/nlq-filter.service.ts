@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Customer, Contract, Ticket, Note, NoteLastContact, PlantingIntention, StoredGrain, DpContract, RefinementFilters, Commodity, CommodityConversion } from '@models';
+import { Customer, Contract, Ticket, Note, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, RefinementFilters, Commodity, CommodityConversion } from '@models';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -18,6 +18,11 @@ export interface NlqFilterContext {
    *  Always loaded on TU change; the source for recency/"never contacted" filters so they never
    *  need the full note set. */
   noteLastContacts?: NoteLastContact[];
+  /** The signed-in user's OWN open follow-up reminders. Loaded on TU change alongside
+   *  noteLastContacts, and already scoped server-side to the caller, so a follow-up prompt can
+   *  never surface another originator's plans. Empty when the reminders feature is flagged off,
+   *  which makes a follow-up prompt return nobody rather than everybody. */
+  myReminders?: ReminderDue[];
   plantingIntentions: PlantingIntention[];
   storedGrain: StoredGrain[];
   /** DP (delayed-pricing) contract rows. Optional — only loaded for prompts that involve DP. */
@@ -984,6 +989,9 @@ export class NlqFilterService {
     // --- Contact history ---
     if (lowerQuery.includes('have not contacted') || lowerQuery.includes("haven't contacted") ||
         lowerQuery.includes('not contacted') || lowerQuery.includes('never contacted')) matched.push('not_contacted');
+    // Follow-ups. Must be reported as a matched pattern or a saved list built from this prompt is
+    // treated as unrecognized and left uncached (see the matchedPatterns check on the home page).
+    if (this.isFollowUpQuery(lowerQuery)) matched.push('has_follow_up');
     if (lowerQuery.includes('contacted in') || lowerQuery.includes('contacted within') ||
         lowerQuery.includes('contacted last') || lowerQuery.includes('contacted this') ||
         lowerQuery.includes('contacted today') || lowerQuery.includes('contacted yesterday') ||
@@ -1385,6 +1393,7 @@ export class NlqFilterService {
     result = this.applyAcresFilter(lowerQuery, result);
     result = this.applyCustomerInfoFilters(lowerQuery, result, context.tickets, context.contracts);
     result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes, context.notes, context.customers, context.currentUserDisplayName, context.currentUserUsername);
+    result = this.applyReminderFilters(lowerQuery, result, context.myReminders ?? []);
     result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers, customerIdsWithNotes, context.currentUserDisplayName, context.currentUserUsername);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
     result = this.applyDpContractFilters(lowerQuery, result, context.dpContracts ?? []);
@@ -2038,6 +2047,45 @@ export class NlqFilterService {
     }
 
     return result;
+  }
+
+  // ============================================================
+  // FOLLOW-UP REMINDER FILTER
+  // ============================================================
+
+  /**
+   * True for prompts asking which producers have a follow-up scheduled.
+   *
+   * Deliberately narrow. "follow up" on its own is ambiguous — several contact prompts are phrased
+   * with it and are rewritten into recency queries by normalizeSynonyms before they reach here — so
+   * this only fires on wording that pairs it with having/scheduling one.
+   */
+  private isFollowUpQuery(lowerQuery: string): boolean {
+    const mentionsFollowUp = /\bfollow\s*-?\s*ups?\b/.test(lowerQuery);
+    if (!mentionsFollowUp) return false;
+
+    return /\b(?:with|have|has|having|got)\s+(?:an?\s+|any\s+)?follow\s*-?\s*ups?\b/.test(lowerQuery)
+      || /\bfollow\s*-?\s*ups?\s+(?:scheduled|set|planned|due|coming)\b/.test(lowerQuery)
+      || /\b(?:scheduled|upcoming|open|my)\s+follow\s*-?\s*ups?\b/.test(lowerQuery);
+  }
+
+  /**
+   * Narrows to producers the signed-in user has an open follow-up against.
+   *
+   * `myReminders` is already the right set on both counts: the API returns only the caller's own
+   * rows, and only ones that are not yet completed. So this is a membership test, with no owner or
+   * completion check to get wrong here — and no date filter either, because an overdue follow-up is
+   * the one most worth acting on.
+   *
+   * Matched on customerId rather than producer code, and NOT walked across linked producers, for
+   * the same reason as the producer-list badge: a follow-up is about the one producer it was set
+   * against, so surfacing its neighbours would put names on the list the user never chose.
+   */
+  private applyReminderFilters(lowerQuery: string, result: Customer[], myReminders: ReminderDue[]): Customer[] {
+    if (!this.isFollowUpQuery(lowerQuery)) return result;
+
+    const withFollowUp = new Set(myReminders.map(r => r.customerId));
+    return result.filter(c => withFollowUp.has(c.id));
   }
 
   // ============================================================
