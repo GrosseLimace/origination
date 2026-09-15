@@ -221,7 +221,16 @@
                 [class.line-through]="reminder.isCompleted"
               >{{ reminder.subject }}</p>
 
-              <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <!-- Rule under the due line, matching the one under a note's author row. Only drawn
+                   when there is a note beneath it to separate; otherwise it would underline the
+                   last thing in the row for no reason. -->
+              <div
+                class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+                [class.pb-2]="reminder.notes"
+                [class.border-b]="reminder.notes"
+                [class.border-gray-200]="reminder.notes"
+                [class.dark:border-gray-700]="reminder.notes"
+              >
                 <span [class]="dueClass(reminder)">
                   {{ dueLabel(reminder) }} &middot; {{ reminder.dueAt | date:'MMM d, y, h:mm a' }}
                 </span>
@@ -238,7 +247,7 @@
               </div>
 
               @if (reminder.notes) {
-                <p class="mt-1 text-sm text-gray-600 dark:text-gray-300 break-words whitespace-pre-wrap">{{ reminder.notes }}</p>
+                <p class="mt-2 text-sm text-gray-600 dark:text-gray-300 break-words whitespace-pre-wrap">{{ reminder.notes }}</p>
               }
             </div>
 
