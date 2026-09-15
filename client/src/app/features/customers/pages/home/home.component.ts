@@ -10,10 +10,12 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, Reminder, ReminderDue, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
+import { CustomerRemindersComponent, ReminderDraft } from '../../components/customer-reminders/customer-reminders.component';
+import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
@@ -25,6 +27,7 @@ import { environment } from '@env/environment';
     CustomerListComponent,
     CustomerProfileComponent,
     CustomerNotesComponent,
+    CustomerRemindersComponent,
     CardComponent,
     CardContentComponent,
     CardHeaderComponent,
@@ -48,6 +51,10 @@ export class HomeComponent {
   readonly isManager = this.userRoles.isAdmin;
   /** Gates the floating calculator launcher (Profitability calc + future calculators). */
   readonly calculatorEnabled = environment.calculatorEnabled;
+  /** Gates the personal follow-up reminders card and the producer-list reminder badge. Off until
+   *  the environment's SPA app registration has delegated Calendars.ReadWrite admin consent. */
+  readonly remindersEnabled = environment.remindersEnabled;
+  private readonly outlookCalendar = inject(OutlookCalendarService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -106,6 +113,9 @@ export class HomeComponent {
    *  unselected TUs are represented without downloading any note bodies. Full notes are
    *  fetched per-producer on selection into _customerNotesCache. */
   readonly noteLastContacts = signal<NoteLastContact[]>([]);
+  /** The signed-in user's own OPEN follow-ups across all producers — feeds the list badge.
+   *  Private per user: the API only ever returns the caller's own. */
+  readonly myReminders = signal<ReminderDue[]>([]);
   readonly storedGrain = signal<StoredGrain[]>([]);
   readonly dpContracts = signal<DpContract[]>([]);
   readonly savedLists = signal<SavedList[]>([]);
@@ -136,6 +146,14 @@ export class HomeComponent {
   readonly customerTickets = signal<Ticket[]>([]);
   readonly customerPricingLines = signal<ContractPricingLine[]>([]);
   readonly customerNotes = signal<Note[]>([]);
+  /** The signed-in user's open follow-ups for the SELECTED producer only. Unlike notes this is
+   *  not walked across the linked-producer group: a follow-up is about the one producer it was
+   *  set on, and showing a linked producer's reminders here would make "complete" ambiguous. */
+  readonly customerReminders = signal<Reminder[]>([]);
+  readonly isLoadingReminders = signal(false);
+  readonly isSavingReminder = signal(false);
+  /** Incremented on each successful reminder save so the card closes and resets its form. */
+  readonly reminderSaveSucceededCounter = signal(0);
   readonly customerCodeMap = signal<Map<number, string>>(new Map());
   readonly customerPlantingIntentions = signal<PlantingIntention[]>([]);
   readonly customerStoredGrain = signal<StoredGrain[]>([]);
@@ -226,6 +244,12 @@ export class HomeComponent {
       untracked(() => this.noteLastContacts.set(rows));
     });
 
+    // Same for the caller's own open follow-ups, which the preload delivers alongside it.
+    effect(() => {
+      const rows = this.appState.myReminders();
+      untracked(() => this.myReminders.set(rows));
+    });
+
     // React to global trade unit changes made via TradeUnitSelectorComponent
     effect(() => {
       const tradeUnits = this.appState.selectedTradeUnits();
@@ -273,6 +297,7 @@ export class HomeComponent {
       this.plantingIntentions.set(this.appState.plantingIntentions());
       this.isLoadingPlanting.set(false);
       this.noteLastContacts.set(this.appState.noteLastContacts());
+      this.myReminders.set(this.appState.myReminders());
       this.storedGrain.set(this.appState.storedGrain());
       this.dpContracts.set(this.appState.dpContracts());
       this.savedLists.set(this.appState.savedLists());
@@ -654,6 +679,7 @@ export class HomeComponent {
       // Last-contact aggregate (always loaded) — powers recency/"never contacted" resolution
       // without the full note set.
       noteLastContacts: this.appState.noteLastContacts(),
+      myReminders: this.appState.myReminders(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       dpContracts: this.dpContracts(),
@@ -916,6 +942,177 @@ export class HomeComponent {
     });
   }
 
+  // ==========================================================================
+  // Personal follow-up reminders
+  // ==========================================================================
+  // Every reminder here belongs to the signed-in user — the API returns nobody else's. The
+  // running theme in these handlers: the DATABASE is the source of truth and the Outlook event
+  // is a best-effort mirror. A calendar failure never blocks or rolls back the reminder; it just
+  // leaves outlookEventId null, which surfaces as an "Add to Outlook" retry on the row.
+
+  /** Loads the caller's reminders for one producer. No cache: the list is small, and a stale
+   *  due date is worse than a re-fetch. */
+  private _loadCustomerReminders(customerId: number): void {
+    if (!this.remindersEnabled) return;
+
+    this.customerReminders.set([]);
+    this.isLoadingReminders.set(true);
+    this.apiService.getRemindersByCustomer(customerId)
+      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (reminders) => {
+          if (this.selectedCustomer()?.id !== customerId) return;
+          this.customerReminders.set(reminders);
+          this.isLoadingReminders.set(false);
+        },
+        error: () => this.isLoadingReminders.set(false)
+      });
+  }
+
+  /** Create or edit, depending on whether the draft carries an id. */
+  saveReminder(draft: ReminderDraft): void {
+    const customer = this.selectedCustomer();
+    if (!customer) return;
+
+    this.isSavingReminder.set(true);
+
+    if (draft.id === undefined) {
+      this.apiService.createReminder(customer.id, draft.dueAt, draft.subject || undefined, draft.notes)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (created) => {
+            this.customerReminders.update(list => this._sortReminders([...list, created]));
+            this._addMyReminder(created);
+            this.isSavingReminder.set(false);
+            this.reminderSaveSucceededCounter.update(n => n + 1);
+            this.toastService.success('Follow-up added');
+            this._syncReminderToOutlook(created);
+          },
+          error: () => this.isSavingReminder.set(false)
+        });
+      return;
+    }
+
+    const id = draft.id;
+    this.apiService.updateReminder(id, draft.dueAt, draft.subject || undefined, draft.notes)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updated) => {
+          this.customerReminders.update(list => this._sortReminders(list.map(r => r.id === id ? updated : r)));
+          this._addMyReminder(updated);
+          this.isSavingReminder.set(false);
+          this.reminderSaveSucceededCounter.update(n => n + 1);
+          this.toastService.success('Follow-up updated');
+
+          // Move the existing event rather than recreating it — a delete-and-recreate shows the
+          // original slot as "Canceled" in the attendee's calendar.
+          if (updated.outlookEventId) {
+            this.outlookCalendar.updateEventWindow(updated.outlookEventId, updated.dueAt)
+              .pipe(takeUntilDestroyed(this.destroyRef))
+              .subscribe(moved => {
+                if (!moved) this.toastService.info('Saved, but the Outlook event could not be moved.');
+              });
+          } else {
+            this._syncReminderToOutlook(updated);
+          }
+        },
+        error: () => this.isSavingReminder.set(false)
+      });
+  }
+
+  toggleReminderComplete(reminder: Reminder): void {
+    const next = !reminder.isCompleted;
+    this.apiService.setReminderCompleted(reminder.id, next)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(updated => {
+        // A completed reminder stays on the calendar on purpose: deleting the event makes Outlook
+        // render it as "Canceled", which reads as "this never happened" rather than "done".
+        this.customerReminders.update(list => this._sortReminders(list.map(r => r.id === reminder.id ? updated : r)));
+        if (next) {
+          this._removeMyReminder(reminder.id);
+        } else {
+          this._addMyReminder(updated);
+        }
+      });
+  }
+
+  deleteReminder(reminder: Reminder): void {
+    this.apiService.deleteReminder(reminder.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.customerReminders.update(list => list.filter(r => r.id !== reminder.id));
+        this._removeMyReminder(reminder.id);
+        this.toastService.success('Follow-up deleted');
+
+        // Only here do we remove the calendar event: the user asked for the follow-up to go away.
+        if (reminder.outlookEventId) {
+          this.outlookCalendar.deleteEvent(reminder.outlookEventId)
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe();
+        }
+      });
+  }
+
+  /** Retry path for a reminder saved while Outlook was unavailable or consent was declined. */
+  addReminderToOutlook(reminder: Reminder): void {
+    this._syncReminderToOutlook(reminder, true);
+  }
+
+  /**
+   * Writes the reminder to the user's own calendar and records the event id. Silent on failure
+   * during an automatic save (the row already offers a retry); explicit about it when the user
+   * pressed "Add to Outlook" and is waiting for an answer.
+   */
+  private _syncReminderToOutlook(reminder: Reminder, userInitiated = false): void {
+    const link = `${window.location.origin}/?customerId=${reminder.customerId}`;
+
+    this.outlookCalendar.createEvent(reminder, link)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(eventId => {
+        if (!eventId) {
+          this.toastService.info(
+            userInitiated
+              ? 'Could not add this to Outlook. Your follow-up is still saved here.'
+              : 'Follow-up saved. It could not be added to Outlook — use "Add to Outlook" to retry.'
+          );
+          return;
+        }
+
+        this.apiService.setReminderOutlookEvent(reminder.id, eventId)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe(updated => {
+            this.customerReminders.update(list => list.map(r => r.id === updated.id ? updated : r));
+            if (userInitiated) this.toastService.success('Added to your Outlook calendar');
+          });
+      });
+  }
+
+  private _sortReminders(list: Reminder[]): Reminder[] {
+    return [...list].sort((a, b) => {
+      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+      return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+    });
+  }
+
+  /** Keeps the badge feed in step locally so the list updates without a round trip. */
+  private _addMyReminder(reminder: Reminder): void {
+    const row: ReminderDue = {
+      id: reminder.id,
+      customerId: reminder.customerId,
+      customerCode: reminder.customerCode,
+      dueAt: reminder.dueAt,
+    };
+    const next = [...this.myReminders().filter(r => r.id !== reminder.id), ...(reminder.isCompleted ? [] : [row])];
+    this.myReminders.set(next);
+    this.appState.setMyReminders(next);
+  }
+
+  private _removeMyReminder(reminderId: number): void {
+    const next = this.myReminders().filter(r => r.id !== reminderId);
+    this.myReminders.set(next);
+    this.appState.setMyReminders(next);
+  }
+
   handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
     // Cancel everything still in flight from the prior customer selection so the
     // browser's connection pool isn't blocked by stale linked-producer / notes /
@@ -985,6 +1182,7 @@ export class HomeComponent {
     // Fetch this producer's (and known linked group's) full notes — notes are no longer
     // bulk-downloaded, so selection is what hydrates the notes panel. Cache-hit = instant.
     this._ensureCustomerNotes(customer);
+    this._loadCustomerReminders(customer.id);
 
     // Fetch planting intentions exactly once per customer selection.
     // _loadCustomerData is called multiple times (contracts, tickets, storedGrain callbacks),

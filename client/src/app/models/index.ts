@@ -6,6 +6,7 @@ export * from './ticket.model';
 export * from './planting-intention.model';
 export * from './note.model';
 export * from './note-mention.model';
+export * from './reminder.model';
 export * from './stored-grain.model';
 export * from './dp-contract.model';
 export * from './saved-list.model';

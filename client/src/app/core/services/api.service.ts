@@ -9,6 +9,8 @@ import {
   PlantingIntention,
   Note,
   NoteLastContact,
+  Reminder,
+  ReminderDue,
   StoredGrain,
   SavedList,
   TeamMember,
@@ -587,6 +589,60 @@ export class ApiService {
   /** Deletes a note */
   deleteNote(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/notes/${id}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // ==========================================================================
+  // Reminder Operations (personal producer follow-ups)
+  // ==========================================================================
+  // Every route below is scoped server-side to the signed-in user: reminders are private, so
+  // these never return or touch another originator's follow-ups.
+
+  /** The signed-in user's reminders for one producer, soonest due first. */
+  getRemindersByCustomer(customerId: number, includeCompleted = false): Observable<Reminder[]> {
+    const query = includeCompleted ? '?includeCompleted=true' : '';
+    return this.http.get<Reminder[]>(`${this.baseUrl}/reminders/customer/${customerId}${query}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Every OPEN reminder the signed-in user owns — tiny rows feeding the producer-list badge.
+   *  Payload is bounded by the user's own follow-ups, not by the team's. */
+  getMyReminders(): Observable<ReminderDue[]> {
+    return this._dedupe('reminders-mine',
+      this.http.get<ReminderDue[]>(`${this.baseUrl}/reminders/mine`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Creates a follow-up reminder. `dueAt` must be a UTC ISO string. */
+  createReminder(customerId: number, dueAt: string, subject?: string, notes?: string): Observable<Reminder> {
+    return this.http.post<Reminder>(`${this.baseUrl}/reminders`, { customerId, dueAt, subject, notes })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Edits the due date, subject or notes of one of the user's own reminders. */
+  updateReminder(id: number, dueAt: string, subject?: string, notes?: string): Observable<Reminder> {
+    return this.http.put<Reminder>(`${this.baseUrl}/reminders/${id}`, { dueAt, subject, notes })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Marks a reminder complete, or reopens it. */
+  setReminderCompleted(id: number, isCompleted: boolean): Observable<Reminder> {
+    return this.http.put<Reminder>(`${this.baseUrl}/reminders/${id}/complete`, { isCompleted })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Records the Outlook event id the browser just created (or null to clear the link). Kept
+   *  separate from updateReminder so the event id is only ever set by the client reporting back
+   *  what Graph returned, never by an edit the user typed. */
+  setReminderOutlookEvent(id: number, outlookEventId: string | null): Observable<Reminder> {
+    return this.http.put<Reminder>(`${this.baseUrl}/reminders/${id}/outlook-event`, { outlookEventId })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Deletes one of the user's own reminders. */
+  deleteReminder(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/reminders/${id}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

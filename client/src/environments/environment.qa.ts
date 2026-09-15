@@ -5,6 +5,9 @@ export const environment = {
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
   calculatorEnabled: true,
+  // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
+  // admin consent on this env SPA app registration; flip to true once that consent is granted.
+  remindersEnabled: false,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-qa.scoular.com/my-preferences',
