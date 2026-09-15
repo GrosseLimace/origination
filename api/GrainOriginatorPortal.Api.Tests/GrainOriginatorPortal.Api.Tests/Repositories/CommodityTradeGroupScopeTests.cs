@@ -127,6 +127,20 @@ public class CommodityTradeGroupScopeTests
         Assert.Null(unscoped.TradeGroupScope);
     }
 
+    [Fact]
+    public void ToResponse_carries_PlantingCategory_and_leaves_Category_as_the_base_crop()
+    {
+        // The planting dashboard groups YSBO under "Organic Soybeans" via this field. Category itself
+        // must stay the base crop: it is the app-wide crop-group key (Build-A-List chips, NLQ, colours),
+        // so the organic label is an override, not a rename.
+        var organic = new Commodity { Code = "YSBO", Name = "ORGANIC SOYBEANS", Category = "Soybeans", PlantingCategory = "Organic Soybeans" }.ToResponse();
+        var conventional = new Commodity { Code = "YSB", Name = "YELLOW SOYBEANS", Category = "Soybeans" }.ToResponse();
+
+        Assert.Equal("Organic Soybeans", organic.PlantingCategory);
+        Assert.Equal("Soybeans", organic.Category);
+        Assert.Null(conventional.PlantingCategory);
+    }
+
     [Theory]
     [InlineData("YCO", "Corn")]
     [InlineData("YSBO", "Soybeans")]

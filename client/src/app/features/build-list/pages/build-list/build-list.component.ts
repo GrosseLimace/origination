@@ -12,11 +12,12 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
 import { dpTotalBushels, dpTotalCharges, dpBreakdownByCrop } from '@shared/utils/dp-aggregate';
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 import { plantingChips, plantingQueryScope, PlantingChip, isIrrigated, isDryland, isDoubleCrop } from '@shared/utils/planting-chips';
+import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -3321,12 +3322,18 @@ export class BuildListComponent {
       const allEstimates: DashboardPlantingEstimate[] = [];
       for (const batch of estimateBatches) allEstimates.push(...batch);
 
-      // Commodity CODE → broad category, the key season targets are actually stored under
-      // ("Corn" / "Dryland Corn"), never the code. Looking up by code returned undefined every
-      // time, which made both coverage prompts below return an empty list no matter the data.
+      // Commodity CODE → planting category, the key season targets are actually stored under
+      // ("Corn" / "Dryland Corn" / "Organic Soybeans"), never the code. Looking up by code returned
+      // undefined every time, which made both coverage prompts below return an empty list no matter
+      // the data. Resolved through the same planting-category rule as the dashboard, so an organic
+      // planting row finds its own season target and is covered by organic contracts only.
       const codeToCategory = new Map<string, string>();
+      const commodityByCode = new Map<string, Commodity>();
       for (const cm of this.appState.commodities()) {
-        if (cm.code && cm.category) codeToCategory.set(cm.code.trim().toUpperCase(), cm.category);
+        if (!cm.code) continue;
+        commodityByCode.set(cm.code.trim().toUpperCase(), cm);
+        const label = commodityPlantingCategory(cm);
+        if (label) codeToCategory.set(cm.code.trim().toUpperCase(), label);
       }
 
       // Index contracts by customer + year + commodity
@@ -3347,7 +3354,7 @@ export class BuildListComponent {
         const entry = {
           year: p.plantingYear,
           crop,
-          category: codeToCategory.get(crop) || p.crop,
+          category: plantingCategory(p, commodityByCode.get(crop)),
           type: p.type,
           acres: p.acres,
         };
