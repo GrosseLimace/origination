@@ -390,6 +390,27 @@ describe('CustomerRemindersComponent', () => {
       expect(emissions).toBe(0);
     });
 
+    it('collapses the card on cancel, back to where Add was pressed from', () => {
+      component.openAdd();
+      component.formSubject.set('half typed');
+
+      component.cancelForm();
+
+      expect(component.formOpen()).toBe(false);
+      expect(component.collapsed()).toBe(true);
+      expect(component.formSubject()).toBe('');
+    });
+
+    it('stays open after a successful save, so the new follow-up is visible', () => {
+      component.openAdd();
+
+      ref.setInput('saveSucceededCounter', 1);
+      fixture.detectChanges();
+
+      expect(component.formOpen()).toBe(false);
+      expect(component.collapsed()).toBe(false);
+    });
+
     it('closes and resets only once the parent reports the save succeeded', () => {
       component.openAdd();
       component.formSubject.set('Talk basis');

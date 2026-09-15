@@ -257,6 +257,17 @@ export class CustomerRemindersComponent {
     this.formOpen.set(true);
   }
 
+  /**
+   * Cancel puts the card back where it was before Add was pressed: form closed and collapsed.
+   *
+   * Separate from closeForm() on purpose. A SUCCESSFUL save also closes the form, and there the
+   * card must stay open so the user sees the follow-up they just created.
+   */
+  cancelForm(): void {
+    this.closeForm();
+    this.collapsed.set(true);
+  }
+
   closeForm(): void {
     this.formOpen.set(false);
     this.timeOpen.set(false);

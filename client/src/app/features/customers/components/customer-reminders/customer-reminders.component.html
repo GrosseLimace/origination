@@ -182,7 +182,7 @@
       </p>
 
       <div class="flex justify-end gap-2">
-        <app-button variant="ghost" size="sm" [disabled]="isSaving()" (onClick)="closeForm()">Cancel</app-button>
+        <app-button variant="ghost" size="sm" [disabled]="isSaving()" (onClick)="cancelForm()">Cancel</app-button>
         <app-button variant="default" size="sm" [disabled]="!canSave()" (onClick)="submit()">
           {{ isSaving() ? 'Saving...' : (editingId() === null ? 'Save' : 'Save Changes') }}
         </app-button>
