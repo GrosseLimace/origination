@@ -78,6 +78,19 @@ public class ProducerDetailsService : IProducerDetailsService
     /// <inheritdoc />
     public async Task<ProducerDetailsResponse> GetByCustomerAsync(long customerId, CancellationToken cancellationToken)
     {
+        // Scoped, and NOT an AR-02 route any more (removed 2026-09-14). AR-02's rationale is
+        // cross-trade-unit coverage, and no client path depends on it here: this read fires only
+        // from selectCustomer, whose producer always comes from the entitled roster — both
+        // filteredCustomers sources start from customers(), deep links resolve via
+        // customers().find() and give up rather than widening, and the cross-TU linked-producer
+        // cache feeds only the last-contact badge, never a selectable row.
+        //
+        // Contrast GET /api/notes/customer/{id}, which IS fetched for every linked-group member
+        // including producers outside the selected trade units. That one stays under AR-02 on
+        // purpose. The criterion is whether a real client path needs the cross-TU read, not the
+        // shape of the route.
+        await EnsureCustomerEntitledAsync(customerId, "read", cancellationToken);
+
         var pd = await _repository.GetAsync(customerId, cancellationToken);
         if (pd is null)
             return new ProducerDetailsResponse { CustomerId = customerId };
@@ -90,6 +103,11 @@ public class ProducerDetailsService : IProducerDetailsService
     /// <inheritdoc />
     public async Task<ProducerDetailsResponse> UpsertAsync(long customerId, UpsertProducerDetailsRequest request, CancellationToken cancellationToken)
     {
+        // Deliberately unscoped; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01). Unlike the sibling
+        // DeleteAsync below, this one has live cross-trade-unit callers: home.component.ts writes
+        // producer details to LINKED producers outside the caller's selected trade units, and the
+        // onboarding flow saves details immediately after assigning membership. An entitlement
+        // check here would break both — do not add one without re-opening AR-01.
         var grainEntries = (request.GrainOnFarm ?? [])
             .Select(g => new GrainOnFarmEntry
             {
@@ -133,6 +151,52 @@ public class ProducerDetailsService : IProducerDetailsService
     }
 
     /// <inheritdoc />
-    public Task DeleteAsync(long customerId, CancellationToken cancellationToken) =>
-        _repository.DeleteAsync(customerId, cancellationToken);
+    public async Task<bool> DeleteAsync(long customerId, CancellationToken cancellationToken)
+    {
+        // H-062 (CWE-639). This route carries no trade-unit value, so [EnforceTradeUnitAccess]
+        // could not guard it even if the controller applied the filter — it only reads a
+        // `tradeUnits` list, a `tradeUnitKey`, or a [FromBody] DTO carrying TradeUnitKey, and a
+        // DELETE by customer id exposes none of those. The check therefore lives here.
+        //
+        // Deliberately NOT covered by AR-01, which still covers the sibling PUT. Three things
+        // separate the delete: it has no client caller at all (deleteProducerDetails in
+        // api.service.ts is dead code), it hand-cascades to ProducerContacts and
+        // ProducerGrainOnFarm, and the producer contact/grain-on-farm rows it destroys are
+        // hand-entered with no upstream system of record to restore from. AR-01's collaboration
+        // rationale protects a hand-off workflow that does not exist on this route.
+        await EnsureCustomerEntitledAsync(customerId, "delete", cancellationToken);
+
+        return await _repository.DeleteAsync(customerId, cancellationToken);
+    }
+
+    /// <summary>Throws unless the caller is entitled to a trade unit the customer belongs to.
+    /// <para>
+    /// Two databases answer this: TradeUnitPreferences says which trade units the USER holds
+    /// (<c>UserTradeUnitPreferences</c>), and the Origination DB says which customers sit in them
+    /// (<c>CustomerTradeUnit</c>, active rows only). A producer with no active membership row
+    /// therefore resolves as not-entitled — safe here because every client path reaches these
+    /// routes with a producer already in the entitled roster, which by construction has one.
+    /// </para><para>
+    /// Fails CLOSED with 503 on a TradeUnitPreferences outage rather than acting on data it cannot
+    /// authorize (CWE-285), mirroring GetAllAsync and EnforceTradeUnitAccessAttribute. Without that
+    /// branch an outage would empty the allowed set and turn every call into a 403.
+    /// </para></summary>
+    private async Task EnsureCustomerEntitledAsync(long customerId, string operation, CancellationToken cancellationToken)
+    {
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+
+        if (!_entitlementService.EntitlementsAvailable)
+            throw new InfrastructureException(
+                "Authorization data is temporarily unavailable. Please retry shortly.",
+                "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
+
+        var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
+        if (allowedCustomerIds.Contains(customerId)) return;
+
+        _logger.LogWarning(
+            "Producer details {Operation} denied [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User}",
+            operation, "AUTHORIZATION_FORBIDDEN", "Authorization", customerId, _requestContext.GetCurrentUser());
+        throw new ForbiddenException(
+            "Access denied: you are not authorized for this producer's trade unit(s).");
+    }
 }

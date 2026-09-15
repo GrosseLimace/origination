@@ -14,5 +14,9 @@ public interface IProducerDetailsService
 
     Task<ProducerDetailsResponse> UpsertAsync(long customerId, UpsertProducerDetailsRequest request, CancellationToken cancellationToken);
 
-    Task DeleteAsync(long customerId, CancellationToken cancellationToken);
+    /// <summary>Deletes a producer's details after authorizing the customer against the caller's
+    /// entitled trade units. Returns false when no details row existed. Throws ForbiddenException
+    /// when the producer is outside the caller's entitlements (H-062 — this route is NOT covered by
+    /// AR-01; see ProducerDetailsService.DeleteAsync).</summary>
+    Task<bool> DeleteAsync(long customerId, CancellationToken cancellationToken);
 }
