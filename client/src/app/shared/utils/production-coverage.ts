@@ -1,4 +1,5 @@
 import { Commodity, CommodityConversion, Contract, DashboardPlantingEstimate, HarvestWindow, PlantingIntention } from '@models';
+import { commodityPlantingCategory, plantingCategory } from './planting-category';
 
 /**
  * Projected production vs. bushels contracted, per commodity, for one producer and one season.
@@ -127,13 +128,23 @@ export function buildProductionCoverage(input: ProductionCoverageInput): Product
     ? intentions.filter(pi => pi.plantingYear === year)
     : intentions;
 
-  // Commodity code → broad category ("HRWW" → "WHEAT", "YC" → "CORN"). This is the join between the
-  // two sides: a planting intention stores a commodity CODE, and Commodities.Category is seeded
-  // directly from Contract.CommodityGroup, so resolving both through this map compares like with like.
+  // Commodity code → planting category ("HRWW" → "WHEAT", "YC" → "CORN", "YSBO" → "ORGANIC SOYBEANS").
+  // This is the join between the two sides: a planting intention stores a commodity CODE, and
+  // contracts carry one too, so resolving both through the same map compares like with like — an
+  // organic contract only covers organic acres. Harvest windows, though, are keyed by the broad
+  // crop ("SOYBEANS"), so the base category is kept alongside for that lookup.
   const codeToCategory = new Map<string, string>();
+  const commodityByCode = new Map<string, Commodity>();
   for (const c of commodities) {
-    if (c.code && c.category) codeToCategory.set(c.code.toUpperCase(), c.category.toUpperCase());
+    if (!c.code) continue;
+    commodityByCode.set(c.code.toUpperCase(), c);
+    const label = commodityPlantingCategory(c);
+    if (label) codeToCategory.set(c.code.toUpperCase(), label.toUpperCase());
   }
+  const harvestWindowFor = (category: string, baseCategory: string): HarvestWindow | undefined => {
+    const byLabel = harvestWindows.find(w => w.commodity.toUpperCase() === category.toUpperCase());
+    return byLabel ?? harvestWindows.find(w => w.commodity.toUpperCase() === baseCategory.toUpperCase());
+  };
 
   const getContractCategory = (c: Contract): string => {
     const code = (c.commodityCode || '').toUpperCase();
@@ -156,13 +167,13 @@ export function buildProductionCoverage(input: ProductionCoverageInput): Product
    * to be the primary rule, which let a contract whose delivery window straddled a year boundary be
    * counted in TWO seasons, and made this screen disagree with the dashboard and Build-A-List.
    */
-  const contractMatchesSeason = (c: Contract, category: string): boolean => {
+  const contractMatchesSeason = (c: Contract, category: string, baseCategory: string): boolean => {
     if (getContractCategory(c) !== category.toUpperCase()) return false;
     if (year === 0) return true;
     if (c.cropYear) return c.cropYear === year;
 
     if (!c.deliveryEnd && !c.deliveryStart) return false;
-    const hw = harvestWindows.find(w => w.commodity.toUpperCase() === category.toUpperCase());
+    const hw = harvestWindowFor(category, baseCategory);
     if (!hw) return false;
     const windowStart = new Date(year, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
     const windowEnd = new Date(year, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
@@ -174,14 +185,15 @@ export function buildProductionCoverage(input: ProductionCoverageInput): Product
 
   // Projected production per category. `null` acres-times-nothing stays null so the distinction
   // between "no estimate" and "zero" survives all the way to the template.
-  const cropMap = new Map<string, { category: string; projectedYield: number | null }>();
+  const cropMap = new Map<string, { category: string; baseCategory: string; projectedYield: number | null }>();
 
   for (const pi of intentionsForYear) {
-    const commodity = commodities.find(c => c.code === pi.crop);
-    const category = commodity?.category || pi.crop;
+    const commodity = commodityByCode.get((pi.crop || '').toUpperCase());
+    const category = plantingCategory(pi, commodity);
+    const baseCategory = commodity?.category || category;
     const yieldEstimate = findYieldEstimate(yieldEstimates, pi.type, category, year);
 
-    if (!cropMap.has(category)) cropMap.set(category, { category, projectedYield: null });
+    if (!cropMap.has(category)) cropMap.set(category, { category, baseCategory, projectedYield: null });
     const entry = cropMap.get(category)!;
     if (yieldEstimate != null) {
       entry.projectedYield = (entry.projectedYield ?? 0) + pi.acres * yieldEstimate;
@@ -192,7 +204,7 @@ export function buildProductionCoverage(input: ProductionCoverageInput): Product
   const lbsPerBushelByCode = buildLbsPerBushelMap(input.conversions);
 
   const byCommodity: CommodityCoverage[] = Array.from(cropMap.values()).map(entry => {
-    const matching = contracts.filter(c => contractMatchesSeason(c, entry.category));
+    const matching = contracts.filter(c => contractMatchesSeason(c, entry.category, entry.baseCategory));
     const { contracted, unit, excludedContracts } = sumInBushels(matching, lbsPerBushelByCode);
     const projectedYield = entry.projectedYield;
 

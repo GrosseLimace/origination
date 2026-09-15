@@ -41,6 +41,27 @@ describe('commodity-color', () => {
     expect(new Set([commodityHex('CORN'), commodityHex('SORGHUM'), commodityHex('SOYBEANS')]).size).toBe(3);
   });
 
+  // The planting surfaces label organics by Commodity.plantingCategory ("Organic Soybeans"); the
+  // colour must still be the base crop's, not a hashed fallback that could collide across organics.
+  it('gives an organic variant its base crop colour', () => {
+    expect(commodityColor('Organic Soybeans')).toEqual(commodityColor('Soybeans'));
+    expect(commodityColor('ORGANIC CORN')).toEqual(commodityColor('Corn'));
+    expect(commodityColor('organic wheat')).toEqual(commodityColor('Wheat'));
+    // A base outside the fixed palette still lines up with its conventional counterpart's fallback.
+    expect(commodityColor('Organic Barley')).toEqual(commodityColor('Barley'));
+    expect(commodityChipClass('Organic Triticale')).toBe(commodityChipClass('Triticale'));
+  });
+
+  // The IP grades (Commodity.plantingCategory for YWC / HEC / DNGS / DOSB) end in their base crop.
+  it('gives a specialty grade its base crop colour by its last word', () => {
+    expect(commodityColor('Waxy Corn')).toEqual(commodityColor('Corn'));
+    expect(commodityColor('Hard Endosperm Corn')).toEqual(commodityColor('Corn'));
+    expect(commodityColor('Dehulled Non-GMO Soybeans')).toEqual(commodityColor('Soybeans'));
+    expect(commodityColor('Dehulled Organic Soybeans')).toEqual(commodityColor('Soybeans'));
+    // Only a trailing crop word counts — a product that merely mentions corn keeps its own colour.
+    expect(commodityColor('Corn Screenings')).not.toEqual(commodityColor('Corn'));
+  });
+
   it('does not throw on empty / null / undefined', () => {
     expect(() => commodityChipClass('')).not.toThrow();
     expect(() => commodityChipClass(null)).not.toThrow();

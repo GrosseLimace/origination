@@ -9,6 +9,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate, Ticket } from '@models';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
+import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
 
@@ -265,7 +266,7 @@ export class CustomerPrintReportComponent {
     const sorted = [...this.includedPlantingIntentions()].sort((a, b) => b.plantingYear - a.plantingYear);
     for (const pi of sorted) {
       const commodity = commodities.find(c => c.code === pi.crop);
-      const category = commodity?.category || pi.crop;
+      const category = plantingCategory(pi, commodity);
       if (!map.has(category)) map.set(category, { crop: category, intentions: [] });
       map.get(category)!.intentions.push(pi);
     }
@@ -295,7 +296,7 @@ export class CustomerPrintReportComponent {
     if (intentions.length === 0) return 0;
     return intentions.reduce((sum, pi) => {
       const commodity = commodities.find(c => c.code === pi.crop);
-      const category = commodity?.category || pi.crop;
+      const category = plantingCategory(pi, commodity);
       // Each intention is projected with ITS OWN season's estimate. Previously this matched on crop
       // name alone, so a year with no season target silently borrowed another year's bu/ac — the
       // printed sheet then showed a projection the Growth Opportunity panel refuses to make.
@@ -328,22 +329,24 @@ export class CustomerPrintReportComponent {
     const yieldEstimates = this.yieldEstimates();
     const cropMap = new Map<string, { acres: number; projected: number; contracted: number }>();
 
-    // Build a lookup: code → display name (category or name)
-    const codeToName = new Map<string, string>();
-    for (const cm of commodities) {
-      codeToName.set(cm.code, cm.category || cm.name || cm.code);
-    }
-
     for (const pi of intentions) {
-      const displayName = codeToName.get(pi.crop) || pi.crop || 'Unknown';
+      const commodity = commodities.find(c => c.code === pi.crop);
+      // Group and label by the same planting category the dashboard uses, so "Organic Soybeans"
+      // gets its own line here instead of folding into "Soybeans".
+      const category = plantingCategory(pi, commodity);
+      const displayName = category || 'Unknown';
       const entry = cropMap.get(displayName) ?? { acres: 0, projected: 0, contracted: 0 };
       entry.acres += pi.acres ?? 0;
-      const commodity = commodities.find(c => c.code === pi.crop);
-      const category = commodity?.category || pi.crop;
       // Same rule as above: an intention only projects off its own season's estimate.
       const est = findYieldEstimate(yieldEstimates, pi.type, category, pi.plantingYear);
       entry.projected += (pi.acres ?? 0) * (est ?? 0);
       cropMap.set(displayName, entry);
+    }
+    // Contracts group under the same planting label as the intentions they cover, so an organic
+    // contract lands on the "Organic Soybeans" line rather than "Soybeans".
+    const codeToName = new Map<string, string>();
+    for (const cm of commodities) {
+      codeToName.set(cm.code, commodityPlantingCategory(cm) || cm.name || cm.code);
     }
     for (const c of contracts) {
       const displayName = codeToName.get(c.commodityCode || '') || c.commodityDescription || c.commodityCode || 'Unknown';
@@ -557,7 +560,7 @@ export class CustomerPrintReportComponent {
    *  the estimate is never taken from a different year (see findYieldEstimate). */
   getPlantingYield(pi: PlantingIntention): number {
     const commodity = this.commodities().find(c => c.code === pi.crop);
-    const category = commodity?.category || pi.crop;
+    const category = plantingCategory(pi, commodity);
     const est = findYieldEstimate(this.yieldEstimates(), pi.type, category, pi.plantingYear);
     return Math.round((pi.acres ?? 0) * (est ?? 0));
   }
