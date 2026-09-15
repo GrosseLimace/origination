@@ -87,6 +87,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ShowInPlantingIntentions).HasColumnName("ShowInPlantingIntentions").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.TradeGroupScope).HasColumnName("TradeGroupScope").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.TradeUnitScope).HasColumnName("TradeUnitScope").HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.PlantingCategory).HasColumnName("PlantingCategory").HasMaxLength(100).IsRequired(false);
 
             entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_Commodities_Code");
         });

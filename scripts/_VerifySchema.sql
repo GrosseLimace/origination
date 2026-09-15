@@ -304,6 +304,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Commodities', 'Tier3',                    'nvarchar(100)', 1),
 ('dbo', 'Commodities', 'TradeGroupScope',          'nvarchar(100)', 1),
 ('dbo', 'Commodities', 'TradeUnitScope',           'nvarchar(200)', 1),
+('dbo', 'Commodities', 'PlantingCategory',         'nvarchar(100)', 1),
 -- Customer (column names overridden via HasColumnName)
 ('dbo', 'Customer', 'CustomerId',                 'bigint',        0),
 ('dbo', 'Customer', 'MerchandisingAddressLine1',  'nvarchar(255)', 1),
