@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { CardTitleComponent } from '@shared/components/card/card.component';
 import { Customer, Reminder } from '@models';
 
 /** What the card emits when the user saves the add/edit form. `id` is absent for a new one. */
@@ -17,17 +18,21 @@ export interface ReminderDraft {
 const DEFAULT_TIME = '09:00';
 
 /**
- * "My follow-ups" card on the producer pane — the signed-in user's own reminders for this
- * producer, plus the form to add or edit one.
+ * The Follow-Up card on the producer pane — the signed-in user's own reminders for this producer,
+ * plus the form to add or edit one.
  *
- * The card is deliberately dumb: it owns only form state and presentation. Every save, complete,
- * delete and Outlook retry goes out as an event so the parent page can keep the API call, the
- * calendar write and the badge feed in step.
+ * Renders its own header row (title, count, Add button) rather than taking one from the host, so
+ * the title and the button sit on a single line and the whole card can collapse behind them. It
+ * starts COLLAPSED: most producers have no follow-up, and the pane below it is already dense.
+ *
+ * Beyond that the card is deliberately dumb — it owns only form and collapse state. Every save,
+ * complete, delete and Outlook retry goes out as an event so the parent page can keep the API call,
+ * the calendar write and the badge feed in step.
  */
 @Component({
   selector: 'app-customer-reminders',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, CardTitleComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './customer-reminders.component.html'
 })
@@ -49,6 +54,9 @@ export class CustomerRemindersComponent {
   /** User asked to (re)create the Outlook event for a reminder that has no linked event. */
   public addToOutlook = output<Reminder>();
 
+  /** Collapsed by default — see the class comment. */
+  collapsed = signal(true);
+
   formOpen = signal(false);
   /** Id being edited; null means the form is composing a new reminder. */
   editingId = signal<number | null>(null);
@@ -62,6 +70,11 @@ export class CustomerRemindersComponent {
 
   readonly canSave = computed(() => this.formDate().trim().length > 0 && !this.isSaving());
 
+  /** Open follow-ups only. Shown next to the title so a collapsed card still says there is work. */
+  readonly openCount = computed(() => this.reminders().filter(r => !r.isCompleted).length);
+
+  private _lastCustomerId: number | null = null;
+
   constructor() {
     // Close and reset only once the parent confirms the save landed.
     effect(() => {
@@ -69,6 +82,27 @@ export class CustomerRemindersComponent {
         this.closeForm();
       }
     });
+
+    // The host reuses this component across producers, so "starts collapsed" has to mean per
+    // producer, not per page load. Without this, opening one producer would leave the card open
+    // for every producer clicked afterwards, and a half-typed form could follow you to another.
+    effect(() => {
+      const id = this.customer()?.id ?? null;
+      untracked(() => {
+        if (id === this._lastCustomerId) return;
+        this._lastCustomerId = id;
+        this.collapsed.set(true);
+        this.closeForm();
+      });
+    });
+  }
+
+  // ---- collapse ------------------------------------------------------------
+  toggleCollapsed(): void {
+    const next = !this.collapsed();
+    this.collapsed.set(next);
+    // Never leave a half-filled form hidden behind a collapsed header.
+    if (next) this.closeForm();
   }
 
   // ---- form ----------------------------------------------------------------
@@ -82,11 +116,14 @@ export class CustomerRemindersComponent {
     this.formSubject.set('');
     this.formNotes.set('');
     this.formOpen.set(true);
+    // Adding from a collapsed card has to reveal the form it just opened.
+    this.collapsed.set(false);
   }
 
   openEdit(reminder: Reminder): void {
     const due = new Date(reminder.dueAt);
 
+    this.collapsed.set(false);
     this.editingId.set(reminder.id);
     this.formDate.set(this.toDateInput(due));
     this.formTime.set(this.toTimeInput(due));

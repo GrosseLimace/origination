@@ -1,9 +1,46 @@
-<div class="space-y-4">
+<!-- Declares its own container: this card lives in the right-hand column, which is only
+     clamp(320px,24vw,460px) wide on xl and full width below it. Viewport breakpoints would size it
+     against the wrong box, so every responsive choice below is a @*/followup container query. -->
+<div class="@container/followup p-4 space-y-3">
+  <!-- Header row: title + count on the left, Add on the right. The whole left side is the
+       collapse toggle, so the card opens from the title as well as the chevron. -->
+  <div class="flex items-center justify-between gap-2">
+    <button
+      type="button"
+      (click)="toggleCollapsed()"
+      [attr.aria-expanded]="!collapsed()"
+      class="flex items-center gap-1.5 min-w-0 cursor-pointer"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+        class="shrink-0 text-gray-400 transition-transform"
+        [class.rotate-90]="!collapsed()"
+      >
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+      <!-- app-card-title, so this reads at exactly the same size as the Notes card title. -->
+      <app-card-title class="truncate">Follow-Up</app-card-title>
+      @if (openCount() > 0) {
+        <span class="shrink-0 rounded-full bg-scoular-green/10 dark:bg-scoular-green/20 px-1.5 py-0.5 text-xs font-medium leading-none text-scoular-green-accessible dark:text-scoular-green">
+          {{ openCount() }}
+        </span>
+      }
+    </button>
+
+    <!-- Same variant and size as Add Note. The button never shrinks; the title truncates instead,
+         so a narrow column can't push the button off the row. -->
+    <app-button variant="default" class="shrink-0" (onClick)="openAdd()">Add Follow-Up</app-button>
+  </div>
+
+  @if (!collapsed()) {
   <!-- Add / edit form -->
   @if (formOpen()) {
-    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 space-y-3">
-      <div class="flex gap-3">
-        <div class="flex-1">
+    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-white dark:bg-gray-800 space-y-3">
+      <!-- Date and time sit side by side only when the column can carry both without squeezing
+           the date input down to an unreadable width. -->
+      <div class="flex flex-col @sm/followup:flex-row gap-2 @sm/followup:gap-3">
+        <div class="flex-1 min-w-0">
           <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-date">Date</label>
           <input
             id="reminder-date"
@@ -15,7 +52,7 @@
             class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 dark:[color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60"
           />
         </div>
-        <div class="w-32">
+        <div class="w-full @sm/followup:w-28 shrink-0">
           <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-time">Time</label>
           <input
             id="reminder-time"
@@ -61,15 +98,11 @@
       </p>
 
       <div class="flex justify-end gap-2">
-        <app-button variant="ghost" [disabled]="isSaving()" (onClick)="closeForm()">Cancel</app-button>
-        <app-button variant="default" [disabled]="!canSave()" (onClick)="submit()">
-          {{ isSaving() ? 'Saving...' : (editingId() === null ? 'Add Follow-Up' : 'Save Changes') }}
+        <app-button variant="ghost" size="sm" [disabled]="isSaving()" (onClick)="closeForm()">Cancel</app-button>
+        <app-button variant="default" size="sm" [disabled]="!canSave()" (onClick)="submit()">
+          {{ isSaving() ? 'Saving...' : (editingId() === null ? 'Save' : 'Save Changes') }}
         </app-button>
       </div>
-    </div>
-  } @else {
-    <div class="flex justify-end">
-      <app-button variant="default" (onClick)="openAdd()">Add Follow-Up</app-button>
     </div>
   }
 
@@ -77,11 +110,11 @@
   @if (reminders().length === 0) {
     @if (isLoading()) {
       <!-- Reminders load per-producer on selection — don't flash the empty state mid-fetch -->
-      <div class="text-center py-6 text-gray-500 dark:text-gray-400">
+      <div class="text-center py-4 text-gray-500 dark:text-gray-400">
         <p class="text-sm">Loading follow-ups...</p>
       </div>
     } @else {
-      <div class="text-center py-6 text-gray-500 dark:text-gray-400">
+      <div class="text-center py-4 text-gray-500 dark:text-gray-400">
         <p class="text-sm">No follow-ups scheduled for this producer.</p>
       </div>
     }
@@ -89,10 +122,10 @@
     <div class="space-y-2">
       @for (reminder of reminders(); track trackById($index, reminder)) {
         <div
-          class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-white dark:bg-gray-800"
+          class="border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 bg-white dark:bg-gray-800"
           [class.opacity-60]="reminder.isCompleted"
         >
-          <div class="flex items-start gap-3">
+          <div class="flex items-start gap-2">
             <input
               type="checkbox"
               [checked]="reminder.isCompleted"
@@ -107,7 +140,7 @@
                 [class.line-through]="reminder.isCompleted"
               >{{ reminder.subject }}</p>
 
-              <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                 <span [class]="dueClass(reminder)">
                   {{ dueLabel(reminder) }} &middot; {{ reminder.dueAt | date:'MMM d, y, h:mm a' }}
                 </span>
@@ -155,5 +188,6 @@
         </div>
       }
     </div>
+  }
   }
 </div>

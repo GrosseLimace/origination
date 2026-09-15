@@ -106,31 +106,17 @@
                Notes: it is the short, actionable list, while Notes is the long history. -->
           @if (remindersEnabled) {
             <app-card>
-              <app-card-header>
-                <div class="flex items-center justify-between">
-                  <app-card-title>My Follow-Ups</app-card-title>
-                  <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"/>
-                      <polyline points="12 6 12 12 16 14"/>
-                    </svg>
-                    <span class="hidden sm:inline">Only you can see these</span>
-                  </div>
-                </div>
-              </app-card-header>
-              <app-card-content>
-                <app-customer-reminders
-                  [reminders]="customerReminders()"
-                  [customer]="customer"
-                  [isLoading]="isLoadingReminders()"
-                  [isSaving]="isSavingReminder()"
-                  [saveSucceededCounter]="reminderSaveSucceededCounter()"
-                  (save)="saveReminder($event)"
-                  (toggleComplete)="toggleReminderComplete($event)"
-                  (remove)="deleteReminder($event)"
-                  (addToOutlook)="addReminderToOutlook($event)">
-                </app-customer-reminders>
-              </app-card-content>
+              <app-customer-reminders
+                [reminders]="customerReminders()"
+                [customer]="customer"
+                [isLoading]="isLoadingReminders()"
+                [isSaving]="isSavingReminder()"
+                [saveSucceededCounter]="reminderSaveSucceededCounter()"
+                (save)="saveReminder($event)"
+                (toggleComplete)="toggleReminderComplete($event)"
+                (remove)="deleteReminder($event)"
+                (addToOutlook)="addReminderToOutlook($event)">
+              </app-customer-reminders>
             </app-card>
           }
 

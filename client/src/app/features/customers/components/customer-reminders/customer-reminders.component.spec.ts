@@ -88,6 +88,66 @@ describe('CustomerRemindersComponent', () => {
     });
   });
 
+  describe('collapsing', () => {
+    it('starts collapsed', () => {
+      expect(component.collapsed()).toBe(true);
+    });
+
+    it('opens and closes from the header toggle', () => {
+      component.toggleCollapsed();
+      expect(component.collapsed()).toBe(false);
+
+      component.toggleCollapsed();
+      expect(component.collapsed()).toBe(true);
+    });
+
+    it('counts only open follow-ups for the header badge', () => {
+      ref.setInput('reminders', [
+        makeReminder({ id: 1 }),
+        makeReminder({ id: 2 }),
+        makeReminder({ id: 3, isCompleted: true }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.openCount()).toBe(2);
+    });
+
+    it('expands when adding, so the form it just opened is visible', () => {
+      component.openAdd();
+
+      expect(component.collapsed()).toBe(false);
+      expect(component.formOpen()).toBe(true);
+    });
+
+    it('expands when editing', () => {
+      component.openEdit(makeReminder({ id: 4, dueAt: dueInDays(2) }));
+
+      expect(component.collapsed()).toBe(false);
+    });
+
+    it('never leaves a half-filled form hidden behind a collapsed header', () => {
+      component.openAdd();
+      component.formSubject.set('half typed');
+
+      component.toggleCollapsed();
+
+      expect(component.collapsed()).toBe(true);
+      expect(component.formOpen()).toBe(false);
+      expect(component.formSubject()).toBe('');
+    });
+
+    it('re-collapses when a different producer is selected', () => {
+      component.openAdd();
+      expect(component.collapsed()).toBe(false);
+
+      ref.setInput('customer', makeCustomer(200));
+      fixture.detectChanges();
+
+      expect(component.collapsed()).toBe(true);
+      expect(component.formOpen()).toBe(false);
+    });
+  });
+
   describe('the add/edit form', () => {
     it('opens for a new reminder defaulting to tomorrow at 9am', () => {
       component.openAdd();
