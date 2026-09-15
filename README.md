@@ -288,6 +288,7 @@ the app team owns directly are version-controlled under [`infra/`](infra/):
 | Resource | Location | Deploy |
 |----------|----------|--------|
 | Notes Daily Recap Logic App | [`infra/logic-apps/notes-daily-recap/`](infra/logic-apps/notes-daily-recap/) | `.github/workflows/deploy-logic-app-notes-daily-recap-dev.yml` (manual) |
+| Instant Share Note Logic App | [`infra/logic-apps/instant-share-note/`](infra/logic-apps/instant-share-note/) | `.github/workflows/deploy-logic-app-instant-share-note-dev.yml` (manual) |
 
 Logic Apps are stored as parameterized ARM templates and authenticate to Azure (SQL, Microsoft
 Graph, Azure OpenAI) via system-assigned managed identity — no secrets in the repo.

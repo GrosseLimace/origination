@@ -4,6 +4,10 @@ export const environment = {
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
+  // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
+  // on THIS environment's SPA app registration; without it the channel lookup returns nothing, so
+  // the flag stays off rather than showing an empty, apparently-broken picker section.
+  teamsChannelMentionsEnabled: false,
   calculatorEnabled: true,
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration; flip to true once that consent is granted.

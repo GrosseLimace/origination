@@ -51,6 +51,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<DailyRecapGroup> DailyRecapGroups => Set<DailyRecapGroup>();
     public DbSet<DailyRecapGroupMember> DailyRecapGroupMembers => Set<DailyRecapGroupMember>();
     public DbSet<DailyRecapGroupCcEmail> DailyRecapGroupCcEmails => Set<DailyRecapGroupCcEmail>();
+    public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
     public DbSet<UsageDashboardExcludedUser> UsageDashboardExcludedUsers => Set<UsageDashboardExcludedUser>();
     public DbSet<MbpLocationSynonym> MbpLocationSynonyms => Set<MbpLocationSynonym>();
 
@@ -808,6 +809,23 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Timestamp).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
         });
 
+        modelBuilder.Entity<TeamsChannel>(entity =>
+        {
+            entity.ToTable("TeamsChannels", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.TeamId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.TeamName).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.ChannelId).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.DisplayName).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.ChannelEmail).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            // Registration is find-or-create keyed on the channel, so two people picking the same
+            // channel must land on one row rather than racing to create duplicates.
+            entity.HasIndex(e => e.ChannelId).IsUnique().HasDatabaseName("UX_TeamsChannels_ChannelId");
+        });
+
         modelBuilder.Entity<DailyRecapGroup>(entity =>
         {
             entity.ToTable("DailyRecapGroups", schema: "dbo");
@@ -817,6 +835,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.DeliveryMethod).HasMaxLength(20).IsRequired();
             entity.Property(e => e.TeamsChannelEmail).HasMaxLength(256).IsRequired(false);
             entity.Property(e => e.Enabled).HasDefaultValue(true).IsRequired();
+
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);

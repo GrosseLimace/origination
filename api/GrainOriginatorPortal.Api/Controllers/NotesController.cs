@@ -18,17 +18,20 @@ public class NotesController : ControllerBase
     private readonly INoteService _service;
     private readonly TradeUnitPreferencesDbContext _entitlementsDb;
     private readonly IDailyRecapGroupService _recapGroups;
+    private readonly ITeamsChannelService _teamsChannels;
     private readonly ILogger<NotesController> _logger;
 
     public NotesController(
         INoteService service,
         TradeUnitPreferencesDbContext entitlementsDb,
         IDailyRecapGroupService recapGroups,
+        ITeamsChannelService teamsChannels,
         ILogger<NotesController> logger)
     {
         _service = service;
         _entitlementsDb = entitlementsDb;
         _recapGroups = recapGroups;
+        _teamsChannels = teamsChannels;
         _logger = logger;
     }
 
@@ -172,17 +175,24 @@ public class NotesController : ControllerBase
         // Same visibility query NoteService expands with, so the picker can never offer a group the
         // save would reject. NOT filtered on Enabled — that flag means "send the daily recap",
         // which is orthogonal to being mentionable. Empty groups are omitted: mentioning one would
-        // notify nobody.
+        // notify nobody — UNLESS it delivers to a Teams channel, which is a recipient in its own
+        // right, so a Teams entry with no members is still worth offering.
         try
         {
             response.AppGroups = (await _recapGroups.GetAllAsync(cancellationToken))
-                .Where(g => g.Members.Count > 0)
-                .Select(g => new MentionCatalogAppGroup
+                .Select(g => new
                 {
-                    GroupId = g.Id,
-                    Name = g.Name,
-                    MemberCount = g.Members.Count,
-                    IsOwner = g.IsOwner,
+                    Group = g,
+                    PostsToChannel = string.Equals(g.DeliveryMethod, "teams", StringComparison.OrdinalIgnoreCase),
+                })
+                .Where(x => x.Group.Members.Count > 0 || x.PostsToChannel)
+                .Select(x => new MentionCatalogAppGroup
+                {
+                    GroupId = x.Group.Id,
+                    Name = x.Group.Name,
+                    MemberCount = x.Group.Members.Count,
+                    IsOwner = x.Group.IsOwner,
+                    PostsToChannel = x.PostsToChannel,
                 })
                 .OrderBy(g => g.Name)
                 .ToList();
@@ -190,6 +200,26 @@ public class NotesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Mention catalog: groups unavailable for user {UserId} — omitting them", userId);
+        }
+
+        // ── Source 3: registered Teams channels ───────────────────────────────────────────────
+        // Same independent-failure-domain treatment: losing the registry must not empty the rest of
+        // the picker. Deliberately unscoped — see MentionCatalogResponse.TeamsChannels.
+        try
+        {
+            response.TeamsChannels = (await _teamsChannels.GetAllAsync(cancellationToken))
+                .Select(c => new MentionCatalogTeamsChannel
+                {
+                    ChannelDbId = c.Id,
+                    DisplayName = c.DisplayName,
+                    TeamName = c.TeamName,
+                    ChannelId = c.ChannelId,
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Mention catalog: Teams channels unavailable — omitting them");
         }
 
         return Ok(response);

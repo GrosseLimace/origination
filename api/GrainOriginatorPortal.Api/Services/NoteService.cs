@@ -17,6 +17,7 @@ public partial class NoteService : INoteService
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IRequestContextService _requestContext;
     private readonly IDailyRecapGroupService _groups;
+    private readonly ITeamsChannelService _teamsChannels;
     private readonly IEntitlementsRepository _entitlements;
     private readonly ILogger<NoteService> _logger;
 
@@ -26,6 +27,7 @@ public partial class NoteService : INoteService
         IDisplayNameLookupRepository displayNameLookup,
         IRequestContextService requestContext,
         IDailyRecapGroupService groups,
+        ITeamsChannelService teamsChannels,
         IEntitlementsRepository entitlements,
         ILogger<NoteService> logger)
     {
@@ -34,6 +36,7 @@ public partial class NoteService : INoteService
         _displayNameLookup = displayNameLookup;
         _requestContext = requestContext;
         _groups = groups;
+        _teamsChannels = teamsChannels;
         _entitlements = entitlements;
         _logger = logger;
     }
@@ -153,6 +156,10 @@ public partial class NoteService : INoteService
     /// expansion, so one group can multiply well past it. The blow-up guard has to live here.</summary>
     private const int MaxExpandedMentions = 250;
 
+    /// <summary>Delivery method that routes a group's notes to its Teams channel instead of to its
+    /// members. Mirrors RecapGroupRequest's allowed values.</summary>
+    private const string TeamsDeliveryMethod = "teams";
+
     /// <summary>Expands the caller's own group mentions, then validates, normalizes and serializes
     /// everything to the JSON stored on the note. Null/empty → null so the column stays NULL rather
     /// than "[]".
@@ -175,8 +182,53 @@ public partial class NoteService : INoteService
         var scrubbed = mentions.Select(m => m with { Via = null }).ToList();
         var expanded = await ExpandGroupsAsync(scrubbed, cancellationToken);
         await ValidatePersonMentionsAsync(expanded, cancellationToken);
+        await ValidateTeamsChannelMentionsAsync(expanded, cancellationToken);
         var normalized = expanded.Select(NormalizeMention).ToList();
         return JsonSerializer.Serialize(normalized);
+    }
+
+    /// <summary>Rejects a Teams-channel mention that doesn't name a registered channel.
+    /// <para>
+    /// The id is an integer key the workflow uses to look the channel's address up at send time. An
+    /// id with no row behind it resolves to no address, and the workflow treats that as an
+    /// unresolvable mention and FAILS the run — so catch it here, where the author can be told,
+    /// rather than at send time where the note looks shared and nothing arrived. Same
+    /// fail-loudly-not-silently rule as the empty-group guard.
+    /// </para><para>
+    /// Deliberately an EXISTENCE check with no scoping: a registered channel is mentionable by
+    /// anyone, which is the whole point of the registry (AR-07). The composer only offers channels
+    /// the signed-in user belongs to, so the scoping that matters happens before this.
+    /// </para></summary>
+    private async Task ValidateTeamsChannelMentionsAsync(IReadOnlyList<NoteMention> mentions, CancellationToken cancellationToken)
+    {
+        var channels = mentions
+            .Where(m => string.Equals(m.Type, NoteMention.TeamsChannelType, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        // Hot path: an ordinary note never touches the registry.
+        if (channels.Count == 0) return;
+
+        List<TeamsChannelDto> registered;
+        try
+        {
+            registered = await _teamsChannels.GetAllAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Fail CLOSED, exactly as the group path does: we can't prove the channel exists, and a
+            // note that silently reaches nobody is worse than a retryable error the author sees.
+            _logger.LogWarning(ex, "Teams channel registry unavailable while validating note mentions — rejecting the save");
+            throw new InfrastructureException(
+                "Can't look up that Teams channel right now. Please try again in a moment.",
+                "INFRASTRUCTURE_DATABASE_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var knownIds = registered.Select(c => c.Id.ToString()).ToHashSet(StringComparer.Ordinal);
+        foreach (var mention in channels)
+        {
+            if (knownIds.Contains(mention.Id?.Trim() ?? string.Empty)) continue;
+            throw new ValidationException("mentions",
+                $"The Teams channel '{mention.Name}' is no longer registered. Remove the mention, or refresh the page and try again.");
+        }
     }
 
     /// <summary>Rejects a directly-typed person mention that doesn't name an ACTIVE user in the
@@ -318,6 +370,18 @@ public partial class NoteService : INoteService
                     $"The group '{mention.Name}' is no longer available to you. Remove the mention, or refresh the page and try again.");
             }
 
+            // A Teams group stops here: the app-group row IS the recipient. Delivery method is the
+            // whole routing decision, so "teams" means this note goes to the channel and its members
+            // are NOT expanded. The Instant Share Note workflow re-reads
+            // DailyRecapGroups.TeamsChannelEmail for this id at send time and posts there, so the
+            // note's own mention JSON still carries no address (M-025 / M-025a).
+            if (string.Equals(group.DeliveryMethod, TeamsDeliveryMethod, StringComparison.OrdinalIgnoreCase))
+            {
+                // Authoritative name — never persist the client's label for a row we own.
+                result[^1] = result[^1] with { Name = group.Name };
+                continue;
+            }
+
             // An empty group contributes no resolvable rows, and the app-group row itself resolves
             // to nobody — so this would save a note the author believes was shared and notify no
             // one. The picker omits empty groups; this catches one emptied since it was loaded.
@@ -401,8 +465,9 @@ public partial class NoteService : INoteService
 
     /// <summary>Pins a non-person mention id to the shape its backing column actually holds, so it
     /// can't carry OData filter syntax into the workflows. Trade unit ids are matched against
-    /// TradeUnitCode (nvarchar(20)); trade-unit-group and app-group ids are integer keys (GroupId,
-    /// DailyRecapGroups.Id). Anything else is rejected loudly rather than trimmed — a mention the
+    /// TradeUnitCode (nvarchar(20)); trade-unit-group, app-group and teams-channel ids are integer
+    /// keys (GroupId, DailyRecapGroups.Id, TeamsChannels.Id). Anything else is rejected loudly
+    /// rather than trimmed — a mention the
     /// catalog didn't emit is forged, and quietly coercing it would hide that.</summary>
     /// <returns>The trimmed id, so the caller stores exactly what was validated.</returns>
     private static string ValidateNonPersonMentionId(NoteMention mention)
@@ -412,7 +477,8 @@ public partial class NoteService : INoteService
         var ok = mention.Type switch
         {
             NoteMention.TradeUnitType => TradeUnitIdPattern().IsMatch(id),
-            NoteMention.TradeUnitGroupType or NoteMention.AppGroupType => NumericIdPattern().IsMatch(id),
+            NoteMention.TradeUnitGroupType or NoteMention.AppGroupType or NoteMention.TeamsChannelType
+                => NumericIdPattern().IsMatch(id),
             _ => false,
         };
 

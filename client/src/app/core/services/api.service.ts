@@ -158,6 +158,7 @@ export class ApiService {
       members: dto.members ?? [],
       ccList: dto.ccList ?? [],
       teamsChannelEmail: dto.teamsChannelEmail,
+
       enabled: dto.enabled,
       // Both flags are server-computed on every response now, including create/update. The `?? true`
       // fallbacks only cover a response shape older than this client.
@@ -564,10 +565,22 @@ export class ApiService {
   }
 
   /** Lookup data (people / trade units / groups) for the note "@" mention picker */
+  /** Registers a Teams channel the composer read from Graph, or returns the row that already
+   *  exists for it. Idempotent, so the composer calls it on every pick without checking first.
+   *  Returns the registry id the note mention must carry. */
+  registerTeamsChannel(body: {
+    teamId: string; teamName: string; channelId: string; displayName: string; channelEmail: string;
+  }): Observable<{ id: number; displayName: string; teamName: string; channelId: string }> {
+    return this.http
+      .post<{ id: number; displayName: string; teamName: string; channelId: string }>(
+        `${this.baseUrl}/teamschannels`, body)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   getMentionCatalog(): Observable<MentionCatalog> {
     return this._dedupe('mention-catalog',
       this.http.get<MentionCatalog>(`${this.baseUrl}/notes/mention-catalog`)
-        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [] })))
+        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] })))
     );
   }
 

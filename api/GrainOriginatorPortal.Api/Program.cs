@@ -254,6 +254,7 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
+builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity

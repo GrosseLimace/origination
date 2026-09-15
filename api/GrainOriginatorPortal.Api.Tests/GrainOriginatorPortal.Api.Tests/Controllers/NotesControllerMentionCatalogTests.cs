@@ -26,12 +26,18 @@ namespace GrainOriginatorPortal.Api.Tests.Controllers;
 /// </summary>
 public class NotesControllerMentionCatalogTests
 {
-    private static NotesController CreateSut(TradeUnitPreferencesDbContext db, string callerUpn = "CEgr@scoular.com")
+    private static NotesController CreateSut(TradeUnitPreferencesDbContext db, string callerUpn = "CEgr@scoular.com",
+        params RecapGroupDto[] visibleGroups)
+        => CreateSut(db, callerUpn, visibleGroups, []);
+
+    private static NotesController CreateSut(TradeUnitPreferencesDbContext db, string callerUpn,
+        RecapGroupDto[] visibleGroups, TeamsChannelDto[] registeredChannels)
     {
         var groups = new Mock<IDailyRecapGroupService>();
-        groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(visibleGroups.ToList());
 
         var sut = new NotesController(new Mock<INoteService>().Object, db, groups.Object,
+            MentionTestDoubles.TeamsChannelStub(registeredChannels),
             new Mock<ILogger<NotesController>>().Object);
 
         var identity = new ClaimsIdentity([new Claim("preferred_username", callerUpn)], "test");
@@ -136,5 +142,61 @@ public class NotesControllerMentionCatalogTests
         // The active-user filter must narrow the set, never widen it past the trade-unit overlap.
         Assert.DoesNotContain(catalog.People, p => p.UserId == "Stranger");
         Assert.Equal(2, catalog.People.Count);
+    }
+
+    // ── App groups: what the picker is allowed to offer ───────────────────────
+    // Mentioning something that notifies nobody is the failure this filter exists to prevent. A
+    // Teams group notifies its channel, so it qualifies even with no members.
+
+    private static RecapGroupDto AppGroup(int id, string name, bool teamsDelivery, int memberCount) => new()
+    {
+        Id = id,
+        Name = name,
+        DeliveryMethod = teamsDelivery ? "teams" : "email",
+        TeamsChannelEmail = teamsDelivery ? "abcd1234.scoular.com@amer.teams.ms" : null,
+        Members = Enumerable.Range(0, memberCount)
+            .Select(i => new RecapGroupMemberDto { Type = "person", Id = $"member{i}", Name = $"Member {i}" })
+            .ToList(),
+    };
+
+    [Fact]
+    public async Task GetMentionCatalog_OffersATeamsGroupThatHasNoMembers()
+    {
+        using var db = Db(nameof(GetMentionCatalog_OffersATeamsGroupThatHasNoMembers));
+        Seed(db, assignments: [("CEgr", "1084")], roster: [("CEgr", true)]);
+
+        var catalog = Body(await CreateSut(db, "CEgr@scoular.com",
+            AppGroup(7, "Grain Desk", teamsDelivery: true, memberCount: 0)).GetMentionCatalog());
+
+        var group = Assert.Single(catalog.AppGroups);
+        Assert.Equal(7, group.GroupId);
+        Assert.True(group.PostsToChannel);
+        Assert.Equal(0, group.MemberCount);
+    }
+
+    [Fact]
+    public async Task GetMentionCatalog_StillOmitsAnEmailGroupThatHasNoMembers()
+    {
+        using var db = Db(nameof(GetMentionCatalog_StillOmitsAnEmailGroupThatHasNoMembers));
+        Seed(db, assignments: [("CEgr", "1084")], roster: [("CEgr", true)]);
+
+        var catalog = Body(await CreateSut(db, "CEgr@scoular.com",
+            AppGroup(8, "Empty", teamsDelivery: false, memberCount: 0)).GetMentionCatalog());
+
+        Assert.Empty(catalog.AppGroups);
+    }
+
+    [Fact]
+    public async Task GetMentionCatalog_MarksEmailGroupsAsNotPostingToAChannel()
+    {
+        using var db = Db(nameof(GetMentionCatalog_MarksEmailGroupsAsNotPostingToAChannel));
+        Seed(db, assignments: [("CEgr", "1084")], roster: [("CEgr", true)]);
+
+        var catalog = Body(await CreateSut(db, "CEgr@scoular.com",
+            AppGroup(9, "Corn Belt", teamsDelivery: false, memberCount: 3)).GetMentionCatalog());
+
+        var group = Assert.Single(catalog.AppGroups);
+        Assert.False(group.PostsToChannel);
+        Assert.Equal(3, group.MemberCount);
     }
 }
