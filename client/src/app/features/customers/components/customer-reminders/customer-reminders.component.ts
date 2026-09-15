@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, HostListener, input, output, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -16,6 +16,29 @@ export interface ReminderDraft {
 
 /** Time of day used when the user picks a date but leaves the time alone. */
 const DEFAULT_TIME = '09:00';
+
+/** Minutes between the times offered in the picker. Quarter-hours cover how follow-up calls are
+ *  actually scheduled without producing a list nobody wants to scroll. */
+const TIME_STEP_MINUTES = 15;
+
+/** "14:30" -> "2:30 PM". Twelve-hour, because that is how the times are spoken here. */
+function formatTime(value: string): string {
+  const [rawHour, rawMinute] = (value || DEFAULT_TIME).split(':').map(Number);
+  const hour24 = Number.isFinite(rawHour) ? rawHour : 9;
+  const minute = Number.isFinite(rawMinute) ? rawMinute : 0;
+  const suffix = hour24 < 12 ? 'AM' : 'PM';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function buildTimeOptions(): ReadonlyArray<{ value: string; label: string }> {
+  const options: { value: string; label: string }[] = [];
+  for (let minutes = 0; minutes < 24 * 60; minutes += TIME_STEP_MINUTES) {
+    const value = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    options.push({ value, label: formatTime(value) });
+  }
+  return options;
+}
 
 /**
  * The Follow-Up card on the producer pane — the signed-in user's own reminders for this producer,
@@ -73,6 +96,21 @@ export class CustomerRemindersComponent {
   /** Open follow-ups only. Shown next to the title so a collapsed card still says there is work. */
   readonly openCount = computed(() => this.reminders().filter(r => !r.isCompleted).length);
 
+  /**
+   * Whether our own time list is showing.
+   *
+   * The time field is a custom picker rather than <input type="time"> because the native control is
+   * browser chrome: Chrome renders no confirm button and a page cannot add one, so there was no way
+   * to tell the user their selection had been taken.
+   */
+  timeOpen = signal(false);
+
+  /** Every selectable time, TIME_STEP_MINUTES apart. Built once; it never changes. */
+  readonly timeOptions: ReadonlyArray<{ value: string; label: string }> = buildTimeOptions();
+
+  /** The chosen time as the user reads it, e.g. "9:00 AM". Drives the closed field. */
+  readonly formattedTime = computed(() => formatTime(this.formTime()));
+
   private _lastCustomerId: number | null = null;
 
   constructor() {
@@ -95,6 +133,32 @@ export class CustomerRemindersComponent {
         this.closeForm();
       });
     });
+  }
+
+  // ---- time picker ---------------------------------------------------------
+  /** Any click that reaches the document closes the list; the picker stops its own clicks. */
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.timeOpen()) this.timeOpen.set(false);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.timeOpen()) this.timeOpen.set(false);
+  }
+
+  toggleTimePicker(): void {
+    if (this.isSaving()) return;
+    this.timeOpen.update(open => !open);
+  }
+
+  /** Takes the time but leaves the list open, so Done is what ends the interaction. */
+  selectTime(value: string): void {
+    this.formTime.set(value);
+  }
+
+  closeTimePicker(): void {
+    this.timeOpen.set(false);
   }
 
   // ---- collapse ------------------------------------------------------------
@@ -134,6 +198,7 @@ export class CustomerRemindersComponent {
 
   closeForm(): void {
     this.formOpen.set(false);
+    this.timeOpen.set(false);
     this.editingId.set(null);
     this.formDate.set('');
     this.formTime.set(DEFAULT_TIME);
