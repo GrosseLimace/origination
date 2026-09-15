@@ -148,6 +148,105 @@ describe('CustomerRemindersComponent', () => {
     });
   });
 
+  describe('the time picker', () => {
+    // Our own dropdown rather than <input type="time">, because OK has to sit inside it under the
+    // columns and the native dropdown is browser chrome a page cannot add to.
+    it('splits the stored 24-hour value into the three columns', () => {
+      component.openAdd();
+      expect(component.selected()).toEqual({ hour12: 9, minute: 0, meridiem: 'AM' });
+
+      component.formTime.set('14:30');
+      expect(component.selected()).toEqual({ hour12: 2, minute: 30, meridiem: 'PM' });
+    });
+
+    it('treats midnight and noon as 12, not 0', () => {
+      component.formTime.set('00:15');
+      expect(component.selected()).toEqual({ hour12: 12, minute: 15, meridiem: 'AM' });
+
+      component.formTime.set('12:45');
+      expect(component.selected()).toEqual({ hour12: 12, minute: 45, meridiem: 'PM' });
+    });
+
+    it('keeps storing 24-hour time as the columns change', () => {
+      component.openAdd();
+
+      component.setHour(2);
+      component.setMinute(45);
+      component.setMeridiem('PM');
+
+      expect(component.formTime()).toBe('14:45');
+      expect(component.formattedTime()).toBe('2:45 PM');
+    });
+
+    it('round-trips midnight and noon through the columns', () => {
+      component.setMeridiem('AM');
+      component.setHour(12);
+      component.setMinute(0);
+      expect(component.formTime()).toBe('00:00');
+
+      component.setMeridiem('PM');
+      expect(component.formTime()).toBe('12:00');
+    });
+
+    it('changing the hour does not disturb the minute or AM/PM', () => {
+      component.formTime.set('14:35');
+
+      component.setHour(7);
+
+      expect(component.formTime()).toBe('19:35');
+    });
+
+    it('offers five-minute steps and the twelve hours starting at 12', () => {
+      expect(component.hours[0]).toBe(12);
+      expect(component.hours.length).toBe(12);
+      expect(component.minutes).toEqual([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
+      expect(component.meridiems).toEqual(['AM', 'PM']);
+    });
+
+    it('stays open while the columns are used, and closes on OK', () => {
+      component.openAdd();
+      component.toggleTimePicker();
+
+      component.setHour(3);
+      expect(component.timeOpen()).toBe(true);
+
+      component.closeTimePicker();
+      expect(component.timeOpen()).toBe(false);
+      expect(component.selected().hour12).toBe(3);
+    });
+
+    it('closes on a click outside and on Escape', () => {
+      component.openAdd();
+
+      component.toggleTimePicker();
+      component.onDocumentClick();
+      expect(component.timeOpen()).toBe(false);
+
+      component.toggleTimePicker();
+      component.onEscape();
+      expect(component.timeOpen()).toBe(false);
+    });
+
+    it('does not open while a save is in flight', () => {
+      component.openAdd();
+      ref.setInput('isSaving', true);
+      fixture.detectChanges();
+
+      component.toggleTimePicker();
+
+      expect(component.timeOpen()).toBe(false);
+    });
+
+    it('is never left open behind a closed form', () => {
+      component.openAdd();
+      component.toggleTimePicker();
+
+      component.closeForm();
+
+      expect(component.timeOpen()).toBe(false);
+    });
+  });
+
   describe('the add/edit form', () => {
     it('opens for a new reminder defaulting to tomorrow at 9am', () => {
       component.openAdd();

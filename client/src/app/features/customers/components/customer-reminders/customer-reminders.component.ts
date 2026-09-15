@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, HostListener, input, output, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -16,6 +16,36 @@ export interface ReminderDraft {
 
 /** Time of day used when the user picks a date but leaves the time alone. */
 const DEFAULT_TIME = '09:00';
+
+/** Minutes offered in the picker, five apart — fine enough to schedule a call around. */
+const MINUTE_STEP = 5;
+
+/** Hours as the native picker orders them: 12 first, then 1 through 11. */
+const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+const MINUTES = Array.from({ length: 60 / MINUTE_STEP }, (_, i) => i * MINUTE_STEP);
+
+const MERIDIEMS = ['AM', 'PM'] as const;
+type Meridiem = (typeof MERIDIEMS)[number];
+
+/** Splits "14:30" into the three things the picker columns show. */
+function splitTime(value: string): { hour12: number; minute: number; meridiem: Meridiem } {
+  const [rawHour, rawMinute] = (value || DEFAULT_TIME).split(':').map(Number);
+  const hour24 = Number.isFinite(rawHour) ? Math.min(23, Math.max(0, rawHour)) : 9;
+  const minute = Number.isFinite(rawMinute) ? Math.min(59, Math.max(0, rawMinute)) : 0;
+  return {
+    hour12: hour24 % 12 === 0 ? 12 : hour24 % 12,
+    minute,
+    meridiem: hour24 < 12 ? 'AM' : 'PM',
+  };
+}
+
+/** The inverse of splitTime: three columns back to the "HH:mm" the form stores. */
+function joinTime(hour12: number, minute: number, meridiem: Meridiem): string {
+  const base = hour12 % 12;
+  const hour24 = meridiem === 'AM' ? base : base + 12;
+  return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
 
 /**
  * The Follow-Up card on the producer pane — the signed-in user's own reminders for this producer,
@@ -73,6 +103,29 @@ export class CustomerRemindersComponent {
   /** Open follow-ups only. Shown next to the title so a collapsed card still says there is work. */
   readonly openCount = computed(() => this.reminders().filter(r => !r.isCompleted).length);
 
+  /**
+   * Whether our time dropdown is showing.
+   *
+   * This is our own dropdown rather than <input type="time"> because the OK button has to live
+   * INSIDE it, under the columns. The native dropdown is browser chrome: a page cannot add anything
+   * to it, and anything drawn beneath the field is covered by it. The columns below mirror the
+   * native layout so the control still behaves the way it did.
+   */
+  timeOpen = signal(false);
+
+  readonly hours = HOURS_12;
+  readonly minutes = MINUTES;
+  readonly meridiems = MERIDIEMS;
+
+  /** The current selection, split into the three columns. */
+  readonly selected = computed(() => splitTime(this.formTime()));
+
+  /** The chosen time as the user reads it, e.g. "9:05 AM". Shown on the closed field. */
+  readonly formattedTime = computed(() => {
+    const { hour12, minute, meridiem } = this.selected();
+    return `${hour12}:${String(minute).padStart(2, '0')} ${meridiem}`;
+  });
+
   private _lastCustomerId: number | null = null;
 
   constructor() {
@@ -95,6 +148,43 @@ export class CustomerRemindersComponent {
         this.closeForm();
       });
     });
+  }
+
+  // ---- time picker ---------------------------------------------------------
+  /** Any click reaching the document closes the dropdown; the picker stops its own clicks. */
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.timeOpen()) this.timeOpen.set(false);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.timeOpen()) this.timeOpen.set(false);
+  }
+
+  toggleTimePicker(): void {
+    if (this.isSaving()) return;
+    this.timeOpen.update(open => !open);
+  }
+
+  /** OK. The columns already applied every change, so this only dismisses. */
+  closeTimePicker(): void {
+    this.timeOpen.set(false);
+  }
+
+  setHour(hour12: number): void {
+    const { minute, meridiem } = this.selected();
+    this.formTime.set(joinTime(hour12, minute, meridiem));
+  }
+
+  setMinute(minute: number): void {
+    const { hour12, meridiem } = this.selected();
+    this.formTime.set(joinTime(hour12, minute, meridiem));
+  }
+
+  setMeridiem(meridiem: Meridiem): void {
+    const { hour12, minute } = this.selected();
+    this.formTime.set(joinTime(hour12, minute, meridiem));
   }
 
   // ---- collapse ------------------------------------------------------------
@@ -134,6 +224,7 @@ export class CustomerRemindersComponent {
 
   closeForm(): void {
     this.formOpen.set(false);
+    this.timeOpen.set(false);
     this.editingId.set(null);
     this.formDate.set('');
     this.formTime.set(DEFAULT_TIME);

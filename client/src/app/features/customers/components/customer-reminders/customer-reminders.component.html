@@ -54,30 +54,90 @@
             class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 dark:[color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60"
           />
         </div>
-        <div class="w-full @sm/followup:w-auto shrink-0">
+        <!-- Our own dropdown, not <input type="time">: OK has to sit inside it, under the columns,
+             and the native dropdown is browser chrome that a page cannot add to. The hour / minute /
+             AM-PM columns mirror the native layout. Clicks inside are stopped so the document
+             listener that dismisses the dropdown does not fire on our own UI. -->
+        <div class="w-full @sm/followup:w-auto shrink-0 relative" (click)="$event.stopPropagation()">
           <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-time">Time</label>
-          <!-- The browser draws the time dropdown itself and closes it as soon as the field loses
-               focus, so OK sits BESIDE the field rather than inside that dropdown: anything placed
-               under the field would be covered by the dropdown and unclickable. Blurring is what
-               dismisses it; the click alone already does that, and the explicit blur() keeps it
-               working for keyboard users who reach OK by tabbing. -->
-          <div class="flex items-center gap-1.5">
-            <input
-              #timeInput
-              id="reminder-time"
-              type="time"
-              [ngModel]="formTime()"
-              (ngModelChange)="formTime.set($event)"
-              [disabled]="isSaving()"
-              class="w-full @sm/followup:w-32 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 dark:[color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60"
-            />
-            <app-button
-              variant="outline"
-              size="sm"
-              [disabled]="isSaving()"
-              (onClick)="timeInput.blur()"
-            >OK</app-button>
-          </div>
+          <button
+            id="reminder-time"
+            type="button"
+            (click)="toggleTimePicker()"
+            [disabled]="isSaving()"
+            [attr.aria-expanded]="timeOpen()"
+            aria-haspopup="dialog"
+            class="w-full @sm/followup:w-32 flex items-center justify-between gap-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-left text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <span class="truncate">{{ formattedTime() }}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </button>
+
+          @if (timeOpen()) {
+            <div
+              role="dialog"
+              aria-label="Choose a time"
+              class="absolute right-0 @sm/followup:left-0 @sm/followup:right-auto z-30 mt-1 w-48 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
+            >
+              <div class="flex divide-x divide-gray-200 dark:divide-gray-700">
+                <!-- Hour -->
+                <div class="flex-1 max-h-40 overflow-y-auto py-1" role="listbox" aria-label="Hour">
+                  @for (hour of hours; track hour) {
+                    <button
+                      type="button"
+                      role="option"
+                      [attr.aria-selected]="hour === selected().hour12"
+                      (click)="setHour(hour)"
+                      class="w-full px-2 py-1.5 text-center text-sm cursor-pointer"
+                      [ngClass]="hour === selected().hour12
+                        ? 'bg-scoular-green/10 dark:bg-scoular-green/20 font-medium text-scoular-green-accessible dark:text-scoular-green'
+                        : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    >{{ hour }}</button>
+                  }
+                </div>
+
+                <!-- Minute -->
+                <div class="flex-1 max-h-40 overflow-y-auto py-1" role="listbox" aria-label="Minute">
+                  @for (minute of minutes; track minute) {
+                    <button
+                      type="button"
+                      role="option"
+                      [attr.aria-selected]="minute === selected().minute"
+                      (click)="setMinute(minute)"
+                      class="w-full px-2 py-1.5 text-center text-sm cursor-pointer"
+                      [ngClass]="minute === selected().minute
+                        ? 'bg-scoular-green/10 dark:bg-scoular-green/20 font-medium text-scoular-green-accessible dark:text-scoular-green'
+                        : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    >{{ minute | number:'2.0-0' }}</button>
+                  }
+                </div>
+
+                <!-- AM / PM -->
+                <div class="flex-1 max-h-40 overflow-y-auto py-1" role="listbox" aria-label="AM or PM">
+                  @for (meridiem of meridiems; track meridiem) {
+                    <button
+                      type="button"
+                      role="option"
+                      [attr.aria-selected]="meridiem === selected().meridiem"
+                      (click)="setMeridiem(meridiem)"
+                      class="w-full px-2 py-1.5 text-center text-sm cursor-pointer"
+                      [ngClass]="meridiem === selected().meridiem
+                        ? 'bg-scoular-green/10 dark:bg-scoular-green/20 font-medium text-scoular-green-accessible dark:text-scoular-green'
+                        : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    >{{ meridiem }}</button>
+                  }
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-2 border-t border-gray-200 dark:border-gray-700 px-2 py-2">
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ formattedTime() }}</span>
+                <app-button variant="default" size="sm" (onClick)="closeTimePicker()">OK</app-button>
+              </div>
+            </div>
+          }
         </div>
       </div>
 
