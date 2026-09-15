@@ -2,13 +2,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 
 // Shared components
-import {
-  CardComponent,
-  CardContentComponent,
-  CardFooterComponent,
-  CardHeaderComponent,
-  CardTitleComponent
-} from '@shared/components/card/card.component';
+import { CardComponent } from '@shared/components/card/card.component';
 
 // Core services
 import { WhatsNewService } from '@core/services/whats-new.service';
@@ -24,14 +18,7 @@ import { WhatsNewReleaseListComponent } from '../../components/whats-new-release
 @Component({
   selector: 'app-whats-new',
   standalone: true,
-  imports: [
-    CardComponent,
-    CardHeaderComponent,
-    CardTitleComponent,
-    CardContentComponent,
-    CardFooterComponent,
-    WhatsNewReleaseListComponent
-  ],
+  imports: [CardComponent, WhatsNewReleaseListComponent],
   templateUrl: './whats-new.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

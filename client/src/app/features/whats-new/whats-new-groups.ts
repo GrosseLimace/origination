@@ -7,10 +7,12 @@ export interface WhatsNewItemGroup {
   items: WhatsNewItem[];
 }
 
-/** A release with its items pre-grouped, so templates never do the grouping. */
+/** A release with its items pre-grouped and its date made readable, so templates do neither. */
 export interface GroupedRelease {
   release: WhatsNewRelease;
   groups: WhatsNewItemGroup[];
+  /** releasedOn written out, e.g. "September 15, 2026". */
+  displayDate: string;
 }
 
 /**
@@ -25,7 +27,8 @@ export interface GroupedRelease {
 export function groupReleases(releases: readonly WhatsNewRelease[]): GroupedRelease[] {
   return releases.map(release => ({
     release,
-    groups: groupItems(release.items)
+    groups: groupItems(release.items),
+    displayDate: formatReleaseDate(release.releasedOn)
   }));
 }
 
@@ -46,4 +49,25 @@ function groupItems(items: readonly WhatsNewItem[]): WhatsNewItemGroup[] {
   }
 
   return groups;
+}
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+/**
+ * Writes a YYYY-MM-DD release date out in full.
+ *
+ * Parsed straight from the string rather than through Date or DatePipe on purpose. A bare
+ * "2026-09-15" is read as UTC midnight, which renders as the 14th anywhere west of Greenwich —
+ * so every release would appear to have shipped a day early for users in the US.
+ */
+export function formatReleaseDate(releasedOn: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(releasedOn);
+  if (match === null) return releasedOn;
+
+  const [, year, month, day] = match;
+  const name = MONTHS[Number(month) - 1];
+  return name === undefined ? releasedOn : name + ' ' + Number(day) + ', ' + year;
 }

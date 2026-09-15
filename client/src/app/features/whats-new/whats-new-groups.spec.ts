@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupReleases } from './whats-new-groups';
+import { formatReleaseDate, groupReleases } from './whats-new-groups';
 import type { WhatsNewItem, WhatsNewRelease } from '@models';
 
 function makeRelease(items: WhatsNewItem[]): WhatsNewRelease {
@@ -81,5 +81,33 @@ describe('groupReleases', () => {
 
   it('returns an empty list for no releases', () => {
     expect(groupReleases([])).toEqual([]);
+  });
+});
+
+describe('formatReleaseDate', () => {
+  it('writes the date out in full', () => {
+    expect(formatReleaseDate('2026-09-15')).toBe('September 15, 2026');
+  });
+
+  it('drops the leading zero from the day', () => {
+    expect(formatReleaseDate('2026-08-04')).toBe('August 4, 2026');
+  });
+
+  it('reports the date as written, never shifted by the reader timezone', () => {
+    // Parsing "2026-01-01" through Date reads it as UTC midnight, which is 31 December anywhere
+    // west of Greenwich — so every release would look a day early across the US.
+    expect(formatReleaseDate('2026-01-01')).toBe('January 1, 2026');
+    expect(formatReleaseDate('2026-12-31')).toBe('December 31, 2026');
+  });
+
+  it('hands back anything it does not recognise untouched', () => {
+    expect(formatReleaseDate('not a date')).toBe('not a date');
+    expect(formatReleaseDate('2026-13-01')).toBe('2026-13-01');
+  });
+
+  it('exposes the formatted date on each grouped release', () => {
+    const [grouped] = groupReleases([makeRelease([{ kind: 'added', text: 'One' }])]);
+
+    expect(grouped.displayDate).toBe('September 15, 2026');
   });
 });

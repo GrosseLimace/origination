@@ -1,8 +1,11 @@
 // Angular core
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 
+// Angular common
+import { NgTemplateOutlet } from '@angular/common';
+
 // Models
-import type { WhatsNewRelease } from '@models';
+import type { WhatsNewItemKind, WhatsNewRelease } from '@models';
 
 // Feature helpers
 import { groupReleases } from '../../whats-new-groups';
@@ -10,12 +13,12 @@ import { WHATS_NEW_KIND_LABELS, WHATS_NEW_KIND_PILL_CLASSES } from '../../whats-
 
 /**
  * Renders a run of releases with their items grouped under headings. Presentational only, and
- * shared by the dialog and the What's New page so the markup exists in one place — the dialog
- * shows the unseen releases, the page shows all of them.
+ * shared by the dialog and the What's New page so the item markup exists in one place.
  */
 @Component({
   selector: 'app-whats-new-release-list',
   standalone: true,
+  imports: [NgTemplateOutlet],
   templateUrl: './whats-new-release-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -23,15 +26,27 @@ export class WhatsNewReleaseListComponent {
   readonly releases = input.required<WhatsNewRelease[]>();
 
   /**
-   * Whether to print each release's title and summary above its items. On the history page yes,
-   * because the releases need telling apart. In the dialog no: its own header already says what
-   * the panel is, so a second heading would only push the features down.
+   * How much frame to put around each release.
+   *
+   * `timeline` is the history page: a dated rail down the side, so a reader can see at a glance
+   * how often releases land and which one they are looking at.
+   *
+   * `compact` is the dialog, which already says what it is in its own header. Repeating a release
+   * title and summary there would only push the features further down the panel.
    */
-  readonly showReleaseHeadings = input<boolean>(true);
+  readonly variant = input<'timeline' | 'compact'>('timeline');
 
-  /** Grouped once per input change rather than on every render pass. */
+  /** Grouped and date-formatted once per input change rather than on every render pass. */
   readonly groupedReleases = computed(() => groupReleases(this.releases()));
 
-  readonly kindLabels = WHATS_NEW_KIND_LABELS;
-  readonly kindClasses = WHATS_NEW_KIND_PILL_CLASSES;
+  // Read through methods rather than indexing the records straight from the template: the items
+  // arrive through an ng-template context, which Angular types as any, and a Record cannot be
+  // indexed with an any key under strict template checking.
+  kindLabel(kind: WhatsNewItemKind): string {
+    return WHATS_NEW_KIND_LABELS[kind];
+  }
+
+  kindClass(kind: WhatsNewItemKind): string {
+    return WHATS_NEW_KIND_PILL_CLASSES[kind];
+  }
 }
