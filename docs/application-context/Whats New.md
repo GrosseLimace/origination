@@ -24,6 +24,14 @@ a dialog once after a deploy that carried notes, then a permanent page listing e
 - **The build line** at the foot of the profile menu (`Release 2026.09.1 · Build a1b2c3d`) and at the
   foot of the page, where it also names the workflow run and environment.
 
+## The history starts at the first production release
+
+The file deliberately carries no entries from before this feature shipped. Earlier releases
+were announced by email only, and reconstructing them after the fact from merge history
+produced descriptions nobody had verified — a page telling originators about a feature that
+does not quite exist is worse than a short history. The list grows from the first production
+release forward.
+
 ## The one rule that matters: one deploy, one entry
 
 A release usually ships several feature branches, and ten undifferentiated bullets read badly.
@@ -73,7 +81,7 @@ In the browser console:
 
 ```js
 localStorage.removeItem('origination.whatsNew.lastSeenVersion');   // show the current release
-localStorage.setItem('origination.whatsNew.lastSeenVersion', '2026.08.1');  // show everything since
+localStorage.setItem('origination.whatsNew.lastSeenVersion', '<an older version>');  // show everything since
 ```
 
 Then reload. No stored version means "show the current release", so `removeItem` is enough.
