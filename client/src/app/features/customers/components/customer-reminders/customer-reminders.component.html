@@ -39,11 +39,10 @@
     <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-white dark:bg-gray-800 space-y-3">
       <!-- Date and time sit side by side only when the column can carry both without squeezing
            the date input down to an unreadable width.
-           Both are sized to their content rather than stretched: the date field used to take all
-           the leftover width while the time field was pinned narrow enough to clip "09:00 AM".
-           Fixed widths that fit together at the @sm threshold keep the whole time visible. -->
+           The time field is fixed at the width its native control needs to show "09:00 AM" in
+           full; the date field takes everything left over, so the pair always fills the row. -->
       <div class="flex flex-col @sm/followup:flex-row gap-2 @sm/followup:gap-3">
-        <div class="w-full @sm/followup:w-36 shrink-0">
+        <div class="w-full @sm/followup:w-auto @sm/followup:flex-1 min-w-0">
           <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-date">Date</label>
           <input
             id="reminder-date"
