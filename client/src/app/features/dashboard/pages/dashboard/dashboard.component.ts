@@ -13,6 +13,7 @@ import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEs
 import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { commodityColor, commodityChipClass } from '@shared/utils/commodity-color';
+import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 
 @Component({
   selector: 'app-dashboard',
@@ -202,7 +203,7 @@ export class DashboardComponent {
     const map = new Map<string, PlantingIntention[]>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = p.category || commodity?.category || p.crop;
+      const category = plantingCategory(p, commodity);
       const key = this.selectedCropFilter()
         ? this._dashboardCropKey(p.type, category)
         : category;
@@ -224,7 +225,7 @@ export class DashboardComponent {
     const byCategory = new Map<string, Contract[]>();
     for (const c of this.contractsForYear()) {
       const commodity = commodityMap.get(c.commodityCode || '') || commodityMap.get(c.commodityDescription || '');
-      const category = (commodity?.category || c.commodityDescription || c.commodityGroup || c.commodityCode || '').toLowerCase();
+      const category = (commodityPlantingCategory(commodity) || c.commodityDescription || c.commodityGroup || c.commodityCode || '').toLowerCase();
       const arr = byCategory.get(category);
       if (arr) arr.push(c); else byCategory.set(category, [c]);
     }
@@ -297,7 +298,7 @@ export class DashboardComponent {
       if (!customerIdSet.has(p.customerId)) return false;
       if (this.selectedCropFilter()) {
         const commodity = this._commodityByCode().get(p.crop);
-        const category = p.category || commodity?.category || p.crop;
+        const category = plantingCategory(p, commodity);
         if (category !== this.selectedCropFilter()) return false;
       }
       return true;
@@ -330,7 +331,7 @@ export class DashboardComponent {
     const yieldMap = this._yieldEstimateMap();
     return this.filteredIntentionsForYear().map(p => {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = p.category || commodity?.category || p.crop;
+      const category = plantingCategory(p, commodity);
       const cropKey = this._dashboardCropKey(p.type, category);
       return { acres: p.acres, yieldEst: yieldMap.get(cropKey) ?? null };
     });
@@ -361,7 +362,7 @@ export class DashboardComponent {
     for (const p of this.plantingIntentions()) {
       if (!customerIdSet.has(p.customerId)) continue;
       const commodity = this._commodityByCode().get(p.crop);
-      const category = p.category || commodity?.category || p.crop;
+      const category = plantingCategory(p, commodity);
       if (category) crops.add(this._toTitleCase(category));
     }
 
@@ -402,7 +403,7 @@ export class DashboardComponent {
     const cropMap = new Map<string, { acres: number; category: string }>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = p.category || commodity?.category || p.crop;
+      const category = plantingCategory(p, commodity);
       const key = this.selectedCropFilter()
         ? this._dashboardCropKey(p.type, category)
         : category;
@@ -452,7 +453,7 @@ export class DashboardComponent {
       let totalAcresWeighted = 0;
       for (const p of matching) {
         const commodity = this._commodityByCode().get(p.crop);
-        const category = p.category || commodity?.category || p.crop;
+        const category = plantingCategory(p, commodity);
         const cropKey = this._dashboardCropKey(p.type, category);
         const yieldEst = yieldMap.get(cropKey);
         if (yieldEst != null) {
@@ -489,7 +490,7 @@ export class DashboardComponent {
     }>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = commodityByCode.get(p.crop);
-      const category = p.category || commodity?.category || p.crop;
+      const category = plantingCategory(p, commodity);
       const categoryKey = this._dashboardCropKey(p.type, category);
       const displayKey = this._dashboardCropKey(p.type, p.crop);
       const yieldEst = yieldMap.get(categoryKey);
@@ -599,7 +600,7 @@ export class DashboardComponent {
       if (+p.plantingYear !== +year) continue;
       if (cropFilter) {
         const commodity = this._commodityByCode().get(p.crop);
-        const category = p.category || commodity?.category || p.crop;
+        const category = plantingCategory(p, commodity);
         if (category !== cropFilter) continue;
       }
       matchingIntentionCustomers.add(p.customerId);
@@ -616,7 +617,7 @@ export class DashboardComponent {
           if (raw.toLowerCase() === cropFilterLower) return true;
           // Resolve code (e.g. "YC") to its category (e.g. "Corn") via commodities lookup
           const commodity = commodityByCode.get(raw) || commodityByCode.get(raw.toUpperCase());
-          return (commodity?.category || '').toLowerCase() === cropFilterLower;
+          return (commodityPlantingCategory(commodity) || '').toLowerCase() === cropFilterLower;
         });
       })
       .map(c => {
@@ -626,7 +627,7 @@ export class DashboardComponent {
         const plantingChips = crops
           .map(code => {
             const commodity = commodityByCode.get(code) || commodityByCode.get(code.toUpperCase());
-            const colorKey = commodity?.category || code;
+            const colorKey = commodityPlantingCategory(commodity) || code;
             return { display: code, colorKey, text: code };
           })
           .sort((a, b) => a.colorKey.localeCompare(b.colorKey) || a.display.localeCompare(b.display));
@@ -826,7 +827,7 @@ export class DashboardComponent {
         if (cropFilter) {
           // Limit chips to codes that resolve to the selected category
           const commodity = commodityByCode.get(raw) || commodityByCode.get(raw.toUpperCase());
-          const category = (commodity?.category || '').toLowerCase();
+          const category = (commodityPlantingCategory(commodity) || '').toLowerCase();
           if (category !== cropFilterLower && raw.toLowerCase() !== cropFilterLower) continue;
         }
         set.add(raw);
@@ -843,11 +844,16 @@ export class DashboardComponent {
     // so the UI never goes blank during the swap.
     const cropYearContracts = this._cropYearContracts();
     const source = cropYearContracts.length > 0 ? cropYearContracts : this.contracts();
+    const commodityByCode = this._commodityByCode();
     return source.filter(c => {
       if (c.cropYear !== year) return false;
       if (cropFilter) {
+        const filter = cropFilter.toLowerCase();
         const group = (c.commodityGroup || c.commodityDescription || c.commodityCode || '').toLowerCase();
-        if (!group.includes(cropFilter.toLowerCase()) && cropFilter.toLowerCase() !== group) return false;
+        // The top crop filter can now be a planting label ("Organic Soybeans") that no ODS commodity
+        // group text contains, so also match the contract's commodity through the same resolver.
+        const label = (commodityPlantingCategory(commodityByCode.get(c.commodityCode || '')) || '').toLowerCase();
+        if (label !== filter && !group.includes(filter) && filter !== group) return false;
       }
       return true;
     });
@@ -1328,7 +1334,7 @@ export class DashboardComponent {
     const cropCategoryMap = new Map<string, string>();
     for (const p of filtered) {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = p.category || commodity?.category || p.crop;
+      const category = plantingCategory(p, commodity);
       const cropKey = this._dashboardCropKey(p.type, category);
       cropAcresMap.set(cropKey, (cropAcresMap.get(cropKey) || 0) + p.acres);
       cropCategoryMap.set(cropKey, category);

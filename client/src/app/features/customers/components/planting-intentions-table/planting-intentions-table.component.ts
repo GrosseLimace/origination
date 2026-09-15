@@ -11,6 +11,7 @@ import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
+import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdAt';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -106,7 +107,7 @@ export class PlantingIntentionsTableComponent {
 
   /** Crop label for the Edit/Delete dialogs — "[Type ]Category" (e.g. "Double Crop Corn"). */
   get editDialogCropLabel(): string {
-    return `${this.editForm.type ? this.editForm.type + ' ' : ''}${this.getCropCategory(this.editForm.crop)}`;
+    return `${this.editForm.type ? this.editForm.type + ' ' : ''}${this.cropCategoryFor(this.editForm.crop, this.editForm.category)}`;
   }
 
   constructor() {
@@ -119,9 +120,11 @@ export class PlantingIntentionsTableComponent {
     });
   }
 
-  getCropCategory(cropCode: string): string {
+  /** Crop label for a row or a form (crop code + its stored category) — the same resolution the
+   *  dashboard uses, so a YSBO row reads "Organic Soybeans" here too. See plantingCategory(). */
+  cropCategoryFor(cropCode: string, storedCategory?: string): string {
     const commodity = this.allCommodities.find(c => c.code === cropCode);
-    return commodity?.category || cropCode;
+    return plantingCategory({ crop: cropCode, category: storedCategory }, commodity);
   }
 
   expandedRows = new Set<number>();
@@ -166,13 +169,17 @@ export class PlantingIntentionsTableComponent {
     return this._categoryOptionsFor(this.addForm.crop || this.editForm.crop);
   }
 
-  /** Unique category options for a crop code — Category + unique Tier2/Tier3 in its group, no dups. */
+  /** Unique category options for a crop code — its planting label + Category + unique Tier2/Tier3
+   *  in its group, no dups. The planting label is added explicitly because the tiers are only
+   *  loaded in Dev, and it is the default the form auto-fills, so it must always be a valid option. */
   private _categoryOptionsFor(crop: string): string[] {
     if (!crop) return [];
     const commodity = this.allCommodities.find(c => c.code === crop);
     if (!commodity) return [];
     const sameCategory = this.allCommodities.filter(c => c.category === commodity.category);
     const options = new Set<string>();
+    const planting = commodityPlantingCategory(commodity);
+    if (planting) options.add(planting);
     if (commodity.category) options.add(commodity.category);
     for (const c of sameCategory) {
       if (c.tier2) options.add(c.tier2);
@@ -183,7 +190,7 @@ export class PlantingIntentionsTableComponent {
 
   /** Crop-column label for a row: "[Type ]Category" (e.g. "Double Crop Corn", "Irrigated Wheat"). */
   rowCropLabel(row: PlantingRow): string {
-    return `${row.type ? row.type + ' ' : ''}${this.getCropCategory(row.crop)}`;
+    return `${row.type ? row.type + ' ' : ''}${this.cropCategoryFor(row.crop, row.category)}`;
   }
 
   get sortedIntentions(): PlantingRow[] {
@@ -329,8 +336,9 @@ export class PlantingIntentionsTableComponent {
     const commodity = this.allCommodities.find(c => c.code === code);
     const name = commodity?.name || '';
     this.addForm.description = [this.addForm.type, name].filter(Boolean).join(' ');
-    // Auto-populate category from the commodity's category
-    this.addForm.category = commodity?.category || '';
+    // Auto-populate category from the commodity's planting label ("Organic Soybeans" for YSBO),
+    // falling back to its broad category. The user can still override from the dropdown.
+    this.addForm.category = commodityPlantingCategory(commodity) || '';
   }
 
   // ── Add Crop search-and-select handlers ──────────────────────────────────
@@ -376,7 +384,7 @@ export class PlantingIntentionsTableComponent {
     const commodity = this.allCommodities.find(c => c.code === code);
     const name = commodity?.name || '';
     this.editForm.description = [this.editForm.type, name].filter(Boolean).join(' ');
-    this.editForm.category = commodity?.category || '';
+    this.editForm.category = commodityPlantingCategory(commodity) || '';
   }
 
   // ── Edit Crop search-and-select handlers ─────────────────────────────────
