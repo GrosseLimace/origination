@@ -709,7 +709,7 @@ the behaviour the business asked for.
 
 **Extended 2026-09-14 (same day) — channels are now mentionable directly.** A second, lighter path
 was added: the composer lists the Teams channels the SIGNED-IN USER belongs to (delegated
-`Channel.ReadBasic.All`) and picking one registers it in `dbo.TeamsChannels`, after which **anyone**
+`Team.ReadBasic.All` + `Channel.ReadBasic.All`) and picking one registers it in `dbo.TeamsChannels`, after which **anyone**
 may mention it. Assessed as no material change to this entry's risk:
 
 - **Scoping is stronger, not weaker, than the group path.** A user is only ever offered channels they

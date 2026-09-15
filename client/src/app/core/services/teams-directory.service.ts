@@ -41,7 +41,10 @@ export class TeamsDirectoryService {
   private readonly msal = inject(MsalService);
   private readonly http = inject(HttpClient);
 
-  private static readonly SCOPES = ['Channel.ReadBasic.All'];
+  /** BOTH are required, and it is easy to request only the second and get a 403 on the first call:
+   *  `/me/joinedTeams` is gated by Team.ReadBasic.All, `/teams/{id}/channels` by
+   *  Channel.ReadBasic.All. Each is the least-privileged delegated permission for its endpoint. */
+  private static readonly SCOPES = ['Team.ReadBasic.All', 'Channel.ReadBasic.All'];
   private static readonly GRAPH = 'https://graph.microsoft.com/v1.0';
 
   /** Cached for the session: this is several requests (one per team) and the answer rarely changes. */

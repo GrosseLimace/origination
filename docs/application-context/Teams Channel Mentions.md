@@ -60,7 +60,15 @@ nothing, so the flag exists to avoid showing an empty section that looks broken.
 
 ## The IT ask (only open item)
 
-Delegated **`Channel.ReadBasic.All`** with **admin consent**, on the three SPA app registrations:
+**Two** delegated permissions, both with **admin consent**, on the three SPA app registrations:
+
+| Permission | Why | Endpoint |
+| --- | --- | --- |
+| `Team.ReadBasic.All` | list the teams the user is in | `GET /me/joinedTeams` |
+| `Channel.ReadBasic.All` | list those teams' channels, with `email` | `GET /teams/{id}/channels` |
+
+Both are the least-privileged delegated permission for their endpoint. Requesting only the second is
+an easy mistake and fails at the first call.
 
 | Env | SPA app registration |
 | --- | --- |
@@ -70,8 +78,8 @@ Delegated **`Channel.ReadBasic.All`** with **admin consent**, on the three SPA a
 
 The API app registrations and the managed identity are **not** involved. This is the same set of
 registrations the Producer Reminders feature needs `Calendars.ReadWrite` on, so the two can go in one
-request. Pitch it as the least-privileged option: delegated read of the channels a user is already in,
-versus the app-only alternative that reads every channel in the tenant.
+request. Pitch it as the least-privileged option: delegated read of the teams and channels a user is
+already in, versus the app-only alternative that reads every channel in the tenant.
 
 `ChannelSettings.ReadWrite.All` would additionally let the app create a channel's email address when
 one does not exist, removing the "someone must click Get email address first" step. Deliberately
