@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, HostListener, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, HostListener, inject, input, output, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -88,6 +88,11 @@ export class CustomerRemindersComponent {
   /** Collapsed by default — see the class comment. */
   collapsed = signal(true);
 
+  /** Delete confirmation, matching the one the Notes card shows. Deleting is the only action here
+   *  that cannot be undone: a completed follow-up is kept, a deleted one is gone. */
+  showDeleteConfirm = signal(false);
+  reminderToDelete = signal<Reminder | null>(null);
+
   formOpen = signal(false);
   /** Id being edited; null means the form is composing a new reminder. */
   editingId = signal<number | null>(null);
@@ -147,8 +152,37 @@ export class CustomerRemindersComponent {
         this._lastCustomerId = id;
         this.collapsed.set(true);
         this.closeForm();
+        if (this.showDeleteConfirm()) this.cancelDelete();
       });
     });
+
+    // The confirm dialog locks body scroll; releasing it on destroy means a navigation away with
+    // the dialog open cannot leave the whole page unscrollable.
+    inject(DestroyRef).onDestroy(() => {
+      if (this.showDeleteConfirm()) document.body.style.overflow = '';
+    });
+  }
+
+  // ---- delete confirmation -------------------------------------------------
+  confirmDelete(reminder: Reminder): void {
+    this.reminderToDelete.set(reminder);
+    this.showDeleteConfirm.set(true);
+    // Stop the page scrolling behind the dialog, as the Notes confirm does.
+    document.body.style.overflow = 'hidden';
+  }
+
+  cancelDelete(): void {
+    this.reminderToDelete.set(null);
+    this.showDeleteConfirm.set(false);
+    document.body.style.overflow = '';
+  }
+
+  executeDelete(): void {
+    const reminder = this.reminderToDelete();
+    if (!reminder) return;
+
+    this.remove.emit(reminder);
+    this.cancelDelete();
   }
 
   // ---- time picker ---------------------------------------------------------

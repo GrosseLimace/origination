@@ -157,6 +157,65 @@ describe('CustomerRemindersComponent', () => {
     });
   });
 
+  describe('deleting', () => {
+    // Deleting is the one irreversible action on the card: completing keeps the record, deleting
+    // removes it and takes the Outlook event with it. So it goes through a confirm, like a note.
+    it('does not delete straight from the row', () => {
+      let removed = 0;
+      component.remove.subscribe(() => removed++);
+
+      component.confirmDelete(makeReminder({ id: 5 }));
+
+      expect(removed).toBe(0);
+      expect(component.showDeleteConfirm()).toBe(true);
+      expect(component.reminderToDelete()?.id).toBe(5);
+    });
+
+    it('emits the removal only once confirmed', () => {
+      const emitted: number[] = [];
+      component.remove.subscribe(r => emitted.push(r.id));
+
+      component.confirmDelete(makeReminder({ id: 5 }));
+      component.executeDelete();
+
+      expect(emitted).toEqual([5]);
+      expect(component.showDeleteConfirm()).toBe(false);
+      expect(component.reminderToDelete()).toBeNull();
+    });
+
+    it('keeps the follow-up when the user backs out', () => {
+      let removed = 0;
+      component.remove.subscribe(() => removed++);
+
+      component.confirmDelete(makeReminder({ id: 5 }));
+      component.cancelDelete();
+
+      expect(removed).toBe(0);
+      expect(component.showDeleteConfirm()).toBe(false);
+    });
+
+    it('releases the page scroll lock on both exits', () => {
+      component.confirmDelete(makeReminder({ id: 5 }));
+      expect(document.body.style.overflow).toBe('hidden');
+      component.cancelDelete();
+      expect(document.body.style.overflow).toBe('');
+
+      component.confirmDelete(makeReminder({ id: 6 }));
+      component.executeDelete();
+      expect(document.body.style.overflow).toBe('');
+    });
+
+    it('dismisses the confirm when a different producer is selected', () => {
+      component.confirmDelete(makeReminder({ id: 5 }));
+
+      ref.setInput('customer', makeCustomer(300));
+      fixture.detectChanges();
+
+      expect(component.showDeleteConfirm()).toBe(false);
+      expect(document.body.style.overflow).toBe('');
+    });
+  });
+
   describe('the time picker', () => {
     // Our own dropdown rather than <input type="time">, because OK has to sit inside it under the
     // columns and the native dropdown is browser chrome a page cannot add to.

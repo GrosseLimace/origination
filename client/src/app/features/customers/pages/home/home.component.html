@@ -101,7 +101,9 @@
 
       <!-- Notes Column - Below profile until xl, then right sidebar, sticky on xl+ (38.7% on 2xl) -->
       @if (selectedCustomer(); as customer) {
-        <div class="xl:sticky xl:top-0 xl:self-start xl:max-h-full xl:overflow-auto xl:pr-1 xl:pb-4 space-y-6">
+        <!-- space-y-3 matches the xl:gap-3 between this column and the profile column, so the gap
+             above Notes reads the same as the gap beside it. -->
+        <div class="xl:sticky xl:top-0 xl:self-start xl:max-h-full xl:overflow-auto xl:pr-1 xl:pb-4 space-y-3">
           <!-- My follow-ups — the signed-in user's own reminders for this producer. Sits above
                Notes: it is the short, actionable list, while Notes is the long history. -->
           @if (remindersEnabled) {
