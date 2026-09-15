@@ -10,6 +10,7 @@ import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
+import { REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
@@ -642,23 +643,20 @@ export class CustomerListComponent {
       const days = Math.round((dueDay.getTime() - today.getTime()) / 86_400_000);
 
       let text: string;
-      let cssClass: string;
       if (days < 0) {
         const overdue = Math.abs(days);
         text = overdue === 1 ? 'Follow-up overdue by 1 day' : `Follow-up overdue by ${overdue} days`;
-        cssClass = 'text-red-600 dark:text-red-400';
       } else if (days === 0) {
         text = 'Follow-up today';
-        cssClass = 'text-amber-600 dark:text-amber-400';
       } else if (days === 1) {
         text = 'Follow-up tomorrow';
-        cssClass = 'text-scoular-green-accessible dark:text-scoular-green';
       } else {
         text = `Follow-up in ${days} days`;
-        cssClass = 'text-gray-500 dark:text-gray-400';
       }
 
-      newCache.set(customerId, { text, cssClass });
+      // Colour comes from the shared rule the producer-pane card also reads, so the badge and the
+      // card can never disagree about how urgent the same follow-up is.
+      newCache.set(customerId, { text, cssClass: REMINDER_DUE_CLASS[reminderDueTier(dueDay)] });
     }
 
     // New Map reference so the OnPush template re-renders.

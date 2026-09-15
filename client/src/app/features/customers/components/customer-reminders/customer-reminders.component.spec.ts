@@ -82,6 +82,15 @@ describe('CustomerRemindersComponent', () => {
       expect(component.dueClass(makeReminder({ dueAt: dueInDays(0) }))).toContain('amber');
     });
 
+    it('shows tomorrow in green, the same as the producer-list badge', () => {
+      expect(component.dueClass(makeReminder({ dueAt: dueInDays(1) }))).toContain('scoular-green');
+    });
+
+    it('greys out anything two days or more away', () => {
+      expect(component.dueClass(makeReminder({ dueAt: dueInDays(2) }))).toContain('gray');
+      expect(component.dueClass(makeReminder({ dueAt: dueInDays(10) }))).toContain('gray');
+    });
+
     it('greys out a completed reminder even when it is overdue', () => {
       const completed = makeReminder({ dueAt: dueInDays(-2), isCompleted: true });
       expect(component.dueClass(completed)).toContain('gray');

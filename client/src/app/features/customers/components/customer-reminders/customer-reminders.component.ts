@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { CardTitleComponent } from '@shared/components/card/card.component';
 import { Customer, Reminder } from '@models';
+import { daysUntilDue, REMINDER_DONE_CLASS, REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
 
 /** What the card emits when the user saves the add/edit form. `id` is absent for a new one. */
 export interface ReminderDraft {
@@ -258,20 +259,12 @@ export class CustomerRemindersComponent {
   }
 
   dueClass(reminder: Reminder): string {
-    if (reminder.isCompleted) return 'text-gray-400 dark:text-gray-500';
-    const days = this.daysUntil(reminder.dueAt);
-    if (days < 0) return 'text-red-600 dark:text-red-400';
-    if (days === 0) return 'text-amber-600 dark:text-amber-400';
-    return 'text-gray-600 dark:text-gray-300';
+    if (reminder.isCompleted) return REMINDER_DONE_CLASS;
+    return REMINDER_DUE_CLASS[reminderDueTier(reminder.dueAt)];
   }
 
-  /** Whole days from today (local midnight) to the due date — negative means overdue. */
   private daysUntil(dueAt: string): number {
-    const due = new Date(dueAt);
-    due.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+    return daysUntilDue(dueAt);
   }
 
   // ---- date helpers --------------------------------------------------------
