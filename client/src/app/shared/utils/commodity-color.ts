@@ -51,6 +51,17 @@ export function commodityColor(crop: string | null | undefined): CommodityColor 
   if (!key) return PALETTE[0];
   if (BY_CROP[key]) return BY_CROP[key];
   let h = 0;
+  // A specialty variant shares its base crop's colour: "Organic Soybeans" and "Dehulled Non-GMO
+  // Soybeans" are Soybeans blue, "Waxy Corn" and "Hard Endosperm Corn" are Corn amber, and
+  // "Organic Barley" gets whatever Barley gets. The planting surfaces label these separately
+  // (Commodity.plantingCategory), but a crop is meant to be one colour everywhere and the label
+  // already carries the distinction. Matched on the LAST word(s) so "Corn Screenings" does not
+  // become corn-coloured by accident.
+  const base = key.replace(/^organic\s+/, '');
+  if (base !== key) return commodityColor(base);
+  for (const crop of Object.keys(BY_CROP)) {
+    if (key.endsWith(` ${crop}`)) return BY_CROP[crop];
+  }
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }

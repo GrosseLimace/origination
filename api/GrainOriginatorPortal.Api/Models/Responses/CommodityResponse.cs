@@ -23,4 +23,9 @@ public record CommodityResponse
     /// unit restriction. Matched by EXACT membership client-side, never as a substring &mdash; see
     /// Commodity.TradeUnitScope. OR-combined with TradeGroupScope.</summary>
     public string? TradeUnitScope { get; init; }
+
+    /// <summary>Crop label the planting-intention surfaces group this commodity under, or null to use
+    /// Category. Set for the organics ("Organic Soybeans" for YSBO) &mdash; see Commodity.PlantingCategory.
+    /// Resolved client-side by plantingCategory() in shared/utils/planting-category.ts.</summary>
+    public string? PlantingCategory { get; init; }
 }
