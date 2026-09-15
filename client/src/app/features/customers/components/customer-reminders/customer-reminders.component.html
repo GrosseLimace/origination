@@ -77,14 +77,19 @@
           </button>
 
           @if (timeOpen()) {
+            <!-- Anchored to the RIGHT edge of the field, always. The time field is the rightmost
+                 thing in the form row, and the notes column this card lives in scrolls
+                 (overflow-auto), so a dropdown wider than the field and anchored left runs past the
+                 card edge and gets clipped by that scroll container. Opening leftward keeps it
+                 inside the card at every column width. -->
             <div
               role="dialog"
               aria-label="Choose a time"
-              class="absolute right-0 @sm/followup:left-0 @sm/followup:right-auto z-30 mt-1 w-48 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
+              class="absolute right-0 z-30 mt-1 w-44 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
             >
               <div class="flex divide-x divide-gray-200 dark:divide-gray-700">
                 <!-- Hour -->
-                <div class="flex-1 max-h-40 overflow-y-auto py-1" role="listbox" aria-label="Hour">
+                <div class="flex-1 max-h-36 overflow-y-auto py-1" role="listbox" aria-label="Hour">
                   @for (hour of hours; track hour) {
                     <button
                       type="button"
@@ -100,7 +105,7 @@
                 </div>
 
                 <!-- Minute -->
-                <div class="flex-1 max-h-40 overflow-y-auto py-1" role="listbox" aria-label="Minute">
+                <div class="flex-1 max-h-36 overflow-y-auto py-1" role="listbox" aria-label="Minute">
                   @for (minute of minutes; track minute) {
                     <button
                       type="button"
@@ -116,7 +121,7 @@
                 </div>
 
                 <!-- AM / PM -->
-                <div class="flex-1 max-h-40 overflow-y-auto py-1" role="listbox" aria-label="AM or PM">
+                <div class="flex-1 max-h-36 overflow-y-auto py-1" role="listbox" aria-label="AM or PM">
                   @for (meridiem of meridiems; track meridiem) {
                     <button
                       type="button"
