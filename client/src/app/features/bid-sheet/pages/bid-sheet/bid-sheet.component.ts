@@ -447,9 +447,8 @@ export class BidSheetComponent {
   });
   /** True if the currently-selected panel location is a Scoular facility. */
   readonly panelSelectedIsScoular = computed<boolean>(() => {
-    const name = this.panelSelectedLocation();
-    if (!name) return false;
-    return this.allMapLocations().some(l => l.name === name && l.isScoularFacility);
+    const id = this.panelSelectedLocationId();
+    return id != null && this.scoularLocationIds().has(id);
   });
   /**
    * Flattened view of every in-scope location and its bids.
@@ -731,8 +730,27 @@ export class BidSheetComponent {
   /** Reference to the map container div for Leaflet initialization (replaces document.getElementById). */
   private mapElRef = viewChild<ElementRef<HTMLElement>>('mapEl');
   filteredBidItems = signal<BidSheetPanelItem[]>([]);
-  selectedLocationName = signal<string>('');
-  panelSelectedLocation = signal<string>('');
+  /**
+   * The session comparison reference, and the location whose detail the panel is showing.
+   *
+   * Both were names. A name is not an identity -- it is per-sheet and not unique -- so clicking one of
+   * two same-named elevators set "the name", and the reference or the panel could then resolve to the
+   * other one. A rename also had to be chased through both signals; an id does not move.
+   */
+  selectedLocationId = signal<number | null>(null);
+  panelSelectedLocationId = signal<number | null>(null);
+
+  /** The row the panel is showing, sheet-first so a per-sheet rename wins over the canonical name. */
+  readonly panelSelectedRow = computed<BidSheetLocation | null>(() => {
+    const id = this.panelSelectedLocationId();
+    if (id == null) return null;
+    return this.bidLocations().find(l => l.id === id)
+        ?? this.allMapLocations().find(l => l.id === id)
+        ?? null;
+  });
+
+  /** What to CALL the panel's location. Display only. */
+  readonly panelSelectedName = computed<string>(() => this.panelSelectedRow()?.name ?? '');
   showDeleteLocationConfirm = signal(false);
   deleteMode = signal(false);
   showDeleteCropConfirm = signal(false);
@@ -742,15 +760,11 @@ export class BidSheetComponent {
 
   /** All crop/bid rows for the location selected in the panel */
   readonly panelLocationBids = computed(() => {
-    const name = this.panelSelectedLocation();
-    if (!name) return [];
+    const locationId = this.panelSelectedLocationId();
+    if (locationId == null) return [];
     const oldD = this.oldDisplay();
     const newD = this.newDisplay();
-    const entries = this.bidEntries().filter(e => e.name === name);
-    // The panel still selects by name (the map and list hand one over); resolve it to the id the
-    // lookups now take. Any entry will do -- they all belong to the same location.
-    const locationId = entries[0]?.locationId ?? this._findLocationByName(name)?.id;
-    if (locationId == null) return [];
+    const entries = this.bidEntries().filter(e => e.locationId === locationId);
     let cropSet = [...new Set(entries.map(e => e.commodityCode).filter(Boolean))].sort();
     // Only show crops that have bids for the displayed old/new periods
     cropSet = cropSet.filter(crop =>
@@ -758,9 +772,8 @@ export class BidSheetComponent {
       this._getLatestBid(locationId, oldD.year, crop!, oldD.month));
 
     // Reference comparison — color-code each crop row vs the session reference, whichever kind
-    // (an added location via selectedLocationName, or a catalog listing via catalogReferenceKey).
-    const refName = this.selectedLocationName();
-    const isRef = !!refName && refName === name;
+    // (an added location via selectedLocationId, or a catalog listing via catalogReferenceKey).
+    const isRef = this.selectedLocationId() === locationId;
 
     return cropSet.map(crop => {
       const oldBid = this._getLatestBid(locationId, oldD.year, crop!, oldD.month);
@@ -1057,9 +1070,7 @@ export class BidSheetComponent {
    * has nothing to open -- there is no vendor book behind it.
    */
   readonly panelSelectedBarchartKey = computed<string | null>(() => {
-    const name = this.panelSelectedLocation();
-    if (!name) return null;
-    return this._findLocationByName(name)?.barchartLocationKey ?? null;
+    return this.panelSelectedRow()?.barchartLocationKey ?? null;
   });
 
   /**
@@ -1139,8 +1150,8 @@ export class BidSheetComponent {
 
   /**
    * The catalog (not-yet-added) location currently set as the comparison reference, mutually
-   * exclusive with selectedLocationName (an ADDED location's reference). Kept as its own signal
-   * rather than overloading selectedLocationName: that one is a NAME matched against bidLocations()
+   * exclusive with selectedLocationId (an ADDED location's reference). Kept as its own signal
+   * rather than overloading selectedLocationId: that one is an ID matched against bidLocations()
    * everywhere it's read (panel rows, _findLocationByName, ...), and a catalog listing's key isn't a
    * name in that sense -- reusing it would make every one of those lookups silently miss.
    */
@@ -1542,7 +1553,7 @@ export class BidSheetComponent {
     } else {
       // The panel shows nothing in All scope, so nothing is "open in the panel" -- and the pin for
       // whatever was open would otherwise stay drawn in its expanded, hover-style form.
-      this.panelSelectedLocation.set('');
+      this.panelSelectedLocationId.set(null);
     }
 
     // bidEntries follows the scope, so the panel's filtered list (the model sheet-scope pins are pruned
@@ -1933,8 +1944,8 @@ export class BidSheetComponent {
     if (locs.length === 0) return;
 
     // Prioritize: selected location → first location
-    const refName = this.selectedLocationName();
-    const refLoc = refName ? locs.find(l => l.name === refName) : null;
+    const refId = this.selectedLocationId();
+    const refLoc = refId != null ? locs.find(l => l.id === refId) : null;
     const panelOpen = this.showPanel();
     const rightPad = panelOpen ? BidSheetComponent.PANEL_WIDTH_PX + 20 : 50;
 
@@ -2056,7 +2067,7 @@ export class BidSheetComponent {
     // kind of reference is set -- an added location (via bidLookup) or a catalog one (via its
     // cached detail, once hovered or clicked) -- so every other row's color follows either kind
     // the same way.
-    const refName = this.selectedLocationName();
+    const refId = this.selectedLocationId();
     const selectedYr = this.selectedYear();
     const month = this.selectedMonth();
     let oldRefBid: number | null = null;
@@ -2077,7 +2088,6 @@ export class BidSheetComponent {
     const uniqueIds = new Set(entries.map(e => e.locationId));
 
     // Ensure reference location always appears even if it has no bid for the selected crop
-    const refId = refName ? (this._findLocationByName(refName)?.id ?? null) : null;
     if (refId != null) uniqueIds.add(refId);
 
     // Built once, not once per row: a .find() over bidEntries()/allMapLocations() inside the loop
@@ -2497,7 +2507,7 @@ export class BidSheetComponent {
         // Open the Edit Bids grid IMMEDIATELY from in-memory data — _buildEditGrid includes
         // bidLocations with no bids yet, so the new location shows as an empty row to fill in
         // (existing locations' bids are already loaded). No round-trip before the screen appears.
-        // Pass saved.name only as the grid's focus target — do NOT set panelSelectedLocation, or
+        // Pass saved.name only as the grid's focus target — do NOT set panelSelectedLocationId, or
         // the side panel would open in single-location DETAIL mode (for the new location) after the
         // grid closes, instead of the full list.
         this._applyBidFilterSources();
@@ -2997,7 +3007,7 @@ export class BidSheetComponent {
     const year = this.selectedYear();
     // Focus target for the grid: an explicit name (e.g. a just-added location) or, by default, the
     // panel's selected location. Passing it as an argument avoids forcing the panel into detail mode.
-    const focusLocation = focusLocationName ?? this.panelSelectedLocation();
+    const focusLocation = focusLocationName ?? this.panelSelectedName();
     // Sync with the panel only when the grid is on a single year. A multi-year selection is the user's
     // deliberate arrangement, and openEditBids runs on every re-entry -- including the add-location
     // round trip -- so re-seeding unconditionally would silently collapse their columns back to one.
@@ -4088,8 +4098,8 @@ export class BidSheetComponent {
   selectItemFromTable(item: BidSheetPanelItem): void {
     // Open the detail view for this location — does NOT set it as the session reference.
     // Use the "Set as Reference" button in the detail view to make it the reference.
-    const alreadyOpen = this.panelSelectedLocation() === item.name;
-    this.panelSelectedLocation.set(alreadyOpen ? '' : item.name);
+    const alreadyOpen = this.panelSelectedLocationId() === item.locationId;
+    this.panelSelectedLocationId.set(alreadyOpen ? null : item.locationId);
     this.showPanel.set(true);
     if (!alreadyOpen) {
       this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-selected', item.name);
@@ -4108,23 +4118,23 @@ export class BidSheetComponent {
 
   /** Sets the currently-open panel detail location as the session reference. */
   panelSetReference(): void {
-    const name = this.panelSelectedLocation();
-    if (!name) return;
+    const id = this.panelSelectedLocationId();
+    if (id == null) return;
     // Toggle: clicking again clears the reference
-    const isSetting = this.selectedLocationName() !== name;
+    const isSetting = this.selectedLocationId() !== id;
     if (isSetting) {
-      this.selectedLocationName.set(name);
-      this.usageTracking.postClickEvent('interaction', 'bidsheet', 'reference-set', name);
+      this.selectedLocationId.set(id);
+      this.usageTracking.postClickEvent('interaction', 'bidsheet', 'reference-set', this.panelSelectedName());
     } else {
-      this.selectedLocationName.set('');
+      this.selectedLocationId.set(null);
     }
     this.filterBids();
     this._refreshMapMarkers();
   }
 
   panelGoBack(): void {
-    // Close detail view but keep the session reference (selectedLocationName) intact
-    this.panelSelectedLocation.set('');
+    // Close detail view but keep the session reference (selectedLocationId) intact
+    this.panelSelectedLocationId.set(null);
     this.showDeleteLocationConfirm.set(false);
     this.deleteMode.set(false);
     this.showDeleteCropConfirm.set(false);
@@ -4139,7 +4149,7 @@ export class BidSheetComponent {
   openDeleteLocationConfirm(): void {
     this.showDeleteLocationConfirm.set(true);
     this.deleteLocationSheetCount.set(null);
-    const loc = this._findLocationByName(this.panelSelectedLocation());
+    const loc = this.panelSelectedRow();
     if (!loc) return;
     this.apiService.getBidSheetLocationSheetCount(loc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (count) => this.deleteLocationSheetCount.set(count),
@@ -4148,10 +4158,9 @@ export class BidSheetComponent {
   }
 
   confirmDeleteLocation(): void {
-    const name = this.panelSelectedLocation();
-    if (!name) return;
-    const loc = this._findLocationByName(name);
+    const loc = this.panelSelectedRow();
     if (!loc) return;
+    const name = loc.name;
     // No trade unit sent. The one on the row is provenance -- whichever desk first added the
     // location -- and sending it 403'd anyone deleting a location a different desk introduced.
     // The server authorizes on the persisted CreatedBy instead: creator or Admin.
@@ -4162,8 +4171,8 @@ export class BidSheetComponent {
         this.sheets.update(list => list.map(s => ({ ...s, locations: s.locations.filter(l => l.id !== loc.id) })));
         this.showDeleteLocationConfirm.set(false);
         this.deleteMode.set(false);
-        this.panelSelectedLocation.set('');
-        this.selectedLocationName.set('');
+        this.panelSelectedLocationId.set(null);
+        this.selectedLocationId.set(null);
         this.toastService.success(`Deleted ${name}`);
         this._applyBidFilterSources();
         this.filterBids();
@@ -4189,10 +4198,8 @@ export class BidSheetComponent {
 
   confirmDeleteCrop(): void {
     const crop = this.pendingDeleteCrop();
-    const name = this.panelSelectedLocation();
-    if (!crop || !name) return;
-    const loc = this._findLocationByName(name);
-    if (!loc) return;
+    const loc = this.panelSelectedRow();
+    if (!crop || !loc) return;
     // No trade unit sent -- see confirmDeleteLocation above.
     this.apiService.deleteBidSheetBids(loc.id, crop).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
@@ -4214,7 +4221,7 @@ export class BidSheetComponent {
   }
 
   startEditLocationName(): void {
-    this.editLocationNameValue.set(this.panelSelectedLocation());
+    this.editLocationNameValue.set(this.panelSelectedName());
     this.editingLocationName.set(true);
   }
 
@@ -4406,13 +4413,12 @@ export class BidSheetComponent {
 
   saveLocationName(): void {
     const newName = this.editLocationNameValue().trim();
-    const oldName = this.panelSelectedLocation();
-    if (!newName || newName === oldName) {
+    const loc = this.panelSelectedRow();
+    if (!loc) return;
+    if (!newName || newName === loc.name) {
       this.cancelEditLocationName();
       return;
     }
-    const loc = this._findLocationByName(oldName);
-    if (!loc) return;
     // Refused with the edit box left OPEN so the name can be corrected -- unlike the grid, where blur
     // has already committed by the time this check runs.
     if (this._nameTakenOnSheet(newName, loc.id)) {
@@ -4431,10 +4437,10 @@ export class BidSheetComponent {
       next: (sheet) => {
         this.editingLocationName.set(false);
         this.editLocationNameValue.set('');
-        this.panelSelectedLocation.set(newName);
-        // Only re-point the reference if it WAS this location -- otherwise renaming one location
-        // silently moved the comparison reference onto it.
-        if (this.selectedLocationName() === oldName) this.selectedLocationName.set(newName);
+        // Nothing to re-point: the panel and the reference both hold the location's ID, which a
+        // rename does not change. Both used to hold the NAME, so each had to be chased -- and the
+        // reference could only be chased by comparing names, which moved it onto the wrong location
+        // whenever two shared one.
         this.toastService.success(`Renamed to ${newName} on this sheet`);
         // The response carries the sheet with its resolved names, so the panel and grid update from
         // it directly. No _loadAllMapLocations(): the canonical row did not change.
@@ -4475,9 +4481,7 @@ export class BidSheetComponent {
   }
 
   toggleLocationScoularStatus(): void {
-    const name = this.panelSelectedLocation();
-    if (!name) return;
-    const loc = this._findLocationByName(name);
+    const loc = this.panelSelectedRow();
     if (!loc) return;
     const newValue = !(loc.isScoularFacility ?? false);
 
@@ -4522,8 +4526,8 @@ export class BidSheetComponent {
    *  (All Producers or the selected group). */
   private _selectMapLocation(loc: BidSheetLocation): void {
     // Toggle selected location for highlighted pin / comparison reference
-    const alreadySelected = this.selectedLocationName() === loc.name;
-    this.selectedLocationName.set(alreadySelected ? '' : loc.name);
+    const alreadySelected = this.selectedLocationId() === loc.id;
+    this.selectedLocationId.set(alreadySelected ? null : loc.id);
     // Mutually exclusive with a catalog reference -- only one comparison anchor at a time.
     this.catalogReferenceKey.set(null);
 
@@ -4546,7 +4550,7 @@ export class BidSheetComponent {
       return;
     }
 
-    this.panelSelectedLocation.set('');
+    this.panelSelectedLocationId.set(null);
     // And the panel stays shut. It is the SHEET's comparison list; in All locations it renders only
     // "pick a bid sheet", so opening it on a pin click covers half the map with a message about
     // something else, and there is no Edit Bids to go on to. _offsetCenter reads showPanel, so
@@ -4568,9 +4572,9 @@ export class BidSheetComponent {
     this.searchQuery.set('');
     this.selectedBasis.set('all');
     this.selectedCrop.set('');
-    this.selectedLocationName.set('');
+    this.selectedLocationId.set(null);
     this.showPanel.set(false);
-    this.panelSelectedLocation.set('');
+    this.panelSelectedLocationId.set(null);
     this._refreshMapMarkers();
     this._loadCatalogLocations();
   }
@@ -4762,10 +4766,10 @@ export class BidSheetComponent {
 
     // refName identifies which ADDED-location pin, if any, IS the reference itself (its own special
     // styling below) -- a catalog reference is never one of these pins, so this stays tied to
-    // selectedLocationName alone. refBid is the VALUE every OTHER pin compares against, and resolves
+    // selectedLocationId alone. refBid is the VALUE every OTHER pin compares against, and resolves
     // whichever kind of reference is actually set (_referenceBid), so comparison still works when the
     // reference is a catalog listing.
-    const refName = this.selectedLocationName();
+    const refId = this.selectedLocationId();
     const refBid = this._referenceBid(year, crop, month);
 
     const statusColors: Record<string, { bg: string; border: string }> = {
@@ -4800,8 +4804,8 @@ export class BidSheetComponent {
       locsByPos.set(key, arr);
     }
 
-    const selectedName = this.selectedLocationName();
-    const panelOpenName = this.panelSelectedLocation();
+    const panelOpenId = this.panelSelectedLocationId();
+    const panelOpenName = this.panelSelectedName();
 
     // Build set of location names visible in the panel (respects crop/TU/search filters). The panel
     // now lists exactly the scoped locations -- the same set drawn below -- so it speaks for every pin
@@ -4815,8 +4819,8 @@ export class BidSheetComponent {
       // If searching, skip this pin group unless at least one location name matches
       if (searchQ && !locs.some(l => l.name.toLowerCase().includes(searchQ))) continue;
       const names = locs.map(l => l.name);
-      const isRef = !!(refName && names.includes(refName));
-      const isPanelOpen = !!(panelOpenName && names.includes(panelOpenName));
+      const isRef = refId != null && locs.some(l => l.id === refId);
+      const isPanelOpen = panelOpenId != null && locs.some(l => l.id === panelOpenId);
       if (this.showingAllLocations()) {
         // All scope: the panel is empty by design, so it can't be the filter model. Apply the Status
         // filter directly, by filterBids' own rule (keep the reference and the chosen status), and ONLY
@@ -4852,11 +4856,9 @@ export class BidSheetComponent {
 
       // Panel-open location — render expanded with name + bid (uses status color if reference, otherwise gray)
       if (isPanelOpen) {
-        const panelOpenId = locs.find(l => l.name === panelOpenName)?.id ?? locs[0].id;
-        const bidStr = crop ? this._getLatestBid(panelOpenId, year, crop, month) : '';
-        // This pin represents panelOpenName specifically, so key it to that name rather than to
-        // "any location at this coordinate".
-        const panelIsScoular = this.scoularLocationIds().has(panelOpenId);
+        const bidStr = crop ? this._getLatestBid(panelOpenId!, year, crop, month) : '';
+        // This pin represents the open location specifically, not "any location at this coordinate".
+        const panelIsScoular = this.scoularLocationIds().has(panelOpenId!);
         let pinBg = '#6b7280', pinBorder = '#4b5563';
         if (isRef) { pinBg = '#2563eb'; pinBorder = '#1d4ed8'; }
         else if (this._hasReference() && bidStr) {
@@ -4921,7 +4923,7 @@ export class BidSheetComponent {
         const bidItems = locs
           .map(l => {
             const n = l.name;
-            const isNameRef = n === refName;
+            const isNameRef = l.id === refId;
             // bidVal drives presence and status comparison and must stay numeric; bidLabel is what
             // the pill prints, which in Both mode carries the basis alongside.
             const bidVal = this._getLatestBid(l.id, year, crop, month);
@@ -5286,7 +5288,7 @@ export class BidSheetComponent {
   /**
    * Toggles a catalog listing as the map's comparison reference -- the same click behaviour an ADDED
    * location's pin already has (_selectMapLocation), extended to a listing nobody has added yet.
-   * Mutually exclusive with selectedLocationName: only one reference at a time, whichever kind.
+   * Mutually exclusive with selectedLocationId: only one reference at a time, whichever kind.
    * Public (not the click handler itself) because the detail popup's own button calls it too, for a
    * location whose popup is already open.
    */
@@ -5294,7 +5296,7 @@ export class BidSheetComponent {
     if (this.catalogReferenceKey() === locationKey) {
       this.catalogReferenceKey.set(null);
     } else {
-      this.selectedLocationName.set('');
+      this.selectedLocationId.set(null);
       this.catalogReferenceKey.set(locationKey);
       this._ensureCatalogDetailCached(locationKey, () => this._refreshMapMarkers());
     }
@@ -5350,7 +5352,7 @@ export class BidSheetComponent {
    *  comparing at all" branches (the ring styling, the status-vs-plain-gray choice) without either
    *  branch needing to know which kind of reference it is. */
   private _hasReference(): boolean {
-    return !!this.selectedLocationName() || !!this.catalogReferenceKey();
+    return this.selectedLocationId() != null || !!this.catalogReferenceKey();
   }
 
   /**
@@ -5360,8 +5362,7 @@ export class BidSheetComponent {
    * setting the reference doesn't freeze every other pin's color until a request round-trips.
    */
   private _referenceBid(year: number | null, crop: string, month: number): number | null {
-    const refName = this.selectedLocationName();
-    const refId = refName ? this._findLocationByName(refName)?.id : undefined;
+    const refId = this.selectedLocationId();
     if (refId != null) return this._parseBid(this._getLatestBid(refId, year, crop, month));
     const catalogKey = this.catalogReferenceKey();
     if (catalogKey) return this._parseBid(this._catalogBidFor(catalogKey, year, crop, month));

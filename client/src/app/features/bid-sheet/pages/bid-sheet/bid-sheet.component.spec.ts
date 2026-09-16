@@ -625,12 +625,12 @@ describe('BidSheetComponent — catalog location as comparison reference', () =>
   });
 
   it('sets the catalog key as reference and clears any added-location reference', () => {
-    component.selectedLocationName.set('Some Added Location');
+    component.selectedLocationId.set(1);
 
     component.toggleCatalogReference('CATKEY1');
 
     expect(component.catalogReferenceKey()).toBe('CATKEY1');
-    expect(component.selectedLocationName()).toBe('');
+    expect(component.selectedLocationId()).toBeNull();
   });
 
   it('toggles the same key off on a second call', () => {
@@ -1293,11 +1293,11 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
   // open stays drawn in its expanded, hover-style form among the dots.
   it('clears the panel selection when widening to All locations', () => {
     component.activeSheetId.set(1);
-    component.panelSelectedLocation.set('On The Sheet');
+    component.panelSelectedLocationId.set(1);
 
     component.setMapScope('all');
 
-    expect(component.panelSelectedLocation()).toBe('');
+    expect(component.panelSelectedLocationId()).toBeNull();
   });
 
   // The panel's own sheet menu calls selectSheet directly. In All scope the sheet is usually still
@@ -1834,7 +1834,7 @@ describe('BidSheetComponent — renaming a location stays on the sheet', () => {
   });
 
   it('renames from the side panel via the same endpoint', () => {
-    component.panelSelectedLocation.set(SHEET_LABEL);
+    component.panelSelectedLocationId.set(1);
     component.editLocationNameValue.set('Renamed In Panel');
 
     component.saveLocationName();
@@ -1866,7 +1866,7 @@ describe('BidSheetComponent — renaming a location stays on the sheet', () => {
     });
 
     it('from the panel, leaving the edit box open so it can be corrected', () => {
-      component.panelSelectedLocation.set(SHEET_LABEL);
+      component.panelSelectedLocationId.set(1);
       component.editingLocationName.set(true);
       component.editLocationNameValue.set('OTHER LABEL');
 
@@ -2335,7 +2335,7 @@ describe('BidSheetComponent — an open popup follows the pin you click', () => 
 
     select(loc); // second click deselects
 
-    expect(component.selectedLocationName()).toBe('');
+    expect(component.selectedLocationId()).toBeNull();
     expect(component.catalogDetailKey()).toBeNull();
   });
 });
