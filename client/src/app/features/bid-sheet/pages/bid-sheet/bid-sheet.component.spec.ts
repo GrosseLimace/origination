@@ -297,7 +297,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     };
 
     const [saved] = markSaved([dirtyRow], [
-      { name: 'A', commodityCode: 'YC', cropYear: 2026, month: 8, bid: '4.98', basisBid: '-40Z' },
+      { locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 8, bid: '4.98', basisBid: '-40Z' },
     ]) as Array<{ originalBids: Record<string, string>; originalBasisBids: Record<string, string> }>;
 
     expect(saved.originalBasisBids['YC#2026#8']).toBe('-40Z');
@@ -306,7 +306,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
 
   it('drops the board symbol from a cell the user has taken over', () => {
     const [saved] = markSaved([row('A', 'YC#2026#8', '9.99')], [
-      { name: 'A', commodityCode: 'YC', cropYear: 2026, month: 8, bid: '9.99', basisBid: '' },
+      { locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 8, bid: '9.99', basisBid: '' },
     ]) as Array<{ boardChips: Record<string, string> }>;
 
     // Left in place, it re-attached to the hand-typed number the moment the cell counted as clean.
@@ -319,7 +319,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     seed(location('A', [bid({ basisBid: '-30' })]));
 
     (component as unknown as { _applyBidsToLocalCache(d: unknown[]): void })._applyBidsToLocalCache([
-      { name: 'A', commodityCode: 'YC', cropYear: 2026, month: 8, bid: '4.98', basisBid: '-40Z' },
+      { locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 8, bid: '4.98', basisBid: '-40Z' },
     ]);
 
     const cached = component.allMapLocations()[0].bids[0];
@@ -328,6 +328,29 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(cached.source).toBe('Manual');
     expect(cached.underlyingFuture).toBeUndefined();
   });
+  // The cache is matched by id. It used to match the dirty row's NAME against allMapLocations, which
+  // holds the CANONICAL name -- so on a location the sheet had renamed, nothing matched and the save
+  // silently failed to update the cache. That is a live bug on one sheet, not only a multi-sheet one.
+  it('updates the cache for a location the sheet has renamed', () => {
+    const canonical = location('Canonical Name', [bid({ locationId: 1, basisBid: '-30' })]);
+    component.allMapLocations.set([canonical]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [],
+      // What the sheet shows -- the server resolves DisplayName ?? Name into this.
+      locations: [{ ...canonical, name: 'Our Label For It' }],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+
+    (component as unknown as { _applyBidsToLocalCache(d: unknown[]): void })._applyBidsToLocalCache([
+      { locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 8, bid: '7.77', basisBid: '-12' },
+    ]);
+
+    const cached = component.allMapLocations()[0].bids[0];
+    expect(cached.bid).toBe('7.77');
+    expect(cached.basisBid).toBe('-12');
+  });
+
   // ── multiple crop years at once ──────────────────────────────────────────────────────────────
   // The grid used to show one year, stepped with arrows, so entering old crop against new crop meant
   // navigating away and back. Every selected year is editable, which means every cell has to carry its
@@ -389,7 +412,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     };
 
     const [saved] = markSaved([both], [
-      { name: 'A', commodityCode: 'YC', cropYear: 2026, month: 9, bid: '4.98', basisBid: '' },
+      { locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 9, bid: '4.98', basisBid: '' },
     ]) as Array<{ originalBids: Record<string, string>; boardChips: Record<string, string> }>;
 
     expect(saved.originalBids['YC#2026#9']).toBe('4.98');   // saved year went clean

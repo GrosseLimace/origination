@@ -3453,9 +3453,9 @@ export class BidSheetComponent {
     });
   }
 
-  private _buildDirtyBids(): Array<{ locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> {
+  private _buildDirtyBids(): Array<{ locationId: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> {
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
-    const toCreate: Array<{ locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> = [];
+    const toCreate: Array<{ locationId: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }> = [];
 
     for (const row of this.editBidsRows()) {
       for (const col of this.editGridColumns()) {
@@ -3543,21 +3543,23 @@ export class BidSheetComponent {
   /** Marks the saved cells clean so the "changed" highlight clears — by setting originalBids to the
    *  value that was actually SAVED (not the current input). If the user kept editing the same cell while
    *  the save was in flight, current ≠ saved, so the cell stays dirty and the re-run / next blur catches it. */
-  private _clearDirtyForSaved(dirty: Array<{ name?: string; commodityCode: string; cropYear: number; month?: number; bid: string; basisBid: string }>): void {
-    const savedByName = new Map<string, Map<string, { bid: string; basisBid: string }>>();
+  private _clearDirtyForSaved(dirty: Array<{ locationId: number; commodityCode: string; cropYear: number; month?: number; bid: string; basisBid: string }>): void {
+    // By location, not by label: two rows sharing a name both matched, so saving one marked the
+    // other clean -- its green highlight cleared and its genuinely unsaved edit dropped out of the
+    // dirty set, which also re-armed the background refresh that is gated on a clean grid.
+    const savedById = new Map<number, Map<string, { bid: string; basisBid: string }>>();
     for (const b of dirty) {
-      if (!b.name) continue;
       // The year is part of the identity. Without it, saving 2026 corn would mark the 2027 corn cell
       // clean too: its highlight would clear, its board symbol would be deleted, and
       // _buildDirtyBids would stop reporting it -- which also re-arms the background refresh that is
       // gated on a clean grid, so the rebuild would land on top of the still-unsaved edit.
       const colKey = this._colKey(b.commodityCode, b.cropYear, b.month ?? 0);
-      const m = savedByName.get(b.name) ?? new Map<string, { bid: string; basisBid: string }>();
+      const m = savedById.get(b.locationId) ?? new Map<string, { bid: string; basisBid: string }>();
       m.set(colKey, { bid: b.bid, basisBid: b.basisBid });
-      savedByName.set(b.name, m);
+      savedById.set(b.locationId, m);
     }
     this.editBidsRows.update(rows => rows.map(row => {
-      const saved = savedByName.get(row.name);
+      const saved = savedById.get(row.locationId);
       if (!saved) return row;
       const originalBids = { ...row.originalBids };
       const originalBasisBids = { ...row.originalBasisBids };
@@ -3586,24 +3588,28 @@ export class BidSheetComponent {
    *  which feed the computed bidEntries → bidLookup that _buildEditGrid reads. Without this, navigating
    *  to another year and back rebuilds the grid from the stale cache and shows the pre-edit value until
    *  a full server refresh. Mirrors the optimistic update confirmAddLocation does for a new location. */
-  private _applyBidsToLocalCache(dirty: Array<{ name?: string; tradeUnitCode?: string; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }>): void {
+  private _applyBidsToLocalCache(dirty: Array<{ locationId: number; tradeUnitCode?: string; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; basisBid: string; month?: number }>): void {
     if (dirty.length === 0) return;
     const now = new Date().toISOString();
 
     // Grouped once rather than re-filtered per location: this used to scan the whole dirty array for
     // EVERY location in allMapLocations(), which is fine at a few dozen locations and is real work
     // once that list is the whole BarChart catalog.
-    const dirtyByName = new Map<string, typeof dirty>();
+    const dirtyById = new Map<number, typeof dirty>();
     for (const d of dirty) {
-      const arr = dirtyByName.get(d.name ?? '');
-      if (arr) arr.push(d); else dirtyByName.set(d.name ?? '', [d]);
+      const arr = dirtyById.get(d.locationId);
+      if (arr) arr.push(d); else dirtyById.set(d.locationId, [d]);
     }
 
     const upsertInto = (locs: BidSheetLocation[]): BidSheetLocation[] => {
       let changed = false;
       const next = locs.map(loc => {
-        const candidates = dirtyByName.get(loc.name);
-        const forLoc = candidates?.filter(d => !d.tradeUnitCode || d.tradeUnitCode === loc.tradeUnitCode) ?? [];
+        // Matched by id. This used to match the dirty row's NAME against allMapLocations, which holds
+        // the CANONICAL name -- so on any location with a per-sheet rename nothing matched and the
+        // local cache silently went unupdated, leaving the grid to wait for a server round trip. The
+        // trade-unit tie-break that went with it is gone too: it only ever existed to disambiguate a
+        // name, and against an id it can only produce a false miss.
+        const forLoc = dirtyById.get(loc.id) ?? [];
         if (forLoc.length === 0) return loc;
         changed = true;
         const bids = [...loc.bids];
@@ -3651,10 +3657,10 @@ export class BidSheetComponent {
   }
 
   /** Records the distinct cells saved this session so "Done" can report the running total. */
-  private _recordSaved(dirty: Array<{ name?: string; commodityCode: string; cropYear: number; month?: number }>): void {
+  private _recordSaved(dirty: Array<{ locationId: number; commodityCode: string; cropYear: number; month?: number }>): void {
     for (const b of dirty) {
-      if (!b.name) continue;
-      this._editBidsSavedKeys.add(`${b.name}|${b.commodityCode}|${b.cropYear}|${b.month ?? 0}`);
+      // By id, so two same-named locations are two saved cells rather than one under-reported.
+      this._editBidsSavedKeys.add(`${b.locationId}|${b.commodityCode}|${b.cropYear}|${b.month ?? 0}`);
     }
   }
 
