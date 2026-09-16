@@ -2798,6 +2798,19 @@ describe('BidSheetComponent — owner actions act on the sheet they were raised 
     expect(component.sheetActionTarget()?.name).toBe('Kansas');
   });
 
+  // The aimed sheet disappearing must abort, never retarget. sheetActionTarget falls back to the
+  // first ticked so the toolbar buttons work, and that fallback on a DELETE confirmation would turn
+  // "the sheet I aimed at has gone" into "delete a different one" -- silently, under a dialog still
+  // showing the old name.
+  it('deletes nothing if the aimed sheet is gone by the time it is confirmed', () => {
+    component.openDeleteSheetConfirm(2);
+
+    component.sheets.set([sheet(1, 'Kansas')]); // Nebraska went while the dialog was open
+    component.confirmDeleteSheet();
+
+    expect(deleted).toEqual([]);
+  });
+
   // A stale aim would point the next toolbar action at a sheet that is gone.
   it('forgets the target once that sheet is deleted', () => {
     component.openDeleteSheetConfirm(2);

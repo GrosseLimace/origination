@@ -215,7 +215,7 @@ export class BidSheetComponent {
   readonly activeSheetId = computed<number | null>(() => this.activeSheet()?.id ?? null);
 
   /**
-   * The panel/grid location set: the active sheet's locations, cross-referenced against
+   * The panel/grid location set: the union of the TICKED sheets' locations, cross-referenced against
    * allMapLocations so an in-place edit (a bid save, a rename, the Scoular flag) shows immediately
    * instead of waiting for the sheet to reload. Falls back to the sheet's own copy for a location
    * allMapLocations hasn't caught up to yet (e.g. one just linked from another tab).
@@ -1832,9 +1832,17 @@ export class BidSheetComponent {
     });
   }
 
+  /**
+   * No argument means "keep whatever is already aimed" -- unlike the other openers, which reset.
+   * chooseDeleteSheet() calls it that way to carry through the aim openDeleteChoice() set.
+   *
+   * The resolved id is PINNED here rather than left to sheetActionTarget's fall-back-to-first, so the
+   * open confirmation cannot come to mean a different sheet than the one it was opened for.
+   */
   openDeleteSheetConfirm(sheetId?: number): void {
-    if (sheetId != null) this.sheetActionTargetId.set(sheetId);
-    if (!this.sheetActionTarget()) return;
+    const target = sheetId ?? this.sheetActionTarget()?.id ?? null;
+    if (target == null) return;
+    this.sheetActionTargetId.set(target);
     this.showDeleteSheetConfirm.set(true);
     this.showSheetMenu.set(false);
   }
@@ -1844,7 +1852,10 @@ export class BidSheetComponent {
   }
 
   confirmDeleteSheet(): void {
-    const sheet = this.sheetActionTarget();
+    // By id, straight out of the list -- NOT through sheetActionTarget, whose fall-back-to-first
+    // would turn "the sheet I aimed at has gone" into "delete a different one".
+    const id = this.sheetActionTargetId();
+    const sheet = this.sheets().find(x => x.id === id);
     if (!sheet || this.deletingSheet()) return;
     this.deletingSheet.set(true);
     this.apiService.deleteBidSheet(sheet.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -2556,7 +2567,7 @@ export class BidSheetComponent {
    */
   readonly addTargetSheetId = signal<number | null>(null);
   readonly showAddSheetChoice = signal<boolean>(false);
-  private readonly _pendingAddAction = signal<(() => void) | null>(null);
+  private readonly _pendingAddAction = signal<((sheetId: number) => void) | null>(null);
 
   /** The sheet an add would land on right now: the remembered one if still ticked, else the first. */
   readonly addTargetSheet = computed<BidSheet | null>(() => {
@@ -2575,7 +2586,10 @@ export class BidSheetComponent {
     if (sheets.length === 1) { this.addTargetSheetId.set(sheets[0].id); action(sheets[0].id); return; }
     const remembered = sheets.find(s => s.id === this.addTargetSheetId());
     if (remembered) { action(remembered.id); return; }
-    this._pendingAddAction.set(() => action(this.addTargetSheet()!.id));
+    // Parked as-is; the chooser hands it the id that was actually picked. It used to re-read
+    // addTargetSheet() at run time, which meant re-deriving the answer the user had just given --
+    // and asserting non-null on a computed that returns null with nothing ticked.
+    this._pendingAddAction.set(action);
     this.showAddSheetChoice.set(true);
   }
 
@@ -2584,7 +2598,7 @@ export class BidSheetComponent {
     this.showAddSheetChoice.set(false);
     const action = this._pendingAddAction();
     this._pendingAddAction.set(null);
-    action?.();
+    action?.(id);
   }
 
   cancelAddSheetChoice(): void {
@@ -4509,14 +4523,22 @@ export class BidSheetComponent {
   }
 
   /**
-   * Whether another location on the open sheet already shows this name (trimmed, case-insensitive).
+   * Whether another location ON SCREEN already shows this name (trimmed, case-insensitive).
    *
-   * Names are identity on this screen: the grid tracks its rows by name, and every rename, Scoular
-   * toggle and delete resolves its target through _findLocationByName. Two rows with one name would
-   * give Angular duplicate keys and send those actions to whichever row has the lower id. Per-sheet
-   * renames made that a two-click accident, so both rename paths ask this first. Compared against what
-   * the sheet DISPLAYS (DisplayName ?? canonical) because that is what the lookups match. The server
-   * enforces the same rule; this only says why before the round trip.
+   * Two rows reading the same thing is the problem: which one did you just rename, and which one are
+   * you about to remove? Checked against what the rows DISPLAY (DisplayName ?? canonical), because
+   * that is what the user is disambiguating by. Identity itself is safe either way -- everything keys
+   * on locationId now, so a collision is a readability fault rather than the wrong-row bug it used to
+   * be.
+   *
+   * Note it reads bidLocations, so with several sheets ticked it spans the UNION and is therefore
+   * STRICTER than the server, which checks one sheet. A name free on sheet A but taken on sheet B is
+   * refused here and would have been accepted there. That is the intended side: the union is what the
+   * user is looking at, and letting them create two identical rows in it helps nobody.
+   *
+   * What it cannot prevent: two DIFFERENT locations arriving already identically named, one from each
+   * sheet. Nothing rejects that -- the rows are keyed by id, so they render and behave correctly, they
+   * just read alike.
    */
   private _nameTakenOnSheet(name: string, exceptLocationId: number): boolean {
     const wanted = name.trim().toLowerCase();
@@ -5611,15 +5633,16 @@ export class BidSheetComponent {
    * confirmAddLocation / onBarchartAddMany.
    */
   addCatalogDetailToSheet(): void {
-    if (this.catalogDetail() === null || this.catalogDetailAdding()) return;
+    const detail = this.catalogDetail();
+    if (!detail || this.catalogDetailAdding()) return;
     if (this.selectedSheets().length === 0) { this.toastService.error('Create or select a bid sheet first'); return; }
-    this._withAddTarget(sheetId => this._addCatalogDetailTo(sheetId));
+    // The detail is captured HERE, not re-read when the add finally runs: the sheet chooser can sit
+    // open while the user clicks a different pin behind it, and "which sheet for THIS location" must
+    // not quietly become an answer about a different one.
+    this._withAddTarget(sheetId => this._addCatalogDetailTo(sheetId, detail));
   }
 
-  private _addCatalogDetailTo(sheetId: number): void {
-    const detail = this.catalogDetail();
-    if (!detail) return;
-
+  private _addCatalogDetailTo(sheetId: number, detail: BarchartCatalogLocationDetail): void {
     this.catalogDetailAdding.set(true);
     const loc = detail.location;
     this.apiService.createBidSheetLocation({
