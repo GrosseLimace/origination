@@ -25,4 +25,10 @@ public interface IReminderService
 
     /// <summary>True when a reminder was removed; false when the caller owns no such reminder.</summary>
     Task<bool> DeleteAsync(int reminderId, CancellationToken cancellationToken);
+
+    /// <summary>Writes an existing reminder to the caller's own Outlook calendar and records the
+    /// event id. Idempotent: a reminder already on the calendar comes back unchanged rather than
+    /// gaining a second event. Returns the reminder with a null OutlookEventId when the calendar
+    /// could not be written, which is what keeps the row's "Add to Outlook" retry showing.</summary>
+    Task<ReminderResponse?> AddToOutlookAsync(int reminderId, AddReminderToOutlookRequest request, CancellationToken cancellationToken);
 }

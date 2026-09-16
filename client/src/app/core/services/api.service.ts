@@ -621,8 +621,10 @@ export class ApiService {
   }
 
   /** Edits the due date, subject or notes of one of the user's own reminders. */
-  updateReminder(id: number, dueAt: string, subject?: string, notes?: string): Observable<Reminder> {
-    return this.http.put<Reminder>(`${this.baseUrl}/reminders/${id}`, { dueAt, subject, notes })
+  /** Saves an edit. `timeZone` rides along because the API moves the Outlook event in the same call
+   *  when the due date changed, and Graph needs a local time plus a zone name. */
+  updateReminder(id: number, dueAt: string, subject?: string, notes?: string, timeZone?: string): Observable<Reminder> {
+    return this.http.put<Reminder>(`${this.baseUrl}/reminders/${id}`, { dueAt, subject, notes, timeZone })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -632,11 +634,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Records the Outlook event id the browser just created (or null to clear the link). Kept
-   *  separate from updateReminder so the event id is only ever set by the client reporting back
-   *  what Graph returned, never by an edit the user typed. */
-  setReminderOutlookEvent(id: number, outlookEventId: string | null): Observable<Reminder> {
-    return this.http.put<Reminder>(`${this.baseUrl}/reminders/${id}/outlook-event`, { outlookEventId })
+  /** Puts an existing reminder on the caller's own Outlook calendar. The API writes the event via
+   *  Graph on-behalf-of the user and records the id, so the browser never touches Graph. A reminder
+   *  that comes back with a null `outlookEventId` means the calendar could not be written, and the
+   *  row keeps offering the retry. */
+  addReminderToOutlook(id: number, body: { timeZone: string; producerLink: string }): Observable<Reminder> {
+    return this.http.post<Reminder>(`${this.baseUrl}/reminders/${id}/outlook`, body)
       .pipe(catchError(e => this.handleError(e)));
   }
 

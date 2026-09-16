@@ -47,21 +47,33 @@ pane, and `IX_ProducerReminders_CreatedBy_DueAt` (filtered `IsCompleted = 0`) fo
 | `POST /` | create; subject defaults to "Follow up with {producer}" |
 | `PUT /{id}` | edit due date / subject / notes |
 | `PUT /{id}/complete` | complete or reopen |
-| `PUT /{id}/outlook-event` | record the Graph event id the browser reported back |
-| `DELETE /{id}` | delete |
+| `POST /{id}/outlook` | write the event to the caller's own calendar and record its id |
+| `DELETE /{id}` | delete, removing the calendar event alongside the row |
 
 Due dates are stored and transported as **UTC**. A due date more than a day in the past is rejected;
 the one-day window is deliberate, so picking "today 9:00" in the afternoon still works.
 
-`outlook-event` is its own endpoint with its own request type on purpose: the event id is
-bookkeeping the client reports back, never a field a user can set through a general edit.
+`POST /{id}/outlook` is its own endpoint rather than a flag on the edit: putting a reminder on a
+calendar is a distinct action with its own retry, and the event id is bookkeeping the API owns —
+never a field a user can set through a general edit. It is idempotent, because the row's "Add to
+Outlook" button can be pressed twice and two blocks in a calendar is worse than a no-op.
 
-## Outlook: why the browser writes the event
+`PUT /{id}` carries an optional `timeZone`, because a due-date change moves the calendar event in the
+same call and Graph needs a local time plus a zone name.
 
-The event belongs to the user, so the SPA acquires a **delegated** `Calendars.ReadWrite` token via
-MSAL and calls `POST /me/events` itself (`core/services/outlook-calendar.service.ts`). The app
-already calls Graph this way for the profile photo in the header, and the CSP `connect-src` already
-allows `graph.microsoft.com`.
+## Outlook: why the API writes the event, on-behalf-of the user
+
+The event belongs to the user, so the permission is **delegated** `Calendars.ReadWrite` — but it is
+held on the **API app registration**, not the SPA, and the API calls `POST /me/events` **on-behalf-of**
+the caller (`Api/Services/OutlookCalendarService.cs`). The browser never holds a Graph token.
+
+That split came from IT Security on 2026-09-15. Delegated Graph permissions live on the API
+registration across the Scoular fleet, and Enterprise TMS already does this for `Mail.Send`. The
+decisive reason is operational rather than security: **their app registrations are rebuilt from a
+config template**, so a permission added by hand to a SPA registration works for months and then
+silently disappears during an unrelated reconcile. The boundary is identical either way, because the
+user's identity flows through the exchange — still `/me/events`, still that person's own calendar,
+never `/users/{id}/events`.
 
 The alternative — the API's managed identity holding **application** `Calendars.ReadWrite` — would
 grant the service write access to every mailbox in the tenant to accomplish the same thing. The SIMS
@@ -71,20 +83,52 @@ application-access policy, and it has shipped disabled in every environment with
 never granted. We took its lessons, not its mechanism:
 
 - Graph wants an **unzoned local literal** plus a separate `timeZone` name, not an ISO offset string.
+  The zone comes from the **browser**, because the server cannot know where the user is sitting — it
+  rides on the save request and on the "Add to Outlook" call. An unrecognised zone falls back to UTC
+  rather than throwing: a reminder an hour out beats no reminder.
 - Rescheduling **PATCHes start and end only**. Deleting and recreating makes Outlook render the
   original slot as "Canceled".
 - **Completing a reminder keeps the event** — deleting it on completion reads as "this never
   happened". The event is removed only when the reminder itself is deleted.
 
-Token acquisition is silent first, then escalates to a **popup** (not a redirect) if interaction is
-required, so a half-filled form is never lost. Every failure path resolves `null`/`false`.
+Every failure path returns `null`/`false` and is swallowed, so a calendar problem never fails or
+rolls back the reminder. The database is the source of truth; the event is a best-effort mirror.
+
+### What moving server-side changed
+
+- **No consent popup.** The browser used to escalate to an MSAL popup on first use, which could
+  interrupt a half-filled form. That is gone.
+- **Fewer round trips.** Rescheduling and deleting now happen inside the ordinary save and delete
+  calls, so the browser makes one request where it used to make two.
+- **No window where the event exists but the row does not know about it.** `POST
+  /api/reminders/{id}/outlook` writes the event *and* records the id in one call. The old `PUT
+  /api/reminders/{id}/outlook-event`, which existed so the browser could report the id back, is gone
+  — nothing calls it, and an endpoint letting a client set an arbitrary event id is not worth keeping.
 
 ## Feature flag
 
 `remindersEnabled` in `client/src/environments/environment*.ts`. True locally and in Dev; **false in
-QA and Production until that environment's SPA app registration has admin consent for delegated
+QA and Production until the API app registration has admin consent for delegated
 `Calendars.ReadWrite`** (see `developer-docs/APP-REGISTRATIONS.md`). With the flag off there is no
 card, no badge, and no `/api/reminders/mine` call.
+
+Consent applies to Dev, QA and Production **together**, not one at a time; the flag is what keeps the
+feature dark until we choose to turn it on.
+
+### How the API authenticates for on-behalf-of
+
+On-behalf-of makes the API a confidential client, so it must prove its own identity to Entra. That is
+**configuration, not code** — `AzureAd:ClientCredentials`:
+
+- **Preferred, secretless:** a federated identity credential on the API registration backed by the
+  App Service managed identity (`"SourceType": "SignedAssertionFromManagedIdentity"`), keeping the
+  app's existing no-secrets posture.
+- **Otherwise:** a client secret or certificate in the same section, from Key Vault.
+
+**Local development** has no managed identity, so a developer running the API locally gets no Graph
+token and the calendar write quietly does nothing — the reminder still saves, and the row shows its
+"Add to Outlook" retry. To exercise it locally, put a client secret in **User Secrets**, never in
+`appsettings.json`.
 
 ## Deliberate non-goals
 

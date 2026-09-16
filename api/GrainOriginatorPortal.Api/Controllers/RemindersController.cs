@@ -96,23 +96,28 @@ public class RemindersController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>
-    /// Links the reminder to the Outlook event the caller browser created on their own calendar
-    /// (or clears the link). Separate from the general edit so the event id can only ever be set by
-    /// the client reporting back what Graph returned.
-    /// </summary>
-    [HttpPut("{id:int}/outlook-event")]
-    [ProducesResponseType(typeof(ReminderResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ReminderResponse>> SetOutlookEvent(int id, [FromBody] SetReminderOutlookEventRequest request, CancellationToken cancellationToken = default)
-    {
-        var reminder = await _service.SetOutlookEventIdAsync(id, request.OutlookEventId, cancellationToken)
-            ?? throw new NotFoundException("Reminder", id);
-        return Ok(reminder);
-    }
-
+    // The old PUT {id}/outlook-event is gone. It existed so the browser could report back the event
+    // id it had just created in Graph; the API writes the event itself now, so nothing calls it —
+    // and an endpoint that let a client set an arbitrary event id is not worth keeping for its own
+    // sake. The service method behind it survives, used by AddToOutlook.
     // -------------------------------------------------------------------------
     /// <summary>Deletes one of the caller own reminders.</summary>
+    /// <summary>Puts an existing reminder on the caller's own Outlook calendar.
+    /// <para>Replaces the old flow where the browser wrote the event itself and then told us the id.
+    /// The API now does both, on-behalf-of the caller, so the browser never touches Graph.</para>
+    /// <para>Always 200 for a reminder that exists: a calendar failure returns the reminder with no
+    /// event id, and the row keeps offering the retry. The reminder is never at risk.</para></summary>
+    [HttpPost("{id:int}/outlook")]
+    [ProducesResponseType(typeof(ReminderResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ReminderResponse>> AddToOutlook(
+        int id, [FromBody] AddReminderToOutlookRequest request, CancellationToken cancellationToken = default)
+    {
+        var updated = await _service.AddToOutlookAsync(id, request, cancellationToken)
+            ?? throw new NotFoundException("Reminder", id);
+        return Ok(updated);
+    }
+
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
