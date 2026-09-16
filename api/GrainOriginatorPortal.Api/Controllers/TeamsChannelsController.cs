@@ -25,11 +25,16 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class TeamsChannelsController : ControllerBase
 {
     private readonly ITeamsChannelService _service;
+    private readonly ITeamsDirectoryService _directory;
     private readonly ILogger<TeamsChannelsController> _logger;
 
-    public TeamsChannelsController(ITeamsChannelService service, ILogger<TeamsChannelsController> logger)
+    public TeamsChannelsController(
+        ITeamsChannelService service,
+        ITeamsDirectoryService directory,
+        ILogger<TeamsChannelsController> logger)
     {
         _service = service;
+        _directory = directory;
         _logger = logger;
     }
 
@@ -40,6 +45,17 @@ public class TeamsChannelsController : ControllerBase
     public async Task<ActionResult<List<TeamsChannelDto>>> GetAll(CancellationToken cancellationToken = default)
     {
         return Ok(await _service.GetAllAsync(cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>The Teams channels the CALLING USER belongs to, read from Graph on-behalf-of them.
+    /// <para>Always 200. An empty list means Graph is unavailable or consent has not been granted in
+    /// this environment, and the composer simply offers no channels rather than breaking.</para></summary>
+    [HttpGet("mine")]
+    [ProducesResponseType(typeof(List<UserTeamsChannel>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<UserTeamsChannel>>> GetMine(CancellationToken cancellationToken = default)
+    {
+        return Ok(await _directory.GetMyChannelsAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
