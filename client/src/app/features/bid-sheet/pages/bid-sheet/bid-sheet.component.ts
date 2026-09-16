@@ -445,17 +445,6 @@ export class BidSheetComponent {
     }
     return ids;
   });
-  /** Set of location names that are marked as Scoular facilities — used for row highlighting in edit bids grid (which keys rows by name). */
-  readonly scoularLocationNames = computed<Set<string>>(() => {
-    const names = new Set<string>();
-    for (const loc of this.allMapLocations()) {
-      if (loc.isScoularFacility) names.add(loc.name);
-    }
-    for (const loc of this.bidLocations()) {
-      if (loc.isScoularFacility) names.add(loc.name);
-    }
-    return names;
-  });
   /** True if the currently-selected panel location is a Scoular facility. */
   readonly panelSelectedIsScoular = computed<boolean>(() => {
     const name = this.panelSelectedLocation();
@@ -3824,10 +3813,10 @@ export class BidSheetComponent {
   readonly printLocations = computed<PrintLocation[]>(() => {
     const columns = this.printCropGroups().flatMap(g => g.columns);
     const highlight = this.printHighlightScoularLocations();
-    const scoularNames = this.scoularLocationNames();
+    const scoularIds = this.scoularLocationIds();
     return this.editBidsRows().map(row => ({
       name: row.name,
-      isScoular: highlight && scoularNames.has(row.name),
+      isScoular: highlight && scoularIds.has(row.locationId),
       values: Object.fromEntries(columns.map(col => [col.key, this.printCellValue(row, col)]))
     }));
   });
@@ -4799,7 +4788,7 @@ export class BidSheetComponent {
     // Keyed on _hasReference(), NOT on crop: picking a crop alone doesn't produce a comparison, and
     // testing crop here is what previously made the ring appear with no reference selected.
     const comparingToRef = this._hasReference();
-    const scoularNames = this.scoularLocationNames();
+    const scoularIds = this.scoularLocationIds();
 
     // Group the in-scope locations by coordinates -- the open sheet's, or everything, per mapScope.
     const locsByPos = new Map<string, BidSheetLocation[]>();
@@ -4867,7 +4856,7 @@ export class BidSheetComponent {
         const bidStr = crop ? this._getLatestBid(panelOpenId, year, crop, month) : '';
         // This pin represents panelOpenName specifically, so key it to that name rather than to
         // "any location at this coordinate".
-        const panelIsScoular = scoularNames.has(panelOpenName);
+        const panelIsScoular = this.scoularLocationIds().has(panelOpenId);
         let pinBg = '#6b7280', pinBorder = '#4b5563';
         if (isRef) { pinBg = '#2563eb'; pinBorder = '#1d4ed8'; }
         else if (this._hasReference() && bidStr) {
@@ -4875,7 +4864,7 @@ export class BidSheetComponent {
           const c = statusColors[status] ?? statusColors['none'];
           pinBg = c.bg; pinBorder = c.border;
         } else if (panelIsScoular) { pinBg = BidSheetComponent.SCOULAR_BG; pinBorder = BidSheetComponent.SCOULAR_BORDER; }
-        const expandedIcon = this._buildHoverIcon(panelOpenName, bidStr, pinBg, pinBorder);
+        const expandedIcon = this._buildHoverIcon(panelOpenName, bidStr, pinBg, pinBorder, panelIsScoular);
         const marker = L.marker([lat, lng], { icon: expandedIcon, zIndexOffset: 1000 });
         marker.on('click', () => this._selectMapLocation(locs[0]));
         this._clusterGroup.addLayer(marker);
@@ -4888,7 +4877,7 @@ export class BidSheetComponent {
       // been two rendering tiers drifting apart; this is the tier that keeps drifting.
       const drawDot = (): void => {
         // Dot stands for the whole coordinate group, so it counts as ours if ANY location here is.
-        const dotIsScoular = names.some(n => scoularNames.has(n));
+        const dotIsScoular = locs.some(l => scoularIds.has(l.id));
         // Compute dot color from bid status (matches the pill colors used when zoomed in)
         let color: string, border: string;
         if (isRef) {
@@ -4917,7 +4906,7 @@ export class BidSheetComponent {
         const m = L.marker([lat, lng], { icon: dotIcon });
         m.on('click', () => this._selectMapLocation(locs[0]));
         const hoverBid2 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border);
+        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border, scoularIds.has(locs[0].id));
         this._clusterGroup.addLayer(m);
       };
 
@@ -4986,7 +4975,7 @@ export class BidSheetComponent {
           const marker = L.marker([lat, lng], { icon: divIcon });
           marker.on('click', () => this._selectMapLocation(locs[0]));
           const hoverBid3 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border);
+          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border, scoularIds.has(locs[0].id));
           this._clusterGroup.addLayer(marker);
           return;
         }
@@ -5004,7 +4993,7 @@ export class BidSheetComponent {
       // Default: name labels — match the pill color story used elsewhere
       // Keyed to locs[0] specifically, not "any name here": this bg also drives the hover icon,
       // which shows locs[0]. Per-line fill for mixed groups is handled inside _buildStackedLabel.
-      const labelIsScoular = scoularNames.has(locs[0].name);
+      const labelIsScoular = scoularIds.has(locs[0].id);
       let bg: string, border: string;
       if (isRef) {
         bg = statusColors['reference'].bg; border = statusColors['reference'].border;
@@ -5024,14 +5013,14 @@ export class BidSheetComponent {
       const maxWidth = Math.min(150, Math.max(85, ...names.map(n => n.length * 7 + 22)));
       const nameIcon = L.divIcon({
         className: 'custom-marker' + this._movedPulseClass(locs.some(l => this._locationChangedWithin24h(l.id, year, crop, month))),
-        html: this._buildStackedLabel(names, bg, border, comparingToRef),
+        html: this._buildStackedLabel(locs, bg, border, comparingToRef),
         iconSize: [maxWidth, names.length * 26 + 8],
         iconAnchor: [maxWidth / 2, names.length * 26 + 8]
       });
       const marker = L.marker([lat, lng], { icon: nameIcon });
       marker.on('click', () => this._selectMapLocation(locs[0]));
       const hoverBid4 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border);
+      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border, scoularIds.has(locs[0].id));
       this._clusterGroup.addLayer(marker);
     });
 
@@ -5491,7 +5480,7 @@ export class BidSheetComponent {
     return out;
   }
 
-  private _buildStackedLabel(names: string[], bg: string, border: string, statusDriven = false): string {
+  private _buildStackedLabel(locs: BidSheetLocation[], bg: string, border: string, statusDriven = false): string {
     // Both greys the map can hand us: the light sentinel, and the neutral itself (darkened alongside
     // _neutralPinColors -- these two MUST move together or this stops matching and the substitution
     // below silently never fires).
@@ -5499,16 +5488,19 @@ export class BidSheetComponent {
     const textColor = '#fff';
     const labelBg = isGrey ? '#6b7280' : bg;
     const labelBorder = isGrey ? '#4b5563' : border;
-    const maxWidth = Math.min(150, Math.max(85, ...names.map(n => n.length * 7 + 22)));
+    const maxWidth = Math.min(150, Math.max(85, ...locs.map(l => l.name.length * 7 + 22)));
     // Both cues are per NAME, not per pin: a stacked label can hold several locations at one
     // coordinate and only some may be ours. Painting the whole stack from one flag would mark a
     // competitor as ours just for sharing a coordinate with a Scoular elevator.
     //   no reference → green FILL on our lines only
     //   reference set → status fill kept, green RING on our lines only (a green ring on a green
     //                   fill would be invisible, which is why these are exclusive)
-    const scoular = this.scoularLocationNames();
-    const linesHtml = names.map(n => {
-      const mine = scoular.has(n);
+    // Per LOCATION, not per name: two elevators can share a label, and painting by name marked a
+    // competitor as ours for it.
+    const scoular = this.scoularLocationIds();
+    const linesHtml = locs.map(l => {
+      const n = l.name;
+      const mine = scoular.has(l.id);
       const lineBg = !statusDriven && mine ? BidSheetComponent.SCOULAR_BG : labelBg;
       const lineBorder = !statusDriven && mine ? BidSheetComponent.SCOULAR_BORDER : labelBorder;
       return `<div style="background:${lineBg};border:2px solid ${lineBorder};border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;color:${textColor};white-space:nowrap;line-height:1.2;overflow:hidden;text-overflow:ellipsis;max-width:${maxWidth}px;${this._scoularRingCss(statusDriven && mine)}">${this._esc(n)}</div>`;
@@ -5520,7 +5512,7 @@ export class BidSheetComponent {
   }
 
   /** Creates an expanded hover icon showing location name + bid value. */
-  private _buildHoverIcon(name: string, bid: string, bg: string, border: string): any {
+  private _buildHoverIcon(name: string, bid: string, bg: string, border: string, isScoular = false): any {
     const L = this._L!;
     const nameHtml = `<div style="font-size:11px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.2;">${this._esc(name)}</div>`;
     const bidLabel = bid || '--';
@@ -5533,7 +5525,7 @@ export class BidSheetComponent {
     return L.divIcon({
       className: 'custom-marker',
       html: `<div style="position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;">
-        <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 9px;box-shadow:${this._scoularRing(this.scoularLocationNames().has(name) && bg !== BidSheetComponent.SCOULAR_BG)}0 3px 10px rgba(0,0,0,0.3);cursor:pointer;">${nameHtml}${subHtml}</div>
+        <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 9px;box-shadow:${this._scoularRing(isScoular && bg !== BidSheetComponent.SCOULAR_BG)}0 3px 10px rgba(0,0,0,0.3);cursor:pointer;">${nameHtml}${subHtml}</div>
         <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid ${bg};margin:-1px auto 0;"></div>
       </div>`,
       iconSize: [w, h],
@@ -5555,8 +5547,8 @@ export class BidSheetComponent {
     this._hoveredMarker = null;
   }
 
-  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string): void {
-    const hoverIcon = this._buildHoverIcon(name, bid, bg, border);
+  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string, isScoular = false): void {
+    const hoverIcon = this._buildHoverIcon(name, bid, bg, border, isScoular);
     marker.on('mouseover', () => {
       // At most one pin is ever expanded; whatever was before this one collapses first.
       if (this._hoveredMarker?.marker !== marker) this._collapseHoveredMarker();
