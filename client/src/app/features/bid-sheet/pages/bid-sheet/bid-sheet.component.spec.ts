@@ -2712,3 +2712,103 @@ describe('BidSheetComponent — several bid sheets shown at once', () => {
     expect(BidSheetComponent.parseSheetIds(saved[0])).toEqual([2, 1]);
   });
 });
+
+/**
+ * Share, rename and delete cannot be done to a SET -- sharing two sheets with someone means two
+ * different things, and a delete confirmation naming several would be a trap. They used to act on
+ * "the active sheet", which with several ticked meant whichever happened to be first: a user who
+ * clicked Delete beside Nebraska would have deleted Kansas. Each is raised from a particular row now
+ * and carries that sheet with it.
+ */
+describe('BidSheetComponent — owner actions act on the sheet they were raised from', () => {
+  let component: BidSheetComponent;
+  let renamed: Array<{ id: number; name: string }>;
+  let deleted: number[];
+  let shared: number[];
+
+  const sheet = (id: number, name: string): BidSheet => ({
+    id, name, ownerUserId: 'test', isOwner: true,
+    createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [], locations: [],
+  } as BidSheet);
+
+  beforeEach(() => {
+    renamed = [];
+    deleted = [];
+    shared = [];
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+      getRecapGroups: () => of([]),
+      renameBidSheet: (id: number, name: string) => { renamed.push({ id, name }); return of(sheet(id, name)); },
+      deleteBidSheet: (id: number) => { deleted.push(id); return of(null); },
+      setBidSheetShares: (id: number) => { shared.push(id); return of(sheet(id, 'x')); },
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    component.sheets.set([sheet(1, 'Kansas'), sheet(2, 'Nebraska')]);
+    component.selectedSheetIds.set([1, 2]);
+  });
+
+  it('renames the sheet whose row raised it, not the first ticked', () => {
+    component.openRenameSheet(2);
+    expect(component.renameSheetName()).toBe('Nebraska');
+
+    component.renameSheetName.set('Nebraska West');
+    component.confirmRenameSheet();
+
+    expect(renamed).toEqual([{ id: 2, name: 'Nebraska West' }]);
+  });
+
+  it('deletes the sheet whose row raised it, and leaves the rest ticked', () => {
+    component.openDeleteSheetConfirm(2);
+    expect(component.sheetActionTarget()?.name).toBe('Nebraska');
+
+    component.confirmDeleteSheet();
+
+    expect(deleted).toEqual([2]);
+    expect(component.selectedSheetIds()).toEqual([1]);
+  });
+
+  it('shares the sheet whose row raised it', () => {
+    component.openShareSheet(2);
+    expect(component.sheetActionTarget()?.name).toBe('Nebraska');
+
+    component.confirmShareSheet();
+
+    expect(shared).toEqual([2]);
+  });
+
+  // The toolbar buttons have no row to be raised from, so they keep pointing at the first ticked --
+  // which is why the ones that cannot be made unambiguous are hidden once several are open.
+  it('falls back to the first ticked sheet when raised without one', () => {
+    component.openRenameSheet();
+
+    expect(component.sheetActionTarget()?.name).toBe('Kansas');
+  });
+
+  // A stale aim would point the next toolbar action at a sheet that is gone.
+  it('forgets the target once that sheet is deleted', () => {
+    component.openDeleteSheetConfirm(2);
+    component.confirmDeleteSheet();
+
+    expect(component.sheetActionTargetId()).toBeNull();
+    expect(component.sheetActionTarget()?.name).toBe('Kansas');
+  });
+});

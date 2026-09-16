@@ -34,6 +34,8 @@ export class SheetMultiSelectComponent {
   readonly showingAll = input<boolean>(false);
   /** Compact styling for the map toolbar, which sits in a crowded single row. */
   readonly compact = input<boolean>(false);
+  /** Whether each row carries its own share / rename / delete menu. */
+  readonly showRowActions = input<boolean>(false);
 
   /** Tick or untick one sheet, leaving the rest alone. */
   readonly toggled = output<number>();
@@ -41,6 +43,36 @@ export class SheetMultiSelectComponent {
   readonly pickedOnly = output<number>();
   /** Browse every location instead of any sheet. */
   readonly pickedAll = output<void>();
+
+  /**
+   * Owner actions, each carrying the sheet it was raised from.
+   *
+   * They live on the ROW rather than in a toolbar because they cannot be done to a set: sharing two
+   * sheets with someone means two different things, and a delete confirmation naming several would be
+   * a trap. Raising each from a particular row makes the target unambiguous by construction.
+   */
+  readonly sharedSheet = output<number>();
+  readonly renamedSheet = output<number>();
+  readonly deletedSheet = output<number>();
+
+  /** Which row has its menu open. One at a time; null is none. */
+  readonly openRowMenu = signal<number | null>(null);
+
+  toggleRowMenu(id: number, event: Event): void {
+    event.stopPropagation();
+    this.openRowMenu.update(open => (open === id ? null : id));
+  }
+
+  /** Every row action closes the whole control: each one opens a dialog over the top of it. */
+  private runRowAction(emit: () => void): void {
+    emit();
+    this.openRowMenu.set(null);
+    this.close();
+  }
+
+  onShare(id: number): void { this.runRowAction(() => this.sharedSheet.emit(id)); }
+  onRename(id: number): void { this.runRowAction(() => this.renamedSheet.emit(id)); }
+  onDelete(id: number): void { this.runRowAction(() => this.deletedSheet.emit(id)); }
 
   readonly open = signal<boolean>(false);
 
@@ -63,8 +95,8 @@ export class SheetMultiSelectComponent {
     return `${names.length} bid sheets`;
   });
 
-  toggleOpen(): void { this.open.update(v => !v); }
-  close(): void { this.open.set(false); }
+  toggleOpen(): void { this.open.update(v => !v); this.openRowMenu.set(null); }
+  close(): void { this.open.set(false); this.openRowMenu.set(null); }
 
   onToggle(id: number): void { this.toggled.emit(id); }
 

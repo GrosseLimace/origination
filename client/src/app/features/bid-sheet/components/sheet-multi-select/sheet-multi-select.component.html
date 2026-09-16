@@ -32,6 +32,36 @@
             @if (!sheet.isOwner) {
               <span class="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
             }
+
+            @if (showRowActions()) {
+              <div class="relative shrink-0">
+                <button type="button" (click)="toggleRowMenu(sheet.id, $event)"
+                        [attr.aria-label]="'Actions for ' + sheet.name" title="Share, rename or delete this sheet"
+                        class="p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
+                </button>
+
+                @if (openRowMenu() === sheet.id) {
+                  <div class="absolute right-0 top-full mt-1 min-w-[9rem] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[1350] overflow-hidden">
+                    <button type="button" (click)="onShare(sheet.id)"
+                            class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                      Share{{ sheet.shares.length > 0 ? ' (' + sheet.shares.length + ')' : '' }}
+                    </button>
+                    <!-- Owner only, matching the server's RequireSheetOwnerAsync. -->
+                    @if (sheet.isOwner) {
+                      <button type="button" (click)="onRename(sheet.id)"
+                              class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        Rename
+                      </button>
+                      <button type="button" (click)="onDelete(sheet.id)"
+                              class="w-full text-left px-3 py-2 text-sm text-scoular-red-accessible dark:text-scoular-red hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        Delete
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+            }
           </div>
         } @empty {
           <p class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No bid sheets yet</p>

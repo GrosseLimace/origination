@@ -45,8 +45,11 @@
               <app-sheet-multi-select
                 [sheets]="sheets()" [selectedIds]="selectedSheetIds()"
                 [showAllOption]="true" [showingAll]="mapScope() === 'all'" [compact]="true"
+                [showRowActions]="true"
                 (toggled)="toggleSheet($event)" (pickedOnly)="selectSheet($event)"
-                (pickedAll)="setMapScope('all')" />
+                (pickedAll)="setMapScope('all')"
+                (sharedSheet)="openShareSheet($event)" (renamedSheet)="openRenameSheet($event)"
+                (deletedSheet)="openDeleteSheetConfirm($event)" />
             }
 
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
@@ -524,6 +527,24 @@
                           @if (!sheet.isOwner) {
                             <span class="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
                           }
+                          <!-- Per sheet, not per selection: these three cannot be done to a set.
+                               Sharing two sheets with someone means two different things, and a delete
+                               confirmation naming several would be a trap. Rename and Delete are owner
+                               only, matching the server's RequireSheetOwnerAsync. -->
+                          <button (click)="openShareSheet(sheet.id)" [title]="'Share \'' + sheet.name + '\''"
+                            class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                          </button>
+                          @if (sheet.isOwner) {
+                            <button (click)="openRenameSheet(sheet.id)" [title]="'Rename \'' + sheet.name + '\''"
+                              class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                            <button (click)="openDeleteSheetConfirm(sheet.id)" [title]="'Delete \'' + sheet.name + '\''"
+                              class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                            </button>
+                          }
                         </div>
                       }
                     </div>
@@ -537,23 +558,6 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                     New bid sheet
                   </button>
-                  @if (activeSheet(); as sheet) {
-                    <div class="border-t border-gray-200 dark:border-gray-700"></div>
-                    <button (click)="openShareSheet()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                      Share{{ sheet.shares.length > 0 ? ' (' + sheet.shares.length + ')' : '' }}
-                    </button>
-                    @if (sheet.isOwner) {
-                      <button (click)="openRenameSheet()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        Rename
-                      </button>
-                      <button (click)="openDeleteSheetConfirm()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-scoular-red-accessible dark:text-scoular-red hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                        Delete
-                      </button>
-                    }
-                  }
                 </div>
               }
             </div>
@@ -802,7 +806,13 @@
                    (click)="$event.stopPropagation()">
                 <div class="px-5 pt-5 pb-3">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Remove what?</h4>
-                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Taking locations off this sheet leaves them for everyone else. Deleting the sheet cannot be undone.</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    @if (selectedSheets().length > 1) {
+                      Taking locations off leaves them for everyone else. To delete a whole sheet, use its ⋯ menu in the sheet picker — with several open there is no single sheet this button could mean.
+                    } @else {
+                      Taking locations off this sheet leaves them for everyone else. Deleting the sheet cannot be undone.
+                    }
+                  </p>
                 </div>
                 <div class="p-3 pt-0 space-y-2">
                   <button (click)="chooseRemoveLocations()"
@@ -821,7 +831,7 @@
                   </button>
 
                   <!-- Owner-only, matching the server guard. A member sees only the option they can use. -->
-                  @if (activeSheet()?.isOwner) {
+                  @if (selectedSheets().length === 1 && sheetActionTarget()?.isOwner) {
                     <button (click)="chooseDeleteSheet()"
                             class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-red hover:bg-scoular-red/5 dark:hover:bg-scoular-red/10 transition-colors">
                       <div class="flex items-start gap-3">
@@ -831,7 +841,7 @@
                         <span class="min-w-0">
                           <span class="block text-sm font-medium text-gray-900 dark:text-white">Delete the whole bid sheet</span>
                           <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Removes "{{ activeSheet()?.name }}" and unshares it. The locations themselves stay.
+                            Removes "{{ sheetActionTarget()?.name }}" and unshares it. The locations themselves stay.
                           </span>
                         </span>
                       </div>
@@ -914,7 +924,7 @@
                       </svg>
                     </div>
                     <div>
-                      <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Delete "{{ activeSheet()?.name }}"?</h4>
+                      <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Delete "{{ sheetActionTarget()?.name }}"?</h4>
                       <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                         This removes the sheet and unshares it. The locations on it stay -- they are shared company-wide and other sheets may hold them too.
                       </p>
@@ -936,7 +946,7 @@
             <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
               <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
                 <div class="px-5 pt-5 pb-3 shrink-0">
-                  <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-1">Share "{{ activeSheet()?.name }}"</h4>
+                  <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-1">Share "{{ sheetActionTarget()?.name }}"</h4>
                   <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">Everyone you add can edit this sheet — its locations, columns and order.</p>
                 </div>
                 <!-- Tabbed picker, mirroring Manage Groups: the four kinds are searched differently and
@@ -1296,26 +1306,31 @@
                      them first), so there is always at least one. -->
                 @if (sheets().length > 0) {
                   <app-sheet-multi-select
-                    [sheets]="sheets()" [selectedIds]="selectedSheetIds()"
-                    (toggled)="onEditBidsSheetToggle($event)" (pickedOnly)="onEditBidsSheetPickOnly($event)" />
+                    [sheets]="sheets()" [selectedIds]="selectedSheetIds()" [showRowActions]="true"
+                    (toggled)="onEditBidsSheetToggle($event)" (pickedOnly)="onEditBidsSheetPickOnly($event)"
+                    (sharedSheet)="openShareSheet($event)" (renamedSheet)="openRenameSheet($event)"
+                    (deletedSheet)="openDeleteSheetConfirm($event)" />
                 }
 
-                <!-- Sheet actions, beside the sheet they act on. The panel's sheet menu has the same
-                     ones; repeating them here means you don't have to leave the grid to share what
-                     you're editing.
+                <!-- Sheet actions, beside the sheet they act on -- so you don't have to leave the grid
+                     to share what you're editing.
+                     SHARE appears only with ONE sheet open: with several there is no single sheet the
+                     button could mean, and the picker's per-row ⋯ menu is unambiguous by construction.
                      RENAME is deliberately NOT here: it sits on the Locations column header, next to
                      the sheet name it changes, rather than as an anonymous pencil among the toolbar.
                      DELETE opens a choice (sheet vs. locations) and so is NOT owner-gated any more --
-                     removing locations is ordinary member editing. The sheet-delete option inside that
-                     dialog is still owner-only, matching the server's RequireSheetOwnerAsync. -->
-                @if (activeSheet(); as sheet) {
+                     removing locations is ordinary member editing, and it is union-wide. The
+                     sheet-delete option inside that dialog is owner-only AND single-sheet-only. -->
+                @if (selectedSheets().length > 0) {
                   <div class="flex items-center gap-1.5">
-                    <button (click)="openShareSheet()" [title]="sheet.shares.length > 0 ? 'Share (' + sheet.shares.length + ' people)' : 'Share'"
+                    @if (selectedSheets().length === 1 && activeSheet(); as sheet) {
+                    <button (click)="openShareSheet(sheet.id)" [title]="sheet.shares.length > 0 ? 'Share (' + sheet.shares.length + ' people)' : 'Share'"
                       class="flex items-center gap-1.5 px-2.5 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                       @if (sheet.shares.length > 0) { <span class="text-xs text-gray-500 dark:text-gray-400">{{ sheet.shares.length }}</span> }
                     </button>
-                    <button (click)="openDeleteChoice()" title="Remove locations from this sheet, or delete the sheet"
+                    }
+                    <button (click)="openDeleteChoice()" [title]="selectedSheets().length > 1 ? 'Remove locations from these sheets' : 'Remove locations from this sheet, or delete the sheet'"
                       class="p-2 text-scoular-red-accessible dark:text-scoular-red bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors shadow-sm">
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                     </button>

@@ -354,6 +354,18 @@ export class BidSheetComponent {
    *  doesn't hand the input a fresh Set on every change-detection pass. */
   readonly emptyLocationIds: ReadonlySet<number> = new Set();
 
+  /**
+   * The sheet a one-sheet action is aimed at: share, rename, delete.
+   *
+   * These cannot be done to a SET -- sharing two sheets with someone means two different things, and
+   * a delete confirmation naming several would be a trap -- so each is raised from a particular
+   * sheet's row in the picker and remembers which. Falling back to the first ticked keeps the
+   * toolbar buttons, which have no row to be raised from, working exactly as they did.
+   */
+  readonly sheetActionTargetId = signal<number | null>(null);
+  readonly sheetActionTarget = computed<BidSheet | null>(() =>
+    this.sheets().find(s => s.id === this.sheetActionTargetId()) ?? this.activeSheet());
+
   readonly showSheetMenu = signal<boolean>(false);
   readonly showCreateSheet = signal<boolean>(false);
   readonly newSheetName = signal<string>('');
@@ -478,8 +490,9 @@ export class BidSheetComponent {
     return rows.length > 0 && rows.every(l => this.removeLocationIds().has(l.id));
   });
 
-  openDeleteChoice(): void {
-    if (!this.activeSheet()) return;
+  openDeleteChoice(sheetId?: number): void {
+    this.sheetActionTargetId.set(sheetId ?? null);
+    if (!this.sheetActionTarget()) return;
     this.showDeleteChoice.set(true);
     this.showSheetMenu.set(false);
   }
@@ -1799,8 +1812,9 @@ export class BidSheetComponent {
     });
   }
 
-  openRenameSheet(): void {
-    const sheet = this.activeSheet();
+  openRenameSheet(sheetId?: number): void {
+    this.sheetActionTargetId.set(sheetId ?? null);
+    const sheet = this.sheetActionTarget();
     if (!sheet) return;
     this.renameSheetName.set(sheet.name);
     this.showRenameSheet.set(true);
@@ -1812,7 +1826,7 @@ export class BidSheetComponent {
   }
 
   confirmRenameSheet(): void {
-    const sheet = this.activeSheet();
+    const sheet = this.sheetActionTarget();
     const name = this.renameSheetName().trim();
     if (!sheet || !name || this.renamingSheet()) return;
     this.renamingSheet.set(true);
@@ -1832,8 +1846,9 @@ export class BidSheetComponent {
     });
   }
 
-  openDeleteSheetConfirm(): void {
-    if (!this.activeSheet()) return;
+  openDeleteSheetConfirm(sheetId?: number): void {
+    if (sheetId != null) this.sheetActionTargetId.set(sheetId);
+    if (!this.sheetActionTarget()) return;
     this.showDeleteSheetConfirm.set(true);
     this.showSheetMenu.set(false);
   }
@@ -1843,7 +1858,7 @@ export class BidSheetComponent {
   }
 
   confirmDeleteSheet(): void {
-    const sheet = this.activeSheet();
+    const sheet = this.sheetActionTarget();
     if (!sheet || this.deletingSheet()) return;
     this.deletingSheet.set(true);
     this.apiService.deleteBidSheet(sheet.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1853,6 +1868,7 @@ export class BidSheetComponent {
         this.sheets.update(list => list.filter(s => s.id !== sheet.id));
         // Only the deleted one goes; anything else ticked stays on screen.
         this.setSelectedSheets(this.selectedSheetIds().filter(id => id !== sheet.id));
+        this.sheetActionTargetId.set(null);
         // Delete is reachable from the Edit Bids header now. The grid is the sheet's, and the sheet
         // is gone -- leaving it open would show an empty grid under a blank dropdown.
         if (this.editBidsMode()) this.closeEditBids();
@@ -1870,8 +1886,9 @@ export class BidSheetComponent {
 
   // ---- Sharing ------------------------------------------------------------------------------
 
-  openShareSheet(): void {
-    const sheet = this.activeSheet();
+  openShareSheet(sheetId?: number): void {
+    this.sheetActionTargetId.set(sheetId ?? null);
+    const sheet = this.sheetActionTarget();
     if (!sheet) return;
     this.pendingShares.set([...sheet.shares]);
     this.shareSearch.set('');
@@ -1926,7 +1943,7 @@ export class BidSheetComponent {
   }
 
   confirmShareSheet(): void {
-    const sheet = this.activeSheet();
+    const sheet = this.sheetActionTarget();
     if (!sheet || this.savingShares()) return;
     this.savingShares.set(true);
     const members = this.pendingShares().map(s => ({ memberType: s.memberType, memberId: s.memberId, name: s.name }));
@@ -5026,6 +5043,8 @@ export class BidSheetComponent {
     // testing crop here is what previously made the ring appear with no reference selected.
     const comparingToRef = this._hasReference();
     const scoularIds = this.scoularLocationIds();
+    // Which ticked sheets each pin belongs to -- empty with one sheet on screen.
+    const sheetBadges = this.sheetBadgeByLocationId();
 
     // Group the in-scope locations by coordinates -- the open sheet's, or everything, per mapScope.
     const locsByPos = new Map<string, BidSheetLocation[]>();
@@ -5141,7 +5160,7 @@ export class BidSheetComponent {
         const m = L.marker([lat, lng], { icon: dotIcon });
         m.on('click', () => this._selectMapLocation(locs[0]));
         const hoverBid2 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border, scoularIds.has(locs[0].id));
+        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border, scoularIds.has(locs[0].id), sheetBadges.get(locs[0].id) ?? '');
         this._clusterGroup.addLayer(m);
       };
 
@@ -5210,7 +5229,7 @@ export class BidSheetComponent {
           const marker = L.marker([lat, lng], { icon: divIcon });
           marker.on('click', () => this._selectMapLocation(locs[0]));
           const hoverBid3 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border, scoularIds.has(locs[0].id));
+          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border, scoularIds.has(locs[0].id), sheetBadges.get(locs[0].id) ?? '');
           this._clusterGroup.addLayer(marker);
           return;
         }
@@ -5255,7 +5274,7 @@ export class BidSheetComponent {
       const marker = L.marker([lat, lng], { icon: nameIcon });
       marker.on('click', () => this._selectMapLocation(locs[0]));
       const hoverBid4 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border, scoularIds.has(locs[0].id));
+      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border, scoularIds.has(locs[0].id), sheetBadges.get(locs[0].id) ?? '');
       this._clusterGroup.addLayer(marker);
     });
 
@@ -5749,21 +5768,32 @@ export class BidSheetComponent {
     </div>`;
   }
 
-  /** Creates an expanded hover icon showing location name + bid value. */
-  private _buildHoverIcon(name: string, bid: string, bg: string, border: string, isScoular = false): any {
+  /**
+   * Creates an expanded hover icon showing location name + bid value, and -- with more than one sheet
+   * on screen -- which of them this pin belongs to.
+   *
+   * The sheet line is the map's answer to the question the grid's row badge answers: with a union
+   * drawn, a pin no longer says which list put it there, and "why is this elevator on my map" is not
+   * something you should have to open the panel to find out. Empty with one sheet ticked, where the
+   * answer is the same for every pin.
+   */
+  private _buildHoverIcon(name: string, bid: string, bg: string, border: string, isScoular = false, onSheets = ''): any {
     const L = this._L!;
     const nameHtml = `<div style="font-size:11px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.2;">${this._esc(name)}</div>`;
     const bidLabel = bid || '--';
     const subHtml = bid
       ? `<div style="font-size:10px;font-weight:500;color:rgba(255,255,255,0.85);white-space:nowrap;line-height:1.2;margin-top:2px;">${this._esc(bidLabel)}</div>`
       : '';
-    const textLen = Math.max(name.length, bidLabel.length + 3);
+    const sheetsHtml = onSheets
+      ? `<div style="font-size:9px;font-weight:500;color:rgba(255,255,255,0.7);white-space:nowrap;line-height:1.2;margin-top:2px;">${this._esc(onSheets)}</div>`
+      : '';
+    const textLen = Math.max(name.length, bidLabel.length + 3, onSheets.length);
     const w = Math.max(100, textLen * 7 + 24);
-    const h = bid ? 50 : 36;
+    const h = (bid ? 50 : 36) + (onSheets ? 13 : 0);
     return L.divIcon({
       className: 'custom-marker',
       html: `<div style="position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;">
-        <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 9px;box-shadow:${this._scoularRing(isScoular && bg !== BidSheetComponent.SCOULAR_BG)}0 3px 10px rgba(0,0,0,0.3);cursor:pointer;">${nameHtml}${subHtml}</div>
+        <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 9px;box-shadow:${this._scoularRing(isScoular && bg !== BidSheetComponent.SCOULAR_BG)}0 3px 10px rgba(0,0,0,0.3);cursor:pointer;">${nameHtml}${subHtml}${sheetsHtml}</div>
         <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid ${bg};margin:-1px auto 0;"></div>
       </div>`,
       iconSize: [w, h],
@@ -5785,8 +5815,8 @@ export class BidSheetComponent {
     this._hoveredMarker = null;
   }
 
-  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string, isScoular = false): void {
-    const hoverIcon = this._buildHoverIcon(name, bid, bg, border, isScoular);
+  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string, isScoular = false, onSheets = ''): void {
+    const hoverIcon = this._buildHoverIcon(name, bid, bg, border, isScoular, onSheets);
     marker.on('mouseover', () => {
       // At most one pin is ever expanded; whatever was before this one collapses first.
       if (this._hoveredMarker?.marker !== marker) this._collapseHoveredMarker();
