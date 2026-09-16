@@ -565,6 +565,15 @@ export class ApiService {
   }
 
   /** Lookup data (people / trade units / groups) for the note "@" mention picker */
+  /** The Teams channels the signed-in user belongs to. The API reads these from Graph
+   *  on-behalf-of the caller, so the browser never talks to Graph and never holds a Graph token.
+   *  An empty list means consent has not been granted in this environment. */
+  getMyTeamsChannels(): Observable<import('@core/services/teams-directory.service').GraphTeamsChannel[]> {
+    return this.http
+      .get<import('@core/services/teams-directory.service').GraphTeamsChannel[]>(`${this.baseUrl}/teamschannels/mine`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** Registers a Teams channel the composer read from Graph, or returns the row that already
    *  exists for it. Idempotent, so the composer calls it on every pick without checking first.
    *  Returns the registry id the note mention must carry. */

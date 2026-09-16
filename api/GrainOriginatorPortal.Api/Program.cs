@@ -90,16 +90,16 @@ builder.Services.AddProblemDetails();
 // exchange the caller's token for a Graph token FOR THAT SAME USER (on-behalf-of). Required by IT
 // Security 2026-09-15: delegated Graph permissions live on the API registration, never the SPA,
 // because their reconciler rebuilds SPA permission lists from a template and would silently drop
-// anything added by hand. The boundary is unchanged — still only the caller's OWN calendar —
-// because the user's identity flows through the exchange.
+// anything added by hand. The permission boundary is identical either way — the user's own calendar,
+// the teams they are already in — because the user's identity flows through the exchange.
 //
 // HOW THE API AUTHENTICATES TO ENTRA is configuration, not code: "AzureAd:ClientCredentials". The
 // intent is the secretless route (a federated credential backed by the App Service managed identity),
-// but a secret or certificate drops into the same section without touching anything here.
+// but a secret or certificate would drop into the same section without touching anything here.
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
     .EnableTokenAcquisitionToCallDownstreamApi()
-    // In-memory is right here: tokens are per-user and short-lived, and a cold instance simply
-    // re-exchanges. A distributed cache would be new infrastructure for no correctness gain.
+    // In-memory is right for this: tokens are per-user and short-lived, a cold instance simply
+    // re-exchanges, and a distributed cache would be new infrastructure for no correctness gain.
     .AddInMemoryTokenCaches();
 // Who may read the WHOLE org and pick any manager. Everyone else who can open the dashboard —
 // i.e. everyone else in the Super Users group — is scoped to themselves plus their own reports.
@@ -270,6 +270,7 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
+builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity

@@ -21,8 +21,10 @@ address. A group set to Teams delivery sends **everything** there — the nightl
 
 ## How the `@` menu finds channels
 
-The composer asks Microsoft Graph for the channels the **signed-in user** belongs to, using that
-person's own delegated token rather than the app's identity. That choice does three jobs at once:
+The composer calls **our API** (`GET /api/teamschannels/mine`), which asks Microsoft Graph
+**on-behalf-of the signed-in user**. The browser never talks to Graph and never holds a Graph token.
+Graph still sees the user's identity, so it returns only the teams that person belongs to. That does
+three jobs at once:
 
 - **Scoping.** You only ever see channels you are actually in, so the list stays small. This is the
   answer to "there are too many channels to pick from" — a person's own teams are a fraction of the
@@ -60,7 +62,8 @@ nothing, so the flag exists to avoid showing an empty section that looks broken.
 
 ## The IT ask (only open item)
 
-**Two** delegated permissions, both with **admin consent**, on the three SPA app registrations:
+**Two** delegated permissions, both with **admin consent**, on the **API app registration**
+(`00078a10-3f3f-4d17-9350-fe90401125ae`) — *not* the SPA registrations:
 
 | Permission | Why | Endpoint |
 | --- | --- | --- |
@@ -70,16 +73,35 @@ nothing, so the flag exists to avoid showing an empty section that looks broken.
 Both are the least-privileged delegated permission for their endpoint. Requesting only the second is
 an easy mistake and fails at the first call.
 
-| Env | SPA app registration |
-| --- | --- |
-| Dev | `e0f25943-ae8b-4c2d-8060-c9ffbd448aff` |
-| QA | `c2bb1208-063d-43aa-bad0-6b51d21437b4` |
-| PROD | `958fd665-daa3-42c5-9903-3c9c00638bf1` |
+Consent applies to Dev, QA and PROD **together**, not one environment at a time (confirmed by IT
+Security 2026-09-15). The per-environment flag is what keeps the feature dark until we choose to turn
+it on. The Producer Reminders feature needs `Calendars.ReadWrite` on the same registration, so the
+two go in one request.
 
-The API app registrations and the managed identity are **not** involved. This is the same set of
-registrations the Producer Reminders feature needs `Calendars.ReadWrite` on, so the two can go in one
-request. Pitch it as the least-privileged option: delegated read of the teams and channels a user is
-already in, versus the app-only alternative that reads every channel in the tenant.
+### Why the API registration and not the SPA
+
+IT Security's rule, 2026-09-15: delegated Graph permissions live on the API registration across the
+fleet, and the API calls Graph on-behalf-of the user. Enterprise TMS already does this for
+`Mail.Send`. The decisive reason is operational rather than security — **their app registrations are
+rebuilt from a config template**, so a permission added by hand to a SPA registration works for
+months and then silently disappears during an unrelated reconcile. The permission boundary is
+identical either way, because the user's identity flows through the exchange.
+
+### How the API authenticates for on-behalf-of
+
+On-behalf-of makes this API a confidential client, so it must prove its own identity to Entra. That
+is **configuration, not code** — `AzureAd:ClientCredentials` — so either answer below works without
+touching `Program.cs`:
+
+- **Preferred, secretless:** a federated identity credential on the API registration backed by the
+  App Service managed identity (`"SourceType": "SignedAssertionFromManagedIdentity"`). Keeps the
+  app's existing no-secrets posture.
+- **If IT prefers the established path:** a client secret or certificate in the same section, sourced
+  from Key Vault.
+
+**Local development** has no managed identity, so a developer running the API locally gets no Graph
+token and sees an empty channel list. To exercise it locally, put a client secret in **User Secrets**
+(never `appsettings.json`), which is the approved place for development secrets.
 
 `ChannelSettings.ReadWrite.All` would additionally let the app create a channel's email address when
 one does not exist, removing the "someone must click Get email address first" step. Deliberately
@@ -89,7 +111,8 @@ one does not exist, removing the "someone must click Get email address first" st
 
 | Symptom | Cause |
 | --- | --- |
-| No channels in the `@` menu | Consent not granted for this environment, or the flag is off. Both fail quietly by design. |
+| No channels in the `@` menu | Consent not granted, the flag is off, or the API has no client credential configured so the on-behalf-of exchange fails. All three fail quietly by design — check the API logs for "Teams channel lookup unavailable" or a Graph 403. |
+| Works in Dev, empty when running locally | Expected. Local has no managed identity, so there is no credential for the on-behalf-of exchange. Add a client secret to User Secrets to test locally. |
 | A channel you're in is missing | It has no email address yet. Open it in Teams → **Get email address**. |
 | Note saved but nothing appeared in the channel | The channel's "who can send here" setting blocks the shared mailbox. It must allow `scoular.com` senders, not "team members only". |
 | Workflow run Failed with `UnknownMentionType` | The mention references a channel that is no longer registered, or one whose stored address is not a Scoular channel. |
@@ -100,6 +123,9 @@ one does not exist, removing the "someone must click Get email address first" st
 - API: `Controllers/TeamsChannelsController.cs`, `Services/TeamsChannelService.cs`,
   `Models/TeamsChannelAddress.cs`, `Services/NoteService.cs` (`ValidateTeamsChannelMentionsAsync`)
 - Data: `Data/Entities/TeamsChannel.cs`, migration `AddTeamsChannelRegistry`
-- Client: `core/services/teams-directory.service.ts`, `features/customers/components/customer-notes/`
+- Graph on-behalf-of: `Services/TeamsDirectoryService.cs`, enabled in `Program.cs`
+  (`EnableTokenAcquisitionToCallDownstreamApi` + `AddInMemoryTokenCaches`)
+- Client: `core/services/teams-directory.service.ts` (now just calls our API),
+  `features/customers/components/customer-notes/`
 - Workflow: `infra/logic-apps/instant-share-note/` (`Case_teams-channel`, `Case_app-group`)
 - Risk record: `SECURITY-REVIEWS/ACCEPTED-RISKS.md` (**AR-07**, amended 2026-09-14)
