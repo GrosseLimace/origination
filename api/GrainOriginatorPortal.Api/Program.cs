@@ -86,7 +86,21 @@ builder.Services.AddProblemDetails();
 // Validates Azure AD JWT bearer tokens on every request.
 // Configuration in appsettings.json "AzureAd" section.
 // =============================================================================
-builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+// EnableTokenAcquisitionToCallDownstreamApi turns this API into a confidential client so it can
+// exchange the caller's token for a Graph token FOR THAT SAME USER (on-behalf-of). Required by IT
+// Security 2026-09-15: delegated Graph permissions live on the API registration, never the SPA,
+// because their reconciler rebuilds SPA permission lists from a template and would silently drop
+// anything added by hand. The boundary is unchanged — still only the caller's OWN calendar —
+// because the user's identity flows through the exchange.
+//
+// HOW THE API AUTHENTICATES TO ENTRA is configuration, not code: "AzureAd:ClientCredentials". The
+// intent is the secretless route (a federated credential backed by the App Service managed identity),
+// but a secret or certificate drops into the same section without touching anything here.
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
+    .EnableTokenAcquisitionToCallDownstreamApi()
+    // In-memory is right here: tokens are per-user and short-lived, and a cold instance simply
+    // re-exchanges. A distributed cache would be new infrastructure for no correctness gain.
+    .AddInMemoryTokenCaches();
 // Who may read the WHOLE org and pick any manager. Everyone else who can open the dashboard —
 // i.e. everyone else in the Super Users group — is scoped to themselves plus their own reports.
 // Deliberately NOT derived from the Admin role: that role is how the Super Users group grants
@@ -236,6 +250,7 @@ builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<IReminderService, ReminderService>();
+builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();

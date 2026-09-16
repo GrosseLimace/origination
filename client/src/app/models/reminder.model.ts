@@ -14,6 +14,9 @@ export interface Reminder {
   subject: string;
   notes?: string;
   outlookEventId?: string | null;
+  /** False only when a reschedule could not move the existing calendar event. The reminder saved
+   *  either way — the API reports this so the client never has to talk to Graph to find out. */
+  outlookEventMoved?: boolean;
   isCompleted: boolean;
   completedAt?: string | null;
   createdAt: string;

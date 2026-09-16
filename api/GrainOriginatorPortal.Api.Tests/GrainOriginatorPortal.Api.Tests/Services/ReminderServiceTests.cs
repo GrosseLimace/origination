@@ -28,6 +28,7 @@ public class ReminderServiceTests
     private readonly Mock<IReminderRepository> _repository = new();
     private readonly Mock<ICustomerRepository> _customers = new();
     private readonly Mock<IRequestContextService> _requestContext = new();
+    private readonly Mock<IOutlookCalendarService> _calendar = new();
     private readonly ReminderService _sut;
 
     public ReminderServiceTests()
@@ -50,7 +51,15 @@ public class ReminderServiceTests
                     CustomerCode = "C-10"
                 });
 
-        _sut = new ReminderService(_repository.Object, _customers.Object, _requestContext.Object);
+        // Calendar writes are a best-effort mirror, so the default double succeeds quietly and the
+        // tests that care about the calendar override it.
+        _calendar.Setup(c => c.UpdateEventWindowAsync(
+                It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _calendar.Setup(c => c.DeleteEventAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _sut = new ReminderService(_repository.Object, _customers.Object, _requestContext.Object, _calendar.Object);
     }
 
     private static CreateReminderRequest CreateRequest(DateTime? dueAt = null, string? subject = null, string? notes = null) =>
@@ -239,5 +248,181 @@ public class ReminderServiceTests
 
         // Assert
         _repository.Verify(r => r.SetOutlookEventIdAsync(1, Caller, null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ── The calendar now moves with the row (server-side, on-behalf-of the caller) ────────────
+    // The rule throughout: the DATABASE is the source of truth and the Outlook event is a
+    // best-effort mirror. A calendar failure must never fail or roll back the reminder.
+
+    private ProducerReminder Stored(string? eventId = null, DateTime? dueAt = null) => new()
+    {
+        Id = 1,
+        CustomerId = 10,
+        Subject = "Follow up",
+        DueAt = dueAt ?? FutureDue,
+        CreatedBy = Caller,
+        CustomerName = "Smith Farms",
+        OutlookEventId = eventId,
+    };
+
+    [Fact]
+    public async Task UpdateAsync_MovesTheCalendarEventWhenTheDueDateChanged()
+    {
+        var newDue = FutureDue.AddDays(3);
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("AAMkAD=="));
+        _repository.Setup(r => r.UpdateAsync(1, Caller, It.IsAny<DateTime>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("AAMkAD==", newDue));
+
+        await _sut.UpdateAsync(1, new UpdateReminderRequest { DueAt = newDue, TimeZone = "America/Chicago" }, CancellationToken.None);
+
+        _calendar.Verify(c => c.UpdateEventWindowAsync("AAMkAD==", It.IsAny<DateTime>(), "America/Chicago", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_LeavesTheCalendarAloneWhenOnlyTheTextChanged()
+    {
+        // Patching the window for an unchanged date is a pointless Graph call, and Outlook shows a
+        // reschedule to anyone looking at the event.
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("AAMkAD=="));
+        _repository.Setup(r => r.UpdateAsync(1, Caller, It.IsAny<DateTime>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("AAMkAD=="));
+
+        await _sut.UpdateAsync(1, new UpdateReminderRequest { DueAt = FutureDue, Notes = "changed" }, CancellationToken.None);
+
+        _calendar.Verify(c => c.UpdateEventWindowAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ReportsAFailedMoveWithoutFailingTheSave()
+    {
+        var newDue = FutureDue.AddDays(3);
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("AAMkAD=="));
+        _repository.Setup(r => r.UpdateAsync(1, Caller, It.IsAny<DateTime>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("AAMkAD==", newDue));
+        _calendar.Setup(c => c.UpdateEventWindowAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _sut.UpdateAsync(1, new UpdateReminderRequest { DueAt = newDue }, CancellationToken.None);
+
+        Assert.NotNull(result);                       // the reminder still saved
+        Assert.False(result!.OutlookEventMoved);      // ...and the client is told the move did not take
+    }
+
+    [Fact]
+    public async Task DeleteAsync_RemovesTheCalendarEventToo()
+    {
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(Stored("AAMkAD=="));
+        _repository.Setup(r => r.DeleteAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        Assert.True(await _sut.DeleteAsync(1, CancellationToken.None));
+
+        _calendar.Verify(c => c.DeleteEventAsync("AAMkAD==", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_StillReportsSuccessWhenTheCalendarRemovalFails()
+    {
+        // The row is already gone. A stranded event is a far smaller problem than a delete that
+        // appears to have failed.
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(Stored("AAMkAD=="));
+        _repository.Setup(r => r.DeleteAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _calendar.Setup(c => c.DeleteEventAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        Assert.True(await _sut.DeleteAsync(1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_TouchesNoCalendarWhenTheReminderWasNeverOnOne()
+    {
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
+        _repository.Setup(r => r.DeleteAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        await _sut.DeleteAsync(1, CancellationToken.None);
+
+        _calendar.Verify(c => c.DeleteEventAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ── Adding to Outlook ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AddToOutlookAsync_WritesTheEventAndRecordsItsId()
+    {
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
+        _repository.Setup(r => r.SetOutlookEventIdAsync(1, Caller, "NEW==", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("NEW=="));
+        _calendar.Setup(c => c.CreateEventAsync(It.IsAny<OutlookEventRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("NEW==");
+
+        var result = await _sut.AddToOutlookAsync(1,
+            new AddReminderToOutlookRequest { TimeZone = "America/Chicago", ProducerLink = "https://x" }, CancellationToken.None);
+
+        Assert.Equal("NEW==", result!.OutlookEventId);
+    }
+
+    [Fact]
+    public async Task AddToOutlookAsync_LeavesTheEventIdNullWhenTheCalendarCouldNotBeWritten()
+    {
+        // Null is the signal the row uses to keep offering "Add to Outlook".
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
+        _calendar.Setup(c => c.CreateEventAsync(It.IsAny<OutlookEventRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+
+        var result = await _sut.AddToOutlookAsync(1,
+            new AddReminderToOutlookRequest { ProducerLink = "https://x" }, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Null(result!.OutlookEventId);
+        _repository.Verify(r => r.SetOutlookEventIdAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddToOutlookAsync_DoesNotCreateASecondEventForAReminderAlreadyOnTheCalendar()
+    {
+        // The retry button can be pressed twice, and two blocks in a calendar is worse than a no-op.
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(Stored("AAMkAD=="));
+
+        var result = await _sut.AddToOutlookAsync(1,
+            new AddReminderToOutlookRequest { ProducerLink = "https://x" }, CancellationToken.None);
+
+        Assert.Equal("AAMkAD==", result!.OutlookEventId);
+        _calendar.Verify(c => c.CreateEventAsync(It.IsAny<OutlookEventRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddToOutlookAsync_PassesTheBrowsersTimeZoneThrough()
+    {
+        // The server cannot know where the user is sitting, and Graph wants a local literal plus a
+        // zone name, so a lost time zone means an event at the wrong hour.
+        OutlookEventRequest? captured = null;
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
+        _repository.Setup(r => r.SetOutlookEventIdAsync(1, Caller, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("NEW=="));
+        _calendar.Setup(c => c.CreateEventAsync(It.IsAny<OutlookEventRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<OutlookEventRequest, CancellationToken>((r, _) => captured = r)
+            .ReturnsAsync("NEW==");
+
+        await _sut.AddToOutlookAsync(1,
+            new AddReminderToOutlookRequest { TimeZone = "Europe/London", ProducerLink = "https://x" }, CancellationToken.None);
+
+        Assert.Equal("Europe/London", captured!.TimeZone);
+    }
+
+    [Fact]
+    public async Task AddToOutlookAsync_FallsBackToUtcWhenTheClientSendsNoTimeZone()
+    {
+        OutlookEventRequest? captured = null;
+        _repository.Setup(r => r.GetByIdAsync(1, Caller, It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
+        _repository.Setup(r => r.SetOutlookEventIdAsync(1, Caller, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored("NEW=="));
+        _calendar.Setup(c => c.CreateEventAsync(It.IsAny<OutlookEventRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<OutlookEventRequest, CancellationToken>((r, _) => captured = r)
+            .ReturnsAsync("NEW==");
+
+        await _sut.AddToOutlookAsync(1, new AddReminderToOutlookRequest { ProducerLink = "https://x" }, CancellationToken.None);
+
+        Assert.Equal("UTC", captured!.TimeZone);
     }
 }

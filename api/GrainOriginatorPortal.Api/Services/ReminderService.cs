@@ -19,15 +19,18 @@ public class ReminderService : IReminderService
     private readonly IReminderRepository _repository;
     private readonly ICustomerRepository _customers;
     private readonly IRequestContextService _requestContext;
+    private readonly IOutlookCalendarService _calendar;
 
     public ReminderService(
         IReminderRepository repository,
         ICustomerRepository customers,
-        IRequestContextService requestContext)
+        IRequestContextService requestContext,
+        IOutlookCalendarService calendar)
     {
         _repository = repository;
         _customers = customers;
         _requestContext = requestContext;
+        _calendar = calendar;
     }
 
     // -------------------------------------------------------------------------
@@ -87,7 +90,19 @@ public class ReminderService : IReminderService
         var notes = NormalizeNotes(request.Notes);
 
         var updated = await _repository.UpdateAsync(reminderId, owner, dueAt, subject, notes, cancellationToken);
-        return updated == null ? null : Map(updated);
+        if (updated == null) return null;
+
+        // Keep the calendar in step with the row. The DATABASE is the source of truth and the event
+        // is a best-effort mirror, so a calendar failure must never fail or roll back the save — the
+        // service swallows its own errors, and the response simply reports what happened.
+        var calendarMoved = true;
+        if (!string.IsNullOrWhiteSpace(updated.OutlookEventId) && dueAt != existing.DueAt)
+        {
+            calendarMoved = await _calendar.UpdateEventWindowAsync(
+                updated.OutlookEventId!, dueAt, ResolveTimeZone(request.TimeZone), cancellationToken);
+        }
+
+        return Map(updated) with { OutlookEventMoved = calendarMoved };
     }
 
     public async Task<ReminderResponse?> SetCompletedAsync(int reminderId, bool isCompleted, CancellationToken cancellationToken)
@@ -105,11 +120,66 @@ public class ReminderService : IReminderService
         return updated == null ? null : Map(updated);
     }
 
-    public Task<bool> DeleteAsync(int reminderId, CancellationToken cancellationToken)
+    public async Task<bool> DeleteAsync(int reminderId, CancellationToken cancellationToken)
     {
         var owner = _requestContext.GetCurrentUser();
-        return _repository.DeleteAsync(reminderId, owner, cancellationToken);
+
+        // Read the event id BEFORE the row goes, or there is nothing left to clean up afterwards.
+        // This is the only path that removes the event: the user asked for the follow-up to go away.
+        // Completing one deliberately leaves it, because deleting makes Outlook render it as
+        // "Canceled", which reads as "this never happened" rather than "done".
+        var existing = await _repository.GetByIdAsync(reminderId, owner, cancellationToken);
+
+        var deleted = await _repository.DeleteAsync(reminderId, owner, cancellationToken);
+        if (!deleted) return false;
+
+        if (!string.IsNullOrWhiteSpace(existing?.OutlookEventId))
+        {
+            // Best effort, as everywhere else: a stranded calendar event is a far smaller problem
+            // than a delete that appears to fail after the row has already gone.
+            await _calendar.DeleteEventAsync(existing!.OutlookEventId!, cancellationToken);
+        }
+
+        return true;
     }
+
+    /// <inheritdoc />
+    public async Task<ReminderResponse?> AddToOutlookAsync(
+        int reminderId, AddReminderToOutlookRequest request, CancellationToken cancellationToken)
+    {
+        var owner = _requestContext.GetCurrentUser();
+        var reminder = await _repository.GetByIdAsync(reminderId, owner, cancellationToken);
+        if (reminder == null) return null;
+
+        // Already on the calendar — return as-is rather than creating a duplicate event. The client
+        // retry button can be pressed twice, and two blocks in a calendar is worse than a no-op.
+        if (!string.IsNullOrWhiteSpace(reminder.OutlookEventId)) return Map(reminder);
+
+        var eventId = await _calendar.CreateEventAsync(new OutlookEventRequest
+        {
+            Subject = reminder.Subject,
+            CustomerName = reminder.CustomerName,
+            Notes = reminder.Notes,
+            DueAtUtc = reminder.DueAt,
+            TimeZone = ResolveTimeZone(request.TimeZone),
+            ProducerLink = request.ProducerLink,
+        }, cancellationToken);
+
+        if (eventId == null)
+        {
+            // Null event id is the signal the row uses to keep offering "Add to Outlook".
+            return Map(reminder);
+        }
+
+        var updated = await _repository.SetOutlookEventIdAsync(reminderId, owner, eventId, cancellationToken);
+        return updated == null ? Map(reminder) : Map(updated);
+    }
+
+    /// <summary>The browser's IANA zone, defaulting to UTC when it is missing. The server cannot
+    /// infer where the user is sitting, and guessing its own zone would put the event at the wrong
+    /// hour for anyone elsewhere.</summary>
+    private static string ResolveTimeZone(string? timeZone) =>
+        string.IsNullOrWhiteSpace(timeZone) ? "UTC" : timeZone.Trim();
 
     // -------------------------------------------------------------------------
     /// <summary>

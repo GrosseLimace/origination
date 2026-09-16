@@ -23,6 +23,11 @@ public record ReminderResponse
     /// <summary>Graph event id on the owner calendar; null means "not on Outlook yet".</summary>
     public string? OutlookEventId { get; init; }
 
+    /// <summary>False only when a reschedule could not move the existing calendar event. The
+    /// reminder itself saved either way — this is what lets the client say "saved, but the Outlook
+    /// event could not be moved" without the client having to talk to Graph at all.</summary>
+    public bool OutlookEventMoved { get; init; } = true;
+
     public bool IsCompleted { get; init; }
     public DateTime? CompletedAt { get; init; }
     public DateTime CreatedAt { get; init; }

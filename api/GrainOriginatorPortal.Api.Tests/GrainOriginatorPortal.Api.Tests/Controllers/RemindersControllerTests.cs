@@ -158,28 +158,35 @@ public class RemindersControllerTests
     }
 
     // -------------------------------------------------------------------------
+    // The browser no longer writes the calendar event and reports its id back; the API writes it
+    // on-behalf-of the caller. So the old PUT {id}/outlook-event is gone and this is its replacement.
+
     [Fact]
-    public async Task SetOutlookEvent_StoresTheEventIdTheClientReportsBack()
+    public async Task AddToOutlook_ReturnsTheUpdatedReminder()
     {
         // Arrange
-        _serviceMock.Setup(s => s.SetOutlookEventIdAsync(1, "AAMkAD==", It.IsAny<CancellationToken>())).ReturnsAsync(Reminder(1));
+        var body = new AddReminderToOutlookRequest { TimeZone = "America/Chicago", ProducerLink = "https://x/?customerId=10" };
+        _serviceMock.Setup(s => s.AddToOutlookAsync(1, It.IsAny<AddReminderToOutlookRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Reminder(1));
 
         // Act
-        var result = await _sut.SetOutlookEvent(1, new SetReminderOutlookEventRequest { OutlookEventId = "AAMkAD==" });
+        var result = await _sut.AddToOutlook(1, body);
 
         // Assert
         Assert.IsType<OkObjectResult>(result.Result);
-        _serviceMock.Verify(s => s.SetOutlookEventIdAsync(1, "AAMkAD==", It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(s => s.AddToOutlookAsync(1, body, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task SetOutlookEvent_Throws404WhenTheCallerDoesNotOwnTheReminder()
+    public async Task AddToOutlook_Throws404WhenTheCallerDoesNotOwnTheReminder()
     {
         // Arrange
-        _serviceMock.Setup(s => s.SetOutlookEventIdAsync(99, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((ReminderResponse?)null);
+        _serviceMock.Setup(s => s.AddToOutlookAsync(99, It.IsAny<AddReminderToOutlookRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ReminderResponse?)null);
 
         // Act + Assert
-        await Assert.ThrowsAsync<NotFoundException>(() => _sut.SetOutlookEvent(99, new SetReminderOutlookEventRequest { OutlookEventId = "x" }));
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _sut.AddToOutlook(99, new AddReminderToOutlookRequest { ProducerLink = "https://x" }));
     }
 
     // -------------------------------------------------------------------------

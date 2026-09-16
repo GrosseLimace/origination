@@ -52,7 +52,8 @@ export class HomeComponent {
   /** Gates the floating calculator launcher (Profitability calc + future calculators). */
   readonly calculatorEnabled = environment.calculatorEnabled;
   /** Gates the personal follow-up reminders card and the producer-list reminder badge. Off until
-   *  the environment's SPA app registration has delegated Calendars.ReadWrite admin consent. */
+   *  the API app registration has delegated Calendars.ReadWrite with admin consent — the API calls
+   *  Graph on-behalf-of the user, so the permission lives there rather than on the SPA. */
   readonly remindersEnabled = environment.remindersEnabled;
   private readonly outlookCalendar = inject(OutlookCalendarService);
   private readonly route = inject(ActivatedRoute);
@@ -994,7 +995,8 @@ export class HomeComponent {
     }
 
     const id = draft.id;
-    this.apiService.updateReminder(id, draft.dueAt, draft.subject || undefined, draft.notes)
+    this.apiService.updateReminder(id, draft.dueAt, draft.subject || undefined, draft.notes,
+      OutlookCalendarService.currentTimeZone())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (updated) => {
@@ -1004,14 +1006,13 @@ export class HomeComponent {
           this.reminderSaveSucceededCounter.update(n => n + 1);
           this.toastService.success('Follow-up updated');
 
-          // Move the existing event rather than recreating it — a delete-and-recreate shows the
-          // original slot as "Canceled" in the attendee's calendar.
+          // The API moved the calendar event in the same call — it patches the window rather than
+          // recreating the event, because a delete-and-recreate shows the original slot as
+          // "Canceled". All that is left here is to report a move that did not take.
           if (updated.outlookEventId) {
-            this.outlookCalendar.updateEventWindow(updated.outlookEventId, updated.dueAt)
-              .pipe(takeUntilDestroyed(this.destroyRef))
-              .subscribe(moved => {
-                if (!moved) this.toastService.info('Saved, but the Outlook event could not be moved.');
-              });
+            if (updated.outlookEventMoved === false) {
+              this.toastService.info('Saved, but the Outlook event could not be moved.');
+            }
           } else {
             this._syncReminderToOutlook(updated);
           }
@@ -1043,13 +1044,9 @@ export class HomeComponent {
         this.customerReminders.update(list => list.filter(r => r.id !== reminder.id));
         this._removeMyReminder(reminder.id);
         this.toastService.success('Follow-up deleted');
-
-        // Only here do we remove the calendar event: the user asked for the follow-up to go away.
-        if (reminder.outlookEventId) {
-          this.outlookCalendar.deleteEvent(reminder.outlookEventId)
-            .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe();
-        }
+        // The API removes the calendar event in the same call. Deleting is the only path that does
+        // so: completing a reminder deliberately leaves the event, because removing it makes Outlook
+        // render the slot as "Canceled", which reads as "this never happened" rather than "done".
       });
   }
 
@@ -1066,10 +1063,13 @@ export class HomeComponent {
   private _syncReminderToOutlook(reminder: Reminder, userInitiated = false): void {
     const link = `${window.location.origin}/?customerId=${reminder.customerId}`;
 
-    this.outlookCalendar.createEvent(reminder, link)
+    // One call now: the API writes the event on-behalf-of the user AND records the id, so there is
+    // no window where the event exists but the row does not know about it.
+    this.outlookCalendar.addToOutlook(reminder, link)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(eventId => {
-        if (!eventId) {
+      .subscribe(updated => {
+        // A null event id means the calendar could not be written; the row keeps its retry button.
+        if (!updated?.outlookEventId) {
           this.toastService.info(
             userInitiated
               ? 'Could not add this to Outlook. Your follow-up is still saved here.'
@@ -1078,12 +1078,8 @@ export class HomeComponent {
           return;
         }
 
-        this.apiService.setReminderOutlookEvent(reminder.id, eventId)
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe(updated => {
-            this.customerReminders.update(list => list.map(r => r.id === updated.id ? updated : r));
-            if (userInitiated) this.toastService.success('Added to your Outlook calendar');
-          });
+        this.customerReminders.update(list => list.map(r => r.id === updated.id ? updated : r));
+        if (userInitiated) this.toastService.success('Added to your Outlook calendar');
       });
   }
 
