@@ -257,8 +257,12 @@ export class BidSheetComponent {
   });
 
   /**
-   * Which ticked sheets each location is on, for the row badge and for targeting a rename or a
-   * removal. Ids, in tick order; a location on one sheet gets a one-element list.
+   * Which ticked sheets each location is on. Ids, in tick order; a location on one sheet gets a
+   * one-element list.
+   *
+   * Nothing DISPLAYS this -- the grid badge and the map hover line that used to were both taken off,
+   * they earned less than the room they cost. It is still what a rename and a removal target, which
+   * is the part that has to be right: both fan out to exactly these sheets.
    */
   readonly sheetIdsByLocationId = computed<ReadonlyMap<number, number[]>>(() => {
     const map = new Map<number, number[]>();
@@ -280,25 +284,6 @@ export class BidSheetComponent {
     if (names.length === 0) return '';
     if (names.length <= 2) return names.join(' + ');
     return `${names.length} bid sheets`;
-  });
-
-  /**
-   * The sheets each row is on, as a phrase for its GRID badge -- empty unless more than one sheet is
-   * ticked, because with one the answer is the same for every row and the badge would be noise.
-   *
-   * It matters with several: the rows are a union, so "why is this elevator here" and "what will a
-   * rename or a removal touch" are no longer answerable from the list alone. The MAP deliberately
-   * does not show this -- see _buildHoverIcon.
-   */
-  readonly sheetBadgeByLocationId = computed<ReadonlyMap<number, string>>(() => {
-    const sheets = this.selectedSheets();
-    if (sheets.length < 2) return new Map();
-    const nameById = new Map(sheets.map(s => [s.id, s.name]));
-    const badges = new Map<number, string>();
-    for (const [locationId, sheetIds] of this.sheetIdsByLocationId()) {
-      badges.set(locationId, sheetIds.map(id => nameById.get(id) ?? '').filter(Boolean).join(', '));
-    }
-    return badges;
   });
 
   /**

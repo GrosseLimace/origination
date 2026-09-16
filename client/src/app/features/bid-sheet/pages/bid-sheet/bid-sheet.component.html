@@ -1688,12 +1688,6 @@
                               <!-- The name sizes to its text rather than filling the cell, so the pencil sits
                                    against the end of the name instead of floating off at the far right. -->
                               <span class="min-w-0 text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words" [title]="row.name">{{ row.name }}</span>
-                              <!-- Which ticked sheets this row is on. Only rendered with more than one
-                                   ticked -- see sheetBadgeByLocationId. -->
-                              @if (sheetBadgeByLocationId().get(row.locationId); as onSheets) {
-                                <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-[10rem] truncate"
-                                      [title]="'On ' + onSheets">{{ onSheets }}</span>
-                              }
                               @if (true) {
                                 <button (click)="startRenameRow(row, $event)" title="Rename location"
                                         class="shrink-0 p-1 rounded text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors">

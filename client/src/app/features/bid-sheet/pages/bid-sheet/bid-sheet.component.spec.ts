@@ -2550,16 +2550,11 @@ describe('BidSheetComponent — several bid sheets shown at once', () => {
     expect(component.scopedLocations().map(l => l.id)).toEqual([1, 2]);
   });
 
-  it('names each row with the sheets it is on', () => {
-    expect(component.sheetBadgeByLocationId().get(1)).toBe('Kansas, Nebraska');
-    expect(component.sheetBadgeByLocationId().get(2)).toBe('Nebraska');
-  });
-
-  // With one sheet the badge would say the same thing on every row: noise, not information.
-  it('drops the badge entirely when only one sheet is ticked', () => {
-    component.setSelectedSheets([1]);
-
-    expect(component.sheetBadgeByLocationId().size).toBe(0);
+  // Nothing shows this, but a rename and a removal both fan out to exactly these sheets, so it is
+  // worth pinning: the shared location resolves to both, the Nebraska-only one to Nebraska alone.
+  it('knows which ticked sheets each location is on', () => {
+    expect(component.sheetIdsByLocationId().get(1)).toEqual([1, 2]);
+    expect(component.sheetIdsByLocationId().get(2)).toEqual([2]);
   });
 
   it('keeps a per-sheet name when the ticked sheets agree on it', () => {

@@ -90,8 +90,8 @@ What that costs, and how each part is settled:
 |---|---|
 | A location on two ticked sheets | **One row.** Bids hang off the company-wide location, so two rows would be two grid rows editing one cell. First ticked sheet wins its position. |
 | Its name, when the sheets disagree | The agreed per-sheet name if they agree, otherwise the **canonical** name. Picking one sheet's label would depend on tick order. |
-| Knowing which sheet a row came from | A badge on the **grid** row, empty with one sheet ticked. Deliberately NOT on the map — the map is read at a glance for the price, and a third line of small text on every hover paid for itself nowhere. |
-| Rename / remove | Applies to **every ticked sheet holding that row** — one request each. Leaving the others behind would put the row straight back the next time they were opened on their own. |
+| Rename / remove | Applies to **every ticked sheet holding that row** (`sheetIdsByLocationId`) — one request each. Leaving the others behind would put the row straight back the next time they were opened on their own. |
+| Showing which sheet a row came from | **Nothing does.** A grid-row badge and a map-hover line were both built and both taken off — neither earned the room. The rows are just location names. |
 | Reorder | **Disabled** unless exactly one sheet is ticked, with the reason on the handle. `SortOrder` is a column on the sheet, shared with everyone on it; there is no single list to write a union's order into. |
 | Adding a location | **Asks which sheet**, once, and remembers the answer for the session. Adding to all of them would put a row on a colleague's shared list with no undo here. |
 | Export | Named after every sheet it drew from — up to two joined with " + ", then "N bid sheets". |
