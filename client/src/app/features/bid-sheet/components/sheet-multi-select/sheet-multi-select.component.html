@@ -1,0 +1,52 @@
+<!-- The trigger: what is on screen right now, and the way to change it. -->
+<div class="relative">
+  <button type="button" (click)="toggleOpen()"
+          [title]="showAllOption() ? 'Which bid sheets the map and panel are showing' : 'The bid sheets you are editing'"
+          [class]="compact()
+            ? 'max-w-[220px] flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors'
+            : 'max-w-[30rem] flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base font-medium text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 shadow-sm focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors'">
+    <span class="truncate">{{ label() }}</span>
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
+  </button>
+
+  @if (open()) {
+    <!-- Closes on any click outside. Without it the list stays up behind the map, which swallows the
+         next click on a pin. -->
+    <div class="fixed inset-0 z-[1250]" (click)="close()"></div>
+
+    <div class="absolute left-0 top-full mt-1 min-w-[15rem] max-w-[22rem] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[1300] overflow-hidden">
+      <div class="max-h-64 overflow-auto py-1">
+        @for (sheet of sheets(); track sheet.id) {
+          <!-- The checkbox adds to the selection; the NAME replaces it. Both on one row because both
+               are wanted constantly -- "also show me this one" and "just show me this one" -- and a
+               modifier key for the second is not something anyone would find. -->
+          <div class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            <input type="checkbox" [checked]="isSelected(sheet.id)" (change)="onToggle(sheet.id)"
+                   [attr.aria-label]="'Show ' + sheet.name"
+                   class="shrink-0 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
+            <button type="button" (click)="onPickOnly(sheet.id)" title="Show only this sheet"
+                    class="flex-1 min-w-0 text-left truncate"
+                    [class]="isSelected(sheet.id) ? 'text-scoular-green-accessible dark:text-scoular-green font-semibold' : 'text-gray-800 dark:text-gray-200'">
+              {{ sheet.name }}
+            </button>
+            @if (!sheet.isOwner) {
+              <span class="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
+            }
+          </div>
+        } @empty {
+          <p class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No bid sheets yet</p>
+        }
+      </div>
+
+      @if (showAllOption()) {
+        <div class="border-t border-gray-200 dark:border-gray-700"></div>
+        <!-- Not a sheet, so not a checkbox: it is the other thing the map can be. -->
+        <button type="button" (click)="onPickAll()"
+                class="w-full text-left px-3 py-2 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                [class]="showingAll() ? 'text-scoular-green-accessible dark:text-scoular-green font-semibold' : 'text-gray-700 dark:text-gray-300'">
+          All locations
+        </button>
+      }
+    </div>
+  }
+</div>

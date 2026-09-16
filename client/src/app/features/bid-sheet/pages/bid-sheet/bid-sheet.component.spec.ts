@@ -102,7 +102,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       shares: [], locations: locs,
     };
     component.sheets.set([sheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
   }
 
   // ── the column's board ────────────────────────────────────────────────────────────────────────
@@ -340,7 +340,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       // What the sheet shows -- the server resolves DisplayName ?? Name into this.
       locations: [{ ...canonical, name: 'Our Label For It' }],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
 
     (component as unknown as { _applyBidsToLocalCache(d: unknown[]): void })._applyBidsToLocalCache([
       { locationId: 1, commodityCode: 'YC', cropYear: 2026, month: 8, bid: '7.77', basisBid: '-12' },
@@ -527,7 +527,7 @@ describe('BidSheetComponent — filter dropdown sources', () => {
       id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
       createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
 
     expect(component.mapCropChoices()).toEqual(['YC']);
 
@@ -541,7 +541,7 @@ describe('BidSheetComponent — filter dropdown sources', () => {
   it('offers every commodity when no sheet is open at all', () => {
     component.plantingCommodities.set([{ id: 1, code: 'YC', name: 'Yellow Corn' }]);
     component.crops.set([]);
-    component.activeSheetId.set(null);
+    component.selectedSheetIds.set([]);
 
     expect(component.mapCropChoices()).toEqual(['YC']);
   });
@@ -618,7 +618,7 @@ describe('BidSheetComponent — catalog location as comparison reference', () =>
       id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
       createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [loc],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
     component.selectedCrop.set('YC');
     component.selectedYear.set(2026);
     component.selectedMonth.set(8);
@@ -1008,7 +1008,7 @@ describe('BidSheetComponent — the catalog popup answers the price toggle', () 
       id: 1, name: 'S', ownerUserId: 'u', isOwner: true, shares: [], locations: [loc],
     } as unknown as BidSheet;
     component.sheets.set([sheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
 
     expect(component.catalogDetailOnActiveSheet()).toBe(true);
   });
@@ -1157,7 +1157,7 @@ describe('BidSheetComponent — the "+ Add" menu and building a sheet from a bat
   // otherwise the person who added it sees nothing appear, and nobody sharing the sheet ever sees it.
   it('links a manually added location to the open sheet, so everyone sharing it sees the location', () => {
     component.sheets.set([NEW_SHEET]);
-    component.activeSheetId.set(NEW_SHEET.id);
+    component.selectedSheetIds.set([NEW_SHEET.id]);
     component.newLocationName.set('Back Forty Bin');
     component.newLocationLat.set(41.5);
     component.newLocationLng.set(-93.6);
@@ -1171,7 +1171,7 @@ describe('BidSheetComponent — the "+ Add" menu and building a sheet from a bat
   // The guard that makes the above possible: with no sheet there is nowhere for the location to go, so
   // it must refuse rather than create an orphan row nobody can see.
   it('refuses a manual add when no sheet is open, instead of creating an orphan', () => {
-    component.activeSheetId.set(null);
+    component.selectedSheetIds.set([]);
     component.newLocationName.set('Back Forty Bin');
     component.newLocationLat.set(41.5);
     component.newLocationLng.set(-93.6);
@@ -1247,14 +1247,14 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
   });
 
   it('draws only the open sheet\'s locations by default', () => {
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
 
     expect(component.mapScope()).toBe('sheet');
     expect(component.scopedLocations().map(l => l.name)).toEqual(['On The Sheet']);
   });
 
   it('draws every added location once scope is switched to All', () => {
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
 
     component.setMapScope('all');
 
@@ -1266,7 +1266,7 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
   // on the sheet, "All locations" drew other people's locations as bidless dots. The panel and grid
   // also read it, but they're hidden in All scope, so this only ever shows on the map.
   it('prices every added location\'s pins in All scope, only the sheet\'s otherwise', () => {
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
 
     expect(component.bidEntries().map(e => e.name)).toEqual(['On The Sheet']);
 
@@ -1279,7 +1279,7 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
   // locations with no sheet to own their order -- so opening it narrows the map back first, whatever
   // path got there (the panel's Edit button is hidden in All scope, but add-location flows also open it).
   it('narrows back to the sheet before opening the Edit Bids grid', () => {
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
     component.setMapScope('all');
     expect(component.mapScope()).toBe('all');
 
@@ -1292,7 +1292,7 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
   // Nothing is "open in the panel" when the panel shows nothing -- otherwise the pin for whatever WAS
   // open stays drawn in its expanded, hover-style form among the dots.
   it('clears the panel selection when widening to All locations', () => {
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
     component.panelSelectedLocationId.set(1);
 
     component.setMapScope('all');
@@ -1304,7 +1304,7 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
   // active underneath, so a version that checked "same id -> return" BEFORE narrowing did nothing at
   // all: the panel kept saying "Showing all locations" and the user had to reach for the map dropdown.
   it('narrows back to the sheet when the already-active sheet is re-picked from the panel menu', () => {
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
     component.setMapScope('all');
     expect(component.mapScope()).toBe('all');
 
@@ -1315,33 +1315,36 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
     expect(component.scopedLocations().map(l => l.name)).toEqual(['On The Sheet']);
   });
 
-  it('drives the toolbar dropdown from the scope, so "All locations" shows as selected', () => {
-    component.activeSheetId.set(1);
-    expect(component.sheetDropdownValue()).toBe('1');
+  it('keeps the selection while the map is widened to All locations', () => {
+    component.selectedSheetIds.set([1]);
 
-    component.onSheetDropdownChange('all');
+    component.setMapScope('all');
 
     expect(component.mapScope()).toBe('all');
-    expect(component.sheetDropdownValue()).toBe('all');
-    // The sheet stays open underneath -- the panel, the grid and Add all still need a destination.
+    // The sheets stay ticked underneath -- the panel, the grid and Add all still need a destination.
     expect(component.activeSheetId()).toBe(1);
+    expect(component.selectedSheetsLabel()).toBe('Test Sheet');
   });
 
-  it('picking a sheet from the dropdown narrows back to it', () => {
-    component.activeSheetId.set(1);
-    component.onSheetDropdownChange('all');
-
-    component.onSheetDropdownChange('1');
+  // Unticking every sheet is not the same as asking for "All locations". It used to be: the scope
+  // computed ORed in "no sheet open", so clearing the selection silently widened the map to every
+  // location anyone had added -- the opposite of what unticking asks for.
+  it('shows nothing, rather than everything, when no sheet is ticked', () => {
+    component.selectedSheetIds.set([]);
 
     expect(component.mapScope()).toBe('sheet');
-    expect(component.scopedLocations().map(l => l.name)).toEqual(['On The Sheet']);
+    expect(component.showingAllLocations()).toBe(false);
+    expect(component.scopedLocations()).toHaveLength(0);
   });
 
-  it('falls back to everything when no sheet is open, since there is nothing to narrow to', () => {
-    component.activeSheetId.set(null);
+  // A user with no sheets at all has nothing to tick, and a blank map would leave them no way to
+  // build their first one -- the catalog IS the picker.
+  it('browses the catalog when the user has no sheets to choose between', () => {
+    component.sheets.set([]);
+    component.selectedSheetIds.set([]);
 
-    expect(component.mapScope()).toBe('sheet'); // the setting stands…
-    expect(component.scopedLocations()).toHaveLength(2); // …but has nothing to apply to
+    expect(component.showingAllLocations()).toBe(true);
+    expect(component.scopedLocations()).toHaveLength(2);
   });
 });
 
@@ -1451,7 +1454,7 @@ describe('BidSheetComponent — narrowing scope clears catalog-anchored state', 
       id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
       createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [loc],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
     component.setMapScope('all');
   });
 
@@ -1515,7 +1518,7 @@ describe('BidSheetComponent — added pins match catalog pins in All scope', () 
       id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
       createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [loc],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
   });
 
   function neutral(shape?: 'pill' | 'dot'): { bg: string; border: string } {
@@ -1583,7 +1586,7 @@ describe('BidSheetComponent — bid moved in the last 24 hours', () => {
       id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
       createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: [loc],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
   }
 
   function moved(): boolean {
@@ -1695,7 +1698,7 @@ describe('BidSheetComponent — sharing with people, desks and groups', () => {
     TestBed.inject(AppStateService);
     component = TestBed.createComponent(BidSheetComponent).componentInstance;
     component.sheets.set([SHEET]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
     component.openShareSheet();
   });
 
@@ -1813,7 +1816,7 @@ describe('BidSheetComponent — renaming a location stays on the sheet', () => {
       createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [],
       locations: [location(SHEET_LABEL, [])],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
   });
 
   /** The grid row as the component builds it: the id is the identity, the label is what it shows. */
@@ -1948,7 +1951,7 @@ describe('BidSheetComponent — removing locations from the sheet', () => {
     const rows = [location('A', []), { ...location('B', []), id: 2 }];
     component.allMapLocations.set(rows);
     component.sheets.set([sheetOf(rows)]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
   });
 
   // _saveDirtyBids deliberately never calls back when the bid save fails (it keeps the edit and aborts
@@ -2030,7 +2033,7 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
       id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
       createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [], locations: [loc],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
   }
 
   // The business dropped the Yearly period: a fed Year cell meant the nearest open month and a typed one
@@ -2361,7 +2364,7 @@ describe('BidSheetComponent — two locations that share a name stay apart', () 
       id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
       createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [], locations: [twinA, twinB],
     } as BidSheet]);
-    component.activeSheetId.set(1);
+    component.selectedSheetIds.set([1]);
   }
 
   beforeEach(() => {
@@ -2461,5 +2464,251 @@ describe('BidSheetComponent — reading the remembered sheet selection', () => {
   it('drops entries that are not real sheet ids, and duplicates', () => {
     expect(BidSheetComponent.parseSheetIds('[120,null,"x",0,-4,1.5]')).toEqual([120]);
     expect(BidSheetComponent.parseSheetIds('[120,133,120]')).toEqual([120, 133]);
+  });
+});
+
+/**
+ * Several sheets shown at once.
+ *
+ * The union is where this gets interesting: a sheet is a curated list of company-wide locations, two
+ * sheets routinely hold the same elevator, and a bid lives on the LOCATION rather than on either
+ * sheet. So the same elevator on two ticked sheets has to be one row -- two would be two grid rows
+ * editing the same cell -- while a rename or a removal of that one row has to reach both sheets, or
+ * the other one silently keeps the old state.
+ */
+describe('BidSheetComponent — several bid sheets shown at once', () => {
+  let component: BidSheetComponent;
+  let renameCalls: Array<{ sheetId: number; locationId: number; name: string }>;
+  let removeCalls: Array<{ sheetId: number; locationIds: number[] }>;
+  let orderCalls: Array<{ sheetId: number; locationIds: number[] }>;
+
+  /** The same elevator (id 1) on both sheets, plus one that is only on the second. */
+  const shared = location('Kanza Garden Plain', [bid({ id: 11, locationId: 1, bid: '4.98' })]);
+  const nebraskaOnly = location('Aurora Co-op', [bid({ id: 22, locationId: 2, bid: '5.10' })]);
+  nebraskaOnly.id = 2;
+
+  const sheet = (id: number, name: string, locations: BidSheetLocation[]): BidSheet => ({
+    id, name, ownerUserId: 'test', isOwner: true,
+    createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [], locations,
+  } as BidSheet);
+
+  const emptyRow = (locationId: number, name: string) => ({
+    locationId, name, type: 'entry' as const,
+    bids: {}, originalBids: {}, basisBids: {}, originalBasisBids: {},
+    coverageChips: {}, boardChips: {}, isBarchartLinked: false,
+  });
+
+  beforeEach(() => {
+    renameCalls = [];
+    removeCalls = [];
+    orderCalls = [];
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+      setBidSheetLocationName: (sheetId: number, locationId: number, name: string) => {
+        renameCalls.push({ sheetId, locationId, name });
+        return of(sheet(sheetId, sheetId === 1 ? 'Kansas' : 'Nebraska', [{ ...shared, name }]));
+      },
+      removeBidSheetLocations: (sheetId: number, locationIds: number[]) => {
+        removeCalls.push({ sheetId, locationIds });
+        return of(sheet(sheetId, sheetId === 1 ? 'Kansas' : 'Nebraska', []));
+      },
+      setBidSheetRowOrder: (sheetId: number, locationIds: number[]) => {
+        orderCalls.push({ sheetId, locationIds });
+        return of(sheet(sheetId, 'Kansas', [shared]));
+      },
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    component.allMapLocations.set([shared, nebraskaOnly]);
+    component.sheets.set([
+      sheet(1, 'Kansas', [shared]),
+      sheet(2, 'Nebraska', [shared, nebraskaOnly]),
+    ]);
+    component.selectedSheetIds.set([1, 2]);
+  });
+
+  it('shows the union of the ticked sheets, with a shared location appearing once', () => {
+    expect(component.bidLocations().map(l => l.id)).toEqual([1, 2]);
+    expect(component.scopedLocations().map(l => l.id)).toEqual([1, 2]);
+  });
+
+  it('names each row with the sheets it is on', () => {
+    expect(component.sheetBadgeByLocationId().get(1)).toBe('Kansas, Nebraska');
+    expect(component.sheetBadgeByLocationId().get(2)).toBe('Nebraska');
+  });
+
+  // With one sheet the badge would say the same thing on every row: noise, not information.
+  it('drops the badge entirely when only one sheet is ticked', () => {
+    component.setSelectedSheets([1]);
+
+    expect(component.sheetBadgeByLocationId().size).toBe(0);
+  });
+
+  it('keeps a per-sheet name when the ticked sheets agree on it', () => {
+    component.sheets.set([
+      sheet(1, 'Kansas', [{ ...shared, name: 'Kanza GP' }]),
+      sheet(2, 'Nebraska', [{ ...shared, name: 'Kanza GP' }, nebraskaOnly]),
+    ]);
+
+    expect(component.bidLocations()[0].name).toBe('Kanza GP');
+  });
+
+  // Picking one sheet's label over the other's would be arbitrary, and would change what the row is
+  // called depending on the order the sheets happened to be ticked in.
+  it('falls back to the canonical name when the ticked sheets disagree on it', () => {
+    component.sheets.set([
+      sheet(1, 'Kansas', [{ ...shared, name: 'Kanza GP' }]),
+      sheet(2, 'Nebraska', [{ ...shared, name: 'Garden Plain' }, nebraskaOnly]),
+    ]);
+
+    expect(component.bidLocations()[0].name).toBe('Kanza Garden Plain');
+  });
+
+  it('renames a shared row on every ticked sheet holding it', () => {
+    (component as unknown as {
+      _renameLocationOnSheets(id: number, name: string): void;
+    })._renameLocationOnSheets(1, 'Garden Plain');
+
+    expect(renameCalls.map(c => c.sheetId).sort()).toEqual([1, 2]);
+    expect(renameCalls.every(c => c.locationId === 1 && c.name === 'Garden Plain')).toBe(true);
+  });
+
+  // The location is only on Nebraska, so Kansas must not be touched -- a rename is per-sheet, and a
+  // PUT naming a location a sheet does not hold is at best a no-op.
+  it('leaves a ticked sheet alone when the row is not on it', () => {
+    (component as unknown as {
+      _renameLocationOnSheets(id: number, name: string): void;
+    })._renameLocationOnSheets(2, 'Aurora');
+
+    expect(renameCalls.map(c => c.sheetId)).toEqual([2]);
+  });
+
+  it('removes a shared row from every ticked sheet holding it, and says how many', () => {
+    component.removeLocationIds.set(new Set([1]));
+    expect(component.removeSheetCount()).toBe(2);
+
+    component.confirmRemoveLocations();
+
+    expect(removeCalls.map(c => c.sheetId).sort()).toEqual([1, 2]);
+    expect(removeCalls.every(c => c.locationIds.length === 1 && c.locationIds[0] === 1)).toBe(true);
+  });
+
+  it('removes a row that is on one sheet from that sheet only', () => {
+    component.removeLocationIds.set(new Set([2]));
+    expect(component.removeSheetCount()).toBe(1);
+
+    component.confirmRemoveLocations();
+
+    expect(removeCalls.map(c => c.sheetId)).toEqual([2]);
+  });
+
+  // Row order is a column on the SHEET, shared with everyone on it. With two ticked there is no
+  // single list to write the union's order into -- doing it anyway would scramble one sheet's order
+  // for its other users, with rows that are not even on it.
+  it('refuses to reorder while more than one sheet is ticked', () => {
+    component.editBidsRows.set([emptyRow(1, 'A'), emptyRow(2, 'B')] as never);
+    expect(component.canReorderRows()).toBe(false);
+    expect(component.reorderDisabledReason()).toContain('one bid sheet');
+
+    component.onRowDrop({ previousIndex: 0, currentIndex: 1 } as never);
+
+    expect(orderCalls).toEqual([]);
+  });
+
+  it('allows reordering again once a single sheet is ticked', () => {
+    component.setSelectedSheets([1]);
+    component.editBidsRows.set([emptyRow(1, 'A'), emptyRow(2, 'B')] as never);
+
+    expect(component.canReorderRows()).toBe(true);
+
+    component.onRowDrop({ previousIndex: 0, currentIndex: 1 } as never);
+
+    expect(orderCalls).toEqual([{ sheetId: 1, locationIds: [2, 1] }]);
+  });
+
+  // A new location has to land on ONE sheet: adding it to every ticked sheet would put it on a list
+  // a colleague is sharing, with no way to undo that from this screen.
+  it('asks which sheet a new location goes on, then remembers the answer', () => {
+    const added: number[] = [];
+    const withTarget = (component as unknown as {
+      _withAddTarget(action: (sheetId: number) => void): void;
+    })._withAddTarget.bind(component);
+
+    withTarget(id => added.push(id));
+    expect(component.showAddSheetChoice()).toBe(true);
+    expect(added).toEqual([]);
+
+    component.chooseAddTargetSheet(2);
+    expect(component.showAddSheetChoice()).toBe(false);
+    expect(added).toEqual([2]);
+
+    // Settled now -- the next add goes straight through to the same sheet.
+    withTarget(id => added.push(id));
+    expect(component.showAddSheetChoice()).toBe(false);
+    expect(added).toEqual([2, 2]);
+  });
+
+  it('does not ask when only one sheet is ticked', () => {
+    component.setSelectedSheets([1]);
+    const added: number[] = [];
+
+    (component as unknown as {
+      _withAddTarget(action: (sheetId: number) => void): void;
+    })._withAddTarget.call(component, (id: number) => added.push(id));
+
+    expect(component.showAddSheetChoice()).toBe(false);
+    expect(added).toEqual([1]);
+  });
+
+  // A remembered sheet that is no longer on screen is not an answer to "where does this go".
+  it('asks again when the remembered sheet is no longer ticked', () => {
+    component.addTargetSheetId.set(99);
+
+    (component as unknown as {
+      _withAddTarget(action: (sheetId: number) => void): void;
+    })._withAddTarget.call(component, () => {});
+
+    expect(component.showAddSheetChoice()).toBe(true);
+  });
+
+  it('names the export after every sheet it drew from', () => {
+    expect(component.selectedSheetsLabel()).toBe('Kansas + Nebraska');
+
+    component.sheets.update(list => [...list, sheet(3, 'Iowa', [])]);
+    component.setSelectedSheets([1, 2, 3]);
+
+    expect(component.selectedSheetsLabel()).toBe('3 bid sheets');
+  });
+
+  // The saved selection is what a reload restores, so it has to be the whole set, not the first.
+  it('saves the whole selection, not just the first sheet', () => {
+    const saved: string[] = [];
+    const api = TestBed.inject(ApiService) as unknown as {
+      setBidSheetPreference: (p: { selectedBidSheetIds?: string | null }) => unknown;
+    };
+    api.setBidSheetPreference = (p) => { saved.push(p.selectedBidSheetIds ?? ''); return of(null); };
+
+    component.setSelectedSheets([2, 1]);
+
+    expect(saved).toEqual(['[2,1]']);
+    expect(BidSheetComponent.parseSheetIds(saved[0])).toEqual([2, 1]);
   });
 });

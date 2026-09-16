@@ -55,6 +55,7 @@ flowchart LR
 | Template | `client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.html` |
 | Print layout util (+ spec) | `client/src/app/features/bid-sheet/utils/print-layout.ts` — builds the `PrintLayoutModel` both the preview and the printed sheet render |
 | BarChart picker | `client/src/app/features/bid-sheet/components/barchart-picker/barchart-picker.component.ts` (+ `.html`, `.spec.ts`) |
+| Sheet multi-select | `client/src/app/features/bid-sheet/components/sheet-multi-select/sheet-multi-select.component.ts` (+ `.html`) — the checkbox list shared by the map toolbar and the Edit Bids header |
 | Controller | `api/GrainOriginatorPortal.Api/Controllers/BidSheetController.cs` |
 | BarChart catalog controller | `api/GrainOriginatorPortal.Api/Controllers/BarchartController.cs` |
 | Service methods (group: BidSheet) | `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `DeleteBidSheetBidsAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync`, plus the sheet family (`GetSheetsAsync`, `CreateSheetAsync`, `RenameSheetAsync`, `SetSheetLayoutAsync`, `SetSheetSharesAsync`, `AddSheetLocationAsync`, `DeleteSheetAsync`) |
@@ -74,7 +75,32 @@ per-sheet rename). This replaced `dbo.BidSheetLocationOrders`, which held one pr
 location ids per user per trade unit and was dropped by `RetireBidSheetLocationOrders`.
 
 **`BidSheetPreferences`** — Per-user, one row under the key `__global__`:
-`CropCode?`, `Month?` (`null` = no preference, `1–12`; a stored `0` is a pre-retirement Yearly value, cleaned on load), `CropYear?`, `CropOrder` (JSON array), `HiddenCrops` (JSON array), `SelectedMonths` (JSON array), `PrintLayout` (JSON — see [Print / export](#print--export)).
+`CropCode?`, `Month?` (`null` = no preference, `1–12`; a stored `0` is a pre-retirement Yearly value, cleaned on load), `CropYear?`, `CropOrder` (JSON array), `HiddenCrops` (JSON array), `SelectedMonths` (JSON array), `SelectedYears` (JSON array), `PriceMode`, `SelectedBidSheetIds` (JSON array of sheet ids — see [Several sheets at once](#several-sheets-at-once)), `PrintLayout` (JSON — see [Print / export](#print--export)).
+
+## Several sheets at once
+
+The screen shows the **union of any number of ticked sheets**, not one at a time. The control is a
+checkbox list (`SheetMultiSelectComponent`) in both the map toolbar and the Edit Bids header; ticking a
+row adds a sheet, clicking its name shows that sheet alone. The map keeps a separate "All locations"
+entry, which is not a sheet but the unscoped catalog view.
+
+What that costs, and how each part is settled:
+
+| Question | Answer |
+|---|---|
+| A location on two ticked sheets | **One row.** Bids hang off the company-wide location, so two rows would be two grid rows editing one cell. First ticked sheet wins its position. |
+| Its name, when the sheets disagree | The agreed per-sheet name if they agree, otherwise the **canonical** name. Picking one sheet's label would depend on tick order. A badge on the row names the sheets it is on. |
+| Rename / remove | Applies to **every ticked sheet holding that row** — one request each. Leaving the others behind would put the row straight back the next time they were opened on their own. |
+| Reorder | **Disabled** unless exactly one sheet is ticked, with the reason on the handle. `SortOrder` is a column on the sheet, shared with everyone on it; there is no single list to write a union's order into. |
+| Adding a location | **Asks which sheet**, once, and remembers the answer for the session. Adding to all of them would put a row on a colleague's shared list with no undo here. |
+| Export | Named after every sheet it drew from — up to two joined with " + ", then "N bid sheets". |
+| Nothing ticked | Shows "Choose a bid sheet" and an empty map, **not** the catalog. The catalog still shows for a user who has no sheets to tick. |
+
+Persisted in `BidSheetPreferences.SelectedBidSheetIds` as a JSON array, read through
+`BidSheetComponent.parseSheetIds`, which treats anything unreadable as no selection. Ids naming a sheet
+that is gone are skipped rather than cleaned out, so a share that comes back comes back ticked.
+
+Share, rename-sheet and delete-sheet still act on **one** sheet — the first ticked (`activeSheet`).
 
 ## State and caching
 
@@ -83,7 +109,7 @@ location ids per user per trade unit and was dropped by `RetireBidSheetLocationO
 
 ## Drag-drop reordering
 
-CDK drag-drop (`@angular/cdk/drag-drop`). The user reorders locations in the bids panel and the new order is persisted on the sheet — `BidSheetLocationLinks.SortOrder`, saved through `PUT /bidsheet/sheets/{id}/location-order` — so it is shared with everyone the sheet is shared with rather than being one person's private arrangement. The order travels with the sheet, not with a desk.
+CDK drag-drop (`@angular/cdk/drag-drop`), and only with **one sheet ticked** (see [Several sheets at once](#several-sheets-at-once)). The user reorders locations in the bids panel and the new order is persisted on the sheet — `BidSheetLocationLinks.SortOrder`, saved through `PUT /bidsheet/sheets/{id}/location-order` — so it is shared with everyone the sheet is shared with rather than being one person's private arrangement. The order travels with the sheet, not with a desk.
 
 ## Map view
 
@@ -165,7 +191,9 @@ the old unique (Name, TradeUnitCode) index went when locations became company-wi
 **A rename is per sheet.** The name lives on the link between a sheet and a location
 (`BidSheetLocationLinks.DisplayName`), so calling an elevator something of your own does not rename it
 on anyone else's sheet. The location row keeps its own name as the default for sheets that have not
-overridden it.
+overridden it. With several sheets ticked a rename writes to every one of them that holds the row —
+anything less and the union would see a disagreement and fall back to the canonical name, so the new
+name would look ignored.
 
 **Deleting, and the Scoular toggle, are company-wide** — there is one row per elevator now, so both
 affect everyone. Delete is therefore restricted to whoever added the location, or an admin, and its

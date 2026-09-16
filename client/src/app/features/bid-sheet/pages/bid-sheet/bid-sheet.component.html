@@ -37,19 +37,16 @@
                  filterableYears), not just what the active sheet happens to have priced, so filtering
                  works before you've added anything. Selecting a crop also narrows the catalog dots
                  themselves -- see _loadCatalogLocations. -->
-            <!-- What the map is showing: one of your sheets, or every location anyone has added.
-                 Leads the bar because it is the context every filter after it is read against, and it
-                 was previously only visible with the side panel open. The panel's own sheet bar keeps
-                 the full menu (share / rename / delete) -- this is switch-and-see. -->
+            <!-- What the map is showing: any number of your sheets, or every location anyone has
+                 added. Leads the bar because it is the context every filter after it is read against,
+                 and it was previously only visible with the side panel open. The panel's own sheet bar
+                 keeps the full menu (share / rename / delete) -- this is switch-and-see. -->
             @if (sheets().length > 0) {
-              <select [ngModel]="sheetDropdownValue()" (ngModelChange)="onSheetDropdownChange($event)"
-                      title="Which bid sheet the map and panel are showing"
-                      class="max-w-[180px] px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-                @for (sheet of sheets(); track sheet.id) {
-                  <option [value]="sheet.id">{{ sheet.name }}{{ sheet.isOwner ? '' : ' (shared)' }}</option>
-                }
-                <option value="all">All locations</option>
-              </select>
+              <app-sheet-multi-select
+                [sheets]="sheets()" [selectedIds]="selectedSheetIds()"
+                [showAllOption]="true" [showingAll]="mapScope() === 'all'" [compact]="true"
+                (toggled)="toggleSheet($event)" (pickedOnly)="selectSheet($event)"
+                (pickedAll)="setMapScope('all')" />
             }
 
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
@@ -290,7 +287,7 @@
                 <button (click)="addCatalogDetailToSheet()" [disabled]="catalogDetailLoading() || catalogDetailAdding() || !catalogDetail() || catalogDetailOnActiveSheet()"
                   class="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                  {{ catalogDetailAdding() ? 'Adding…' : catalogDetailOnActiveSheet() ? 'Already on this sheet' : (activeSheet() ? 'Add to "' + activeSheet()!.name + '"' : 'Add to a bid sheet') }}
+                  {{ catalogDetailAdding() ? 'Adding…' : catalogDetailOnActiveSheet() ? 'Already on this sheet' : (addTargetSheet() ? 'Add to "' + addTargetSheet()!.name + '"' : 'Add to a bid sheet') }}
                 </button>
               </div>
             </div>
@@ -501,7 +498,7 @@
                     @if (mapScope() === 'all') {
                       All locations
                     } @else {
-                      {{ activeSheet()?.name ?? (sheets().length === 0 ? 'No bid sheets yet' : 'Choose a bid sheet') }}
+                      {{ selectedSheetsLabel() || (sheets().length === 0 ? 'No bid sheets yet' : 'Choose a bid sheet') }}
                     }
                   </span>
                   <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400 group-hover:text-scoular-green-accessible transition-colors"><polyline points="6 9 12 15 18 9"/></svg>
@@ -512,15 +509,22 @@
                 <div class="absolute left-3 right-3 top-full mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[1200] overflow-hidden">
                   @if (sheets().length > 0) {
                     <div class="max-h-48 overflow-auto py-1">
+                      <!-- Tick to show alongside, click the name to show on its own -- the same two
+                           gestures the toolbar control offers, so the panel does not disagree with it. -->
                       @for (sheet of sheets(); track sheet.id) {
-                        <button (click)="selectSheet(sheet.id)"
-                          class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                          [class]="sheet.id === activeSheetId() ? 'text-scoular-green-accessible dark:text-scoular-green font-semibold' : 'text-gray-800 dark:text-gray-200'">
-                          <span class="truncate flex-1">{{ sheet.name }}</span>
+                        <div class="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                          <input type="checkbox" [checked]="mapScope() !== 'all' && selectedSheetIds().includes(sheet.id)"
+                                 (change)="toggleSheet(sheet.id)" [attr.aria-label]="'Show ' + sheet.name"
+                                 class="shrink-0 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
+                          <button (click)="selectSheet(sheet.id)" title="Show only this sheet"
+                            class="truncate flex-1 text-left"
+                            [class]="mapScope() !== 'all' && selectedSheetIds().includes(sheet.id) ? 'text-scoular-green-accessible dark:text-scoular-green font-semibold' : 'text-gray-800 dark:text-gray-200'">
+                            {{ sheet.name }}
+                          </button>
                           @if (!sheet.isOwner) {
                             <span class="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
                           }
-                        </button>
+                        </div>
                       }
                     </div>
                     <div class="border-t border-gray-200 dark:border-gray-700"></div>
@@ -847,15 +851,19 @@
             <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
               <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md max-h-[80vh] flex flex-col">
                 <div class="px-5 pt-5 pb-3 shrink-0">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Remove locations from "{{ activeSheet()?.name }}"</h4>
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Remove locations from "{{ selectedSheetsLabel() }}"</h4>
                   <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                    They come off this sheet only. The locations and their bids stay, and anyone else's sheet holding them is unaffected.
+                    @if (removeSheetCount() > 1) {
+                      They come off {{ removeSheetCount() }} sheets — every one you have open that holds them. The locations and their bids stay, and anyone else's sheet holding them is unaffected.
+                    } @else {
+                      They come off this sheet only. The locations and their bids stay, and anyone else's sheet holding them is unaffected.
+                    }
                   </p>
                 </div>
 
                 @if (removableLocations().length === 0) {
                   <div class="px-5 pb-4 shrink-0">
-                    <p class="text-xs text-gray-400 dark:text-gray-500 italic">This sheet has no locations on it.</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic">There are no locations on the sheets you have open.</p>
                   </div>
                 } @else {
                   <div class="px-5 pb-2 shrink-0 flex items-center justify-between">
@@ -1033,6 +1041,41 @@
           }
 
         <!-- ============ ADD LOCATION: WHERE FROM? ============ -->
+        <!-- Which sheet a new location lands on, asked only when several are open and the answer is
+             not already settled. Adding to all of them was rejected: a sheet is a curated list someone
+             else may be sharing, and there is no undo for that on this screen. -->
+        @if (showAddSheetChoice()) {
+          <div class="absolute inset-0 z-[1250] flex items-center justify-center bg-black/40 p-4"
+               (click)="cancelAddSheetChoice()">
+            <div class="w-full max-w-sm bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                 (click)="$event.stopPropagation()">
+              <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Which sheet?</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  You have {{ selectedSheets().length }} sheets open. Pick where this goes — the rest of what you add this session goes there too.
+                </p>
+              </div>
+              <div class="p-3 space-y-2 max-h-64 overflow-auto">
+                @for (sheet of selectedSheets(); track sheet.id) {
+                  <button (click)="chooseAddTargetSheet(sheet.id)"
+                          class="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-900 dark:text-white hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
+                    <span class="truncate">{{ sheet.name }}</span>
+                    @if (!sheet.isOwner) {
+                      <span class="ml-1.5 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
+                    }
+                  </button>
+                }
+              </div>
+              <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                <button (click)="cancelAddSheetChoice()"
+                        class="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
         @if (showAddSourceChoice()) {
           <div class="absolute inset-0 z-[1200] flex items-center justify-center bg-black/40 p-4"
                (click)="cancelAddSourceChoice()">
@@ -1071,7 +1114,7 @@
                 </button>
                 }
 
-                @if (activeSheet(); as sheet) {
+                @if (addTargetSheet(); as sheet) {
                   <button (click)="chooseAddToSheet()"
                           class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
                     <div class="flex items-start gap-3">
@@ -1134,7 +1177,7 @@
             [newSheetMode]="barchartSheetMode() === 'new'"
             [sheetNameDraft]="newSheetName()"
             (sheetNameDraftChange)="newSheetName.set($event)"
-            [sheetName]="activeSheet()?.name ?? ''"
+            [sheetName]="addTargetSheet()?.name ?? ''"
             [sheetLocationIds]="barchartSheetMode() === 'new' ? emptyLocationIds : activeSheetLocationIds()"
             (resultsChange)="onBarchartResults($event)"
             (focus)="onBarchartFocus($event)"
@@ -1248,17 +1291,13 @@
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                 </svg>
                 <h4 class="text-xl font-bold text-gray-900 dark:text-white">Edit Bids</h4>
-                <!-- Which sheet is being edited. No "All locations" here, unlike the map's copy of this
-                     dropdown: the grid is the sheet's (openEditBids narrows the map back to it first),
-                     so it always edits exactly one sheet. -->
+                <!-- Which sheets are being edited. No "All locations" here, unlike the map's copy of
+                     this control: the grid is the sheets' rows (openEditBids narrows the map back to
+                     them first), so there is always at least one. -->
                 @if (sheets().length > 0) {
-                  <select [ngModel]="activeSheetId()" (ngModelChange)="onEditBidsSheetChange(+$event)"
-                          title="The bid sheet you're editing"
-                          class="max-w-[30rem] px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base font-medium text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-scoular-green">
-                    @for (sheet of sheets(); track sheet.id) {
-                      <option [value]="sheet.id">{{ sheet.name }}{{ sheet.isOwner ? '' : ' (shared)' }}</option>
-                    }
-                  </select>
+                  <app-sheet-multi-select
+                    [sheets]="sheets()" [selectedIds]="selectedSheetIds()"
+                    (toggled)="onEditBidsSheetToggle($event)" (pickedOnly)="onEditBidsSheetPickOnly($event)" />
                 }
 
                 <!-- Sheet actions, beside the sheet they act on. The panel's sheet menu has the same
@@ -1529,15 +1568,17 @@
                     }
                     <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onCropColumnDrop($event)"
                         class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                      <!-- Names the sheet in the corner cell: with several sheets in play, the grid
-                           otherwise looks identical whichever one is open. -->
+                      <!-- Names the ticked sheets in the corner cell: with several sheets in play, the
+                           grid otherwise looks identical whichever ones are open. -->
                       <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[240px] lg:min-w-[340px]">
                         <span class="inline-flex items-center gap-1.5 align-middle">
-                          <span>Locations@if (activeSheet(); as sheet) { <span class="normal-case text-gray-700 dark:text-gray-200"> — {{ sheet.name }}</span> }</span>
+                          <span>Locations@if (selectedSheetsLabel(); as label) { <span class="normal-case text-gray-700 dark:text-gray-200"> — {{ label }}</span> }</span>
                           <!-- Rename lives here rather than in the toolbar: it is the name right beside
                                it that changes, so the pencil needs no label to explain itself. Owner
-                               only, matching the panel's menu. -->
-                          @if (activeSheet()?.isOwner) {
+                               only, matching the panel's menu -- and only with ONE sheet ticked, since
+                               with several the label is a joined phrase and there is no single sheet
+                               the pencil could be pointing at. -->
+                          @if (selectedSheets().length === 1 && activeSheet()?.isOwner) {
                             <button (click)="openRenameSheet()" title="Rename this bid sheet"
                               class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
                               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1572,7 +1613,7 @@
                        covers a tall list in a couple of seconds while still being steerable. -->
                   <tbody cdkDropList [cdkDropListAutoScrollStep]="18" (cdkDropListDropped)="onRowDrop($event)">
                     @for (row of editBidsRows(); track row.locationId; let rowIdx = $index) {
-                      <tr cdkDrag class="border-b border-gray-100 dark:border-gray-800 transition-colors"
+                      <tr cdkDrag [cdkDragDisabled]="!canReorderRows()" class="border-b border-gray-100 dark:border-gray-800 transition-colors"
                           [ngClass]="scoularLocationIds().has(row.locationId)
                             ? 'bg-green-50 dark:bg-green-900/30'
                             : 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/40'">
@@ -1587,7 +1628,13 @@
                                 ? 'bg-[#e6f6f1] dark:bg-[#0e3435]'
                                 : 'bg-white dark:bg-gray-900')">
                           <div class="flex items-center gap-2 w-full">
-                            <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
+                            <!-- Greyed rather than hidden with several sheets ticked, and it says why:
+                                 a handle that vanishes reads as a bug, and row order is the sheet's. -->
+                            <span cdkDragHandle
+                                  [title]="reorderDisabledReason() || 'Drag to reorder'"
+                                  [class]="canReorderRows()
+                                    ? 'cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0'
+                                    : 'cursor-not-allowed text-gray-200 dark:text-gray-700 flex-shrink-0'">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
                             </span>
                             <!-- Wraps to a second line rather than truncating: BarChart names carry the
@@ -1626,6 +1673,12 @@
                               <!-- The name sizes to its text rather than filling the cell, so the pencil sits
                                    against the end of the name instead of floating off at the far right. -->
                               <span class="min-w-0 text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words" [title]="row.name">{{ row.name }}</span>
+                              <!-- Which ticked sheets this row is on. Only rendered with more than one
+                                   ticked -- see sheetBadgeByLocationId. -->
+                              @if (sheetBadgeByLocationId().get(row.locationId); as onSheets) {
+                                <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-[10rem] truncate"
+                                      [title]="'On ' + onSheets">{{ onSheets }}</span>
+                              }
                               @if (true) {
                                 <button (click)="startRenameRow(row, $event)" title="Rename location"
                                         class="shrink-0 p-1 rounded text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors">

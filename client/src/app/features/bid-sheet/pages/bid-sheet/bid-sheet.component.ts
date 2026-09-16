@@ -17,6 +17,7 @@ import type { EntitlementPerson, EntitlementTradeUnit, EntitlementTradeUnitGroup
 import type { RecapGroup } from '@features/daily-digest/models/recap-group.model';
 import { environment } from '@env/environment';
 import { BarchartPickerComponent, BarchartBulkAddRequest, BarchartSearchArea } from '../../components/barchart-picker/barchart-picker.component';
+import { SheetMultiSelectComponent } from '../../components/sheet-multi-select/sheet-multi-select.component';
 import { BarchartCatalogLocation, BarchartCatalogLocationDetail } from '@models';
 import { commodityHex } from '@shared/utils/commodity-color';
 import { barchartDisplayName, barchartSaveName, isScoularListing } from '../../utils/barchart-location-name';
@@ -93,7 +94,7 @@ const FILTER_BAR_WRAP_WIDTH = 1050;
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
-  imports: [CommonModule, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, CdkScrollable, BarchartPickerComponent],
+  imports: [CommonModule, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, CdkScrollable, BarchartPickerComponent, SheetMultiSelectComponent],
   templateUrl: './bid-sheet.component.html',
   styleUrl: './bid-sheet.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -184,9 +185,34 @@ export class BidSheetComponent {
   // unscoped (allMapLocations, above); only the panel/grid narrow to the active sheet.
   readonly sheets = signal<BidSheet[]>([]);
   readonly sheetsLoaded = signal<boolean>(false);
-  readonly activeSheetId = signal<number | null>(null);
-  readonly activeSheet = computed<BidSheet | null>(() =>
-    this.sheets().find(s => s.id === this.activeSheetId()) ?? null);
+  /**
+   * The sheets on screen, in the order they were ticked. Several at once: originators compare a
+   * Kansas sheet against a Nebraska one without switching back and forth, so the panel, the grid and
+   * the map show their union.
+   *
+   * Ids rather than sheets, because a sheet object is replaced wholesale on every write (_applySheet)
+   * and the selection has to survive that. Ids naming a sheet that is gone -- deleted, or unshared
+   * since it was saved -- are simply skipped by selectedSheets rather than cleaned out, so a sheet
+   * that comes back (a share restored) comes back selected.
+   */
+  readonly selectedSheetIds = signal<number[]>([]);
+
+  /** The ticked sheets, in tick order, minus any id that no longer names a sheet this user can see. */
+  readonly selectedSheets = computed<BidSheet[]>(() => {
+    const byId = new Map(this.sheets().map(s => [s.id, s]));
+    return this.selectedSheetIds()
+      .map(id => byId.get(id))
+      .filter((s): s is BidSheet => s !== undefined);
+  });
+
+  /**
+   * The first ticked sheet -- the single destination for anything that can only happen on ONE sheet:
+   * share, rename, delete, and the default in the chooser that asks where a new location should go.
+   * It is NOT what the screen shows; that is selectedSheets. Kept as activeSheet/activeSheetId
+   * because every such write already reads it under those names.
+   */
+  readonly activeSheet = computed<BidSheet | null>(() => this.selectedSheets()[0] ?? null);
+  readonly activeSheetId = computed<number | null>(() => this.activeSheet()?.id ?? null);
 
   /**
    * The panel/grid location set: the active sheet's locations, cross-referenced against
@@ -195,20 +221,97 @@ export class BidSheetComponent {
    * allMapLocations hasn't caught up to yet (e.g. one just linked from another tab).
    */
   readonly bidLocations = computed<BidSheetLocation[]>(() => {
-    const sheet = this.activeSheet();
-    if (!sheet) return [];
+    const sheets = this.selectedSheets();
+    if (sheets.length === 0) return [];
     const live = new Map(this.allMapLocations().map(l => [l.id, l]));
-    // The live row supplies fresh DATA (bids, coordinates, the Scoular flag), but the SHEET owns the
-    // NAME: sheet.locations already carries DisplayName ?? canonical, resolved server-side. Taking the
-    // live row wholesale -- which this used to do -- threw that away and reverted every per-sheet
-    // rename to the canonical name the moment allMapLocations loaded.
-    return sheet.locations.map(l => {
-      const fresh = live.get(l.id);
-      return fresh ? { ...fresh, name: l.name } : l;
+
+    // One row per LOCATION, not per sheet row: a location on two ticked sheets is one elevator with
+    // one set of bids, and listing it twice would give the grid two rows editing the same cell.
+    // First sheet ticked wins the position, so the rows read in sheet order.
+    const order: number[] = [];
+    const first = new Map<number, BidSheetLocation>();
+    const names = new Map<number, Set<string>>();
+    for (const sheet of sheets) {
+      for (const l of sheet.locations) {
+        if (!first.has(l.id)) { order.push(l.id); first.set(l.id, l); }
+        const seen = names.get(l.id);
+        if (seen) seen.add(l.name); else names.set(l.id, new Set([l.name]));
+      }
+    }
+
+    return order.map(id => {
+      const own = first.get(id)!;
+      const fresh = live.get(id);
+      // The live row supplies fresh DATA (bids, coordinates, the Scoular flag), but a SHEET owns the
+      // NAME: sheet.locations carries DisplayName ?? canonical, resolved server-side. Taking the live
+      // row wholesale -- which this used to do -- threw that away and reverted every per-sheet rename
+      // to the canonical name the moment allMapLocations loaded.
+      //
+      // With several sheets ticked the name can be contested: the same elevator may be "Kanza GP" on
+      // one and "Garden Plain" on another. Agreement wins; disagreement falls back to the canonical
+      // name, because picking one sheet's label over another's would be arbitrary and would silently
+      // change what the row is called depending on the order they were ticked in.
+      const name = (names.get(id)!.size === 1 ? own.name : fresh?.name) ?? own.name;
+      return fresh ? { ...fresh, name } : { ...own, name };
     });
   });
 
-  /** Ids on the active sheet, for the BarChart picker's "already here" checkbox state. */
+  /**
+   * Which ticked sheets each location is on, for the row badge and for targeting a rename or a
+   * removal. Ids, in tick order; a location on one sheet gets a one-element list.
+   */
+  readonly sheetIdsByLocationId = computed<ReadonlyMap<number, number[]>>(() => {
+    const map = new Map<number, number[]>();
+    for (const sheet of this.selectedSheets()) {
+      for (const l of sheet.locations) {
+        const on = map.get(l.id);
+        if (on) { if (!on.includes(sheet.id)) on.push(sheet.id); } else map.set(l.id, [sheet.id]);
+      }
+    }
+    return map;
+  });
+
+  /**
+   * What the ticked sheets are called, as one phrase. Naming every sheet stops being readable past a
+   * couple and a bare count stops being informative below that, so it switches at two.
+   */
+  readonly selectedSheetsLabel = computed<string>(() => {
+    const names = this.selectedSheets().map(s => s.name);
+    if (names.length === 0) return '';
+    if (names.length <= 2) return names.join(' + ');
+    return `${names.length} bid sheets`;
+  });
+
+  /**
+   * The sheets each row is on, as a phrase for its badge -- empty unless more than one sheet is
+   * ticked, because with one the answer is the same for every row and the badge would be noise.
+   *
+   * It matters with several: the rows are a union, so "why is this elevator here" and "what will a
+   * rename or a removal touch" are no longer answerable from the list alone.
+   */
+  readonly sheetBadgeByLocationId = computed<ReadonlyMap<number, string>>(() => {
+    const sheets = this.selectedSheets();
+    if (sheets.length < 2) return new Map();
+    const nameById = new Map(sheets.map(s => [s.id, s.name]));
+    const badges = new Map<number, string>();
+    for (const [locationId, sheetIds] of this.sheetIdsByLocationId()) {
+      badges.set(locationId, sheetIds.map(id => nameById.get(id) ?? '').filter(Boolean).join(', '));
+    }
+    return badges;
+  });
+
+  /**
+   * Whether rows can be dragged. Row order is a column on the SHEET (BidSheetLocationLink.SortOrder),
+   * shared with everyone on it -- so with several ticked there is no single list to write a new order
+   * into, and a drag would have to either guess a sheet or invent a per-user order on top, which is
+   * exactly the name-keyed thing the sheet order replaced. The handle is disabled instead, and says so.
+   */
+  readonly canReorderRows = computed<boolean>(() => this.selectedSheets().length === 1);
+
+  readonly reorderDisabledReason = computed<string>(() =>
+    this.canReorderRows() ? '' : 'Show one bid sheet on its own to reorder its rows');
+
+  /** Ids on the ticked sheets, for the BarChart picker's "already here" checkbox state. */
   readonly activeSheetLocationIds = computed<ReadonlySet<number>>(() =>
     new Set(this.bidLocations().map(l => l.id)));
 
@@ -236,7 +339,8 @@ export class BidSheetComponent {
    * picked or there is no sheet to narrow to. The catalog layer rides on this too: with a sheet open
    * the map is meant to be JUST that sheet, and a few thousand catalog dots underneath is the opposite.
    */
-  readonly showingAllLocations = computed<boolean>(() => this.mapScope() === 'all' || !this.activeSheet());
+  readonly showingAllLocations = computed<boolean>(() =>
+    this.mapScope() === 'all' || this.sheets().length === 0);
 
   /**
    * The locations the MAP draws and prices: the sheet's, or every added one. bidEntries flattens this,
@@ -353,8 +457,21 @@ export class BidSheetComponent {
   readonly removeLocationIds = signal<ReadonlySet<number>>(new Set());
   readonly removingLocations = signal<boolean>(false);
 
-  /** The open sheet's locations, in row order, for the removal list. */
+  /** The ticked sheets' locations, in row order, for the removal list. */
   readonly removableLocations = computed<BidSheetLocation[]>(() => this.bidLocations());
+
+  /**
+   * How many ticked sheets the removal would touch, so the dialog can say "from 2 sheets" rather than
+   * letting a user on a multi-sheet view think they are only editing the one they were looking at.
+   */
+  readonly removeSheetCount = computed<number>(() => {
+    const onSheets = this.sheetIdsByLocationId();
+    const sheetIds = new Set<number>();
+    for (const locationId of this.removeLocationIds()) {
+      for (const sheetId of onSheets.get(locationId) ?? []) sheetIds.add(sheetId);
+    }
+    return sheetIds.size;
+  });
 
   readonly allRemovableSelected = computed<boolean>(() => {
     const rows = this.removableLocations();
@@ -403,15 +520,27 @@ export class BidSheetComponent {
   }
 
   /**
-   * Takes the ticked locations off the sheet -- one request, so a batch cannot half-apply.
+   * Takes the ticked locations off every ticked sheet holding them -- one request per sheet, so a
+   * batch cannot half-apply WITHIN a sheet.
    *
-   * Flushes pending bid edits FIRST: the grid is rebuilt from the response, so an unsaved cell on a
+   * Across sheets it removes from all of them, because the row on screen stands for the location on
+   * each: leaving it on the sheets that happen not to be first would put it straight back on the list
+   * the moment they were looked at on their own.
+   *
+   * Flushes pending bid edits FIRST: the grid is rebuilt from the responses, so an unsaved cell on a
    * row that survives would otherwise be thrown away along with the removed ones.
    */
   confirmRemoveLocations(): void {
-    const sheetId = this.activeSheetId();
     const ids = [...this.removeLocationIds()];
-    if (sheetId == null || ids.length === 0 || this.removingLocations()) return;
+    const onSheets = this.sheetIdsByLocationId();
+    const bySheet = new Map<number, number[]>();
+    for (const locationId of ids) {
+      for (const sheetId of onSheets.get(locationId) ?? []) {
+        const on = bySheet.get(sheetId);
+        if (on) on.push(locationId); else bySheet.set(sheetId, [locationId]);
+      }
+    }
+    if (bySheet.size === 0 || ids.length === 0 || this.removingLocations()) return;
 
     this._saveDirtyBids(() => {
       // Raised HERE, not before the flush: _saveDirtyBids never calls back when the bid save fails (it
@@ -419,20 +548,23 @@ export class BidSheetComponent {
       // "Removing..." forever, button dead until a reload. A second click during the flush is
       // harmless: _saveDirtyBids coalesces and fires only the latest callback.
       this.removingLocations.set(true);
-      this.apiService.removeBidSheetLocations(sheetId, ids)
+      const sheetCount = bySheet.size;
+      forkJoin([...bySheet].map(([sheetId, locationIds]) =>
+        this.apiService.removeBidSheetLocations(sheetId, locationIds)))
         .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-          next: (sheet) => {
+          next: (sheets) => {
             this.removingLocations.set(false);
             this.showRemoveLocations.set(false);
             this.removeLocationIds.set(new Set());
-            this._applySheet(sheet);
+            for (const sheet of sheets) this._applySheet(sheet);
             this._applyBidFilterSources();
             this.filterBids();
             this._refreshMapMarkers();
             if (this.editBidsMode()) this._buildEditGrid();
-            this.toastService.success(ids.length === 1
-              ? 'Removed 1 location from this sheet'
-              : `Removed ${ids.length} locations from this sheet`);
+            const what = ids.length === 1 ? '1 location' : `${ids.length} locations`;
+            this.toastService.success(sheetCount === 1
+              ? `Removed ${what} from this sheet`
+              : `Removed ${what} from ${sheetCount} sheets`);
           },
           error: () => {
             this.removingLocations.set(false);
@@ -1100,7 +1232,10 @@ export class BidSheetComponent {
   readonly catalogDetailOnActiveSheet = computed<boolean>(() => {
     const key = this.catalogDetail()?.location.locationKey;
     if (!key) return false;
-    return (this.activeSheet()?.locations ?? []).some(l => l.barchartLocationKey === key);
+    // Any TICKED sheet, not just the first: the popup opens from a pin, the pin is drawn because the
+    // location is on one of the sheets on screen, and offering Add for a location already visible in
+    // the panel just collides with UQ_BidSheetLocations_BarchartKey.
+    return this.bidLocations().some(l => l.barchartLocationKey === key);
   });
 
   /**
@@ -1434,20 +1569,22 @@ export class BidSheetComponent {
   /**
    * Loads the sheets the user owns or is shared on, then decides which one is open.
    *
-   * Preference order: the sheet the preference row named (if it still exists -- it may have been
-   * deleted, or unshared, since); otherwise, if there is exactly one sheet, that one, since a picker
-   * would be pure friction with nothing to pick between. With zero sheets or more than one and no
-   * saved choice, activeSheetId stays null and the empty state asks the user to create or pick one.
+   * Preference order: the sheets the preference row named, minus any that no longer exist -- one may
+   * have been deleted, or unshared, since it was saved; otherwise, if there is exactly one sheet,
+   * that one, since a picker would be pure friction with nothing to pick between. With zero sheets,
+   * or more than one and no saved choice, nothing is ticked and the empty state asks the user to
+   * create or pick one.
    */
-  private _loadSheets(preferredSheetId: number | null): void {
+  private _loadSheets(preferredSheetIds: number[]): void {
     this.apiService.getBidSheets().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (list) => {
         this.sheets.set(list);
         this.sheetsLoaded.set(true);
-        if (preferredSheetId != null && list.some(s => s.id === preferredSheetId)) {
-          this.activeSheetId.set(preferredSheetId);
+        const visible = preferredSheetIds.filter(id => list.some(s => s.id === id));
+        if (visible.length > 0) {
+          this.selectedSheetIds.set(visible);
         } else if (list.length === 1) {
-          this.activeSheetId.set(list[0].id);
+          this.selectedSheetIds.set([list[0].id]);
         }
         this._applyBidFilterSources();
         this.filterBids();
@@ -1477,20 +1614,40 @@ export class BidSheetComponent {
     });
   }
 
+  /** Shows exactly this sheet and nothing else -- what picking one from a menu has always meant. */
   selectSheet(id: number): void {
     this.showSheetMenu.set(false);
+    this.setSelectedSheets([id]);
+  }
+
+  /**
+   * Ticks or unticks one sheet, leaving the rest of the selection alone. Ticking appends, so the
+   * order on screen is the order they were ticked in.
+   */
+  toggleSheet(id: number): void {
+    const current = this.selectedSheetIds();
+    this.setSelectedSheets(current.includes(id) ? current.filter(x => x !== id) : [...current, id]);
+  }
+
+  /**
+   * The one way the selection changes. Every caller funnels through here so nothing can set the ids
+   * and forget to rebuild what depends on them.
+   */
+  setSelectedSheets(ids: number[]): void {
+    const next = [...new Set(ids)];
+    const current = this.selectedSheetIds();
     // Picking a sheet ANYWHERE means "show me this sheet", so it narrows the map back from "All
     // locations" too. This used to live only in the map dropdown's handler, and choosing a sheet from
-    // the panel's own menu in All scope did nothing visible: the sheet was usually already active
-    // underneath, so the early return below fired and mapScope stayed 'all'. Must run BEFORE that
+    // the panel's own menu in All scope did nothing visible: the sheet was usually already selected
+    // underneath, so the no-change return below fired and mapScope stayed 'all'. Must run BEFORE that
     // return for exactly that reason.
-    if (this.mapScope() === 'all') this.setMapScope('sheet');
-    if (this.activeSheetId() === id) return;
-    this.activeSheetId.set(id);
+    if (next.length > 0 && this.mapScope() === 'all') this.setMapScope('sheet');
+    if (next.length === current.length && next.every((id, i) => id === current[i])) return;
+    this.selectedSheetIds.set(next);
     this._applyBidFilterSources();
     this.filterBids();
     this._refreshMapMarkers();
-    this._saveSelectedSheet(id);
+    this._saveSelectedSheets(next);
   }
 
   toggleSheetMenu(): void {
@@ -1498,30 +1655,32 @@ export class BidSheetComponent {
   }
 
   /**
-   * The map toolbar's sheet dropdown, whose options are the user's sheets plus "All locations" --
-   * one control answering "what am I looking at", rather than a sheet picker beside a scope switch
-   * saying the same thing twice. "All locations" widens the MAP; the panel and grid are the sheet's and
-   * show a prompt instead. The sheet stays open underneath so Add still has a destination.
+   * Changing the sheet selection from inside the Edit Bids grid. Flushes pending cell edits against
+   * the CURRENT rows before they change underneath them -- same ordering confirmCropSelection uses,
+   * and for the same reason: _buildEditGrid reshapes what the dirty cells refer to.
+   *
+   * Unticking the last sheet is refused rather than obeyed. The grid IS the sheets' rows; with none
+   * it would be a header over nothing, and the user would have to leave the screen to get back.
    */
-  readonly sheetDropdownValue = computed<string>(() =>
-    this.mapScope() === 'all' ? 'all' : String(this.activeSheetId() ?? ''));
-
-  onSheetDropdownChange(value: string): void {
-    if (value === 'all') { this.setMapScope('all'); return; }
-    const id = Number(value);
-    if (!id) return;
-    this.selectSheet(id); // narrows back to sheet scope itself -- one rule for every way of picking a sheet
+  onEditBidsSheetToggle(id: number): void {
+    const current = this.selectedSheetIds();
+    const next = current.includes(id) ? current.filter(x => x !== id) : [...current, id];
+    if (next.length === 0) {
+      this.toastService.error('Keep at least one bid sheet open while editing bids');
+      return;
+    }
+    this._changeEditBidsSheets(next);
   }
 
-  /**
-   * Switching sheets from inside the Edit Bids grid. Flushes pending cell edits against the CURRENT
-   * sheet before the rows change underneath them -- same ordering confirmCropSelection uses, and for
-   * the same reason: _buildEditGrid reshapes what the dirty cells refer to.
-   */
-  onEditBidsSheetChange(id: number): void {
-    if (!id || id === this.activeSheetId()) return;
+  onEditBidsSheetPickOnly(id: number): void {
+    this._changeEditBidsSheets([id]);
+  }
+
+  private _changeEditBidsSheets(ids: number[]): void {
+    const current = this.selectedSheetIds();
+    if (ids.length === current.length && ids.every((id, i) => id === current[i])) return;
     this._saveDirtyBids(() => {
-      this.selectSheet(id);
+      this.setSelectedSheets(ids);
       this._buildEditGrid();
     });
   }
@@ -1581,15 +1740,16 @@ export class BidSheetComponent {
     this._loadCatalogLocations();
   }
 
-  /** Records which sheet is open, so a reload reopens the same one. */
-  private _saveSelectedSheet(id: number): void {
+  /** Records which sheets are open, so a reload reopens the same ones in the same order. */
+  private _saveSelectedSheets(ids: number[]): void {
     const cropCode = this.selectedCrop() || null;
     const month = this.selectedMonth();
     const cropYear = this.selectedYear() || null;
     this.apiService.setBidSheetPreference({
-      tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, selectedBidSheetIds: JSON.stringify(id == null ? [] : [id])
+      tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear,
+      selectedBidSheetIds: JSON.stringify(ids)
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      error: (err) => { if (isDevMode()) console.warn('Failed to save the open bid sheet', err); }
+      error: (err) => { if (isDevMode()) console.warn('Failed to save the open bid sheets', err); }
     });
   }
 
@@ -1624,13 +1784,11 @@ export class BidSheetComponent {
       next: (sheet) => {
         this.creatingSheet.set(false);
         this._applySheet(sheet);
-        this.activeSheetId.set(sheet.id);
+        // A sheet you just made is the one you want to look at, on its own -- not added alongside
+        // whatever was already ticked, which would open it half-buried in other people's rows.
+        this.setSelectedSheets([sheet.id]);
         this.showCreateSheet.set(false);
         this.toastService.success(`Created "${sheet.name}"`);
-        this._saveSelectedSheet(sheet.id);
-        this._applyBidFilterSources();
-        this.filterBids();
-        this._refreshMapMarkers();
       },
       error: (err) => {
         this.creatingSheet.set(false);
@@ -1693,7 +1851,8 @@ export class BidSheetComponent {
         this.deletingSheet.set(false);
         this.showDeleteSheetConfirm.set(false);
         this.sheets.update(list => list.filter(s => s.id !== sheet.id));
-        this.activeSheetId.set(null);
+        // Only the deleted one goes; anything else ticked stays on screen.
+        this.setSelectedSheets(this.selectedSheetIds().filter(id => id !== sheet.id));
         // Delete is reachable from the Edit Bids header now. The grid is the sheet's, and the sheet
         // is gone -- leaving it open would show an empty grid under a blank dropdown.
         if (this.editBidsMode()) this.closeEditBids();
@@ -1912,10 +2071,10 @@ export class BidSheetComponent {
           }
 
           // Sheets load last, using whichever one this preference row says was open.
-          this._loadSheets(BidSheetComponent.parseSheetIds(pref?.selectedBidSheetIds)[0] ?? null);
+          this._loadSheets(BidSheetComponent.parseSheetIds(pref?.selectedBidSheetIds));
         },
         // A failed preference load must not block the screen from showing sheets at all.
-        error: (err) => { if (isDevMode()) console.warn('Failed to load bid sheet preference', err); this._loadSheets(null); }
+        error: (err) => { if (isDevMode()) console.warn('Failed to load bid sheet preference', err); this._loadSheets([]); }
       });
   }
 
@@ -2383,6 +2542,54 @@ export class BidSheetComponent {
   }
 
   /**
+   * Which sheet a newly added location goes on. Adding to all of them was rejected: a sheet is a
+   * curated list somebody else may be sharing, and a location added to the one you were looking at
+   * appearing on your colleague's too is not something you would be able to undo from this screen.
+   *
+   * Remembered for the session rather than saved, and re-asked whenever the remembered sheet is no
+   * longer ticked. It is a within-a-sitting convenience -- "everything I add today goes on Kansas" --
+   * and a choice that outlived the sitting would silently send tomorrow's additions somewhere the
+   * user had stopped looking.
+   */
+  readonly addTargetSheetId = signal<number | null>(null);
+  readonly showAddSheetChoice = signal<boolean>(false);
+  private readonly _pendingAddAction = signal<(() => void) | null>(null);
+
+  /** The sheet an add would land on right now: the remembered one if still ticked, else the first. */
+  readonly addTargetSheet = computed<BidSheet | null>(() => {
+    const sheets = this.selectedSheets();
+    if (sheets.length === 0) return null;
+    return sheets.find(s => s.id === this.addTargetSheetId()) ?? sheets[0];
+  });
+
+  /**
+   * Runs an add once there is exactly one sheet for it to land on -- asking first, but only when the
+   * answer is not already settled: one sheet ticked, or a remembered choice still among the ticked.
+   */
+  private _withAddTarget(action: (sheetId: number) => void): void {
+    const sheets = this.selectedSheets();
+    if (sheets.length === 0) { this._requireSheet(); return; }
+    if (sheets.length === 1) { this.addTargetSheetId.set(sheets[0].id); action(sheets[0].id); return; }
+    const remembered = sheets.find(s => s.id === this.addTargetSheetId());
+    if (remembered) { action(remembered.id); return; }
+    this._pendingAddAction.set(() => action(this.addTargetSheet()!.id));
+    this.showAddSheetChoice.set(true);
+  }
+
+  chooseAddTargetSheet(id: number): void {
+    this.addTargetSheetId.set(id);
+    this.showAddSheetChoice.set(false);
+    const action = this._pendingAddAction();
+    this._pendingAddAction.set(null);
+    action?.();
+  }
+
+  cancelAddSheetChoice(): void {
+    this.showAddSheetChoice.set(false);
+    this._pendingAddAction.set(null);
+  }
+
+  /**
    * Ensures there is somewhere for a single location to land, prompting for a sheet if not.
    * Returns false when the caller should stand down and let the prompt take over.
    */
@@ -2493,8 +2700,11 @@ export class BidSheetComponent {
 
   confirmAddLocation(): void {
     if (this.addLocationSaving()) return; // guard against a double-click firing two creates
-    const sheetId = this.activeSheetId();
-    if (sheetId == null) { this.toastService.error('Create or select a bid sheet first'); return; }
+    if (this.selectedSheets().length === 0) { this.toastService.error('Create or select a bid sheet first'); return; }
+    this._withAddTarget(sheetId => this._confirmAddLocationTo(sheetId));
+  }
+
+  private _confirmAddLocationTo(sheetId: number): void {
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
     const name = this.newLocationName().trim();
     const lat = this.newLocationLat();
@@ -2887,14 +3097,13 @@ export class BidSheetComponent {
       return;
     }
 
-    const sheetId = this.activeSheetId();
     // No destination means nothing can be linked anywhere. Said out loud rather than returning
     // silently, which left the button looking broken.
-    if (sheetId == null) {
+    if (this.selectedSheets().length === 0) {
       this.toastService.error('Create or select a bid sheet first, then add these locations');
       return;
     }
-    this._bulkAddToSheet(sheetId, request);
+    this._withAddTarget(sheetId => this._bulkAddToSheet(sheetId, request));
   }
 
   /** Creates the sheet a "build a sheet" batch is destined for, then adds the batch to it. */
@@ -2904,8 +3113,7 @@ export class BidSheetComponent {
       next: (sheet) => {
         this.barchartAdding.set(false);
         this._applySheet(sheet);
-        this.activeSheetId.set(sheet.id);
-        this._saveSelectedSheet(sheet.id);
+        this.setSelectedSheets([sheet.id]);
         this.barchartSheetMode.set('existing'); // it exists now -- anything further adds to it
         this._bulkAddToSheet(sheet.id, request);
       },
@@ -3120,6 +3328,10 @@ export class BidSheetComponent {
 
   onRowDrop(event: CdkDragDrop<EditBidsRow[]>): void {
     if (event.previousIndex === event.currentIndex) return;
+    // Belt and braces -- the handle is already disabled. A drop that got through here with several
+    // sheets ticked would write the UNION's order onto whichever sheet happened to be first,
+    // scrambling that sheet's order for everyone sharing it with rows that are not even on it.
+    if (!this.canReorderRows()) return;
 
     this.editBidsRows.update(rows => {
       const updated = [...rows];
@@ -3984,13 +4196,16 @@ export class BidSheetComponent {
    * than a spreadsheet that quietly disagrees with the sheet.
    */
   exportEditBids(): void {
-    if (this.exporting() || !this.activeSheet()) return;
+    if (this.exporting() || this.selectedSheets().length === 0) return;
     this._saveDirtyBids(() => { void this._runExport(); });
   }
 
   private async _runExport(): Promise<void> {
-    const sheet = this.activeSheet();
-    if (!sheet) return;
+    // The workbook is the rows on screen, so it is named after every sheet they came from. Naming it
+    // after the first alone would put a file called "Kansas" on someone's desk holding Nebraska's
+    // elevators too.
+    const sheetName = this.selectedSheetsLabel();
+    if (!sheetName) return;
     this.exporting.set(true);
     try {
       // exceljs is ~1MB, so it is loaded on first use rather than shipped in the initial bundle. It is
@@ -4000,7 +4215,7 @@ export class BidSheetComponent {
       const ExcelJS = ((loaded as { default?: ExcelJSModule }).default ?? loaded) as ExcelJSModule;
 
       const model = buildBidSheetExport({
-        sheetName: sheet.name,
+        sheetName,
         exportedAt: new Date(),
         // The toggle decides what each period exports: Cash or Basis alone, or both side by side.
         priceMode: this.priceMode(),
@@ -4011,7 +4226,7 @@ export class BidSheetComponent {
 
       downloadWorkbook(await writeBidSheetWorkbook(model, ExcelJS), model.fileName);
       this.usageTracking.postClickEvent('interaction', 'bidsheet', 'exported-excel');
-      this.toastService.success(`Exported "${sheet.name}"`);
+      this.toastService.success(`Exported "${sheetName}"`);
     } catch (err) {
       if (isDevMode()) console.error('[BidSheet] export failed', err);
       this.toastService.error('Failed to export the bid sheet');
@@ -4366,7 +4581,7 @@ export class BidSheetComponent {
     // writes the shared location row -- so renaming a row in the grid renamed that elevator for
     // EVERY sheet holding it, and the new name survived being removed and re-added because it had
     // become the elevator's real name. Row order is keyed by location id, so nothing to carry over.
-    this._renameLocationOnSheet(loc.id, newName);
+    this._renameLocationOnSheets(loc.id, newName);
   }
 
   isRowScoular(row: EditBidsRow): boolean {
@@ -4441,52 +4656,54 @@ export class BidSheetComponent {
       this.toastService.error(`Another location on this sheet is already called "${newName}"`);
       return;
     }
-    const sheetId = this.activeSheetId();
-    if (sheetId == null) { this.toastService.error('Open a bid sheet to rename a location'); return; }
-
-    // Renames on THIS SHEET only. It used to PUT the shared location row, and locations are
+    // Renames on the TICKED SHEETS only. It used to PUT the shared location row, and locations are
     // company-wide -- so the name changed on every sheet holding that elevator, last write wins, with
     // no warning. Two originators with the same elevator overwrote each other's label. The canonical
     // name (what "All locations" shows, and what the BarChart bridge matches on) is left alone.
-    this.apiService.setBidSheetLocationName(sheetId, loc.id, newName)
-      .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (sheet) => {
-        this.editingLocationName.set(false);
-        this.editLocationNameValue.set('');
-        // Nothing to re-point: the panel and the reference both hold the location's ID, which a
-        // rename does not change. Both used to hold the NAME, so each had to be chased -- and the
-        // reference could only be chased by comparing names, which moved it onto the wrong location
-        // whenever two shared one.
-        this.toastService.success(`Renamed to ${newName} on this sheet`);
-        // The response carries the sheet with its resolved names, so the panel and grid update from
-        // it directly. No _loadAllMapLocations(): the canonical row did not change.
-        this._applySheet(sheet);
-        this._applyBidFilterSources();
-        this.filterBids();
-        this._refreshMapMarkers();
-      },
-      error: () => this.toastService.error('Failed to rename location')
+    //
+    // Nothing to re-point afterwards: the panel and the reference both hold the location's ID, which a
+    // rename does not change. Both used to hold the NAME, so each had to be chased -- and the
+    // reference could only be chased by comparing names, which moved it onto the wrong location
+    // whenever two shared one.
+    this._renameLocationOnSheets(loc.id, newName, () => {
+      this.editingLocationName.set(false);
+      this.editLocationNameValue.set('');
     });
   }
 
   /**
-   * Renames a location on the OPEN SHEET only, and refreshes everything derived from the sheet.
+   * Renames a location on the TICKED SHEETS that hold it, and refreshes everything derived from them.
    *
    * Shared by the side panel and the Edit Bids grid. The grid used to write the shared location row
    * instead, which renamed the elevator for every sheet holding it -- and because that became its real
    * name, the label came back even after removing and re-adding the location from the catalog.
+   *
+   * With several sheets ticked the row on screen is ONE row standing for the same elevator on each of
+   * them, so renaming it has to reach all of them. Renaming only the first would leave the other
+   * sheets on the old label and the union's name rule would then see a disagreement and show the
+   * canonical name -- the user's new name would appear to have been ignored.
+   *
+   * Sheets the location is not on are untouched, ticked or not: the user renamed a row they can see.
    */
-  private _renameLocationOnSheet(locationId: number, newName: string): void {
-    const sheetId = this.activeSheetId();
-    if (sheetId == null) { this.toastService.error('Open a bid sheet to rename a location'); return; }
+  private _renameLocationOnSheets(locationId: number, newName: string, onDone?: () => void): void {
+    const sheetIds = this.sheetIdsByLocationId().get(locationId) ?? [];
+    if (sheetIds.length === 0) { this.toastService.error('Open a bid sheet to rename a location'); return; }
 
-    this.apiService.setBidSheetLocationName(sheetId, locationId, newName)
+    // One request per sheet, because a rename is per-sheet by construction (BidSheetLocationLink
+    // .DisplayName). forkJoin reports the first failure, and any write that already landed stays --
+    // the sheets that did succeed come back in the error-free responses we never see, so the next
+    // load reconciles. Half-renamed is visible (the row falls back to the canonical name) rather than
+    // silent, which is the right failure for something this cheap to redo.
+    forkJoin(sheetIds.map(id => this.apiService.setBidSheetLocationName(id, locationId, newName)))
       .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (sheet) => {
-          this.toastService.success(`Renamed to ${newName} on this sheet`);
-          // The response carries the sheet with its names already resolved, so everything downstream
-          // rebuilds from it. No _loadAllMapLocations(): the canonical row did not change.
-          this._applySheet(sheet);
+        next: (updated) => {
+          this.toastService.success(sheetIds.length === 1
+            ? `Renamed to ${newName} on this sheet`
+            : `Renamed to ${newName} on ${sheetIds.length} sheets`);
+          // Each response carries its sheet with names already resolved, so everything downstream
+          // rebuilds from them. No _loadAllMapLocations(): the canonical row did not change.
+          for (const sheet of updated) this._applySheet(sheet);
+          onDone?.();
           this._applyBidFilterSources();
           this.filterBids();
           this._refreshMapMarkers();
@@ -5391,10 +5608,14 @@ export class BidSheetComponent {
    * confirmAddLocation / onBarchartAddMany.
    */
   addCatalogDetailToSheet(): void {
+    if (this.catalogDetail() === null || this.catalogDetailAdding()) return;
+    if (this.selectedSheets().length === 0) { this.toastService.error('Create or select a bid sheet first'); return; }
+    this._withAddTarget(sheetId => this._addCatalogDetailTo(sheetId));
+  }
+
+  private _addCatalogDetailTo(sheetId: number): void {
     const detail = this.catalogDetail();
-    const sheetId = this.activeSheetId();
-    if (!detail || this.catalogDetailAdding()) return;
-    if (sheetId == null) { this.toastService.error('Create or select a bid sheet first'); return; }
+    if (!detail) return;
 
     this.catalogDetailAdding.set(true);
     const loc = detail.location;
