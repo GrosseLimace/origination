@@ -877,9 +877,9 @@ export class ApiService {
   }
 
   /** Gets saved bid sheet preferences (crop, month, year) for the current user and a trade unit key. */
-  getBidSheetPreference(tradeUnitKey: string): Observable<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null; selectedYears: string | null; printLayout: string | null; priceMode: string | null; selectedBidSheetId: number | null } | null> {
+  getBidSheetPreference(tradeUnitKey: string): Observable<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null; selectedYears: string | null; printLayout: string | null; priceMode: string | null; selectedBidSheetIds: string | null } | null> {
     return this._dedupe(`bidsheet-preference-${tradeUnitKey}`,
-      this.http.get<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null; selectedYears: string | null; printLayout: string | null; priceMode: string | null; selectedBidSheetId: number | null }>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
+      this.http.get<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null; selectedYears: string | null; printLayout: string | null; priceMode: string | null; selectedBidSheetIds: string | null }>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
         .pipe(catchError(() => of(null)))
     );
   }

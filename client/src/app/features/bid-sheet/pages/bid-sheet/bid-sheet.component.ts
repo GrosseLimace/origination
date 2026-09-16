@@ -144,6 +144,22 @@ export class BidSheetComponent {
    */
   selectedMonth = signal<number>(BidSheetComponent.currentMonth());
 
+  /**
+   * The saved sheet selection, made safe to use: a JSON array of positive integers, de-duplicated, in
+   * the order stored. Anything else -- null, "", malformed JSON, a bare number from before the column
+   * held a list -- reads as an empty selection rather than throwing on load.
+   */
+  static parseSheetIds(raw: unknown): number[] {
+    if (typeof raw !== 'string' || raw.trim() === '') return [];
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return [...new Set(parsed.map(Number).filter(n => Number.isInteger(n) && n > 0))];
+    } catch {
+      return [];
+    }
+  }
+
   /** 1-12 for today. A function, not a constant, so a long-open tab does not freeze on the month it loaded in. */
   static currentMonth(): number { return new Date().getMonth() + 1; }
 
@@ -1571,7 +1587,7 @@ export class BidSheetComponent {
     const month = this.selectedMonth();
     const cropYear = this.selectedYear() || null;
     this.apiService.setBidSheetPreference({
-      tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, selectedBidSheetId: id
+      tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, selectedBidSheetIds: JSON.stringify(id == null ? [] : [id])
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       error: (err) => { if (isDevMode()) console.warn('Failed to save the open bid sheet', err); }
     });
@@ -1896,7 +1912,7 @@ export class BidSheetComponent {
           }
 
           // Sheets load last, using whichever one this preference row says was open.
-          this._loadSheets(pref?.selectedBidSheetId ?? null);
+          this._loadSheets(BidSheetComponent.parseSheetIds(pref?.selectedBidSheetIds)[0] ?? null);
         },
         // A failed preference load must not block the screen from showing sheets at all.
         error: (err) => { if (isDevMode()) console.warn('Failed to load bid sheet preference', err); this._loadSheets(null); }

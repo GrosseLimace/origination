@@ -41,7 +41,7 @@ public interface IBidSheetRepository
     Task<BidSheetPreference?> GetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken);
     Task SetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear,
         string? cropOrder, string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
-        int? selectedBidSheetId, CancellationToken cancellationToken);
+        string? selectedBidSheetIds, CancellationToken cancellationToken);
 
     // ---- Sheets --------------------------------------------------------------------------------
     // A sheet is a named, shareable working set of locations. It replaced the trade unit as the thing

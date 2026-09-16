@@ -2427,3 +2427,39 @@ describe('BidSheetComponent — two locations that share a name stay apart', () 
     expect(items.map(i => i.oldBid || i.newBid).filter(Boolean).length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * The remembered sheet selection is stored as a JSON array now rather than a single id, so the screen
+ * can reopen on several sheets at once. Everything reading it goes through one parser, because the
+ * column already holds rows written by the old code and a load that throws leaves the user on a blank
+ * screen with no sheets at all.
+ */
+describe('BidSheetComponent — reading the remembered sheet selection', () => {
+  it('reads a stored list of sheet ids in order', () => {
+    expect(BidSheetComponent.parseSheetIds('[120,133]')).toEqual([120, 133]);
+    expect(BidSheetComponent.parseSheetIds('[719]')).toEqual([719]);
+  });
+
+  it('treats an absent or empty value as no selection', () => {
+    expect(BidSheetComponent.parseSheetIds(null)).toEqual([]);
+    expect(BidSheetComponent.parseSheetIds(undefined)).toEqual([]);
+    expect(BidSheetComponent.parseSheetIds('')).toEqual([]);
+    expect(BidSheetComponent.parseSheetIds('   ')).toEqual([]);
+    expect(BidSheetComponent.parseSheetIds('[]')).toEqual([]);
+  });
+
+  // A row half-written, hand-edited in SSMS, or left over from the scalar column must not take the
+  // screen down -- an unreadable selection is no selection.
+  it('falls back to no selection on anything it cannot read', () => {
+    expect(BidSheetComponent.parseSheetIds('[120')).toEqual([]);
+    expect(BidSheetComponent.parseSheetIds('120')).toEqual([]);
+    expect(BidSheetComponent.parseSheetIds('{"id":120}')).toEqual([]);
+    expect(BidSheetComponent.parseSheetIds(120 as unknown)).toEqual([]);
+  });
+
+  // Ids that cannot name a sheet are dropped rather than carried into a lookup that would miss.
+  it('drops entries that are not real sheet ids, and duplicates', () => {
+    expect(BidSheetComponent.parseSheetIds('[120,null,"x",0,-4,1.5]')).toEqual([120]);
+    expect(BidSheetComponent.parseSheetIds('[120,133,120]')).toEqual([120, 133]);
+  });
+});

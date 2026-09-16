@@ -142,7 +142,7 @@ export interface BidSheetPreferenceUpdate {
   printLayout?: string | null;
   priceMode?: string | null;
   /** The sheet the user last had open, so the screen reopens where they left it. */
-  selectedBidSheetId?: number | null;
+  selectedBidSheetIds?: string | null;
 }
 
 /**

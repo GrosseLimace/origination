@@ -286,7 +286,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetPreferences', 'ModifiedAt',     'datetime2',     0),
 ('dbo', 'BidSheetPreferences', 'Month',          'int',           1),
 ('dbo', 'BidSheetPreferences', 'PrintLayout',    'nvarchar(max)', 1),
-('dbo', 'BidSheetPreferences', 'SelectedBidSheetId', 'int',           1),
+('dbo', 'BidSheetPreferences', 'SelectedBidSheetIds', 'nvarchar(200)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedMonths',     'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedYears',  'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'TradeUnitKey',   'nvarchar(500)', 0),

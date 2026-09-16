@@ -19,7 +19,7 @@ public interface IBidSheetService
     Task<BidSheetPreferenceResponse?> GetPreferenceAsync(string tradeUnitKey, CancellationToken cancellationToken);
     Task SetPreferenceAsync(string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder,
         string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
-        int? selectedBidSheetId, CancellationToken cancellationToken);
+        string? selectedBidSheetIds, CancellationToken cancellationToken);
 
     // ---- Sheets --------------------------------------------------------------------------------
     // A sheet is a named, shareable working set of locations. Everyone on a sheet can edit its
