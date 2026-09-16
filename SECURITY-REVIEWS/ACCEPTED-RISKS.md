@@ -11,7 +11,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
-| AR-05 | Bid-sheet **location** reads are company-wide; destructive ops restricted to creator/Admin; the elevators half is gone (route deleted 2026-09-14) | High | CWE-284 | Accepted — **awaiting countersign** (amended 2026-09-03) | 2026-09-02 | 2027-09-02 |
+| AR-05 | Bid-sheet **location** reads are company-wide; destructive ops restricted to creator/Admin; the elevators half is gone (route deleted 2026-09-14); sheet rename/reshare opened to any member (2026-09-16) | High | CWE-284 | Accepted — **awaiting countersign** (amended 2026-09-16) | 2026-09-02 | 2027-09-02 |
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
 | AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements | Medium | CWE-284 | Accepted | 2026-08-11 | 2027-08-11 |
 | AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — **security sign-off pending** | 2026-09-01 | 2027-09-01 |
@@ -599,6 +599,7 @@ The "re-evaluate if" clause above named the sheets phase specifically, so here i
 sheet requires being its owner or on its share list; renaming, resharing and deleting one are
 owner-only (`BidSheetService.RequireVisibleSheetAsync` / `RequireSheetOwnerAsync`, both checking
 persisted values, both returning a real 403 rather than a 404 for a genuine outsider).
+**⚠ Superseded 2026-09-16 — only DELETE is owner-only now. See the addendum below.**
 
 Mutation of **bids and locations was deliberately NOT scoped to sheet membership.** The clause above
 offered that as an option; it was not taken, because a location is company-wide and appears on many
@@ -631,6 +632,51 @@ seconds — but the same missing mechanism.
 request to asksecurity@scoular.com, not a separate one.
 
 **Amended by:** Origination engineering — 2026-09-03.
+
+### Addendum — rename and reshare opened to sheet members, 2026-09-16
+
+**A deliberate relaxation, requested by the product owner, recorded here because it widens who can
+change who sees a sheet.** The 2026-09-03 addendum above recorded rename, reshare and delete as
+owner-only; two of the three no longer are.
+
+| Action on a sheet | Before | Now | Enforced by |
+|---|---|---|---|
+| Rename | Owner only | **Any member** | `RequireVisibleSheetAsync` |
+| Reshare (add/remove members) | Owner only | **Any member** | `RequireVisibleSheetAsync` |
+| Delete | Owner only | Owner only — unchanged | `RequireSheetOwnerAsync` |
+
+**Why.** A bid sheet is a shared working list, not a personal document. The people working from it are
+the ones who know what it should be called and which colleague needs to be on it, and routing both
+through whoever happened to create it made the owner a bottleneck for clerical changes. Deleting is
+the one action that cannot be undone and takes the sheet away from everyone on it, so it stays with
+the creator.
+
+**The residual risk this adds, stated plainly: a member can widen who sees a sheet they do not own,
+and the owner is not notified.** They find out by opening the share dialog. Bounded by:
+
+- A member can only reshare a sheet already shared with them — this grants no new reach to an
+  outsider, it lets an insider extend an existing circle.
+- Every share row records `SharedBy`, so who widened it is on the record and queryable.
+- Sharing a sheet conveys no privilege the recipient did not already have: locations and bids are
+  company-wide and readable by every authenticated employee (residual risk 1 above). A sheet is a
+  *curated view* of data the recipient could already see. What leaks is the curation — which elevators
+  a desk watches — not the prices.
+- Authenticated Scoular employees only; internal competitor bid data, no PII.
+
+**A related check that had to move with it.** The rename endpoint tested the new name for uniqueness
+against the CALLER's sheets, which was the same set as the owner's while only the owner could rename.
+Left alone it would have let a member give the owner two sheets with one name, while rejecting a name
+the owner was not using. It now checks the OWNER's list. Not a security fault — a correctness one
+that the authorization change created.
+
+**Not done, and worth knowing:** there is no notification to the owner, and no per-sheet setting to
+keep resharing owner-only. Both were considered and left out as disproportionate for the data class.
+
+**Re-evaluate if:** which elevators a desk tracks becomes competitively sensitive between desks, or if
+sheets are ever used to carry data that is not already company-readable. Either would make the
+curation itself worth protecting and should restore owner-only resharing.
+
+**Amended by:** Origination engineering — 2026-09-16.
 
 **Status: awaiting IT Security countersign** (asksecurity@scoular.com), alongside AR-02. The feature is
 Dev-only and gated behind `environment.barchartBidsEnabled`; it must not reach PROD without sign-off.
