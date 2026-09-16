@@ -340,20 +340,25 @@ public class BidSheetService : IBidSheetService
     }
 
     /// <summary>
-    /// Loads a sheet the caller OWNS, or throws.
+    /// Loads a sheet the caller OWNS, or throws. Returns the owner's id, which callers need to keep a
+    /// sheet's name unique against the OWNER's sheets rather than the caller's.
     ///
-    /// Rename, reshare and delete are owner-only. A member deleting the owner's sheet out from under
-    /// them is the wrong default, and a member reshuffling who else can see it is worse -- both would
-    /// be invisible to the owner until they next opened the picker.
+    /// DELETE only. Deleting is the one thing on a sheet that cannot be undone and takes it away from
+    /// everyone else on it, so it stays with whoever made it. Rename and reshare are ordinary member
+    /// editing -- a shared sheet is a shared working list, and the people working from it are the ones
+    /// who know what it should be called and who else needs it. (User's call, 2026-09-16; it was
+    /// owner-only before.)
     /// </summary>
-    private async Task RequireSheetOwnerAsync(int sheetId, CancellationToken cancellationToken)
+    private async Task<string> RequireSheetOwnerAsync(int sheetId, CancellationToken cancellationToken)
     {
         var owner = await _repository.GetSheetOwnerAsync(sheetId, cancellationToken);
         if (owner == null) throw new NotFoundException("Bid sheet", sheetId);
 
         var user = _requestContext.GetCurrentUserShortName();
         if (!string.Equals(owner, user, StringComparison.OrdinalIgnoreCase))
-            throw new ForbiddenException("Only the person who created this bid sheet can rename, reshare, or delete it.");
+            throw new ForbiddenException("Only the person who created this bid sheet can delete it.");
+
+        return owner;
     }
 
     /// <summary>Re-reads a sheet after a write so the client gets the full, ordered shape back rather
@@ -404,13 +409,22 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task<BidSheetResponse> RenameSheetAsync(int sheetId, BidSheetRequest request, CancellationToken cancellationToken)
     {
-        await RequireSheetOwnerAsync(sheetId, cancellationToken);
+        // Any member. The name is what everyone on the sheet reads it by, so it belongs to the people
+        // working from it rather than to whoever happened to create it.
+        await RequireVisibleSheetAsync(sheetId, cancellationToken);
 
         var user = _requestContext.GetCurrentUserShortName();
         var name = request.Name.Trim();
 
-        if (await _repository.SheetNameExistsAsync(user, name, sheetId, cancellationToken))
-            throw new BusinessException($"You already have a bid sheet called \"{name}\".", "DUPLICATE_BID_SHEET_NAME");
+        // Uniqueness is per OWNER -- their sheet list is the one this name has to be unambiguous in.
+        // Checking the CALLER's sheets, which is what this did when only the owner could rename, would
+        // now let a member give the owner two sheets with the same name while rejecting a name the
+        // owner is not even using.
+        var owner = await _repository.GetSheetOwnerAsync(sheetId, cancellationToken)
+            ?? throw new NotFoundException("Bid sheet", sheetId);
+
+        if (await _repository.SheetNameExistsAsync(owner, name, sheetId, cancellationToken))
+            throw new BusinessException($"There is already a bid sheet called \"{name}\".", "DUPLICATE_BID_SHEET_NAME");
 
         _ = await _repository.RenameSheetAsync(sheetId, name, user, cancellationToken)
             ?? throw new NotFoundException("Bid sheet", sheetId);
@@ -436,14 +450,18 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task DeleteSheetAsync(int sheetId, CancellationToken cancellationToken)
     {
-        await RequireSheetOwnerAsync(sheetId, cancellationToken);
+        _ = await RequireSheetOwnerAsync(sheetId, cancellationToken);
         await _repository.DeleteSheetAsync(sheetId, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task<BidSheetResponse> SetSheetSharesAsync(int sheetId, BidSheetSharesRequest request, CancellationToken cancellationToken)
     {
-        await RequireSheetOwnerAsync(sheetId, cancellationToken);
+        // Any member. Note what this allows: a member can widen who sees the OWNER's sheet, and the
+        // owner finds out by looking. That is the accepted trade for a shared working list -- the
+        // person who needs a colleague on it is usually not the person who created it. Every share is
+        // stamped with SharedBy, so who widened it is on the record.
+        await RequireVisibleSheetAsync(sheetId, cancellationToken);
 
         var user = _requestContext.GetCurrentUserShortName();
         var now = DateTime.UtcNow;

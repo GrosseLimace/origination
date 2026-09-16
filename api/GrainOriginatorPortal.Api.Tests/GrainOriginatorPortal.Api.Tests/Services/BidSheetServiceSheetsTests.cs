@@ -109,7 +109,7 @@ public class BidSheetServiceSheetsTests
     }
 
     // =========================================================================
-    // Owner-only: rename, reshare, delete
+    // Owner-only: delete. Rename and reshare are any member.
     // =========================================================================
 
     // A member can edit the sheet's contents but must not be able to delete the sheet itself.
@@ -134,33 +134,71 @@ public class BidSheetServiceSheetsTests
         _repo.Verify(r => r.DeleteSheetAsync(sheet.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // Resharing is owner-only for a reason a member-visible test would miss: a member quietly adding
-    // or dropping people would be invisible to the owner until they next opened the share dialog.
+    // A shared sheet is a shared working list: the people working from it are the ones who know who
+    // else needs it. Note what this deliberately allows -- a member can widen who sees the OWNER's
+    // sheet, and the owner finds out by looking. SharedBy records who did it.
     [Fact]
-    public async Task SetSheetSharesAsync_CallerIsMemberNotOwner_Throws403_AndDoesNotWrite()
+    public async Task SetSheetSharesAsync_CallerIsMemberNotOwner_Reshares()
     {
         var sheet = Sheet(sharedWith: Member);
         SheetIsVisibleTo(sheet, Owner, Member);
         CallerIs(Member);
+        _repo.Setup(r => r.SetSheetSharesAsync(sheet.Id, It.IsAny<List<BidSheetShare>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(sheet);
 
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.SetSheetSharesAsync(
+        await _sut.SetSheetSharesAsync(
             sheet.Id, new BidSheetSharesRequest { Members = [new BidSheetShareRequest { UserId = Outsider }] },
-            CancellationToken.None));
+            CancellationToken.None);
 
-        _repo.Verify(r => r.SetSheetSharesAsync(It.IsAny<int>(), It.IsAny<List<BidSheetShare>>(), It.IsAny<CancellationToken>()), Times.Never);
+        _repo.Verify(r => r.SetSheetSharesAsync(sheet.Id,
+            It.Is<List<BidSheetShare>>(l => l.Count == 1 && l[0].SharedBy == Member), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task RenameSheetAsync_CallerIsMemberNotOwner_Throws403_AndDoesNotRename()
+    public async Task RenameSheetAsync_CallerIsMemberNotOwner_Renames()
+    {
+        var sheet = Sheet(sharedWith: Member);
+        SheetIsVisibleTo(sheet, Owner, Member);
+        CallerIs(Member);
+        _repo.Setup(r => r.RenameSheetAsync(sheet.Id, "Ours Now", Member, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(sheet);
+
+        await _sut.RenameSheetAsync(sheet.Id, new BidSheetRequest { Name = "Ours Now" }, CancellationToken.None);
+
+        // Attributed to whoever actually typed it, not to the owner.
+        _repo.Verify(r => r.RenameSheetAsync(sheet.Id, "Ours Now", Member, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The name has to be unique in the OWNER's list, which is the one it has to be unambiguous in.
+    // Checking the CALLER's sheets -- what this did when only the owner could rename -- would let a
+    // member hand the owner two sheets of the same name, and reject names the owner is not using.
+    [Fact]
+    public async Task RenameSheetAsync_MemberRenaming_ChecksTheOwnersNamesNotTheirOwn()
+    {
+        var sheet = Sheet(sharedWith: Member);
+        SheetIsVisibleTo(sheet, Owner, Member);
+        CallerIs(Member);
+        _repo.Setup(r => r.SheetNameExistsAsync(Owner, "Taken", sheet.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await Assert.ThrowsAsync<BusinessException>(() => _sut.RenameSheetAsync(
+            sheet.Id, new BidSheetRequest { Name = "Taken" }, CancellationToken.None));
+
+        _repo.Verify(r => r.SheetNameExistsAsync(Owner, "Taken", sheet.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _repo.Verify(r => r.SheetNameExistsAsync(Member, It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // Deleting is the one thing that cannot be undone and takes the sheet from everyone on it.
+    [Fact]
+    public async Task DeleteSheetAsync_MessageNamesDeleteOnly()
     {
         var sheet = Sheet(sharedWith: Member);
         SheetIsVisibleTo(sheet, Owner, Member);
         CallerIs(Member);
 
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.RenameSheetAsync(
-            sheet.Id, new BidSheetRequest { Name = "Theirs Now" }, CancellationToken.None));
-
-        _repo.Verify(r => r.RenameSheetAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => _sut.DeleteSheetAsync(sheet.Id, CancellationToken.None));
+        Assert.Contains("delete", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rename", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // =========================================================================

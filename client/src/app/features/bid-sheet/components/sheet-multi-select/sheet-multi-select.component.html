@@ -33,34 +33,32 @@
               <span class="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
             }
 
+            <!-- On the row, not behind a ⋯ menu: the list scrolls, and a popup anchored inside a
+                 scrolling box gets clipped by it -- the menu opened below the visible area and had to
+                 be scrolled to. Three icons cost less room than that cost the user.
+                 Share and rename are open to any member; DELETE is the creator's alone, matching the
+                 server's RequireSheetOwnerAsync. -->
             @if (showRowActions()) {
-              <div class="relative shrink-0">
-                <button type="button" (click)="toggleRowMenu(sheet.id, $event)"
-                        [attr.aria-label]="'Actions for ' + sheet.name" title="Share, rename or delete this sheet"
+              <span class="shrink-0 flex items-center gap-0.5">
+                <button type="button" (click)="onShare(sheet.id)"
+                        [title]="sheet.shares.length > 0 ? 'Share (' + sheet.shares.length + ')' : 'Share this sheet'"
+                        [attr.aria-label]="'Share ' + sheet.name"
                         class="p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 </button>
-
-                @if (openRowMenu() === sheet.id) {
-                  <div class="absolute right-0 top-full mt-1 min-w-[9rem] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[1350] overflow-hidden">
-                    <button type="button" (click)="onShare(sheet.id)"
-                            class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                      Share{{ sheet.shares.length > 0 ? ' (' + sheet.shares.length + ')' : '' }}
-                    </button>
-                    <!-- Owner only, matching the server's RequireSheetOwnerAsync. -->
-                    @if (sheet.isOwner) {
-                      <button type="button" (click)="onRename(sheet.id)"
-                              class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                        Rename
-                      </button>
-                      <button type="button" (click)="onDelete(sheet.id)"
-                              class="w-full text-left px-3 py-2 text-sm text-scoular-red-accessible dark:text-scoular-red hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                        Delete
-                      </button>
-                    }
-                  </div>
+                <button type="button" (click)="onRename(sheet.id)" title="Rename this sheet"
+                        [attr.aria-label]="'Rename ' + sheet.name"
+                        class="p-1 rounded text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                @if (sheet.isOwner) {
+                  <button type="button" (click)="onDelete(sheet.id)" title="Delete this sheet"
+                          [attr.aria-label]="'Delete ' + sheet.name"
+                          class="p-1 rounded text-gray-400 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  </button>
                 }
-              </div>
+              </span>
             }
           </div>
         } @empty {

@@ -45,28 +45,30 @@ export class SheetMultiSelectComponent {
   readonly pickedAll = output<void>();
 
   /**
-   * Owner actions, each carrying the sheet it was raised from.
+   * Per-sheet actions, each carrying the sheet it was raised from.
    *
    * They live on the ROW rather than in a toolbar because they cannot be done to a set: sharing two
    * sheets with someone means two different things, and a delete confirmation naming several would be
    * a trap. Raising each from a particular row makes the target unambiguous by construction.
+   *
+   * Share and rename are open to anyone the sheet is shared with -- it is a shared working list, and
+   * the people working from it are the ones who know what it should be called and who else needs it.
+   * DELETE is the creator's alone: it cannot be undone and it takes the sheet from everyone on it.
    */
   readonly sharedSheet = output<number>();
   readonly renamedSheet = output<number>();
   readonly deletedSheet = output<number>();
 
-  /** Which row has its menu open. One at a time; null is none. */
-  readonly openRowMenu = signal<number | null>(null);
-
-  toggleRowMenu(id: number, event: Event): void {
-    event.stopPropagation();
-    this.openRowMenu.update(open => (open === id ? null : id));
-  }
-
-  /** Every row action closes the whole control: each one opens a dialog over the top of it. */
+  /**
+   * Every row action closes the control: each one opens a dialog over the top of it.
+   *
+   * The actions are buttons ON the row rather than a ⋯ menu that opens from it. The list scrolls
+   * (max-h-64), and a popup anchored to a row inside a scrolling box is clipped by it -- the menu
+   * opened underneath the visible area and had to be scrolled to, which is what the user hit.
+   * Flattening them removes the nesting rather than fighting the overflow.
+   */
   private runRowAction(emit: () => void): void {
     emit();
-    this.openRowMenu.set(null);
     this.close();
   }
 
@@ -95,8 +97,8 @@ export class SheetMultiSelectComponent {
     return `${names.length} bid sheets`;
   });
 
-  toggleOpen(): void { this.open.update(v => !v); this.openRowMenu.set(null); }
-  close(): void { this.open.set(false); this.openRowMenu.set(null); }
+  toggleOpen(): void { this.open.update(v => !v); }
+  close(): void { this.open.set(false); }
 
   onToggle(id: number): void { this.toggled.emit(id); }
 

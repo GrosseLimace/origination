@@ -90,7 +90,7 @@ What that costs, and how each part is settled:
 |---|---|
 | A location on two ticked sheets | **One row.** Bids hang off the company-wide location, so two rows would be two grid rows editing one cell. First ticked sheet wins its position. |
 | Its name, when the sheets disagree | The agreed per-sheet name if they agree, otherwise the **canonical** name. Picking one sheet's label would depend on tick order. |
-| Knowing which sheet a row came from | A badge on the grid row, and a line on the map pin's hover card. Both empty with one sheet ticked, where the answer is the same everywhere. |
+| Knowing which sheet a row came from | A badge on the **grid** row, empty with one sheet ticked. Deliberately NOT on the map — the map is read at a glance for the price, and a third line of small text on every hover paid for itself nowhere. |
 | Rename / remove | Applies to **every ticked sheet holding that row** — one request each. Leaving the others behind would put the row straight back the next time they were opened on their own. |
 | Reorder | **Disabled** unless exactly one sheet is ticked, with the reason on the handle. `SortOrder` is a column on the sheet, shared with everyone on it; there is no single list to write a union's order into. |
 | Adding a location | **Asks which sheet**, once, and remembers the answer for the session. Adding to all of them would put a row on a colleague's shared list with no undo here. |
@@ -105,14 +105,26 @@ that is gone are skipped rather than cleaned out, so a share that comes back com
 
 **Share, rename-sheet and delete-sheet cannot be done to a set** — sharing two sheets with someone
 means two different things, and a delete confirmation naming several would be a trap. Each is raised
-from a particular sheet's row (the ⋯ menu in the picker, or the icons in the panel's sheet list) and
-carries that sheet in `sheetActionTargetId`; `sheetActionTarget` falls back to the first ticked so the
-toolbar buttons keep working unchanged. The target is cleared when its sheet is deleted.
+from a particular sheet's row (the icons on each row of the picker, and the same three in the panel's
+sheet list) and carries that sheet in `sheetActionTargetId`; `sheetActionTarget` falls back to the
+first ticked so the toolbar buttons keep working unchanged. The target is cleared when its sheet is
+deleted.
+
+They are buttons ON the row rather than behind a ⋯ menu: the picker's list scrolls (`max-h-64`) and a
+popup anchored to a row inside a scrolling box is clipped by it — the menu opened below the visible
+area and had to be scrolled to.
 
 The toolbar entry points that CANNOT be made unambiguous are withheld once several sheets are ticked:
 the Edit Bids header's Share button is hidden, and the delete dialog offers only "remove locations"
-(which is union-wide and correct) without the "delete the sheet" half. Rename and Delete stay
-owner-only, matching the server's `RequireSheetOwnerAsync`.
+(which is union-wide and correct) without the "delete the sheet" half.
+
+**Who can do what (changed 2026-09-16 at the user's request; all three were owner-only before):**
+
+| Action | Who | Why |
+|---|---|---|
+| Rename the sheet | **Any member** | It is what everyone on the sheet reads it by. Uniqueness is checked against the **owner's** sheet list, not the caller's — see `RenameSheetAsync`. |
+| Share / reshare | **Any member** | A shared sheet is a shared working list; the person who needs a colleague on it is usually not the one who created it. **This lets a member widen who sees the owner's sheet, and the owner finds out by looking** — `SharedBy` records who did it. |
+| Delete the sheet | **Owner only** | Cannot be undone and takes the sheet from everyone on it. `RequireSheetOwnerAsync` is now delete's alone. |
 
 ## State and caching
 

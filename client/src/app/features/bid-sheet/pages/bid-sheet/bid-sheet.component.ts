@@ -283,11 +283,12 @@ export class BidSheetComponent {
   });
 
   /**
-   * The sheets each row is on, as a phrase for its badge -- empty unless more than one sheet is
+   * The sheets each row is on, as a phrase for its GRID badge -- empty unless more than one sheet is
    * ticked, because with one the answer is the same for every row and the badge would be noise.
    *
    * It matters with several: the rows are a union, so "why is this elevator here" and "what will a
-   * rename or a removal touch" are no longer answerable from the list alone.
+   * rename or a removal touch" are no longer answerable from the list alone. The MAP deliberately
+   * does not show this -- see _buildHoverIcon.
    */
   readonly sheetBadgeByLocationId = computed<ReadonlyMap<number, string>>(() => {
     const sheets = this.selectedSheets();
@@ -5043,8 +5044,6 @@ export class BidSheetComponent {
     // testing crop here is what previously made the ring appear with no reference selected.
     const comparingToRef = this._hasReference();
     const scoularIds = this.scoularLocationIds();
-    // Which ticked sheets each pin belongs to -- empty with one sheet on screen.
-    const sheetBadges = this.sheetBadgeByLocationId();
 
     // Group the in-scope locations by coordinates -- the open sheet's, or everything, per mapScope.
     const locsByPos = new Map<string, BidSheetLocation[]>();
@@ -5160,7 +5159,7 @@ export class BidSheetComponent {
         const m = L.marker([lat, lng], { icon: dotIcon });
         m.on('click', () => this._selectMapLocation(locs[0]));
         const hoverBid2 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border, scoularIds.has(locs[0].id), sheetBadges.get(locs[0].id) ?? '');
+        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border, scoularIds.has(locs[0].id));
         this._clusterGroup.addLayer(m);
       };
 
@@ -5229,7 +5228,7 @@ export class BidSheetComponent {
           const marker = L.marker([lat, lng], { icon: divIcon });
           marker.on('click', () => this._selectMapLocation(locs[0]));
           const hoverBid3 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border, scoularIds.has(locs[0].id), sheetBadges.get(locs[0].id) ?? '');
+          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border, scoularIds.has(locs[0].id));
           this._clusterGroup.addLayer(marker);
           return;
         }
@@ -5274,7 +5273,7 @@ export class BidSheetComponent {
       const marker = L.marker([lat, lng], { icon: nameIcon });
       marker.on('click', () => this._selectMapLocation(locs[0]));
       const hoverBid4 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border, scoularIds.has(locs[0].id), sheetBadges.get(locs[0].id) ?? '');
+      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border, scoularIds.has(locs[0].id));
       this._clusterGroup.addLayer(marker);
     });
 
@@ -5769,31 +5768,27 @@ export class BidSheetComponent {
   }
 
   /**
-   * Creates an expanded hover icon showing location name + bid value, and -- with more than one sheet
-   * on screen -- which of them this pin belongs to.
+   * Creates an expanded hover icon showing location name + bid value.
    *
-   * The sheet line is the map's answer to the question the grid's row badge answers: with a union
-   * drawn, a pin no longer says which list put it there, and "why is this elevator on my map" is not
-   * something you should have to open the panel to find out. Empty with one sheet ticked, where the
-   * answer is the same for every pin.
+   * Deliberately NOT which sheets the pin is on, though the grid row carries exactly that badge: on
+   * the map it was a third line of small text on every hover, and the map is read at a glance for the
+   * price. The grid is where you go to act on a row, and that is where the question is worth
+   * answering. (User's call, 2026-09-16, after trying it.)
    */
-  private _buildHoverIcon(name: string, bid: string, bg: string, border: string, isScoular = false, onSheets = ''): any {
+  private _buildHoverIcon(name: string, bid: string, bg: string, border: string, isScoular = false): any {
     const L = this._L!;
     const nameHtml = `<div style="font-size:11px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.2;">${this._esc(name)}</div>`;
     const bidLabel = bid || '--';
     const subHtml = bid
       ? `<div style="font-size:10px;font-weight:500;color:rgba(255,255,255,0.85);white-space:nowrap;line-height:1.2;margin-top:2px;">${this._esc(bidLabel)}</div>`
       : '';
-    const sheetsHtml = onSheets
-      ? `<div style="font-size:9px;font-weight:500;color:rgba(255,255,255,0.7);white-space:nowrap;line-height:1.2;margin-top:2px;">${this._esc(onSheets)}</div>`
-      : '';
-    const textLen = Math.max(name.length, bidLabel.length + 3, onSheets.length);
+    const textLen = Math.max(name.length, bidLabel.length + 3);
     const w = Math.max(100, textLen * 7 + 24);
-    const h = (bid ? 50 : 36) + (onSheets ? 13 : 0);
+    const h = bid ? 50 : 36;
     return L.divIcon({
       className: 'custom-marker',
       html: `<div style="position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;">
-        <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 9px;box-shadow:${this._scoularRing(isScoular && bg !== BidSheetComponent.SCOULAR_BG)}0 3px 10px rgba(0,0,0,0.3);cursor:pointer;">${nameHtml}${subHtml}${sheetsHtml}</div>
+        <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 9px;box-shadow:${this._scoularRing(isScoular && bg !== BidSheetComponent.SCOULAR_BG)}0 3px 10px rgba(0,0,0,0.3);cursor:pointer;">${nameHtml}${subHtml}</div>
         <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid ${bg};margin:-1px auto 0;"></div>
       </div>`,
       iconSize: [w, h],
@@ -5815,8 +5810,8 @@ export class BidSheetComponent {
     this._hoveredMarker = null;
   }
 
-  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string, isScoular = false, onSheets = ''): void {
-    const hoverIcon = this._buildHoverIcon(name, bid, bg, border, isScoular, onSheets);
+  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string, isScoular = false): void {
+    const hoverIcon = this._buildHoverIcon(name, bid, bg, border, isScoular);
     marker.on('mouseover', () => {
       // At most one pin is ever expanded; whatever was before this one collapses first.
       if (this._hoveredMarker?.marker !== marker) this._collapseHoveredMarker();
