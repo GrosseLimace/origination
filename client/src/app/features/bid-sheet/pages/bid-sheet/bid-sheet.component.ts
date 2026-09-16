@@ -28,12 +28,14 @@ import {
 } from '../../utils/print-layout';
 
 interface EditBidsRow {
-  name: string;
   /**
-   * The location this row is. Sent with every saved bid so the server writes to the row the user is
-   * actually looking at -- locations are company-wide now, so a name no longer identifies one.
+   * The location this row is, and the row's identity. Required, not optional: a name does not identify
+   * a location -- it is per-sheet (BidSheetLocationLink.DisplayName) and not unique across sheets --
+   * so every lookup, save and template track key goes through this.
    */
-  locationId?: number;
+  locationId: number;
+  /** What the row is CALLED here: the per-sheet DisplayName, or the canonical name. Display only. */
+  name: string;
   type: 'elevator' | 'entry';
   elevatorCode?: string;
   tradeUnitCode?: string;
@@ -60,6 +62,8 @@ type BidStatus = 'reference' | 'beating' | 'matching' | 'none';
 /** Row in the panel list view (`filteredBidItems`). */
 interface BidSheetPanelItem {
   type: 'entry';
+  /** The row's identity; `name` below is display only. See EditBidsRow.locationId. */
+  locationId: number;
   name: string;
   isScoular: boolean;
   isRef: boolean;
@@ -517,11 +521,19 @@ export class BidSheetComponent {
       }))
     );
   });
-  /** Pre-computed lookup: "name|commodityCode|cropYear|month" → latest BidSheetEntry (by modifiedAt then createdAt). O(1) lookups instead of repeated filter+sort. */
+  /**
+   * Pre-computed lookup: "locationId|commodityCode|cropYear|month" -> the latest BidSheetEntry for that
+   * cell (by modifiedAt then createdAt). O(1) instead of repeated filter+sort.
+   *
+   * Keyed by id, not by name. A location's displayed name is per-sheet (BidSheetLocationLink.DisplayName),
+   * so a name is not an identity: two sheets can call one elevator different things, and two different
+   * elevators can share a name. Keying on the name collapsed the second case into one cell -- last write
+   * wins, the other elevator's bid invisible -- and split the first into two.
+   */
   private readonly bidLookup = computed(() => {
     const lookup = new Map<string, BidSheetEntry>();
     for (const e of this.bidEntries()) {
-      const key = `${e.name}|${e.commodityCode}|${e.cropYear}|${e.month}`;
+      const key = `${e.locationId}|${e.commodityCode}|${e.cropYear}|${e.month}`;
       const existing = lookup.get(key);
       if (!existing || new Date(e.modifiedAt || e.createdAt).getTime() > new Date(existing.modifiedAt || existing.createdAt).getTime()) {
         lookup.set(key, e);
@@ -652,9 +664,9 @@ export class BidSheetComponent {
    * changed as much as one edited an hour ago. With no crop or period selected there is no single cell
    * to judge, so it answers false rather than picking one arbitrarily.
    */
-  private _locationChangedWithin24h(name: string, year: number | null, crop: string, month: number): boolean {
+  private _locationChangedWithin24h(locationId: number, year: number | null, crop: string, month: number): boolean {
     if (!crop || !year) return false;
-    const entry = this._getLatestEntry(name, year, crop, month);
+    const entry = this._getLatestEntry(locationId, year, crop, month);
     if (!entry) return false;
     return entry.source === 'Barchart'
       ? this._changedWithin24h(entry.basisChangedAt)
@@ -746,11 +758,15 @@ export class BidSheetComponent {
     const oldD = this.oldDisplay();
     const newD = this.newDisplay();
     const entries = this.bidEntries().filter(e => e.name === name);
+    // The panel still selects by name (the map and list hand one over); resolve it to the id the
+    // lookups now take. Any entry will do -- they all belong to the same location.
+    const locationId = entries[0]?.locationId ?? this._findLocationByName(name)?.id;
+    if (locationId == null) return [];
     let cropSet = [...new Set(entries.map(e => e.commodityCode).filter(Boolean))].sort();
     // Only show crops that have bids for the displayed old/new periods
     cropSet = cropSet.filter(crop =>
-      this._getLatestBid(name, newD.year, crop!, newD.month) ||
-      this._getLatestBid(name, oldD.year, crop!, oldD.month));
+      this._getLatestBid(locationId, newD.year, crop!, newD.month) ||
+      this._getLatestBid(locationId, oldD.year, crop!, oldD.month));
 
     // Reference comparison — color-code each crop row vs the session reference, whichever kind
     // (an added location via selectedLocationName, or a catalog listing via catalogReferenceKey).
@@ -758,8 +774,8 @@ export class BidSheetComponent {
     const isRef = !!refName && refName === name;
 
     return cropSet.map(crop => {
-      const oldBid = this._getLatestBid(name, oldD.year, crop!, oldD.month);
-      const newBid = this._getLatestBid(name, newD.year, crop!, newD.month);
+      const oldBid = this._getLatestBid(locationId, oldD.year, crop!, oldD.month);
+      const newBid = this._getLatestBid(locationId, newD.year, crop!, newD.month);
       // Get reference bid for this crop (if any). If reference doesn't have this crop → leave white (status 'none').
       const oldRefBid = this._hasReference() && !isRef ? this._referenceBid(oldD.year, crop!, oldD.month) : null;
       const newRefBid = this._hasReference() && !isRef ? this._referenceBid(newD.year, crop!, newD.month) : null;
@@ -767,15 +783,15 @@ export class BidSheetComponent {
       const newStatus = isRef ? 'reference' : this._computeItemStatus(newBid, false, newRefBid);
       // Feed provenance for the displayed periods, so the panel can say where a number came from and
       // when the elevator last touched it. Taken from the newer period when both are fed.
-      const newEntry = this._getLatestEntry(name, newD.year, crop!, newD.month);
-      const oldEntry = this._getLatestEntry(name, oldD.year, crop!, oldD.month);
+      const newEntry = this._getLatestEntry(locationId, newD.year, crop!, newD.month);
+      const oldEntry = this._getLatestEntry(locationId, oldD.year, crop!, oldD.month);
       const fedEntry = newEntry?.source === 'Barchart' ? newEntry : (oldEntry?.source === 'Barchart' ? oldEntry : null);
       return {
         crop: crop!, oldBid, newBid, oldStatus, newStatus,
-        oldBidLabel: this._getDisplayBid(name, oldD.year, crop!, oldD.month, false),
-        newBidLabel: this._getDisplayBid(name, newD.year, crop!, newD.month, false),
-        oldBidContract: this.panelContractFor(name, oldD.year, crop!, oldD.month),
-        newBidContract: this.panelContractFor(name, newD.year, crop!, newD.month),
+        oldBidLabel: this._getDisplayBid(locationId, oldD.year, crop!, oldD.month, false),
+        newBidLabel: this._getDisplayBid(locationId, newD.year, crop!, newD.month, false),
+        oldBidContract: this.panelContractFor(locationId, oldD.year, crop!, oldD.month),
+        newBidContract: this.panelContractFor(locationId, newD.year, crop!, newD.month),
         isFed: !!fedEntry, fedAsOf: fedEntry?.quoteAsOf
       };
     });
@@ -2067,42 +2083,48 @@ export class BidSheetComponent {
     const entries = crop
       ? this.bidEntries().filter(e => e.commodityCode === crop)
       : this.bidEntries();
-    const uniqueNames = new Set(entries.map(e => e.name));
+    // One row per LOCATION, not per name. Two sheets can call the same elevator different things and
+    // two elevators can share a name, so a name-keyed set both split and merged rows wrongly.
+    const uniqueIds = new Set(entries.map(e => e.locationId));
 
     // Ensure reference location always appears even if it has no bid for the selected crop
-    if (refName && !uniqueNames.has(refName)) {
-      uniqueNames.add(refName);
-    }
+    const refId = refName ? (this._findLocationByName(refName)?.id ?? null) : null;
+    if (refId != null) uniqueIds.add(refId);
 
-    // Built once, not once per name: a .find() over bidEntries()/allMapLocations() inside the loop
-    // below is O(names x entries), which is fine at a few dozen locations and stops being fine once
+    // Built once, not once per row: a .find() over bidEntries()/allMapLocations() inside the loop
+    // below is O(rows x entries), which is fine at a few dozen locations and stops being fine once
     // the map is showing the whole BarChart catalog.
-    const entryByName = new Map<string, BidSheetEntry>();
-    for (const e of this.bidEntries()) if (!entryByName.has(e.name)) entryByName.set(e.name, e);
-    const scoularNamesForItems = this.scoularLocationNames();
+    const entryById = new Map<number, BidSheetEntry>();
+    for (const e of this.bidEntries()) if (!entryById.has(e.locationId)) entryById.set(e.locationId, e);
+    // The name to PRINT comes from the locations in scope, which carry the per-sheet DisplayName.
+    const nameById = new Map<number, string>();
+    for (const l of this.scopedLocations()) nameById.set(l.id, l.name);
+    const scoularIdsForItems = this.scoularLocationIds();
 
-    for (const name of uniqueNames) {
-      const oldBid = this._getLatestBid(name, oldD.year, crop, oldD.month);
-      const newBid = this._getLatestBid(name, newD.year, crop, newD.month);
-      const selectedBid = this._getLatestBid(name, selectedYr, crop, month);
-      const entryWithCoords = entryByName.get(name);
-      const isRef = name === refName;
+    for (const locationId of uniqueIds) {
+      const oldBid = this._getLatestBid(locationId, oldD.year, crop, oldD.month);
+      const newBid = this._getLatestBid(locationId, newD.year, crop, newD.month);
+      const selectedBid = this._getLatestBid(locationId, selectedYr, crop, month);
+      const entryWithCoords = entryById.get(locationId);
+      const name = nameById.get(locationId) ?? entryWithCoords?.name ?? '';
+      const isRef = locationId === refId;
 
       items.push({
         type: 'entry',
+        locationId,
         name,
-        isScoular: scoularNamesForItems.has(name),
+        isScoular: scoularIdsForItems.has(locationId),
         isRef,
         latitude: entryWithCoords?.latitude ?? null,
         longitude: entryWithCoords?.longitude ?? null,
         oldBid,
         newBid,
-        oldBidLabel: this._getDisplayBid(name, oldD.year, crop, oldD.month, false),
-        newBidLabel: this._getDisplayBid(name, newD.year, crop, newD.month, false),
-        oldBidContract: this.panelContractFor(name, oldD.year, crop, oldD.month),
-        newBidContract: this.panelContractFor(name, newD.year, crop, newD.month),
-        oldCoveredBy: this.coverageLabelFor(name, oldD.year, crop, oldD.month),
-        newCoveredBy: this.coverageLabelFor(name, newD.year, crop, newD.month),
+        oldBidLabel: this._getDisplayBid(locationId, oldD.year, crop, oldD.month, false),
+        newBidLabel: this._getDisplayBid(locationId, newD.year, crop, newD.month, false),
+        oldBidContract: this.panelContractFor(locationId, oldD.year, crop, oldD.month),
+        newBidContract: this.panelContractFor(locationId, newD.year, crop, newD.month),
+        oldCoveredBy: this.coverageLabelFor(locationId, oldD.year, crop, oldD.month),
+        newCoveredBy: this.coverageLabelFor(locationId, newD.year, crop, newD.month),
         oldStatus: isRef ? 'reference' : this._computeItemStatus(oldBid, false, oldRefBid),
         newStatus: isRef ? 'reference' : this._computeItemStatus(newBid, false, newRefBid),
         status: isRef ? 'reference' : this._computeItemStatus(selectedBid, false, selectedRefBid)
@@ -2112,10 +2134,11 @@ export class BidSheetComponent {
     // Include locations with no bids yet (only when no crop filter is active)
     if (!crop) {
       for (const loc of this.bidLocations()) {
-        if (uniqueNames.has(loc.name)) continue;
-        const isRef = loc.name === refName;
+        if (uniqueIds.has(loc.id)) continue;
+        const isRef = loc.id === refId;
         items.push({
           type: 'entry',
+          locationId: loc.id,
           name: loc.name,
           isScoular: !!loc.isScoularFacility,
           isRef,
@@ -2145,9 +2168,9 @@ export class BidSheetComponent {
     this.filteredBidItems.set(items);
   }
 
-  private _getLatestBid(name: string, year: number | null, commodityCode: string, month: number): string {
+  private _getLatestBid(locationId: number, year: number | null, commodityCode: string, month: number): string {
     if (!year || !commodityCode) return '';
-    return this.bidLookup().get(`${name}|${commodityCode}|${year}|${month}`)?.bid ?? '';
+    return this.bidLookup().get(`${locationId}|${commodityCode}|${year}|${month}`)?.bid ?? '';
   }
 
   /**
@@ -2200,15 +2223,15 @@ export class BidSheetComponent {
    * a bid to know what it is priced off. Deviation from the column consensus additionally turns the
    * label, so a cell against a different board than its column still declares it.
    */
-  cellBoardFor(name: string, year: number | null, crop: string, month: number): string {
-    const entry = this._getLatestEntry(name, year, crop, month);
+  cellBoardFor(locationId: number, year: number | null, crop: string, month: number): string {
+    const entry = this._getLatestEntry(locationId, year, crop, month);
     if (entry?.source !== 'Barchart') return '';
     return entry.underlyingFuture?.trim() ?? '';
   }
 
-  private _getLatestEntry(name: string, year: number | null, commodityCode: string, month: number): BidSheetEntry | null {
+  private _getLatestEntry(locationId: number, year: number | null, commodityCode: string, month: number): BidSheetEntry | null {
     if (!year || !commodityCode) return null;
-    return this.bidLookup().get(`${name}|${commodityCode}|${year}|${month}`) ?? null;
+    return this.bidLookup().get(`${locationId}|${commodityCode}|${year}|${month}`) ?? null;
   }
 
   /**
@@ -2224,9 +2247,9 @@ export class BidSheetComponent {
    * wide zoom -- the contract doubles a pill's width, and a region's worth of them is what makes the
    * map cramped. The panel, the grid and print always name it; so does hover, at any zoom.
    */
-  private _getDisplayBid(name: string, year: number | null, crop: string, month: number, includeContract = true): string {
-    const primary = this._getLatestBid(name, year, crop, month);
-    const basis = (this._getLatestEntry(name, year, crop, month)?.basisBid ?? '').trim();
+  private _getDisplayBid(locationId: number, year: number | null, crop: string, month: number, includeContract = true): string {
+    const primary = this._getLatestBid(locationId, year, crop, month);
+    const basis = (this._getLatestEntry(locationId, year, crop, month)?.basisBid ?? '').trim();
     const value = this.priceMode() === 'both'
       ? (primary && basis ? `${primary} / ${basis}` : (primary || basis))
       : primary;
@@ -2239,7 +2262,7 @@ export class BidSheetComponent {
     // denser candidate, and the Dev feedback round decides between them. The full form also never
     // hides a cross-exchange split -- KEU26 and ZWU26 share a letter but not a market.
     const contract = value
-      ? this.cellBoardFor(name, year, crop, month)
+      ? this.cellBoardFor(locationId, year, crop, month)
       : '';
     return contract ? `${value} (${contract})` : value;
   }
@@ -2251,9 +2274,9 @@ export class BidSheetComponent {
    * small muted span: a combined "5.38 / 6 (ZCZ26)" is wider than the column and wrapped onto a second
    * line, which turned a list you scan into a stack you read.
    */
-  panelContractFor(name: string, year: number | null, crop: string, month: number): string {
-    if (!this._getDisplayBid(name, year, crop, month, false)) return '';
-    return this.cellBoardFor(name, year, crop, month);
+  panelContractFor(locationId: number, year: number | null, crop: string, month: number): string {
+    if (!this._getDisplayBid(locationId, year, crop, month, false)) return '';
+    return this.cellBoardFor(locationId, year, crop, month);
   }
 
   /**
@@ -2276,9 +2299,9 @@ export class BidSheetComponent {
   }
 
   /** coverageChipFor, looked up by cell. */
-  coverageLabelFor(name: string, year: number | null, crop: string, month: number): string {
+  coverageLabelFor(locationId: number, year: number | null, crop: string, month: number): string {
     if (!crop) return '';
-    return this.coverageChipFor(this._getLatestEntry(name, year, crop, month));
+    return this.coverageChipFor(this._getLatestEntry(locationId, year, crop, month));
   }
 
   private _parseBid(bid: string): number | null {
@@ -3030,24 +3053,28 @@ export class BidSheetComponent {
     const lookup = this.bidLookup();
     const columns = this.editGridColumns();
     const rows: EditBidsRow[] = [];
-    const addedNames = new Set<string>();
+    const addedIds = new Set<number>();
 
-    // Add locations that have bid entries
+    // One row per LOCATION. Keyed by id rather than name: a per-sheet rename is not an identity, and
+    // two rows sharing a name collapsed into one cell store -- editing either wrote to both.
     const allEntries = this.bidEntries();
-    const uniqueNames = [...new Set(allEntries.map(e => e.name))];
-    // Built once rather than re-scanned per name: a .find() inside this loop is O(names x entries).
-    const repByName = new Map<string, BidSheetEntry>();
-    for (const e of allEntries) if (!repByName.has(e.name)) repByName.set(e.name, e);
-    for (const name of uniqueNames) {
-      addedNames.add(name);
-      const rep = repByName.get(name);
+    const uniqueIds = [...new Set(allEntries.map(e => e.locationId))];
+    // Built once rather than re-scanned per row: a .find() inside this loop is O(rows x entries).
+    const repById = new Map<number, BidSheetEntry>();
+    for (const e of allEntries) if (!repById.has(e.locationId)) repById.set(e.locationId, e);
+    const gridNameById = new Map<number, string>();
+    for (const l of this.scopedLocations()) gridNameById.set(l.id, l.name);
+    for (const locationId of uniqueIds) {
+      addedIds.add(locationId);
+      const rep = repById.get(locationId);
+      const name = gridNameById.get(locationId) ?? rep?.name ?? '';
       const bids: Record<string, string> = {};
       const basisBids: Record<string, string> = {};
       const originalBasisBids: Record<string, string> = {};
       const coverageChips: Record<string, string> = {};
       const boardChips: Record<string, string> = {};
       for (const col of columns) {
-        const entry = lookup.get(`${name}|${col.crop}|${col.year}|${col.month}`);
+        const entry = lookup.get(`${locationId}|${col.crop}|${col.year}|${col.month}`);
         // Each price lives in its own field whatever the toggle says. The template picks which to
         // show; the save writes each to its own column. Reading a mode-selected value into bids is
         // how a basis would end up filed as a cash price.
@@ -3055,18 +3082,18 @@ export class BidSheetComponent {
         basisBids[col.key] = entry?.basisBid ?? '';
         originalBasisBids[col.key] = basisBids[col.key];
         coverageChips[col.key] = this.coverageChipFor(entry);
-        boardChips[col.key] = this.cellBoardFor(name, col.year, col.crop, col.month);
+        boardChips[col.key] = this.cellBoardFor(locationId, col.year, col.crop, col.month);
       }
-      rows.push({ name, locationId: rep?.locationId, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, coverageChips, boardChips, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ locationId, name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, coverageChips, boardChips, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
     for (const loc of this.bidLocations()) {
-      if (addedNames.has(loc.name)) continue;
-      addedNames.add(loc.name);
+      if (addedIds.has(loc.id)) continue;
+      addedIds.add(loc.id);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, locationId: loc.id, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, coverageChips: {}, boardChips: {}, isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ locationId: loc.id, name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, coverageChips: {}, boardChips: {}, isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // No re-sort here. Row order used to be a separate, per-user, name-keyed lookup applied on top --
@@ -3885,12 +3912,12 @@ export class BidSheetComponent {
     if (wantBasis) {
       value = live
         ? (row.basisBids[gridKey] ?? '').trim()
-        : (this._getLatestEntry(row.name, col.year, col.crop, col.month)?.basisBid ?? '').trim();
+        : (this._getLatestEntry(row.locationId, col.year, col.crop, col.month)?.basisBid ?? '').trim();
     } else if (live) {
       value = (row.bids[gridKey] ?? '').trim();
     } else {
       // Mode-aware, but only cash reaches it: basis took the branch above.
-      value = this._getLatestBid(row.name, col.year, col.crop, col.month).trim();
+      value = this._getLatestBid(row.locationId, col.year, col.crop, col.month).trim();
     }
     if (!value) return value;
 
@@ -3906,7 +3933,7 @@ export class BidSheetComponent {
     // screen, which labels every fed bid. Print cannot afford the repetition: the values feed the
     // fit-first column sizing, and a symbol on all of them widened columns enough to drop the whole
     // sheet to 9px type, or overflow the page outright in Both mode.
-    const cellBoard = this.cellBoardFor(row.name, col.year, col.crop, col.month);
+    const cellBoard = this.cellBoardFor(row.locationId, col.year, col.crop, col.month);
     const consensus = this.boardConsensus(col.crop, col.year, col.month);
     return cellBoard && cellBoard !== consensus ? `${value} (${cellBoard})` : value;
   }
@@ -4269,25 +4296,27 @@ export class BidSheetComponent {
   // -------------------------------------------------------------------------
 
   /** Row currently being renamed, by location name. Empty when none is. */
-  readonly renamingRow = signal('');
+  /** The location id of the row being renamed in the grid, or null. Was the row's name, which is not
+   *  an identity -- two rows can share one. */
+  readonly renamingRow = signal<number | null>(null);
   readonly renameRowDraft = signal('');
 
-  startRenameRow(name: string, event?: Event): void {
+  startRenameRow(row: EditBidsRow, event?: Event): void {
     event?.stopPropagation();
-    this.renamingRow.set(name);
-    this.renameRowDraft.set(name);
+    this.renamingRow.set(row.locationId);
+    this.renameRowDraft.set(row.name);
     // The template's `autofocus` does nothing here -- browsers honour it at parse time, not when an
     // element is inserted later -- so the user had to click the pencil and then click the box. Focus
     // after the input exists, and select the text so a full replacement is one keystroke away.
     setTimeout(() => {
-      const el = document.getElementById(`rename-row-${name}`) as HTMLInputElement | null;
+      const el = document.getElementById(`rename-row-${row.locationId}`) as HTMLInputElement | null;
       el?.focus();
       el?.select();
     });
   }
 
   cancelRenameRow(): void {
-    this.renamingRow.set('');
+    this.renamingRow.set(null);
     this.renameRowDraft.set('');
   }
 
@@ -4300,14 +4329,16 @@ export class BidSheetComponent {
     this.renameRowDraft.set('');
   }
 
-  saveRenameRow(oldName: string): void {
+  saveRenameRow(row: EditBidsRow): void {
     const newName = this.renameRowDraft().trim();
     // An empty name reverts rather than saving. Blur commits, so a user who clears the box and clicks
     // away must get the old name back instead of a nameless row.
     this.cancelRenameRow();
-    if (!newName || newName === oldName) return;
+    if (!newName || newName === row.name) return;
 
-    const loc = this._findLocationByName(oldName);
+    // By id: _findLocationByName would resolve a shared name to the lowest-id match, which is how a
+    // rename could land on a different elevator than the one the user was looking at.
+    const loc = this.allMapLocations().find(l => l.id === row.locationId);
     if (!loc) return;
     if (this._nameTakenOnSheet(newName, loc.id)) {
       this.toastService.error(`Another location on this sheet is already called "${newName}"`);
@@ -4320,16 +4351,16 @@ export class BidSheetComponent {
     this._renameLocationOnSheet(loc.id, newName);
   }
 
-  isRowScoular(name: string): boolean {
-    // scoularLocationNames() is an O(1) set lookup; _findLocationByName is an O(n) scan over every
-    // location, and this is called once per grid row on every change-detection pass -- O(rows x
-    // locations) repeated many times a second. At catalog scale that stops being free.
-    return this.scoularLocationNames().has(name);
+  isRowScoular(row: EditBidsRow): boolean {
+    // scoularLocationIds() is an O(1) set lookup; scanning every location is O(n), and this is called
+    // once per grid row on every change-detection pass -- O(rows x locations) repeated many times a
+    // second. At catalog scale that stops being free.
+    return this.scoularLocationIds().has(row.locationId);
   }
 
-  toggleRowScoular(name: string, event?: Event): void {
+  toggleRowScoular(row: EditBidsRow, event?: Event): void {
     event?.stopPropagation();
-    const loc = this._findLocationByName(name);
+    const loc = this.allMapLocations().find(l => l.id === row.locationId);
     if (!loc) return;
     const next = !(loc.isScoularFacility ?? false);
     this._saveLocationFields(loc, { isScoularFacility: next },
@@ -4798,14 +4829,14 @@ export class BidSheetComponent {
         // filter -- it has nothing to say -- and draws as a dot, exactly like a catalog listing with no
         // matched price. Skipping it here was why some added pins simply vanished in All locations.
         if (basis !== 'all' && crop && !isRef) {
-          const judged = names.map(n => this._getLatestBid(n, year, crop, month)).filter(Boolean);
+          const judged = locs.map(l => this._getLatestBid(l.id, year, crop, month)).filter(Boolean);
           if (judged.length > 0 && !judged.some(b => this._computeItemStatus(b, false, refBid) === basis)) continue;
         }
       } else {
         // Sheet scope: the panel IS the filter model -- show what its filters left, and only what has a
         // bid for the selected period. A sheet with a crop picked lists who is bidding it.
         if (!names.some(n => panelNames.has(n))) continue;
-        if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
+        if (crop && !locs.some(l => this._getLatestBid(l.id, year, crop, month))) continue;
       }
       renderGroups.push({ locs, names, isRef, isPanelOpen });
     }
@@ -4826,7 +4857,8 @@ export class BidSheetComponent {
 
       // Panel-open location — render expanded with name + bid (uses status color if reference, otherwise gray)
       if (isPanelOpen) {
-        const bidStr = crop ? this._getLatestBid(panelOpenName, year, crop, month) : '';
+        const panelOpenId = locs.find(l => l.name === panelOpenName)?.id ?? locs[0].id;
+        const bidStr = crop ? this._getLatestBid(panelOpenId, year, crop, month) : '';
         // This pin represents panelOpenName specifically, so key it to that name rather than to
         // "any location at this coordinate".
         const panelIsScoular = scoularNames.has(panelOpenName);
@@ -4857,7 +4889,7 @@ export class BidSheetComponent {
           color = statusColors['reference'].bg; border = statusColors['reference'].border;
         } else if (this._hasReference() && crop) {
           // Use beating/matching/none color based on this location's bid vs the reference
-          const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
+          const bidVal = this._getLatestBid(locs[0].id, year, crop, month);
           const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
           color = statusColors[status].bg; border = statusColors[status].border;
         } else if (dotIsScoular) {
@@ -4872,13 +4904,13 @@ export class BidSheetComponent {
         const dotPx = this.showingAllLocations() ? BidSheetComponent.CATALOG_DOT_SIZE : 14;
         const dotBorderPx = this.showingAllLocations() ? 1.5 : 2;
         const dotIcon = L.divIcon({
-          className: 'custom-marker' + this._movedPulseClass(names.some(n => this._locationChangedWithin24h(n, year, crop, month))),
+          className: 'custom-marker' + this._movedPulseClass(locs.some(l => this._locationChangedWithin24h(l.id, year, crop, month))),
           html: `<div style="width:${dotPx}px;height:${dotPx}px;background:${color};border:${dotBorderPx}px solid ${border};border-radius:50%;box-shadow:${this._scoularRing(comparingToRef && dotIsScoular)}0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`,
           iconSize: [dotPx, dotPx], iconAnchor: [dotPx / 2, dotPx / 2]
         });
         const m = L.marker([lat, lng], { icon: dotIcon });
         m.on('click', () => this._selectMapLocation(locs[0]));
-        const hoverBid2 = crop ? this._getDisplayBid(locs[0].name, year, crop, month) : '';
+        const hoverBid2 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
         this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border);
         this._clusterGroup.addLayer(m);
       };
@@ -4891,16 +4923,17 @@ export class BidSheetComponent {
 
       if (showBidValues) {
         // A crop is selected -- show bid values with status colors.
-        const bidItems = names
-          .map(n => {
+        const bidItems = locs
+          .map(l => {
+            const n = l.name;
             const isNameRef = n === refName;
             // bidVal drives presence and status comparison and must stay numeric; bidLabel is what
             // the pill prints, which in Both mode carries the basis alongside.
-            const bidVal = this._getLatestBid(n, year, crop, month);
+            const bidVal = this._getLatestBid(l.id, year, crop, month);
             // The board only joins the pill once there is room for it (BOARD_SYMBOL_ZOOM); hover and
             // the panel still name it at any zoom.
-            const bidLabel = this._getDisplayBid(n, year, crop, month, zoom >= BidSheetComponent.BOARD_SYMBOL_ZOOM);
-            const nameIsScoular = scoularNames.has(n);
+            const bidLabel = this._getDisplayBid(l.id, year, crop, month, zoom >= BidSheetComponent.BOARD_SYMBOL_ZOOM);
+            const nameIsScoular = this.scoularLocationIds().has(l.id);
             if (isNameRef) {
               const { bg, border } = statusColors['reference'];
               return { name: n, label: bidLabel || '--', bg, border, isScoular: nameIsScoular };
@@ -4936,7 +4969,7 @@ export class BidSheetComponent {
           const primaryBg = bidItems[0].bg;
           const divIcon = L.divIcon({
             // One pulse for the whole coordinate group, like the Scoular ring: "something here moved".
-            className: 'custom-marker' + this._movedPulseClass(names.some(n => this._locationChangedWithin24h(n, year, crop, month))),
+            className: 'custom-marker' + this._movedPulseClass(locs.some(l => this._locationChangedWithin24h(l.id, year, crop, month))),
             html: `<div style="position:relative;width:${maxWidth}px;text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center;">
               ${linesHtml}
               <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${primaryBg};margin:-1px auto 0;"></div>
@@ -4946,7 +4979,7 @@ export class BidSheetComponent {
           });
           const marker = L.marker([lat, lng], { icon: divIcon });
           marker.on('click', () => this._selectMapLocation(locs[0]));
-          const hoverBid3 = crop ? this._getDisplayBid(locs[0].name, year, crop, month) : '';
+          const hoverBid3 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
           this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border);
           this._clusterGroup.addLayer(marker);
           return;
@@ -4971,7 +5004,7 @@ export class BidSheetComponent {
         bg = statusColors['reference'].bg; border = statusColors['reference'].border;
       } else if (this._hasReference() && crop) {
         // Use beating/matching/none color based on this location's bid vs the reference
-        const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
+        const bidVal = this._getLatestBid(locs[0].id, year, crop, month);
         const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
         bg = statusColors[status].bg; border = statusColors[status].border;
       } else if (labelIsScoular) {
@@ -4984,14 +5017,14 @@ export class BidSheetComponent {
       // vendor name anchored ~110px off from the text actually drawn.
       const maxWidth = Math.min(150, Math.max(85, ...names.map(n => n.length * 7 + 22)));
       const nameIcon = L.divIcon({
-        className: 'custom-marker' + this._movedPulseClass(names.some(n => this._locationChangedWithin24h(n, year, crop, month))),
+        className: 'custom-marker' + this._movedPulseClass(locs.some(l => this._locationChangedWithin24h(l.id, year, crop, month))),
         html: this._buildStackedLabel(names, bg, border, comparingToRef),
         iconSize: [maxWidth, names.length * 26 + 8],
         iconAnchor: [maxWidth / 2, names.length * 26 + 8]
       });
       const marker = L.marker([lat, lng], { icon: nameIcon });
       marker.on('click', () => this._selectMapLocation(locs[0]));
-      const hoverBid4 = crop ? this._getDisplayBid(locs[0].name, year, crop, month) : '';
+      const hoverBid4 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
       this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border);
       this._clusterGroup.addLayer(marker);
     });
@@ -5333,7 +5366,8 @@ export class BidSheetComponent {
    */
   private _referenceBid(year: number | null, crop: string, month: number): number | null {
     const refName = this.selectedLocationName();
-    if (refName) return this._parseBid(this._getLatestBid(refName, year, crop, month));
+    const refId = refName ? this._findLocationByName(refName)?.id : undefined;
+    if (refId != null) return this._parseBid(this._getLatestBid(refId, year, crop, month));
     const catalogKey = this.catalogReferenceKey();
     if (catalogKey) return this._parseBid(this._catalogBidFor(catalogKey, year, crop, month));
     return null;

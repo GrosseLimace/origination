@@ -147,17 +147,17 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       location('Typed', [bid({ locationId: 2, source: 'Manual', underlyingFuture: 'ZCU26' })]),
     );
 
-    expect(component.cellBoardFor('Fed', 2026, 'YC', 8)).toBe('ZCU26');
+    expect(component.cellBoardFor(1, 2026, 'YC', 8)).toBe('ZCU26');
     // The symbol describes the FEED's number; a cell the user took over must not wear it.
-    expect(component.cellBoardFor('Typed', 2026, 'YC', 8)).toBe('');
+    expect(component.cellBoardFor(2, 2026, 'YC', 8)).toBe('');
   });
 
   // ── what a printed cell says ─────────────────────────────────────────────────────────────────
 
   /** A grid row as _buildEditGrid produces it, with the cell clean (current === original). */
-  function row(name: string, key: string, value: string, board = 'ZCU26') {
+  function row(name: string, key: string, value: string, board = 'ZCU26', locationId = 1) {
     return {
-      name, type: 'entry' as const,
+      locationId, name, type: 'entry' as const,
       bids: { [key]: value }, originalBids: { [key]: value },
       basisBids: {}, originalBasisBids: {},
       coverageChips: {}, boardChips: { [key]: board },
@@ -177,7 +177,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     // On the column's own board the header already says it -- repeating it on every cell is what
     // widened the columns enough to shrink the whole printed sheet.
     expect(component.printCellValue(row('Majority', 'YC#2026#8', '4.98') as never, col)).toBe('4.98');
-    expect(component.printCellValue(row('Rolled', 'YC#2026#8', '5.02') as never, col)).toBe('5.02 (ZCZ26)');
+    expect(component.printCellValue(row('Rolled', 'YC#2026#8', '5.02', 'ZCU26', 2) as never, col)).toBe('5.02 (ZCZ26)');
   });
 
   // The value comes from the live grid so unsaved edits print; the board comes from the saved entry.
@@ -1565,8 +1565,8 @@ describe('BidSheetComponent — bid moved in the last 24 hours', () => {
 
   function moved(): boolean {
     return (component as unknown as {
-      _locationChangedWithin24h(n: string, y: number | null, c: string, m: number): boolean;
-    })._locationChangedWithin24h('Elevator A', 2026, 'YC', 8);
+      _locationChangedWithin24h(n: number, y: number | null, c: string, m: number): boolean;
+    })._locationChangedWithin24h(1, 2026, 'YC', 8);
   }
 
   // A fed cell is judged by basisChangedAt, which the bridge sets only when the value really differs.
@@ -1614,10 +1614,10 @@ describe('BidSheetComponent — bid moved in the last 24 hours', () => {
   it('says no when there is no crop or period to judge a cell by', () => {
     seedBid({ source: 'Barchart', quoteAsOf: hoursAgo(1), createdAt: '2026-08-01T00:00:00Z' });
     const check = (component as unknown as {
-      _locationChangedWithin24h(n: string, y: number | null, c: string, m: number): boolean;
+      _locationChangedWithin24h(n: number, y: number | null, c: string, m: number): boolean;
     })._locationChangedWithin24h;
-    expect(check.call(component, 'Elevator A', 2026, '', 8)).toBe(false);
-    expect(check.call(component, 'Elevator A', null, 'YC', 8)).toBe(false);
+    expect(check.call(component, 1, 2026, '', 8)).toBe(false);
+    expect(check.call(component, 1, null, 'YC', 8)).toBe(false);
   });
 });
 
@@ -1793,11 +1793,18 @@ describe('BidSheetComponent — renaming a location stays on the sheet', () => {
     component.activeSheetId.set(1);
   });
 
+  /** The grid row as the component builds it: the id is the identity, the label is what it shows. */
+  const gridRow = (name = SHEET_LABEL, locationId = 1) => ({
+    locationId, name, type: 'entry' as const,
+    bids: {}, originalBids: {}, basisBids: {}, originalBasisBids: {},
+    coverageChips: {}, boardChips: {}, isBarchartLinked: false,
+  }) as never;
+
   // The bug the user hit: this used to call updateBidSheetLocation, renaming the shared row.
   it('renames from the Edit Bids grid via the per-sheet endpoint, not the shared row', () => {
     component.renameRowDraft.set('Renamed In Grid');
 
-    component.saveRenameRow(SHEET_LABEL);
+    component.saveRenameRow(gridRow());
 
     expect(setBidSheetLocationName).toHaveBeenCalledWith(1, 1, 'Renamed In Grid');
     expect(updateBidSheetLocation).not.toHaveBeenCalled();
@@ -1829,7 +1836,7 @@ describe('BidSheetComponent — renaming a location stays on the sheet', () => {
       const error = vi.spyOn(TestBed.inject(ToastService), 'error');
       component.renameRowDraft.set('  other label ');
 
-      component.saveRenameRow(SHEET_LABEL);
+      component.saveRenameRow(gridRow());
 
       expect(setBidSheetLocationName).not.toHaveBeenCalled();
       expect(error).toHaveBeenCalledWith(expect.stringContaining('other label'));
@@ -1851,7 +1858,7 @@ describe('BidSheetComponent — renaming a location stays on the sheet', () => {
     it('but not the location itself, re-cased', () => {
       component.renameRowDraft.set(SHEET_LABEL.toUpperCase());
 
-      component.saveRenameRow(SHEET_LABEL);
+      component.saveRenameRow(gridRow());
 
       expect(setBidSheetLocationName).toHaveBeenCalledWith(1, 1, SHEET_LABEL.toUpperCase());
     });
@@ -1861,7 +1868,7 @@ describe('BidSheetComponent — renaming a location stays on the sheet', () => {
   // the endpoint replaces the whole record — so it has to send the CANONICAL name. Sending the sheet's
   // label would publish one sheet's private name as the elevator's real one.
   it('sends the canonical name when toggling Scoular, never the sheet label', () => {
-    component.toggleRowScoular(SHEET_LABEL);
+    component.toggleRowScoular(gridRow());
 
     expect(updateBidSheetLocation).toHaveBeenCalledTimes(1);
     const [, body] = updateBidSheetLocation.mock.calls[0];
@@ -2039,8 +2046,8 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
     const covered = fedBid({ month: 10, coveredByCropYear: 2026, coveredByMonth: 11, underlyingFuture: 'ZCZ26' });
     const own = fedBid({ month: 11, underlyingFuture: 'ZCZ26' });
     seed(covered, own);
-    expect(component.coverageLabelFor('A', 2026, 'YC', 10)).toBe('Nov');
-    expect(component.coverageLabelFor('A', 2026, 'YC', 11)).toBe('');
+    expect(component.coverageLabelFor(1, 2026, 'YC', 10)).toBe('Nov');
+    expect(component.coverageLabelFor(1, 2026, 'YC', 11)).toBe('');
     expect(component.coverageChipFor(null)).toBe('');
     expect(component.coverageChipFor({ ...component.bidEntries()[0], source: 'Manual' })).toBe('');
   });
@@ -2053,14 +2060,14 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
       fedBid({ month: 10, quoteAsOf: justNow, basisQuoteAsOf: justNow, modifiedAt: justNow, basisChangedAt: lastWeek }),
       fedBid({ month: 11, quoteAsOf: lastWeek, basisChangedAt: justNow }),
     );
-    const moved = (month: number) => (component as any)._locationChangedWithin24h('A', 2026, 'YC', month) as boolean;
+    const moved = (month: number) => (component as any)._locationChangedWithin24h(1, 2026, 'YC', month) as boolean;
     expect(moved(10)).toBe(false);  // fresh stamps, stale basis: a re-post
     expect(moved(11)).toBe(true);   // stale stamp, fresh basis: a move
   });
 
   it('still pulses a manual cell on an edit', () => {
     seed(bid({ source: 'Manual', commodityCode: 'YC', cropYear: 2026, month: 10, modifiedAt: new Date().toISOString() }));
-    expect((component as any)._locationChangedWithin24h('A', 2026, 'YC', 10)).toBe(true);
+    expect((component as any)._locationChangedWithin24h(1, 2026, 'YC', 10)).toBe(true);
   });
 });
 
@@ -2307,5 +2314,93 @@ describe('BidSheetComponent — an open popup follows the pin you click', () => 
 
     expect(component.selectedLocationName()).toBe('');
     expect(component.catalogDetailKey()).toBeNull();
+  });
+});
+
+/**
+ * A location's displayed name is not its identity.
+ *
+ * It is per-sheet (BidSheetLocationLink.DisplayName), so one elevator can be called different things on
+ * two sheets, and two different elevators can be called the same thing. The grid, the panel, the bid
+ * lookup and both @for track keys used to be keyed by that name: same-named locations collapsed into
+ * one row with one set of cells (last write wins, the other elevator's bid invisible, and Angular
+ * raising NG0955 on the duplicate track key). Everything keys on locationId now.
+ */
+describe('BidSheetComponent — two locations that share a name stay apart', () => {
+  let component: BidSheetComponent;
+
+  function seedTwins(): void {
+    const twinA = location('Twin Elevators', [bid({ id: 11, locationId: 1, bid: '4.98', underlyingFuture: 'ZCU26' })]);
+    const twinB = location('Twin Elevators', [bid({ id: 22, locationId: 2, bid: '5.44', underlyingFuture: 'ZCZ26' })]);
+    twinB.id = 2;
+    component.allMapLocations.set([twinA, twinB]);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-09-01T00:00:00Z', shares: [], locations: [twinA, twinB],
+    } as BidSheet]);
+    component.activeSheetId.set(1);
+  }
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+    seedTwins();
+  });
+
+  it('gives each its own bid, rather than one overwriting the other', () => {
+    const latest = (component as unknown as {
+      _getLatestBid(id: number, y: number | null, c: string, m: number): string;
+    })._getLatestBid;
+
+    expect(latest.call(component, 1, 2026, 'YC', 8)).toBe('4.98');
+    expect(latest.call(component, 2, 2026, 'YC', 8)).toBe('5.44');
+  });
+
+  it('reads each cell against its own board', () => {
+    expect(component.cellBoardFor(1, 2026, 'YC', 8)).toBe('ZCU26');
+    expect(component.cellBoardFor(2, 2026, 'YC', 8)).toBe('ZCZ26');
+  });
+
+  it('builds one grid row per location, with distinct track keys', () => {
+    component.editBidsYears.set([2026]);
+    component.editBidsMonths.set([8]);
+    component.crops.set(['YC']);
+    (component as unknown as { _buildEditGrid(): void })._buildEditGrid();
+
+    const rows = component.editBidsRows();
+    expect(rows.length).toBe(2);
+    expect(rows.map(r => r.locationId).sort()).toEqual([1, 2]);
+    // The track key is locationId; duplicate keys are what raised NG0955.
+    expect(new Set(rows.map(r => r.locationId)).size).toBe(2);
+  });
+
+  it('lists both in the panel instead of collapsing them', () => {
+    component.selectedCrop.set('YC');
+    component.filterBids();
+
+    const items = component.filteredBidItems();
+    expect(items.length).toBe(2);
+    expect(items.map(i => i.locationId).sort()).toEqual([1, 2]);
+    expect(items.map(i => i.oldBid || i.newBid).filter(Boolean).length).toBeGreaterThan(0);
   });
 });
