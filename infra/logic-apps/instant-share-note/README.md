@@ -106,16 +106,31 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    mailbox, same `retryPolicy: none`.
 
    **The channel's own `@` token is stripped from the note text.** A note reads "@Origination
-   Workbench Testing here's the update"; in the channel itself that tag is routing noise, so
-   `Strip_Registered_Channel_Token` (and `Strip_App_Group_Token` on the Teams branch of
-   `Case_app-group`) removes the literal `@{name}` from a `channelNote` variable as the loop resolves
-   each mention. **Only channel-type mentions are stripped, never people** — "@Sam can you call them"
-   is content. `name` on those rows is server-set (registry display name / group name), not
-   client-authored. `Compose_Safe_Channel_Note` then trims and escapes the result; the email to people
-   keeps using the unstripped `Compose_Safe_Note`.
+   Workbench Testing here's the update"; in the channel itself that tag is routing noise. The loop
+   **appends** each channel's display name to a `channelNames` array (`Append_Channel_Name` in
+   `Case_teams-channel`, `Append_App_Group_Name` on the Teams branch of `Case_app-group`), and
+   `Compose_Channel_Note_Stripped` removes those names from the raw note **after** the loop.
+   `Compose_Safe_Channel_Note` then trims and escapes the result; the email to people keeps using the
+   unstripped `Compose_Safe_Note`. **Only channel-type mentions are stripped, never people** — "@Sam
+   can you call them" is content. `name` on those rows is server-set (registry display name / group
+   name), not client-authored, so the search string is never user-controlled. An empty name is
+   recorded as a sentinel, because searching for a bare `@` would eat every at-sign in the note.
+
+   > **Why an array and a post-loop Compose, rather than rewriting the note as the loop goes.**
+   > The first attempt did exactly that and Azure refused to deploy it:
+   > *"Self reference is not supported when updating the value of variable 'channelNote'."* A
+   > `SetVariable` may not read the variable it is setting, so the note text cannot be rewritten in
+   > place. `AppendToArrayVariable` is append rather than self-reference and is allowed — which is
+   > also why `For_each_Mention` must stay pinned to `concurrency.repetitions: 1`: appends from
+   > parallel iterations can be lost.
+   >
+   > **The strip is bounded at five channels.** Logic Apps expressions have no fold, so each name
+   > costs one nested `replace()`. A note normally tags one channel; a sixth would simply keep its
+   > tag rather than fail.
 
    > **M-036 still holds here — and the ORDER matters.** Strip first, escape second.
-   > `Compose_Safe_Channel_Note` runs after the loop and escapes `& < >` on the stripped text; the
+   > `Compose_Channel_Note_Stripped` runs after the loop, then `Compose_Safe_Channel_Note` escapes
+   > `& < >` on the stripped text; the
    > body interpolates only that output plus a formatted date. The `<br>` tags come from a
    > `replace()` on the ALREADY-ESCAPED note, so they are ours, never user-authored. If the stripped
    > note is empty (a note that was only the tag) the body says "(no note text)" rather than posting a
