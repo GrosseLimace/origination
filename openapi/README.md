@@ -52,8 +52,36 @@ even with a structurally valid token.
 
 ### Registered callers (integration pipeline)
 
-Supplied by the integration team 2026-08-11. Their QA **and** UAT both target our QA, so two identities
-need the role on the QA app registration.
+**The pipeline moved from the iPaaS framework to Logic Apps (integration team, 2026-09-16).** The
+integration itself is unchanged — same endpoints, payloads, spec and schedule shape — but the
+identities are not. Each Logic App workflow runs under its **own system-assigned managed identity**,
+so access is auditable and revocable per workflow rather than pooled behind one shared principal. Every
+workflow that calls this API therefore needs its own grant; the earlier iPaaS UAMI grants (listed at
+the end of this section for the record) stop mattering once the cutover completes.
+
+Their QA **and** UAT both target our QA (we have no UAT), so four identities land on the QA
+registration. They have confirmed QA and UAT are never enabled at the same time, so we never see two
+writers.
+
+Two workflows deliberately hold **no** role — the sweep planner and the audit rollup never call this
+API.
+
+| Workflow | Their env | Targets our | Object id | Status |
+|---|---|---|---|---|
+| `logic-barchart-instr-page` | DEV | Dev | `0d6d88e9-ff6c-4107-b313-7160d706faca` | requested 2026-09-17 |
+| `logic-barchart-quotes` | DEV | Dev | `0ad0da55-c8e6-40dd-91d1-1e7c2082636c` | requested 2026-09-17 |
+| `logic-barchart-instr-page` | QA | QA | `79633ced-c6e4-4fea-b08b-c1fbe0c82981` | requested 2026-09-17 |
+| `logic-barchart-quotes` | QA | QA | `9535f17c-c04d-4015-9ab6-ff34e083b7c7` | requested 2026-09-17 |
+| `logic-barchart-instr-page` | UAT | QA | `2e3d3429-862a-44fb-9866-8434fe1c17f0` | requested 2026-09-17 |
+| `logic-barchart-quotes` | UAT | QA | `bbf66830-aea2-44aa-8ed6-923d4c4ac799` | requested 2026-09-17 |
+| `logic-origination-apply-bids` | DEV / QA / UAT | Dev / QA / QA | *not yet built* | pending from integration team |
+| *(prod workflows)* | PROD | Prod | *not yet supplied* | pending |
+
+**DEV is the urgent half.** DEV works today only because the iPaaS identity still holds the role; the
+moment DEV cuts over to Logic Apps, its feed stops until the two DEV grants above land.
+
+<details>
+<summary>Superseded: the iPaaS UAMI grants (2026-08-11), still assigned but no longer used after cutover</summary>
 
 | Their environment | Targets our | Managed identity | Object id |
 |---|---|---|---|
@@ -61,6 +89,10 @@ need the role on the QA app registration.
 | QA | QA | `scoiaanp-uami-integration-qa-ipaas` | `cfce5a3c-a43d-4d49-9dee-a3a9eab956e9` |
 | UAT | QA | `scoiaanp-uami-integration-uat-ipaas` | `9376dcd5-d17c-4d8a-b2aa-3a96f160eb77` |
 | PROD | Prod | `scoiaap-uami-integration-ipaas` | `7f374a39-cfb3-43a8-8c68-5c5f47cfedd5` |
+
+Safe to remove from `appRoleAssignments` once the integration team confirms the iPaaS pipeline is retired
+in every environment. Left in place until then so nothing breaks mid-cutover.
+</details>
 
 ### Granting the role
 
@@ -71,36 +103,53 @@ repo (the same repo that syncs `developer-docs/` into this one — see its sync 
 them across deployments. That file also holds the outbound network rules and external endpoint list, so
 a connectivity change would go in the same request.
 
-Note the UAT identity is assigned to the **qa** environment, because their UAT targets our QA.
+Note the UAT identities are assigned to the **qa** environment, because their UAT targets our QA.
+
+The six Logic App identities to ADD (the existing iPaaS entries stay until cutover is confirmed):
 
 ```json
 "appRoleAssignments": [
   {
-    "principalDisplayName": "scoiaanp-uami-integration-dev-ipaas",
-    "principalId": "1b97e5c0-ae4c-49d8-8aed-4c7df5bb744c",
+    "principalDisplayName": "logic-barchart-instr-page (DEV)",
+    "principalId": "0d6d88e9-ff6c-4107-b313-7160d706faca",
     "appRoleValue": "Origination.Application",
     "environments": ["dev"]
   },
   {
-    "principalDisplayName": "scoiaanp-uami-integration-qa-ipaas",
-    "principalId": "cfce5a3c-a43d-4d49-9dee-a3a9eab956e9",
+    "principalDisplayName": "logic-barchart-quotes (DEV)",
+    "principalId": "0ad0da55-c8e6-40dd-91d1-1e7c2082636c",
+    "appRoleValue": "Origination.Application",
+    "environments": ["dev"]
+  },
+  {
+    "principalDisplayName": "logic-barchart-instr-page (QA)",
+    "principalId": "79633ced-c6e4-4fea-b08b-c1fbe0c82981",
     "appRoleValue": "Origination.Application",
     "environments": ["qa"]
   },
   {
-    "principalDisplayName": "scoiaanp-uami-integration-uat-ipaas",
-    "principalId": "9376dcd5-d17c-4d8a-b2aa-3a96f160eb77",
+    "principalDisplayName": "logic-barchart-quotes (QA)",
+    "principalId": "9535f17c-c04d-4015-9ab6-ff34e083b7c7",
     "appRoleValue": "Origination.Application",
     "environments": ["qa"]
   },
   {
-    "principalDisplayName": "scoiaap-uami-integration-ipaas",
-    "principalId": "7f374a39-cfb3-43a8-8c68-5c5f47cfedd5",
+    "principalDisplayName": "logic-barchart-instr-page (UAT)",
+    "principalId": "2e3d3429-862a-44fb-9866-8434fe1c17f0",
     "appRoleValue": "Origination.Application",
-    "environments": ["prod"]
+    "environments": ["qa"]
+  },
+  {
+    "principalDisplayName": "logic-barchart-quotes (UAT)",
+    "principalId": "bbf66830-aea2-44aa-8ed6-923d4c4ac799",
+    "appRoleValue": "Origination.Application",
+    "environments": ["qa"]
   }
 ]
 ```
+
+Three `logic-origination-apply-bids` entries (dev / qa / qa-for-UAT) and the prod set follow once the
+integration team supplies the object ids.
 
 No new app roles are needed — `Origination.Application` already exists in every environment as a
 convention-based default. This is assignment only, which also avoids the trap where declaring a custom
@@ -124,6 +173,14 @@ only, and the host allowlist above is enforced on every request. A caller theref
 
 If the route is APIM, anything that rewrites the `Host` header must preserve one of the allowlisted
 hostnames, or requests are rejected before reaching application code.
+
+**State per environment (2026-09-17):**
+
+| Our env | Reachable from the integration gateway? | Notes |
+|---|---|---|
+| Dev | **Yes** — proven | 37,180 / 37,180 loadInstruments calls succeeded on 2026-09-16 |
+| QA | **Not yet** | The integration team has built the API config in their QA and UAT gateways pointing at `app-origination-qa-eus.azurewebsites.net`. What is missing is on OUR side: the private endpoint route and Private DNS resolution that let their QA/UAT gateway networks reach our QA App Service, the way DEV's already does. Raised with infra 2026-09-17. |
+| Prod | Not started | |
 
 ## Request rules
 
