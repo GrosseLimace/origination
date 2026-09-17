@@ -94,6 +94,29 @@ never granted. We took its lessons, not its mechanism:
 Every failure path returns `null`/`false` and is swallowed, so a calendar problem never fails or
 rolls back the reminder. The database is the source of truth; the event is a best-effort mirror.
 
+### Creating an event must never be retried
+
+`POST /me/events` is non-idempotent and has no idempotency key. If Graph writes the event and the
+response is lost — a client timeout, a reset, a gateway 504 raised after the write — a retry puts a
+**second event** on someone's calendar. The shared `"graph"` HTTP client retries on exactly those
+failures (`HttpRequestException` / `TaskCanceledException`, which is what its 10-second timeout
+surfaces as), so a single create could have landed three events.
+
+So `CreateEventAsync` uses a separate **`"graph-no-retry"`** client: same base address, timeout and
+correlation handler, circuit breaker kept (it fails fast, it does not re-send), but no retry.
+`UpdateEventWindowAsync` and `DeleteEventAsync` keep `"graph"` — patching the same window twice is
+the same result, and an already-missing event already counts as success. `OutlookCalendarServiceTests`
+asserts which client each of the three calls asks for, so the distinction cannot quietly regress.
+
+This is the same hazard the Instant Share Note workflow hit with Graph `sendMail`, where the default
+policy mailed up to five copies of one note and the run still reported success; that was fixed with
+`retryPolicy: none`.
+
+One residual, accepted and unchanged: if a create times out *after* Graph wrote the event, the
+reminder keeps a null `OutlookEventId` and the row offers "Add to Outlook" — pressing it writes a
+second event. Removing the automatic retry makes that far rarer, and the alternative (reading the
+calendar back to check) needs a broader permission than we asked for.
+
 ### What moving server-side changed
 
 - **No consent popup.** The browser used to escalate to an MSAL popup on first use, which could

@@ -28,11 +28,19 @@ public class OutlookCalendarServiceTests
 
     private static readonly DateTime DueUtc = new(2026, 3, 10, 15, 30, 0, DateTimeKind.Utc);
 
+    /// <summary>Every named client the service asked for, in order. Which one it picks is the whole
+    /// safety story for creating an event, so the tests assert on it.</summary>
+    private readonly List<string> _clientsRequested = [];
+
     private OutlookCalendarService Build()
     {
         var factory = new Mock<IHttpClientFactory>();
-        factory.Setup(f => f.CreateClient("graph"))
-            .Returns(() => new HttpClient(_handler) { BaseAddress = new Uri("https://graph.microsoft.com/v1.0/") });
+        factory.Setup(f => f.CreateClient(It.IsAny<string>()))
+            .Returns((string name) =>
+            {
+                _clientsRequested.Add(name);
+                return new HttpClient(_handler) { BaseAddress = new Uri("https://graph.microsoft.com/v1.0/") };
+            });
 
         return new OutlookCalendarService(_tokens.Object, factory.Object,
             new Mock<ILogger<OutlookCalendarService>>().Object);
@@ -227,6 +235,48 @@ public class OutlookCalendarServiceTests
         _handler.Enqueue(HttpStatusCode.InternalServerError, "{}");
 
         Assert.False(await Build().DeleteEventAsync("AAMkAD==", CancellationToken.None));
+    }
+
+    // ── Which HTTP client each call uses ──────────────────────────────────────
+    // POST /me/events is non-idempotent and has no idempotency key. If Graph writes the event and
+    // the response is lost, a retry puts a SECOND event on someone's calendar. The shared "graph"
+    // client retries on exactly that failure, so creating must use the non-retrying one. The other
+    // two calls are idempotent and keep the retry. This is the same hazard the Instant Share Note
+    // workflow hit with sendMail, where the default policy mailed up to five copies of one note.
+
+    [Fact]
+    public async Task CreatingAnEvent_UsesTheClientThatWillNotRetry()
+    {
+        ArrangeToken();
+        _handler.Enqueue(HttpStatusCode.Created, """{"id":"AAMkAD=="}""");
+
+        await Build().CreateEventAsync(Request(), CancellationToken.None);
+
+        Assert.Equal(["graph-no-retry"], _clientsRequested);
+    }
+
+    [Fact]
+    public async Task MovingAnEvent_KeepsTheRetryingClient()
+    {
+        // Idempotent: patching the same window twice is the same result.
+        ArrangeToken();
+        _handler.Enqueue(HttpStatusCode.OK, "{}");
+
+        await Build().UpdateEventWindowAsync("AAMkAD==", DueUtc, "UTC", CancellationToken.None);
+
+        Assert.Equal(["graph"], _clientsRequested);
+    }
+
+    [Fact]
+    public async Task DeletingAnEvent_KeepsTheRetryingClient()
+    {
+        // Idempotent: the end state is the same, and an already-missing event counts as success.
+        ArrangeToken();
+        _handler.Enqueue(HttpStatusCode.NoContent, "");
+
+        await Build().DeleteEventAsync("AAMkAD==", CancellationToken.None);
+
+        Assert.Equal(["graph"], _clientsRequested);
     }
 
     private sealed class StubHandler : HttpMessageHandler
