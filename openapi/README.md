@@ -63,8 +63,14 @@ Their QA **and** UAT both target our QA (we have no UAT), so four identities lan
 registration. They have confirmed QA and UAT are never enabled at the same time, so we never see two
 writers.
 
-Two workflows deliberately hold **no** role — the sweep planner and the audit rollup never call this
-API.
+Two of their five workflows deliberately hold **no** role — the sweep planner only calls BarChart, and
+the audit rollup only reads their own storage and sends alerts. Five workflow names in their resource
+group, nine grants: that is why.
+
+**This is the complete set — nine identities, nothing further coming (integration team, 2026-09-17).**
+All five workflows are deployed to their DEV, QA and UAT and are **disabled** until the grants land; they
+will enable QA first and tell us before anything posts. Prod identities will be supplied when prod is
+scheduled.
 
 | Workflow | Their env | Targets our | Object id | Status |
 |---|---|---|---|---|
@@ -74,11 +80,13 @@ API.
 | `logic-barchart-quotes` | QA | QA | `9535f17c-c04d-4015-9ab6-ff34e083b7c7` | requested 2026-09-17 |
 | `logic-barchart-instr-page` | UAT | QA | `2e3d3429-862a-44fb-9866-8434fe1c17f0` | requested 2026-09-17 |
 | `logic-barchart-quotes` | UAT | QA | `bbf66830-aea2-44aa-8ed6-923d4c4ac799` | requested 2026-09-17 |
-| `logic-origination-apply-bids` | DEV / QA / UAT | Dev / QA / QA | *not yet built* | pending from integration team |
-| *(prod workflows)* | PROD | Prod | *not yet supplied* | pending |
+| `logic-origination-apply-bids` | DEV | Dev | `eb563a48-0f79-45c1-bdbc-5d4dbcfadcae` | requested 2026-09-17 |
+| `logic-origination-apply-bids` | QA | QA | `a54f2187-9dd0-40fc-b8c3-9e1d64f3b219` | requested 2026-09-17 |
+| `logic-origination-apply-bids` | UAT | QA | `c9f3891e-5af3-4783-8972-e8ff10eafd8f` | requested 2026-09-17 |
 
-**DEV is the urgent half.** DEV works today only because the iPaaS identity still holds the role; the
-moment DEV cuts over to Logic Apps, its feed stops until the two DEV grants above land.
+**DEV still runs on iPaaS today** and keeps working until the integration team enables the DEV Logic
+Apps, which they will not do before the grants are in. The three DEV grants go in the same pass so that
+cutover is a switch, not an outage.
 
 <details>
 <summary>Superseded: the iPaaS UAMI grants (2026-08-11), still assigned but no longer used after cutover</summary>
@@ -105,57 +113,96 @@ a connectivity change would go in the same request.
 
 Note the UAT identities are assigned to the **qa** environment, because their UAT targets our QA.
 
-The six Logic App identities to ADD (the existing iPaaS entries stay until cutover is confirmed):
+The nine Logic App identities to ADD, matching the file's exact shape (the existing iPaaS entries stay until
+cutover is confirmed):
 
 ```json
 "appRoleAssignments": [
   {
-    "principalDisplayName": "logic-barchart-instr-page (DEV)",
     "principalId": "0d6d88e9-ff6c-4107-b313-7160d706faca",
+    "principalDisplayName": "logic-barchart-instr-page (DEV)",
     "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
-    "environments": ["dev"]
+    "environments": [
+      "dev"
+    ]
   },
   {
-    "principalDisplayName": "logic-barchart-quotes (DEV)",
     "principalId": "0ad0da55-c8e6-40dd-91d1-1e7c2082636c",
+    "principalDisplayName": "logic-barchart-quotes (DEV)",
     "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
-    "environments": ["dev"]
+    "environments": [
+      "dev"
+    ]
   },
   {
-    "principalDisplayName": "logic-barchart-instr-page (QA)",
+    "principalId": "eb563a48-0f79-45c1-bdbc-5d4dbcfadcae",
+    "principalDisplayName": "logic-origination-apply-bids (DEV)",
+    "principalType": "ServicePrincipal",
+    "appRoleValue": "Origination.Application",
+    "environments": [
+      "dev"
+    ]
+  },
+  {
     "principalId": "79633ced-c6e4-4fea-b08b-c1fbe0c82981",
+    "principalDisplayName": "logic-barchart-instr-page (QA)",
     "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
-    "environments": ["qa"]
+    "environments": [
+      "qa"
+    ]
   },
   {
-    "principalDisplayName": "logic-barchart-quotes (QA)",
     "principalId": "9535f17c-c04d-4015-9ab6-ff34e083b7c7",
+    "principalDisplayName": "logic-barchart-quotes (QA)",
     "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
-    "environments": ["qa"]
+    "environments": [
+      "qa"
+    ]
   },
   {
-    "principalDisplayName": "logic-barchart-instr-page (UAT)",
+    "principalId": "a54f2187-9dd0-40fc-b8c3-9e1d64f3b219",
+    "principalDisplayName": "logic-origination-apply-bids (QA)",
+    "principalType": "ServicePrincipal",
+    "appRoleValue": "Origination.Application",
+    "environments": [
+      "qa"
+    ]
+  },
+  {
     "principalId": "2e3d3429-862a-44fb-9866-8434fe1c17f0",
+    "principalDisplayName": "logic-barchart-instr-page (UAT)",
     "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
-    "environments": ["qa"]
+    "environments": [
+      "qa"
+    ]
   },
   {
-    "principalDisplayName": "logic-barchart-quotes (UAT)",
     "principalId": "bbf66830-aea2-44aa-8ed6-923d4c4ac799",
+    "principalDisplayName": "logic-barchart-quotes (UAT)",
     "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
-    "environments": ["qa"]
+    "environments": [
+      "qa"
+    ]
+  },
+  {
+    "principalId": "c9f3891e-5af3-4783-8972-e8ff10eafd8f",
+    "principalDisplayName": "logic-origination-apply-bids (UAT)",
+    "principalType": "ServicePrincipal",
+    "appRoleValue": "Origination.Application",
+    "environments": [
+      "qa"
+    ]
   }
 ]
 ```
 
-Three `logic-origination-apply-bids` entries (dev / qa / qa-for-UAT) and the prod set follow once the
-integration team supplies the object ids.
+Prod identities follow when prod is scheduled.
 
 No new app roles are needed — `Origination.Application` already exists in every environment as a
 convention-based default. This is assignment only, which also avoids the trap where declaring a custom
