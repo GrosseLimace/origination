@@ -112,36 +112,42 @@ The six Logic App identities to ADD (the existing iPaaS entries stay until cutov
   {
     "principalDisplayName": "logic-barchart-instr-page (DEV)",
     "principalId": "0d6d88e9-ff6c-4107-b313-7160d706faca",
+    "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
     "environments": ["dev"]
   },
   {
     "principalDisplayName": "logic-barchart-quotes (DEV)",
     "principalId": "0ad0da55-c8e6-40dd-91d1-1e7c2082636c",
+    "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
     "environments": ["dev"]
   },
   {
     "principalDisplayName": "logic-barchart-instr-page (QA)",
     "principalId": "79633ced-c6e4-4fea-b08b-c1fbe0c82981",
+    "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
     "environments": ["qa"]
   },
   {
     "principalDisplayName": "logic-barchart-quotes (QA)",
     "principalId": "9535f17c-c04d-4015-9ab6-ff34e083b7c7",
+    "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
     "environments": ["qa"]
   },
   {
     "principalDisplayName": "logic-barchart-instr-page (UAT)",
     "principalId": "2e3d3429-862a-44fb-9866-8434fe1c17f0",
+    "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
     "environments": ["qa"]
   },
   {
     "principalDisplayName": "logic-barchart-quotes (UAT)",
     "principalId": "bbf66830-aea2-44aa-8ed6-923d4c4ac799",
+    "principalType": "ServicePrincipal",
     "appRoleValue": "Origination.Application",
     "environments": ["qa"]
   }
