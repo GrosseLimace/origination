@@ -94,10 +94,13 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    the user receives up to five copies — while the run still reports Succeeded. Diagnosed and fixed in
    the daily-recap workflow (commits `999f0d59`, `97b8ea08`); this is the same fix ported here.
 8. **`HTTP_Send_Channel_Post`** — the same Graph `sendMail` call, addressed to the Teams channel
-   address(es) collected in step 5, but with a deliberately **plain body: the note, then a one-line
-   footer, nothing else.** The subject line already becomes the post's title in Teams ("Caden Egr
-   shared a note on Smith Farms"), so the body does not repeat it. The note is rendered first and
-   slightly larger, with its line breaks preserved. No banner image, no layout tables, no stylesheet.
+   address(es) collected in step 5, with a deliberately plain body: **a muted header line naming the
+   author and the producer (`Name (ScoularId)`), a rule, the note at reading size, and a closing
+   rule.** The closing rule matters — Exchange appends a confidentiality notice to the message, and
+   without a divider it reads as a continuation of the note. There is no timestamp or "sent by" line:
+   Teams already shows when a post arrived. The producer code is `Customer.ScoularId`, which is what
+   the app calls `CustomerCode` (`NoteRepository` maps `CustomerCode = Customer.ScoularId`); there is
+   no `CustomerCode` column on `dbo.Customer`. No banner image, no layout tables, no stylesheet.
    Teams' email-to-channel rendering flattens the Outlook-styled template and buries the note under
    the 580px header — the first live test (2026-09-17) came out as "a big logo and a hard-to-find
    note", and the second round of feedback was "the note is small and the first sentence repeats the
@@ -127,6 +130,10 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    > **The strip is bounded at five channels.** Logic Apps expressions have no fold, so each name
    > costs one nested `replace()`. A note normally tags one channel; a sixth would simply keep its
    > tag rather than fail.
+
+   > **Every interpolated value is an escaped `Compose_Safe_*` output — including the producer code**,
+   > which comes from the source system rather than a user. Escaping it anyway keeps the rule
+   > exception-free: nothing reaches the body unescaped.
 
    > **M-036 still holds here — and the ORDER matters.** Strip first, escape second.
    > `Compose_Channel_Note_Stripped` runs after the loop, then `Compose_Safe_Channel_Note` escapes
