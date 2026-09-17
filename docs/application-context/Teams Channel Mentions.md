@@ -60,7 +60,7 @@ SQL cannot become an exfiltration path. A channel whose address is missing or fa
 production until the Graph consent below is granted. Without consent the channel lookup returns
 nothing, so the flag exists to avoid showing an empty section that looks broken.
 
-## The IT ask (only open item)
+## The IT ask — DONE in Dev (2026-09-17), QA and PROD pending
 
 **Two** delegated permissions, both with **admin consent**, on the **API app registration**
 (`00078a10-3f3f-4d17-9350-fe90401125ae`) — *not* the SPA registrations:
@@ -93,11 +93,28 @@ On-behalf-of makes this API a confidential client, so it must prove its own iden
 is **configuration, not code** — `AzureAd:ClientCredentials` — so either answer below works without
 touching `Program.cs`:
 
-- **Preferred, secretless:** a federated identity credential on the API registration backed by the
-  App Service managed identity (`"SourceType": "SignedAssertionFromManagedIdentity"`). Keeps the
-  app's existing no-secrets posture.
-- **If IT prefers the established path:** a client secret or certificate in the same section, sourced
-  from Key Vault.
+**Answered by IT Security on 2026-09-17 — the secretless route, and it is live in Dev.** A federated
+identity credential on the `Origination API - Dev` registration is bound to the
+`app-origination-dev-eus` **system-assigned** managed identity, with token-exchange audience
+`api://AzureADTokenExchange`. The App Service signs an assertion with its own identity; there is no
+client secret anywhere. In `appsettings.Dev.json` that is just:
+
+```json
+"AzureAd": { "ClientCredentials": [ { "SourceType": "SignedAssertionFromManagedIdentity" } ] }
+```
+
+`ManagedIdentityClientId` is deliberately omitted because the identity is system-assigned. QA and
+Production have **no credential and no consent yet, by design** — a small config change on IT's side
+once Dev is proven, not another build. The three SPA registrations were left untouched.
+
+Two operational notes from IT worth keeping:
+
+- **If Graph calls suddenly fail after an infrastructure change**, the likely cause is the managed
+  identity having been recreated — the credential binds to its object id. Their tooling repairs it on
+  the next deploy; tell them.
+- **We are the first app in the tenant to do an on-behalf-of exchange.** IT wants to be told when
+  either feature has been exercised in Dev so they can confirm the exchange appears in the sign-in
+  logs. That log entry, not the configuration, is what proves the whole thing.
 
 **Local development** has no managed identity, so a developer running the API locally gets no Graph
 token and sees an empty channel list. To exercise it locally, put a client secret in **User Secrets**
