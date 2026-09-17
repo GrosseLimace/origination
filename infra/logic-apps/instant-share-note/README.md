@@ -94,13 +94,20 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    the user receives up to five copies — while the run still reports Succeeded. Diagnosed and fixed in
    the daily-recap workflow (commits `999f0d59`, `97b8ea08`); this is the same fix ported here.
 8. **`HTTP_Send_Channel_Post`** — the same Graph `sendMail` call, addressed to the Teams channel
-   address(es) collected in step 5, with a deliberately plain body: **a muted header line naming the
-   author and the producer (`Name (ScoularId)`), a rule, the note at reading size, and a closing
-   rule.** The closing rule matters — Exchange appends a confidentiality notice to the message, and
-   without a divider it reads as a continuation of the note. There is no timestamp or "sent by" line:
-   Teams already shows when a post arrived. The producer code is `Customer.ScoularId`, which is what
-   the app calls `CustomerCode` (`NoteRepository` maps `CustomerCode = Customer.ScoularId`); there is
-   no `CustomerCode` column on `dbo.Customer`. No banner image, no layout tables, no stylesheet.
+   address(es) collected in step 5. **Teams renders the SUBJECT as the post's title**, so the subject
+   carries the whole header — `Caden Egr shared a note on A & B ORGANIC ACRES (MWACRST)` — and the
+   body is just a rule, the note at reading size, and a closing rule. An earlier revision repeated
+   that sentence as the first line of the body; the post then said the same thing twice, once as the
+   title and once underneath.
+
+   The closing rule matters: Exchange appends a confidentiality notice to the message, and without a
+   divider it reads as a continuation of the note. There is no timestamp or "sent by" line, because
+   Teams already shows when a post arrived and the subject already names the author.
+
+   The producer code is `Customer.ScoularId`, which is what the app calls `CustomerCode`
+   (`NoteRepository` maps `CustomerCode = Customer.ScoularId`); there is no `CustomerCode` column on
+   `dbo.Customer`. It sits in the subject **raw**, like the producer name beside it — see the note on
+   the subject below. No banner image, no layout tables, no stylesheet.
    Teams' email-to-channel rendering flattens the Outlook-styled template and buries the note under
    the 580px header — the first live test (2026-09-17) came out as "a big logo and a hard-to-find
    note", and the second round of feedback was "the note is small and the first sentence repeats the
@@ -131,9 +138,10 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    > costs one nested `replace()`. A note normally tags one channel; a sixth would simply keep its
    > tag rather than fail.
 
-   > **Every interpolated value is an escaped `Compose_Safe_*` output — including the producer code**,
-   > which comes from the source system rather than a user. Escaping it anyway keeps the rule
-   > exception-free: nothing reaches the body unescaped.
+   > **The only value interpolated into the channel BODY is the escaped note.** Everything else that
+   > identifies the post lives in the subject, which is a plain-text Graph field and is deliberately
+   > left RAW — escaping it would print `&amp;` in the title of a producer like "A & B ORGANIC ACRES".
+   > Same reasoning as the person-mention subject, which has always been raw.
 
    > **M-036 still holds here — and the ORDER matters.** Strip first, escape second.
    > `Compose_Channel_Note_Stripped` runs after the loop, then `Compose_Safe_Channel_Note` escapes

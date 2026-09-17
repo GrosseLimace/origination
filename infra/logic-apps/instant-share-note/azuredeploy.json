@@ -692,15 +692,6 @@
                   },
                   "type": "Compose"
                 },
-                "Compose_Safe_Customer_Code": {
-                  "inputs": "@replace(replace(replace(coalesce(body('Get_Customer')?['ScoularId'], ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')",
-                  "runAfter": {
-                    "Condition_Unresolved_Mention_Types": [
-                      "Succeeded"
-                    ]
-                  },
-                  "type": "Compose"
-                },
                 "Compose_Channel_Note_Stripped": {
                   "inputs": "@replace(replace(replace(replace(replace(coalesce(triggerBody()?['Description'], ''), concat('@', if(greater(length(variables('channelNames')), 0), string(variables('channelNames')[0]), '__no_channel_token__')), ''), concat('@', if(greater(length(variables('channelNames')), 1), string(variables('channelNames')[1]), '__no_channel_token__')), ''), concat('@', if(greater(length(variables('channelNames')), 2), string(variables('channelNames')[2]), '__no_channel_token__')), ''), concat('@', if(greater(length(variables('channelNames')), 3), string(variables('channelNames')[3]), '__no_channel_token__')), ''), concat('@', if(greater(length(variables('channelNames')), 4), string(variables('channelNames')[4]), '__no_channel_token__')), '')",
                   "runAfter": {
@@ -788,10 +779,10 @@
                         "body": {
                           "message": {
                             "body": {
-                              "content": "<p style=\"margin:0;color:#576269;font-size:13px\">@{outputs('Compose_Safe_Author')} shared a note on <strong style=\"color:#00395D\">@{if(empty(outputs('Compose_Safe_Customer')), 'a producer', outputs('Compose_Safe_Customer'))}</strong>@{if(empty(outputs('Compose_Safe_Customer_Code')), '', concat(' (', outputs('Compose_Safe_Customer_Code'), ')'))}</p><hr style=\"border:0;border-top:1px solid #dfe3e6;margin:12px 0\"><p style=\"margin:0;font-size:16px;line-height:1.55;color:#111827\">@{if(empty(outputs('Compose_Safe_Channel_Note')), '(no note text)', replace(replace(outputs('Compose_Safe_Channel_Note'), decodeUriComponent('%0D%0A'), '<br>'), decodeUriComponent('%0A'), '<br>'))}</p><hr style=\"border:0;border-top:1px solid #dfe3e6;margin:12px 0\">",
+                              "content": "<hr style=\"border:0;border-top:1px solid #dfe3e6;margin:12px 0\"><p style=\"margin:0;font-size:16px;line-height:1.55;color:#111827\">@{if(empty(outputs('Compose_Safe_Channel_Note')), '(no note text)', replace(replace(outputs('Compose_Safe_Channel_Note'), decodeUriComponent('%0D%0A'), '<br>'), decodeUriComponent('%0A'), '<br>'))}</p><hr style=\"border:0;border-top:1px solid #dfe3e6;margin:12px 0\">",
                               "contentType": "HTML"
                             },
-                            "subject": "@{coalesce(body('Get_Author')?['DisplayName'], triggerBody()?['CreatedBy'])} shared a note on @{coalesce(body('Get_Customer')?['CustomerName'], 'a customer')}",
+                            "subject": "@{coalesce(body('Get_Author')?['DisplayName'], triggerBody()?['CreatedBy'])} shared a note on @{coalesce(body('Get_Customer')?['CustomerName'], 'a customer')}@{if(empty(coalesce(body('Get_Customer')?['ScoularId'], '')), '', concat(' (', body('Get_Customer')?['ScoularId'], ')'))}",
                             "toRecipients": "@outputs('Compose_Channel_Recipients')"
                           },
                           "saveToSentItems": true
@@ -824,9 +815,6 @@
                       "Succeeded"
                     ],
                     "Compose_Safe_Channel_Note": [
-                      "Succeeded"
-                    ],
-                    "Compose_Safe_Customer_Code": [
                       "Succeeded"
                     ],
                     "Compose_Safe_Note": [
