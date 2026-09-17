@@ -150,6 +150,23 @@
               },
               "type": "InitializeVariable"
             },
+            "Initialize_channel_note": {
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "channelNote",
+                    "type": "string",
+                    "value": "@{coalesce(triggerBody()?['Description'], '')}"
+                  }
+                ]
+              },
+              "runAfter": {
+                "Initialize_unresolved_types": [
+                  "Succeeded"
+                ]
+              },
+              "type": "InitializeVariable"
+            },
             "Condition_Has_Mentions": {
               "actions": {
                 "Parse_Mentions": {
@@ -383,6 +400,18 @@
                         },
                         "Case_teams-channel": {
                           "actions": {
+                            "Strip_Registered_Channel_Token": {
+                              "inputs": {
+                                "name": "channelNote",
+                                "value": "@{if(empty(item()?['name']), variables('channelNote'), replace(variables('channelNote'), concat('@', item()?['name']), ''))}"
+                              },
+                              "runAfter": {
+                                "Get_Teams_Channel": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "SetVariable"
+                            },
                             "Get_Teams_Channel": {
                               "inputs": {
                                 "host": {
@@ -476,6 +505,13 @@
                             },
                             "Condition_App_Group_Delivers_To_Teams": {
                               "actions": {
+                                "Strip_App_Group_Token": {
+                                  "inputs": {
+                                    "name": "channelNote",
+                                    "value": "@{if(empty(item()?['name']), variables('channelNote'), replace(variables('channelNote'), concat('@', item()?['name']), ''))}"
+                                  },
+                                  "type": "SetVariable"
+                                },
                                 "Condition_Channel_Address_Is_Scoular": {
                                   "actions": {
                                     "Append_Channel_Recipient": {
@@ -657,6 +693,15 @@
                   },
                   "type": "Compose"
                 },
+                "Compose_Safe_Channel_Note": {
+                  "inputs": "@replace(replace(replace(trim(variables('channelNote')), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')",
+                  "runAfter": {
+                    "Condition_Unresolved_Mention_Types": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "Compose"
+                },
                 "Condition_Has_Recipients": {
                   "actions": {
                     "HTTP_Send_Share_Email": {
@@ -726,7 +771,7 @@
                         "body": {
                           "message": {
                             "body": {
-                              "content": "<p><strong>@{outputs('Compose_Safe_Author')}</strong> shared a note regarding <strong>@{if(empty(outputs('Compose_Safe_Customer')), 'a customer', outputs('Compose_Safe_Customer'))}</strong>.</p><p>@{replace(replace(outputs('Compose_Safe_Note'), decodeUriComponent('%0D%0A'), '<br>'), decodeUriComponent('%0A'), '<br>')}</p><p style=\"color:#8a949b;font-size:12px\">Created @{formatDateTime(convertFromUtc(concat(triggerBody()?['CreatedAt'],'Z'),'Central Standard Time'),'M/d/yyyy h:mm tt')} CT &middot; Sent by the Scoular Origination App</p>",
+                              "content": "<p style=\"font-size:16px;line-height:1.5\">@{if(empty(outputs('Compose_Safe_Channel_Note')), '(no note text)', replace(replace(outputs('Compose_Safe_Channel_Note'), decodeUriComponent('%0D%0A'), '<br>'), decodeUriComponent('%0A'), '<br>'))}</p><p style=\"color:#8a949b;font-size:12px\">Created @{formatDateTime(convertFromUtc(concat(triggerBody()?['CreatedAt'],'Z'),'Central Standard Time'),'M/d/yyyy h:mm tt')} CT &middot; Sent by the Scoular Origination App</p>",
                               "contentType": "HTML"
                             },
                             "subject": "@{coalesce(body('Get_Author')?['DisplayName'], triggerBody()?['CreatedBy'])} shared a note on @{coalesce(body('Get_Customer')?['CustomerName'], 'a customer')}",
@@ -759,6 +804,9 @@
                   },
                   "runAfter": {
                     "Compose_Channel_Recipients": [
+                      "Succeeded"
+                    ],
+                    "Compose_Safe_Channel_Note": [
                       "Succeeded"
                     ],
                     "Compose_Safe_Note": [
@@ -864,7 +912,7 @@
                 ]
               },
               "runAfter": {
-                "Initialize_unresolved_types": [
+                "Initialize_channel_note": [
                   "Succeeded"
                 ]
               },

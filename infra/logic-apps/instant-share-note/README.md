@@ -94,18 +94,39 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    the user receives up to five copies — while the run still reports Succeeded. Diagnosed and fixed in
    the daily-recap workflow (commits `999f0d59`, `97b8ea08`); this is the same fix ported here.
 8. **`HTTP_Send_Channel_Post`** — the same Graph `sendMail` call, addressed to the Teams channel
-   address(es) collected in step 5, but with a deliberately **lean body**: one sentence naming who
-   shared a note about which producer, the note text with line breaks preserved, and a one-line
-   footer. No banner image, no layout tables, no stylesheet. Teams' email-to-channel rendering
-   flattens the Outlook-styled template and buries the note under the 580px header — the first live
-   test (2026-09-17) came out as "a big logo and a hard-to-find note". The subject line already becomes
-   the post's title in Teams, so the body only needs the content. Guarded by
-   `Condition_Has_Channel_Recipients`, so it is skipped entirely unless a channel-routed group or a
-   registered channel was mentioned. Same managed identity, same shared mailbox, same `retryPolicy: none`.
+   address(es) collected in step 5, but with a deliberately **plain body: the note, then a one-line
+   footer, nothing else.** The subject line already becomes the post's title in Teams ("Caden Egr
+   shared a note on Smith Farms"), so the body does not repeat it. The note is rendered first and
+   slightly larger, with its line breaks preserved. No banner image, no layout tables, no stylesheet.
+   Teams' email-to-channel rendering flattens the Outlook-styled template and buries the note under
+   the 580px header — the first live test (2026-09-17) came out as "a big logo and a hard-to-find
+   note", and the second round of feedback was "the note is small and the first sentence repeats the
+   title". Guarded by `Condition_Has_Channel_Recipients`, so it is skipped entirely unless a
+   channel-routed group or a registered channel was mentioned. Same managed identity, same shared
+   mailbox, same `retryPolicy: none`.
 
-   > **M-036 still holds here.** The body interpolates only the three `Compose_Safe_*` outputs plus a
-   > formatted date. The `<br>` tags come from a `replace()` on the ALREADY-ESCAPED note (newline →
-   > `<br>`), so they are ours, never user-authored; user text cannot smuggle markup in.
+   **The channel's own `@` token is stripped from the note text.** A note reads "@Origination
+   Workbench Testing here's the update"; in the channel itself that tag is routing noise, so
+   `Strip_Registered_Channel_Token` (and `Strip_App_Group_Token` on the Teams branch of
+   `Case_app-group`) removes the literal `@{name}` from a `channelNote` variable as the loop resolves
+   each mention. **Only channel-type mentions are stripped, never people** — "@Sam can you call them"
+   is content. `name` on those rows is server-set (registry display name / group name), not
+   client-authored. `Compose_Safe_Channel_Note` then trims and escapes the result; the email to people
+   keeps using the unstripped `Compose_Safe_Note`.
+
+   > **M-036 still holds here — and the ORDER matters.** Strip first, escape second.
+   > `Compose_Safe_Channel_Note` runs after the loop and escapes `& < >` on the stripped text; the
+   > body interpolates only that output plus a formatted date. The `<br>` tags come from a
+   > `replace()` on the ALREADY-ESCAPED note, so they are ours, never user-authored. If the stripped
+   > note is empty (a note that was only the tag) the body says "(no note text)" rather than posting a
+   > blank.
+
+   > **Two things about the post that are NOT ours to change**, because it arrives as email:
+   > the **confidentiality notice** is appended by an Exchange mail-flow rule IT owns (an exemption for
+   > mail from the Origination mailbox to `*.teams.ms` is a one-line ask), and the **"View original
+   > email"** link is Teams' own control on any email-originated post. Removing that would need a real
+   > Teams bot posting messages, which is the app-only path Microsoft does not offer (see the
+   > feasibility table in `docs/application-context/Teams Channel Mentions.md`).
 
    > Posting to a channel is **email to the channel's "send to channel" address** — Microsoft retired
    > Office 365 connectors/incoming webhooks in May 2026, Graph cannot post a channel message with an

@@ -134,6 +134,9 @@ one does not exist, removing the "someone must click Get email address first" st
 | Note saved but nothing appeared in the channel | The channel's "who can send here" setting blocks the shared mailbox. It must allow `scoular.com` senders, not "team members only". |
 | Workflow run Failed with `UnknownMentionType` | The mention references a channel that is no longer registered, or one whose stored address is not a Scoular channel. |
 | "The Teams channel … is no longer registered" on save | The registry row was deleted after the composer loaded. Refresh. |
+| The channel post ends with a confidentiality notice | Not ours. Exchange appends it under an IT mail-flow rule because the post travels as email. Ask IT to exempt mail from the Origination mailbox to `*.teams.ms`. |
+| The channel post shows a "View original email" link | Teams' own control on any email-originated post; cannot be hidden. Removing it would need a Teams bot, which the app-only path does not offer. |
+| A brand-new channel never appears in the `@` menu | It has no email address yet (Teams → channel → ⋯ → Get email address), and the API caches your list for 15 minutes, so set the address up before opening the note pane. |
 
 ## Files
 
