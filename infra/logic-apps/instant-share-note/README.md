@@ -94,9 +94,18 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    the user receives up to five copies — while the run still reports Succeeded. Diagnosed and fixed in
    the daily-recap workflow (commits `999f0d59`, `97b8ea08`); this is the same fix ported here.
 8. **`HTTP_Send_Channel_Post`** — the same Graph `sendMail` call, addressed to the Teams channel
-   address(es) collected in step 5, with the heading changed to "A note was shared with this channel".
-   Guarded by `Condition_Has_Channel_Recipients`, so it is skipped entirely unless a channel-routed
-   group was mentioned. Same managed identity, same shared mailbox, same `retryPolicy: none`.
+   address(es) collected in step 5, but with a deliberately **lean body**: one sentence naming who
+   shared a note about which producer, the note text with line breaks preserved, and a one-line
+   footer. No banner image, no layout tables, no stylesheet. Teams' email-to-channel rendering
+   flattens the Outlook-styled template and buries the note under the 580px header — the first live
+   test (2026-09-17) came out as "a big logo and a hard-to-find note". The subject line already becomes
+   the post's title in Teams, so the body only needs the content. Guarded by
+   `Condition_Has_Channel_Recipients`, so it is skipped entirely unless a channel-routed group or a
+   registered channel was mentioned. Same managed identity, same shared mailbox, same `retryPolicy: none`.
+
+   > **M-036 still holds here.** The body interpolates only the three `Compose_Safe_*` outputs plus a
+   > formatted date. The `<br>` tags come from a `replace()` on the ALREADY-ESCAPED note (newline →
+   > `<br>`), so they are ours, never user-authored; user text cannot smuggle markup in.
 
    > Posting to a channel is **email to the channel's "send to channel" address** — Microsoft retired
    > Office 365 connectors/incoming webhooks in May 2026, Graph cannot post a channel message with an
