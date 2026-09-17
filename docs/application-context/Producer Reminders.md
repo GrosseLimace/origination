@@ -120,10 +120,21 @@ feature dark until we choose to turn it on.
 On-behalf-of makes the API a confidential client, so it must prove its own identity to Entra. That is
 **configuration, not code** — `AzureAd:ClientCredentials`:
 
-- **Preferred, secretless:** a federated identity credential on the API registration backed by the
-  App Service managed identity (`"SourceType": "SignedAssertionFromManagedIdentity"`), keeping the
-  app's existing no-secrets posture.
-- **Otherwise:** a client secret or certificate in the same section, from Key Vault.
+**Answered by IT Security on 2026-09-17 — the secretless route, and it is live in Dev.** A federated
+identity credential on the `Origination API - Dev` registration is bound to the
+`app-origination-dev-eus` **system-assigned** managed identity, with token-exchange audience
+`api://AzureADTokenExchange`. No client secret anywhere. In `appsettings.Dev.json`:
+
+```json
+"AzureAd": { "ClientCredentials": [ { "SourceType": "SignedAssertionFromManagedIdentity" } ] }
+```
+
+`ManagedIdentityClientId` is omitted because the identity is system-assigned. QA and Production have
+**no credential and no consent yet, by design**; that is a config change on IT's side once Dev is
+proven. If Graph calls suddenly fail after an infrastructure change, the managed identity was probably
+recreated — the credential binds to its object id, and IT's tooling repairs it on the next deploy.
+IT also wants to hear when the feature has been exercised in Dev: we are the first app in the tenant
+to do an on-behalf-of exchange, and the sign-in log entry is what proves it.
 
 **Local development** has no managed identity, so a developer running the API locally gets no Graph
 token and the calendar write quietly does nothing — the reminder still saves, and the row shows its
