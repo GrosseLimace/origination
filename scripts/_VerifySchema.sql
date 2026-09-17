@@ -285,6 +285,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetPreferences', 'HiddenCrops',    'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'ModifiedAt',     'datetime2',     0),
 ('dbo', 'BidSheetPreferences', 'Month',          'int',           1),
+('dbo', 'BidSheetPreferences', 'PriceMode',      'nvarchar(10)',  1),
 ('dbo', 'BidSheetPreferences', 'PrintLayout',    'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedBidSheetIds', 'nvarchar(200)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedMonths',     'nvarchar(max)', 1),
@@ -629,7 +630,13 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260902185607_AddSelectedYearsToBidSheetPreference'),
 ('20260902194934_MakeBidSheetLocationsGlobal'),
 ('20260903124434_AddBidSheets'),
-('20260903133208_AddSelectedBidSheetIdToPreference');
+('20260903133208_AddSelectedBidSheetIdToPreference'),
+('20260909162456_AddBidSheetLocationLinkDisplayName'),
+('20260909191007_AddBidSheetShareMemberType'),
+('20260910143631_RetireYearlyPeriodAddCoverageAndChangeStamps'),
+('20260910145249_AlignPublishableBidViewWithCoverage'),
+('20260914131223_RetireBidSheetLocationOrders'),
+('20260916131452_SelectSeveralBidSheets');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
