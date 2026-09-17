@@ -17,7 +17,7 @@
             -InstrumentsPath ./barchart-snapshot/instruments `
             -QuotesPath      ./barchart-snapshot/quotes
 
-    Then seed dbo.BarchartCommodityMap (SeedBarchartCommodityMap.sql) and call apply-bids.
+    Then seed dbo.BarchartCommodityMap (Seed-BarchartCommodityMap.sql) and call apply-bids.
 
 .PARAMETER SourceConnectionString
     Database to read from. Defaults to Dev. Note there is no Authentication keyword: see -AccessToken.

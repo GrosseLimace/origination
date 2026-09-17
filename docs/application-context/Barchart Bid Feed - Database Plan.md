@@ -101,7 +101,7 @@ BarChart says "Corn (#2 Yellow)"; our bid grid runs on Scoular commodity codes. 
 | `CommodityCode`, `CommodityName`, `CommodityCategory` | Our code / name / category |
 | `IsActive` | Turn a mapping off without deleting it |
 
-**Seeded by `scripts/SeedBarchartCommodityMap.sql`** — 19 mappings, confirmed by Travis 2026-08-18.
+**Seeded by `scripts/Seed-BarchartCommodityMap.sql`** — 19 mappings, confirmed by Travis 2026-08-18. Dry-run by default; run once per environment after the BarChart migrations.
 Idempotent (a `MERGE` that only writes when something differs), so it is safe to re-run, and it prints a
 coverage report of every vendor commodity in the catalog with whether it will reach the Bid Sheet. Run it
 in each environment after the migration; **without it the feed loads normally and no bids ever appear**,

@@ -16,6 +16,8 @@
     broken" when it is only unseeded. Seed before asking anyone to test the feed in a new environment.
 
     Rows are as they stand on Dev (2026-09-16), where the feed has been running since 2026-08-31.
+    The 19 mappings were confirmed by Travis on 2026-08-18; this file supersedes the earlier
+    SeedBarchartCommodityMap.sql, which held the same rows without the dry-run or the extras report.
 
     NOTE ON THE DUPLICATES: several BarChart strings deliberately map to one Scoular code —
     "Wheat (Spring, Minneapolis)", "(Spring, Dark Northern)" and "(Spring, Minneapolis, 14.0)" are all
