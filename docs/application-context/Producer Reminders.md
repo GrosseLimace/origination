@@ -7,7 +7,7 @@ Written for: developers working on the Origination Workbench.
 An originator can schedule a follow-up against a producer ("call Smith Farms on the 20th") from the
 producer pane. The reminder appears in a **My Follow-Ups** card on that producer, as a colour-coded
 badge on the producer's row in the list, and as an event on the originator's own Outlook calendar
-with a 15-minute reminder.
+reminding them the day before.
 
 ## The two rules that shape everything else
 

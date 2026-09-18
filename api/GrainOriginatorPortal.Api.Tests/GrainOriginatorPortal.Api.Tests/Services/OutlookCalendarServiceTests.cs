@@ -109,7 +109,9 @@ public class OutlookCalendarServiceTests
         var root = _handler.Json!.RootElement;
         Assert.Equal("2026-03-10T10:30:00", root.GetProperty("start").GetProperty("dateTime").GetString());
         Assert.Equal("2026-03-10T11:00:00", root.GetProperty("end").GetProperty("dateTime").GetString());
-        Assert.Equal(15, root.GetProperty("reminderMinutesBeforeStart").GetInt32());
+        // A full day of notice, not a meeting quarter-hour: a follow-up has to arrive while there
+        // is still time to prepare for the call or move it.
+        Assert.Equal(1440, root.GetProperty("reminderMinutesBeforeStart").GetInt32());
         Assert.True(root.GetProperty("isReminderOn").GetBoolean());
     }
 

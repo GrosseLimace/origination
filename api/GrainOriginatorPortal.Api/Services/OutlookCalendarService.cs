@@ -33,8 +33,14 @@ public class OutlookCalendarService : IOutlookCalendarService
     /// <summary>How long the calendar block runs. A follow-up is a prompt to make a call, not a meeting.</summary>
     private const int EventMinutes = 30;
 
-    /// <summary>Outlook pops its reminder this many minutes before the block.</summary>
-    private const int ReminderMinutesBeforeStart = 15;
+    /// <summary>
+    /// Outlook pops its reminder this many minutes before the block — a full day.
+    ///
+    /// Not the quarter-hour a meeting would use. The point of a follow-up is to prompt a call while
+    /// there is still time to prepare for it or move it, and fifteen minutes' notice arrives too
+    /// late to do either. SIMS reached the same figure for its change-management events.
+    /// </summary>
+    private const int ReminderMinutesBeforeStart = 24 * 60;
 
     private readonly ITokenAcquisition _tokenAcquisition;
     private readonly IHttpClientFactory _httpClientFactory;
