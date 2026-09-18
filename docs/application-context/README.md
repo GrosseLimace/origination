@@ -29,6 +29,9 @@ This folder is the canonical reference for **what each screen of the Origination
 | [BarChart Ingestion API Contract](./Barchart%20Ingestion%20API%20Contract.md) | `/api/barchart-ingest` | The contract handed to the data-pipeline team: endpoints, auth, payload rules, daily call sequence |
 | [Usage Dashboard](./Usage%20Dashboard.md) | `/usage-dashboard` _(admin-only, env-gated)_ | Adoption metrics, originator-level activity, query-library usage and gaps |
 | [App Access Graph Check](./App%20Access%20Graph%20Check.md) | _(backend + diagnostic)_ | Entra access group read via managed identity; usage-dashboard/digest filtering; IT grants + outcome table |
+| [Producer Reminders](./Producer%20Reminders.md) | `/` _(env-gated)_ | Personal follow-up reminders on the producer pane and list badge, mirrored to the user's own Outlook calendar |
+| [What's New](./Whats%20New.md) | `/whats-new` | In-app release notes and the build stamp — how to write the entry before a PROD deploy |
+| [Teams Channel Mentions](./Teams%20Channel%20Mentions.md) | _(notes composer + `/daily-digest`)_ | @-mention a Teams channel to post a note there; delegated Graph channel lookup, the registry, and the consent still outstanding |
 
 ## Conventions used in these docs
 

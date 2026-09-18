@@ -33,6 +33,7 @@ import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversio
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
+import { environment } from '@env/environment';
 
 @Component({
   selector: 'app-build-list',
@@ -1707,6 +1708,12 @@ export class BuildListComponent {
     const search = this.librarySearchText().toLowerCase().trim();
     const category = this.selectedCategory();
     let items = this.queryLibrary();
+    // Prompt cards are database rows, so they appear the moment the migration runs — including in
+    // environments where the reminders feature is still switched off. There the follow-up card
+    // would resolve to nobody, every time, so hide it rather than leave a dead end on the page.
+    if (!environment.remindersEnabled) {
+      items = items.filter(q => !(q.tags || '').toLowerCase().includes('reminders'));
+    }
     if (category) items = items.filter(q => q.category === category);
     if (search) {
       items = items.filter(q =>
@@ -2855,6 +2862,7 @@ export class BuildListComponent {
       tickets: this.tickets(),
       notes: this.notes(),
       noteLastContacts: this.appState.noteLastContacts(),
+      myReminders: this.appState.myReminders(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       dpContracts: this.dpContracts(),

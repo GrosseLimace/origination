@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface DashboardCacheEntry {
@@ -177,6 +177,10 @@ export class AppStateService {
   /** Per-customer "last contacted" aggregate — the lightweight badge feed (all trade units,
    *  entitlement-filtered). Preloaded on TU change; tiny regardless of how many notes exist. */
   noteLastContacts = signal<NoteLastContact[]>([]);
+  /** The signed-in user's OWN open follow-up reminders — the producer-list reminder badge feed.
+   *  Private per user (the API only returns the caller's), and tiny: one row per scheduled
+   *  follow-up, no reminder text. Preloaded on TU change alongside noteLastContacts. */
+  myReminders = signal<ReminderDue[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
   dpContracts = signal<DpContract[]>([]);
   /** True once a DP fetch has COMPLETED for the current trade units, regardless of row count.
@@ -254,6 +258,10 @@ export class AppStateService {
 
   setNoteLastContacts(rows: NoteLastContact[]): void {
     this.noteLastContacts.set(rows);
+  }
+
+  setMyReminders(rows: ReminderDue[]): void {
+    this.myReminders.set(rows);
   }
 
   setStoredGrain(storedGrain: StoredGrain[]): void {
@@ -424,6 +432,7 @@ export class AppStateService {
     this.plantingIntentions.set([]);
     this.clearNotesCache();
     this.noteLastContacts.set([]);
+    this.myReminders.set([]);
     this.storedGrain.set([]);
     this.dpContracts.set([]);
     this.dpContractsLoaded.set(false);

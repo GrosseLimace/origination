@@ -9,6 +9,8 @@ import {
   PlantingIntention,
   Note,
   NoteLastContact,
+  Reminder,
+  ReminderDue,
   StoredGrain,
   SavedList,
   TeamMember,
@@ -162,6 +164,7 @@ export class ApiService {
       members: dto.members ?? [],
       ccList: dto.ccList ?? [],
       teamsChannelEmail: dto.teamsChannelEmail,
+
       enabled: dto.enabled,
       // Both flags are server-computed on every response now, including create/update. The `?? true`
       // fallbacks only cover a response shape older than this client.
@@ -568,10 +571,31 @@ export class ApiService {
   }
 
   /** Lookup data (people / trade units / groups) for the note "@" mention picker */
+  /** The Teams channels the signed-in user belongs to. The API reads these from Graph
+   *  on-behalf-of the caller, so the browser never talks to Graph and never holds a Graph token.
+   *  An empty list means consent has not been granted in this environment. */
+  getMyTeamsChannels(): Observable<import('@core/services/teams-directory.service').GraphTeamsChannel[]> {
+    return this.http
+      .get<import('@core/services/teams-directory.service').GraphTeamsChannel[]>(`${this.baseUrl}/teamschannels/mine`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Registers a Teams channel the composer read from Graph, or returns the row that already
+   *  exists for it. Idempotent, so the composer calls it on every pick without checking first.
+   *  Returns the registry id the note mention must carry. */
+  registerTeamsChannel(body: {
+    teamId: string; teamName: string; channelId: string; displayName: string; channelEmail: string;
+  }): Observable<{ id: number; displayName: string; teamName: string; channelId: string }> {
+    return this.http
+      .post<{ id: number; displayName: string; teamName: string; channelId: string }>(
+        `${this.baseUrl}/teamschannels`, body)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   getMentionCatalog(): Observable<MentionCatalog> {
     return this._dedupe('mention-catalog',
       this.http.get<MentionCatalog>(`${this.baseUrl}/notes/mention-catalog`)
-        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [] })))
+        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] })))
     );
   }
 
@@ -593,6 +617,63 @@ export class ApiService {
   /** Deletes a note */
   deleteNote(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/notes/${id}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // ==========================================================================
+  // Reminder Operations (personal producer follow-ups)
+  // ==========================================================================
+  // Every route below is scoped server-side to the signed-in user: reminders are private, so
+  // these never return or touch another originator's follow-ups.
+
+  /** The signed-in user's reminders for one producer, soonest due first. */
+  getRemindersByCustomer(customerId: number, includeCompleted = false): Observable<Reminder[]> {
+    const query = includeCompleted ? '?includeCompleted=true' : '';
+    return this.http.get<Reminder[]>(`${this.baseUrl}/reminders/customer/${customerId}${query}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Every OPEN reminder the signed-in user owns — tiny rows feeding the producer-list badge.
+   *  Payload is bounded by the user's own follow-ups, not by the team's. */
+  getMyReminders(): Observable<ReminderDue[]> {
+    return this._dedupe('reminders-mine',
+      this.http.get<ReminderDue[]>(`${this.baseUrl}/reminders/mine`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Creates a follow-up reminder. `dueAt` must be a UTC ISO string. */
+  createReminder(customerId: number, dueAt: string, subject?: string, notes?: string): Observable<Reminder> {
+    return this.http.post<Reminder>(`${this.baseUrl}/reminders`, { customerId, dueAt, subject, notes })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Edits the due date, subject or notes of one of the user's own reminders. */
+  /** Saves an edit. `timeZone` rides along because the API moves the Outlook event in the same call
+   *  when the due date changed, and Graph needs a local time plus a zone name. */
+  updateReminder(id: number, dueAt: string, subject?: string, notes?: string, timeZone?: string): Observable<Reminder> {
+    return this.http.put<Reminder>(`${this.baseUrl}/reminders/${id}`, { dueAt, subject, notes, timeZone })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Marks a reminder complete, or reopens it. */
+  setReminderCompleted(id: number, isCompleted: boolean): Observable<Reminder> {
+    return this.http.put<Reminder>(`${this.baseUrl}/reminders/${id}/complete`, { isCompleted })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Puts an existing reminder on the caller's own Outlook calendar. The API writes the event via
+   *  Graph on-behalf-of the user and records the id, so the browser never touches Graph. A reminder
+   *  that comes back with a null `outlookEventId` means the calendar could not be written, and the
+   *  row keeps offering the retry. */
+  addReminderToOutlook(id: number, body: { timeZone: string; producerLink: string }): Observable<Reminder> {
+    return this.http.post<Reminder>(`${this.baseUrl}/reminders/${id}/outlook`, body)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Deletes one of the user's own reminders. */
+  deleteReminder(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/reminders/${id}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

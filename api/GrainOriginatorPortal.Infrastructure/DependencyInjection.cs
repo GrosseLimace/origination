@@ -119,6 +119,7 @@ public static class DependencyInjection
         services.AddScoped<IFarmRepository, FarmRepository>();
         services.AddScoped<IPlantingIntentionRepository, PlantingIntentionRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
+        services.AddScoped<IReminderRepository, ReminderRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<ITicketRepository, TicketRepository>();
         services.AddScoped<IContractRepository, ContractRepository>();
@@ -131,6 +132,7 @@ public static class DependencyInjection
         services.AddScoped<IUsageRepository, UsageRepository>();
         services.AddScoped<ICustomerSyncRepository, CustomerSyncRepository>();
         services.AddScoped<IDailyRecapGroupRepository, DailyRecapGroupRepository>();
+        services.AddScoped<ITeamsChannelRepository, TeamsChannelRepository>();
         services.AddScoped<IMbpLocationSynonymRepository, MbpLocationSynonymRepository>();
 
         return services;

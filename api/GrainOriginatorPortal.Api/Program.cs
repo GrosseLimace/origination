@@ -86,7 +86,21 @@ builder.Services.AddProblemDetails();
 // Validates Azure AD JWT bearer tokens on every request.
 // Configuration in appsettings.json "AzureAd" section.
 // =============================================================================
-builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+// EnableTokenAcquisitionToCallDownstreamApi turns this API into a confidential client so it can
+// exchange the caller's token for a Graph token FOR THAT SAME USER (on-behalf-of). Required by IT
+// Security 2026-09-15: delegated Graph permissions live on the API registration, never the SPA,
+// because their reconciler rebuilds SPA permission lists from a template and would silently drop
+// anything added by hand. The permission boundary is identical either way — the user's own calendar,
+// the teams they are already in — because the user's identity flows through the exchange.
+//
+// HOW THE API AUTHENTICATES TO ENTRA is configuration, not code: "AzureAd:ClientCredentials". The
+// intent is the secretless route (a federated credential backed by the App Service managed identity),
+// but a secret or certificate would drop into the same section without touching anything here.
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
+    .EnableTokenAcquisitionToCallDownstreamApi()
+    // In-memory is right for this: tokens are per-user and short-lived, a cold instance simply
+    // re-exchanges, and a distributed cache would be new infrastructure for no correctness gain.
+    .AddInMemoryTokenCaches();
 // Who may read the WHOLE org and pick any manager. Everyone else who can open the dashboard —
 // i.e. everyone else in the Super Users group — is scoped to themselves plus their own reports.
 // Deliberately NOT derived from the Admin role: that role is how the Super Users group grants
@@ -241,6 +255,8 @@ builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
 builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
+builder.Services.AddScoped<IReminderService, ReminderService>();
+builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
@@ -261,6 +277,8 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
+builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
+builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity
@@ -373,6 +391,35 @@ builder.Services.AddHttpClient("graph", client =>
     });
 });
 
+// A second Graph client for the ONE call that must never be re-sent: creating an Outlook calendar
+// event. POST /me/events is non-idempotent and has no idempotency key, so when Graph accepts the
+// event but the response is lost — a client timeout, a reset, a gateway 504 raised after the event
+// was already written — a retry produces a SECOND event on the user's calendar. The shared "graph"
+// client above retries on exactly those failures (HttpRequestException / TaskCanceledException,
+// which is what its 10s timeout surfaces as), so a single create could land three events.
+//
+// This is the same hazard the Instant Share Note workflow hit with Graph sendMail, where the default
+// policy mailed up to five copies of one note; that was fixed with retryPolicy: none. Reads and the
+// idempotent calendar calls (PATCH the window, DELETE the event) keep using "graph" and its retry.
+//
+// The circuit breaker is kept: it fails fast, it does not re-send.
+builder.Services.AddHttpClient("graph-no-retry", client =>
+{
+    client.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddHttpMessageHandler<CorrelationIdOutboundHandler>()
+.AddResilienceHandler("graph-no-retry", pipeline =>
+{
+    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        FailureRatio = 0.5,
+        SamplingDuration = TimeSpan.FromSeconds(30),
+        MinimumThroughput = 5,
+        BreakDuration = TimeSpan.FromSeconds(30)
+    });
+});
+
 // =============================================================================
 // RATE LIMITING — security-guide.md §4.1 (CWE-770)
 // Fixed-window limiter: 300 requests per minute per authenticated user (or IP for anonymous).
@@ -407,6 +454,15 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>("application_db", tags: ["ready"]);
 
 var app = builder.Build();
+
+// Record which build is serving, so App Insights can tie a request or an error back to an exact
+// commit and workflow run. Stamped by CI via Directory.Build.props; reads "local" on a dev box.
+app.Logger.LogInformation(
+    "Origination API starting. Release {ReleaseVersion}, build {CommitSha} (#{BuildNumber}), environment {Environment}.",
+    GrainOriginatorPortal.Api.Controllers.WhatsNewController.Releases.Value.FirstOrDefault()?.Version ?? "none",
+    BuildInfo.CommitSha,
+    BuildInfo.BuildNumber,
+    app.Environment.EnvironmentName);
 
 // =============================================================================
 // Development: Warm up all three DB connections in parallel at startup.

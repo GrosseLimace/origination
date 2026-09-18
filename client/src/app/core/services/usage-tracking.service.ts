@@ -45,6 +45,12 @@ export class UsageTrackingService {
     });
   }
 
+  /** Release notes opened from the header or the profile menu. Not a screen in routeToFeature:
+   *  it is app chrome, and the backend maps GET /api/whats-new to the same system feature. */
+  trackWhatsNewOpened(): void {
+    this.postClickEvent('interaction', 'system', 'whats-new');
+  }
+
   // Customer Page interactions
   trackProfileOpened(customerId: string): void {
     this.postClickEvent('interaction', 'customers', 'profile-opened', customerId);

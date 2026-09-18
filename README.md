@@ -194,6 +194,8 @@ BarChart" picker; catalog reads are not trade-unit scoped because the catalog is
 | GET | `/geocode?address={address}` | Geocode an address via Azure Maps |
 | GET | `/diagnostics/health` | Health check |
 | GET | `/diagnostics/ping` | Ping |
+| GET | `/whats-new` | Curated release notes, newest first — see [What's New](docs/application-context/Whats%20New.md) |
+| GET | `/version` | Running release number plus the CI-stamped commit and workflow run |
 
 ## Data Sources
 
@@ -314,6 +316,7 @@ the app team owns directly are version-controlled under [`infra/`](infra/):
 | Resource | Location | Deploy |
 |----------|----------|--------|
 | Notes Daily Recap Logic App | [`infra/logic-apps/notes-daily-recap/`](infra/logic-apps/notes-daily-recap/) | `.github/workflows/deploy-logic-app-notes-daily-recap-dev.yml` (manual) |
+| Instant Share Note Logic App | [`infra/logic-apps/instant-share-note/`](infra/logic-apps/instant-share-note/) | `.github/workflows/deploy-logic-app-instant-share-note-dev.yml` (manual) |
 
 Logic Apps are stored as parameterized ARM templates and authenticate to Azure (SQL, Microsoft
 Graph, Azure OpenAI) via system-assigned managed identity — no secrets in the repo.
