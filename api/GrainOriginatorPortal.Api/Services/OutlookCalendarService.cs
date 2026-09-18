@@ -33,8 +33,14 @@ public class OutlookCalendarService : IOutlookCalendarService
     /// <summary>How long the calendar block runs. A follow-up is a prompt to make a call, not a meeting.</summary>
     private const int EventMinutes = 30;
 
-    /// <summary>Outlook pops its reminder this many minutes before the block.</summary>
-    private const int ReminderMinutesBeforeStart = 15;
+    /// <summary>
+    /// Outlook pops its reminder this many minutes before the block — a full day.
+    ///
+    /// Not the quarter-hour a meeting would use. The point of a follow-up is to prompt a call while
+    /// there is still time to prepare for it or move it, and fifteen minutes' notice arrives too
+    /// late to do either. SIMS reached the same figure for its change-management events.
+    /// </summary>
+    private const int ReminderMinutesBeforeStart = 24 * 60;
 
     private readonly ITokenAcquisition _tokenAcquisition;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -53,7 +59,8 @@ public class OutlookCalendarService : IOutlookCalendarService
     /// <inheritdoc />
     public async Task<string?> CreateEventAsync(OutlookEventRequest request, CancellationToken cancellationToken)
     {
-        var http = await CreateGraphClientAsync();
+        // Deliberately the non-retrying client: see NoRetryClient.
+        var http = await CreateGraphClientAsync(NoRetryClient);
         if (http is null) return null;
 
         var start = request.DueAtUtc;
@@ -150,7 +157,14 @@ public class OutlookCalendarService : IOutlookCalendarService
     /// <summary>A Graph client carrying an on-behalf-of token, or null when one cannot be obtained.
     /// Null is an ordinary outcome, not an error: it is what every environment looks like until
     /// admin consent is granted.</summary>
-    private async Task<HttpClient?> CreateGraphClientAsync()
+    /// <summary>The retrying Graph client, for the calendar calls that are safe to repeat.</summary>
+    private const string RetryingClient = "graph";
+
+    /// <summary>The non-retrying Graph client, for creating an event. A repeated POST /me/events
+    /// writes a SECOND event on the user's calendar, so an ambiguous timeout must not be retried.</summary>
+    private const string NoRetryClient = "graph-no-retry";
+
+    private async Task<HttpClient?> CreateGraphClientAsync(string clientName = RetryingClient)
     {
         string token;
         try
@@ -170,7 +184,7 @@ public class OutlookCalendarService : IOutlookCalendarService
             return null;
         }
 
-        var http = _httpClientFactory.CreateClient("graph");
+        var http = _httpClientFactory.CreateClient(clientName);
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return http;
     }

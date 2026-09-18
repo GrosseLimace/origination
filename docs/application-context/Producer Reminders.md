@@ -7,7 +7,7 @@ Written for: developers working on the Origination Workbench.
 An originator can schedule a follow-up against a producer ("call Smith Farms on the 20th") from the
 producer pane. The reminder appears in a **My Follow-Ups** card on that producer, as a colour-coded
 badge on the producer's row in the list, and as an event on the originator's own Outlook calendar
-with a 15-minute reminder.
+reminding them the day before.
 
 ## The two rules that shape everything else
 
@@ -94,6 +94,29 @@ never granted. We took its lessons, not its mechanism:
 Every failure path returns `null`/`false` and is swallowed, so a calendar problem never fails or
 rolls back the reminder. The database is the source of truth; the event is a best-effort mirror.
 
+### Creating an event must never be retried
+
+`POST /me/events` is non-idempotent and has no idempotency key. If Graph writes the event and the
+response is lost — a client timeout, a reset, a gateway 504 raised after the write — a retry puts a
+**second event** on someone's calendar. The shared `"graph"` HTTP client retries on exactly those
+failures (`HttpRequestException` / `TaskCanceledException`, which is what its 10-second timeout
+surfaces as), so a single create could have landed three events.
+
+So `CreateEventAsync` uses a separate **`"graph-no-retry"`** client: same base address, timeout and
+correlation handler, circuit breaker kept (it fails fast, it does not re-send), but no retry.
+`UpdateEventWindowAsync` and `DeleteEventAsync` keep `"graph"` — patching the same window twice is
+the same result, and an already-missing event already counts as success. `OutlookCalendarServiceTests`
+asserts which client each of the three calls asks for, so the distinction cannot quietly regress.
+
+This is the same hazard the Instant Share Note workflow hit with Graph `sendMail`, where the default
+policy mailed up to five copies of one note and the run still reported success; that was fixed with
+`retryPolicy: none`.
+
+One residual, accepted and unchanged: if a create times out *after* Graph wrote the event, the
+reminder keeps a null `OutlookEventId` and the row offers "Add to Outlook" — pressing it writes a
+second event. Removing the automatic retry makes that far rarer, and the alternative (reading the
+calendar back to check) needs a broader permission than we asked for.
+
 ### What moving server-side changed
 
 - **No consent popup.** The browser used to escalate to an MSAL popup on first use, which could
@@ -120,10 +143,21 @@ feature dark until we choose to turn it on.
 On-behalf-of makes the API a confidential client, so it must prove its own identity to Entra. That is
 **configuration, not code** — `AzureAd:ClientCredentials`:
 
-- **Preferred, secretless:** a federated identity credential on the API registration backed by the
-  App Service managed identity (`"SourceType": "SignedAssertionFromManagedIdentity"`), keeping the
-  app's existing no-secrets posture.
-- **Otherwise:** a client secret or certificate in the same section, from Key Vault.
+**Answered by IT Security on 2026-09-17 — the secretless route, and it is live in Dev.** A federated
+identity credential on the `Origination API - Dev` registration is bound to the
+`app-origination-dev-eus` **system-assigned** managed identity, with token-exchange audience
+`api://AzureADTokenExchange`. No client secret anywhere. In `appsettings.Dev.json`:
+
+```json
+"AzureAd": { "ClientCredentials": [ { "SourceType": "SignedAssertionFromManagedIdentity" } ] }
+```
+
+`ManagedIdentityClientId` is omitted because the identity is system-assigned. QA and Production have
+**no credential and no consent yet, by design**; that is a config change on IT's side once Dev is
+proven. If Graph calls suddenly fail after an infrastructure change, the managed identity was probably
+recreated — the credential binds to its object id, and IT's tooling repairs it on the next deploy.
+IT also wants to hear when the feature has been exercised in Dev: we are the first app in the tenant
+to do an on-behalf-of exchange, and the sign-in log entry is what proves it.
 
 **Local development** has no managed identity, so a developer running the API locally gets no Graph
 token and the calendar write quietly does nothing — the reminder still saves, and the row shows its
