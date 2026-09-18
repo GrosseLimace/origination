@@ -8,14 +8,16 @@ export const environment = {
   barchartBidsEnabled: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
-  // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
-  // on THIS environment's SPA app registration; without it the channel lookup returns nothing, so
-  // the flag stays off rather than showing an empty, apparently-broken picker section.
-  teamsChannelMentionsEnabled: false,
+  // @-mention a Teams channel in a note. The channel lookup runs in the API on-behalf-of the caller,
+  // so it needs delegated Team.ReadBasic.All + Channel.ReadBasic.All with admin consent on the API
+  // app registration (NOT the SPA — that moved server-side on 2026-09-15) and a federated credential
+  // binding that registration to the App Service managed identity. Both granted in QA on 2026-09-18,
+  // so this is on. Without them the lookup returns nothing and the picker section looks broken.
+  teamsChannelMentionsEnabled: true,
   calculatorEnabled: true,
-  // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
-  // admin consent on this env SPA app registration; flip to true once that consent is granted.
-  remindersEnabled: false,
+  // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite with
+  // admin consent on the API app registration, same credential as above. Granted in QA 2026-09-18.
+  remindersEnabled: true,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-qa.scoular.com/my-preferences',
