@@ -94,9 +94,69 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    the user receives up to five copies — while the run still reports Succeeded. Diagnosed and fixed in
    the daily-recap workflow (commits `999f0d59`, `97b8ea08`); this is the same fix ported here.
 8. **`HTTP_Send_Channel_Post`** — the same Graph `sendMail` call, addressed to the Teams channel
-   address(es) collected in step 5, with the heading changed to "A note was shared with this channel".
-   Guarded by `Condition_Has_Channel_Recipients`, so it is skipped entirely unless a channel-routed
-   group was mentioned. Same managed identity, same shared mailbox, same `retryPolicy: none`.
+   address(es) collected in step 5. **Teams renders the SUBJECT as the post's title**, so the subject
+   carries the whole header — `Caden Egr shared a note on A & B ORGANIC ACRES (MWACRST)` — and the
+   body is just a rule, the note at reading size, and a closing rule. An earlier revision repeated
+   that sentence as the first line of the body; the post then said the same thing twice, once as the
+   title and once underneath.
+
+   The closing rule matters: Exchange appends a confidentiality notice to the message, and without a
+   divider it reads as a continuation of the note. There is no timestamp or "sent by" line, because
+   Teams already shows when a post arrived and the subject already names the author.
+
+   The producer code is `Customer.ScoularId`, which is what the app calls `CustomerCode`
+   (`NoteRepository` maps `CustomerCode = Customer.ScoularId`); there is no `CustomerCode` column on
+   `dbo.Customer`. It sits in the subject **raw**, like the producer name beside it — see the note on
+   the subject below. No banner image, no layout tables, no stylesheet.
+   Teams' email-to-channel rendering flattens the Outlook-styled template and buries the note under
+   the 580px header — the first live test (2026-09-17) came out as "a big logo and a hard-to-find
+   note", and the second round of feedback was "the note is small and the first sentence repeats the
+   title". Guarded by `Condition_Has_Channel_Recipients`, so it is skipped entirely unless a
+   channel-routed group or a registered channel was mentioned. Same managed identity, same shared
+   mailbox, same `retryPolicy: none`.
+
+   **The channel's own `@` token is stripped from the note text.** A note reads "@Origination
+   Workbench Testing here's the update"; in the channel itself that tag is routing noise. The loop
+   **appends** each channel's display name to a `channelNames` array (`Append_Channel_Name` in
+   `Case_teams-channel`, `Append_App_Group_Name` on the Teams branch of `Case_app-group`), and
+   `Compose_Channel_Note_Stripped` removes those names from the raw note **after** the loop.
+   `Compose_Safe_Channel_Note` then trims and escapes the result; the email to people keeps using the
+   unstripped `Compose_Safe_Note`. **Only channel-type mentions are stripped, never people** — "@Sam
+   can you call them" is content. `name` on those rows is server-set (registry display name / group
+   name), not client-authored, so the search string is never user-controlled. An empty name is
+   recorded as a sentinel, because searching for a bare `@` would eat every at-sign in the note.
+
+   > **Why an array and a post-loop Compose, rather than rewriting the note as the loop goes.**
+   > The first attempt did exactly that and Azure refused to deploy it:
+   > *"Self reference is not supported when updating the value of variable 'channelNote'."* A
+   > `SetVariable` may not read the variable it is setting, so the note text cannot be rewritten in
+   > place. `AppendToArrayVariable` is append rather than self-reference and is allowed — which is
+   > also why `For_each_Mention` must stay pinned to `concurrency.repetitions: 1`: appends from
+   > parallel iterations can be lost.
+   >
+   > **The strip is bounded at five channels.** Logic Apps expressions have no fold, so each name
+   > costs one nested `replace()`. A note normally tags one channel; a sixth would simply keep its
+   > tag rather than fail.
+
+   > **The only value interpolated into the channel BODY is the escaped note.** Everything else that
+   > identifies the post lives in the subject, which is a plain-text Graph field and is deliberately
+   > left RAW — escaping it would print `&amp;` in the title of a producer like "A & B ORGANIC ACRES".
+   > Same reasoning as the person-mention subject, which has always been raw.
+
+   > **M-036 still holds here — and the ORDER matters.** Strip first, escape second.
+   > `Compose_Channel_Note_Stripped` runs after the loop, then `Compose_Safe_Channel_Note` escapes
+   > `& < >` on the stripped text; the
+   > body interpolates only that output plus a formatted date. The `<br>` tags come from a
+   > `replace()` on the ALREADY-ESCAPED note, so they are ours, never user-authored. If the stripped
+   > note is empty (a note that was only the tag) the body says "(no note text)" rather than posting a
+   > blank.
+
+   > **Two things about the post that are NOT ours to change**, because it arrives as email:
+   > the **confidentiality notice** is appended by an Exchange mail-flow rule IT owns (an exemption for
+   > mail from the Origination mailbox to `*.teams.ms` is a one-line ask), and the **"View original
+   > email"** link is Teams' own control on any email-originated post. Removing that would need a real
+   > Teams bot posting messages, which is the app-only path Microsoft does not offer (see the
+   > feasibility table in `docs/application-context/Teams Channel Mentions.md`).
 
    > Posting to a channel is **email to the channel's "send to channel" address** — Microsoft retired
    > Office 365 connectors/incoming webhooks in May 2026, Graph cannot post a channel message with an
