@@ -201,7 +201,7 @@ public class PlantingIntentionService : IPlantingIntentionService
 
     /// <inheritdoc />
     public Task DeleteAsync(int intentionId, CancellationToken cancellationToken) =>
-        _repository.DeleteAsync(intentionId, cancellationToken);
+        _repository.DeleteAsync(intentionId, _requestContext.GetCurrentUser(), cancellationToken);
 
     private async Task<List<PlantingIntentionResponse>> MapWithNamesAsync(List<PlantingIntention> intentions, CancellationToken cancellationToken)
     {

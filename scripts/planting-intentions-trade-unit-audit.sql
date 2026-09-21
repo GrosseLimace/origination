@@ -16,6 +16,9 @@
 --      These count on no single-trade-unit dashboard view until re-tagged.
 --   C. Blank tags — rows with no trade unit at all (legacy). These still count under the
 --      producer's membership, as before the fix.
+--
+-- Soft-deleted rows (IsDeleted = 1) are excluded everywhere: they are hidden from the app by a
+-- global query filter, so nobody needs to re-tag them.
 -- =============================================================================
 SET NOCOUNT ON;
 
@@ -33,6 +36,7 @@ Orphaned AS (
     SELECT pi.Id
     FROM dbo.ProducerPlantingIntentions pi
     WHERE pi.TradeUnit <> ''
+      AND pi.IsDeleted = 0
       AND NOT EXISTS (
             SELECT 1 FROM dbo.CustomerTradeUnit ctu
             WHERE ctu.CustomerId = pi.CustomerId
@@ -44,6 +48,7 @@ SELECT 'A. Ambiguous (producer on 2+ trade units)' AS Section,
        COUNT(*) AS Rows_, SUM(pi.Acres) AS Acres
 FROM dbo.ProducerPlantingIntentions pi
 JOIN MultiTu m ON m.CustomerId = pi.CustomerId
+WHERE pi.IsDeleted = 0
 UNION ALL
 SELECT 'B. Orphaned (tag not among producer''s active trade units)',
        COUNT(*), SUM(pi.Acres)
@@ -52,7 +57,7 @@ JOIN Orphaned o ON o.Id = pi.Id
 UNION ALL
 SELECT 'C. Blank tag', COUNT(*), SUM(pi.Acres)
 FROM dbo.ProducerPlantingIntentions pi
-WHERE pi.TradeUnit = '';
+WHERE pi.TradeUnit = '' AND pi.IsDeleted = 0;
 
 -- A. Ambiguous tags — hand this list to the business.
 WITH MultiTu AS (
@@ -78,6 +83,7 @@ SELECT pi.Id            AS IntentionId,
 FROM dbo.ProducerPlantingIntentions pi
 JOIN MultiTu m       ON m.CustomerId = pi.CustomerId
 LEFT JOIN dbo.Customer c ON c.Id = pi.CustomerId
+WHERE pi.IsDeleted = 0
 ORDER BY c.Name, pi.PlantingYear DESC, pi.Crop, pi.[Type];
 
 -- B. Orphaned tags — includes whether the producer was removed from that trade unit by a user
@@ -106,6 +112,7 @@ OUTER APPLY (
     ORDER BY i.ModifiedAt DESC
 ) inactive
 WHERE pi.TradeUnit <> ''
+  AND pi.IsDeleted = 0
   AND NOT EXISTS (
         SELECT 1 FROM dbo.CustomerTradeUnit ctu
         WHERE ctu.CustomerId = pi.CustomerId
@@ -128,5 +135,5 @@ SELECT pi.Id            AS IntentionId,
        pi.CreatedBy, pi.CreatedAt
 FROM dbo.ProducerPlantingIntentions pi
 LEFT JOIN dbo.Customer c ON c.Id = pi.CustomerId
-WHERE pi.TradeUnit = ''
+WHERE pi.TradeUnit = '' AND pi.IsDeleted = 0
 ORDER BY c.Name, pi.PlantingYear DESC, pi.Crop;

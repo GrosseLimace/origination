@@ -538,21 +538,6 @@ public class CustomerRepository : ICustomerRepository
         return customers;
     }
 
-    public async Task UpdateAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken)
-    {
-        var exists = await _appContext.Customers.AsNoTracking()
-            .AnyAsync(c => c.Id == customerId, cancellationToken);
-        if (!exists)
-        {
-            _logger.LogWarning("Customer {CustomerId} not found for update", customerId);
-            return;
-        }
-
-        // Location / Phone / Email originate from the ODS and cannot be written from here.
-        // FarmIds / LinkedProducerIds / TotalAcres are not persisted via this path — they live
-        // on ProducerDetails and are updated through the ProducerDetails endpoints.
-        _logger.LogInformation("UpdateCustomerAsync called for {CustomerId} — no-op (write path lives on ProducerDetails).", customerId);
-    }
 
     public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
     {
@@ -606,6 +591,17 @@ public class CustomerRepository : ICustomerRepository
         var existingByCode = existingTus.ToDictionary(t => t.TradeUnit, StringComparer.OrdinalIgnoreCase);
         var desired = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
 
+        // Snapshot the active codes BEFORE the reconcile loops below mutate these entities in
+        // place — the audit line needs the before/after pair, and by the time we log it the
+        // objects have already been changed. AR-03 leans on attribution as its compensating
+        // control, so this write in particular has to be reconstructable: it rewrites
+        // dbo.CustomerTradeUnit, which is the table every other authorization decision reads.
+        var beforeCodes = existingTus
+            .Where(t => t.IsActive)
+            .Select(t => t.TradeUnit)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         // Activate / insert every desired code as a manual assignment. Re-adding a code that
         // exists (e.g. a previously-removed manual row, IsActive=false) reactivates it in place
         // rather than inserting a duplicate.
@@ -647,7 +643,7 @@ public class CustomerRepository : ICustomerRepository
         // Soft-deactivate manual assignments the user removed (active manual TUs not in the
         // desired set). The row is preserved so it can be re-added/reactivated later. Sync
         // assignments (IsManual=false) are never touched — they're locked in the UI.
-        var deactivated = 0;
+        var deactivatedCodes = new List<string>();
         foreach (var existing in existingTus)
         {
             if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
@@ -655,13 +651,23 @@ public class CustomerRepository : ICustomerRepository
                 existing.IsActive = false;
                 existing.ModifiedAt = now;
                 existing.ModifiedBy = currentUser;
-                deactivated++;
+                deactivatedCodes.Add(existing.TradeUnit);
             }
         }
 
         await _appContext.SaveChangesAsync(cancellationToken);
-        _logger.LogInformation("AssignTradeUnits: customer {CustomerId} reconciled to {Count} manual TU(s) [{Codes}], {Deactivated} deactivated",
-            customerId, codes.Count, string.Join(", ", codes), deactivated);
+        // Structured AUDIT_UPDATE, matching the sibling DeactivateTradeUnitAsync below. This was
+        // a bare LogInformation with no audit code and no acting user until H-071 (2026-09-21)
+        // asked for one — AR-03 claimed "mutations are attributable (audit logging + ...)" while
+        // the row stamps were there but the log was not queryable as an audit event. Same gap
+        // H-062 found under AR-01 on the producer-details delete: verify a stated compensating
+        // control per route rather than trusting the register.
+        _logger.LogInformation(
+            "Customer trade units reassigned [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} Before=[{Before}] After=[{After}] Deactivated=[{Deactivated}]",
+            "AUDIT_UPDATE", "DataMutation", customerId, currentUser,
+            string.Join(", ", beforeCodes),
+            string.Join(", ", codes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase)),
+            string.Join(", ", deactivatedCodes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase)));
         return AssignTradeUnitsResult.Ok;
     }
 

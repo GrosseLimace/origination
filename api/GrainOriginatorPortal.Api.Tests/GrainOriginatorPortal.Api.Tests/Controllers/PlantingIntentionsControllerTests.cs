@@ -11,6 +11,7 @@ using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
@@ -22,7 +23,11 @@ public class PlantingIntentionsControllerTests
     public PlantingIntentionsControllerTests()
     {
         _serviceMock = new Mock<IPlantingIntentionService>();
-        _sut = new PlantingIntentionsController(_serviceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object);
+        // The request context names the actor in the AUDIT_ log lines (M-043); a stub suffices here.
+        var requestContext = new Mock<IRequestContextService>();
+        requestContext.Setup(r => r.GetCurrentUser()).Returns("tester");
+        _sut = new PlantingIntentionsController(_serviceMock.Object, requestContext.Object,
+            new Mock<ILogger<PlantingIntentionsController>>().Object);
     }
 
     // -------------------------------------------------------------------------

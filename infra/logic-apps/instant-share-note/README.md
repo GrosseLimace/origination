@@ -18,11 +18,34 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    - `person` → **always `<local part of id>@scoular.com`** — the id's domain, if any, is discarded;
    - `trade-unit` → members of `[dbo].[UserTradeUnitAssignments]` (Entitlements), each `<UserId>@scoular.com`;
    - `trade-unit-group` → members of `[dbo].[UserGroupAssignments]` (Entitlements), each `<UserId>@scoular.com`;
-   - `app-group` → **intentionally resolves to nothing here.** One of the user's own groups; the API
-     flattens it into member rows of the three types above before the note is ever stored, so by the
-     time this workflow sees it the recipients are already present as siblings. The empty
-     `Case_app-group` exists so that no-op is explicit rather than an accident of the `default` branch.
+   - `teams-channel` → a **registered Teams channel** (`[dbo].[TeamsChannels]`), picked straight from
+     the composer's "@" menu. `Get_Teams_Channel` reads the row by its integer id and appends its
+     `ChannelEmail` to `channelRecipient`. Same address handling as below: the note carries only the
+     id, the workflow re-checks the Scoular-tenant shape of what it read, and a missing or foreign
+     address collects into `unresolvedTypes` and fails the run.
+   - `app-group` → **two outcomes, decided by the group's delivery method.** `Get_App_Group` reads
+     `[dbo].[DailyRecapGroups]` for the mention's id (a numeric key the API pins, so it is safe to
+     interpolate into the `$filter`). Delivery method is the group's whole routing decision — there
+     is no separate per-group mention switch.
+     - **`DeliveryMethod = 'email'` (the common case): resolves to nothing here.** The API already
+       flattened the group into member rows of the three types above before the note was stored, so
+       the recipients are present as siblings. The branch is explicit rather than an accident of
+       `default`.
+     - **`DeliveryMethod = 'teams'`: the group's `TeamsChannelEmail` becomes the recipient** and its
+       members are *not* expanded — the note is posted to the channel **instead of** being emailed to
+       them. The address is appended to a separate `channelRecipient` variable and sent by
+       `HTTP_Send_Channel_Post`, so a note mentioning both a person and a channel produces one
+       ordinary email and one channel post.
    Addresses are de-duplicated with `union()`.
+
+   > **Security — the channel address is read here, never taken from the note.** The stored mention
+   > row carries only `{type:"app-group", id:"7"}`; `NoteService.NormalizeMention` drops `email` on
+   > every non-person row. So the destination cannot be client-authored, which is the same property
+   > M-025 / M-025a established for person recipients. The workflow **re-checks the shape** it reads
+   > (`*.teams.ms` host, local part ending `.scoular.com`) even though `RecapGroupRequest.Validate`
+   > already enforced it on save — a row edited directly in SQL must not become an exfiltration path.
+   > A Teams group whose address is missing or fails that check appends to `unresolvedTypes` and
+   > **fails the run** rather than silently notifying nobody.
 
    > **Unknown types fail the run.** The `default` branch collects the type into `unresolvedTypes`
    > and `Condition_Unresolved_Mention_Types` then terminates the run as **Failed**. Previously
@@ -60,6 +83,9 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    > sits in a text node; none is inside an attribute value. The **`subject` is deliberately raw** —
    > it is a plain-text field in the Graph payload, and escaping it would show literal `&amp;` to
    > recipients. See `SECURITY-REVIEWS/ACCEPTED-RISKS.md` (**M-036**).
+   > The three `Compose_Safe_*` actions sit at the `Condition_Has_Mentions` level (not inside
+   > `Condition_Has_Recipients`) so both the email and the channel post interpolate the same escaped
+   > values. Both sends `runAfter` all three.
 7. **`HTTP_Send_Share_Email`** — sends the note (Regarding / Note / From / Created) via **Microsoft Graph
    `sendMail`** as the shared mailbox, to the resolved recipients. No AI summary — the raw note is shared.
    Runs with **`retryPolicy: none`** and **no chunked transfer**: Graph `sendMail` is a non-idempotent
@@ -67,6 +93,81 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    reset, or a gateway 504 raised after the backend already delivered), the default policy re-POSTs and
    the user receives up to five copies — while the run still reports Succeeded. Diagnosed and fixed in
    the daily-recap workflow (commits `999f0d59`, `97b8ea08`); this is the same fix ported here.
+8. **`HTTP_Send_Channel_Post`** — the same Graph `sendMail` call, addressed to the Teams channel
+   address(es) collected in step 5. **Teams renders the SUBJECT as the post's title**, so the subject
+   carries the whole header — `Caden Egr shared a note on A & B ORGANIC ACRES (MWACRST)` — and the
+   body is just a rule, the note at reading size, and a closing rule. An earlier revision repeated
+   that sentence as the first line of the body; the post then said the same thing twice, once as the
+   title and once underneath.
+
+   The closing rule matters: Exchange appends a confidentiality notice to the message, and without a
+   divider it reads as a continuation of the note. There is no timestamp or "sent by" line, because
+   Teams already shows when a post arrived and the subject already names the author.
+
+   The producer code is `Customer.ScoularId`, which is what the app calls `CustomerCode`
+   (`NoteRepository` maps `CustomerCode = Customer.ScoularId`); there is no `CustomerCode` column on
+   `dbo.Customer`. It sits in the subject **raw**, like the producer name beside it — see the note on
+   the subject below. No banner image, no layout tables, no stylesheet.
+   Teams' email-to-channel rendering flattens the Outlook-styled template and buries the note under
+   the 580px header — the first live test (2026-09-17) came out as "a big logo and a hard-to-find
+   note", and the second round of feedback was "the note is small and the first sentence repeats the
+   title". Guarded by `Condition_Has_Channel_Recipients`, so it is skipped entirely unless a
+   channel-routed group or a registered channel was mentioned. Same managed identity, same shared
+   mailbox, same `retryPolicy: none`.
+
+   **The channel's own `@` token is stripped from the note text.** A note reads "@Origination
+   Workbench Testing here's the update"; in the channel itself that tag is routing noise. The loop
+   **appends** each channel's display name to a `channelNames` array (`Append_Channel_Name` in
+   `Case_teams-channel`, `Append_App_Group_Name` on the Teams branch of `Case_app-group`), and
+   `Compose_Channel_Note_Stripped` removes those names from the raw note **after** the loop.
+   `Compose_Safe_Channel_Note` then trims and escapes the result; the email to people keeps using the
+   unstripped `Compose_Safe_Note`. **Only channel-type mentions are stripped, never people** — "@Sam
+   can you call them" is content. `name` on those rows is server-set (registry display name / group
+   name), not client-authored, so the search string is never user-controlled. An empty name is
+   recorded as a sentinel, because searching for a bare `@` would eat every at-sign in the note.
+
+   > **Why an array and a post-loop Compose, rather than rewriting the note as the loop goes.**
+   > The first attempt did exactly that and Azure refused to deploy it:
+   > *"Self reference is not supported when updating the value of variable 'channelNote'."* A
+   > `SetVariable` may not read the variable it is setting, so the note text cannot be rewritten in
+   > place. `AppendToArrayVariable` is append rather than self-reference and is allowed — which is
+   > also why `For_each_Mention` must stay pinned to `concurrency.repetitions: 1`: appends from
+   > parallel iterations can be lost.
+   >
+   > **The strip is bounded at five channels.** Logic Apps expressions have no fold, so each name
+   > costs one nested `replace()`. A note normally tags one channel; a sixth would simply keep its
+   > tag rather than fail.
+
+   > **The only value interpolated into the channel BODY is the escaped note.** Everything else that
+   > identifies the post lives in the subject, which is a plain-text Graph field and is deliberately
+   > left RAW — escaping it would print `&amp;` in the title of a producer like "A & B ORGANIC ACRES".
+   > Same reasoning as the person-mention subject, which has always been raw.
+
+   > **M-036 still holds here — and the ORDER matters.** Strip first, escape second.
+   > `Compose_Channel_Note_Stripped` runs after the loop, then `Compose_Safe_Channel_Note` escapes
+   > `& < >` on the stripped text; the
+   > body interpolates only that output plus a formatted date. The `<br>` tags come from a
+   > `replace()` on the ALREADY-ESCAPED note, so they are ours, never user-authored. If the stripped
+   > note is empty (a note that was only the tag) the body says "(no note text)" rather than posting a
+   > blank.
+
+   > **Two things about the post that are NOT ours to change**, because it arrives as email:
+   > the **confidentiality notice** is appended by an Exchange mail-flow rule IT owns (an exemption for
+   > mail from the Origination mailbox to `*.teams.ms` is a one-line ask), and the **"View original
+   > email"** link is Teams' own control on any email-originated post. Removing that would need a real
+   > Teams bot posting messages, which is the app-only path Microsoft does not offer (see the
+   > feasibility table in `docs/application-context/Teams Channel Mentions.md`).
+
+   > Posting to a channel is **email to the channel's "send to channel" address** — Microsoft retired
+   > Office 365 connectors/incoming webhooks in May 2026, Graph cannot post a channel message with an
+   > app-only identity (`ChannelMessage.Send` is delegated-only; the app-only permission is
+   > migration-only), and the Logic Apps Teams connector has no managed-identity support. Channel
+   > email is the only path that needs **no new Graph grant and no stored secret**. The daily-recap
+   > workflow has used it since 2026-06.
+   >
+   > **Channel prerequisite the team owner controls:** the channel must have email enabled, and its
+   > "who can send to this address" setting must allow senders from `scoular.com` (or anyone).
+   > "Team members only" bounces mail from the shared mailbox.
 
 ### Dedup / one-send guarantee
 
@@ -77,7 +178,8 @@ strictly read-only (`db_datareader`).
 > **v1 limitation:** only note **creation** is watched. Mentions added by **editing** an existing note are
 > not delivered. Adding that would require the SQL "when an item is modified" trigger plus a
 > `MentionsNotifiedAt` column and write-back (the identity would then need write access). Tracked as a
-> future enhancement.
+> future enhancement. This applies to channel posts exactly as it does to emails: mentioning a Teams
+> group while **editing** an existing note posts nothing.
 
 ## Mentions JSON contract
 
@@ -93,9 +195,32 @@ The Logic App reads `dbo.Notes.Mentions` (`nvarchar(max)`), which the API writes
 
   { "id": "7",     "name": "Corn Belt",   "type": "app-group" },
   { "id": "SFletcher", "name": "Sam Fletcher", "type": "person", "email": "SFletcher@scoular.com", "via": "app-group:7" },
-  { "id": "1084",  "name": "1084",        "type": "trade-unit", "via": "app-group:7" }
+  { "id": "1084",  "name": "1084",        "type": "trade-unit", "via": "app-group:7" },
+
+  { "id": "9",     "name": "Grain Desk",  "type": "app-group" },
+
+  { "id": "12",    "name": "Grain Desk",  "type": "teams-channel" }
 ]
 ```
+
+The **last row on its own** is a Teams-delivery group: no `via` siblings follow it, because the API
+deliberately does **not** expand a group that delivers to a channel. One bare `app-group` row with no
+expansions therefore means "post this to that group's channel" — the workflow reads the address from
+`DailyRecapGroups` and emails nobody. Note it carries **no `email` field**; the destination lives
+only in the database.
+
+The **final row** is a registered Teams channel: `id` is the `dbo.TeamsChannels` key, and again there
+is no `email` field — the address lives only in the database.
+
+> ⚠ **Deploy order for `teams-channel`: THIS WORKFLOW FIRST, then the API.** Unlike `app-group`,
+> which an older workflow skipped harmlessly, an unrecognised type hits the `default` branch and
+> **Terminate-Fails the run**. So a note carrying a `teams-channel` mention fails outright until the
+> workflow knows the type. Ship the workflow to an environment before enabling
+> `teamsChannelMentionsEnabled` there. (The flag is off in QA and prod, which is the safety net.)
+>
+> The `app-group` half is the other way round: `Get_App_Group` reads columns that already exist
+> (`DeliveryMethod`, `TeamsChannelEmail`), so it is safe on its own, and shipping the API first
+> merely avoids a Teams group briefly producing both member emails and a channel post.
 
 The last three rows show a group mention: the API writes the `app-group` row **plus** one row per
 member. Note the member rows are ordinary mentions — a `trade-unit` member stays a single row that

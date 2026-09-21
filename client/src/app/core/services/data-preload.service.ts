@@ -6,8 +6,9 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
-import { Customer, Contract, Ticket, NoteLastContact, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardSummary } from '@models';
+import { Customer, Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardSummary } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
+import { environment } from '@env/environment';
 
 @Injectable({ providedIn: 'root' })
 export class DataPreloadService {
@@ -121,6 +122,19 @@ export class DataPreloadService {
           })
         );
 
+        // The signed-in user's own open follow-ups — the same shape of feed as the last-contact
+        // aggregate above and just as cheap, so the reminder badge is ready with the list rather
+        // than popping in later. Skipped entirely while the feature is flagged off, so a build
+        // without calendar consent makes no reminder calls at all.
+        const reminders$ = environment.remindersEnabled
+          ? this.apiService.getMyReminders().pipe(
+              catchError(() => of([] as ReminderDue[])),
+              tap(data => {
+                this.appState.setMyReminders(data);
+              })
+            )
+          : of([] as ReminderDue[]);
+
         // Secondary group — each result streams into AppState as it arrives.
         // Using merge (not forkJoin) so fast calls like getCommodities don't wait
         // for slower calls like getPlantingIntentions to complete.
@@ -179,7 +193,7 @@ export class DataPreloadService {
           })
         );
 
-        return merge(customers$, contracts$, todaysTickets$, notes$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);
+        return merge(customers$, contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

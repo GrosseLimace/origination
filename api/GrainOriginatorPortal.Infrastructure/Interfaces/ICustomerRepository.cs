@@ -18,7 +18,6 @@ public interface ICustomerRepository
     Task<Customer?> GetByIdAsync(long id, CancellationToken cancellationToken);
     Task<Customer?> GetByScoularIdAsync(string scoularId, CancellationToken cancellationToken);
     Task<List<Customer>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken);
-    Task UpdateAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken);
     Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken);
     Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken);
     Task<HashSet<string>> GetOpenActivityTradeUnitsAsync(string scoularId, CancellationToken cancellationToken);

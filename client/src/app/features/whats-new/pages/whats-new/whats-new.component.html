@@ -1,0 +1,33 @@
+<div class="w-full">
+  <div class="text-center">
+    <h2 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">What's New</h2>
+    <p class="mt-2 text-[length:var(--text-fluid-sm)] text-gray-500 dark:text-gray-400">
+      Everything we have shipped to the Origination Workbench, newest first.
+    </p>
+  </div>
+
+  @if (loading()) {
+    <p class="mt-10 text-center text-sm text-gray-500 dark:text-gray-400">Loading release notes…</p>
+  } @else if (loadFailed()) {
+    <p class="mt-10 text-center text-sm text-scoular-red-accessible">
+      Release notes could not be loaded. Refresh to try again.
+    </p>
+  } @else if (releases().length === 0) {
+    <p class="mt-10 text-center text-sm text-gray-500 dark:text-gray-400">No updates have been published yet.</p>
+  } @else {
+    <!-- Padding is applied here rather than through app-card-content, which zeroes its own top
+         padding for the card header this layout deliberately does without. -->
+    <app-card class="mt-8 block">
+      <div class="p-6 sm:p-8">
+        <app-whats-new-release-list [releases]="releases()" />
+      </div>
+
+      @if (buildLine(); as line) {
+        <!-- Quote this line in a bug report and we can tell exactly which build you were on. -->
+        <div class="border-t border-gray-200 px-6 py-3 text-center dark:border-gray-700">
+          <span class="text-xs text-gray-400 dark:text-gray-500">{{ line }}</span>
+        </div>
+      }
+    </app-card>
+  }
+</div>

@@ -31,9 +31,24 @@ public class UsageTrackingMiddleware
         }
 
         var stopwatch = Stopwatch.StartNew();
-        await _next(context);
-        stopwatch.Stop();
 
+        // Record in a finally so a request that ends in an unhandled exception still counts. This
+        // middleware sits inside UseExceptionHandler's scope, so without this the throwing requests
+        // — exactly the ones the error-rate figures need — never reached the channel at all.
+        try
+        {
+            await _next(context);
+        }
+        finally
+        {
+            stopwatch.Stop();
+            TryRecord(context, path, stopwatch);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    private void TryRecord(HttpContext context, string path, Stopwatch stopwatch)
+    {
         var rawUserId = context.User.FindFirst("preferred_username")?.Value
             ?? context.User.FindFirst("oid")?.Value
             ?? context.User.Identity?.Name;

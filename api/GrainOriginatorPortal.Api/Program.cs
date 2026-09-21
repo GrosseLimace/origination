@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Identity.Web;
+using Microsoft.AspNetCore.Mvc;
 
 // Polly namespaces
 using Polly;
@@ -22,6 +23,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Models.Responses;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -86,7 +88,21 @@ builder.Services.AddProblemDetails();
 // Validates Azure AD JWT bearer tokens on every request.
 // Configuration in appsettings.json "AzureAd" section.
 // =============================================================================
-builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+// EnableTokenAcquisitionToCallDownstreamApi turns this API into a confidential client so it can
+// exchange the caller's token for a Graph token FOR THAT SAME USER (on-behalf-of). Required by IT
+// Security 2026-09-15: delegated Graph permissions live on the API registration, never the SPA,
+// because their reconciler rebuilds SPA permission lists from a template and would silently drop
+// anything added by hand. The permission boundary is identical either way — the user's own calendar,
+// the teams they are already in — because the user's identity flows through the exchange.
+//
+// HOW THE API AUTHENTICATES TO ENTRA is configuration, not code: "AzureAd:ClientCredentials". The
+// intent is the secretless route (a federated credential backed by the App Service managed identity),
+// but a secret or certificate would drop into the same section without touching anything here.
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
+    .EnableTokenAcquisitionToCallDownstreamApi()
+    // In-memory is right for this: tokens are per-user and short-lived, a cold instance simply
+    // re-exchanges, and a distributed cache would be new infrastructure for no correctness gain.
+    .AddInMemoryTokenCaches();
 // Who may read the WHOLE org and pick any manager. Everyone else who can open the dashboard —
 // i.e. everyone else in the Super Users group — is scoped to themselves plus their own reports.
 // Deliberately NOT derived from the Admin role: that role is how the Super Users group grants
@@ -111,6 +127,14 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAssertion(ctx =>
             GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.CanView(ctx.User)));
 });
+// Audit authorization denials where the framework decides them. The authorization middleware
+// short-circuits on a failed [Authorize] without calling the rest of the pipeline, so
+// SecurityAuditMiddleware (which reads the final status code downstream) never saw the ordinary
+// 401/403s it exists to log. This handler logs and then delegates to the default behaviour.
+builder.Services.AddSingleton<
+    Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler,
+    AuthorizationAuditResultHandler>();
+
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 
 // Usage tracking: bounded in-memory channel + background batch writer
@@ -202,6 +226,58 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow;
     });
 
+// Make [ApiController]'s automatic model-validation failures use the app's own error envelope.
+//
+// Every controller here carries [ApiController], which short-circuits a data-annotation failure
+// into the framework's RFC7807 ValidationProblemDetails *before* GlobalExceptionHandler or our own
+// ValidationException ever run. That is the single most common validation failure across the whole
+// write surface, and it was the one shape the Angular client can't read — so the identical
+// conceptual error produced two different bodies depending on whether it was caught by an
+// annotation or thrown by hand. One factory, and every controller agrees.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var http = context.HttpContext;
+        var traceId = http.Items[CorrelationIdMiddleware.ItemsKey]?.ToString() ?? http.TraceIdentifier;
+
+        // Field-level detail, same shape a thrown ValidationException produces.
+        var details = context.ModelState
+            .Where(kvp => kvp.Value?.Errors.Count > 0)
+            .SelectMany(kvp => kvp.Value!.Errors.Select(e => new ApiErrorDetail
+            {
+                Field = kvp.Key,
+                // ErrorMessage is empty when the failure came from a binding/parse exception;
+                // don't leak the exception text to the caller, which may name internal types.
+                Message = string.IsNullOrWhiteSpace(e.ErrorMessage)
+                    ? "The value provided is not valid for this field."
+                    : e.ErrorMessage,
+                Code = "VALIDATION_INVALID_FIELD",
+            }))
+            .ToList();
+
+        http.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("GrainOriginatorPortal.Api.ModelValidation")
+            .LogWarning(
+                "Validation error [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {FieldCount} field(s) failed on {Method} {Path}",
+                traceId, "VALIDATION_ERROR", "Validation", details.Count,
+                http.Request.Method, http.Request.Path.Value);
+
+        return new BadRequestObjectResult(new ApiErrorResponse
+        {
+            Error = new ApiErrorBody
+            {
+                Code = "VALIDATION_ERROR",
+                Message = "One or more fields failed validation.",
+                Details = details,
+                TraceId = traceId,
+                Timestamp = DateTime.UtcNow.ToString("O"),
+                Instance = http.Request.Path.Value,
+            }
+        });
+    };
+});
+
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
 builder.Services.AddOpenApi();
 
@@ -235,6 +311,8 @@ builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
 builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
+builder.Services.AddScoped<IReminderService, ReminderService>();
+builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
@@ -253,6 +331,8 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
+builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
+builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity
@@ -365,6 +445,35 @@ builder.Services.AddHttpClient("graph", client =>
     });
 });
 
+// A second Graph client for the ONE call that must never be re-sent: creating an Outlook calendar
+// event. POST /me/events is non-idempotent and has no idempotency key, so when Graph accepts the
+// event but the response is lost — a client timeout, a reset, a gateway 504 raised after the event
+// was already written — a retry produces a SECOND event on the user's calendar. The shared "graph"
+// client above retries on exactly those failures (HttpRequestException / TaskCanceledException,
+// which is what its 10s timeout surfaces as), so a single create could land three events.
+//
+// This is the same hazard the Instant Share Note workflow hit with Graph sendMail, where the default
+// policy mailed up to five copies of one note; that was fixed with retryPolicy: none. Reads and the
+// idempotent calendar calls (PATCH the window, DELETE the event) keep using "graph" and its retry.
+//
+// The circuit breaker is kept: it fails fast, it does not re-send.
+builder.Services.AddHttpClient("graph-no-retry", client =>
+{
+    client.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddHttpMessageHandler<CorrelationIdOutboundHandler>()
+.AddResilienceHandler("graph-no-retry", pipeline =>
+{
+    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        FailureRatio = 0.5,
+        SamplingDuration = TimeSpan.FromSeconds(30),
+        MinimumThroughput = 5,
+        BreakDuration = TimeSpan.FromSeconds(30)
+    });
+});
+
 // =============================================================================
 // RATE LIMITING — security-guide.md §4.1 (CWE-770)
 // Fixed-window limiter: 300 requests per minute per authenticated user (or IP for anonymous).
@@ -380,6 +489,38 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit = 1000,
                 Window = TimeSpan.FromMinutes(1)
             }));
+
+    // The limiter writes its own rejection, so it never passes through GlobalExceptionHandler —
+    // which left the app's only real 429 with an empty body and no Retry-After, and made the
+    // handler's own 429 branch dead code. Emit the standard error envelope here instead.
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        var http = context.HttpContext;
+        var traceId = http.Items[CorrelationIdMiddleware.ItemsKey]?.ToString() ?? http.TraceIdentifier;
+
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var window)
+            ? (int)window.TotalSeconds
+            : 30;
+        http.Response.Headers.RetryAfter = retryAfter.ToString();
+
+        http.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("GrainOriginatorPortal.Api.RateLimiting")
+            .LogWarning(
+                "Rate limit exceeded [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Method} {Path} → 429",
+                traceId, "RATE_LIMIT_EXCEEDED", "Security", http.Request.Method, http.Request.Path.Value);
+
+        await http.Response.WriteAsJsonAsync(new ApiErrorResponse
+        {
+            Error = new ApiErrorBody
+            {
+                Code = "RATE_LIMIT_EXCEEDED",
+                Message = "Too many requests. Please wait a moment and try again.",
+                TraceId = traceId,
+                Timestamp = DateTime.UtcNow.ToString("O"),
+                Instance = http.Request.Path.Value
+            }
+        }, cancellationToken);
+    };
 });
 
 // =============================================================================
@@ -399,6 +540,15 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>("application_db", tags: ["ready"]);
 
 var app = builder.Build();
+
+// Record which build is serving, so App Insights can tie a request or an error back to an exact
+// commit and workflow run. Stamped by CI via Directory.Build.props; reads "local" on a dev box.
+app.Logger.LogInformation(
+    "Origination API starting. Release {ReleaseVersion}, build {CommitSha} (#{BuildNumber}), environment {Environment}.",
+    GrainOriginatorPortal.Api.Controllers.WhatsNewController.Releases.Value.FirstOrDefault()?.Version ?? "none",
+    BuildInfo.CommitSha,
+    BuildInfo.BuildNumber,
+    app.Environment.EnvironmentName);
 
 // =============================================================================
 // Development: Warm up all three DB connections in parallel at startup.

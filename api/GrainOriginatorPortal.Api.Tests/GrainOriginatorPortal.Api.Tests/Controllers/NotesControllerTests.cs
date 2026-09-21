@@ -1,4 +1,5 @@
 // Microsoft namespaces
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -25,8 +26,11 @@ public class NotesControllerTests
         _serviceMock = new Mock<INoteService>();
         // TradeUnitPreferencesDbContext and the group service are only used by the mention-catalog endpoint,
         // which these tests don't exercise — neither is dereferenced by the methods under test.
+        // The request context names the actor in the AUDIT_ log lines (M-041); a stub suffices here.
+        var requestContext = new Mock<IRequestContextService>();
+        requestContext.Setup(r => r.GetCurrentUser()).Returns("tester");
         _sut = new NotesController(_serviceMock.Object, null!, new Mock<IDailyRecapGroupService>().Object,
-            new Mock<ILogger<NotesController>>().Object);
+            new Mock<ITeamsChannelService>().Object, requestContext.Object, new Mock<ILogger<NotesController>>().Object);
     }
 
     // -------------------------------------------------------------------------

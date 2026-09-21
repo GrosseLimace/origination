@@ -60,6 +60,13 @@ export const routes: Routes = [
         loadComponent: () => import('./features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component').then(m => m.UserUsageDetailComponent)
       }
     : { path: 'usage-dashboard/users/:userId', redirectTo: '' },
+  // Release notes. Not flag-gated: the notes file itself is the switch — a deploy that adds no
+  // entry announces nothing, and the page simply says nothing has been published yet.
+  {
+    path: 'whats-new',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/whats-new/pages/whats-new/whats-new.component').then(m => m.WhatsNewComponent)
+  },
   {
     path: '**',
     redirectTo: ''

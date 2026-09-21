@@ -5,6 +5,7 @@ using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -18,17 +19,23 @@ public class NotesController : ControllerBase
     private readonly INoteService _service;
     private readonly TradeUnitPreferencesDbContext _entitlementsDb;
     private readonly IDailyRecapGroupService _recapGroups;
+    private readonly ITeamsChannelService _teamsChannels;
+    private readonly IRequestContextService _requestContext;
     private readonly ILogger<NotesController> _logger;
 
     public NotesController(
         INoteService service,
         TradeUnitPreferencesDbContext entitlementsDb,
         IDailyRecapGroupService recapGroups,
+        ITeamsChannelService teamsChannels,
+        IRequestContextService requestContext,
         ILogger<NotesController> logger)
     {
         _service = service;
         _entitlementsDb = entitlementsDb;
         _recapGroups = recapGroups;
+        _teamsChannels = teamsChannels;
+        _requestContext = requestContext;
         _logger = logger;
     }
 
@@ -49,6 +56,11 @@ public class NotesController : ControllerBase
         [FromQuery] string? customerIds = null,
         CancellationToken cancellationToken = default)
     {
+        // Not entitlement-scoped, by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02), which
+        // lists this route. The `tradeUnits` arg narrows by the CUSTOMER's trade unit when a caller
+        // passes it — it is a relevance filter, not a boundary, and no caller passes it today.
+        // Re-flagged as M-042 (2026-09-21); scoping it would restrict nobody, because originators
+        // self-assign their trade units in the Trade Unit Preferences app. See AR-02's banner.
         return Ok(await _service.GetAllAsync(tradeUnits, sinceDays, contentAny, authorAny, pinnedOnly, customerIds, cancellationToken));
     }
 
@@ -62,6 +74,9 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(List<NoteLastContactResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<NoteLastContactResponse>>> GetLastContact(CancellationToken cancellationToken = default)
     {
+        // Not entitlement-scoped, by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02), which
+        // lists this route. Ships dates and customer codes only — no note bodies — and the customer
+        // LIST is separately scoped, so surplus rows never reach the UI. Re-flagged as M-042.
         return Ok(await _service.GetLastContactAsync(cancellationToken));
     }
 
@@ -88,14 +103,11 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(MentionCatalogResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<MentionCatalogResponse>> GetMentionCatalog(CancellationToken cancellationToken = default)
     {
-        // Derive the caller's UserId from the UPN claim (e.g. CEgr@scoular.com → CEgr),
-        // matching how vw_UserTradeUnitPreferences.UserId is stored.
-        var upn = User.FindFirst("preferred_username")?.Value
-            ?? User.FindFirst("upn")?.Value
-            ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
-            ?? User.Identity?.Name
-            ?? string.Empty;
-        var userId = upn.Contains('@') ? upn.Split('@')[0] : upn;
+        // The caller's UserId is the UPN prefix (e.g. CEgr@scoular.com → CEgr), matching how
+        // vw_UserTradeUnitPreferences.UserId is stored — which is what
+        // IRequestContextService.GetCurrentUserShortName already resolves. The claim chain used to
+        // be reimplemented here and in EntitlementsController.GetCatalog.
+        var userId = _requestContext.GetCurrentUserShortName();
 
         var response = new MentionCatalogResponse();
 
@@ -172,17 +184,24 @@ public class NotesController : ControllerBase
         // Same visibility query NoteService expands with, so the picker can never offer a group the
         // save would reject. NOT filtered on Enabled — that flag means "send the daily recap",
         // which is orthogonal to being mentionable. Empty groups are omitted: mentioning one would
-        // notify nobody.
+        // notify nobody — UNLESS it delivers to a Teams channel, which is a recipient in its own
+        // right, so a Teams entry with no members is still worth offering.
         try
         {
             response.AppGroups = (await _recapGroups.GetAllAsync(cancellationToken))
-                .Where(g => g.Members.Count > 0)
-                .Select(g => new MentionCatalogAppGroup
+                .Select(g => new
                 {
-                    GroupId = g.Id,
-                    Name = g.Name,
-                    MemberCount = g.Members.Count,
-                    IsOwner = g.IsOwner,
+                    Group = g,
+                    PostsToChannel = string.Equals(g.DeliveryMethod, "teams", StringComparison.OrdinalIgnoreCase),
+                })
+                .Where(x => x.Group.Members.Count > 0 || x.PostsToChannel)
+                .Select(x => new MentionCatalogAppGroup
+                {
+                    GroupId = x.Group.Id,
+                    Name = x.Group.Name,
+                    MemberCount = x.Group.Members.Count,
+                    IsOwner = x.Group.IsOwner,
+                    PostsToChannel = x.PostsToChannel,
                 })
                 .OrderBy(g => g.Name)
                 .ToList();
@@ -190,6 +209,26 @@ public class NotesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Mention catalog: groups unavailable for user {UserId} — omitting them", userId);
+        }
+
+        // ── Source 3: registered Teams channels ───────────────────────────────────────────────
+        // Same independent-failure-domain treatment: losing the registry must not empty the rest of
+        // the picker. Deliberately unscoped — see MentionCatalogResponse.TeamsChannels.
+        try
+        {
+            response.TeamsChannels = (await _teamsChannels.GetAllAsync(cancellationToken))
+                .Select(c => new MentionCatalogTeamsChannel
+                {
+                    ChannelDbId = c.Id,
+                    DisplayName = c.DisplayName,
+                    TeamName = c.TeamName,
+                    ChannelId = c.ChannelId,
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Mention catalog: Teams channels unavailable — omitting them");
         }
 
         return Ok(response);
@@ -208,8 +247,8 @@ public class NotesController : ControllerBase
         // and translates a DB-permissions failure to a 503.
         var note = await _service.CreateAsync(request.CustomerId, request.Content, request.Mentions, cancellationToken);
         _logger.LogInformation(
-            "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}",
-            "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId);
+            "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}, User={User}",
+            "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId, _requestContext.GetCurrentUser());
         return Created($"/api/notes/{note.Id}", note);
     }
 
@@ -227,9 +266,14 @@ public class NotesController : ControllerBase
             ?? throw new NotFoundException("Note", id);
         var note = await _service.TogglePinAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
+        // The actor is recorded HERE and nowhere else: toggling a pin deliberately does not stamp
+        // ModifiedBy/ModifiedAt on the row. Those two fields mean "someone edited the text" —
+        // ModifiedBy feeds NLQ author search ("notes by <name>") and ModifiedAt drives note sort
+        // order, so stamping them on a pin would forge authorship and reorder the list. M-041
+        // (2026-09-21) credited this path with attribution it did not have; this log line is it.
         _logger.LogInformation(
-            "Note pin toggled [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, IsPinned={IsPinned}",
-            "AUDIT_UPDATE", "DataMutation", note.Id, note.IsPinned);
+            "Note pin toggled [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, IsPinned={IsPinned}, User={User}",
+            "AUDIT_UPDATE", "DataMutation", note.Id, note.IsPinned, _requestContext.GetCurrentUser());
         return Ok(note);
     }
 
@@ -248,8 +292,8 @@ public class NotesController : ControllerBase
         var note = await _service.UpdateAsync(id, request.Content, request.Mentions, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
-            "Note updated [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
-            "AUDIT_UPDATE", "DataMutation", note.Id);
+            "Note updated [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, User={User}",
+            "AUDIT_UPDATE", "DataMutation", note.Id, _requestContext.GetCurrentUser());
         return Ok(note);
     }
 
@@ -265,9 +309,11 @@ public class NotesController : ControllerBase
         _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         await _service.DeleteAsync(id, cancellationToken);
+        // Soft delete: the row survives with IsDeleted/DeletedAt/DeletedBy and is recoverable.
+        // M-041 (2026-09-21) described this as destroying a colleague's note — it does not.
         _logger.LogInformation(
-            "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
-            "AUDIT_DELETE", "DataMutation", id);
+            "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, User={User}",
+            "AUDIT_DELETE", "DataMutation", id, _requestContext.GetCurrentUser());
         return NoContent();
     }
 }

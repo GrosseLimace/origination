@@ -161,6 +161,8 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
 
     public async Task<int> RetagAsync(long customerId, string fromTradeUnit, string toTradeUnit, string currentUser, CancellationToken cancellationToken)
     {
+        // Soft-deleted rows are excluded by the entity's global query filter, so a deleted plan
+        // doesn't follow the producer to their new trade unit.
         var rows = await _appContext.PlantingIntentions
             .Where(p => p.CustomerId == customerId && p.TradeUnit == fromTradeUnit)
             .ToListAsync(cancellationToken);
@@ -181,14 +183,31 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
         return rows.Count;
     }
 
-    public async Task DeleteAsync(int intentionId, CancellationToken cancellationToken)
+    public async Task DeleteAsync(int intentionId, string currentUser, CancellationToken cancellationToken)
     {
+        // Soft delete: keep the row, mark IsDeleted/DeletedAt/DeletedBy. The global query filter
+        // in ApplicationDbContext hides it from every read, so user-facing behaviour is unchanged,
+        // but the plan can be recovered by flipping IsDeleted back to false.
+        //
+        // This replaced a HARD delete on 2026-09-21. The route is a live UI button
+        // (home.component.ts deletePlantingIntention), so the realistic loss is an originator
+        // removing the wrong row — not an attacker.
+        //
+        // The AUDIT_DELETE line deliberately carries only who, which id and when — never the crop
+        // or the acreage. Under the hard delete those figures were the only surviving trace, which
+        // is what M-043 was about; the soft-deleted ROW is now the record, and it holds the whole
+        // plan. Repeating the acreage in a log would put confidential figures somewhere retained on
+        // different terms and readable by a wider audience, and buy nothing back.
         var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
         if (intention != null)
         {
-            _appContext.PlantingIntentions.Remove(intention);
+            intention.IsDeleted = true;
+            intention.DeletedAt = DateTime.UtcNow;
+            intention.DeletedBy = currentUser;
             await _appContext.SaveChangesAsync(cancellationToken);
-            _logger.LogInformation("Deleted planting intention {Id}", intentionId);
+            _logger.LogInformation(
+                "Soft-deleted planting intention [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId} User={User} DeletedAt={DeletedAt}",
+                "AUDIT_DELETE", "DataMutation", intentionId, currentUser, intention.DeletedAt);
         }
     }
 }
