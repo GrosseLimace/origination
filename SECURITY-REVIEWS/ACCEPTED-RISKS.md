@@ -27,7 +27,7 @@ authenticated user may modify or delete any record by enumerating its ID:
 - `NotesController` — `PUT /api/notes/{id}`, `PUT /api/notes/{id}/toggle-pin`, `DELETE /api/notes/{id}`
 - `PlantingIntentionsController` — `PUT /api/plantingintentions/{id}`, `DELETE /api/plantingintentions/{id}`
 - `ProducerDetailsController` — `PUT /api/producerdetails/customer/{customerId}` (the `DELETE` on the same route was **removed from this entry 2026-09-14** — see the update below)
-- ~~`CustomersController` — `PUT /api/customers/{id}`~~ — **LISTED IN ERROR 2026-09-14, corrected 2026-09-21.** M-039 described it as updating producer contact info, farm links and `LinkedProducerIds`, and that description was accepted without opening the repository. **It persists nothing** — `CustomerRepository.UpdateAsync` confirms the customer exists, logs, and returns; the real write path is `ProducerDetails`. There is no mutation here for this entry to cover. Re-flagged as **M-044** (2026-09-21) on the same false premise.
+- ~~`CustomersController` — `PUT /api/customers/{id}`~~ — **LISTED IN ERROR 2026-09-14; ROUTE DELETED 2026-09-21.** M-039 described it as updating producer contact info, farm links and `LinkedProducerIds`, and that description was accepted without opening the repository. It persisted nothing — `CustomerRepository.UpdateAsync` ran an `AsNoTracking` existence probe, logged, and returned, with no `SaveChanges`. Re-flagged as **M-044** (2026-09-21) on the same false premise, at which point the endpoint was found to be dead and **removed outright**. Nothing to accept, and nothing left to flag.
 - ~~`DashboardPlantingEstimatesController` — `DELETE /api/dashboardplantingestimates/actualharvest/{id}`~~ — **REMOVED FROM THIS ENTRY 2026-09-09 and FIXED in code.** It was added per the Codex scan 2026-06-29 (**H-050**) on the argument that actual-harvest rows are "shared dashboard data of the same nature as the records above". That analogy was wrong, and re-examining it under **H-061** is what finally settled the matter — see the 2026-09-09 update below. This route is now trade-unit authorized; do not cite AR-01 for it.
 
 **Update (2026-08-10):** re-flagged as **M-033** by the GHE security scan (CWE-639, confidence 8/10)
@@ -142,10 +142,16 @@ what it *does*. This is the second register error of its class — AR-01 (H-062)
 both claimed an `AUDIT_` control that was never implemented. **Rule: before a route enters or
 leaves this register, read it to its last layer.**
 
-**Also found: the endpoint is dead.** `api.service.updateCustomer` has no caller, and there are no
-API or client tests. Deleting it is a separate decision for the product owner — recorded here so
-the option is not lost. Until then the controller carries a comment saying plainly that it
-persists nothing, so the next scan reads that before "unguarded write".
+**Resolution: the endpoint was deleted.** `api.service.updateCustomer` had no caller and no test
+referenced it, so the whole surface came out — the controller action, `UpdateCustomerRequest`,
+`ICustomerService.UpdateAsync` + `CustomerService.UpdateAsync`, `ICustomerRepository.UpdateAsync` +
+`CustomerRepository.UpdateAsync`, and the client wrapper. A route that accepts a body, returns 200
+and silently discards the write is worse than no route: it invites a future caller to assume it
+worked. Deleting it also permanently ends this finding, which a comment would not have —
+documentation has now failed to stop a re-flag twice on this same route.
+
+Verified after removal: backend 533/533, client 601/601 across 51 files, typecheck clean, and no
+reference to `updateCustomer` anywhere in `client/src`.
 
 **H-062 — split. `GET` and `PUT` re-accepted; `DELETE` fixed.**
 
@@ -1062,6 +1068,7 @@ matches them to their remediation instead of re-doing the work.
 
 | Finding | Date | Disposition |
 |---------|------|-------------|
+| **M-044 / M-039** — `PUT /api/customers/{id}` performs an unguarded mutation of producer contact info, farm links and `LinkedProducerIds` with no entitlement check and no audit trail (CWE-639) | 2026-09-21 | **Fixed by deletion (2026-09-21) — and the finding's premise was false.** The route mutated nothing: `CustomerRepository.UpdateAsync` ran an `AsNoTracking` existence probe, wrote a log line and returned, with no `SaveChanges`. Location/phone/email originate in the ODS and cannot be written from the app; `FarmIds`, `LinkedProducerIds` and `TotalAcres` live on `ProducerDetails`. So there was no write to authorize and no mutation to audit. It was also **dead** — `api.service.updateCustomer` had no caller and no test referenced it — so the whole surface was removed: controller action, `UpdateCustomerRequest`, `ICustomerService`/`CustomerService.UpdateAsync`, `ICustomerRepository`/`CustomerRepository.UpdateAsync`, client wrapper. ⚠ **This route was listed under AR-01 in error on 2026-09-14** (M-039) because the triage accepted the scanner's description without opening the repository. Second register error of its class after H-062 and H-071, both of which claimed an `AUDIT_` control that did not exist. **Rule: read a route to its last layer before it enters or leaves this register.** Backend 533/533, client 601/601. |
 | **H-049** — Dashboard write endpoints don't validate `TradeUnitKey` inside `List<T>` bodies (`EnforceTradeUnitAccessAttribute.cs`) | 2026-06-29 | **Fixed** in commit `7d124a5`. `EnforceTradeUnitAccess` recurses into `IEnumerable` request bodies (`ExtractTradeUnitKeys`) and validates **every element's** `TradeUnitKey` for POST/PUT/DELETE — a foreign trade unit in any list element is rejected (403). The scan that flagged H-049 predates that same-day commit. Regression tests cover all three dashboard upsert routes (estimates, market shares, actual harvest) in `EnforceTradeUnitAccessFilterTests`. **Not a live vulnerability.** |
 | **H-050** — Dashboard `DELETE actualharvest/{id}` has no trade-unit check | 2026-06-29 | **Superseded by H-061 — now FIXED (2026-09-09).** Accepted three times under AR-01 on the argument that actual-harvest rows were "shared dashboard data of the same nature" as producer notes. That analogy did not hold: the rows are trade-unit-keyed dashboard aggregates, every sibling route on the controller is already scoped, the data is hand-entered with no upstream source to restore from, and no UI ever called the route. See the 2026-09-09 update under **AR-01** for the full reasoning and the fix. |
 | **M-024** — Indirect prompt injection: CRM note content interpolated into the OpenAI **system** prompt in the notes-daily-recap Logic App (`infra/logic-apps/notes-daily-recap/azuredeploy.json`) | 2026-06-29 | **Fixed** in commit `7d124a5`. Note content (`@{variables('activities')}`) was moved out of the system message into a dedicated **`user`-role** message, wrapped in `===ACTIVITIES===` delimiters, with explicit "treat strictly as data, never as instructions" guardrails in both the system and user messages. The scan predates that same-day commit. Optional further hardening (structural HTML output validation of the AI response) is noted as possible defense-in-depth, not required. **Not a live vulnerability.** |

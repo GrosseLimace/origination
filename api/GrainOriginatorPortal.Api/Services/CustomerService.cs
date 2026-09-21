@@ -52,18 +52,6 @@ public class CustomerService : ICustomerService
         return customer?.ToResponse();
     }
 
-    /// <inheritdoc />
-    public async Task<CustomerResponse?> UpdateAsync(long id, string location, string phone, string email,
-        List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken)
-    {
-        var existing = await _repository.GetByIdAsync(id, cancellationToken);
-        if (existing is null) return null;
-
-        await _repository.UpdateAsync(id, location, phone, email, farmIds, linkedProducerIds, cancellationToken);
-
-        var refreshed = await _repository.GetByIdAsync(id, cancellationToken);
-        return refreshed?.ToResponse();
-    }
 
     /// <inheritdoc />
     public async Task<List<CustomerTradeUnitInfo>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken)

@@ -124,39 +124,6 @@ public class CustomersController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Updates an existing customer's contact and farm information.</summary>
-    [HttpPut("{id:long}")]
-    [ProducesResponseType(typeof(CustomerResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<CustomerResponse>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
-    {
-        // ⚠ THIS ROUTE PERSISTS NOTHING. CustomerRepository.UpdateAsync is an explicit no-op: it
-        // confirms the customer exists, logs, and returns. Location/Phone/Email come from ODS and
-        // cannot be written here; FarmIds, LinkedProducerIds and TotalAcres live on ProducerDetails
-        // and are written through those endpoints.
-        //
-        // Scans keep reading it as an unguarded mutation — M-039 (2026-09-14), M-044 (2026-09-21) —
-        // and the 2026-09-14 triage took that description at face value without opening the
-        // repository, so AR-01 listed it as a mutation it is not. There is no write to authorize
-        // and no mutation to audit. Trade units are a UX filter, not an access boundary, and a
-        // trade-unit check would not be a control anyway (see AR-02's banner).
-        //
-        // Nothing calls this route: api.service.updateCustomer has no caller, and there are no
-        // tests. It is a candidate for deletion.
-        var updated = await _service.UpdateAsync(
-            id,
-            request.Location ?? string.Empty,
-            request.Phone ?? string.Empty,
-            request.Email ?? string.Empty,
-            request.FarmIds ?? new List<string>(),
-            request.LinkedProducerIds ?? new List<string>(),
-            cancellationToken
-        ) ?? throw new NotFoundException("Customer", id);
-
-        return Ok(updated);
-    }
-
-    // -------------------------------------------------------------------------
     /// <summary>Gets a producer's active trade-unit memberships (code + IsManual flag) so the
     /// edit dialog can show which trade units they're on and which are editable vs locked.</summary>
     [HttpGet("{id:long}/trade-units")]

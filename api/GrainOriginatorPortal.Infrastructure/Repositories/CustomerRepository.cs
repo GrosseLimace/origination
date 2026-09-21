@@ -538,21 +538,6 @@ public class CustomerRepository : ICustomerRepository
         return customers;
     }
 
-    public async Task UpdateAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken)
-    {
-        var exists = await _appContext.Customers.AsNoTracking()
-            .AnyAsync(c => c.Id == customerId, cancellationToken);
-        if (!exists)
-        {
-            _logger.LogWarning("Customer {CustomerId} not found for update", customerId);
-            return;
-        }
-
-        // Location / Phone / Email originate from the ODS and cannot be written from here.
-        // FarmIds / LinkedProducerIds / TotalAcres are not persisted via this path — they live
-        // on ProducerDetails and are updated through the ProducerDetails endpoints.
-        _logger.LogInformation("UpdateCustomerAsync called for {CustomerId} — no-op (write path lives on ProducerDetails).", customerId);
-    }
 
     public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
     {
