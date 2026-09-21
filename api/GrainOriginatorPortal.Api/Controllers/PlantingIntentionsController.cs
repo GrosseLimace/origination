@@ -3,6 +3,7 @@ using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -13,11 +14,13 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class PlantingIntentionsController : ControllerBase
 {
     private readonly IPlantingIntentionService _service;
+    private readonly IRequestContextService _requestContext;
     private readonly ILogger<PlantingIntentionsController> _logger;
 
-    public PlantingIntentionsController(IPlantingIntentionService service, ILogger<PlantingIntentionsController> logger)
+    public PlantingIntentionsController(IPlantingIntentionService service, IRequestContextService requestContext, ILogger<PlantingIntentionsController> logger)
     {
         _service = service;
+        _requestContext = requestContext;
         _logger = logger;
     }
 
@@ -66,8 +69,8 @@ public class PlantingIntentionsController : ControllerBase
             cancellationToken
         );
         _logger.LogInformation(
-            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}",
-            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop);
+            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}, User={User}",
+            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop, _requestContext.GetCurrentUser());
         return Ok(intention);
     }
 
@@ -94,8 +97,8 @@ public class PlantingIntentionsController : ControllerBase
             cancellationToken
         ) ?? throw new NotFoundException("PlantingIntention", id);
         _logger.LogInformation(
-            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
-            "AUDIT_UPDATE", "DataMutation", id);
+            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, User={User}",
+            "AUDIT_UPDATE", "DataMutation", id, _requestContext.GetCurrentUser());
         return Ok(updated);
     }
 
@@ -107,12 +110,18 @@ public class PlantingIntentionsController : ControllerBase
     public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may delete any planting intention.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
         _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("PlantingIntention", id);
         await _service.DeleteAsync(id, cancellationToken);
+        // ⚠ This is a HARD delete — PlantingIntentionRepository.DeleteAsync calls Remove(), so the
+        // row is gone and carries no DeletedBy. Unlike a note, there is nothing left to attribute
+        // it to afterwards: THIS LOG LINE IS THE ONLY SURVIVING RECORD of who removed a forward
+        // crop plan. M-043 (2026-09-21) credited this path with attribution it did not have — the
+        // line recorded IntentionId and nothing else. Do not drop User from it.
         _logger.LogInformation(
-            "Planting intention deleted [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
-            "AUDIT_DELETE", "DataMutation", id);
+            "Planting intention deleted [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, User={User}",
+            "AUDIT_DELETE", "DataMutation", id, _requestContext.GetCurrentUser());
         return NoContent();
     }
 }

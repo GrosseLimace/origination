@@ -1,9 +1,14 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface DashboardCacheEntry {
   tradeUnitsKey: string;
+  /** Planting year the year-specific entries below were loaded for. Part of the cache key: the
+   *  dashboard resets selectedPlantingYear to the current year on every construction while this
+   *  cache survives navigation, so matching on tradeUnitsKey alone re-applied another year's
+   *  estimates/market shares/harvest figures. */
+  year: number;
   customers: Customer[];
   contracts: Contract[];
   plantingIntentions: PlantingIntention[];
@@ -177,6 +182,10 @@ export class AppStateService {
   /** Per-customer "last contacted" aggregate — the lightweight badge feed (all trade units,
    *  entitlement-filtered). Preloaded on TU change; tiny regardless of how many notes exist. */
   noteLastContacts = signal<NoteLastContact[]>([]);
+  /** The signed-in user's OWN open follow-up reminders — the producer-list reminder badge feed.
+   *  Private per user (the API only returns the caller's), and tiny: one row per scheduled
+   *  follow-up, no reminder text. Preloaded on TU change alongside noteLastContacts. */
+  myReminders = signal<ReminderDue[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
   dpContracts = signal<DpContract[]>([]);
   /** True once a DP fetch has COMPLETED for the current trade units, regardless of row count.
@@ -240,6 +249,7 @@ export class AppStateService {
 
   setTickets(tickets: Ticket[]): void {
     this.tickets.set(tickets);
+    this.ticketsTradeUnitKey.set(this.selectedTradeUnits().join(','));
     this.ticketsLoaded.set(true);
   }
 
@@ -254,6 +264,10 @@ export class AppStateService {
 
   setNoteLastContacts(rows: NoteLastContact[]): void {
     this.noteLastContacts.set(rows);
+  }
+
+  setMyReminders(rows: ReminderDue[]): void {
+    this.myReminders.set(rows);
   }
 
   setStoredGrain(storedGrain: StoredGrain[]): void {
@@ -318,8 +332,16 @@ export class AppStateService {
   // emptiness check would misfire. Reset on TU change / logout via clearTicketsCache().
   ticketsLoaded = signal(false);
 
+  /** Which trade-unit selection `tickets` was loaded for. Consumers that adopt the shared set into
+   *  their own copy must check this: `clearTicketsCache()` and a component's own trade-unit effect
+   *  are independent subscribers to `selectedTradeUnits` with no ordering guarantee between them,
+   *  so there is a window where a component has already cleared its local set for the NEW trade
+   *  unit while this one still holds the PREVIOUS trade unit's tickets. */
+  ticketsTradeUnitKey = signal<string | null>(null);
+
   clearTicketsCache(): void {
     this.tickets.set([]);
+    this.ticketsTradeUnitKey.set(null);
     this.ticketsLoaded.set(false);
   }
 
@@ -469,6 +491,7 @@ export class AppStateService {
     this.plantingIntentions.set([]);
     this.clearNotesCache();
     this.noteLastContacts.set([]);
+    this.myReminders.set([]);
     this.storedGrain.set([]);
     this.dpContracts.set([]);
     this.dpContractsLoaded.set(false);

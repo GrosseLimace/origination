@@ -6,13 +6,21 @@
           <!-- Top: Name block + action buttons -->
           <div class="flex items-start justify-between gap-3 mb-4">
             <div class="min-w-0">
-              <!-- Name + status badges. The badges live in their own non-wrapping
-                   group so they move as a unit: either all inline with the name, or
-                   all together on one line beneath it. Letting them wrap
-                   individually stair-steps them down the card. -->
-              <div class="flex items-center gap-2 min-w-0 flex-wrap">
-                <h1 class="text-base @2xl/profile:text-lg @4xl/profile:text-2xl font-bold text-gray-900 dark:text-white leading-tight truncate min-w-0">{{ customer().name }}</h1>
-                <div class="flex items-center gap-2 shrink-0">
+              <!-- Name + code column, then status badges. The name and its code stay
+                   stacked as one column so the badges either sit beside the name (short
+                   names) or drop as a unit BELOW the code (long names) - never between
+                   the name and its code. Letting the badges wrap individually
+                   stair-steps them down the card. -->
+              <div class="flex items-start gap-2 min-w-0 flex-wrap">
+                <div class="min-w-0">
+                  <h1 class="text-base @2xl/profile:text-lg @4xl/profile:text-2xl font-bold text-gray-900 dark:text-white leading-tight truncate min-w-0">{{ customer().name }}</h1>
+                  @if (customer().scoularId) {
+                    <p class="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{{ customer().scoularId }}</p>
+                  }
+                </div>
+                <!-- Small top offset centres the badge row on the name line rather
+                     than the top edge of the name + code column. -->
+                <div class="flex items-center gap-2 shrink-0 mt-px @4xl/profile:mt-1">
                 @if (customer().eSignEnabled) {
                   <button
                     type="button"
@@ -63,11 +71,8 @@
                   }
                 </div>
               }
-              @if (customer().scoularId) {
-                <p class="text-sm text-gray-400 dark:text-gray-500" [class.mt-3]="customer().eSignEnabled && showESignRecipients()" [class.mt-0.5]="!(customer().eSignEnabled && showESignRecipients())">{{ customer().scoularId }}</p>
-              }
               @if (customer().farm) {
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ customer().farm }}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400" [class.mt-3]="customer().eSignEnabled && showESignRecipients()" [class.mt-0.5]="!(customer().eSignEnabled && showESignRecipients())">{{ customer().farm }}</p>
               }
               <div class="flex items-center gap-2 mt-2 flex-wrap">
                 <button

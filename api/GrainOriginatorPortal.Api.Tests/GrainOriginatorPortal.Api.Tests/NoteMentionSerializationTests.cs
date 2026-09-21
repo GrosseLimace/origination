@@ -143,6 +143,13 @@ public class NoteMentionSerializationTests
     private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions(
         out Mock<IDailyRecapGroupService> groups, out Mock<IEntitlementsRepository> entitlements,
         params RecapGroupDto[] visibleGroups)
+        => BuildServiceCapturingMentions(out groups, out entitlements, visibleGroups, null);
+
+    /// <param name="teamsChannels">The channel registry. Null means an empty registry, which is the
+    /// hot path for every test that isn't about channels.</param>
+    private static (NoteService svc, List<string?> captured) BuildServiceCapturingMentions(
+        out Mock<IDailyRecapGroupService> groups, out Mock<IEntitlementsRepository> entitlements,
+        RecapGroupDto[] visibleGroups, ITeamsChannelService? teamsChannels)
     {
         var captured = new List<string?>();
         var repo = new Mock<INoteRepository>();
@@ -172,7 +179,8 @@ public class NoteMentionSerializationTests
             .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(StringComparer.OrdinalIgnoreCase));
 
         var svc = new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
-            groups.Object, entitlements.Object, new Mock<ILogger<NoteService>>().Object);
+            groups.Object, teamsChannels ?? MentionTestDoubles.TeamsChannelStub(),
+            entitlements.Object, new Mock<ILogger<NoteService>>().Object);
         return (svc, captured);
     }
 
@@ -534,7 +542,7 @@ public class NoteMentionSerializationTests
         entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(StringComparer.OrdinalIgnoreCase));
         return new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
-            groups.Object, entitlements.Object, new Mock<ILogger<NoteService>>().Object);
+            groups.Object, MentionTestDoubles.TeamsChannelStub(), entitlements.Object, new Mock<ILogger<NoteService>>().Object);
     }
 
     // ── Person mentions must name a real active user (H-056) ───────────────────────────────────
@@ -666,5 +674,194 @@ public class NoteMentionSerializationTests
         await Assert.ThrowsAsync<ValidationException>(
             () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
         Assert.Empty(captured);
+    }
+
+    // ── Teams groups: the app-group row IS the recipient ───────────────────────────────────────
+    // Delivery method is the whole routing decision. A "teams" group posts the note to its channel
+    // INSTEAD of emailing its members, so expansion must stop at the group row. The workflow
+    // re-reads the channel address from DailyRecapGroups for that id at send time, which is why the
+    // stored row still carries no address — the M-025 property holds for the channel exactly as it
+    // does for people.
+
+    private static RecapGroupDto ChannelGroup(int id, string name, params RecapGroupMemberDto[] members) => new()
+    {
+        Id = id,
+        Name = name,
+        DeliveryMethod = "teams",
+        TeamsChannelEmail = "abcd1234.scoular.com@amer.teams.ms",
+        Members = members.ToList(),
+    };
+
+    [Fact]
+    public async Task CreateAsync_TeamsGroup_StoresOnlyTheGroupRow_AndExpandsNobody()
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(
+            ChannelGroup(7, "Grain Desk", PersonMember, TradeUnitMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Grain Desk" } };
+
+        await svc.CreateAsync(100, "note body", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        var only = Assert.Single(stored);
+        Assert.Equal("app-group", only.Type);
+        Assert.Equal("7", only.Id);
+        Assert.Equal("Grain Desk", only.Name);   // authoritative server-side name
+        Assert.Null(only.Via);
+        Assert.Null(only.Email);                 // the address is never persisted on the note
+    }
+
+    [Fact]
+    public async Task CreateAsync_TeamsGroup_WithNoMembers_IsAccepted()
+    {
+        // The empty-group guard must not fire here: the channel is the recipient, so an entry with
+        // nobody in it still notifies someone.
+        var (svc, captured) = BuildServiceCapturingMentions(ChannelGroup(7, "Grain Desk"));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Grain Desk" } };
+
+        await svc.CreateAsync(100, "note body", mentions, CancellationToken.None);
+
+        Assert.Single(StoredMentions(captured));
+    }
+
+    [Fact]
+    public async Task CreateAsync_TeamsGroup_NeverStoresTheChannelAddress_EvenIfTheClientSendsOne()
+    {
+        // The client cannot smuggle a destination onto the note: NormalizeMention drops email on
+        // every non-person row, and the workflow reads the address from the DB regardless.
+        var (svc, captured) = BuildServiceCapturingMentions(ChannelGroup(7, "Grain Desk"));
+        var mentions = new[]
+        {
+            new NoteMention { Type = "app-group", Id = "7", Name = "Grain Desk", Email = "attacker@evil.com" }
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        Assert.Null(Assert.Single(StoredMentions(captured)).Email);
+        Assert.DoesNotContain("evil.com", captured[0]);
+    }
+
+    [Fact]
+    public async Task CreateAsync_TeamsGroup_AlongsideAPersonMention_KeepsBoth()
+    {
+        // Mentioning a channel and a person in one note must still notify the person — the two
+        // delivery paths are independent in the workflow.
+        var (svc, captured) = BuildServiceCapturingMentions(ChannelGroup(7, "Grain Desk"));
+        var mentions = new[]
+        {
+            new NoteMention { Type = "person", Id = "SFletcher", Name = "Sam Fletcher" },
+            new NoteMention { Type = "app-group", Id = "7", Name = "Grain Desk" },
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal(2, stored.Count);
+        Assert.Equal("SFletcher@scoular.com", stored[0].Email);
+        Assert.Equal("app-group", stored[1].Type);
+    }
+
+    [Fact]
+    public async Task CreateAsync_EmailGroup_StillExpandsItsMembers()
+    {
+        // Regression guard: the new branch must be reached only for Teams delivery.
+        var (svc, captured) = BuildServiceCapturingMentions(Group(7, "Corn Belt", PersonMember));
+        var mentions = new[] { new NoteMention { Type = "app-group", Id = "7", Name = "Corn Belt" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        var stored = StoredMentions(captured);
+        Assert.Equal(2, stored.Count);
+        Assert.Equal("app-group:7", stored[1].Via);
+    }
+
+    // ── Registered Teams channels ──────────────────────────────────────────────────────────────
+    // A "teams-channel" mention names a row in dbo.TeamsChannels by its integer key. The workflow
+    // looks the address up there at send time, so the note carries no address — the same property
+    // the person and app-group paths hold, reached the same way.
+
+    private static (NoteService svc, List<string?> captured) BuildServiceWithChannels(
+        params TeamsChannelDto[] registered)
+    {
+        var (svc, captured) = BuildServiceCapturingMentions(
+            out Mock<IDailyRecapGroupService> _, out Mock<IEntitlementsRepository> _,
+            [], MentionTestDoubles.TeamsChannelStub(registered));
+        return (svc, captured);
+    }
+
+    private static TeamsChannelDto Channel(int id, string name) => new()
+    {
+        Id = id, DisplayName = name, TeamName = "Trading", ChannelId = $"19:{id}@thread.tacv2",
+    };
+
+    [Fact]
+    public async Task CreateAsync_StoresARegisteredChannelMention_WithNoAddress()
+    {
+        var (svc, captured) = BuildServiceWithChannels(Channel(12, "Grain Desk"));
+        var mentions = new[] { new NoteMention { Type = "teams-channel", Id = "12", Name = "Grain Desk" } };
+
+        await svc.CreateAsync(100, "note body", mentions, CancellationToken.None);
+
+        var only = Assert.Single(StoredMentions(captured));
+        Assert.Equal("teams-channel", only.Type);
+        Assert.Equal("12", only.Id);
+        Assert.Null(only.Email);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RejectsAChannelMentionThatIsNotRegistered()
+    {
+        // Left to the workflow this would fail the whole run at send time, long after the author
+        // believed the note was shared. Refuse it while they can still see the error.
+        var (svc, captured) = BuildServiceWithChannels(Channel(12, "Grain Desk"));
+        var mentions = new[] { new NoteMention { Type = "teams-channel", Id = "999", Name = "Ghost" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Empty(captured);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DropsAClientSuppliedAddressFromAChannelMention()
+    {
+        var (svc, captured) = BuildServiceWithChannels(Channel(12, "Grain Desk"));
+        var mentions = new[]
+        {
+            new NoteMention { Type = "teams-channel", Id = "12", Name = "Grain Desk", Email = "attacker@evil.com" },
+        };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        Assert.Null(Assert.Single(StoredMentions(captured)).Email);
+        Assert.DoesNotContain("evil.com", captured[0]);
+    }
+
+    [Theory]
+    [InlineData("abc")]      // not numeric — the id is an integer key
+    [InlineData("1 or 1=1")] // OData injection shape, same guard as the other non-person types
+    [InlineData("")]
+    public async Task CreateAsync_RejectsAChannelMentionWhoseIdIsNotAnIntegerKey(string forgedId)
+    {
+        var (svc, captured) = BuildServiceWithChannels(Channel(12, "Grain Desk"));
+        var mentions = new[] { new NoteMention { Type = "teams-channel", Id = forgedId, Name = "Grain Desk" } };
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => svc.CreateAsync(100, "b", mentions, CancellationToken.None));
+        Assert.Empty(captured);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithoutAChannelMention_NeverQueriesTheRegistry()
+    {
+        // Hot path: an ordinary note pays nothing for this feature.
+        var channels = new Mock<ITeamsChannelService>();
+        channels.Setup(c => c.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var (svc, _) = BuildServiceCapturingMentions(
+            out Mock<IDailyRecapGroupService> _, out Mock<IEntitlementsRepository> _,
+            [], channels.Object);
+        var mentions = new[] { new NoteMention { Type = "trade-unit", Id = "1084", Name = "1084" } };
+
+        await svc.CreateAsync(100, "b", mentions, CancellationToken.None);
+
+        channels.Verify(c => c.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 }

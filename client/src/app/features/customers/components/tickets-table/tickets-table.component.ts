@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, signal } from '@angular/core';
+import { Component, input, output, effect, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -123,13 +123,21 @@ export class TicketsTableComponent {
     this.showSearch = false;
   }
 
-  /** Set of ticket IDs that are spot loads — unapplied tickets in the last 30 days.
+  /** Set of ticket IDs that are spot loads — unapplied tickets in the last 30 days with no
+   *  active, same-commodity contract whose delivery window covers the ticket's date.
    *  Unapplied = ContractNumber prefix is U (Unload), L (Loadout), or C (Customer Storage).
    *  Matches Actionable Insights → Spot Loads exactly, so the "Spot" badge on the customer
-   *  ticket list lines up with what that producer shows up for on /insights. No contract-date
-   *  coverage check — an unapplied ticket is a spot load regardless of what contracts exist
-   *  in the same window, because the ticket itself is what tells us it wasn't priced. */
-  get spotTicketIds(): Set<number> {
+   *  ticket list lines up with what that producer shows up for on /insights.
+   *
+   *  A computed, not a getter: the template binds this once per rendered ticket row, and as a
+   *  plain getter it rebuilt the whole Set — iterating every ticket and scanning every contract
+   *  for each unapplied one — on every change-detection pass anywhere in the app. For a producer
+   *  with hundreds of tickets and dozens of contracts that was visible jank on the Tickets tab.
+   *  As a computed it recomputes only when tickets() or contracts() actually change.
+   *  (The 30-day cutoff is therefore captured per recomputation rather than per read; across a
+   *  UTC midnight with the tab left open a ticket right on the boundary can stay flagged until
+   *  the next data change, which is immaterial for a 30-day window.) */
+  readonly spotTicketIds = computed<Set<number>>(() => {
     const ids = new Set<number>();
     // Cutoff snaps to start-of-UTC-day 30 days ago so a ticket dated exactly 30 days
     // ago isn't excluded just because "now" is past midnight.
@@ -155,7 +163,7 @@ export class TicketsTableComponent {
       if (!hasContractCoverage) ids.add(t.id);
     }
     return ids;
-  }
+  });
 
   get unappliedTickets(): Ticket[] {
     // A ticket is "unapplied" when its contract prefix is U (Unload), L (Loadout), or
@@ -494,7 +502,7 @@ export class TicketsTableComponent {
   }
 
   getSpotCount(group: TicketGroup): number {
-    const spots = this.spotTicketIds;
+    const spots = this.spotTicketIds();
     return group.tickets.filter(t => spots.has(t.id)).length;
   }
 

@@ -11,12 +11,17 @@ public class DailyRecapGroup
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
-    /// <summary>"email" or "teams".</summary>
+    /// <summary>"email" or "teams" — where EVERYTHING for this group goes. "email" sends the daily
+    /// recap and any @-mention of the group to its members. "teams" sends both to
+    /// <see cref="TeamsChannelEmail"/> instead, and the members are not emailed at all; they only
+    /// grant visibility. This single field is the routing decision — there is no separate per-channel
+    /// mention switch.</summary>
     public string DeliveryMethod { get; set; } = "email";
     /// <summary>Microsoft Teams channel email — populated only when DeliveryMethod is "teams".</summary>
     public string? TeamsChannelEmail { get; set; }
     /// <summary>UI on/off toggle. The Logic App only sends for enabled groups.</summary>
     public bool Enabled { get; set; } = true;
+
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }

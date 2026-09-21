@@ -109,4 +109,67 @@ public class RecapGroupRequestValidationTests
 
         Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.Members)));
     }
+
+    // ── Teams delivery: the channel is the recipient ──────────────────────────
+    // Delivery method is the whole routing decision. "teams" means the channel receives both the
+    // daily recap and any @-mention, so such an entry needs nobody in it.
+    private const string ScoularChannel = "abcd1234.scoular.com@amer.teams.ms";
+
+    [Fact]
+    public void TeamsDelivery_WithNoMembers_IsAccepted()
+    {
+        var req = Base() with
+        {
+            DeliveryMethod = "teams",
+            TeamsChannelEmail = ScoularChannel,
+            Members = [],
+        };
+
+        Assert.Empty(Validate(req));
+    }
+
+    [Fact]
+    public void EmailDelivery_WithNoMembers_IsStillRejected()
+    {
+        // The members exemption is bought by having a channel, nothing else.
+        var req = Base() with { DeliveryMethod = "email", Members = [] };
+
+        var errors = Validate(req);
+
+        Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.Members)));
+    }
+
+    [Fact]
+    public void TeamsDelivery_StillRequiresAScoularChannelAddress()
+    {
+        // Dropping the members floor must not become a way around the tenant pin.
+        var req = Base() with
+        {
+            DeliveryMethod = "teams",
+            TeamsChannelEmail = "abcd1234.contoso.com@amer.teams.ms",
+            Members = [],
+        };
+
+        var errors = Validate(req);
+
+        Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.TeamsChannelEmail)));
+    }
+
+    [Fact]
+    public void DailyRecap_OnAMemberlessGroup_IsRejected()
+    {
+        // The recap is built from the notes the MEMBERS can see, so a memberless Teams entry would
+        // schedule an empty send every evening.
+        var req = Base() with
+        {
+            DeliveryMethod = "teams",
+            TeamsChannelEmail = ScoularChannel,
+            Members = [],
+            Enabled = true,
+        };
+
+        var errors = Validate(req);
+
+        Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.Enabled)));
+    }
 }

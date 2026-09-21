@@ -2,6 +2,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -20,11 +21,16 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class EntitlementsController : ControllerBase
 {
     private readonly TradeUnitPreferencesDbContext _entitlementsDb;
+    private readonly IRequestContextService _requestContext;
     private readonly ILogger<EntitlementsController> _logger;
 
-    public EntitlementsController(TradeUnitPreferencesDbContext entitlementsDb, ILogger<EntitlementsController> logger)
+    public EntitlementsController(
+        TradeUnitPreferencesDbContext entitlementsDb,
+        IRequestContextService requestContext,
+        ILogger<EntitlementsController> logger)
     {
         _entitlementsDb = entitlementsDb;
+        _requestContext = requestContext;
         _logger = logger;
     }
 
@@ -41,14 +47,10 @@ public class EntitlementsController : ControllerBase
     [HttpGet("catalog")]
     public async Task<ActionResult<EntitlementsCatalogResponse>> GetCatalog(CancellationToken ct = default)
     {
-        var upn = User.FindFirst("preferred_username")?.Value
-            ?? User.FindFirst("upn")?.Value
-            ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
-            ?? User.Identity?.Name
-            ?? string.Empty;
-
-        // UserTradeUnitPreference.UserId is the UPN prefix (e.g. "CEgr"), not the full UPN.
-        var userId = upn.Contains('@') ? upn.Split('@')[0] : upn;
+        // UserTradeUnitPreference.UserId is the UPN prefix (e.g. "CEgr"), not the full UPN —
+        // exactly what IRequestContextService.GetCurrentUserShortName resolves. This controller
+        // reimplemented that claim chain inline, as did NotesController.GetMentionCatalog.
+        var userId = _requestContext.GetCurrentUserShortName();
         if (string.IsNullOrWhiteSpace(userId))
             return Unauthorized("Unable to determine user identity from token.");
 

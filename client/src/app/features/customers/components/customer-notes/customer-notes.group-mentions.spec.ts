@@ -6,6 +6,14 @@ import { CustomerNotesComponent } from './customer-notes.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, MentionCatalog, Note } from '@models';
+import { TeamsDirectoryService, GraphTeamsChannel } from '@core/services/teams-directory.service';
+
+/** What Graph reports the signed-in user's own teams contain. "Grain Desk" is already registered
+ *  (it is in the catalog below); "Logistics" is not, so picking it has to register it first. */
+const graphChannels: GraphTeamsChannel[] = [
+  { teamId: 't1', teamName: 'Trading', channelId: 'c-grain', displayName: 'Grain Desk', channelEmail: 'a.scoular.com@amer.teams.ms' },
+  { teamId: 't2', teamName: 'Ops', channelId: 'c-logistics', displayName: 'Logistics', channelEmail: 'b.scoular.com@amer.teams.ms' },
+];
 
 /**
  * A user's own groups are @-mentionable alongside people and trade units. The picker must keep them
@@ -18,6 +26,7 @@ const catalog: MentionCatalog = {
   tradeUnits: [{ code: '1084', description: 'Omaha' }],
   tradeUnitGroups: [{ groupId: 12, name: 'Corn Belt' }],
   appGroups: [{ groupId: 7, name: 'Corn Belt', memberCount: 3, isOwner: true }],
+  teamsChannels: [{ channelDbId: 21, displayName: 'Grain Desk', teamName: 'Trading', channelId: 'c-grain' }],
 };
 
 function makeNote(over: Partial<Note> = {}): Note {
@@ -36,7 +45,18 @@ describe('CustomerNotesComponent — group mentions', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getMentionCatalog: () => of(catalog) } },
+        {
+          provide: ApiService,
+          useValue: {
+            getMentionCatalog: () => of(catalog),
+            registerTeamsChannel: (b: { displayName: string; teamName: string; channelId: string }) =>
+              of({ id: 77, displayName: b.displayName, teamName: b.teamName, channelId: b.channelId }),
+          },
+        },
+        {
+          provide: TeamsDirectoryService,
+          useValue: { getChannels: () => of(graphChannels) },
+        },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
       ],
     });
@@ -111,5 +131,95 @@ describe('CustomerNotesComponent — group mentions', () => {
     const mentions = component.noteViewSegments(note).filter(s => s.kind === 'mention').map(s => s.text);
     expect(mentions).toEqual(['@1084']);
     expect(mentions).not.toContain('Sam Fletcher');
+  });
+
+  // ── Teams groups ─────────────────────────────────────────────────────────
+  // A group that delivers to Teams posts the note to its channel instead of emailing members, so the
+  // picker labels it by destination. A member count would be actively misleading here: such an
+  // entry can have zero members and still notify a whole channel.
+
+  it('labels a Teams group by its destination, not a member count', () => {
+    component.mentionCatalog.set({
+      ...catalog,
+      appGroups: [{ groupId: 9, name: 'Grain Desk', memberCount: 4, isOwner: true, postsToChannel: true }],
+    });
+
+    const group = optionsFor('grain').find(o => o.type === 'app-group');
+
+    expect(group!.secondary).toBe('Group · Posts to Teams channel');
+    expect(group!.secondary).not.toContain('member');
+  });
+
+  it('offers a Teams group that has no members at all', () => {
+    component.mentionCatalog.set({
+      ...catalog,
+      appGroups: [{ groupId: 9, name: 'Grain Desk', memberCount: 0, isOwner: true, postsToChannel: true }],
+    });
+
+    const group = optionsFor('grain').find(o => o.type === 'app-group');
+
+    expect(group).toBeDefined();
+    expect(group!.id).toBe('9');
+  });
+
+  it('still shows a member count for an ordinary group', () => {
+    // Regression guard: the new label must key off the destination, not off every app-group.
+    component.mentionCatalog.set({
+      ...catalog,
+      appGroups: [{ groupId: 7, name: 'Corn Belt', memberCount: 3, isOwner: true, postsToChannel: false }],
+    });
+
+    expect(optionsFor('corn').find(o => o.type === 'app-group')!.secondary).toBe('Group · 3 members');
+  });
+
+  // ── Teams channels by name ───────────────────────────────────────────────
+  // Two sources feed these options: channels already registered (usable by anyone) and channels
+  // read from the signed-in user's own teams. Merged so one never appears twice, and scoped for
+  // free — you only ever see teams you belong to, which is what keeps the list manageable.
+
+  it('offers a registered channel, labelled with its team', () => {
+    const opt = optionsFor('grain desk').find(o => o.type === 'teams-channel');
+
+    expect(opt).toBeDefined();
+    expect(opt!.id).toBe('21');                       // registry id, not the Graph channel id
+    expect(opt!.secondary).toBe('Teams channel · Trading');
+  });
+
+  it('shows a registered channel once, not twice, when Graph reports it too', () => {
+    const channels = optionsFor('grain desk').filter(o => o.type === 'teams-channel');
+
+    expect(channels).toHaveLength(1);
+  });
+
+  it('offers a channel from your teams that nobody has registered yet', () => {
+    const opt = optionsFor('logistics').find(o => o.type === 'teams-channel');
+
+    expect(opt).toBeDefined();
+    expect(opt!.id).toBe('');                         // no id until picking registers it
+    expect(opt!.secondary).toBe('Teams channel · Ops');
+  });
+
+  it('never puts a channel address on an option', () => {
+    // The note must reference a channel by id only. An address on the option would end up on the
+    // note, which is exactly what the server-side design avoids.
+    const opts = optionsFor('logistics').filter(o => o.type === 'teams-channel');
+
+    expect(JSON.stringify(opts.map(o => ({ type: o.type, id: o.id, name: o.name, secondary: o.secondary }))))
+      .not.toContain('teams.ms');
+  });
+
+  it('carries no address on the Teams option, so none can reach the saved note', () => {
+    // The note must never record a destination: selectMention copies only type/id/name/email off
+    // the option, and the workflow re-reads the channel address from the group at send time. That
+    // is what keeps a client-authored address out of the delivery path.
+    component.mentionCatalog.set({
+      ...catalog,
+      appGroups: [{ groupId: 9, name: 'Grain Desk', memberCount: 0, isOwner: true, postsToChannel: true }],
+    });
+
+    const group = optionsFor('grain').find(o => o.type === 'app-group')!;
+
+    expect(group.email).toBeUndefined();
+    expect(JSON.stringify(group)).not.toContain('teams.ms');
   });
 });

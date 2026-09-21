@@ -38,6 +38,20 @@ public class ContractsController : ControllerBase
     public async Task<ActionResult<List<ContractResponse>>> GetByCustomer(long customerId, [FromQuery] string? scoularId = null, CancellationToken cancellationToken = default)
     {
         // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        //
+        // ⚠ WHY THIS LACKS [EnforceTradeUnitAccess] WHILE GetAll AND GetByCropYear CARRY IT.
+        // Deliberate, and there is a live client path that depends on it — H-069 (2026-09-21) read
+        // the asymmetry as self-evidently wrong, and it is not. `handleSelectLinkedCustomer` in
+        // home.component.ts has an explicit else-branch for a linked producer who is NOT in the
+        // caller's roster ("Linked customer is in a different trade unit — fetch them from the
+        // API"), and it then calls _loadCustomerContractsAndTickets on that producer. Resolving the
+        // owning trade unit and validating it — the fix H-069 suggests — would 403 exactly that
+        // path and break the linked-producer profile.
+        //
+        // The test that separates these routes from ones that HAVE been scoped (H-061 dashboard
+        // delete, H-062 producer details) is whether a real client path needs the cross-trade-unit
+        // read. Contracts has one; producer details had none. Check the callers before assuming
+        // this entry covers — or does not cover — a route.
         return Ok(await _service.GetByCustomerAsync(customerId, scoularId, cancellationToken));
     }
 
@@ -51,6 +65,8 @@ public class ContractsController : ControllerBase
     public async Task<ActionResult<List<ContractResponse>>> GetPacingHistorical(long customerId, CancellationToken cancellationToken = default)
     {
         // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        // Same cross-trade-unit dependency as GetByCustomer above — see the note there before
+        // adding an entitlement check here (H-069, 2026-09-21).
         return Ok(await _service.GetHistoricalForPacingAsync(customerId, cancellationToken));
     }
 
@@ -74,6 +90,8 @@ public class ContractsController : ControllerBase
     public async Task<ActionResult<List<ContractResponse>>> GetByFarm(string farmId, CancellationToken cancellationToken = default)
     {
         // Open to any rep — no per-farm object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        // Same cross-trade-unit dependency as GetByCustomer above — see the note there before
+        // adding an entitlement check here (H-069, 2026-09-21).
         return Ok(await _service.GetByFarmAsync(farmId, cancellationToken));
     }
 
@@ -90,6 +108,8 @@ public class ContractsController : ControllerBase
             throw new ValidationException("sourceContractId", "sourceContractId is required.");
 
         // Open to any rep — no per-contract object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        // Same cross-trade-unit dependency as GetByCustomer above — see the note there before
+        // adding an entitlement check here (H-069, 2026-09-21).
         return Ok(await _service.GetPricingLinesAsync(sourceContractId, cancellationToken));
     }
 
@@ -106,6 +126,8 @@ public class ContractsController : ControllerBase
         }
 
         // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        // Same cross-trade-unit dependency as GetByCustomer above — see the note there before
+        // adding an entitlement check here (H-069, 2026-09-21).
         return Ok(await _service.GetPricingLinesByCustomerAsync(scoularId, cancellationToken));
     }
 }

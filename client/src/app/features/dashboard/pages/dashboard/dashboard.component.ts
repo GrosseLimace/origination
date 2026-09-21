@@ -12,7 +12,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
-import { commodityColor, commodityChipClass } from '@shared/utils/commodity-color';
+import { commodityColor, commodityChipClass, commodityRowClass } from '@shared/utils/commodity-color';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 
 @Component({
@@ -969,10 +969,13 @@ export class DashboardComponent {
       this.plantingIntentionsExpanded.set(savedState === 'true');
     }
 
-    // Restore commodities + dashboard-specific data from cache if available, otherwise fetch
+    // Restore commodities + dashboard-specific data from cache if available, otherwise fetch.
+    // The year has to match as well as the trade unit — the cached estimates/market shares/harvest
+    // are year-specific, and selectedPlantingYear resets to the current year here while the cache
+    // survives navigation, so a TU-only match re-applied whichever year was cached last.
     const cached = this.appStateService.dashboardCache();
     const tradeUnitsKey = this.tradeUnitKey();
-    if (cached && cached.tradeUnitsKey === tradeUnitsKey) {
+    if (cached && cached.tradeUnitsKey === tradeUnitsKey && cached.year === this.selectedPlantingYear()) {
       this._restoreFromCache(cached);
     } else {
       this._loadLocalData();
@@ -1121,6 +1124,7 @@ export class DashboardComponent {
   private _saveDashboardCache(): void {
     this.appStateService.setDashboardCache({
       tradeUnitsKey: this.tradeUnitKey(),
+      year: this.selectedPlantingYear(),
       customers: this.customers(),
       contracts: this.contracts(),
       plantingIntentions: this.plantingIntentions(),
@@ -1232,6 +1236,11 @@ export class DashboardComponent {
       return;
     }
 
+    // Stale-response guard, matching reloadPlantingIntentions/_loadLocalData. This runs on every
+    // year and trade-unit change, so without it rapid navigation lets an older response land after
+    // a newer one and overwrite current estimates/market-share/harvest figures with stale data.
+    const requestId = ++this._loadRequestId;
+
     this._localLoading.set(true);
     this.apiService.getDashboardSummary(key, year)
       .pipe(
@@ -1239,6 +1248,7 @@ export class DashboardComponent {
         takeUntilDestroyed(this.destroyRef)
       ).subscribe({
         next: (summary) => {
+          if (requestId !== this._loadRequestId) return; // discard stale response
           this.savedYieldEstimates.set(summary.estimates);
           this.savedMarketShares.set(summary.marketShares);
           this.savedActualHarvest.set(summary.actualHarvest);
@@ -1248,6 +1258,7 @@ export class DashboardComponent {
           this._localLoading.set(false);
         },
         error: () => {
+          if (requestId !== this._loadRequestId) return;
           this._localLoading.set(false);
         }
       });
@@ -1590,7 +1601,7 @@ export class DashboardComponent {
     const map = new Map<string, string>();
     for (const r of this.categoryRows()) {
       // Shared per-crop tint so Season Targets rows match the crop's color everywhere else.
-      map.set(r.category, `${commodityColor(r.category).row} transition-colors`);
+      map.set(r.category, `${commodityRowClass(r.category)} transition-colors`);
     }
     return map;
   });

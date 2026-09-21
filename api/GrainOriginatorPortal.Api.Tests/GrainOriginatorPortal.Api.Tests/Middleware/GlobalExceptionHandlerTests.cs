@@ -193,4 +193,48 @@ public class GlobalExceptionHandlerTests
             Assert.NotEmpty(body.Error.Timestamp);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Cancellation: only the CLIENT going away is a silent 499. Our own timeouts raise the same
+    // exception type, and returning those unlogged hid real infrastructure failures.
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task OperationCanceled_WhenClientAborted_Returns499AndDoesNotLog()
+    {
+        var sut = CreateSut();
+        var ctx = BuildContext();
+        ctx.RequestAborted = new CancellationToken(canceled: true);
+
+        var handled = await sut.TryHandleAsync(ctx, new OperationCanceledException(), default);
+
+        Assert.True(handled);
+        Assert.Equal(499, ctx.Response.StatusCode);
+        _loggerMock.Verify(
+            l => l.Log(
+                It.IsAny<LogLevel>(), It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task OperationCanceled_WhenClientStillConnected_IsTreatedAsUnexpectedAndLogged()
+    {
+        var sut = CreateSut();
+        var ctx = BuildContext();  // RequestAborted not cancelled — this is our own timeout
+
+        var handled = await sut.TryHandleAsync(ctx, new OperationCanceledException(), default);
+
+        Assert.True(handled);
+        Assert.Equal(StatusCodes.Status500InternalServerError, ctx.Response.StatusCode);
+
+        var body = await ReadResponseBody(ctx);
+        Assert.Equal("INTERNAL_ERROR", body!.Error.Code);
+
+        // Logged at Critical by the Unexpected branch, so an internal timeout is actually visible.
+        _loggerMock.Verify(
+            l => l.Log(
+                LogLevel.Critical, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
 }

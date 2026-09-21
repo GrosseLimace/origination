@@ -6,6 +6,8 @@ import { HeaderComponent } from './header.component';
 import { ThemeService } from '@core/services/theme.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
+import { WhatsNewService } from '@core/services/whats-new.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { provideTestEnvironment } from '@testing/test-providers';
 import { makeMsalServiceMock } from '@testing/msal.mocks';
 
@@ -18,6 +20,10 @@ describe('HeaderComponent', () => {
   const rolesStub = { isAdmin: signal(false), roles: signal<string[]>([]), canViewUsageDashboard: signal(false) };
   // The real service calls window.open — stub it so no popup is attempted under test.
   const tradeUnitsStub = { openPreferences: vi.fn() };
+  // The header reads hasUnseen() for the unread dot and version() for the build line; the real
+  // service fetches both over HTTP on construction.
+  const whatsNewStub = { hasUnseen: signal(false), version: signal<any>(null) };
+  const usageTrackingStub = { trackWhatsNewOpened: vi.fn() };
 
   function baseProviders(extra: any[] = []) {
     return provideTestEnvironment({
@@ -25,6 +31,8 @@ describe('HeaderComponent', () => {
         { provide: ThemeService, useValue: themeStub },
         { provide: UserRolesService, useValue: rolesStub },
         { provide: UserTradeUnitsService, useValue: tradeUnitsStub },
+        { provide: WhatsNewService, useValue: whatsNewStub },
+        { provide: UsageTrackingService, useValue: usageTrackingStub },
         ...extra,
       ],
     });

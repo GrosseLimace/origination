@@ -52,6 +52,9 @@ public static class DependencyInjection
                     maxRetryDelay: TimeSpan.FromSeconds(30),
                     errorNumbersToAdd: null);
                 sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
+                // Match the ODS contexts: the app DB serves the same wide dashboard/usage reads,
+                // and the team already knows SQL's 30s default is sometimes too tight here.
+                sqlOptions.CommandTimeout(120);
             });
 #if DEBUG
             if (isDevelopment)
@@ -99,6 +102,9 @@ public static class DependencyInjection
                     maxRetryCount: 5,
                     maxRetryDelay: TimeSpan.FromSeconds(30),
                     errorNumbersToAdd: null);
+                // Explicit rather than inheriting SQL's 30s default — entitlement lookups gate
+                // every scoped read, and a timeout here fails the request closed.
+                sqlOptions.CommandTimeout(120);
             });
 #if DEBUG
             if (isDevelopment)
@@ -135,6 +141,7 @@ public static class DependencyInjection
         services.AddScoped<IFarmRepository, FarmRepository>();
         services.AddScoped<IPlantingIntentionRepository, PlantingIntentionRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
+        services.AddScoped<IReminderRepository, ReminderRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         // Tickets follow the same switch pattern as contracts. The CTRM ticket repository still needs
         // the ODS one — for the ticket-key index, the storage gate and the location lookup, none of
@@ -157,6 +164,7 @@ public static class DependencyInjection
         services.AddScoped<IUsageRepository, UsageRepository>();
         services.AddScoped<ICustomerSyncRepository, CustomerSyncRepository>();
         services.AddScoped<IDailyRecapGroupRepository, DailyRecapGroupRepository>();
+        services.AddScoped<ITeamsChannelRepository, TeamsChannelRepository>();
         services.AddScoped<IMbpLocationSynonymRepository, MbpLocationSynonymRepository>();
 
         return services;

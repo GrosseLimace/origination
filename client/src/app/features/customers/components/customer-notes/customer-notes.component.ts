@@ -7,7 +7,9 @@ import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.direct
 import { ToastService } from '@core/services/toast.service';
 import { ApiService } from '@core/services/api.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { TeamsDirectoryService, GraphTeamsChannel } from '@core/services/teams-directory.service';
 import { Customer, Note, NoteMention, MentionCatalog } from '@models';
+import { environment } from '@env/environment';
 
 /** A single selectable row in the "@" mention dropdown. */
 interface MentionOption {
@@ -16,6 +18,9 @@ interface MentionOption {
   name: string;
   email?: string;
   secondary?: string;
+  /** Set on a Teams channel that Graph offered but nobody has registered yet. Picking it registers
+   *  the channel first, which is what turns it into a usable mention id. */
+  pendingChannel?: GraphTeamsChannel;
 }
 
 @Component({
@@ -56,6 +61,7 @@ export class CustomerNotesComponent {
   private readonly toastService = inject(ToastService);
   private readonly apiService = inject(ApiService);
   private readonly usageTracking = inject(UsageTrackingService);
+  private readonly teamsDirectory = inject(TeamsDirectoryService);
 
   newNote = signal('');
 
@@ -63,7 +69,10 @@ export class CustomerNotesComponent {
   noteTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('noteTextarea');
   /** Backdrop div mirroring the textarea text so selected @mentions render green while typing. */
   noteBackdrop = viewChild<ElementRef<HTMLDivElement>>('noteBackdrop');
-  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [] });
+  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] });
+  /** Teams channels the signed-in user belongs to, read from Graph with their own token. Empty when
+   *  the feature is off or consent hasn't been granted — the picker then behaves as it always did. */
+  teamsChannelsFromGraph = signal<GraphTeamsChannel[]>([]);
   /** Structured mentions chosen for the note being composed; sent to the API on submit. */
   mentions = signal<NoteMention[]>([]);
   /** Live segmentation of the compose text so already-selected @mentions show green as the
@@ -117,8 +126,35 @@ export class CustomerNotesComponent {
     }
     for (const g of cat.appGroups ?? []) {
       const s = score([g.name], []);
+      // A Teams entry is labelled by its DESTINATION, not a member count: mentioning it posts to
+      // the channel and emails nobody, and it may legitimately have no members at all —
+      // "0 members" would read as "this will notify no one", the opposite of the truth.
       const members = `${g.memberCount} member${g.memberCount === 1 ? '' : 's'}`;
-      if (s >= 0) ranked.push({ opt: { type: 'app-group', id: String(g.groupId), name: g.name, secondary: `Group · ${members}` }, score: s });
+      const secondary = g.postsToChannel ? 'Group · Posts to Teams channel' : `Group · ${members}`;
+      if (s >= 0) ranked.push({ opt: { type: 'app-group', id: String(g.groupId), name: g.name, secondary }, score: s });
+    }
+
+    // Teams channels. Two sources, merged so a channel never appears twice: ones already registered
+    // (mentionable by anyone, and the only ones that exist if this user's Graph lookup failed), and
+    // ones read from the signed-in user's own teams that nobody has picked yet. Registered wins,
+    // because it already has the id a mention needs.
+    const registeredByChannelId = new Map<string, string>();
+    for (const c of cat.teamsChannels ?? []) {
+      registeredByChannelId.set(c.channelId, String(c.channelDbId));
+      const s = score([c.displayName], [c.teamName]);
+      if (s >= 0) ranked.push({
+        opt: { type: 'teams-channel', id: String(c.channelDbId), name: c.displayName, secondary: `Teams channel · ${c.teamName}` },
+        score: s,
+      });
+    }
+    for (const c of this.teamsChannelsFromGraph()) {
+      if (registeredByChannelId.has(c.channelId)) continue;
+      const s = score([c.displayName], [c.teamName]);
+      // id is empty until the pick registers it — selectMention fills it in from the response.
+      if (s >= 0) ranked.push({
+        opt: { type: 'teams-channel', id: '', name: c.displayName, secondary: `Teams channel · ${c.teamName}`, pendingChannel: c },
+        score: s,
+      });
     }
 
     ranked.sort((a, b) => a.score - b.score || a.opt.name.localeCompare(b.opt.name));
@@ -140,6 +176,15 @@ export class CustomerNotesComponent {
     this.apiService.getMentionCatalog()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(c => this.mentionCatalog.set(c));
+
+    // The user's own Teams channels, read from Graph with their own token. Flag-gated because it
+    // needs admin consent per environment; the service already degrades to an empty list, so the
+    // flag is about not paying for a lookup that cannot succeed yet.
+    if (environment.teamsChannelMentionsEnabled) {
+      this.teamsDirectory.getChannels()
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(channels => this.teamsChannelsFromGraph.set(channels));
+    }
 
     effect(() => {
       const _notes = this.notes();
@@ -475,6 +520,27 @@ export class CustomerNotesComponent {
     const after = value.slice(this.mentionCaret);
     const insert = `@${opt.name} `;
     this.newNote.set(before + insert + after);
+    // A Teams channel nobody has picked before has no id yet. Register it, then record the mention
+    // with the id that comes back. The text is already in the box, so the only visible difference is
+    // that the name turns green a moment later; if registration fails the text stays as plain text
+    // and the toast says why, which is honest — no mention was recorded, so nothing will be posted.
+    if (opt.pendingChannel) {
+      this.apiService.registerTeamsChannel(opt.pendingChannel)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: registered => this.mentions.update(list =>
+            list.some(x => x.type === 'teams-channel' && x.id === String(registered.id))
+              ? list
+              : [...list, { type: 'teams-channel', id: String(registered.id), name: opt.name }]),
+          error: () => this.toastService.error(
+            `Couldn't set up "${opt.name}" for mentions. Try again, or remove it from the note.`),
+        });
+      this.closeMentionDropdown();
+      this._focusAfterMention(before + insert);
+      this.usageTracking.postClickEvent('interaction', 'customers', 'notes-mention', `${opt.type}:new`);
+      return;
+    }
+
     // Dedupe by type+id — the same person/TU/group is only sent once even if @-ed twice.
     this.mentions.update(list =>
       list.some(x => x.type === opt.type && x.id === opt.id)
@@ -484,7 +550,12 @@ export class CustomerNotesComponent {
     // Note create/edit/delete/pin are all visible from their API calls; picking a mention is not,
     // so it's the one part of the notes flow that needs an explicit event.
     this.usageTracking.postClickEvent('interaction', 'customers', 'notes-mention', `${opt.type}:${opt.id}`);
-    const caretPos = (before + insert).length;
+    this._focusAfterMention(before + insert);
+  }
+
+  /** Restores focus and puts the caret after the text just inserted. */
+  private _focusAfterMention(textBeforeCaret: string): void {
+    const caretPos = textBeforeCaret.length;
     setTimeout(() => {
       const ta = this.noteTextarea()?.nativeElement;
       if (ta) {

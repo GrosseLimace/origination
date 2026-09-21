@@ -5,16 +5,23 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap, map, tap } from 'rxjs/operators';
 import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
-import { Customer, SavedList, Note, NoteLastContact, ProducerDetails } from '@models';
+import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
+import { REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+
+/** The follow-up badge on a producer row — the signed-in user's next open reminder for them. */
+interface ReminderBadge {
+  text: string;
+  cssClass: string;
+}
 
 interface LastContactInfo {
   text: string;
@@ -39,6 +46,9 @@ export class CustomerListComponent {
   /** Per-customer "last contacted" aggregate (all trade units, one row per customer with
    *  notes) — feeds the badge cache without the full note download. */
   public noteLastContacts = input<NoteLastContact[]>([]);
+  /** The signed-in user's OWN open follow-ups (all producers). Private per user — the API only
+   *  returns the caller's — so this badge never reveals another originator's plans. */
+  public myReminders = input<ReminderDue[]>([]);
   public loading = input(false);
   public producerDetailsMap = input(new Map<number, ProducerDetails>());
   /** Extra customers fetched for incoming/outgoing linked-producer lookups (populated by the home
@@ -69,6 +79,10 @@ export class CustomerListComponent {
   savedListLoading = signal(false);
   searchLoading = signal(false);
   filteredCustomers = signal<Customer[]>([]);
+
+  /** Roster size when the active saved list's customerIds were last resolved. Guards the
+   *  roster-growth re-run in the constructor; -1 so the first resolve always counts as growth. */
+  private _nlqResolvedForCustomerCount = -1;
   readonly hasTradeUnitSelection = computed(() =>
     this.appStateService.selectedTradeUnits().length > 0 || this.appStateService.selectedGroupNames().length > 0
   );
@@ -78,6 +92,8 @@ export class CustomerListComponent {
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.
   lastContactCache = signal(new Map<number, LastContactInfo>());
+  /** Per-customer follow-up badge, keyed by customer id. Rebuilt with the last-contact cache. */
+  reminderCache = signal(new Map<number, ReminderBadge>());
 
   private _scrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -178,6 +194,15 @@ export class CustomerListComponent {
       this._rebuildLastContactCache();
     });
 
+    // The follow-up badge rebuilds on its own so adding or completing a reminder repaints the
+    // list without redoing the (much larger) last-contact pass over every producer.
+    effect(() => {
+      this.customers();
+      this.filteredCustomers();
+      this.myReminders();
+      this._rebuildReminderCache();
+    });
+
     // Re-run the active saved list's NLQ when tickets / stored grain / planting
     // intentions arrive AFTER the first run. Without this, a saved list whose query
     // needs tickets (e.g. "Producers with unapplied tickets") runs once when those
@@ -201,6 +226,30 @@ export class CustomerListComponent {
         if (!(needsTickets || needsStorage || needsPlanting)) return;
         // Re-execute the live filter against the now-complete data and persist the
         // refreshed customerIds back to appState.
+        this._executeNlq(savedList);
+        this.applyFilters();
+      });
+    });
+
+    // Same idea for the ROSTER growing. The effect above covers late-arriving datasets, but
+    // customers() also fills in progressively via per-producer merges — and the cached
+    // customerIds were only invalidated on a trade-unit change or a list switch. A producer who
+    // arrived after the list resolved, and who matches its query, stayed silently excluded until
+    // the user reselected the list.
+    //
+    // Gated on the roster being strictly LARGER than when the result was computed: customers() is
+    // written often enough that re-running on every change would re-execute the whole filter for
+    // nothing, and the comparison is monotonic so this can't feed itself.
+    effect(() => {
+      const count = this.customers().length;
+      untracked(() => {
+        const listId = this.selectedListId();
+        if (!listId || listId === 'all') return;
+        if (count <= this._nlqResolvedForCustomerCount) return;
+        const savedList = this.savedLists().find(l => String(l.id) === listId);
+        if (!savedList?.query) return;
+        // undefined means a run is already pending or in flight — leave it rather than race it.
+        if (savedList.customerIds === undefined) return;
         this._executeNlq(savedList);
         this.applyFilters();
       });
@@ -533,6 +582,7 @@ export class CustomerListComponent {
       tickets: this.appStateService.tickets(),
       notes,
       noteLastContacts: this.appStateService.noteLastContacts(),
+      myReminders: this.appStateService.myReminders(),
       plantingIntentions: this.appStateService.plantingIntentions(),
       storedGrain: this.appStateService.storedGrain(),
       dpContracts: this.appStateService.dpContracts(),
@@ -570,6 +620,9 @@ export class CustomerListComponent {
     savedList.customerIds = this.nlqFilterService.applyCustomerOverrides(
       refined.map(c => c.id), savedList.includedCustomerIds, savedList.excludedCustomerIds
     );
+    // Remember the roster this result was computed against, so the roster-growth effect can tell
+    // a genuinely larger roster from the ordinary churn that also re-fires on every write.
+    this._nlqResolvedForCustomerCount = this.customers().length;
 
     // Persist customerIds to appState so they survive component remount.
     const lists = this.appStateService.savedLists().map(l =>
@@ -596,6 +649,67 @@ export class CustomerListComponent {
     this.appStateService.setSelectedGroupNames([]);
     this.filteredCustomers.set([]);
     this.clearSelection.emit();
+  }
+
+  /**
+   * Builds the follow-up badge for each visible producer: the SOONEST open reminder the signed-in
+   * user has for them.
+   *
+   * Keyed on customerId rather than customerCode, and deliberately NOT walked across the
+   * linked-producer group the way last-contact is. A reminder is a personal to-do about the one
+   * producer it was set on — surfacing it on a linked producer's row would send the user to the
+   * wrong page when they click it.
+   */
+  private _rebuildReminderCache(): void {
+    const rows = this.myReminders();
+    if (rows.length === 0) {
+      // Skip the allocation entirely in the common case: most producers have no follow-up, and
+      // for a brand-new user this runs on every list render.
+      if (this.reminderCache().size > 0) this.reminderCache.set(new Map());
+      return;
+    }
+
+    const soonestByCustomer = new Map<number, number>();
+    for (const row of rows) {
+      const due = this._parseUtcMs(row.dueAt);
+      const existing = soonestByCustomer.get(row.customerId);
+      if (existing === undefined || due < existing) soonestByCustomer.set(row.customerId, due);
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const newCache = new Map<number, ReminderBadge>();
+    for (const [customerId, dueMs] of soonestByCustomer) {
+      const dueDay = new Date(dueMs);
+      dueDay.setHours(0, 0, 0, 0);
+      const days = Math.round((dueDay.getTime() - today.getTime()) / 86_400_000);
+
+      let text: string;
+      if (days < 0) {
+        const overdue = Math.abs(days);
+        text = overdue === 1 ? 'Follow-up overdue by 1 day' : `Follow-up overdue by ${overdue} days`;
+      } else if (days === 0) {
+        text = 'Follow-up today';
+      } else if (days === 1) {
+        text = 'Follow-up tomorrow';
+      } else {
+        text = `Follow-up in ${days} days`;
+      }
+
+      // Colour comes from the shared rule the producer-pane card also reads, so the badge and the
+      // card can never disagree about how urgent the same follow-up is.
+      newCache.set(customerId, { text, cssClass: REMINDER_DUE_CLASS[reminderDueTier(dueDay)] });
+    }
+
+    // New Map reference so the OnPush template re-renders.
+    this.reminderCache.set(newCache);
+  }
+
+  /** Bare ISO strings from the API are UTC without a Z suffix. */
+  private _parseUtcMs(ts: string): number {
+    const raw = !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+    return new Date(raw).getTime();
   }
 
   /**

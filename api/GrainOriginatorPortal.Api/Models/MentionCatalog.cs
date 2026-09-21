@@ -13,6 +13,28 @@ public class MentionCatalogResponse
     public List<MentionCatalogTradeUnit> TradeUnits { get; set; } = [];
     public List<MentionCatalogGroup> TradeUnitGroups { get; set; } = [];
     public List<MentionCatalogAppGroup> AppGroups { get; set; } = [];
+
+    /// <summary>Registered Microsoft Teams channels. Unlike every other list here this one is NOT
+    /// scoped to the caller: a channel registered by anyone is mentionable by everyone, which is
+    /// what lets the first person to pick a channel make it available to the whole team. Scoping
+    /// happens earlier — the composer only ever offers channels the signed-in user belongs to.</summary>
+    public List<MentionCatalogTeamsChannel> TeamsChannels { get; set; } = [];
+}
+
+/// <summary>A registered Teams channel. Mentioning it posts the note to that channel.</summary>
+public class MentionCatalogTeamsChannel
+{
+    /// <summary>dbo.TeamsChannels key — what a mention stores. Never the channel address.</summary>
+    public int ChannelDbId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>Owning team, shown as the secondary label so two channels named "General" are
+    /// tellable apart.</summary>
+    public string TeamName { get; set; } = string.Empty;
+
+    /// <summary>Graph channel id, so the composer can tell which of the channels it just read from
+    /// Graph are already registered.</summary>
+    public string ChannelId { get; set; } = string.Empty;
 }
 
 /// <summary>A person who shares at least one trade unit with the caller.</summary>
@@ -51,4 +73,10 @@ public class MentionCatalogAppGroup
 
     /// <summary>False for a group the caller only sees because they're a member of it.</summary>
     public bool IsOwner { get; set; }
+
+    /// <summary>True when this group delivers to a Teams channel, so mentioning it posts the note
+    /// there instead of emailing the members. Derived from the group's delivery method, not stored.
+    /// The picker labels these by destination rather than a member count, and such an entry may have
+    /// zero members — so it is listed on this flag alone.</summary>
+    public bool PostsToChannel { get; set; }
 }

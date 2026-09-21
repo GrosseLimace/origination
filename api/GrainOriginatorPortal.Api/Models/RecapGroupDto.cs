@@ -8,6 +8,8 @@ public record RecapGroupDto
     public string Name { get; init; } = string.Empty;
     public string DeliveryMethod { get; init; } = "email";
     public string? TeamsChannelEmail { get; init; }
+
+
     public bool Enabled { get; init; }
     public List<RecapGroupMemberDto> Members { get; init; } = [];
     public List<string> CcList { get; init; } = [];

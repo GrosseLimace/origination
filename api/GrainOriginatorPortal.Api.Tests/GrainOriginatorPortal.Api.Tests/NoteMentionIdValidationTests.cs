@@ -119,7 +119,7 @@ public class NoteMentionIdValidationTests
             .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(System.StringComparer.OrdinalIgnoreCase));
 
         var svc = new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
-            groups.Object, entitlements.Object, new Mock<ILogger<NoteService>>().Object);
+            groups.Object, MentionTestDoubles.TeamsChannelStub(), entitlements.Object, new Mock<ILogger<NoteService>>().Object);
         return (svc, () => json);
     }
 }
