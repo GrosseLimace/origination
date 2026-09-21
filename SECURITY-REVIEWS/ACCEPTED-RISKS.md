@@ -119,6 +119,44 @@ the route list above as a mutation of producer contact info, farm links and `Lin
 real — the route did carry an uncited paraphrase, the H-060 pattern — but the remedy was to explain
 that it is a no-op, not to file it under an entry about accepting unguarded mutations.
 
+### Update (2026-09-21) — M-045: a stale premise, and the H-062 fix was incomplete
+
+**M-045** (`claude`, CWE-639, 8/10) against `PUT /api/producerdetails/customer/{customerId}`.
+
+**The authorization half rests on a stale premise — declined.** The finding argues the upsert must
+be scoped because the sibling `GET` was "remediated and is now trade-unit authorized", leaving a
+read-403 / write-200 asymmetry that lets a caller poison a record they cannot read back. **That GET
+scoping was reverted the same day** (2026-09-21) — see the banner at the top of AR-02 and the
+comment on `GetByCustomerAsync`. There is no asymmetry: `GET` and `PUT` are both open and both
+covered by the register; only `DELETE` is scoped, for the reasons H-062 records. The scan evidently
+ran against the intermediate tree.
+
+Independently, the upsert could not take this check even if the premise held: it has six callers,
+two of which write to cross-trade-unit LINKED producers by design, plus an onboarding path that
+writes details immediately after assigning membership. This is the same check that broke
+search-and-click when it was added to the read.
+
+**The audit half was valid, and verifying it exposed a worse gap in the H-062 fix.**
+
+| Path | Before | After |
+|---|---|---|
+| `UpsertAsync` | plain `LogInformation`, no audit code, no actor | `AUDIT_UPDATE` + `User` + contact/grain counts |
+| `DeleteAsync` | `AUDIT_DELETE` + cascade counts, **no actor** | `AUDIT_DELETE` + `User` + cascade counts |
+
+⚠ **The delete gap is the serious one, and it was mine.** The H-062 fix (2026-09-14) was made
+specifically to satisfy this entry's "every mutation is attributable" claim. It added the audit
+code and the cascade counts **but not the actor**, and `IProducerDetailsRepository.DeleteAsync` did
+not even accept a `currentUser`. This is a HARD delete — `Remove()` on the details row plus
+`RemoveRange()` on `ProducerContacts` and `ProducerGrainOnFarm` — so no `DeletedBy` survives on any
+row. For seven days the most destructive route in the application, which erases hand-entered
+producer contact PII with no upstream source to restore from, recorded **who did it nowhere**.
+The repository method now takes the acting user and logs it.
+
+**Fifth instance** of a compensating control being thinner than claimed — H-062, H-071, M-041,
+M-043, and now the *fix for* H-062. Writing the fix is not the same as verifying it: **re-read the
+log line's fields after changing it.** Delete guard re-verified by mutation (3 of 6
+`ProducerDetailsDeleteTests` fail with the entitlement check removed).
+
 ### Update (2026-09-21) — M-043: planting intentions, and a HARD delete with no attribution
 
 **M-043** (`claude`, CWE-639, 8/10) against `PUT`/`DELETE /api/plantingintentions/{id}` (this entry)

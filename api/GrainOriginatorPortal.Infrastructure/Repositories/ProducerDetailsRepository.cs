@@ -296,7 +296,14 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         // carries them.
         saved.GrainOnFarm = await GetGrainOnFarmAsync(customerId, cancellationToken);
         saved.Contacts = await GetContactsAsync(customerId, cancellationToken);
-        _logger.LogInformation("Upserted ProducerDetails for customer {CustomerId}", customerId);
+        // Structured AUDIT_UPDATE, matching the delete below. M-045 (2026-09-21) found this path
+        // emitting only a plain LogInformation with no audit code and no actor -- the same gap
+        // H-062 closed on the delete. The row does carry ModifiedBy, so the write was attributable,
+        // but not from the log alone. Contact counts are included because this path overwrites
+        // ProducerContact PII (names, phones, emails).
+        _logger.LogInformation(
+            "Producer details upserted [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} Contacts={Contacts} GrainRows={GrainRows}",
+            "AUDIT_UPDATE", "DataMutation", customerId, currentUser, saved.Contacts.Count, saved.GrainOnFarm.Count);
         return saved;
     }
 
@@ -339,7 +346,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         return cleaned;
     }
 
-    public async Task<bool> DeleteAsync(long customerId, CancellationToken cancellationToken)
+    public async Task<bool> DeleteAsync(long customerId, string currentUser, CancellationToken cancellationToken)
     {
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
         if (existing == null) return false;
@@ -362,9 +369,14 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         // rows that exist nowhere upstream, so the cascade counts belong in the audit trail — a
         // plain LogInformation left AR-01's stated "every mutation is attributable" control
         // unsatisfied for this route (H-062, 2026-09-14).
+        //
+        // ⚠ User={User} added 2026-09-21. The H-062 fix added the audit code and the cascade
+        // counts but NOT the actor, and this is a HARD delete — Remove() on the details row plus
+        // RemoveRange() on contacts and grain. Nothing survives to carry a DeletedBy, so this line
+        // is the only record of who destroyed a producer's contact PII. Do not drop User from it.
         _logger.LogInformation(
-            "Producer details deleted [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} ContactsRemoved={ContactsRemoved} GrainRowsRemoved={GrainRowsRemoved}",
-            "AUDIT_DELETE", "DataMutation", customerId, contacts.Count, grain.Count);
+            "Producer details deleted [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} ContactsRemoved={ContactsRemoved} GrainRowsRemoved={GrainRowsRemoved}",
+            "AUDIT_DELETE", "DataMutation", customerId, currentUser, contacts.Count, grain.Count);
         return true;
     }
 

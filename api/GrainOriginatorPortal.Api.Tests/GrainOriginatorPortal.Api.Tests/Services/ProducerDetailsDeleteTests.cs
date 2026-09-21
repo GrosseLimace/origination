@@ -47,7 +47,7 @@ public class ProducerDetailsDeleteTests
         _requestContextMock.Setup(r => r.GetCurrentUser()).Returns("tester");
 
         _repositoryMock
-            .Setup(r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         _sut = new ProducerDetailsService(
@@ -65,7 +65,7 @@ public class ProducerDetailsDeleteTests
         var result = await _sut.DeleteAsync(EntitledCustomerId, CancellationToken.None);
 
         Assert.True(result);
-        _repositoryMock.Verify(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<CancellationToken>()), Times.Once);
+        _repositoryMock.Verify(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public class ProducerDetailsDeleteTests
 
         // The assertion that matters: the producer's details and child rows must still be there.
         _repositoryMock.Verify(
-            r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+            r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // An entitled customer with no details row is a no-op, not an error — the route stays
@@ -85,7 +85,7 @@ public class ProducerDetailsDeleteTests
     public async Task DeleteAsync_WhenNoDetailsRowExists_ReturnsFalseWithoutThrowing()
     {
         _repositoryMock
-            .Setup(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<CancellationToken>()))
+            .Setup(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var result = await _sut.DeleteAsync(EntitledCustomerId, CancellationToken.None);
@@ -105,7 +105,7 @@ public class ProducerDetailsDeleteTests
 
         Assert.Equal("ENTITLEMENTS_DB_UNAVAILABLE", ex.ErrorCode);
         _repositoryMock.Verify(
-            r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+            r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ---- GET is deliberately NOT scoped. Three tests here asserted a trade-unit check on the
@@ -145,7 +145,7 @@ public class ProducerDetailsDeleteTests
             .ReturnsAsync(new HashSet<long> { EntitledCustomerId })
             .Callback(() => sequence.Add("resolve"));
         _repositoryMock
-            .Setup(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<CancellationToken>()))
+            .Setup(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true)
             .Callback(() => sequence.Add("delete"));
 

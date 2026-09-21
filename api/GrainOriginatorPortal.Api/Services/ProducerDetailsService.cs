@@ -113,6 +113,12 @@ public class ProducerDetailsService : IProducerDetailsService
         // producer details to LINKED producers outside the caller's selected trade units, and the
         // onboarding flow saves details immediately after assigning membership. An entitlement
         // check here would break both — do not add one without re-opening AR-01.
+        //
+        // M-045 (2026-09-21) argued this write must be scoped because the sibling GET was scoped,
+        // leaving a read-403/write-200 asymmetry. That premise is STALE: the GET scoping was
+        // reverted the same day (see GetByCustomerAsync above). GET and PUT are both open and both
+        // covered by the register; only the DELETE is scoped, for the reasons H-062 records.
+        // The finding's audit half was valid and is fixed in the repository.
         var grainEntries = (request.GrainOnFarm ?? [])
             .Select(g => new GrainOnFarmEntry
             {
@@ -177,7 +183,7 @@ public class ProducerDetailsService : IProducerDetailsService
         // rationale protects a hand-off workflow that does not exist on this route.
         await EnsureCustomerEntitledAsync(customerId, "delete", cancellationToken);
 
-        return await _repository.DeleteAsync(customerId, cancellationToken);
+        return await _repository.DeleteAsync(customerId, _requestContext.GetCurrentUser(), cancellationToken);
     }
 
     /// <summary>Throws unless the caller holds a trade unit the customer belongs to. Used by the
