@@ -19,5 +19,9 @@ public interface IPlantingIntentionRepository
     /// the service has already validated a non-null value against the producer's memberships.</summary>
     Task<PlantingIntention?> UpdateAsync(int intentionId, string crop, string? category, string? type,
         string? description, int acres, int plantingYear, string? tradeUnit, string currentUser, CancellationToken cancellationToken);
+    /// <summary>Repoints every row of this customer tagged <paramref name="fromTradeUnit"/> at
+    /// <paramref name="toTradeUnit"/>. Returns how many rows moved. The service validates the target.</summary>
+    Task<int> RetagAsync(long customerId, string fromTradeUnit, string toTradeUnit, string currentUser, CancellationToken cancellationToken);
+
     Task DeleteAsync(int intentionId, CancellationToken cancellationToken);
 }

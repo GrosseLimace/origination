@@ -51,7 +51,19 @@ One trade unit → shown read-only; several → the originator must pick, presel
 of them is selected in the header. Same crop, year and type for two trade units are two rows, not
 one accumulated row. The API rejects a trade unit the producer is not active in (400). A producer
 with no membership rows yet falls back to the user's in-scope trade units. The profile itself always
-lists every row regardless of trade unit. Full rationale: [`Planting Intentions Dashboard.md`](./Planting%20Intentions%20Dashboard.md#trade-unit-attribution-of-planting-acres).
+lists every row regardless of trade unit, and the Planting table's fourth column shows each row's
+trade unit (it replaced Created On, which the table no longer displays). Full rationale:
+[`Planting Intentions Dashboard.md`](./Planting%20Intentions%20Dashboard.md#trade-unit-attribution-of-planting-acres).
+
+**Removing a trade unit moves the acres.** In the Edit Producer Details dialog, removing a trade
+unit chip that has planting intentions against it opens a prompt showing how many rows, how many
+acres and which crop years, and offers the producer's remaining trade units. Confirming with a
+destination calls `POST /api/plantingintentions/retag` on Save. Declining leaves the rows on the
+trade unit the producer has left, where no trade-unit dashboard counts them until someone re-tags
+them, which the prompt says plainly. The producer's intentions are fetched once, on the first
+removal, so a dialog that never removes a trade unit costs nothing extra. Nothing is blocked: a
+trade unit with planting intentions is still removable, because the nightly sync can drop a
+membership with no user present anyway.
 
 **Growth Opportunity** was called "AI Growth Forecast" until 2026-08-12. Nothing about it was AI — it
 rendered a hardcoded sentence and two branches gated behind `const totalProjected = 0` that could

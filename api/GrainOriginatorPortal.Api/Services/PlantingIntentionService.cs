@@ -184,6 +184,25 @@ public class PlantingIntentionService : IPlantingIntentionService
     }
 
     /// <inheritdoc />
+    public async Task<int> RetagAsync(long customerId, string fromTradeUnit, string toTradeUnit, CancellationToken cancellationToken)
+    {
+        var from = (fromTradeUnit ?? string.Empty).Trim();
+        if (from.Length == 0)
+            throw new ValidationException("fromTradeUnit", "The trade unit to move planting intentions from is required.");
+
+        // Validates the target against the producer's active trade units (same rule as create/update).
+        // The source is deliberately unchecked — the producer has usually just been removed from it.
+        var to = await ResolveTradeUnitAsync(customerId, toTradeUnit, customerFound: true, crop: "(retag)", cancellationToken);
+        if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase)) return 0;
+
+        var moved = await _repository.RetagAsync(customerId, from, to, _requestContext.GetCurrentUser(), cancellationToken);
+        _logger.LogInformation(
+            "Planting intentions retagged [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId}, From={FromTradeUnit}, To={ToTradeUnit}, Count={Count}",
+            "AUDIT_UPDATE", "DataMutation", customerId, from, to, moved);
+        return moved;
+    }
+
+    /// <inheritdoc />
     public Task DeleteAsync(int intentionId, CancellationToken cancellationToken) =>
         _repository.DeleteAsync(intentionId, cancellationToken);
 

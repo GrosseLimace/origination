@@ -80,6 +80,30 @@ export class EditCustomerDialogComponent {
   // a user can back out by cancelling. Each becomes a DELETE .../trade-units/{code} call in onSave.
   removedDormantTuCodes = signal<string[]>([]);
 
+  // ── Planting intentions recorded against a trade unit being removed ──────
+  // Removing a trade unit doesn't unplant the acres, so the originator is asked where the rows
+  // should count instead rather than leaving them stranded on a trade unit the producer has left
+  // (such a row counts on no single-trade-unit dashboard). Loaded lazily on the first removal —
+  // removals are rare, so most opens of this dialog never pay for the fetch.
+  private _plantingByTu = signal<Map<string, { count: number; acres: number; years: number[] }>>(new Map());
+  private _plantingLoaded = false;
+  isCheckingPlantingIntentions = signal(false);
+
+  /** The open "where should these acres go?" prompt, or null. */
+  tuRemovalPrompt = signal<{
+    code: string;
+    kind: 'manual' | 'dormant';
+    count: number;
+    acres: number;
+    years: number[];
+    targets: string[];
+  } | null>(null);
+  /** Chosen destination in the prompt; '' means "leave them where they are". */
+  tuRemovalTarget = signal<string>('');
+
+  /** from → to, staged until Save, then one retag call each. */
+  private _stagedIntentionMoves = signal<Map<string, string>>(new Map());
+
   /** Active sync-sourced (locked) memberships — used to keep them out of the add-search dropdown
    *  (they're already active memberships). Inactive rows are excluded so a removed TU can be re-added. */
   readonly lockedTradeUnits = computed(() =>
@@ -385,6 +409,12 @@ export class EditCustomerDialogComponent {
         this.removedDormantTuCodes.set([]);
         this.tuListLoaded.set(false);
         this._originalManualTuCodes = [];
+        // Planting-intention state is per producer: drop it so the next removal re-checks.
+        this._plantingByTu.set(new Map());
+        this._plantingLoaded = false;
+        this._stagedIntentionMoves.set(new Map());
+        this.tuRemovalPrompt.set(null);
+        this.tuRemovalTarget.set('');
         if (this.allTradeUnits().length === 0 && !this.isLoadingTradeUnits()) {
           this.isLoadingTradeUnits.set(true);
           this.apiService.getAllTradeUnits().subscribe({
@@ -476,18 +506,130 @@ export class EditCustomerDialogComponent {
     if (!code || this.selectedTuCodes().includes(code)) return;
     this.selectedTuCodes.update(list => [...list, code]);
     this.tuSearch.set('');
+    // Re-adding a trade unit undoes its removal, so any staged move of its acres is moot.
+    this._clearStagedMove(code);
   }
 
+  /** Remove a manual assignment. Asks where the acres go first when this producer has planting
+   *  intentions recorded against the trade unit. */
   removeTradeUnit(code: string): void {
-    this.selectedTuCodes.update(list => list.filter(c => c !== code));
+    this._beginTradeUnitRemoval(code, 'manual');
   }
 
   /** Stage removal of a dormant LOCKED trade unit (committed on Save). Only dormant chips expose
    *  this; the server re-validates dormancy when the DELETE runs in onSave(). */
   removeDormantTradeUnit(code: string): void {
+    this._beginTradeUnitRemoval(code, 'dormant');
+  }
+
+  /** The removal itself — what the two handlers above used to do directly. */
+  private _applyTradeUnitRemoval(code: string, kind: 'manual' | 'dormant'): void {
+    if (kind === 'manual') {
+      this.selectedTuCodes.update(list => list.filter(c => c !== code));
+      return;
+    }
     if (!this.removedDormantTuCodes().includes(code)) {
       this.removedDormantTuCodes.update(list => [...list, code]);
     }
+  }
+
+  /**
+   * Removes the trade unit straight away when no planting intentions are recorded against it,
+   * otherwise opens the prompt. The intention list is fetched once, on demand. A failed fetch
+   * removes the trade unit rather than blocking the user — the rows stay visible on the profile
+   * (flagged as no longer assigned) and in the audit script.
+   */
+  private _beginTradeUnitRemoval(code: string, kind: 'manual' | 'dormant'): void {
+    const customer = this.customer();
+    if (!customer || customer.isOnboardCandidate) {
+      this._applyTradeUnitRemoval(code, kind);
+      return;
+    }
+    if (this._plantingLoaded) {
+      this._promptOrRemove(code, kind);
+      return;
+    }
+    this.isCheckingPlantingIntentions.set(true);
+    this.apiService.getPlantingIntentionsByCustomer(customer.id).subscribe({
+      next: rows => {
+        const byTu = new Map<string, { count: number; acres: number; years: number[] }>();
+        for (const row of rows) {
+          const tu = (row.tradeUnit || '').trim();
+          if (!tu) continue;
+          const entry = byTu.get(tu) ?? { count: 0, acres: 0, years: [] };
+          entry.count += 1;
+          entry.acres += row.acres;
+          if (!entry.years.includes(row.plantingYear)) entry.years.push(row.plantingYear);
+          byTu.set(tu, entry);
+        }
+        for (const entry of byTu.values()) entry.years.sort((a, b) => b - a);
+        this._plantingByTu.set(byTu);
+        this._plantingLoaded = true;
+        this.isCheckingPlantingIntentions.set(false);
+        this._promptOrRemove(code, kind);
+      },
+      error: () => {
+        this.isCheckingPlantingIntentions.set(false);
+        this._plantingLoaded = true; // don't re-fetch on every chip click
+        this._applyTradeUnitRemoval(code, kind);
+      }
+    });
+  }
+
+  private _promptOrRemove(code: string, kind: 'manual' | 'dormant'): void {
+    const stats = this._plantingByTu().get(code);
+    if (!stats || stats.count === 0) {
+      this._applyTradeUnitRemoval(code, kind);
+      return;
+    }
+    const targets = this._remainingTradeUnitsAfterRemoving(code);
+    this.tuRemovalTarget.set(targets.length === 1 ? targets[0] : '');
+    this.tuRemovalPrompt.set({ code, kind, count: stats.count, acres: stats.acres, years: stats.years, targets });
+  }
+
+  /**
+   * Where the acres could go: the trade units this producer keeps once the staged edits apply.
+   * Restricted to memberships that are already active, so a trade unit added in this same dialog
+   * (not yet saved) is never offered — that move would race the assignment and be rejected.
+   */
+  private _remainingTradeUnitsAfterRemoving(code: string): string[] {
+    const activeNow = new Set(this.currentTradeUnits().filter(t => t.isActive).map(t => t.tradeUnit));
+    const keeping = new Set<string>([
+      ...this.activeLockedTradeUnits(),
+      ...this.dormantTradeUnits(),
+      ...this.selectedTuCodes(),
+    ]);
+    return [...keeping].filter(c => c !== code && activeNow.has(c)).sort();
+  }
+
+  /** Confirm the removal, moving the acres to the chosen trade unit (or leaving them if none). */
+  confirmTradeUnitRemoval(): void {
+    const prompt = this.tuRemovalPrompt();
+    if (!prompt) return;
+    const target = this.tuRemovalTarget();
+    if (target) {
+      this._stagedIntentionMoves.update(map => new Map(map).set(prompt.code, target));
+    } else {
+      this._clearStagedMove(prompt.code);
+    }
+    this._applyTradeUnitRemoval(prompt.code, prompt.kind);
+    this.tuRemovalPrompt.set(null);
+    this.tuRemovalTarget.set('');
+  }
+
+  /** Back out — the trade unit stays and nothing moves. */
+  cancelTradeUnitRemoval(): void {
+    this.tuRemovalPrompt.set(null);
+    this.tuRemovalTarget.set('');
+  }
+
+  private _clearStagedMove(code: string): void {
+    if (!this._stagedIntentionMoves().has(code)) return;
+    this._stagedIntentionMoves.update(map => {
+      const next = new Map(map);
+      next.delete(code);
+      return next;
+    });
   }
 
   /** Save is blocked for a not-yet-onboarded candidate until at least one trade unit is
@@ -745,6 +887,10 @@ export class EditCustomerDialogComponent {
     this.editLinkedProducerIds.set([...this._originalLinkedProducerIds]);
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(this._originalESignEnabled);
+    // Cancelling drops the staged trade-unit removals, so the acre moves they carried go too.
+    this._stagedIntentionMoves.set(new Map());
+    this.tuRemovalPrompt.set(null);
+    this.tuRemovalTarget.set('');
     const customer = this.customer();
     this.editContacts.set(customer ? this._contactsFromCustomer(customer) : []);
     this.newCommodity.set('');
@@ -769,6 +915,20 @@ export class EditCustomerDialogComponent {
       for (const code of dormantRemovals) {
         this.apiService.removeDormantTradeUnit(customer.id, code).subscribe({
           error: () => this.toast.error(`Couldn't remove trade unit ${code} — the producer may still have an open contract or ticket there.`)
+        });
+      }
+
+      // Move the planting intentions the user chose to re-home when removing a trade unit. Order
+      // against the removals above doesn't matter: the API validates only the DESTINATION, which
+      // is an active membership either way.
+      for (const [from, to] of this._stagedIntentionMoves()) {
+        this.apiService.retagPlantingIntentions(customer.id, from, to).subscribe({
+          next: ({ moved }) => {
+            if (moved > 0) {
+              this.toast.success(`Moved ${moved} planting intention${moved === 1 ? '' : 's'} from ${from} to ${to}.`);
+            }
+          },
+          error: () => this.toast.error(`Couldn't move planting intentions from ${from} to ${to} — they're still recorded against ${from}.`)
         });
       }
 

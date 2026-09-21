@@ -159,6 +159,28 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
         return intention;
     }
 
+    public async Task<int> RetagAsync(long customerId, string fromTradeUnit, string toTradeUnit, string currentUser, CancellationToken cancellationToken)
+    {
+        var rows = await _appContext.PlantingIntentions
+            .Where(p => p.CustomerId == customerId && p.TradeUnit == fromTradeUnit)
+            .ToListAsync(cancellationToken);
+        if (rows.Count == 0) return 0;
+
+        var now = DateTime.UtcNow;
+        foreach (var row in rows)
+        {
+            row.TradeUnit = toTradeUnit;
+            row.ModifiedBy = currentUser;
+            row.ModifiedAt = now;
+        }
+        await _appContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Retagged {Count} planting intention(s) for customer {CustomerId} from {FromTradeUnit} to {ToTradeUnit}",
+            rows.Count, customerId, fromTradeUnit, toTradeUnit);
+        return rows.Count;
+    }
+
     public async Task DeleteAsync(int intentionId, CancellationToken cancellationToken)
     {
         var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);

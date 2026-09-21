@@ -22,5 +22,10 @@ public interface IPlantingIntentionService
     Task<PlantingIntentionResponse?> UpdateAsync(int intentionId, string crop, string? category, string? type,
         string? description, int acres, int plantingYear, string? tradeUnit, CancellationToken cancellationToken);
 
+    /// <summary>Moves all of a producer's planting intentions from one trade unit to another and
+    /// returns how many moved. <paramref name="toTradeUnit"/> must be one of the producer's active
+    /// trade units; the source is not checked, since the producer has usually just left it.</summary>
+    Task<int> RetagAsync(long customerId, string fromTradeUnit, string toTradeUnit, CancellationToken cancellationToken);
+
     Task DeleteAsync(int intentionId, CancellationToken cancellationToken);
 }

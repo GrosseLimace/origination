@@ -101,6 +101,24 @@ public class PlantingIntentionsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Moves all of a producer's planting intentions from one trade unit to another.
+    /// Called when a producer is unassigned from a trade unit and the originator chooses where the
+    /// acres should now count. Returns the number of rows moved.</summary>
+    [HttpPost("retag")]
+    [ProducesResponseType(typeof(RetagPlantingIntentionsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<RetagPlantingIntentionsResponse>> Retag([FromBody] RetagPlantingIntentionsRequest request, CancellationToken cancellationToken = default)
+    {
+        // Trade units are a UX filter, not an access boundary (AR-01/AR-02). The service still
+        // refuses a target the producer doesn't trade with, which is a data-integrity rule.
+        var moved = await _service.RetagAsync(request.CustomerId, request.FromTradeUnit, request.ToTradeUnit, cancellationToken);
+        _logger.LogInformation(
+            "Planting intentions retagged [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId}, From={From}, To={To}, Count={Count}",
+            "AUDIT_UPDATE", "DataMutation", request.CustomerId, request.FromTradeUnit, request.ToTradeUnit, moved);
+        return Ok(new RetagPlantingIntentionsResponse { Moved = moved });
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Deletes a planting intention by ID.</summary>
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

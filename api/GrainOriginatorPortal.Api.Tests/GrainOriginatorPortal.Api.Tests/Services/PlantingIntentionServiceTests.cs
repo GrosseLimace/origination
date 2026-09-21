@@ -65,6 +65,11 @@ public class PlantingIntentionServiceTests
                     CreatedBy = "creator", ModifiedBy = user
                 });
 
+        _repositoryMock
+            .Setup(r => r.RetagAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+
         _sut = new PlantingIntentionService(
             _repositoryMock.Object,
             _customerRepositoryMock.Object,
@@ -259,5 +264,66 @@ public class PlantingIntentionServiceTests
 
         // Assert
         Assert.Null(result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Retag — used when a producer is unassigned from a trade unit and the originator says where
+    // the acres should count instead. The SOURCE is not validated (the producer has just left it);
+    // the TARGET must be one of the trade units they still have.
+    [Fact]
+    public async Task RetagAsync_MovesRowsToTheChosenTradeUnit()
+    {
+        // Arrange — the producer kept 2190 after being removed from 2210.
+        ProducerHasTradeUnits("2190");
+
+        // Act
+        var moved = await _sut.RetagAsync(CustomerId, "2210", "2190", CancellationToken.None);
+
+        // Assert
+        Assert.Equal(3, moved);
+        _repositoryMock.Verify(r => r.RetagAsync(CustomerId, "2210", "2190", "tester@scoular.com",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task RetagAsync_Throws_WhenTargetIsNotOneOfTheProducersTradeUnits()
+    {
+        // Arrange
+        ProducerHasTradeUnits("2190");
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _sut.RetagAsync(CustomerId, "2210", "9999", CancellationToken.None));
+        _repositoryMock.Verify(r => r.RetagAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task RetagAsync_DoesNothing_WhenSourceAndTargetMatch()
+    {
+        // Arrange
+        ProducerHasTradeUnits("2190");
+
+        // Act
+        var moved = await _sut.RetagAsync(CustomerId, "2190", "2190", CancellationToken.None);
+
+        // Assert
+        Assert.Equal(0, moved);
+        _repositoryMock.Verify(r => r.RetagAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task RetagAsync_Throws_WhenSourceIsBlank()
+    {
+        // Arrange
+        ProducerHasTradeUnits("2190");
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _sut.RetagAsync(CustomerId, "   ", "2190", CancellationToken.None));
     }
 }
