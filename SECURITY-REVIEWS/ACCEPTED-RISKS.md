@@ -535,7 +535,37 @@ blank codes and returns early on an empty set, so `?tradeUnitCode=` (empty strin
 repository path. Any route that treats a trade-unit parameter as required must reject
 null/whitespace explicitly *before* calling the validator — validating is not the same as requiring.
 
-### Decision: Accepted (locations only — see the 2026-09-14 update above)
+**Update (2026-09-21):** re-flagged as **H-068** (`claude`, CWE-284, confidence 8/10) against the
+remaining half, `GET /api/bidsheet/locations`. **Re-accepted — no behaviour change.**
+
+The finding's central argument is that the sibling `GetElevators` requires `tradeUnitCode`, so "the
+correct pattern is known to this codebase" and locations is an oversight. **That contrast is an
+artifact of the 2026-09-14 fix above, not evidence of a miss** — the two routes were separated on
+whether a client path actually depends on the unscoped read, the same test that settled H-061 and
+H-062. Elevators had no caller at all; locations is load-bearing:
+
+- `bid-sheet.component.ts` references `allMapLocations` in **24 places**.
+- `_loadAllMapLocations` feeds the ~4,000-pin catalog map; the no-TU-selected refresh path reloads
+  through it; and with no trade unit active the entire flattened location view *is* `allMapLocations`.
+- The crop and crop-year filter lists are derived from `allMapLocations().flatMap(l => l.bids)`, so
+  **the bids are needed cross-trade-unit too** — serving pins without prices would not work either.
+
+Both suggested fixes therefore break the feature. Requiring `tradeUnitCode`, or defaulting the scope
+to the caller's entitled set, leaves a rep seeing only their own bids — the one thing the catalog
+map exists to look past.
+
+On the empty-string point: `?tradeUnitCode=` returning everything is **not** a bypass here. Omitting
+the parameter is the documented intent, so blank behaving identically is consistent. That only
+mattered on elevators because the parameter became *required* there.
+
+**What did change:** the asymmetry now explains itself at the call site. The `GetLocations` comment
+previously said only "cross-TU visibility is a feature" and never said why its sibling differs, so a
+scanner comparing two near-identical routes reasonably read the difference as an oversight. Same
+failure mode as H-060, M-039 and H-063 — a deliberate decision that the code does not state gets
+rediscovered every scan. **Lesson: when a fix makes two sibling routes behave differently, document
+the difference at the point of the difference, not only in this file.**
+
+### Decision: Accepted (locations only — see the 2026-09-14 and 2026-09-21 updates above)
 
 **Rationale.** Cross-trade-unit *visibility* of bid-sheet locations and bids is **intended** — the
 frontend deliberately loads all locations for the map view, and reps benefit from seeing the wider
