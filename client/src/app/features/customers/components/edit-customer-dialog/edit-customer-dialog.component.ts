@@ -54,6 +54,10 @@ export class EditCustomerDialogComponent {
     tradeUnitCodes: string[];        // Desired ACTIVE manual TU set — reconciled on "Save Changes".
     reconcileTradeUnits: boolean;    // Only reconcile when it's safe + meaningful (see canReconcileTradeUnits).
     grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[];
+    // Planting intentions to re-home because their trade unit is being removed. The PARENT runs
+    // these, because it owns the cached intention lists that the profile renders — doing it here
+    // would move the rows server-side while the table kept showing the old trade unit.
+    intentionMoves: { from: string; to: string }[];
   }>();
 
   // ── Trade-unit assignment / management ──────────────────────────────────
@@ -918,19 +922,6 @@ export class EditCustomerDialogComponent {
         });
       }
 
-      // Move the planting intentions the user chose to re-home when removing a trade unit. Order
-      // against the removals above doesn't matter: the API validates only the DESTINATION, which
-      // is an active membership either way.
-      for (const [from, to] of this._stagedIntentionMoves()) {
-        this.apiService.retagPlantingIntentions(customer.id, from, to).subscribe({
-          next: ({ moved }) => {
-            if (moved > 0) {
-              this.toast.success(`Moved ${moved} planting intention${moved === 1 ? '' : 's'} from ${from} to ${to}.`);
-            }
-          },
-          error: () => this.toast.error(`Couldn't move planting intentions from ${from} to ${to} — they're still recorded against ${from}.`)
-        });
-      }
 
       // Contacts: drop fully-blank rows, normalize to exactly one primary. Rows with details but
       // no name are blocked before this point (contactsInvalid gates the Save button).
@@ -967,7 +958,8 @@ export class EditCustomerDialogComponent {
             bushelsOnHand: r.bushelsOnHand.trim() ? this._parseNumericInput(r.bushelsOnHand) : undefined,
             targetBushels: r.targetBushels.trim() ? this._parseDecimalInput(r.targetBushels) : undefined,
             grade: r.grade.trim() || undefined
-          }))
+          })),
+        intentionMoves: [...this._stagedIntentionMoves()].map(([from, to]) => ({ from, to }))
       });
       this._initialized = false;
       this.close.emit();

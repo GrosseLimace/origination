@@ -2,7 +2,7 @@ import { Component, inject, signal, computed, DestroyRef, effect, untracked } fr
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, Subject } from 'rxjs';
-import { catchError, takeUntil } from 'rxjs/operators';
+import { catchError, map, takeUntil } from 'rxjs/operators';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -1417,7 +1417,7 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[]; intentionMoves?: { from: string; to: string }[] }): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
@@ -1432,12 +1432,57 @@ export class HomeComponent {
             this.selectedCustomer.set({ ...sel, isManual: true, isOnboardCandidate: false });
           }
           this._saveProducerDetailsAndLinks(data);
+          this._movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
         },
         error: () => this.toastService.error('Failed to update trade units')
       });
     } else {
       this._saveProducerDetailsAndLinks(data);
+      this._movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
     }
+  }
+
+  /**
+   * Re-homes planting intentions whose trade unit the user just removed, then reloads this
+   * producer's intentions so the profile and the dashboards show the new trade unit. Without the
+   * reload the move lands in the database while the cached rows still read the old trade unit.
+   */
+  private _movePlantingIntentions(customerId: number, moves: { from: string; to: string }[]): void {
+    if (moves.length === 0) return;
+    forkJoin(
+      moves.map(m => this.apiService.retagPlantingIntentions(customerId, m.from, m.to).pipe(
+        map(result => ({ ...m, moved: result.moved })),
+        catchError(() => {
+          this.toastService.error(`Couldn't move planting intentions from ${m.from} to ${m.to} — they're still recorded against ${m.from}.`);
+          return of({ ...m, moved: 0 });
+        })
+      ))
+    ).subscribe(results => {
+      const moved = results.reduce((sum, r) => sum + r.moved, 0);
+      if (moved > 0) {
+        const destinations = [...new Set(results.filter(r => r.moved > 0).map(r => r.to))].join(', ');
+        this.toastService.success(`Moved ${moved} planting intention${moved === 1 ? '' : 's'} to ${destinations}.`);
+        this._reloadCustomerPlantingIntentions(customerId);
+      }
+    });
+  }
+
+  /** Refetches one producer's planting intentions into every store that renders them. */
+  private _reloadCustomerPlantingIntentions(customerId: number): void {
+    this.apiService.getPlantingIntentionsByCustomer(customerId).subscribe({
+      next: (rows) => {
+        this._customerPlantingCache.set(customerId, rows);
+        if (this.selectedCustomer()?.id === customerId) {
+          this.allCustomerPlantingIntentions.set(rows);
+          this.customerPlantingIntentions.set(rows);
+        }
+        // Swap this producer's rows in the app-wide list the dashboard and Build-A-List read.
+        const merged = [...this.plantingIntentions().filter(p => p.customerId !== customerId), ...rows];
+        this.plantingIntentions.set(merged);
+        this.appState.setPlantingIntentions(merged);
+      },
+      error: () => this.toastService.error('Planting intentions moved, but the list couldn\'t be refreshed — reload the page to see them.')
+    });
   }
 
   private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {

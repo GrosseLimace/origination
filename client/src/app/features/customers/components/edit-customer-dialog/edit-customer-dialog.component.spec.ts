@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { ComponentRef, signal } from '@angular/core';
 import { of, throwError } from 'rxjs';
@@ -35,11 +35,12 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
   let component: EditCustomerDialogComponent;
   let ref: ComponentRef<EditCustomerDialogComponent>;
   let intentions: PlantingIntention[];
-  let retag: ReturnType<typeof vi.fn>;
+  // The dialog emits the moves; the parent runs them, because it owns the cached intention lists.
+  let saved: { intentionMoves: { from: string; to: string }[] }[];
 
   beforeEach(() => {
     intentions = [];
-    retag = vi.fn(() => of({ moved: 2 }));
+    saved = [];
     TestBed.configureTestingModule({
       providers: [
         {
@@ -52,7 +53,6 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
             getCustomers: () => of([]),
             getPlantingIntentionsByCustomer: () => of(intentions),
             removeDormantTradeUnit: () => of(undefined),
-            retagPlantingIntentions: retag,
           },
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
@@ -73,7 +73,13 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
     component = fixture.componentInstance;
     ref = fixture.componentRef;
     ref.setInput('customer', makeCustomer());
+    component.save.subscribe(payload => saved.push(payload));
   });
+
+  /** The moves the dialog handed the parent on the last Save. */
+  function emittedMoves(): { from: string; to: string }[] {
+    return saved.at(-1)?.intentionMoves ?? [];
+  }
 
   /** Put the producer on the given memberships without going through the open-dialog effect. */
   function withMemberships(...memberships: Membership[]): void {
@@ -123,7 +129,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
     expect(component.selectedTuCodes()).toEqual(['2190']);
 
     component.onSave();
-    expect(retag).toHaveBeenCalledWith(42, '2210', '2190');
+    expect(emittedMoves()).toEqual([{ from: '2210', to: '2190' }]);
   });
 
   it('makes the user choose when more than one trade unit remains', () => {
@@ -146,7 +152,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
 
     expect(component.selectedTuCodes()).toEqual(['2190']);
     component.onSave();
-    expect(retag).not.toHaveBeenCalled();
+    expect(emittedMoves()).toEqual([]);
   });
 
   it('keeps the trade unit when the prompt is cancelled', () => {
@@ -159,7 +165,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
     expect(component.tuRemovalPrompt()).toBeNull();
     expect(component.selectedTuCodes()).toContain('2210');
     component.onSave();
-    expect(retag).not.toHaveBeenCalled();
+    expect(emittedMoves()).toEqual([]);
   });
 
   it('drops a staged move when the trade unit is added back', () => {
@@ -171,7 +177,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
     component.addTradeUnit('2210');           // undo
 
     component.onSave();
-    expect(retag).not.toHaveBeenCalled();
+    expect(emittedMoves()).toEqual([]);
   });
 
   it('offers no destination when the producer keeps no other trade unit', () => {
