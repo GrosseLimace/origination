@@ -487,6 +487,39 @@ inline AR-03 citation. The suggested fix — requiring caller entitlement for th
 memberships — still cannot work for onboarding, where the producer is by definition not yet in the
 trade unit being assigned. That rebuttal is recorded in the 2026-09-09 update above.
 
+**Update (2026-09-21) — re-accepted, but the audit half of this entry's compensating control was
+only half-implemented, and is now fixed.** Re-flagged as **H-071** (`claude`, CWE-284, confidence
+9/10), the strongest framing so far: *"privilege escalation via unguarded mutation of the
+authorization data plane"* — attach a producer to a trade unit you hold, and they become legitimately
+visible through the **guarded** endpoints. That escalation path is real and this entry has accepted
+it since 2026-06-23; it is the New Customer Trade Units onboarding flow.
+
+Three suggestions, three different answers:
+
+1. **`[Authorize(Policy = "AdminOnly")]` — declined, fifth time.** Admin-gating removes rep-driven
+   onboarding, which is the feature. Unchanged from 2026-08-10, H-058 and H-064.
+2. **`ValidateTradeUnitsOrThrowAsync` on the submitted codes — declined, because it does not do what
+   the finding wants.** The attack it describes is "attaching a high-value producer to a trade unit
+   they **are** entitled to". Validating submitted codes against the caller's own entitlements lets
+   exactly that through — the attacker is assigning to their own trade unit. It would only block
+   assigning to a trade unit the caller does **not** hold, which is not the described attack, and
+   would add a restriction on legitimate cross-desk corrections without closing anything. Note this
+   is a *different* suggestion from the one rebutted under H-058 (which validated the customer's
+   **current** memberships and fails closed on onboarding); both fail, for different reasons.
+3. **`AUDIT_UPDATE` on the assignment — ADOPTED. This one found a real gap.**
+
+⚠ **The compensating control below was half-true.** It claims "mutations are attributable (audit
+logging + `CreatedBy`/`ModifiedBy`/`IsActive` soft-delete)". The row stamps were always there, and
+`DeactivateTradeUnitAsync` did emit a proper `[AUDIT_UPDATE] [DataMutation]` line — but
+`AssignTradeUnitsAsync`, the write that actually rewrites the authorization mapping, logged a bare
+`LogInformation` with **no audit code and no acting user**. It was not queryable as an audit event.
+It now emits `AUDIT_UPDATE` with the caller and the **before / after / deactivated** code sets, the
+before-set snapshotted ahead of the reconcile loops that mutate those entities in place.
+
+**This is the second time a stated compensating control in this file turned out not to be
+implemented** — H-062 found the same thing under AR-01 on the producer-details delete. When an entry
+leans on a control, verify it **per route**, in the code, rather than trusting the entry.
+
 ### Decision: Accepted
 
 **Rationale.** This is the **intended rep-driven producer-onboarding flow** (the "New Customer Trade
