@@ -89,6 +89,17 @@ public class CustomerSyncBackgroundService : BackgroundService
     /// </summary>
     private async Task RunSyncSafelyAsync(CancellationToken stoppingToken, string reason)
     {
+        // One correlation id per sync run, in the same scope fields HTTP requests use
+        // (RequestContextMiddleware). This is a nightly job, so when one misbehaves the first
+        // thing anyone wants is every line from that run and nothing else — which wasn't possible
+        // before, because the output carried no per-run field at all.
+        using var runScope = _logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["ServiceName"] = "GrainOriginatorPortal.Api",
+            ["Operation"]   = $"CustomerSync.{reason}",
+            ["TraceId"]     = Guid.NewGuid().ToString("N"),
+        });
+
         try
         {
             await _sync.SyncAsync(stoppingToken);
