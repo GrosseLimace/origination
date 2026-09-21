@@ -55,13 +55,14 @@ public class CommodityTradeGroupScopeTests
             db.Commodities.Add(new Commodity { Id = id++, Code = code, Name = name, Category = cat, IsActive = true, ShowInPlantingIntentions = true, TradeUnitScope = "2090,2291,2295" });
 
         // Unit-scoped to a single unit (3811, Pulses Trading). Category is the ODS commodity GROUP, which
-        // is why these carry a PlantingCategory: "FEED & FERT INGREDIENTS" is no crop label.
-        foreach (var (code, name) in new[] {
-            ("BFL1", "BROWN FLAX #1"),
-            ("BFL2", "BROWN FLAX #2"),
-            ("GFL1", "GOLDEN FLAX #1"),
-            ("GFL2", "GOLDEN FLAX #2") })
-            db.Commodities.Add(new Commodity { Id = id++, Code = code, Name = name, Category = "FEED & FERT INGREDIENTS", IsActive = true, ShowInPlantingIntentions = true, TradeUnitScope = "3811", PlantingCategory = "Flax" });
+        // is why these carry a PlantingCategory: "FEED & FERT INGREDIENTS" is no crop label. Brown and
+        // golden are distinct crops, so they label by colour; only the grade number collapses.
+        foreach (var (code, name, planting) in new[] {
+            ("BFL1", "BROWN FLAX #1",  "Brown Flax"),
+            ("BFL2", "BROWN FLAX #2",  "Brown Flax"),
+            ("GFL1", "GOLDEN FLAX #1", "Golden Flax"),
+            ("GFL2", "GOLDEN FLAX #2", "Golden Flax") })
+            db.Commodities.Add(new Commodity { Id = id++, Code = code, Name = name, Category = "FEED & FERT INGREDIENTS", IsActive = true, ShowInPlantingIntentions = true, TradeUnitScope = "3811", PlantingCategory = planting });
 
         // Uncurated noise that must stay out of the planting list regardless of scope.
         db.Commodities.Add(new Commodity { Id = id++, Code = "SORO", Name = "ORGANIC SORGHUM", Category = "SORGHUM", IsActive = true, ShowInPlantingIntentions = false });
@@ -201,7 +202,7 @@ public class CommodityTradeGroupScopeTests
     }
 
     [Fact]
-    public async Task Flax_rows_are_served_unfiltered_scoped_to_3811_alone_and_labelled_Flax()
+    public async Task Flax_rows_are_served_unfiltered_scoped_to_3811_alone_and_labelled_by_colour()
     {
         using var db = NewContext();
 
@@ -216,8 +217,10 @@ public class CommodityTradeGroupScopeTests
         Assert.All(rows, c => Assert.Null(c.TradeGroupScope));
         // Category stays the ODS group (the app-wide crop key) and the planting label carries the
         // crop instead -- otherwise the dashboard would group flax acres under "FEED & FERT INGREDIENTS".
+        // Brown and golden are separate crops (SplitFlaxPlantingCategoryByColour); the grade number is not.
         Assert.All(rows, c => Assert.Equal("FEED & FERT INGREDIENTS", c.Category));
-        Assert.All(rows, c => Assert.Equal("Flax", c.PlantingCategory));
+        Assert.All(rows.Where(c => c.Code.StartsWith('B')), c => Assert.Equal("Brown Flax", c.PlantingCategory));
+        Assert.All(rows.Where(c => c.Code.StartsWith('G')), c => Assert.Equal("Golden Flax", c.PlantingCategory));
     }
 
     [Fact]
