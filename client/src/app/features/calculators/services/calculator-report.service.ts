@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 // Type-only import (erased at build) so the ~800 kB jspdf/html2canvas bundle stays out of the
 // eager home-page chunk; the runtime libs are dynamically imported on demand in download().
 import type { jsPDF } from 'jspdf';
+import { formatAccountingMoney } from '@shared/utils/accounting-money';
 
 const INK: [number, number, number] = [17, 24, 39];          // near-black — values & title
 const HEADER_GREY: [number, number, number] = [55, 65, 81];  // dark grey — column-header fill
@@ -136,13 +137,9 @@ export class CalculatorReportService {
   }
 }
 
-/** Accounting-style money for reports: `$ 40.00` / `$ (40.00)` (parentheses for negatives), matching
- *  the on-screen AccountingCurrencyPipe. `maxFractionDigits` (floored at 2) for finer per-bushel values. */
+/** Accounting-style money for reports: `$ 40.00` / `$ (40.00)` (parentheses for negatives).
+ *  Delegates to the shared formatter that AccountingCurrencyPipe also uses — this held its own
+ *  identical copy, with a comment saying it matched the pipe, which is how they'd have drifted. */
 export function reportMoneyAccounting(n: number, maxFractionDigits = 2): string {
-  const value = n || 0;
-  const abs = Math.abs(value).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: Math.max(2, maxFractionDigits),
-  });
-  return value < 0 ? `$ (${abs})` : `$ ${abs}`;
+  return formatAccountingMoney(n, maxFractionDigits);
 }

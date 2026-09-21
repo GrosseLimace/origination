@@ -140,6 +140,7 @@ export class DailyDigestComponent implements OnInit {
   protected readonly newCcEmail = signal('');
   // Microsoft Teams channel email — only used/required when deliveryMethod is 'teams'.
   protected readonly formTeamsEmail = signal('');
+
   /** Daily-recap opt-in, honoured on CREATE only (after that the card toggle owns it). Defaults to
    *  false so a group made purely to @-mention doesn't quietly start emailing everyone in it. */
   protected readonly formEnabled = signal(false);
@@ -214,10 +215,22 @@ export class DailyDigestComponent implements OnInit {
     this.deliveryDropdownOpen.set(false);
   }
 
+  /** True when this entry delivers to a Teams channel. Delivery method is the whole routing
+   *  decision: the channel receives both the recap and any @-mention, which is what makes members
+   *  optional here. */
+  protected readonly isChannelRouted = computed(() => this.formDeliveryMethod() === 'teams');
+
+  /** The daily recap is built from the notes the MEMBERS can see, so a memberless entry cannot
+   *  send one. Mirrors the server rule rather than letting the user submit and get a 400. */
+  protected readonly canEnableRecap = computed(() => this.formMembers().length > 0);
+
   protected readonly isEditing = computed(() => this.editingGroupId() !== null);
   protected readonly canSubmit = computed(() =>
     !!this.formName().trim()
-    && this.formMembers().length > 0
+    // Members are optional ONLY for a channel-routed entry, where the channel is the recipient.
+    && (this.formMembers().length > 0 || this.isChannelRouted())
+    // A group with nobody in it has no notes to recap, so the two can't both be on.
+    && !(this.formEnabled() && this.formMembers().length === 0)
     // Teams delivery requires a valid channel address (a *.teams.ms "send to channel" email) so the
     // recap has a destination — the backend rejects anything else and the workflow fails closed.
     && (this.formDeliveryMethod() !== 'teams' || this._isTeamsChannel(this.formTeamsEmail()))
@@ -305,6 +318,7 @@ export class DailyDigestComponent implements OnInit {
     this.formCcList.set([...group.ccList]);
     this.newCcEmail.set('');
     this.formTeamsEmail.set(group.teamsChannelEmail ?? '');
+
     this.editingGroupId.set(group.id);
     this.dialogOpen.set(true);
   }
@@ -353,8 +367,15 @@ export class DailyDigestComponent implements OnInit {
     this.cancelDeleteGroup();
   }
 
+  /** A memberless entry (only possible when it routes @-mentions to a channel) has no members whose
+   *  notes the recap would summarise, so the recap can't be turned on. Turning it OFF stays allowed
+   *  so an entry that somehow got into that state is always recoverable. */
+  protected canToggleRecap(group: RecapGroup): boolean {
+    return group.canEdit && (group.enabled || group.members.length > 0);
+  }
+
   protected toggleGroupEnabled(group: RecapGroup): void {
-    if (!group.canEdit) return;   // any member may start or stop the daily recap
+    if (!this.canToggleRecap(group)) return;   // any member may start or stop the daily recap
     const next = !group.enabled;
     // Optimistic flip; revert on failure.
     this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: next } : g));
@@ -447,6 +468,7 @@ export class DailyDigestComponent implements OnInit {
       ccList: this.formCcList(),
       // Only persist the Teams email for Teams groups; clear it if the method is Email.
       teamsChannelEmail: this.formDeliveryMethod() === 'teams' ? this.formTeamsEmail().trim() : undefined,
+
       // Create-only — the API ignores this on update, where the card's toggle is the source of truth.
       enabled: this.formEnabled(),
     };
@@ -544,6 +566,7 @@ export class DailyDigestComponent implements OnInit {
     this.formCcList.set([]);
     this.newCcEmail.set('');
     this.formTeamsEmail.set('');
+
     this.formEnabled.set(false);
     this.memberPickerTab.set('people');
     this.memberSearch.set('');

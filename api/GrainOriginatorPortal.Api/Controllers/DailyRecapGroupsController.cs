@@ -48,8 +48,8 @@ public class DailyRecapGroupsController : ControllerBase
     {
         var group = await _service.CreateAsync(request, cancellationToken);
         _logger.LogInformation(
-            "Recap group created [{ErrorCode}] [{ErrorCategory}]: GroupId={GroupId}, Name={Name}",
-            "AUDIT_CREATE", "DataMutation", group.Id, request.Name);
+            "Recap group created [{ErrorCode}] [{ErrorCategory}]: GroupId={GroupId}, Name={Name}, DeliveryMethod={DeliveryMethod}, TeamsChannel={TeamsChannel}",
+            "AUDIT_CREATE", "DataMutation", group.Id, request.Name, group.DeliveryMethod, group.TeamsChannelEmail ?? "-");
         return Created($"/api/dailyrecapgroups/{group.Id}", group);
     }
 

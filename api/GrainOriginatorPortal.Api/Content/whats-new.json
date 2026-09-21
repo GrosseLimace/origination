@@ -1,0 +1,30 @@
+[
+  {
+    "version": "2026.09.1",
+    "releasedOn": "2026-09-15",
+    "title": "Release notes in the app, trade unit overlap on saved lists",
+    "summary": "A short note on what changed after each release, and a way to spot producers a saved list is hiding.",
+    "items": [
+      {
+        "group": "What's New panel",
+        "kind": "added",
+        "text": "After each release the app tells you what changed. The notice appears once, and you can reopen it any time from the What's New row in your profile menu."
+      },
+      {
+        "group": "What's New panel",
+        "kind": "added",
+        "text": "Your profile menu now shows which release and build you are running. Include that line when you report a problem and we can tell exactly which version you were on."
+      },
+      {
+        "group": "Saved lists",
+        "kind": "added",
+        "text": "A saved list now shows which of its producers fall outside your current trade unit selection, so you can see at a glance why a list looks shorter than you expected."
+      },
+      {
+        "group": "Usage Dashboard",
+        "kind": "fixed",
+        "text": "The activity status column no longer shows stale values for originators who have signed in recently."
+      }
+    ]
+  }
+]

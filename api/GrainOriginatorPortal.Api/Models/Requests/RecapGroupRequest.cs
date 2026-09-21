@@ -26,7 +26,8 @@ public record RecapGroupRequest : IValidatableObject
     [StringLength(256)]
     public string? TeamsChannelEmail { get; init; }
 
-    [MinLength(1, ErrorMessage = "A recap group needs at least one member.")]
+    // No [MinLength(1)]: a Teams entry delivers to its channel, so it may legitimately have no
+    // members (Validate() below still requires at least one for email delivery).
     [MaxLength(500, ErrorMessage = "A recap group cannot have more than 500 members.")]
     public List<RecapGroupMemberRequest> Members { get; init; } = [];
 
@@ -46,7 +47,26 @@ public record RecapGroupRequest : IValidatableObject
     /// keeps the destination inside Scoular and blocks cross-tenant exfiltration.</summary>
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (!string.Equals(DeliveryMethod, "teams", StringComparison.OrdinalIgnoreCase))
+        var isTeams = string.Equals(DeliveryMethod, "teams", StringComparison.OrdinalIgnoreCase);
+
+        // Members are optional ONLY for Teams delivery, where the channel is the recipient and
+        // members merely grant visibility. Email delivery still needs someone to deliver to.
+        if (Members.Count == 0 && !isTeams)
+        {
+            yield return new ValidationResult(
+                "A recap group needs at least one member.", [nameof(Members)]);
+        }
+
+        // The daily recap is built from the notes of the producers its MEMBERS can see, so a
+        // memberless entry would send an empty recap every evening to nobody.
+        if (Enabled && Members.Count == 0)
+        {
+            yield return new ValidationResult(
+                "A group with no members cannot send a daily recap. Add members, or turn the recap off.",
+                [nameof(Enabled)]);
+        }
+
+        if (!isTeams)
             yield break;
 
         var channel = TeamsChannelEmail?.Trim();

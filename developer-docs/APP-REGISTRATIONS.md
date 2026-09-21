@@ -115,6 +115,7 @@ No additional identifierUris or delegated OAuth2 scopes configured for this envi
 **API Permissions:**
 - **Origination API**: `Origination.Application.Dev` (Delegated)
 - **Microsoft Graph**: `User.Read` (Delegated)
+- **Microsoft Graph**: `Calendars.ReadWrite` (Delegated) — producer follow-up reminders write an event to the SIGNED-IN USER'S OWN calendar (`POST /me/events`) from the SPA. Needs tenant admin consent; the `remindersEnabled` flag in the matching `environment.*.ts` stays false until that consent is granted.
 
 **Access Groups:**
 - `Origination App Dev Users` - End users for Dev environment
@@ -175,6 +176,7 @@ No additional identifierUris or delegated OAuth2 scopes configured for this envi
 **API Permissions:**
 - **Origination API**: `Origination.Application.QA` (Delegated)
 - **Microsoft Graph**: `User.Read` (Delegated)
+- **Microsoft Graph**: `Calendars.ReadWrite` (Delegated) — producer follow-up reminders write an event to the SIGNED-IN USER'S OWN calendar (`POST /me/events`) from the SPA. Needs tenant admin consent; the `remindersEnabled` flag in the matching `environment.*.ts` stays false until that consent is granted.
 
 **Access Groups:**
 - `Origination App QA Users` - End users for QA environment
@@ -235,6 +237,7 @@ No additional identifierUris or delegated OAuth2 scopes configured for this envi
 **API Permissions:**
 - **Origination API**: `Origination.Application.Prod` (Delegated)
 - **Microsoft Graph**: `User.Read` (Delegated)
+- **Microsoft Graph**: `Calendars.ReadWrite` (Delegated) — producer follow-up reminders write an event to the SIGNED-IN USER'S OWN calendar (`POST /me/events`) from the SPA. Needs tenant admin consent; the `remindersEnabled` flag in the matching `environment.*.ts` stays false until that consent is granted.
 
 **Access Groups:**
 - `Origination App Users` - End users for Production environment

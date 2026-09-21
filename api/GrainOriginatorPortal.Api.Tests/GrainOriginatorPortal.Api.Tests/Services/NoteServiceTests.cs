@@ -37,7 +37,7 @@ public class NoteServiceTests
             _customerRepositoryMock.Object,
             _displayNameMock.Object,
             _requestContextMock.Object,
-            _groupsMock.Object,
+            _groupsMock.Object, MentionTestDoubles.TeamsChannelStub(),
             _entitlementsMock.Object,
             new Mock<ILogger<NoteService>>().Object);
     }

@@ -6577,6 +6577,23 @@ INSERT INTO #stg ([LocationId],[Location],[Elevator],[DisplayName],[AddressLine1
 (N'_CANC PW2658595',NULL,NULL,N'CANC PW2658595',NULL,NULL,NULL,NULL,NULL,NULL,N'0',N'0',NULL,NULL,N'Y',N'Y',N'ACTIVE',NULL,N'0001-01-01 00:00:00.000000',N'CERTIFY',N'2026-07-29 10:40:53.984121',N'CERTIFY',N'2026-07-29 10:40:53.984121'),
 (N'_DEL MIDWAY/IDAGOLD',NULL,NULL,N'DEL MIDWAY/IDAGOLD',NULL,NULL,NULL,NULL,NULL,NULL,N'0',N'0',NULL,NULL,N'Y',N'Y',N'ACTIVE',NULL,N'0001-01-01 00:00:00.000000',N'CERTIFY',N'2026-07-30 09:59:59.543461',N'CERTIFY',N'2026-07-30 09:59:59.543461');
 
+-- Guard: this MERGE deletes every row absent from the staged export. A truncated or
+-- half-pasted export would otherwise silently wipe the location master, with only the
+-- PRINT below as a trace. Abort if staging is empty or the delete share exceeds the cap.
+DECLARE @maxDeletePct int = 10;  -- raise deliberately for a known large de-listing
+DECLARE @stgCount int = (SELECT COUNT(*) FROM #stg);
+DECLARE @curCount int = (SELECT COUNT(*) FROM dbo.MbpLocationSynonym);
+DECLARE @wouldDelete int = (
+    SELECT COUNT(*) FROM dbo.MbpLocationSynonym t
+    WHERE NOT EXISTS (SELECT 1 FROM #stg s WHERE s.LocationId = t.LocationId));
+IF @stgCount = 0 OR (@curCount > 0 AND @wouldDelete * 100 > @curCount * @maxDeletePct)
+BEGIN
+    ROLLBACK;
+    RAISERROR('MbpLocationSynonym load aborted: staging has %d rows and the MERGE would delete %d of %d existing rows (cap %d%%). Check the export, or raise @maxDeletePct on purpose.',
+              16, 1, @stgCount, @wouldDelete, @curCount, @maxDeletePct);
+    RETURN;
+END
+
 MERGE dbo.MbpLocationSynonym AS t
 USING (SELECT [LocationId], [Location], [Elevator], [DisplayName], [AddressLine1], [AddressLine2], [City], [State], [Country], [ZipCode], [Phone], [Fax], [Email], [Website], [PushNotificationsHidden], [CashBidsHidden], [Status], [DeletedByUser], TRY_CONVERT(datetime2(7), NULLIF([DeletedAtSvStamp],'')) AS [DeletedAtSvStamp], [CreatedByUser], TRY_CONVERT(datetime2(7), NULLIF([CreatedStamp],'')) AS [CreatedStamp], [ChangedByUser], TRY_CONVERT(datetime2(7), NULLIF([ChangeStamp],'')) AS [ChangeStamp] FROM #stg) AS s
 ON t.LocationId = s.LocationId

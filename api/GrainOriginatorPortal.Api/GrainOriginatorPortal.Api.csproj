@@ -10,6 +10,18 @@
     <InternalsVisibleTo Include="GrainOriginatorPortal.Api.Tests" />
   </ItemGroup>
 
+  <!--
+    The What's New release notes are embedded in the assembly rather than served from wwwroot.
+    UseStaticFiles runs before UseAuthentication, so anything under wwwroot is reachable without
+    a token; the notes describe internal work and are streamed by WhatsNewController behind
+    [Authorize] instead. The Remove is required because the Web SDK globs **\*.json as Content
+    by default, which would publish a second, public copy alongside the embedded one.
+  -->
+  <ItemGroup>
+    <Content Remove="Content\whats-new.json" />
+    <EmbeddedResource Include="Content\whats-new.json" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.0" />
     <PackageReference Include="Azure.Identity" Version="1.18.0" />

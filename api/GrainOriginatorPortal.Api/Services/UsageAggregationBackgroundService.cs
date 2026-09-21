@@ -54,6 +54,17 @@ public class UsageAggregationBackgroundService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            // One correlation id per cycle, in the same scope fields HTTP requests use
+            // (RequestContextMiddleware), so a misbehaving run can be filtered down to its own log
+            // lines in Log Analytics. Without it, an hourly job's output is an undifferentiated
+            // stream and there's no way to ask "show me just that run".
+            using var runScope = _logger.BeginScope(new Dictionary<string, object?>
+            {
+                ["ServiceName"] = "GrainOriginatorPortal.Api",
+                ["Operation"]   = "UsageAggregation.Cycle",
+                ["TraceId"]     = Guid.NewGuid().ToString("N"),
+            });
+
             try
             {
                 await RunCycleAsync(stoppingToken);
@@ -81,21 +92,21 @@ public class UsageAggregationBackgroundService : BackgroundService
     private async Task RunCycleAsync(CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        var yesterday = DateOnly.FromDateTime(now.AddDays(-1));
+        var yesterday = TargetDayFor(now);
 
         // Aggregate a day once rather than every hour. The one exception is the first tick after
         // the date rolls over: the tracking service flushes on a 5-second timer, so a handful of
         // late-arriving rows can land after the first pass — re-running the previous day one extra
         // time picks those up. Aggregation is a full recompute, so re-running is safe.
-        if (_lastAggregatedDate != yesterday)
+        if (ShouldAggregateDay(yesterday, _lastAggregatedDate))
         {
             await AggregateDayAsync(yesterday, cancellationToken);
             _lastAggregatedDate = yesterday;
 
             // Weekly rollup closes out on Monday, once the final day of the week is aggregated.
-            if (yesterday.DayOfWeek == DayOfWeek.Sunday)
+            if (ClosesOutAWeek(yesterday))
             {
-                var weekStart = yesterday.AddDays(-6);
+                var weekStart = WeekStartFor(yesterday);
                 await RunInScopeAsync((repo, ct) => repo.AggregateWeeklyLoginsAsync(weekStart, ct), cancellationToken);
                 _logger.LogInformation("Aggregated weekly logins for week starting {WeekStart}", weekStart);
             }
@@ -103,12 +114,44 @@ public class UsageAggregationBackgroundService : BackgroundService
             _logger.LogInformation("Aggregation cycle completed for {Date}", yesterday);
         }
 
-        if (now - _lastSnapshotRefreshUtc >= SnapshotRefreshInterval)
+        if (IsDue(now, _lastSnapshotRefreshUtc, SnapshotRefreshInterval))
             await RefreshTradeUnitSnapshotAsync(cancellationToken);
 
-        if (now - _lastCleanupUtc >= CleanupInterval)
+        if (IsDue(now, _lastCleanupUtc, CleanupInterval))
             await CleanupRetentionAsync(cancellationToken);
     }
+
+    // -------------------------------------------------------------------------
+    // Scheduling decisions, as pure functions.
+    //
+    // These were inline in RunCycleAsync, so the date-boundary and day-of-week branching could
+    // only be exercised by running the whole service against a database. A day-boundary or
+    // day-of-week off-by-one here silently skips or double-runs a weekly rollup with no CI signal
+    // — so the decisions are now separable from the I/O and pinned by
+    // UsageAggregationScheduleTests. Same arithmetic as before, just named.
+    // -------------------------------------------------------------------------
+
+    /// <summary>The day a cycle at <paramref name="nowUtc"/> should aggregate: yesterday, UTC.
+    /// Today is still accumulating, so it is never the target.</summary>
+    internal static DateOnly TargetDayFor(DateTime nowUtc) => DateOnly.FromDateTime(nowUtc.AddDays(-1));
+
+    /// <summary>Whether <paramref name="targetDay"/> still needs aggregating. Null means nothing has
+    /// been aggregated since startup, so the first cycle always runs.</summary>
+    internal static bool ShouldAggregateDay(DateOnly targetDay, DateOnly? lastAggregated) =>
+        lastAggregated != targetDay;
+
+    /// <summary>Whether aggregating <paramref name="targetDay"/> completes a week that can now be
+    /// rolled up. Weeks run Monday–Sunday, so this is Sunday — i.e. the rollup happens on the
+    /// Monday cycle, which is what the caller's comment means by "closes out on Monday".</summary>
+    internal static bool ClosesOutAWeek(DateOnly targetDay) => targetDay.DayOfWeek == DayOfWeek.Sunday;
+
+    /// <summary>The Monday starting the week that ends on <paramref name="weekEnd"/> (a Sunday).</summary>
+    internal static DateOnly WeekStartFor(DateOnly weekEnd) => weekEnd.AddDays(-6);
+
+    /// <summary>Whether an interval-gated job is due. <see cref="DateTime.MinValue"/> as
+    /// <paramref name="lastRunUtc"/> means "never run", which is always due.</summary>
+    internal static bool IsDue(DateTime nowUtc, DateTime lastRunUtc, TimeSpan interval) =>
+        nowUtc - lastRunUtc >= interval;
 
     private async Task AggregateDayAsync(DateOnly date, CancellationToken cancellationToken)
     {
