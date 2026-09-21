@@ -25,6 +25,15 @@ public class PlantingIntention
     public DateTime? ModifiedAt { get; set; }
     public string? ModifiedBy { get; set; }
 
+    // Soft delete, mirroring Note. Reads are filtered by a global query filter in
+    // ApplicationDbContext, so the row stays in the table with DeletedAt/DeletedBy and can be
+    // recovered by flipping IsDeleted back to false. Planting intentions are hand-entered
+    // forward crop plans with no upstream system of record — a hard delete lost them for good,
+    // and the AUDIT_DELETE line records the id, not the acreage (M-043, 2026-09-21).
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }
+
     // Navigation property — FK to dbo.Customer. Populated via Include() so the
     // service layer can copy CustomerName / CustomerCode onto the DTO without
     // those columns being stored on the ProducerPlantingIntentions table.
