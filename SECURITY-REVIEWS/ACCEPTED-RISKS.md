@@ -15,6 +15,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
 | AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements | Medium | CWE-284 | Accepted | 2026-08-11 | 2027-08-11 |
 | AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — **security sign-off pending** | 2026-09-01 | 2027-09-01 |
+| AR-09 | The caller's UPN (an email-shaped identifier) is written into the structured log scope of every request | Low | CWE-532 | Accepted | 2026-09-21 | 2027-09-21 |
 
 ---
 
@@ -759,6 +760,53 @@ scoped: swap the roster lookup for the caller's catalog set
 
 **Accepted by:** Origination engineering — recorded 2026-09-01. **Security sign-off pending** (goes
 to asksecurity@scoular.com with AR-01 and AR-02).
+
+---
+
+## AR-09 — The caller's UPN is written into every request's structured log scope
+
+**Finding:** `RequestContextMiddleware` resolves `preferred_username` — the user's UPN, e.g.
+`CEgr@scoular.com` — and puts it in the `UserId` field of the `BeginScope` that wraps every
+request's logs. Every `ILogger` call inside the request inherits it, so it also becomes a queryable
+custom dimension on every App Insights trace. The style guide prefers a stable non-sensitive
+identifier (an object id) over an email-shaped one when a user identifier is needed
+(`logging.user-upn-logged-on-every-request`, CWE-532).
+
+**Accepted, because the UPN is the point.** This is an internal line-of-business app where every
+user is a Scoular employee, and the logs exist to answer "who did this" during an incident or an
+access review. An `oid` GUID satisfies the letter of the guide and makes that question
+unanswerable without a second lookup against Azure AD — which is exactly the lookup you can't do
+quickly at 2am. The same short name is already the identity key in `UserActivity`,
+`UserTradeUnitSnapshot` and the entitlements view, so an `oid` in logs wouldn't even join to our
+own tables without translation.
+
+**What makes the residual risk low:**
+
+- The identifier is a corporate work email, not customer PII. It is not a credential, and it
+  discloses nothing that the Azure AD directory doesn't already expose to every employee.
+- Scope is Scoular-internal only — the app is not multi-tenant and has no external accounts
+  (see [SECURITY-MODEL.md](../docs/application-context/SECURITY-MODEL.md)).
+- Access to the logs is itself controlled: Log Analytics / App Insights in the Scoular tenant, not
+  a customer-reachable surface.
+- It is the *only* identifier logged. No passwords, tokens, or customer PII go into the scope —
+  `CorrelationIdMiddleware` now also validates the inbound `X-Correlation-Id` before it reaches
+  the same scope, so a caller can't inject arbitrary content into these fields.
+- Retention is bounded by the workspace retention policy, not by us holding it indefinitely.
+
+**Revisit if any of these becomes true:**
+
+- Origination gains non-Scoular users, so a UPN starts identifying someone outside the company.
+- Log data leaves the tenant, is shipped to a third-party aggregator, or gains broader read access.
+- A data-classification policy explicitly classifies employee UPNs as restricted.
+
+**Compensating direction if it ever needs changing:** log the `oid` as `UserId` and keep the short
+name as a separate, droppable field, so the join to our own tables survives while the
+email-shaped value can be suppressed independently.
+
+**Accepted by:** Origination engineering — recorded 2026-09-21. Surfaced by the Code Quality
+Dashboard pilot audit (PR #613). Not routed for IT Security countersignature: unlike AR-01/02/08
+this is a data-classification choice about our own employees' identifiers rather than an
+object-level authorization gap — raise it with AR-01/02/08 if Security would rather rule on it.
 
 ---
 
