@@ -125,12 +125,22 @@ not; `NotesController`, `PlantingIntentionsController`, `StoredGrainController` 
 also reads the `GetAllAsync`-scoped / `GetByCustomerAsync`-open split as an oversight; that split is
 the documented app-wide pattern recorded under AR-02 below.
 
-- **`GET`** — ⚠ **this bullet was WRONG when first written, and is corrected here rather than
-  quietly edited.** It originally read "stays accepted under AR-02 — narrowing it would break the
-  linked-producer profile view". That claim was never verified: the linked-producer cache feeds only
-  the last-contact badge, not a selectable row, so no such breakage existed. The PR scan flagged the
-  read as the remaining unguarded path and was right. **The GET is now scoped and removed from
-  AR-02** — see AR-02's 2026-09-14 update for the trace and the criterion it established.
+- **`GET`** — ⚠ **this bullet has been wrong twice, and both versions are kept rather than quietly
+  edited, because the second mistake is more instructive than the first.**
+  - *Version 1 (2026-09-09):* "stays accepted under AR-02 — narrowing it would break the
+    linked-producer profile view." Never verified, and false: the linked-producer cache feeds only
+    the last-contact badge, not a selectable row.
+  - *Version 2 (2026-09-14):* "the GET is now scoped and removed from AR-02." Correct that the
+    original claim was wrong, but it drew the wrong conclusion — it treated a trade-unit test as a
+    control. **Reverted 2026-09-21.**
+  - *Current:* the GET is **unscoped**, stays under AR-02, and a mutation-verified regression test
+    pins it that way. Originators self-assign trade units, so the check restricted nobody while
+    silently blanking the profile for any producer not yet onboarded. See the banner at the top of
+    AR-02.
+
+  The pattern worth keeping: each version was a narrower reading of the evidence than the last. The
+  first assumed a dependency without checking; the second checked the callers but not whether the
+  control meant anything; only the third asked what a trade unit actually *is* in this product.
 - **`PUT`** stays accepted under this entry. It has **six live call sites**, and two of them
   (`home.component.ts` `_propagatePrimaryContact` and the removed-incoming-links path) write to
   **linked producers in other trade units by design**, with inline comments saying so. A third runs
@@ -195,6 +205,39 @@ gain regulatory/financial significance that would require per-record ownership e
 
 ## AR-02 — Customer-scoped reads not restricted by trade-unit entitlement
 
+> ### ⚠ READ THIS BEFORE TRIAGING ANY FINDING AGAINST THIS ENTRY
+>
+> **A trade-unit check is not an access control in this application, and cannot be made into one.**
+> Originators **self-assign** their own trade units through the Trade Unit Preferences app. Anyone a
+> trade-unit test refuses can open that app, join the group, and load the same producer legitimately
+> seconds later. The test therefore narrows nothing — it only adds a detour, and it breaks
+> onboarding candidates outright (see below). This is what the nine *"trade units are a UX filter,
+> not an access boundary"* comments across the API mean, stated plainly.
+>
+> Every scan finding against this entry proposes the same remedy — resolve the owning trade unit and
+> call `ValidateTradeUnitsOrThrowAsync`. **That remedy does not do what it appears to do.** It is not
+> a weaker control than the finding wants; it is not a control at all. Saying so is the answer to
+> this whole class of finding, and it is a better answer than the per-route caller traces recorded
+> further down (which are true, but secondary).
+>
+> **Proven the hard way, 2026-09-21.** A trade-unit check was added to
+> `GET /api/producerdetails/customer/{customerId}` on 2026-09-14 in response to H-062, and reverted
+> a week later. It did not restrict anyone — but ODS **onboarding candidates** carry a real
+> `CustomerId` with **no `CustomerTradeUnit` row at all**, so the membership test refused them.
+> `handleSelectCustomer` swallows that error, and the details fetch gates
+> `_fetchMissingLinkedProducers`, `_loadCustomerData` and `_ensureCustomerNotes` — so searching for a
+> producer you had not yet onboarded opened a **blank profile with no error**. The product
+> requirement it broke: *an originator may search for and open any producer.*
+>
+> `IUserEntitlementService.ValidateCustomerAccessAsync` documents this exact trap — "it fails CLOSED
+> when a customer has no trade-unit mapping" — and is deliberately never wired for that reason. The
+> 2026-09-14 change reimplemented it by hand anyway. **Before adding any entitlement test to a read,
+> ask what happens to a producer with no trade unit yet.**
+>
+> Two trade-unit checks remain in the codebase, on the producer-details `DELETE` and the bid-sheet
+> `elevators` read. Both are **speed bumps on routes nothing calls**, kept because they cost nothing
+> and deter a blind id sweep. Neither is evidence that producer data is entitlement-protected.
+
 **Finding** (scan 2026-06-23; HIGH; CWE-639 / CWE-284 Broken Access Control). Customer-scoped read
 endpoints accept a client-supplied identifier and return the producer's data without an object-level
 authorization check (no `ValidateCustomerAccessAsync` or equivalent) — they require only a valid
@@ -212,7 +255,7 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/tickets/customer/{customerId}`
 - `GET /api/notes/customer/{customerId}`
 - `GET /api/plantingintentions/customer/{customerId}`
-- ~~`GET /api/producerdetails/customer/{customerId}`~~ — **REMOVED FROM THIS ENTRY 2026-09-14 and FIXED in code.** See the update below. Do not cite AR-02 for it.
+- `GET /api/producerdetails/customer/{customerId}` (briefly scoped 2026-09-14, **reverted 2026-09-21** — see the banner at the top of this entry; the check was not a control and broke onboarding candidates)
 - `GET /api/dpcontracts/customer/{customerId}` (added 2026-08-18 — see the update below)
 
 **Update (2026-07-21):** the notes list/search endpoints are no longer trade-unit-filtered on the
@@ -323,8 +366,13 @@ related customer-scoped endpoints", and again as the GET half of **H-062** again
 acknowledges the AR-02 citation and argues the exposure remains concrete, which is true and is
 exactly what this entry accepts.
 
-⚠ **The producer-details GET was NOT re-accepted — it is now FIXED, and this entry was wrong about
-it for a day.** The first pass kept it here on the stated grounds that scoping it "would break the
+⚠⚠ **THIS PARAGRAPH IS SUPERSEDED — the scoping it describes was REVERTED on 2026-09-21.** It is
+kept rather than deleted so the reasoning, and its error, stay on the record. What follows was
+written on 2026-09-14 and was wrong at the level of principle, not detail: it treated a trade-unit
+test as a control, which in this application it is not. See the banner at the top of this entry.
+
+~~The producer-details GET was NOT re-accepted — it is now FIXED, and this entry was wrong about
+it for a day.~~ The first pass kept it here on the stated grounds that scoping it "would break the
 linked-producer profile view". The PR scan pushed back, and re-tracing every client path showed that
 claim was false:
 
@@ -971,5 +1019,5 @@ matches them to their remediation instead of re-doing the work.
 | **M-036** — The Instant Share Note Logic App interpolated the raw note body, author name and customer name into the `sendMail` HTML, so authored content rendered as markup in mail from the shared mailbox — HTML/link injection enabling internal phishing and tracking pixels (CWE-79) | 2026-08-31 | **Fixed** (2026-09-01). Three `Compose_Safe_*` actions inside `Condition_Has_Recipients` HTML-escape `&`, `<`, `>` (in that order — `&` first, or later replaces would double-encode), and the template interpolates only those outputs; `HTTP_Send_Share_Email` runs after all three. Only those three characters are escaped because every interpolation sits in a **text node**, none inside an attribute. The `subject` is intentionally left raw — it is a plain-text Graph field. The sibling `notes-daily-recap` workflow needed **no change**: its note text reaches the mail only through `Create_HTML_table`, which encodes cell values, and its AI summary is separately escaped. |
 | **H-061** — Dashboard `DELETE actualharvest/{id}` performs no per-record or trade-unit authorization: the sequential integer id flows to a bare `FindAsync` + `Remove`, and the class-level `[EnforceTradeUnitAccess]` filter evaluates nothing because the route carries no trade-unit value, so any authenticated user could enumerate ids and destroy another trade unit's actual-harvest rows (CWE-639) | 2026-09-07 | **Fixed (2026-09-09).** `DashboardService.DeleteActualHarvestAsync` resolves the row's own `TradeUnitKey` and calls `ValidateTradeUnitsOrThrowAsync` before deleting — 403 for another trade unit's row, silent 204 no-op for a non-existent id (so the route is not an existence oracle), and 503 fail-closed on an entitlements outage. The audit log records the resolved trade unit, and misses are logged too. Covered by `DashboardActualHarvestDeleteTests` (5 tests, mutation-verified). This route was **removed from AR-01** — see that entry's 2026-09-09 update for why the original H-050 acceptance was mistaken. |
 | **M-037** — Instant Share Note Logic App interpolates the user-authored note `Description` and the author display name into a `contentType: "HTML"` Graph `sendMail` body with no encoding, so a note author can deliver arbitrary markup (anchors with attacker-chosen hrefs, fake banners, hidden content) as trusted HTML from the privileged shared mailbox — internal content-spoofing / phishing rather than script execution, since Outlook strips scripts (CWE-79) | 2026-09-07 | **Fixed — duplicate of M-036 above.** The weekly baseline re-flagged the defect against `main` on 2026-09-07 while the fix was still unmerged on `fix_NoteMentionSecurity`; it lands on `main` with that branch, so no separate remediation exists or is needed. See the **M-036** row for the escaping detail, including why the subject stays raw and why the sibling `notes-daily-recap` workflow needs no change. **Deploy note:** merging the template does not change any environment — the `deploy-logic-app-instant-share-note-*` workflow must be dispatched per environment, together with the API half (H-056), because the two are halves of one attack: who can be targeted, and what can be delivered. |
-| **H-062 (DELETE + GET halves)** — `DELETE /api/producerdetails/customer/{customerId}` performed no trade-unit authorization at any layer: the sequential `customerId` path segment reached a bare repository delete that hand-cascades to the `ProducerContacts` and `ProducerGrainOnFarm` child rows, so any authenticated user could enumerate ids and destroy another trade unit's producer contact PII and grain-on-farm positions (CWE-639) | 2026-09-14 | **Fixed (2026-09-14).** `ProducerDetailsService.DeleteAsync` resolves the caller's entitled trade units, confirms membership via `GetActiveCustomerIdsInTradeUnitsAsync`, and returns 403 otherwise — with 503 fail-closed on an entitlements outage and a silent no-op when no details row exists, so the route is not an existence oracle. The repository now emits a structured `AUDIT_DELETE` including the cascade counts, and the controller logs misses. Covered by `ProducerDetailsDeleteTests` (5 tests, mutation-verified). **The `GET` was fixed too, one day later.** The first pass left it under AR-02 believing the linked-producer profile view needed the cross-trade-unit read; the PR scan pushed back and re-tracing every client path showed that was false — the cross-TU cache feeds only the last-contact badge, and deep links resolve through the entitled roster. `GetByCustomerAsync` now runs the same `EnsureCustomerEntitledAsync` check before touching the repository, so the `ProducerContact` PII never leaves it for an out-of-scope producer. **`PUT` remains accepted under AR-01** — it has six live callers, two writing to cross-trade-unit linked producers by design, plus an onboarding path that would race freshly-written membership. See AR-01's and AR-02's 2026-09-14 updates. |
+| **H-062 (DELETE half)** — `DELETE /api/producerdetails/customer/{customerId}` performed no trade-unit authorization at any layer: the sequential `customerId` path segment reached a bare repository delete that hand-cascades to the `ProducerContacts` and `ProducerGrainOnFarm` child rows, so any authenticated user could enumerate ids and destroy another trade unit's producer contact PII and grain-on-farm positions (CWE-639) | 2026-09-14 | **Fixed (2026-09-14).** `ProducerDetailsService.DeleteAsync` resolves the caller's entitled trade units, confirms membership via `GetActiveCustomerIdsInTradeUnitsAsync`, and returns 403 otherwise — with 503 fail-closed on an entitlements outage and a silent no-op when no details row exists, so the route is not an existence oracle. The repository now emits a structured `AUDIT_DELETE` including the cascade counts, and the controller logs misses. Covered by `ProducerDetailsDeleteTests` (5 tests, mutation-verified). ⚠ **The `GET` was also scoped on 2026-09-14 and REVERTED on 2026-09-21 — do not re-add it.** That change was wrong in principle: a trade-unit test is not an access control here, because originators self-assign trade units through the Trade Unit Preferences app. It also broke search-and-click, because ODS onboarding candidates carry a real `CustomerId` with no `CustomerTradeUnit` row and were refused, silently blanking the profile. See the banner at the top of AR-02. A regression test (`GetByCustomerAsync_ForAProducerOutsideTheCallersTradeUnits_StillReturns`) now pins the read as unscoped and is mutation-verified. **`PUT` remains accepted under AR-01** — it has six live callers, two writing to cross-trade-unit linked producers by design, plus an onboarding path that would race freshly-written membership. See AR-01's and AR-02's 2026-09-14 updates. |
 | **H-066 (elevators half)** — `GET /api/bidsheet/elevators` returned every elevator across every trade unit when `tradeUnitCode` was omitted, with no entitlement validation (CWE-284) | 2026-09-14 | **Fixed (2026-09-14).** `tradeUnitCode` is now required and validated, and blank is rejected explicitly *before* `ValidateTradeUnitsOrThrowAsync` — which filters blanks and returns early, so `?tradeUnitCode=` would otherwise have passed validation vacuously and fallen through unscoped. Nothing in the client called this route, so the fix costs no behaviour; the client signature was tightened to a required parameter so a future caller fails at compile time. Covered by `BidSheetElevatorScopeTests` (5 cases, mutation-verified). **Only the elevators half was fixed** — `GET /api/bidsheet/locations` remains accepted under AR-05 because the bid-sheet map genuinely needs the unscoped read. |

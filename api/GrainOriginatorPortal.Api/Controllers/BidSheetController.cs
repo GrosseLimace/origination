@@ -32,7 +32,10 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<List<ElevatorCacheResponse>>> GetElevators([FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        // H-066 (2026-09-14): scoped, unlike the sibling locations read below. AR-05 covered both,
+        // H-066 (2026-09-14): scoped, unlike the sibling locations read below. Note this is a
+        // SPEED BUMP, not an authorization control — trade units are self-assigned through the
+        // Trade Unit Preferences app, so a caller this refuses can join the unit and read anyway.
+        // Kept because nothing calls this route, so requiring a scope costs nothing. AR-05 covered both,
         // but its justification — the bid-sheet map needs every location — only ever applied to
         // locations. Nothing in the client calls this route, so requiring a scope costs no
         // behaviour. AR-05 was narrowed off it; do not re-open it to an unscoped read.
