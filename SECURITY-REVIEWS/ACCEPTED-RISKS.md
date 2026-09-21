@@ -200,12 +200,26 @@ The delete route also gained the AR-01 citation it was missing (only the update 
 M-041. The pattern is now unmistakable: **every `AUDIT_` claim in this register has been wrong at
 least once. Verify the log line's fields, not just its presence.**
 
-🔴 **Open recommendation — not actioned, needs a product decision.** Planting-intention delete is a
-hard delete of hand-entered forward origination data with no upstream system of record to restore
-from. That is the same durability argument that took the producer-details delete OUT of this entry
-under H-062. The cheap fix is to make it a soft delete, matching notes (`IsDeleted`/`DeletedAt`/
-`DeletedBy`), which would give recovery *and* row-level attribution. It needs a migration, so it is
-recorded here rather than bundled into a security-finding pass.
+✅ **Durability recommendation — ACTIONED 2026-09-21.** Planting-intention delete *was* a hard
+delete of hand-entered forward origination data with no upstream system of record to restore from —
+the same durability argument that took the producer-details delete OUT of this entry under H-062.
+It is now a **soft delete** (`IsDeleted` / `DeletedAt` / `DeletedBy`, recoverable by flipping the
+flag), so the route gives both recovery and row-level attribution.
+
+Approved by the project owner and implemented on branch `fix_PlantingIntentionSoftDelete`
+(commit `b49d969d`, off `main`, **not yet merged or deployed** — the migration must be applied per
+environment like any other). Two notes for whoever reviews it:
+
+- Reads are filtered by a single `HasQueryFilter` on the model, **not** by Note's per-query
+  `!IsDeleted` predicate repeated in eleven places. These rows are SUMMED into trade-unit acreage
+  rollups, so one forgotten predicate would be a wrong total with no error. Verified that no raw
+  SQL touches `ProducerPlantingIntentions`, since a global filter would not apply to it.
+- The `AUDIT_DELETE` line now carries crop, acres and planting year as well as the actor, so the
+  log is self-sufficient. That was the actual gap: the M-043 fix recorded *who* and *which id* but
+  never *what*, so perfect attribution still could not reconstruct the plan.
+
+**The authorization half of M-043 is unaffected and remains accepted** — this was a data-durability
+fix, not an access control. Nothing about who may delete a planting intention has changed.
 
 ### Update (2026-09-21) — M-041: notes mutations, fifth pass
 
