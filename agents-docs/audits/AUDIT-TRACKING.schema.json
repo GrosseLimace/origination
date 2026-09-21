@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://scoular.ghe.com/IT/origination/agents-docs/audits/AUDIT-TRACKING.schema.json",
+  "title": "Audit Tracking",
+  "description": "Structured tracker for audit findings across a repository. Source of truth for finding status; companion .md files carry rich prose.",
+  "type": "object",
+  "required": ["schema_version", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "description": "Schema version. Bump on breaking changes to the finding shape.",
+      "minimum": 1
+    },
+    "findings": {
+      "type": "array",
+      "description": "Flat list of audit findings across all audits in this repo.",
+      "items": { "$ref": "#/definitions/finding" }
+    }
+  },
+  "definitions": {
+    "finding": {
+      "type": "object",
+      "required": [
+        "id",
+        "audit",
+        "severity",
+        "status",
+        "title",
+        "opened_in",
+        "last_verified"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable slug identifier. Format: '{audit}.{slug}' where slug is lowercase-kebab-case. Must be unique across the file.",
+          "pattern": "^[a-z0-9-]+\\.[a-z0-9][a-z0-9-]*$"
+        },
+        "audit": {
+          "type": "string",
+          "description": "Which audit domain this finding belongs to. Must match the prefix in 'id'.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low"],
+          "description": "Severity classification per the audit style guide."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "in_progress",
+            "resolved",
+            "accepted",
+            "wont_fix",
+            "superseded",
+            "needs_verification"
+          ],
+          "description": "Current status. 'needs_verification' = imported from .md but unable to confirm against code; review needed."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short human description. Matches the .md heading.",
+          "minLength": 3
+        },
+        "description": {
+          "type": "string",
+          "description": "Longer prose describing the finding. Multi-line via ordinary JSON string escapes (\\n)."
+        },
+        "files": {
+          "type": "array",
+          "description": "Repo-relative file paths this finding applies to.",
+          "items": { "type": "string" }
+        },
+        "suggested_fix": {
+          "type": "string",
+          "description": "Recommended remediation approach."
+        },
+        "opened_in": {
+          "type": "object",
+          "required": ["date"],
+          "additionalProperties": false,
+          "description": "When this finding was first logged.",
+          "properties": {
+            "session": {
+              "type": "integer",
+              "description": "Session number from the session log, if applicable.",
+              "minimum": 0
+            },
+            "date": {
+              "type": "string",
+              "format": "date",
+              "description": "YYYY-MM-DD when the finding was opened."
+            }
+          }
+        },
+        "last_verified": {
+          "type": "string",
+          "format": "date",
+          "description": "YYYY-MM-DD the finding was last confirmed to still apply. Used to flag stale open findings."
+        },
+        "ghe_issue": {
+          "type": ["integer", "null"],
+          "description": "Umbrella audit GHE issue number (one per audit domain). Optional when finding is standalone."
+        },
+        "resolved_in": {
+          "type": ["object", "null"],
+          "required": ["date", "detected_by"],
+          "additionalProperties": false,
+          "description": "Populated when status is 'resolved'. Null otherwise.",
+          "properties": {
+            "session": {
+              "type": "integer",
+              "description": "Session in which the fix landed."
+            },
+            "pr": {
+              "type": "integer",
+              "description": "PR number that resolved this finding."
+            },
+            "commit": {
+              "type": "string",
+              "description": "Commit SHA, if no PR applies."
+            },
+            "date": {
+              "type": "string",
+              "format": "date"
+            },
+            "detected_by": {
+              "type": "string",
+              "enum": ["manual", "audit_rerun", "wrap_up_prompt", "pr_body_resolves"],
+              "description": "How this resolution was recorded. 'audit_rerun' means the re-verification step inferred the fix (spot-check recommended)."
+            }
+          }
+        },
+        "follow_up_issue": {
+          "type": ["integer", "null"],
+          "description": "GHE issue tracking broader work spawned by this finding (e.g. Option A refactor for C-2 is #203)."
+        },
+        "related_findings": {
+          "type": "array",
+          "description": "IDs of related findings in other audits (same root cause viewed from different lenses).",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+\\.[a-z0-9][a-z0-9-]*$"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "description": "Freeform notes — resolution history, verification breadcrumbs, cross-references."
+        },
+        "resolution_notes": {
+          "type": "string",
+          "description": "Short prose describing how the resolution landed (e.g. which knobs flipped, which gaps remain)."
+        },
+        "accepted_rationale": {
+          "type": "string",
+          "description": "Short prose citing why this finding is intentionally accepted (typically points at a project convention or design decision)."
+        }
+      }
+    }
+  }
+}
