@@ -290,15 +290,6 @@ export class ApiService {
       .pipe(catchError(() => of([] as Customer[])));
   }
 
-  /** Updates an existing customer's information (sends only fields accepted by UpdateCustomerRequest DTO) */
-  updateCustomer(customer: Customer): Observable<Customer> {
-    return this.http.put<Customer>(`${this.baseUrl}/customers/${customer.id}`, {
-      location: customer.location,
-      phone: customer.phone,
-      email: customer.email,
-      linkedProducerIds: customer.linkedProducerIds
-    }).pipe(catchError(e => this.handleError(e)));
-  }
 
   // ==========================================================================
   // Contract Operations

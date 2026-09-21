@@ -219,7 +219,7 @@ public class ProducerContactTests
             GrainOnFarm = new[] { new GrainOnFarmEntry { CommodityGroup = "Corn", BushelsOnHand = 10 } }
         }, "tuser", CancellationToken.None);
 
-        await repo.DeleteAsync(100, CancellationToken.None);
+        await repo.DeleteAsync(100, "tester", CancellationToken.None);
 
         Assert.Empty(await db.ProducerContacts.AsNoTracking().ToListAsync());
         Assert.Empty(await db.ProducerGrainOnFarm.AsNoTracking().ToListAsync());
