@@ -1,4 +1,6 @@
 // Project namespaces
+using GrainOriginatorPortal.Infrastructure.Abstractions;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
@@ -75,4 +77,32 @@ public class CustomerTradeUnitViewContractTests
         Assert.DoesNotContain("IsActive", names);
         Assert.DoesNotContain("IsDeleted", names);
     }
+    [Theory]
+    [InlineData("IndustryCode2")]
+    [InlineData("NopIdNumber")]
+    public void DeclaresTheOrganicColumnsOnBothSyncSources(string column)
+    {
+        // Added to originations.vw_CustomerTradeUnits on 2026-09-21 so the organic gate can read
+        // them from the main sync pass rather than only for manually onboarded producers. Both
+        // sources must carry them: ICustomerOdsAttributes is what ApplyAttributes copies from, so
+        // a property here that one source lacks is the "Invalid column name" failure again.
+        Assert.NotNull(typeof(CustomerTradeUnitView).GetProperty(column));
+        Assert.NotNull(typeof(CurrentCustomerRow).GetProperty(column));
+        Assert.NotNull(typeof(ICustomerOdsAttributes).GetProperty(column));
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("0", null)]
+    [InlineData(" 1234567890 ", "1234567890")]
+    public void NormalisesThePlaceholderNopId(string? raw, string? expected)
+    {
+        // ODS holds the literal "0" on ~1,525 rows, far more than hold a real 10-digit id.
+        // Letting that through would treat roughly three times the certified population as
+        // having a NOPID on file.
+        Assert.Equal(expected, OdsValues.NormaliseNopId(raw));
+    }
+
 }

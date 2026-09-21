@@ -39,6 +39,8 @@ public record CustomerResponse
     public CoordinatesResponse? Coordinates { get; init; }
     public string Farm { get; init; } = string.Empty;
     public string? IndustryCode1 { get; init; }
+    public string? IndustryCode2 { get; init; }
+    public string? NopIdNumber { get; init; }
     public bool IsActive { get; init; }
     public DateTime? EffectiveStartDate { get; init; }
     public DateTime? EffectiveEndDate { get; init; }

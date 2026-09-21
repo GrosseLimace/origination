@@ -39,6 +39,8 @@ public static class CustomerMappings
         Coordinates = c.Coordinates is null ? null : new CoordinatesResponse { Lat = c.Coordinates.Lat, Lng = c.Coordinates.Lng },
         Farm = c.Farm,
         IndustryCode1 = c.IndustryCode1,
+        IndustryCode2 = c.IndustryCode2,
+        NopIdNumber = c.NopIdNumber,
         IsActive = c.IsActive,
         EffectiveStartDate = c.EffectiveStartDate,
         EffectiveEndDate = c.EffectiveEndDate,
