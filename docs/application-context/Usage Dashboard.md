@@ -296,4 +296,4 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 
 - [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `Admin` policy registration, `adminGuard`, `UsageTrackingService`.
 - [`Build a List.md`](./Build%20a%20List.md) — `dbo.QueryLibrary` and the search-gap events.
-- `scripts/_VerifySchema.sql` — authoritative shape assertions for the usage tables.
+- `api/GrainOriginatorPortal.Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs` — authoritative shape of the usage tables (the old `scripts/_VerifySchema.sql` drifted and was removed).
