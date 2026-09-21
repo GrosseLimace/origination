@@ -144,4 +144,29 @@ public class PlantingIntentionsControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(created, ok.Value);
     }
+
+    // -------------------------------------------------------------------------
+    // Retag moves a producer's rows off a trade unit they've been removed from; the count comes
+    // back so the caller can tell the user what happened.
+    [Fact]
+    public async Task Retag_ReturnsTheNumberOfRowsMoved()
+    {
+        // Arrange
+        _serviceMock
+            .Setup(s => s.RetagAsync(10, "2210", "2190", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2);
+
+        var request = new RetagPlantingIntentionsRequest
+        {
+            CustomerId = 10, FromTradeUnit = "2210", ToTradeUnit = "2190"
+        };
+
+        // Act
+        var result = await _sut.Retag(request);
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(2, Assert.IsType<RetagPlantingIntentionsResponse>(ok.Value).Moved);
+        _serviceMock.Verify(s => s.RetagAsync(10, "2210", "2190", It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

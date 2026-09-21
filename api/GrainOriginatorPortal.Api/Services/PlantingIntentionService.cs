@@ -195,11 +195,8 @@ public class PlantingIntentionService : IPlantingIntentionService
         var to = await ResolveTradeUnitAsync(customerId, toTradeUnit, customerFound: true, crop: "(retag)", cancellationToken);
         if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase)) return 0;
 
-        var moved = await _repository.RetagAsync(customerId, from, to, _requestContext.GetCurrentUser(), cancellationToken);
-        _logger.LogInformation(
-            "Planting intentions retagged [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId}, From={FromTradeUnit}, To={ToTradeUnit}, Count={Count}",
-            "AUDIT_UPDATE", "DataMutation", customerId, from, to, moved);
-        return moved;
+        // The controller writes the AUDIT_UPDATE line for this call, as it does for create/update/delete.
+        return await _repository.RetagAsync(customerId, from, to, _requestContext.GetCurrentUser(), cancellationToken);
     }
 
     /// <inheritdoc />
