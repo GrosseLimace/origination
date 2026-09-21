@@ -113,8 +113,10 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> BulkUpsertBids([FromBody] List<UpsertBidSheetBidRequest> requests, CancellationToken cancellationToken = default)
     {
+        // Thrown, not returned as a bare string — a raw JSON string body is unreadable to the
+        // client's error unwrapping, so this message never reached the user.
         if (requests.Count > 500)
-            return BadRequest("Maximum 500 bids per bulk request.");
+            throw new ValidationException(nameof(requests), "Maximum 500 bids per bulk request.");
 
         var tradeUnits = requests
             .Where(r => !string.IsNullOrEmpty(r.TradeUnitCode))

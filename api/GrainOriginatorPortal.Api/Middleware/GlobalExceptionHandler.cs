@@ -41,8 +41,12 @@ public class GlobalExceptionHandler : IExceptionHandler
 
         switch (exception)
         {
-            case OperationCanceledException:
-                // Client disconnected or request timed out — not a server error, do not log
+            // Only a cancellation the CLIENT caused is a silent 499. An OperationCanceledException
+            // raised while the connection is still open is our own timeout (some other
+            // CancellationTokenSource firing), and returning it unlogged hid real infrastructure
+            // failures — let those fall through to the Unexpected branch and be logged.
+            case OperationCanceledException when httpContext.RequestAborted.IsCancellationRequested:
+                // Client disconnected — not a server error, do not log
                 httpContext.Response.StatusCode = 499; // Client Closed Request (nginx convention)
                 return true;
 

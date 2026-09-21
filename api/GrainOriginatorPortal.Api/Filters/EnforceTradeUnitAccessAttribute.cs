@@ -54,9 +54,16 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
                     StatusCodes.Status503ServiceUnavailable);
             }
 
+            // Tracks whether any of the three patterns below actually recognised this action's
+            // parameters. Without it the filter fell through to next() with zero enforcement and
+            // zero trace whenever a signature drifted out of the shapes it knows — which already
+            // caused one live gap (H-061, DELETE actualharvest/{id}). Now it says so out loud.
+            var enforced = false;
+
             // Pattern 1: tradeUnits as List<string> (Customers, Contracts, Tickets)
             if (context.ActionArguments.TryGetValue("tradeUnits", out var tradeUnitsObj) && tradeUnitsObj is List<string> tradeUnitsList && tradeUnitsList.Count > 0)
             {
+                enforced = true;
                 if (isReadRequest)
                 {
                     var filtered = tradeUnitsList.Where(c => !string.IsNullOrWhiteSpace(c) && allowed.Contains(c)).ToList();
@@ -75,6 +82,7 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
             // Pattern 2: tradeUnitKey as comma-separated string (Dashboard GET endpoints)
             if (context.ActionArguments.TryGetValue("tradeUnitKey", out var tradeUnitKeyObj) && tradeUnitKeyObj is string tradeUnitKey && !string.IsNullOrWhiteSpace(tradeUnitKey))
             {
+                enforced = true;
                 var codes = tradeUnitKey.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (isReadRequest)
                 {
@@ -102,8 +110,23 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
                 var bodyCodes = ExtractTradeUnitKeys(arg);
                 if (bodyCodes.Count > 0)
                 {
+                    enforced = true;
                     await _entitlementService.ValidateTradeUnitsOrThrowAsync(bodyCodes, context.HttpContext.RequestAborted);
                 }
+            }
+
+            if (!enforced)
+            {
+                // Deliberately a loud log rather than a hard failure: several decorated actions
+                // legitimately carry no trade-unit parameter (the id-only routes scope in the
+                // service layer instead), so throwing here would break working endpoints. This
+                // makes the silent case searchable so drift is caught before it becomes a gap.
+                _logger.LogWarning(
+                    "EnforceTradeUnitAccess matched no known parameter shape on {Method} {Path} — no filtering applied by this attribute. [{ErrorCode}] [{ErrorCategory}]",
+                    context.HttpContext.Request.Method,
+                    context.HttpContext.Request.Path,
+                    "ENTITLEMENTS_FILTER_NOT_APPLIED",
+                    "Security");
             }
 
             await next();

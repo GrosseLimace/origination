@@ -139,10 +139,23 @@ public class GeocodeService : IGeocodeService
                 continue;
             }
 
-            // Call Nominatim (server-to-server, no CORS)
+            // Call Nominatim (server-to-server, no CORS).
+            // Take the shared slot per item, same as GeocodeSingleAsync/SearchAsync: the loop's own
+            // delay only paced THIS batch, so two concurrent callers could still fire at Nominatim
+            // simultaneously and blow the documented 1 req/sec limit (risking an IP-level block that
+            // breaks geocoding app-wide). Acquiring per item rather than for the whole batch keeps a
+            // 50-item batch from monopolising the limiter for a minute.
+            await _rateLimiter.WaitAsync(cancellationToken);
             try
             {
+                var elapsed = DateTime.UtcNow - _lastNominatimCall;
+                if (elapsed.TotalMilliseconds < 1100)
+                {
+                    await Task.Delay(1100 - (int)elapsed.TotalMilliseconds, cancellationToken);
+                }
+
                 var url = BuildNominatimUrl(req);
+                _lastNominatimCall = DateTime.UtcNow;
                 var response = await http.GetAsync(url, cancellationToken);
 
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
@@ -183,9 +196,6 @@ public class GeocodeService : IGeocodeService
                         (int)response.StatusCode, Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
                     results.Add(new GeocodeResult { Key = req.Key });
                 }
-
-                // Respect Nominatim rate limit: 1 req/sec
-                await Task.Delay(1100, cancellationToken);
             }
             catch (HttpRequestException ex)
             {
@@ -198,6 +208,10 @@ public class GeocodeService : IGeocodeService
                 _logger.LogError(ex, "Batch geocode timed out for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
                     Fingerprint(cacheKey), "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
                 results.Add(new GeocodeResult { Key = req.Key });
+            }
+            finally
+            {
+                _rateLimiter.Release();
             }
         }
 
@@ -213,13 +227,13 @@ public class GeocodeService : IGeocodeService
         // Cap limit at 5 to prevent abuse
         limit = Math.Clamp(limit, 1, 5);
 
+        // Cache the WHOLE result list, not just the first point. Caching only results[0] meant an
+        // identical repeat search silently returned 1 candidate where the first call returned up to
+        // 5 — the disambiguation dropdown would collapse to a single option on the second try.
         var cacheKey = $"search:{q.ToLower().Trim()}:{limit}";
-        if (_cache.TryGetValue<double[]?>(cacheKey, out var cached) && cached != null)
+        if (_cache.TryGetValue<List<GeocodeSearchResult>>(cacheKey, out var cached) && cached != null)
         {
-            return new List<GeocodeSearchResult>
-            {
-                new() { Lat = cached[0], Lng = cached[1] }
-            };
+            return cached;
         }
 
         await _rateLimiter.WaitAsync(cancellationToken);
@@ -249,8 +263,7 @@ public class GeocodeService : IGeocodeService
                         Lng = double.Parse(d.GetProperty("lon").GetString()!)
                     }).ToList();
 
-                    // Cache first result
-                    _cache.Set(cacheKey, new[] { results[0].Lat, results[0].Lng }, _cacheOptions);
+                    _cache.Set(cacheKey, results, _cacheOptions);
                     return results;
                 }
             }

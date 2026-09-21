@@ -22,6 +22,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Models.Responses;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -111,6 +112,14 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAssertion(ctx =>
             GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.CanView(ctx.User)));
 });
+// Audit authorization denials where the framework decides them. The authorization middleware
+// short-circuits on a failed [Authorize] without calling the rest of the pipeline, so
+// SecurityAuditMiddleware (which reads the final status code downstream) never saw the ordinary
+// 401/403s it exists to log. This handler logs and then delegates to the default behaviour.
+builder.Services.AddSingleton<
+    Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler,
+    AuthorizationAuditResultHandler>();
+
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 
 // Usage tracking: bounded in-memory channel + background batch writer
@@ -380,6 +389,38 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit = 1000,
                 Window = TimeSpan.FromMinutes(1)
             }));
+
+    // The limiter writes its own rejection, so it never passes through GlobalExceptionHandler —
+    // which left the app's only real 429 with an empty body and no Retry-After, and made the
+    // handler's own 429 branch dead code. Emit the standard error envelope here instead.
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        var http = context.HttpContext;
+        var traceId = http.Items[CorrelationIdMiddleware.ItemsKey]?.ToString() ?? http.TraceIdentifier;
+
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var window)
+            ? (int)window.TotalSeconds
+            : 30;
+        http.Response.Headers.RetryAfter = retryAfter.ToString();
+
+        http.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("GrainOriginatorPortal.Api.RateLimiting")
+            .LogWarning(
+                "Rate limit exceeded [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Method} {Path} → 429",
+                traceId, "RATE_LIMIT_EXCEEDED", "Security", http.Request.Method, http.Request.Path.Value);
+
+        await http.Response.WriteAsJsonAsync(new ApiErrorResponse
+        {
+            Error = new ApiErrorBody
+            {
+                Code = "RATE_LIMIT_EXCEEDED",
+                Message = "Too many requests. Please wait a moment and try again.",
+                TraceId = traceId,
+                Timestamp = DateTime.UtcNow.ToString("O"),
+                Instance = http.Request.Path.Value
+            }
+        }, cancellationToken);
+    };
 });
 
 // =============================================================================
