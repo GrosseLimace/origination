@@ -47,20 +47,13 @@ applying the suggested fix would introduce a bug:
 
 The reason is also recorded in the method itself, so the next audit doesn't re-file it.
 
-## One finding whose premise is still unverified
+## One finding verified against the databases — and what that turned up
 
-`code-review.bulk-bid-location-insert-race` is marked `resolved` — a guard was added — but its
-premise has not been confirmed. The finding asserts a unique index on
-`BidSheetLocations (Name, TradeUnitCode)`. **That index is not in the EF model:** no live migration
-creates `UQ_BidSheetLocations_Name_TradeUnit`, only historical `.Designer.cs` snapshots mention it,
-and the current model snapshot has just the non-unique `IX_BidSheetLocations_TradeUnitCode`.
-
-It may exist in deployed databases, because the hand-rolled `migrate-bid-sheet.sql` created the
-table with it outside EF — the same model-versus-database drift that
-`sql.handrolled-ddl-faked-migration-history` describes. So two findings in this run interact and
-neither says so.
-
-Settling it is one query per environment:
+`code-review.bulk-bid-location-insert-race` asserts a unique index on
+`BidSheetLocations (Name, TradeUnitCode)`. That index is **not in the EF model** — no live migration
+creates `UQ_BidSheetLocations_Name_TradeUnit`, only historical `.Designer.cs` snapshots mention it —
+so the premise couldn't be confirmed from the repo. It was settled by querying all three
+environments:
 
 ```sql
 SELECT i.name, i.is_unique, i.type_desc
@@ -68,18 +61,53 @@ FROM   sys.indexes i
 WHERE  i.object_id = OBJECT_ID('dbo.BidSheetLocations') AND i.name IS NOT NULL;
 ```
 
-If a unique index exists, the guard is real and nothing changes. If it does not, the guard is a
-catch that can never fire and two comments in `BidSheetRepository.cs` are stale. Note that *adding*
-a global unique index is not the easy fix it looks like: the table predates any naming rule, so it
-would need a duplicate-name sweep of QA and PROD first, or the deploy fails on existing duplicates.
+| Environment | Result |
+| --- | --- |
+| Dev | `PK_BidSheetLocations`, `UQ_BidSheetLocations_BarchartKey` |
+| QA | `PK_BidSheetLocations`, `UQ_BidSheetLocations_BarchartKey` |
+| **PROD** | `PK_BidSheetLocations`, `IX_BidSheetLocations_TradeUnitCode`, **`UQ_BidSheetLocations_Name_TradeUnit` (unique)** |
+
+**The finding was right.** PROD has the constraint, so the guard added to `BulkUpsertBidsAsync`
+protects a real race there, and the two comments in `BidSheetRepository.cs` that reference the index
+by name (in `LocationNameExistsAsync` and `ReconcileDuplicateBidInsertsAsync`) are **accurate — do
+not "correct" them.** An earlier reading of the EF model alone suggested they were stale; they are
+not.
+
+### The drift this exposed, which matters more than the finding
+
+**1. PROD enforces a constraint EF doesn't know about.** `UQ_BidSheetLocations_Name_TradeUnit` was
+created by the hand-rolled `migrate-bid-sheet.sql`, outside EF, so it exists in the database and in
+no migration. The practical consequence: **a duplicate location name fails in PROD and nowhere
+else.** It cannot be reproduced locally, in Dev, or in QA. This is the same
+model-versus-database drift `sql.handrolled-ddl-faked-migration-history` describes, now confirmed
+live rather than theoretical.
+
+**2. Dev and QA are on a different schema from PROD entirely.** Both carry
+`UQ_BidSheetLocations_BarchartKey` and neither has `IX_BidSheetLocations_TradeUnitCode`, which *is*
+in `main`'s model. They have been deployed from `feature_BidSheetRemodelAndBarchartFeed`, which
+holds **21 migrations `main` does not have** — including `MakeBidSheetLocationsGlobal`, which is
+what dropped per-TU name uniqueness there. So Dev and QA are ahead of `main` on an unmerged branch
+while PROD is behind it. Deploying `main`-lineage code to Dev or QA runs
+`dotnet ef database update` against a history containing migrations that code has never seen.
+
+This may be entirely deliberate — that branch was intentionally kept off `main` — but it is worth
+confirming rather than discovering during a deploy.
+
+**3. If anyone proposes adding a global unique index** as the tidy fix, it needs a duplicate-name
+sweep of the target environment first. The table predates any naming rule, and a unique index
+created over existing duplicates fails the deploy.
 
 ## For the dashboard's scoring model
 
 Detail is on PR #613; the short version:
 
-1. **A finding can be true while its `suggested_fix` is wrong.** Two instances in this run — the
-   one above, and the unverified index premise. That failure mode isn't modelled: the tracker
+1. **A finding can be true while its `suggested_fix` is wrong.** One confirmed instance in this run
+   — the `ProducerDetails` re-fetch pair above. That failure mode isn't modelled: the tracker
    presents finding and fix with equal confidence, and the fix is the field people act on.
+   (A second suspected instance, `code-review.bulk-bid-location-insert-race`, turned out to be a
+   false alarm — the finding was right and the databases proved it. Worth stating, because the
+   lesson is the opposite of what it first looked like: a finding asserting a database fact can't
+   be checked against the EF model alone, in *either* direction.)
 2. **Findings can understate.** `code-review.nlq-pacing-open-vs-all-contracts-mismatch` was filed
    as an inconsistency; it was a broken feature — the free-text path scoped to open contracts, and
    last year's contracts are all closed, so it zeroed its own baseline and returned almost nobody.

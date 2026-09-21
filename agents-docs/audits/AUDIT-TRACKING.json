@@ -1408,7 +1408,7 @@
       "related_findings": ["sql.n-plus-one-bid-insert-reconciliation"],
       "opened_in": { "date": "2026-09-19" },
       "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615."
+      "notes": "[2026-09-21] Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. [2026-09-21 verified] Premise CONFIRMED against the databases: PROD carries UQ_BidSheetLocations_Name_TradeUnit (unique), so the guard protects a real race there. Dev and QA do not — both run the feature_BidSheetRemodelAndBarchartFeed schema, where MakeBidSheetLocationsGlobal dropped per-TU name uniqueness. The index exists in PROD but in NO migration (hand-rolled migrate-bid-sheet.sql created it outside EF), so a duplicate location name fails in PROD and nowhere else. The comments in BidSheetRepository.cs naming this index are accurate — do not correct them."
     },
     {
       "id": "code-review.reconcile-only-handles-bids-not-locations",
