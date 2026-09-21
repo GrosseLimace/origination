@@ -507,6 +507,32 @@ was scoped to do, and why it was never claimed as a fix. Its field-minimization 
 already considered and rejected above for the same reason. The route carries two inline AR-04
 citations.
 
+**Update (2026-09-21):** re-flagged as **H-072** (`claude`, CWE-200, confidence 8/10). **Re-accepted
+— no change.** Fourth pass. Two suggestions, and they need different answers:
+
+1. **"Scope the ODS search to the caller's entitled trade units by joining through
+   `dbo.CustomerTradeUnit`" — structurally impossible, not merely disruptive.** This search exists
+   to find producers who are in CTRM but have **no contract or ticket yet**, and such a producer has
+   no `CustomerTradeUnit` row at all. The join would return zero rows for precisely the population
+   the feature serves. The client confirms the shape: `customer-list.component.ts` fires the ODS
+   lookup only as a fallback — when the scoped search returns **nothing**, no trade unit or group is
+   selected, and the term is ≥3 characters — and tags the results `isOnboardCandidate`. Scoping it
+   by trade unit would mean the onboarding search could only find producers already onboarded.
+
+2. **"Gate it behind a dedicated policy/role" — DECLINED as a product decision, 2026-09-21.** The
+   user was asked directly and the answer was explicit: *there should not be a guard on searching
+   for producers.* Any originator may look a producer up. This is not a security judgement to be
+   revisited by the next scan — it is the same product direction AR-03 records for rep-driven
+   onboarding ("originators onboard producers"), re-accepted there three times. A role gate would
+   contradict AR-03, and would need a new Entra app role to implement.
+
+The finding is right that the three-character minimum and `TOP 50` cap are not authorization
+controls. AR-04 has never claimed they were — they bound bulk extraction, and the acceptance rests
+on the trusted internal population, not on them.
+
+No code change: the route already carries two inline AR-04 citations and this finding does not rest
+on an undocumented asymmetry, so there is nothing a comment would answer.
+
 ### Decision: Accepted (with the server-side min-length hardening above)
 
 **Rationale.** This endpoint is the **rep onboarding search** (the home-page fallback for the "New
