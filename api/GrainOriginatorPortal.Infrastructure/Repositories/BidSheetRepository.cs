@@ -438,7 +438,12 @@ public class BidSheetRepository : IBidSheetRepository
             if (!winnerByName.TryGetValue(name, out var winner)) continue;
 
             _appContext.Entry(dup).State = EntityState.Detached; // drop our losing insert
+            // Swap, don't just remove: the caller derives the set of location ids to preload
+            // existing bids for from this list, so dropping the entry without substituting the
+            // winner would hide that location's already-stored bids and send the second pass into
+            // an avoidable unique-violation retry.
             newLocations.Remove(dup);
+            newLocations.Add(winner);
             byName[name] = winner;
             if (!string.IsNullOrEmpty(dup.ElevatorCode))
                 byElevator[dup.ElevatorCode!] = winner;

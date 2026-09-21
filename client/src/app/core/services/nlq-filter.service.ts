@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Customer, Contract, Ticket, Note, NoteLastContact, PlantingIntention, StoredGrain, DpContract, RefinementFilters, Commodity, CommodityConversion } from '@models';
-import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap, computeHarvestPacePct } from '@shared/utils/contract-status';
+import { isContractUnconfirmed, isContractCustomerConfirmed, isContractOverdueWithUnshippedBu, buildConversionMap, computeHarvestPacePct } from '@shared/utils/contract-status';
 import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
@@ -2727,7 +2727,7 @@ export class NlqFilterService {
       result = result.filter(c => getOpenContracts(c).some(ct => isContractUnconfirmed(ct)));
     } else if (lowerQuery.includes('confirmed contract') || lowerQuery.includes('customer confirmed')) {
       result = result.filter(c =>
-        getOpenContracts(c).some(ct => !isContractUnconfirmed(ct))
+        getOpenContracts(c).some(ct => isContractCustomerConfirmed(ct))
       );
     }
 

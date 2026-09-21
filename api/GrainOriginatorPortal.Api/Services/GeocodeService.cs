@@ -233,7 +233,9 @@ public class GeocodeService : IGeocodeService
         var cacheKey = $"search:{q.ToLower().Trim()}:{limit}";
         if (_cache.TryGetValue<List<GeocodeSearchResult>>(cacheKey, out var cached) && cached != null)
         {
-            return cached;
+            // Copy: handing back the cached instance would let any caller's mutation corrupt the
+            // entry for everyone. At most 5 items, so the copy is free.
+            return [.. cached];
         }
 
         await _rateLimiter.WaitAsync(cancellationToken);

@@ -25,6 +25,17 @@ export function isContractUnconfirmed(contract: Contract): boolean {
   return true;
 }
 
+/** Returns true only when the customer has positively confirmed the contract.
+ *
+ *  Deliberately NOT the inverse of `isContractUnconfirmed`: that one also returns false for
+ *  Fulfilled/Cancelled contracts, on the grounds that there's no point chasing a confirmation for
+ *  a contract that's already done. Terminal-and-never-confirmed is not the same as confirmed, so
+ *  negating it would count those as confirmed and widen any "confirmed contracts" query. Trimmed
+ *  and case-insensitive, matching the unconfirmed rule. */
+export function isContractCustomerConfirmed(contract: Contract): boolean {
+  return (contract.customerConfirmStatus || '').trim().toLowerCase() === 'confirmed';
+}
+
 /** Returns true if `contract` is past its delivery end date AND still has unshipped bushels.
  *  Delegates to the shared `getContractDeliveryStats` util so this rule is identical to what
  *  contracts-table / activity-summary / insights / customer-print-report show — no separate

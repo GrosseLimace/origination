@@ -104,9 +104,12 @@ export class BuildListComponent {
   // "the full set"), so a partial slice can't leak to other consumers as if it were complete.
   private _loadedNoteScopeKey = signal<string>('');
   private _scopedNotesFetchInFlight = false;
-  /** Set when a newer note scope was requested while a fetch was in flight; the in-flight
-   *  handler re-runs _ensureNotesForQuery once it settles so the newer scope isn't stranded. */
-  private _scopedNotesFetchSuperseded = false;
+  /** The refinements of a note-scope request that arrived while a different scoped fetch was in
+   *  flight. Held rather than dropped so the in-flight handler can re-run it once it settles.
+   *  Stores the criteria, not just a flag: the stranded request is usually the STAGED refine set,
+   *  which is not appliedRefinements() yet — retrying with the default would fetch the wrong scope
+   *  and leave the staged apply just as stuck. Last request wins. */
+  private _supersededNoteScopeRequest: RefinementFilters | null = null;
   // Batched note-load bookkeeping ('batched' scope): customerIds whose note bodies have already
   // been fetched for DISPLAY, and an in-flight guard so batches serialize (each re-checks on
   // completion for producers that rendered while it was loading).
@@ -2648,12 +2651,12 @@ export class BuildListComponent {
     if (scope.mode === 'none' || scope.mode === 'batched') return;
     if (scope.mode === 'full') { this._ensureNotesLoaded(); return; }
     if (this._loadedNoteScopeKey() === scope.key) return;
-    // A different scope is mid-flight. Remember that this one still needs fetching instead of
-    // dropping it: _commitRefinements calls here exactly once per refine change, so a swallowed
-    // call left _criteriaReadiness permanently false for the newly staged refine — spinner on,
-    // Apply disabled — until the user happened to change something else.
+    // A different scope is mid-flight. Hold this request instead of dropping it:
+    // _ensureDataForCriteria is called exactly once when a refine is staged and nothing re-kicks
+    // it, so a swallowed call left _criteriaReadiness false forever for that staged refine —
+    // spinner on, Apply disabled — until the user happened to change something else.
     if (this._scopedNotesFetchInFlight) {
-      this._scopedNotesFetchSuperseded = true;
+      this._supersededNoteScopeRequest = r;
       return;
     }
     this._scopedNotesFetchInFlight = true;
@@ -2678,12 +2681,13 @@ export class BuildListComponent {
     });
   }
 
-  /** Re-runs the scoped-note fetch when a newer scope was requested while one was in flight. The
-   *  scope is re-read from current state rather than queued, so only the latest one is fetched. */
+  /** Re-runs a scoped-note fetch that was superseded while another was in flight, with the
+   *  refinements it originally asked for. Cleared before the retry so a failing fetch can't loop. */
   private _retryScopedNotesIfSuperseded(): void {
-    if (!this._scopedNotesFetchSuperseded) return;
-    this._scopedNotesFetchSuperseded = false;
-    this._ensureNotesForQuery();
+    const pending = this._supersededNoteScopeRequest;
+    if (!pending) return;
+    this._supersededNoteScopeRequest = null;
+    this._ensureNotesForQuery(pending);
   }
 
   /** Batched note loading: fetch note bodies for the producers in the current render window (and
@@ -3193,6 +3197,10 @@ export class BuildListComponent {
   searchMembers(term: string): void {
     if (this._memberSearchTimeout) clearTimeout(this._memberSearchTimeout);
     if (!term.trim() || term.trim().length < 2) {
+      // Cancel here too, not just on the search path below: clearing the box only stopped a
+      // request still inside the debounce, so one already in flight would land afterwards and
+      // repopulate the list the user just emptied.
+      this._cancelMemberSearch$.next();
       this.memberSearchResults.set([]);
       this.memberInResultsMatches.set([]);
       this.memberSearchLoading.set(false);
