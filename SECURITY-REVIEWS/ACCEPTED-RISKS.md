@@ -215,6 +215,15 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/plantingintentions/customer/{customerId}`
 - ~~`GET /api/producerdetails/customer/{customerId}`~~ — **REMOVED FROM THIS ENTRY 2026-09-14 and FIXED in code.** See the update below. Do not cite AR-02 for it.
 - `GET /api/dpcontracts/customer/{customerId}` (added 2026-08-18 — see the update below)
+- `GET /api/storedgrain/customer/{customerId}` (added 2026-09-21 — **listing gap, not a new
+  decision.** The route has always had the same unscoped-by-design shape as its `dpcontracts`
+  sibling, and `StoredGrainService.GetByCustomerAsync` deliberately applies no entitlement scoping
+  while `GetAllAsync` does — the documented app-wide split. It was simply never written down here,
+  and the sibling controller carried an inline AR-02 citation while this one didn't. Surfaced by
+  the Code Quality Dashboard pilot audit, PR #613. The inline citation now exists too. This is the
+  third time this entry has been extended for a route that was deliberate but unlisted — H-060,
+  M-039, and now this one — which is itself the argument for adding a route here the moment the
+  decision is made rather than when a scan finds it.)
 
 **Update (2026-07-21):** the notes list/search endpoints are no longer trade-unit-filtered on the
 server either — note **content** is now returned org-wide to any authenticated rep:

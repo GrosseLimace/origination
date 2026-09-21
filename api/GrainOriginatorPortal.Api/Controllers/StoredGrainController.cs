@@ -33,6 +33,10 @@ public class StoredGrainController : ControllerBase
     [ProducesResponseType(typeof(List<StoredGrainResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<StoredGrainResponse>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        // Open to any rep — no per-producer object-level authz by design; see
+        // SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02). Mirrors the citation on the sibling
+        // DpContractsController route. This route was missing from AR-02's own table until
+        // 2026-09-21 — exactly the undocumented-deliberate-decision pattern that entry warns about.
         return Ok(await _service.GetByCustomerAsync(customerId, cancellationToken));
     }
 }
