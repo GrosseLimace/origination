@@ -23,6 +23,13 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
 
     private sealed class EnforceTradeUnitAccessFilter : IAsyncActionFilter
     {
+        /// <summary>Action ids already reported as unenforceable. Whether an action carries a
+        /// recognized trade-unit parameter is a property of its signature, not of the request, so
+        /// this is logged once per action per process rather than on every call — otherwise the
+        /// routes that legitimately scope in the service layer (see DeleteActualHarvest / H-061)
+        /// would bury the signal under a warning on every single request.</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _reportedUnenforceable = new();
+
         private readonly IUserEntitlementService _entitlementService;
         private readonly ILogger _logger;
 
@@ -54,9 +61,16 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
                     StatusCodes.Status503ServiceUnavailable);
             }
 
+            // Tracks whether any of the three patterns below actually recognised this action's
+            // parameters. Without it the filter fell through to next() with zero enforcement and
+            // zero trace whenever a signature drifted out of the shapes it knows — which already
+            // caused one live gap (H-061, DELETE actualharvest/{id}). Now it says so out loud.
+            var enforced = false;
+
             // Pattern 1: tradeUnits as List<string> (Customers, Contracts, Tickets)
             if (context.ActionArguments.TryGetValue("tradeUnits", out var tradeUnitsObj) && tradeUnitsObj is List<string> tradeUnitsList && tradeUnitsList.Count > 0)
             {
+                enforced = true;
                 if (isReadRequest)
                 {
                     var filtered = tradeUnitsList.Where(c => !string.IsNullOrWhiteSpace(c) && allowed.Contains(c)).ToList();
@@ -75,6 +89,7 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
             // Pattern 2: tradeUnitKey as comma-separated string (Dashboard GET endpoints)
             if (context.ActionArguments.TryGetValue("tradeUnitKey", out var tradeUnitKeyObj) && tradeUnitKeyObj is string tradeUnitKey && !string.IsNullOrWhiteSpace(tradeUnitKey))
             {
+                enforced = true;
                 var codes = tradeUnitKey.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (isReadRequest)
                 {
@@ -102,8 +117,25 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
                 var bodyCodes = ExtractTradeUnitKeys(arg);
                 if (bodyCodes.Count > 0)
                 {
+                    enforced = true;
                     await _entitlementService.ValidateTradeUnitsOrThrowAsync(bodyCodes, context.HttpContext.RequestAborted);
                 }
+            }
+
+            // Deliberately a log rather than a hard failure: some decorated actions legitimately
+            // carry no trade-unit parameter (the id-only routes scope in the service layer
+            // instead — see DashboardPlantingEstimatesController.DeleteActualHarvest), so throwing
+            // here would break working endpoints. Logging it makes the silent case searchable, so
+            // a NEW action that drifts out of the three known shapes is visible before it becomes
+            // a gap like H-061 rather than being discovered by a security scan.
+            if (!enforced && _reportedUnenforceable.TryAdd(context.ActionDescriptor.Id, 0))
+            {
+                _logger.LogWarning(
+                    "EnforceTradeUnitAccess matched no known parameter shape on {Method} {Path} — this attribute applies no filtering there; scoping must live in the service layer. [{ErrorCode}] [{ErrorCategory}]",
+                    context.HttpContext.Request.Method,
+                    context.HttpContext.Request.Path,
+                    "ENTITLEMENTS_FILTER_NOT_APPLIED",
+                    "Security");
             }
 
             await next();

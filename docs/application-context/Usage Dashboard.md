@@ -356,4 +356,4 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 
 - [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `Admin` policy registration, `adminGuard`, `UsageTrackingService`.
 - [`Build a List.md`](./Build%20a%20List.md) — `dbo.QueryLibrary` and the search-gap events.
-- `scripts/_VerifySchema.sql` — authoritative shape assertions for the usage tables.
+- `api/GrainOriginatorPortal.Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs` — authoritative shape of the usage tables. Prefer it over `scripts/_VerifySchema.sql`, which is a hand-maintained manifest that has drifted before. That file is KEPT rather than deleted (the audit proposed removing it): the BarChart work references it by name in five migrations as the `Barchart.ViewDrift` check, so it is still load-bearing on that line even though nothing in CI runs it.

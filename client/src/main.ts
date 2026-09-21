@@ -37,7 +37,11 @@ import { GlobalErrorHandler } from './app/core/handlers/global-error.handler';
 //      which creates third-party cookie restriction issues in modern browsers.
 //   4. XSS is the primary remaining risk. Mitigations in place:
 //      - Angular's built-in DOM sanitization prevents reflected/stored XSS.
-//      - No bypassSecurityTrust* usage anywhere in the app.
+//      - Exactly ONE bypassSecurityTrust* call in the app: HighlightPipe, which HTML-escapes the
+//        text first and then inserts only its own static <mark> markup, so nothing
+//        user-controlled reaches the DOM unescaped. Pinned by highlight.pipe.spec.ts — if you add
+//        another such call, add it here and test it. (This line previously claimed there were
+//        none, which had been untrue since the pipe was written.)
 //      - MSAL access tokens are short-lived (~1 hour) and refresh silently.
 //      - Content-Security-Policy HTTP headers (set in SecurityHeadersMiddleware) restrict resource loading for both SPA and API responses.
 const msalInstance = new PublicClientApplication({

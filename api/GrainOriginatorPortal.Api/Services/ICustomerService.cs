@@ -15,9 +15,6 @@ public interface ICustomerService
     Task<CustomerResponse?> GetByScoularIdAsync(string scoularId, CancellationToken cancellationToken);
     Task<List<CustomerResponse>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken);
 
-    /// <summary>Applies the (no-op) contact update and returns the refreshed customer, or null if not found.</summary>
-    Task<CustomerResponse?> UpdateAsync(long id, string location, string phone, string email,
-        List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken);
 
     Task<List<CustomerTradeUnitInfo>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken);
     Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken);

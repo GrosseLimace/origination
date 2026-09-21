@@ -10,10 +10,16 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <!-- §8 DEVIATION — do NOT delete this package yet. It is BANNED for DB tests by
-         style-guides/automated-testing.md §8, but it is STILL IN USE by Controllers/NotesControllerTests.cs
-         and Controllers/PlantingIntentionsControllerTests.cs (.UseInMemoryDatabase). Remove it only AFTER
-         those two tests are migrated to the real-SQL WebApplicationFactory harness (plan Phase D).
-         Deleting it now breaks the build. -->
+         style-guides/automated-testing.md §8, but .UseInMemoryDatabase is STILL IN USE by SEVEN
+         test files: Controllers/DiagnosticsControllerAppAccessTests.cs,
+         Controllers/NotesControllerMentionCatalogTests.cs, Repositories/CommodityTradeGroupScopeTests.cs,
+         Repositories/DailyRecapGroupRepositoryTests.cs, Repositories/ProducerContactTests.cs,
+         Repositories/ProducerGrainOnFarmTests.cs, Repositories/SavedListRepositoryTests.cs.
+         Remove it only AFTER those are migrated to the real-SQL WebApplicationFactory harness
+         (plan Phase D). Deleting it now breaks the build.
+         This list previously named two files, neither of which uses the package any more — if you
+         migrate one, update this comment in the same change, or the next reader inherits the same
+         understated picture. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Moq" Version="4.20.72" />

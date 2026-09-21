@@ -1,0 +1,316 @@
+<!-- Declares its own container: this card lives in the right-hand column, which is only
+     clamp(320px,24vw,460px) wide on xl and full width below it. Viewport breakpoints would size it
+     against the wrong box, so every responsive choice below is a @*/followup container query. -->
+<!-- Tighter vertically when collapsed: the card is then just a header row, and it sits above the
+     Notes card in an already dense column, so the roomier padding only earns its place once there
+     is content under it. -->
+<div class="@container/followup px-4 space-y-3" [ngClass]="collapsed() ? 'py-2.5' : 'py-4'">
+  <!-- Header row: title + count on the left, Add on the right. The whole left side is the
+       collapse toggle, so the card opens from the title as well as the chevron. -->
+  <div class="flex items-center justify-between gap-2">
+    <button
+      type="button"
+      (click)="toggleCollapsed()"
+      [attr.aria-expanded]="!collapsed()"
+      class="flex items-center gap-1.5 min-w-0 cursor-pointer"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+        class="shrink-0 text-gray-400 transition-transform"
+        [class.rotate-90]="!collapsed()"
+      >
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+      <!-- app-card-title, so this reads at exactly the same size as the Notes card title. -->
+      <app-card-title class="truncate">Follow-Up</app-card-title>
+      @if (openCount() > 0) {
+        <span class="shrink-0 rounded-full bg-scoular-green/10 dark:bg-scoular-green/20 px-1.5 py-0.5 text-xs font-medium leading-none text-scoular-green-accessible dark:text-scoular-green">
+          {{ openCount() }}
+        </span>
+      }
+    </button>
+
+    <!-- Same variant and size as Add Note. The button never shrinks; the title truncates instead,
+         so a narrow column can't push the button off the row. -->
+    <app-button variant="default" class="shrink-0" (onClick)="openAdd()">Add Follow-Up</app-button>
+  </div>
+
+  @if (!collapsed()) {
+  <!-- Add / edit form -->
+  @if (formOpen()) {
+    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-white dark:bg-gray-800 space-y-3">
+      <!-- Date and time sit side by side only when the column can carry both without squeezing
+           the date input down to an unreadable width.
+           The time field is fixed at the width its native control needs to show "09:00 AM" in
+           full; the date field takes everything left over, so the pair always fills the row. -->
+      <div class="flex flex-col @sm/followup:flex-row gap-2 @sm/followup:gap-3">
+        <div class="w-full @sm/followup:w-auto @sm/followup:flex-1 min-w-0">
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-date">Date</label>
+          <input
+            id="reminder-date"
+            type="date"
+            [min]="todayIso"
+            [ngModel]="formDate()"
+            (ngModelChange)="formDate.set($event)"
+            [disabled]="isSaving()"
+            class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 dark:[color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60"
+          />
+        </div>
+        <!-- Our own dropdown, not <input type="time">: OK has to sit inside it, under the columns,
+             and the native dropdown is browser chrome that a page cannot add to. The hour / minute /
+             AM-PM columns mirror the native layout. Clicks inside are stopped so the document
+             listener that dismisses the dropdown does not fire on our own UI. -->
+        <div class="w-full @sm/followup:w-auto shrink-0 relative" (click)="$event.stopPropagation()">
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-time">Time</label>
+          <button
+            id="reminder-time"
+            type="button"
+            (click)="toggleTimePicker()"
+            [disabled]="isSaving()"
+            [attr.aria-expanded]="timeOpen()"
+            aria-haspopup="dialog"
+            class="w-full @sm/followup:w-32 flex items-center justify-between gap-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-left text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <span class="truncate">{{ formattedTime() }}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </button>
+
+          @if (timeOpen()) {
+            <!-- Anchored to the RIGHT edge of the field, always. The time field is the rightmost
+                 thing in the form row, and the notes column this card lives in scrolls
+                 (overflow-auto), so a dropdown wider than the field and anchored left runs past the
+                 card edge and gets clipped by that scroll container. Opening leftward keeps it
+                 inside the card at every column width. -->
+            <div
+              role="dialog"
+              aria-label="Choose a time"
+              class="absolute right-0 z-30 mt-1 w-44 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
+            >
+              <div class="flex divide-x divide-gray-200 dark:divide-gray-700">
+                <!-- Hour -->
+                <div class="flex-1 max-h-36 overflow-y-auto py-1" role="listbox" aria-label="Hour">
+                  @for (hour of hours; track hour) {
+                    <button
+                      type="button"
+                      role="option"
+                      [attr.aria-selected]="hour === selected().hour12"
+                      (click)="setHour(hour)"
+                      class="w-full px-2 py-1.5 text-center text-sm cursor-pointer"
+                      [ngClass]="hour === selected().hour12
+                        ? 'bg-scoular-green/10 dark:bg-scoular-green/20 font-medium text-scoular-green-accessible dark:text-scoular-green'
+                        : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    >{{ hour }}</button>
+                  }
+                </div>
+
+                <!-- Minute -->
+                <div class="flex-1 max-h-36 overflow-y-auto py-1" role="listbox" aria-label="Minute">
+                  @for (minute of minutes; track minute) {
+                    <button
+                      type="button"
+                      role="option"
+                      [attr.aria-selected]="minute === selected().minute"
+                      (click)="setMinute(minute)"
+                      class="w-full px-2 py-1.5 text-center text-sm cursor-pointer"
+                      [ngClass]="minute === selected().minute
+                        ? 'bg-scoular-green/10 dark:bg-scoular-green/20 font-medium text-scoular-green-accessible dark:text-scoular-green'
+                        : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    >{{ minute | number:'2.0-0' }}</button>
+                  }
+                </div>
+
+                <!-- AM / PM -->
+                <div class="flex-1 max-h-36 overflow-y-auto py-1" role="listbox" aria-label="AM or PM">
+                  @for (meridiem of meridiems; track meridiem) {
+                    <button
+                      type="button"
+                      role="option"
+                      [attr.aria-selected]="meridiem === selected().meridiem"
+                      (click)="setMeridiem(meridiem)"
+                      class="w-full px-2 py-1.5 text-center text-sm cursor-pointer"
+                      [ngClass]="meridiem === selected().meridiem
+                        ? 'bg-scoular-green/10 dark:bg-scoular-green/20 font-medium text-scoular-green-accessible dark:text-scoular-green'
+                        : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    >{{ meridiem }}</button>
+                  }
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-2 border-t border-gray-200 dark:border-gray-700 px-2 py-2">
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ formattedTime() }}</span>
+                <app-button variant="default" size="sm" (onClick)="closeTimePicker()">OK</app-button>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-subject">Subject</label>
+        <input
+          id="reminder-subject"
+          type="text"
+          maxlength="200"
+          [ngModel]="formSubject()"
+          (ngModelChange)="formSubject.set($event)"
+          [disabled]="isSaving()"
+          [placeholder]="'Follow up with ' + customer().name"
+          class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent disabled:opacity-60"
+        />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="reminder-notes">Notes</label>
+        <textarea
+          id="reminder-notes"
+          rows="2"
+          maxlength="2000"
+          [ngModel]="formNotes()"
+          (ngModelChange)="formNotes.set($event)"
+          [disabled]="isSaving()"
+          placeholder="What do you need to cover?"
+          class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-none disabled:opacity-60"
+        ></textarea>
+      </div>
+
+      <p class="text-xs text-gray-500 dark:text-gray-400">
+        Saving also puts this on your Outlook calendar, with a reminder the day before.
+      </p>
+
+      <div class="flex justify-end gap-2">
+        <app-button variant="ghost" size="sm" [disabled]="isSaving()" (onClick)="cancelForm()">Cancel</app-button>
+        <app-button variant="default" size="sm" [disabled]="!canSave()" (onClick)="submit()">
+          {{ isSaving() ? 'Saving...' : (editingId() === null ? 'Save' : 'Save Changes') }}
+        </app-button>
+      </div>
+    </div>
+  }
+
+  <!-- Reminder list -->
+  @if (reminders().length === 0) {
+    @if (isLoading()) {
+      <!-- Reminders load per-producer on selection — don't flash the empty state mid-fetch -->
+      <div class="text-center py-4 text-gray-500 dark:text-gray-400">
+        <p class="text-sm">Loading follow-ups...</p>
+      </div>
+    } @else {
+      <div class="text-center py-4 text-gray-500 dark:text-gray-400">
+        <p class="text-sm">No follow-ups scheduled for this producer.</p>
+      </div>
+    }
+  } @else {
+    <div class="space-y-2">
+      @for (reminder of reminders(); track trackById($index, reminder)) {
+        <div
+          class="border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 bg-white dark:bg-gray-800"
+          [class.opacity-60]="reminder.isCompleted"
+        >
+          <div class="flex items-start gap-2">
+            <input
+              type="checkbox"
+              [checked]="reminder.isCompleted"
+              (change)="toggleComplete.emit(reminder)"
+              [attr.aria-label]="reminder.isCompleted ? 'Reopen follow-up' : 'Mark follow-up complete'"
+              class="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 dark:border-gray-600 text-scoular-green focus:ring-scoular-green"
+            />
+
+            <div class="min-w-0 flex-1">
+              <p
+                class="text-sm font-medium text-gray-900 dark:text-gray-100 break-words"
+                [class.line-through]="reminder.isCompleted"
+              >{{ reminder.subject }}</p>
+
+              <!-- Rule under the due line, matching the one under a note's author row. Only drawn
+                   when there is a note beneath it to separate; otherwise it would underline the
+                   last thing in the row for no reason. -->
+              <div
+                class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+                [class.pb-2]="reminder.notes"
+                [class.border-b]="reminder.notes"
+                [class.border-gray-200]="reminder.notes"
+                [class.dark:border-gray-700]="reminder.notes"
+              >
+                <span [class]="dueClass(reminder)">
+                  {{ dueLabel(reminder) }} &middot; {{ reminder.dueAt | date:'MMM d, y, h:mm a' }}
+                </span>
+
+                @if (reminder.outlookEventId) {
+                  <span class="text-gray-400 dark:text-gray-500">On your Outlook calendar</span>
+                } @else if (!reminder.isCompleted) {
+                  <button
+                    type="button"
+                    (click)="addToOutlook.emit(reminder)"
+                    class="text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer"
+                  >Add to Outlook</button>
+                }
+              </div>
+
+              @if (reminder.notes) {
+                <p class="mt-2 text-sm text-gray-600 dark:text-gray-300 break-words whitespace-pre-wrap">{{ reminder.notes }}</p>
+              }
+            </div>
+
+            <div class="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                (click)="openEdit(reminder)"
+                aria-label="Edit follow-up"
+                class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                </svg>
+              </button>
+              <button
+                type="button"
+                (click)="confirmDelete(reminder)"
+                aria-label="Delete follow-up"
+                class="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+  }
+
+  <!-- Delete confirmation — same shape and z-order as the Notes confirm. Deleting is the one
+       action here that cannot be undone: completing a follow-up keeps the record, deleting removes
+       it. Outside the collapsed block on purpose, so it survives the card being collapsed. -->
+  @if (showDeleteConfirm() && reminderToDelete(); as doomed) {
+    <!-- z-[70]: a confirm has to sit above dialogs (z-[60]) and menus/toasts (z-50). -->
+    <div class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="cancelDelete()">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90dvh]" (click)="$event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Follow-Up?</h3>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          Are you sure you want to delete this follow-up? This action cannot be undone, and it will
+          also be removed from your Outlook calendar.
+        </p>
+        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 mb-4 space-y-3">
+          <div class="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-600">
+            <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ doomed.subject }}</span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">&bull;</span>
+            <span class="text-xs" [class]="dueClass(doomed)">{{ doomed.dueAt | date:'MMM d, y, h:mm a' }}</span>
+          </div>
+          @if (doomed.notes) {
+            <p class="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">{{ doomed.notes }}</p>
+          }
+        </div>
+        <div class="flex justify-end gap-2">
+          <app-button variant="outline" (onClick)="cancelDelete()">Cancel</app-button>
+          <app-button variant="destructive" (onClick)="executeDelete()">Delete</app-button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
