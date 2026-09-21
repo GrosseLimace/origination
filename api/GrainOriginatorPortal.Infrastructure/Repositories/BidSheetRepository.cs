@@ -466,14 +466,32 @@ public class BidSheetRepository : IBidSheetRepository
             .Where(e => e.State == EntityState.Added)
             .Select(e => e.Entity)
             .ToList();
+        if (added.Count == 0) return false;
+
+        // One query for the whole pending set, not one per bid. This runs over EVERY Added bid —
+        // not just the one that tripped the constraint — so on a large bulk upsert (locations ×
+        // commodities × months) the per-bid version fanned out to a round trip per pending insert
+        // while the user waited on a retry. Narrowed to the affected locations and crop years,
+        // which is selective enough to stay on the index without building an N-term OR.
+        var locationIds = added.Select(b => b.LocationId).Distinct().ToList();
+        var cropYears = added.Select(b => b.CropYear).Distinct().ToList();
+        var candidates = await _appContext.BidSheetLocationBids
+            .Where(b => locationIds.Contains(b.LocationId) && cropYears.Contains(b.CropYear))
+            .ToListAsync(cancellationToken);
+
+        // Uppercase the CommodityCode on both sides of the key: SQL Server's collation is
+        // case-insensitive, so "yc" and "YC" are the same row to the unique index and must be the
+        // same key here too — otherwise a case difference looks like "no collision" and the
+        // duplicate insert is retried straight back into the same violation.
+        var existingByKey = new Dictionary<(int, string, int, int), BidSheetLocationBid>();
+        foreach (var b in candidates)
+            existingByKey.TryAdd((b.LocationId, (b.CommodityCode ?? "").ToUpperInvariant(), b.CropYear, b.Month), b);
+
         var reconciled = false;
         foreach (var bid in added)
         {
-            // SQL Server's case-insensitive collation makes the CommodityCode compare match regardless of case.
-            var existing = await _appContext.BidSheetLocationBids.FirstOrDefaultAsync(
-                b => b.LocationId == bid.LocationId && b.CommodityCode == bid.CommodityCode
-                     && b.CropYear == bid.CropYear && b.Month == bid.Month, cancellationToken);
-            if (existing == null) continue;
+            var key = (bid.LocationId, (bid.CommodityCode ?? "").ToUpperInvariant(), bid.CropYear, bid.Month);
+            if (!existingByKey.TryGetValue(key, out var existing)) continue;
             _appContext.Entry(bid).State = EntityState.Detached; // drop the duplicate insert
             existing.Bid = bid.Bid;
             existing.CommodityName = bid.CommodityName;
