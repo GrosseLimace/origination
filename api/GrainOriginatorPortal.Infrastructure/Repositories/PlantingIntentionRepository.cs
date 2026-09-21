@@ -163,8 +163,13 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
         //
         // This replaced a HARD delete on 2026-09-21. The route is a live UI button
         // (home.component.ts deletePlantingIntention), so the realistic loss is an originator
-        // removing the wrong row — not an attacker. The AUDIT_DELETE line records who and which
-        // id, but never the acreage, so attribution alone could not reconstruct the plan (M-043).
+        // removing the wrong row — not an attacker.
+        //
+        // The AUDIT_DELETE line deliberately carries only who, which id and when — never the crop
+        // or the acreage. Under the hard delete those figures were the only surviving trace, which
+        // is what M-043 was about; the soft-deleted ROW is now the record, and it holds the whole
+        // plan. Repeating the acreage in a log would put confidential figures somewhere retained on
+        // different terms and readable by a wider audience, and buy nothing back.
         var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
         if (intention != null)
         {
@@ -173,8 +178,8 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
             intention.DeletedBy = currentUser;
             await _appContext.SaveChangesAsync(cancellationToken);
             _logger.LogInformation(
-                "Soft-deleted planting intention [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId} User={User} Crop={Crop} Acres={Acres} PlantingYear={PlantingYear}",
-                "AUDIT_DELETE", "DataMutation", intentionId, currentUser, intention.Crop, intention.Acres, intention.PlantingYear);
+                "Soft-deleted planting intention [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId} User={User} DeletedAt={DeletedAt}",
+                "AUDIT_DELETE", "DataMutation", intentionId, currentUser, intention.DeletedAt);
         }
     }
 }
