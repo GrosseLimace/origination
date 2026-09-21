@@ -27,7 +27,7 @@ authenticated user may modify or delete any record by enumerating its ID:
 - `NotesController` — `PUT /api/notes/{id}`, `PUT /api/notes/{id}/toggle-pin`, `DELETE /api/notes/{id}`
 - `PlantingIntentionsController` — `PUT /api/plantingintentions/{id}`, `DELETE /api/plantingintentions/{id}`
 - `ProducerDetailsController` — `PUT /api/producerdetails/customer/{customerId}` (the `DELETE` on the same route was **removed from this entry 2026-09-14** — see the update below)
-- `CustomersController` — `PUT /api/customers/{id}` (added 2026-09-14 per **M-039**; updates producer contact info, farm links and `LinkedProducerIds`. Always in scope of this entry's rationale, but never listed — the route carried a comment paraphrasing it with no AR number, so each scan met an apparently-undocumented unguarded mutation. Same gap H-060 found on `ContractsController`.)
+- ~~`CustomersController` — `PUT /api/customers/{id}`~~ — **LISTED IN ERROR 2026-09-14, corrected 2026-09-21.** M-039 described it as updating producer contact info, farm links and `LinkedProducerIds`, and that description was accepted without opening the repository. **It persists nothing** — `CustomerRepository.UpdateAsync` confirms the customer exists, logs, and returns; the real write path is `ProducerDetails`. There is no mutation here for this entry to cover. Re-flagged as **M-044** (2026-09-21) on the same false premise.
 - ~~`DashboardPlantingEstimatesController` — `DELETE /api/dashboardplantingestimates/actualharvest/{id}`~~ — **REMOVED FROM THIS ENTRY 2026-09-09 and FIXED in code.** It was added per the Codex scan 2026-06-29 (**H-050**) on the argument that actual-harvest rows are "shared dashboard data of the same nature as the records above". That analogy was wrong, and re-examining it under **H-061** is what finally settled the matter — see the 2026-09-09 update below. This route is now trade-unit authorized; do not cite AR-01 for it.
 
 **Update (2026-08-10):** re-flagged as **M-033** by the GHE security scan (CWE-639, confidence 8/10)
@@ -111,10 +111,41 @@ three `NotesController` mutations and **M-039** (`codex`) against `PUT /api/cust
 three routes already carry inline AR-01 citations and the client renders Edit/Delete/Pin on every
 note to every user. Nothing new.
 
-**M-039 — re-accepted, but it exposed a listing gap.** The route was never in this entry's list
-despite being squarely within its rationale, and its inline comment paraphrased that rationale
-without naming AR-01. Now listed above and cited in code. This is the H-060 pattern exactly: an
-undocumented deliberate decision re-flags every scan.
+**M-039 — ⚠ MIS-TRIAGED 2026-09-14; corrected 2026-09-21 (see the M-044 update below).** It was
+recorded as "re-accepted, but it exposed a listing gap" and `PUT /api/customers/{id}` was added to
+the route list above as a mutation of producer contact info, farm links and `LinkedProducerIds`.
+**That description came from the finding, not from the code.** The route mutates nothing:
+`CustomerRepository.UpdateAsync` checks the customer exists, logs, and returns. The listing gap was
+real — the route did carry an uncited paraphrase, the H-060 pattern — but the remedy was to explain
+that it is a no-op, not to file it under an entry about accepting unguarded mutations.
+
+### Update (2026-09-21) — M-044: the route this entry listed does not exist as a mutation
+
+**M-044** (CWE-639) re-flagged `PUT /api/customers/{id}` as an unguarded mutation missing both an
+entitlement check and an audit trail. **Re-accepted with the listing struck, because the premise is
+false.** `CustomerRepository.UpdateAsync` confirms the customer exists, writes a log line, and
+returns. Nothing persists. Location, phone and email originate in the ODS and cannot be written
+from the app at all; `FarmIds`, `LinkedProducerIds` and `TotalAcres` live on `ProducerDetails` and
+are written through those endpoints. There is no write to authorize and no mutation to audit.
+
+Both halves of the finding therefore fall away, and neither needs this entry:
+
+| M-044 asks for | Disposition |
+|---|---|
+| An entitlement check before the update | No update occurs. And a trade-unit check would not be a control regardless — originators self-assign their trade units. See the banner at the top of AR-02. |
+| An `AUDIT_UPDATE` entry for the mutation | There is no mutation to audit. The existing log line records the call. |
+
+**The instructive part is how it got listed.** The 2026-09-14 triage of M-039 accepted the
+finding's own description of what the route does and never opened the repository. A scanner
+describes what a route *looks* like from the controller down; the register is supposed to record
+what it *does*. This is the second register error of its class — AR-01 (H-062) and AR-03 (H-071)
+both claimed an `AUDIT_` control that was never implemented. **Rule: before a route enters or
+leaves this register, read it to its last layer.**
+
+**Also found: the endpoint is dead.** `api.service.updateCustomer` has no caller, and there are no
+API or client tests. Deleting it is a separate decision for the product owner — recorded here so
+the option is not lost. Until then the controller carries a comment saying plainly that it
+persists nothing, so the next scan reads that before "unguarded write".
 
 **H-062 — split. `GET` and `PUT` re-accepted; `DELETE` fixed.**
 

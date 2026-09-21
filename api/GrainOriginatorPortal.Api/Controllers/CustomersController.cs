@@ -130,10 +130,19 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CustomerResponse>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
     {
-        // Trade units are a UX filter, not an access boundary — any rep may act on any customer.
-        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
-        // Listed there from 2026-09-14 (M-039) — it was always in scope of that entry's rationale but
-        // absent from its route list, so each scan met an apparently-undocumented unguarded mutation.
+        // ⚠ THIS ROUTE PERSISTS NOTHING. CustomerRepository.UpdateAsync is an explicit no-op: it
+        // confirms the customer exists, logs, and returns. Location/Phone/Email come from ODS and
+        // cannot be written here; FarmIds, LinkedProducerIds and TotalAcres live on ProducerDetails
+        // and are written through those endpoints.
+        //
+        // Scans keep reading it as an unguarded mutation — M-039 (2026-09-14), M-044 (2026-09-21) —
+        // and the 2026-09-14 triage took that description at face value without opening the
+        // repository, so AR-01 listed it as a mutation it is not. There is no write to authorize
+        // and no mutation to audit. Trade units are a UX filter, not an access boundary, and a
+        // trade-unit check would not be a control anyway (see AR-02's banner).
+        //
+        // Nothing calls this route: api.service.updateCustomer has no caller, and there are no
+        // tests. It is a candidate for deletion.
         var updated = await _service.UpdateAsync(
             id,
             request.Location ?? string.Empty,
