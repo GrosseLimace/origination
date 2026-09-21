@@ -119,6 +119,41 @@ the route list above as a mutation of producer contact info, farm links and `Lin
 real — the route did carry an uncited paraphrase, the H-060 pattern — but the remedy was to explain
 that it is a no-op, not to file it under an entry about accepting unguarded mutations.
 
+### Update (2026-09-21) — M-043: planting intentions, and a HARD delete with no attribution
+
+**M-043** (`claude`, CWE-639, 8/10) against `PUT`/`DELETE /api/plantingintentions/{id}` (this entry)
+and `GET /api/plantingintentions/customer/{customerId}` (AR-02, listed there). **Both halves
+re-accepted** — same reasoning as the notes routes: planting intentions are collaborative forward
+crop plans, and a trade-unit predicate restricts nobody who can self-assign trade units.
+
+**But the finding repeats M-041's false claim, and here it matters much more.** It states the
+`AUDIT_UPDATE`/`AUDIT_DELETE` lines give "attribution but not prevention". They recorded only
+`IntentionId`. And unlike a note:
+
+| | Note | Planting intention |
+|---|---|---|
+| Delete type | **Soft** — `IsDeleted`/`DeletedAt`/`DeletedBy`, recoverable | **HARD** — `Remove()`, row gone |
+| Attribution surviving a delete | `DeletedBy` on the row | **none** |
+| Audit line before this fix | no `User` | no `User` |
+
+So deleting another region's forward crop plan left **no trace of who did it anywhere** — the row
+was gone and the log line did not name the actor. The update path was safe only incidentally, via
+the row's `ModifiedBy`.
+
+**Fixed (2026-09-21):** `AUDIT_CREATE`, `AUDIT_UPDATE` and `AUDIT_DELETE` now carry `User={User}`.
+The delete route also gained the AR-01 citation it was missing (only the update had one).
+
+**Fourth instance** of a compensating control being thinner than claimed — after H-062, H-071 and
+M-041. The pattern is now unmistakable: **every `AUDIT_` claim in this register has been wrong at
+least once. Verify the log line's fields, not just its presence.**
+
+🔴 **Open recommendation — not actioned, needs a product decision.** Planting-intention delete is a
+hard delete of hand-entered forward origination data with no upstream system of record to restore
+from. That is the same durability argument that took the producer-details delete OUT of this entry
+under H-062. The cheap fix is to make it a soft delete, matching notes (`IsDeleted`/`DeletedAt`/
+`DeletedBy`), which would give recovery *and* row-level attribution. It needs a migration, so it is
+recorded here rather than bundled into a security-finding pass.
+
 ### Update (2026-09-21) — M-041: notes mutations, fifth pass
 
 **M-041** (`claude`, CWE-639, 8/10) against `PUT /api/notes/{id}`, `PUT /api/notes/{id}/toggle-pin`
