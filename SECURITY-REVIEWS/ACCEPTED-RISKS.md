@@ -398,6 +398,7 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/plantingintentions/customer/{customerId}`
 - `GET /api/producerdetails/customer/{customerId}` (briefly scoped 2026-09-14, **reverted 2026-09-21** — see the banner at the top of this entry; the check was not a control and broke onboarding candidates)
 - `GET /api/dpcontracts/customer/{customerId}` (added 2026-08-18 — see the update below)
+- `GET /api/storedgrain/customer/{customerId}` (added 2026-09-21 per **M-040** — warehouse-receipt positions by commodity: quantities, storage rates, receivable amounts, read live from `ctrm.vw_GNTA39D1`)
 
 **Update (2026-07-21):** the notes list/search endpoints are no longer trade-unit-filtered on the
 server either — note **content** is now returned org-wide to any authenticated rep:
@@ -534,6 +535,33 @@ the route. `GET /api/notes/customer/{id}` has one — `_ensureCustomerNotes` fet
 linked-group member, with an inline comment saying the endpoint has no TU filter so linked producers
 in unselected trade units are covered. Producer details had no equivalent. Apply that test, per
 route, before assuming this entry covers something.
+
+### Update (2026-09-21) — M-040: the last uncited customer-scoped read
+
+**M-040** (`claude`, CWE-639, 8/10) against `GET /api/storedgrain/customer/{customerId}`.
+**Re-accepted, listed above, and cited in code.** No behaviour change.
+
+The finding is accurate on every point, including the one that matters: *"Unlike the neighbouring
+controllers this route carries no risk-register citation or documented rationale."* It was the only
+customer-scoped read of its shape missing from this list — eight siblings were here, this one never
+was, and `StoredGrainController` contained no AR reference at all. That is the **fourth** time this
+exact gap has produced a finding, after H-060 (`ContractsController`), M-039 (`PUT /api/customers/{id}`)
+and M-042 (the notes reads). **An undocumented deliberate decision re-flags every single scan.**
+
+Why it stays accepted: scoping it restricts nobody, because originators self-assign their trade
+units in the Trade Unit Preferences app (see the banner at the top of this entry). And the split the
+finding reads as inconsistent — `GetAllAsync` entitlement-scoped, `GetByCustomerAsync` open — is the
+documented app-wide pattern, followed identically by `ProducerDetailsService` and `DpContractService`:
+the list view scopes for relevance, the per-producer read does not gate.
+
+⚠ **The data is real — do not dismiss this route as empty.** An internal note had recorded
+"StoredGrain service returns stubs". That is **false**: `StoredGrainRepository` runs live SQL against
+`ctrm.vw_GNTA39D1` (latest warehouse receipts, deduplicated per receipt/location/customer) joined to
+the elevator master, returning quantities, storage rates, storage days and receivable amounts. The
+accepted risk is therefore genuine: any authenticated employee can read any producer's storage
+position. Accepted on the same basis as the rest of this entry, not on a belief that the payload is
+empty. (Only some *fields* on the entity are unmapped, which is presumably where the stub note came
+from.)
 
 ### Update (2026-09-21) — M-042: the notes reads, re-accepted with citations added
 
