@@ -133,4 +133,40 @@ public class EnforceTradeUnitAccessFilterTests
         entitlement.Verify(e => e.ValidateTradeUnitsOrThrowAsync(
             It.Is<IEnumerable<string>>(c => c.Contains("TU1")), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // -------------------------------------------------------------------------
+    // An action carrying no recognized trade-unit parameter (an id-only route such as
+    // DeleteActualHarvest) must still run — scoping lives in the service layer there — while the
+    // filter records that it applied nothing, so a NEW action drifting out of the known shapes is
+    // visible rather than silently unenforced (the H-061 failure mode).
+    [Fact]
+    public async Task UnrecognizedParameterShape_StillCallsNext_AndValidatesNothing()
+    {
+        var entitlement = EntitlementAllowing("TU1");
+        var filter = BuildFilter(entitlement.Object);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = "DELETE";
+        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
+        ActionExecutingContext IdOnlyContext() => new(
+            actionContext,
+            new List<IFilterMetadata>(),
+            new Dictionary<string, object?> { ["id"] = 42 },   // no tradeUnits / tradeUnitKey / body
+            controller: new object());
+
+        var nextCalls = 0;
+        ActionExecutionDelegate next = () => { nextCalls++; return Task.FromResult<ActionExecutedContext>(null!); };
+
+        // Twice, same action: the diagnostic is recorded per action, not per request, so a
+        // documented id-only route can't bury the signal under one warning per call.
+        await filter.OnActionExecutionAsync(IdOnlyContext(), next);
+        await filter.OnActionExecutionAsync(IdOnlyContext(), next);
+
+        // Not blocked — throwing here would break documented, working routes.
+        Assert.Equal(2, nextCalls);
+        // And nothing was validated, because the request carried nothing to validate.
+        entitlement.Verify(
+            e => e.ValidateTradeUnitsOrThrowAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }

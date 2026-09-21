@@ -72,9 +72,14 @@ export class ApiService {
   private _dedupe<T>(key: string, request: Observable<T>): Observable<T> {
     const cached = this._inFlight.get(key);
     if (cached) return cached as Observable<T>;
+    // finalize sits UPSTREAM of shareReplay so eviction happens when the underlying HTTP call
+    // settles, not when an individual subscriber walks away. The other way round, an unsubscribing
+    // caller (DataPreloadService's switchMap on a trade-unit change) deleted the entry while
+    // refCount: false kept the real request alive — so switching back before it landed fired a
+    // duplicate of the exact call this cache exists to prevent.
     const shared = request.pipe(
-      shareReplay({ bufferSize: 1, refCount: false }),
-      finalize(() => this._inFlight.delete(key))
+      finalize(() => this._inFlight.delete(key)),
+      shareReplay({ bufferSize: 1, refCount: false })
     );
     this._inFlight.set(key, shared);
     return shared;
@@ -89,16 +94,29 @@ export class ApiService {
       if (error.status === 403) {
         const message = error.error?.error?.message || 'Access denied: you are not authorized for this resource.';
         this.toastService.error(message);
+      } else if (error.status === 401) {
+        // Previously fell through to the generic path, where most call sites swallow the error —
+        // so a revoked or expired session showed the user nothing at all. MSAL still drives the
+        // re-auth; this only makes sure they're told why the screen stopped working.
+        this.toastService.error('Your session has expired — please refresh the page to sign in again.');
       }
       // Surface the server's real message (falling back through the common shapes) + status, so
       // callers can show something useful instead of a generic "Server error". For validation
       // errors, prefer the first field-level detail (e.g. "A location named X already exists in
       // this trade unit") over the generic top-level "One or more fields failed validation." text.
-      const errObj = (error.error as { error?: { message?: string; details?: Array<{ message?: string }> } } | null)?.error;
+      const errObj = (error.error as {
+        error?: { message?: string; traceId?: string; details?: Array<{ message?: string }> }
+      } | null)?.error;
       const detailMsg = errObj?.details?.find(d => !!d?.message)?.message;
       const serverMsg = detailMsg ?? errObj?.message ?? (error.error as { message?: string } | null)?.message ?? error.message;
       const wrapped = new Error(serverMsg || 'Server error');
       (wrapped as Error & { status?: number }).status = error.status;
+      // Carry the server's correlation id through to call sites. The API populates it on every
+      // error and builds a "(Ref: …)" message around it specifically so a user can quote it to
+      // support, but it was being dropped here, so no surface in the app ever showed one.
+      if (errObj?.traceId) {
+        (wrapped as Error & { traceId?: string }).traceId = errObj.traceId;
+      }
       return throwError(() => wrapped);
     }
 
@@ -803,20 +821,45 @@ export class ApiService {
   // Saved List Operations (Customer query lists)
   // ==========================================================================
 
+  /** The saved-list columns that arrive as JSON strings and have to come back as objects. Both
+   *  read paths used to declare their own identical parseJson closure, and all three write paths
+   *  their own identical stringify block — so a change to how a list is shaped had four places to
+   *  land and no way to tell you when it only reached three. */
+  private static parseSavedListJson<T>(val: string | null | undefined): T | undefined {
+    if (!val) return undefined;
+    try { return JSON.parse(val) as T; } catch { return undefined; }
+  }
+
+  private static hydrateSavedList(l: any): SavedList {
+    return {
+      ...l,
+      filters: ApiService.parseSavedListJson<RefinementFilters>(l.filters),
+      includedCustomerIds: ApiService.parseSavedListJson<number[]>(l.includedCustomerIds),
+      excludedCustomerIds: ApiService.parseSavedListJson<number[]>(l.excludedCustomerIds),
+    };
+  }
+
+  /** Inverse of hydrateSavedList — empty collections and empty filter objects go as null so the
+   *  server stores "unset" rather than "[]", which the read side would hand back as an empty
+   *  array and the NLQ path treats differently from undefined. */
+  private static toSavedListPayload<T extends {
+    filters?: RefinementFilters;
+    includedCustomerIds?: number[];
+    excludedCustomerIds?: number[];
+  }>(data: T) {
+    return {
+      ...data,
+      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null,
+      includedCustomerIds: data.includedCustomerIds?.length ? JSON.stringify(data.includedCustomerIds) : null,
+      excludedCustomerIds: data.excludedCustomerIds?.length ? JSON.stringify(data.excludedCustomerIds) : null,
+    };
+  }
+
   /** Fetches all saved customer lists — deserializes JSON strings to objects */
   getSavedLists(): Observable<SavedList[]> {
-    const parseJson = <T>(val: string | null | undefined): T | undefined => {
-      if (!val) return undefined;
-      try { return JSON.parse(val) as T; } catch { return undefined; }
-    };
     return this._dedupe('savedlists',
       this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
-        map(lists => lists.map(l => ({
-          ...l,
-          filters: parseJson<RefinementFilters>(l.filters),
-          includedCustomerIds: parseJson<number[]>(l.includedCustomerIds),
-          excludedCustomerIds: parseJson<number[]>(l.excludedCustomerIds),
-        }))),
+        map(lists => lists.map(ApiService.hydrateSavedList)),
         catchError(e => this.handleError(e))
       )
     );
@@ -825,42 +868,21 @@ export class ApiService {
   /** Manager-only: fetches all saved lists tied to the given trade unit(s) that belong to other
    *  users, each carrying the creator's display name. Same JSON deserialization as getSavedLists. */
   getTeamSavedLists(tradeUnits: string): Observable<SavedList[]> {
-    const parseJson = <T>(val: string | null | undefined): T | undefined => {
-      if (!val) return undefined;
-      try { return JSON.parse(val) as T; } catch { return undefined; }
-    };
     return this.http.get<any[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
-      map(lists => lists.map(l => ({
-        ...l,
-        filters: parseJson<RefinementFilters>(l.filters),
-        includedCustomerIds: parseJson<number[]>(l.includedCustomerIds),
-        excludedCustomerIds: parseJson<number[]>(l.excludedCustomerIds),
-      }))),
+      map(lists => lists.map(ApiService.hydrateSavedList)),
       catchError(e => this.handleError(e))
     );
   }
 
   /** Creates a new saved list */
   createSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] }): Observable<SavedList> {
-    const payload = {
-      ...data,
-      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null,
-      includedCustomerIds: data.includedCustomerIds?.length ? JSON.stringify(data.includedCustomerIds) : null,
-      excludedCustomerIds: data.excludedCustomerIds?.length ? JSON.stringify(data.excludedCustomerIds) : null,
-    };
-    return this.http.post<SavedList>(`${this.baseUrl}/savedlists`, payload)
+    return this.http.post<SavedList>(`${this.baseUrl}/savedlists`, ApiService.toSavedListPayload(data))
       .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Updates an existing saved list by ID */
   updateSavedList(id: number, data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] }): Observable<SavedList> {
-    const payload = {
-      ...data,
-      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null,
-      includedCustomerIds: data.includedCustomerIds?.length ? JSON.stringify(data.includedCustomerIds) : null,
-      excludedCustomerIds: data.excludedCustomerIds?.length ? JSON.stringify(data.excludedCustomerIds) : null,
-    };
-    return this.http.put<SavedList>(`${this.baseUrl}/savedlists/${id}`, payload)
+    return this.http.put<SavedList>(`${this.baseUrl}/savedlists/${id}`, ApiService.toSavedListPayload(data))
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -878,13 +900,8 @@ export class ApiService {
 
   /** Manager-only: assigns a copy of a built list to one or more team members (one copy each). */
   assignSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[]; targetUserIds: string[] }): Observable<SavedList[]> {
-    const payload = {
-      ...data,
-      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null,
-      includedCustomerIds: data.includedCustomerIds?.length ? JSON.stringify(data.includedCustomerIds) : null,
-      excludedCustomerIds: data.excludedCustomerIds?.length ? JSON.stringify(data.excludedCustomerIds) : null,
-    };
-    return this.http.post<SavedList[]>(`${this.baseUrl}/savedlists/assign`, payload)
+    // targetUserIds rides along untouched — the payload helper only reshapes the three JSON columns.
+    return this.http.post<SavedList[]>(`${this.baseUrl}/savedlists/assign`, ApiService.toSavedListPayload(data))
       .pipe(catchError(e => this.handleError(e)));
   }
 

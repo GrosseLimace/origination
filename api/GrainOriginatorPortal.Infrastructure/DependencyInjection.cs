@@ -51,6 +51,9 @@ public static class DependencyInjection
                     maxRetryDelay: TimeSpan.FromSeconds(30),
                     errorNumbersToAdd: null);
                 sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
+                // Match the ODS contexts: the app DB serves the same wide dashboard/usage reads,
+                // and the team already knows SQL's 30s default is sometimes too tight here.
+                sqlOptions.CommandTimeout(120);
             });
 #if DEBUG
             if (isDevelopment)
@@ -98,6 +101,9 @@ public static class DependencyInjection
                     maxRetryCount: 5,
                     maxRetryDelay: TimeSpan.FromSeconds(30),
                     errorNumbersToAdd: null);
+                // Explicit rather than inheriting SQL's 30s default — entitlement lookups gate
+                // every scoped read, and a timeout here fails the request closed.
+                sqlOptions.CommandTimeout(120);
             });
 #if DEBUG
             if (isDevelopment)

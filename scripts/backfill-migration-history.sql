@@ -8,9 +8,11 @@
 -- Some old migrations (AddCustomerForeignKeys, AddUserPreferences,
 -- ReplaceBidSheetTables) are NOT idempotent — if EF doesn't see them
 -- recorded in __EFMigrationsHistory it will try to re-run them and crash.
--- This script inserts a history row for every migration currently in the
--- repo, idempotently (NOT EXISTS guards), so EF treats them as already
--- applied. Re-running this script is a no-op.
+-- This script records the pre-May-2026 migrations that were applied by hand, idempotently
+-- (NOT EXISTS guards), so EF treats them as already applied. Three of the ids
+-- (AddCustomerForeignKeys, ReplaceBidSheetTables, AddNoteSoftDelete) were later squashed
+-- and no longer exist as .cs files; they stay here so environments that DID apply them
+-- keep a consistent history row. Re-running this script is a no-op.
 --
 -- Run against: Origination database on azrscosqld01 (Dev),
 --              azrscosqlq01 (QA), and azrscosqlp01 (Prod).

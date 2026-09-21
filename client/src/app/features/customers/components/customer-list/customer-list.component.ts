@@ -73,6 +73,10 @@ export class CustomerListComponent {
   savedListLoading = signal(false);
   searchLoading = signal(false);
   filteredCustomers = signal<Customer[]>([]);
+
+  /** Roster size when the active saved list's customerIds were last resolved. Guards the
+   *  roster-growth re-run in the constructor; -1 so the first resolve always counts as growth. */
+  private _nlqResolvedForCustomerCount = -1;
   readonly hasTradeUnitSelection = computed(() =>
     this.appStateService.selectedTradeUnits().length > 0 || this.appStateService.selectedGroupNames().length > 0
   );
@@ -216,6 +220,30 @@ export class CustomerListComponent {
         if (!(needsTickets || needsStorage || needsPlanting)) return;
         // Re-execute the live filter against the now-complete data and persist the
         // refreshed customerIds back to appState.
+        this._executeNlq(savedList);
+        this.applyFilters();
+      });
+    });
+
+    // Same idea for the ROSTER growing. The effect above covers late-arriving datasets, but
+    // customers() also fills in progressively via per-producer merges — and the cached
+    // customerIds were only invalidated on a trade-unit change or a list switch. A producer who
+    // arrived after the list resolved, and who matches its query, stayed silently excluded until
+    // the user reselected the list.
+    //
+    // Gated on the roster being strictly LARGER than when the result was computed: customers() is
+    // written often enough that re-running on every change would re-execute the whole filter for
+    // nothing, and the comparison is monotonic so this can't feed itself.
+    effect(() => {
+      const count = this.customers().length;
+      untracked(() => {
+        const listId = this.selectedListId();
+        if (!listId || listId === 'all') return;
+        if (count <= this._nlqResolvedForCustomerCount) return;
+        const savedList = this.savedLists().find(l => String(l.id) === listId);
+        if (!savedList?.query) return;
+        // undefined means a run is already pending or in flight — leave it rather than race it.
+        if (savedList.customerIds === undefined) return;
         this._executeNlq(savedList);
         this.applyFilters();
       });
@@ -581,6 +609,9 @@ export class CustomerListComponent {
     savedList.customerIds = this.nlqFilterService.applyCustomerOverrides(
       refined.map(c => c.id), savedList.includedCustomerIds, savedList.excludedCustomerIds
     );
+    // Remember the roster this result was computed against, so the roster-growth effect can tell
+    // a genuinely larger roster from the ordinary churn that also re-fires on every write.
+    this._nlqResolvedForCustomerCount = this.customers().length;
 
     // Persist customerIds to appState so they survive component remount.
     const lists = this.appStateService.savedLists().map(l =>

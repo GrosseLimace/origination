@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Customer, Contract, Ticket, Note, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, RefinementFilters, Commodity, CommodityConversion } from '@models';
-import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
+import { isContractUnconfirmed, isContractCustomerConfirmed, isContractOverdueWithUnshippedBu, computeHarvestPacePct } from '@shared/utils/contract-status';
 import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
@@ -657,31 +657,10 @@ export class NlqFilterService {
     }
     if (filters.downHarvestPace) {
       const today = new Date();
-      const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
       list = list.filter(c => {
-        const customerContracts = contracts.filter(ct => ct.ctrmCustomerId === c.scoularId);
-        if (customerContracts.length === 0) return false;
-        // Determine most recent delivery year
-        let maxYear = 0;
-        for (const ct of customerContracts) {
-          if (ct.deliveryStart) {
-            const y = new Date(ct.deliveryStart).getFullYear();
-            if (y > maxYear) maxYear = y;
-          }
-        }
-        if (maxYear === 0) return false;
-        const thisYearBu = customerContracts
-          .filter(ct => ct.deliveryStart && new Date(ct.deliveryStart).getFullYear() === maxYear)
-          .reduce((s, ct) => s + (ct.quantity ?? 0), 0);
-        const lastYearBu = customerContracts
-          .filter(ct => {
-            if (!ct.deliveryStart || new Date(ct.deliveryStart).getFullYear() !== maxYear - 1) return false;
-            if (!ct.contractDate) return true;
-            return new Date(ct.contractDate) <= samePointLastYear;
-          })
-          .reduce((s, ct) => s + (ct.quantity ?? 0), 0);
-        if (lastYearBu === 0) return false;
-        return ((thisYearBu - lastYearBu) / lastYearBu) * 100 < 0;
+        const pacing = computeHarvestPacePct(
+          contracts.filter(ct => ct.ctrmCustomerId === c.scoularId), today);
+        return pacing !== null && pacing < 0;
       });
     }
     if (filters.neverContacted
@@ -761,7 +740,7 @@ export class NlqFilterService {
       // groups vs 'single' on individual tickets). Delegated to the shared helper used
       // by build-list so behavior agrees.
       if (dimensionContext.commodityConversions) {
-        const conversionMap = buildConversionMap(dimensionContext.commodityConversions);
+        const conversionMap = buildLbsPerBushelMap(dimensionContext.commodityConversions);
         const viewMode: 'grouped' | 'single' = filters.ticketViewMode ?? 'single';
         const matchingIds = matchTicketViewModeFilters(scopedTickets, codeToId, conversionMap, viewMode, filters);
         if (matchingIds) list = list.filter(c => matchingIds.has(c.id));
@@ -2789,14 +2768,14 @@ export class NlqFilterService {
     // --- Customer confirmation status (within active) ---
     if (lowerQuery.includes('unconfirmed contract') || lowerQuery.includes('unconfirmed') ||
         (lowerQuery.includes('not confirmed') && lowerQuery.includes('contract'))) {
-      result = result.filter(c =>
-        getOpenContracts(c).some(ct =>
-          ct.customerConfirmStatus != null && ct.customerConfirmStatus !== 'Confirmed'
-        )
-      );
+      // Use the canonical rule rather than a local re-derivation. The old inline check required a
+      // non-null status, so a contract that had never been given one — the most common unconfirmed
+      // case — appeared in Insights and the refine-panel checkbox but was silently dropped from a
+      // typed "unconfirmed contracts" query.
+      result = result.filter(c => getOpenContracts(c).some(ct => isContractUnconfirmed(ct)));
     } else if (lowerQuery.includes('confirmed contract') || lowerQuery.includes('customer confirmed')) {
       result = result.filter(c =>
-        getOpenContracts(c).some(ct => ct.customerConfirmStatus === 'Confirmed')
+        getOpenContracts(c).some(ct => isContractCustomerConfirmed(ct))
       );
     }
 
@@ -3014,32 +2993,12 @@ export class NlqFilterService {
                          lowerQuery.includes('below') || lowerQuery.includes('slower') ||
                          lowerQuery.includes('down');
       const today = new Date();
-      const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
       result = result.filter(c => {
-        const cContracts = getOpenContracts(c);
-        if (cContracts.length === 0) return false;
-        let maxYear = 0;
-        for (const ct of cContracts) {
-          if (ct.deliveryStart) {
-            const y = new Date(ct.deliveryStart).getFullYear();
-            if (y > maxYear) maxYear = y;
-          }
-        }
-        if (maxYear === 0) return false;
-        const thisYearBu = cContracts
-          .filter(ct => ct.deliveryStart && new Date(ct.deliveryStart).getFullYear() === maxYear)
-          .reduce((s, ct) => s + (ct.quantity ?? 0), 0);
-        // Only count prior-year contracts booked on or before this calendar date last year
-        // (same-point-last-year comparison, matching the pacing card logic).
-        const lastYearBu = cContracts
-          .filter(ct => {
-            if (!ct.deliveryStart || new Date(ct.deliveryStart).getFullYear() !== maxYear - 1) return false;
-            if (!ct.contractDate) return true;
-            return new Date(ct.contractDate) <= samePointLastYear;
-          })
-          .reduce((s, ct) => s + (ct.quantity ?? 0), 0);
-        if (lastYearBu === 0) return false;
-        const pacing = ((thisYearBu - lastYearBu) / lastYearBu) * 100;
+        // getAllContracts, not getOpenContracts. Pacing counts what's been booked, and last
+        // year's contracts are closed by now — so scoping to open contracts zeroed lastYearBu
+        // and made this query return almost nobody.
+        const pacing = computeHarvestPacePct(getAllContracts(c), today);
+        if (pacing === null) return false;
         return isNegative ? pacing < 0 : pacing >= 0;
       });
     }

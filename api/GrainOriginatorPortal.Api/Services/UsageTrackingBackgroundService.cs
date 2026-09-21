@@ -36,6 +36,11 @@ public class UsageTrackingBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Deliberately NO per-run correlation scope here, unlike the aggregation and customer-sync
+        // services. Those are scheduled jobs where "show me just that run" is the first question
+        // anyone asks; this loop flushes every 5 seconds (~17k runs a day) and logs almost nothing
+        // outside errors, so a per-flush id would add Log Analytics cardinality without answering
+        // a question anyone has. Individual failures already carry their batch context.
         _logger.LogInformation("UsageTrackingBackgroundService started");
 
         var activityBatch = new List<UserActivityRecord>(BatchSize);
