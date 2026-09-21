@@ -12,7 +12,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 
-type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdAt';
+type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
 type SortDirection = 'none' | 'asc' | 'desc';
 
 /** A table row — a single planting intention. (Alias kept so existing bindings/signatures stay stable.) */
@@ -301,8 +301,8 @@ export class PlantingIntentionsTableComponent {
           case 'acres':
             comparison = a.acres - b.acres;
             break;
-          case 'createdAt':
-            comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          case 'tradeUnit':
+            comparison = (a.tradeUnit || '').localeCompare(b.tradeUnit || '');
             break;
         }
         return this.currentSortDirection === 'desc' ? -comparison : comparison;

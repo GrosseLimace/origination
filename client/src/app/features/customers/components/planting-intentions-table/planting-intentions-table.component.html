@@ -67,16 +67,10 @@
                   <div class="text-sm text-gray-900 dark:text-white">{{ intention.plantingYear }}</div>
                 </div>
                 <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Created On</div>
-                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.createdAt | date:'M/d/yy' }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">Trade Unit</div>
+                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.tradeUnit || '—' }}</div>
                 </div>
               </div>
-
-              @if (intention.tradeUnit) {
-                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Trade Unit: {{ intention.tradeUnit }}</div>
-                </div>
-              }
             </div>
           }
         </div>
@@ -146,15 +140,16 @@
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('createdAt')" class="text-center">
+                <!-- Trade unit, not created-on: a producer's rows can sit on different trade units. -->
+                <app-table-head [sortable]="true" (click)="handleSort('tradeUnit')" class="text-center">
                   <div class="flex items-center justify-center gap-1.5">
-                    <span>Created On</span>
-                    <span [class]="getSortIconClass('createdAt')">
-                      @if (currentSortColumn === 'createdAt' && currentSortDirection === 'asc') {
+                    <span>Trade Unit</span>
+                    <span [class]="getSortIconClass('tradeUnit')">
+                      @if (currentSortColumn === 'tradeUnit' && currentSortDirection === 'asc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
                         </svg>
-                      } @else if (currentSortColumn === 'createdAt' && currentSortDirection === 'desc') {
+                      } @else if (currentSortColumn === 'tradeUnit' && currentSortDirection === 'desc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
@@ -203,7 +198,13 @@
                   <app-table-cell class="text-center">{{ rowCropLabel(intention) }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ intention.createdAt | date:'M/d/yy' }}</app-table-cell>
+                  <app-table-cell class="text-center">
+                    @if (intention.tradeUnit) {
+                      <span [title]="tradeUnitLabel(intention.tradeUnit)">{{ intention.tradeUnit }}</span>
+                    } @else {
+                      <span class="text-gray-400 dark:text-gray-500">—</span>
+                    }
+                  </app-table-cell>
                   <app-table-cell class="w-[22%]">
                     <div class="flex justify-center">
                       <button

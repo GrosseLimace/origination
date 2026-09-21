@@ -201,6 +201,21 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     expect(edited.at(-1)).toEqual(expect.objectContaining({ tradeUnit: '2210' }));
   });
 
+  // ── Row list ──────────────────────────────────────────────────────────────
+
+  it('sorts rows by trade unit (the column that replaced Created On)', () => {
+    ref.setInput('plantingIntentions', [
+      makeIntention({ id: 1, tradeUnit: '2210', crop: 'YSB' }),
+      makeIntention({ id: 2, tradeUnit: '2190', crop: 'YC' }),
+    ]);
+
+    component.handleSort('tradeUnit');
+    expect(component.sortedIntentions.map(r => r.tradeUnit)).toEqual(['2190', '2210']);
+
+    component.handleSort('tradeUnit'); // second click flips direction
+    expect(component.sortedIntentions.map(r => r.tradeUnit)).toEqual(['2210', '2190']);
+  });
+
   it('keeps a stale tag visible in the edit options and flags it', () => {
     // Craig was removed from Tribune, but this row still says Tribune.
     memberships = [member('2190')];
