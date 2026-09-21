@@ -119,6 +119,37 @@ the route list above as a mutation of producer contact info, farm links and `Lin
 real — the route did carry an uncited paraphrase, the H-060 pattern — but the remedy was to explain
 that it is a no-op, not to file it under an entry about accepting unguarded mutations.
 
+### Update (2026-09-21) — M-041: notes mutations, fifth pass
+
+**M-041** (`claude`, CWE-639, 8/10) against `PUT /api/notes/{id}`, `PUT /api/notes/{id}/toggle-pin`
+and `DELETE /api/notes/{id}` — the fifth flag on this same route set after M-033, M-035 and M-038.
+**Re-accepted, no restriction added.** Notes are collaborative by intent; an author-ownership
+predicate is the control this entry exists to decline, and a trade-unit predicate would restrict
+nobody (see AR-02's banner).
+
+**Two of the finding's factual claims are wrong and must not be carried forward:**
+
+1. *"destroys another originator's customer interaction record"* — **false.** `NoteRepository.DeleteAsync`
+   is a **soft delete**: the row survives with `IsDeleted` / `DeletedAt` / `DeletedBy` and is recovered
+   by flipping `IsDeleted` back. Nothing is destroyed and the actor is stamped on the row.
+2. *"Structured AUDIT_UPDATE/AUDIT_DELETE log lines ... provides after-the-fact attribution"* —
+   **it did not.** The four `AUDIT_` lines in `NotesController` recorded `NoteId` and `CustomerId`
+   but **not who acted**. Update and delete were still attributable through the row (`ModifiedBy`,
+   `DeletedBy`); **toggle-pin was attributable nowhere at all.**
+
+**Fixed (2026-09-21):** all four lines (`AUDIT_CREATE`, both `AUDIT_UPDATE`, `AUDIT_DELETE`) now
+carry `User={User}` from `IRequestContextService`.
+
+⚠ **Toggle-pin deliberately does NOT stamp `ModifiedBy`/`ModifiedAt`, and must not be changed to.**
+Those fields mean "someone edited the text": `ModifiedBy` feeds NLQ author search ("notes by
+<name>") and `ModifiedAt` drives note sort order. Stamping them on a pin would forge authorship and
+reorder the list. The audit log line is the correct place for that actor, and now holds it.
+
+**Third instance of this class of error** — after H-062 (AR-01) and H-071 (AR-03), both of which
+claimed an `AUDIT_` control that was not implemented. Here the lines existed but recorded the wrong
+fields. **The compensating controls in this register must be re-read, not assumed, every time one
+is cited.**
+
 ### Update (2026-09-21) — M-044: the route this entry listed does not exist as a mutation
 
 **M-044** (CWE-639) re-flagged `PUT /api/customers/{id}` as an unguarded mutation missing both an
@@ -430,6 +461,25 @@ the route. `GET /api/notes/customer/{id}` has one — `_ensureCustomerNotes` fet
 linked-group member, with an inline comment saying the endpoint has no TU filter so linked producers
 in unselected trade units are covered. Producer details had no equivalent. Apply that test, per
 route, before assuming this entry covers something.
+
+### Update (2026-09-21) — M-042: the notes reads, re-accepted with citations added
+
+**M-042** (`claude`, CWE-200, 7/10) against `GET /api/notes` (`NotesController.cs:43`),
+`GET /api/notes/last-contact` and `GET /api/notes/customer/{id}`. **Re-accepted, no behaviour
+change** — all three are already listed in this entry's route list above, and the reasoning has
+been in `NoteService` all along: trade units scope WHICH producers a rep works, not which of a
+producer's notes are visible, so the badge, the profile and NLQ search all see one consistent set.
+Its suggested fix — scope the notes to the caller's entitled trade units — restricts nobody,
+because originators self-assign those trade units. See the banner at the top of this entry.
+
+The finding is right that client-side narrowing is not a control, and right that the payload
+crosses the trust boundary. That is the accepted risk, stated plainly: **any authenticated Scoular
+employee can read any producer note.** It is accepted because the alternative check is not a check.
+
+**What did need fixing: the citations.** The finding points at `NotesController.cs:43`, and only
+`GetByCustomer` carried an AR-02 reference — `GetAll` and `GetLastContact` had accurate comments
+with no AR number, so a reader starting at the controller saw an undocumented unscoped read. Both
+now cite AR-02. Same failure mode as H-060 and M-039.
 
 ### Update (2026-09-21) — THREE AR-02 findings in one weekly batch: H-069, H-073, H-075
 

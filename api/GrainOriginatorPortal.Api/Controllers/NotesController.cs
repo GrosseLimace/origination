@@ -5,6 +5,7 @@ using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -18,17 +19,20 @@ public class NotesController : ControllerBase
     private readonly INoteService _service;
     private readonly TradeUnitPreferencesDbContext _entitlementsDb;
     private readonly IDailyRecapGroupService _recapGroups;
+    private readonly IRequestContextService _requestContext;
     private readonly ILogger<NotesController> _logger;
 
     public NotesController(
         INoteService service,
         TradeUnitPreferencesDbContext entitlementsDb,
         IDailyRecapGroupService recapGroups,
+        IRequestContextService requestContext,
         ILogger<NotesController> logger)
     {
         _service = service;
         _entitlementsDb = entitlementsDb;
         _recapGroups = recapGroups;
+        _requestContext = requestContext;
         _logger = logger;
     }
 
@@ -49,6 +53,11 @@ public class NotesController : ControllerBase
         [FromQuery] string? customerIds = null,
         CancellationToken cancellationToken = default)
     {
+        // Not entitlement-scoped, by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02), which
+        // lists this route. The `tradeUnits` arg narrows by the CUSTOMER's trade unit when a caller
+        // passes it — it is a relevance filter, not a boundary, and no caller passes it today.
+        // Re-flagged as M-042 (2026-09-21); scoping it would restrict nobody, because originators
+        // self-assign their trade units in the Trade Unit Preferences app. See AR-02's banner.
         return Ok(await _service.GetAllAsync(tradeUnits, sinceDays, contentAny, authorAny, pinnedOnly, customerIds, cancellationToken));
     }
 
@@ -62,6 +71,9 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(List<NoteLastContactResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<NoteLastContactResponse>>> GetLastContact(CancellationToken cancellationToken = default)
     {
+        // Not entitlement-scoped, by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02), which
+        // lists this route. Ships dates and customer codes only — no note bodies — and the customer
+        // LIST is separately scoped, so surplus rows never reach the UI. Re-flagged as M-042.
         return Ok(await _service.GetLastContactAsync(cancellationToken));
     }
 
@@ -208,8 +220,8 @@ public class NotesController : ControllerBase
         // and translates a DB-permissions failure to a 503.
         var note = await _service.CreateAsync(request.CustomerId, request.Content, request.Mentions, cancellationToken);
         _logger.LogInformation(
-            "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}",
-            "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId);
+            "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}, User={User}",
+            "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId, _requestContext.GetCurrentUser());
         return Created($"/api/notes/{note.Id}", note);
     }
 
@@ -227,9 +239,14 @@ public class NotesController : ControllerBase
             ?? throw new NotFoundException("Note", id);
         var note = await _service.TogglePinAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
+        // The actor is recorded HERE and nowhere else: toggling a pin deliberately does not stamp
+        // ModifiedBy/ModifiedAt on the row. Those two fields mean "someone edited the text" —
+        // ModifiedBy feeds NLQ author search ("notes by <name>") and ModifiedAt drives note sort
+        // order, so stamping them on a pin would forge authorship and reorder the list. M-041
+        // (2026-09-21) credited this path with attribution it did not have; this log line is it.
         _logger.LogInformation(
-            "Note pin toggled [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, IsPinned={IsPinned}",
-            "AUDIT_UPDATE", "DataMutation", note.Id, note.IsPinned);
+            "Note pin toggled [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, IsPinned={IsPinned}, User={User}",
+            "AUDIT_UPDATE", "DataMutation", note.Id, note.IsPinned, _requestContext.GetCurrentUser());
         return Ok(note);
     }
 
@@ -248,8 +265,8 @@ public class NotesController : ControllerBase
         var note = await _service.UpdateAsync(id, request.Content, request.Mentions, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
-            "Note updated [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
-            "AUDIT_UPDATE", "DataMutation", note.Id);
+            "Note updated [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, User={User}",
+            "AUDIT_UPDATE", "DataMutation", note.Id, _requestContext.GetCurrentUser());
         return Ok(note);
     }
 
@@ -265,9 +282,11 @@ public class NotesController : ControllerBase
         _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         await _service.DeleteAsync(id, cancellationToken);
+        // Soft delete: the row survives with IsDeleted/DeletedAt/DeletedBy and is recoverable.
+        // M-041 (2026-09-21) described this as destroying a colleague's note — it does not.
         _logger.LogInformation(
-            "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
-            "AUDIT_DELETE", "DataMutation", id);
+            "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, User={User}",
+            "AUDIT_DELETE", "DataMutation", id, _requestContext.GetCurrentUser());
         return NoContent();
     }
 }
