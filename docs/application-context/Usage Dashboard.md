@@ -8,8 +8,64 @@
 - **Access**: `authGuard` + `adminGuard` (must have `Admin` role claim).
 - **Primary user goal**: monitor adoption, spot inactive originators, identify underused features, and find gaps in the query library — feed product / management decisions.
 
-This is the only screen in the app gated by an actual role (vs. just "authenticated"). Backend reads are gated server-side too via the `AdminOnly` policy.
+This is the only screen in the app gated by an actual role (vs. just "authenticated"). Backend reads are
+gated server-side too, via the `UsageDashboardViewer` policy (equivalent to `AdminOnly` today, but named
+separately so the read surface stays distinct from exclusion administration).
 
+Two different questions decide what a person sees here, and they are deliberately kept apart —
+see [Who sees how much](#who-sees-how-much).
+
+
+## Who sees how much
+
+Two independent questions, answered by two different sources. Confusing them is the easiest way to
+get this wrong.
+
+| Question | Answered by | Changed how |
+| --- | --- | --- |
+| May you open the dashboard at all? | `Admin` app role, granted by the **"Origination App {Env} Super Users"** Entra group | Entra group membership |
+| How much of the org do you see? | the **`dbo.UsageDashboardViewAllUsers`** table | a SQL `INSERT` / `DELETE` |
+
+Everyone in the Super Users group who is **not** in that table is auto-scoped to themselves plus
+everyone reporting to them — the manager dropdown is hidden and they can only drill into users inside
+their own subtree. The subtree is resolved from TradeUnitPreferences `vw_UserManagerLookup` by
+materialized-path prefix, then intersected with the Entra app-access set so only people who can
+actually sign in are counted.
+
+`ViewAll` is deliberately **not** derived from the `Admin` role. That role only says "may open this".
+It also could not work: every name in the table already holds `Admin` in QA and PROD through the
+Super Users groups, so an Admin-implies-view-all rule would leave nobody scoped in the only
+environments that matter.
+
+### Changing who sees the whole org
+
+Run `scripts/Manage-UsageDashboardViewAll.sql` against the environment's Origination database.
+
+- Takes effect within **~60 seconds** (the API caches the list for a minute). No redeploy, no
+  App Service restart.
+- The person whose access changed then needs a **browser refresh** — the SPA decides whether to draw
+  the manager dropdown from the synthetic `UsageDashboardViewAll` role in `/api/me`, which it only
+  calls at page load.
+- Fill in `Reason` and `CreatedBy`. They are the only audit trail for a row that widens what someone
+  can see.
+
+This list used to be the `UsageDashboard:ViewAll` array in `appsettings.json`, which meant a deploy
+and a restart per change. The migration `AddUsageDashboardViewAllUsers` seeds the five names that
+were in that array.
+
+**Fail-closed by construction.** An empty table means everyone is scoped, never that everyone sees
+everything — so if the table cannot be read, `UsageDashboardViewAllProvider` degrades to an empty
+list and logs, rather than throwing or widening anyone's view. Enforcement is server-side at a single
+funnel, `UsageDashboardService.ResolveEffectiveManagerIdAsync`; every read passes through it, so
+scoping cannot be forgotten on a future endpoint.
+
+| Piece | Path |
+| --- | --- |
+| Table entity | `api/GrainOriginatorPortal.Infrastructure/Data/Entities/UsageDashboardViewAllUser.cs` |
+| Cached reader | `api/GrainOriginatorPortal.Api/Services/UsageDashboardViewAllProvider.cs` |
+| Access rules | `api/GrainOriginatorPortal.Api/Authorization/UsageDashboardAccess.cs` |
+| Manager subtree | `api/GrainOriginatorPortal.Api/Services/ManagerDirectoryService.cs` |
+| Admin SQL | `scripts/Manage-UsageDashboardViewAll.sql` |
 ## How users reach it
 
 - "Usage Dashboard" item in the profile menu — only rendered when (a) the user has the `Admin` role and (b) `environment.usageDashboardEnabled === true`.
@@ -145,7 +201,10 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 
 ### Controller endpoints
 
-All read endpoints require `[Authorize(Policy = "AdminOnly")]`. The exclusion endpoints
+All read endpoints require `[Authorize(Policy = UsageDashboardAccess.PolicyName)]` (`"UsageDashboardViewer"`,
+equivalent to `AdminOnly` today). Every panel endpoint also accepts `?managerId=` to narrow the view to
+that manager's whole org subtree — but the value is only honoured for callers in
+`dbo.UsageDashboardViewAllUsers`; everyone else is silently pinned to their own subtree. The exclusion endpoints
 (`access-users`, `excluded-users` CRUD) are additionally restricted to the
 `UsageDashboard:ExclusionManagers` allowlist in appsettings (the named IT users) — other admins get
 403 and never see the gear.
@@ -161,6 +220,7 @@ All read endpoints require `[Authorize(Policy = "AdminOnly")]`. The exclusion en
 | `GET /underused-features` | features ranked ascending by distinct users |
 | `GET /query-library-usage` | most-clicked library prompts, names resolved |
 | `GET /query-search-gaps` | top 20 library searches that matched nothing |
+| `GET /managers` | roster for the manager dropdown, from TradeUnitPreferences `vw_UserManagerLookup`; empty for a scoped caller, 503 if that DB is unreachable |
 | `GET /users/{userId}/detail` | full per-user profile — drives the drill-down page |
 | `GET /excluded-users/can-manage` | whether the caller is on the `UsageDashboard:ExclusionManagers` allowlist — the client hides the exclusion gear when false |
 | `GET /access-users` | app-access roster (Entra group) for the exclusion picker; `available=false` ⇒ client falls back to free text |
