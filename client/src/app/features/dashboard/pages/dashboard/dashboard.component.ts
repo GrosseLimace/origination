@@ -12,7 +12,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
-import { commodityColor, commodityChipClass } from '@shared/utils/commodity-color';
+import { commodityColor, commodityChipClass, commodityRowClass } from '@shared/utils/commodity-color';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 
 @Component({
@@ -1582,7 +1582,7 @@ export class DashboardComponent {
     const map = new Map<string, string>();
     for (const r of this.categoryRows()) {
       // Shared per-crop tint so Season Targets rows match the crop's color everywhere else.
-      map.set(r.category, `${commodityColor(r.category).row} transition-colors`);
+      map.set(r.category, `${commodityRowClass(r.category)} transition-colors`);
     }
     return map;
   });

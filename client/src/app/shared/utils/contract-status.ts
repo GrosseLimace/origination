@@ -1,17 +1,10 @@
-import type { Contract, CommodityConversion } from '@models';
+import type { Contract } from '@models';
 import { getContractDeliveryStats } from './contract-delivery';
 
-/** Builds a commodityCode (uppercase, trimmed) → lbsPerBushel map from CommodityConversion
- *  rows. Used by ticket-view-filter helpers that still need lbs↔bushel conversion for
- *  per-ticket quality math (delivery stats no longer need it — they use openBalanceQuantity). */
-export function buildConversionMap(conversions: readonly CommodityConversion[]): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const c of conversions) {
-    if (!c.commodityCode) continue;
-    map.set(c.commodityCode.trim().toUpperCase(), c.lbsPerUnit);
-  }
-  return map;
-}
+// buildConversionMap lived here and was byte-for-byte identical to production-coverage.ts's
+// buildLbsPerBushelMap — same iteration, same trim+uppercase key, same value — with both imported
+// side by side in the two files that needed a conversion map. Retired in favour of
+// buildLbsPerBushelMap, which has the wider call set and also tolerates an undefined input.
 
 /** Returns true if a contract should be treated as "unconfirmed" — same rule used by the
  *  Insights "Unconfirmed Contracts" category and the contracts-table red highlight. A contract

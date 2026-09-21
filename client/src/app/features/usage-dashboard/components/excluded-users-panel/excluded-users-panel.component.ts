@@ -19,8 +19,8 @@ import { formatLastActive } from '../../utils/usage-format';
  * can't be read (Graph not configured/blocked in this environment) the panel falls back to a
  * free-text short-name entry so exclusions can still be managed.
  *
- * The whole Usage Dashboard is admin-gated (route adminGuard + AdminOnly endpoints), so only admin
- * accounts ever see this panel.
+ * The whole Usage Dashboard is admin-gated (the usageDashboardGuard route guard + AdminOnly
+ * endpoints), so only admin accounts ever see this panel.
  */
 @Component({
   selector: 'app-excluded-users-panel',

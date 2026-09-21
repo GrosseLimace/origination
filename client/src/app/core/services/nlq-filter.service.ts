@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Customer, Contract, Ticket, Note, NoteLastContact, PlantingIntention, StoredGrain, DpContract, RefinementFilters, Commodity, CommodityConversion } from '@models';
-import { isContractUnconfirmed, isContractCustomerConfirmed, isContractOverdueWithUnshippedBu, buildConversionMap, computeHarvestPacePct } from '@shared/utils/contract-status';
+import { isContractUnconfirmed, isContractCustomerConfirmed, isContractOverdueWithUnshippedBu, computeHarvestPacePct } from '@shared/utils/contract-status';
 import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
@@ -735,7 +735,7 @@ export class NlqFilterService {
       // groups vs 'single' on individual tickets). Delegated to the shared helper used
       // by build-list so behavior agrees.
       if (dimensionContext.commodityConversions) {
-        const conversionMap = buildConversionMap(dimensionContext.commodityConversions);
+        const conversionMap = buildLbsPerBushelMap(dimensionContext.commodityConversions);
         const viewMode: 'grouped' | 'single' = filters.ticketViewMode ?? 'single';
         const matchingIds = matchTicketViewModeFilters(scopedTickets, codeToId, conversionMap, viewMode, filters);
         if (matchingIds) list = list.filter(c => matchingIds.has(c.id));

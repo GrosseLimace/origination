@@ -29,7 +29,7 @@ import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
-import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
+import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
@@ -807,7 +807,7 @@ export class BuildListComponent {
         r.avgProteinOver != null || r.avgProteinUnder != null;
 
       if (hasNetBu || hasQualityFilter) {
-        const conversionMap = buildConversionMap(this.appState.commodityConversions());
+        const conversionMap = buildLbsPerBushelMap(this.appState.commodityConversions());
         const matchingCustomerIds = matchTicketViewModeFilters(
           scopedTickets, codeToId, conversionMap, viewMode, r
         );

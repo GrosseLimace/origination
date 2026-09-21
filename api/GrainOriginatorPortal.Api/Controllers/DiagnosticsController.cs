@@ -550,7 +550,11 @@ public class DiagnosticsController : ControllerBase
     /// </summary>
     [HttpPost("elevator-cache/geocode")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
-    public IActionResult StartElevatorGeocode(CancellationToken cancellationToken = default)
+    // No CancellationToken parameter: this is fire-and-forget. The background Task.Run below
+    // deliberately outlives the request and takes a fresh scope, so a request-scoped token would
+    // be cancelled the moment we return 202. One used to be declared here and silently ignored,
+    // which read as if the work were cancellable.
+    public IActionResult StartElevatorGeocode()
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
