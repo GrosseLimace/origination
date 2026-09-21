@@ -11,7 +11,7 @@ using GrainOriginatorPortal.Infrastructure.Interfaces;
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
 /// <summary>
-/// H-062 (CWE-639). The producer-details by-customer routes carry no trade-unit value,
+/// H-062 (CWE-639). The producer-details DELETE carries no trade-unit value,
 /// so [EnforceTradeUnitAccess] could not guard it even if the controller applied the filter — the
 /// check has to resolve the customer's own entitlement. These tests pin that guard.
 ///
@@ -47,7 +47,7 @@ public class ProducerDetailsDeleteTests
         _requestContextMock.Setup(r => r.GetCurrentUser()).Returns("tester");
 
         _repositoryMock
-            .Setup(r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         _sut = new ProducerDetailsService(
@@ -65,7 +65,7 @@ public class ProducerDetailsDeleteTests
         var result = await _sut.DeleteAsync(EntitledCustomerId, CancellationToken.None);
 
         Assert.True(result);
-        _repositoryMock.Verify(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<CancellationToken>()), Times.Once);
+        _repositoryMock.Verify(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public class ProducerDetailsDeleteTests
 
         // The assertion that matters: the producer's details and child rows must still be there.
         _repositoryMock.Verify(
-            r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+            r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // An entitled customer with no details row is a no-op, not an error — the route stays
@@ -85,7 +85,7 @@ public class ProducerDetailsDeleteTests
     public async Task DeleteAsync_WhenNoDetailsRowExists_ReturnsFalseWithoutThrowing()
     {
         _repositoryMock
-            .Setup(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<CancellationToken>()))
+            .Setup(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var result = await _sut.DeleteAsync(EntitledCustomerId, CancellationToken.None);
@@ -105,51 +105,32 @@ public class ProducerDetailsDeleteTests
 
         Assert.Equal("ENTITLEMENTS_DB_UNAVAILABLE", ex.ErrorCode);
         _repositoryMock.Verify(
-            r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+            r => r.DeleteAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    // ---- GET (added 2026-09-14, after the scan flagged the read as the remaining unguarded path)
+    // ---- GET is deliberately NOT scoped. Three tests here asserted a trade-unit check on the
+    // read between 2026-09-14 and 2026-09-21; they were removed with the check.
     //
-    // The read carries ProducerContact PII — name, phone and email for each contact. It was left
-    // under AR-02 in the first pass on the belief that the linked-producer profile view needed it
-    // cross-trade-unit. Tracing every path showed that is false: the cross-TU linked-producer cache
-    // feeds only the last-contact badge, never a selectable row, and deep links resolve through the
-    // entitled roster. So the check costs nothing.
+    // Trade units are self-assigned through the Trade Unit Preferences app, so a trade-unit test on
+    // a read refuses nobody — it only adds a detour. Worse, ODS onboarding candidates carry a real
+    // CustomerId with NO CustomerTradeUnit row, so the check refused them and silently blanked the
+    // profile. This test pins the behaviour that regression broke.
 
     [Fact]
-    public async Task GetByCustomerAsync_WhenCustomerIsInAnEntitledTradeUnit_Returns()
+    public async Task GetByCustomerAsync_ForAProducerOutsideTheCallersTradeUnits_StillReturns()
     {
+        // ForeignCustomerId is absent from GetActiveCustomerIdsInTradeUnitsAsync — an onboarding
+        // candidate or another desk's producer. The read must still serve it.
         _repositoryMock
-            .Setup(r => r.GetAsync(EntitledCustomerId, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(ForeignCustomerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProducerDetails?)null);
 
-        var result = await _sut.GetByCustomerAsync(EntitledCustomerId, CancellationToken.None);
+        var result = await _sut.GetByCustomerAsync(ForeignCustomerId, CancellationToken.None);
 
-        Assert.Equal(EntitledCustomerId, result.CustomerId);
-    }
-
-    [Fact]
-    public async Task GetByCustomerAsync_WhenCustomerIsOutsideEntitlements_ThrowsAndReadsNothing()
-    {
-        await Assert.ThrowsAsync<ForbiddenException>(
-            () => _sut.GetByCustomerAsync(ForeignCustomerId, CancellationToken.None));
-
-        // The PII must never leave the repository, not merely be filtered afterwards.
-        _repositoryMock.Verify(
-            r => r.GetAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task GetByCustomerAsync_WhenEntitlementsUnavailable_FailsClosedWith503()
-    {
-        _entitlementMock.SetupGet(e => e.EntitlementsAvailable).Returns(false);
-
-        var ex = await Assert.ThrowsAsync<InfrastructureException>(
-            () => _sut.GetByCustomerAsync(EntitledCustomerId, CancellationToken.None));
-
-        Assert.Equal("ENTITLEMENTS_DB_UNAVAILABLE", ex.ErrorCode);
-        _repositoryMock.Verify(
-            r => r.GetAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(ForeignCustomerId, result.CustomerId);
+        // And it must not have consulted entitlements at all on this path.
+        _entitlementMock.Verify(
+            e => e.GetAllowedTradeUnitCodesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // Guards the ordering the fix depends on: entitlement must resolve BEFORE the delete, never
@@ -164,7 +145,7 @@ public class ProducerDetailsDeleteTests
             .ReturnsAsync(new HashSet<long> { EntitledCustomerId })
             .Callback(() => sequence.Add("resolve"));
         _repositoryMock
-            .Setup(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<CancellationToken>()))
+            .Setup(r => r.DeleteAsync(EntitledCustomerId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true)
             .Callback(() => sequence.Add("delete"));
 

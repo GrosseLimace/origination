@@ -1,4 +1,5 @@
 // Microsoft namespaces
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -36,9 +37,12 @@ public class NotesControllerMentionCatalogTests
         var groups = new Mock<IDailyRecapGroupService>();
         groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(visibleGroups.ToList());
 
+        var requestContext = new Mock<IRequestContextService>();
+        requestContext.Setup(r => r.GetCurrentUser()).Returns(callerUpn);
+
         var sut = new NotesController(new Mock<INoteService>().Object, db, groups.Object,
             MentionTestDoubles.TeamsChannelStub(registeredChannels),
-            new Mock<ILogger<NotesController>>().Object);
+            requestContext.Object, new Mock<ILogger<NotesController>>().Object);
 
         var identity = new ClaimsIdentity([new Claim("preferred_username", callerUpn)], "test");
         sut.ControllerContext = new ControllerContext

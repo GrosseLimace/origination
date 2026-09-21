@@ -32,7 +32,10 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<List<ElevatorCacheResponse>>> GetElevators([FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        // H-066 (2026-09-14): scoped, unlike the sibling locations read below. AR-05 covered both,
+        // H-066 (2026-09-14): scoped, unlike the sibling locations read below. Note this is a
+        // SPEED BUMP, not an authorization control — trade units are self-assigned through the
+        // Trade Unit Preferences app, so a caller this refuses can join the unit and read anyway.
+        // Kept because nothing calls this route, so requiring a scope costs nothing. AR-05 covered both,
         // but its justification — the bid-sheet map needs every location — only ever applied to
         // locations. Nothing in the client calls this route, so requiring a scope costs no
         // behaviour. AR-05 was narrowed off it; do not re-open it to an unscoped read.
@@ -50,13 +53,37 @@ public class BidSheetController : ControllerBase
     // Locations
     // -------------------------------------------------------------------------
 
-    /// <summary>Gets bid sheet locations. If tradeUnitCode is provided, filters to that TU; otherwise returns all.</summary>
+    /// <summary>Gets bid sheet locations. If tradeUnitCode is provided, filters to that TU; otherwise
+    /// returns all — deliberately, for the catalog map. See the note below before "fixing" that.</summary>
     [HttpGet("locations")]
     [ProducesResponseType(typeof(List<BidSheetLocationResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<BidSheetLocationResponse>>> GetLocations([FromQuery] string? tradeUnitCode = null, CancellationToken cancellationToken = default)
     {
         // Reads are intentionally unscoped when tradeUnitCode is omitted (cross-TU visibility is a
         // feature; only writes are entitlement-gated). Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-05).
+        //
+        // ⚠ WHY THIS DIFFERS FROM GetElevators ABOVE, WHICH REQUIRES tradeUnitCode.
+        // The asymmetry is deliberate, not an oversight — H-068 (2026-09-21) read it as one and
+        // argued the sibling proves "the correct pattern is known to this codebase". It does not:
+        // the two routes were separated on whether a client path actually depends on the unscoped
+        // read, which is the same test that settled H-061 and H-062.
+        //
+        //   - GetElevators had NO caller anywhere in client/src, so requiring a scope (H-066,
+        //     2026-09-14) cost nothing and AR-05 was narrowed off it.
+        //   - GetLocations is load-bearing. bid-sheet.component.ts references allMapLocations in
+        //     24 places: _loadAllMapLocations feeds the ~4,000-pin catalog map, the no-TU-selected
+        //     refresh path reloads through it, and the crop / crop-year filter lists are derived from
+        //     allMapLocations().flatMap(l => l.bids) — i.e. the BIDS are needed cross-TU too, so
+        //     serving pins-without-prices would not work either.
+        //
+        // Requiring tradeUnitCode here, or defaulting the scope to the caller's entitled set, would
+        // leave a rep seeing only their own bids — which is the one thing the catalog map exists to
+        // look past. Do not tighten this without re-opening AR-05 and rebuilding the map first.
+        //
+        // The empty-string form (?tradeUnitCode=) returning everything is NOT a bypass here, unlike
+        // on GetElevators: omitting the parameter is the documented intent, so blank behaving the
+        // same way is consistent. The pre-check on GetElevators exists only because the parameter is
+        // required there and ValidateTradeUnitsOrThrowAsync returns early on an empty set.
         if (!string.IsNullOrWhiteSpace(tradeUnitCode))
             await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
         return Ok(await _service.GetLocationsAsync(tradeUnitCode, cancellationToken));

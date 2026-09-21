@@ -40,5 +40,5 @@ public interface IProducerDetailsRepository
     Task<ProducerDetails> UpsertAsync(ProducerDetailsUpsertArgs args, string currentUser, CancellationToken cancellationToken);
     /// <summary>Deletes a producer's details and hand-cascades the ProducerContacts and
     /// ProducerGrainOnFarm child rows. Returns false when no details row existed.</summary>
-    Task<bool> DeleteAsync(long customerId, CancellationToken cancellationToken);
+    Task<bool> DeleteAsync(long customerId, string currentUser, CancellationToken cancellationToken);
 }
