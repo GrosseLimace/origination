@@ -80,6 +80,17 @@ public class CustomersController : ControllerBase
     {
         // No per-producer object-level authz is intentional (trade units are a UX filter, not an
         // access boundary); see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        //
+        // ⚠ THE CROSS-TRADE-UNIT CALLER IS REAL — check it before "fixing" this route.
+        // handleSelectLinkedCustomer in home.component.ts has an explicit else-branch for a
+        // linked producer who is NOT in the caller's roster ("Linked customer is in a different
+        // trade unit — fetch them from the API") and calls exactly this endpoint. The stored-
+        // trade-unit re-authorization H-073 (2026-09-21) suggests would 403 that path and break
+        // the linked-producer profile. Same for GetBySourceId and GetLinkedTo below, which
+        // _fetchMissingLinkedProducers uses to pull in producers outside the roster.
+        //
+        // The test that separates these from routes that HAVE been scoped (H-061, H-062) is
+        // whether a real client path needs the cross-trade-unit read. These three do.
         var customer = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
         return Ok(customer);
@@ -144,6 +155,13 @@ public class CustomersController : ControllerBase
     public async Task<ActionResult<List<CustomerTradeUnitInfo>>> GetTradeUnits(long id, CancellationToken cancellationToken = default)
     {
         // No per-producer object-level authz is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        //
+        // NOTE: unlike GetById / GetBySourceId / GetLinkedTo above, this route is NOT part of the
+        // linked-producer flow — it feeds the edit dialog's membership list. It rests on AR-02's
+        // general position instead. H-073 (2026-09-21) argued it also hands an attacker the trade-
+        // unit codes to aim at AssignTradeUnits (AR-03); that chaining is real but adds nothing,
+        // since AR-03 already accepts that any rep may assign trade units and every rep can read
+        // the codes from their own picker.
         return Ok(await _service.GetTradeUnitsAsync(id, cancellationToken));
     }
 

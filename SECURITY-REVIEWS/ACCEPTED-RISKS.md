@@ -374,6 +374,35 @@ argument had nothing in the code to answer it. `GetByCustomer` now carries the f
 the other four point at it. Expect this to re-flag anyway — unlike H-060 and H-068, the gap here was
 not documentation. **The countersignature is the only thing that closes it.**
 
+**Update (2026-09-21, same batch) — H-073.** A *second* AR-02 finding in the same weekly round
+(`claude`, CWE-639, confidence 9/10), against `GetById`, `GetBySourceId`, `GetLinkedTo` and
+`GetTradeUnits` — the same four routes as H-059 (2026-09-09) and H-067 (2026-09-14).
+**Re-accepted — no change.**
+
+Three of the four have a proven cross-trade-unit caller, the same evidence that settled H-069:
+
+- **`GetById`** — `handleSelectLinkedCustomer` fetches a linked producer who is not in the roster,
+  commented *"Linked customer is in a different trade unit — fetch them from the API"*.
+- **`GetBySourceId` / `GetLinkedTo`** — `_fetchMissingLinkedProducers` looks specifically for linked
+  producers **absent** from `customers()` and fetches them, plus the reverse-link lookup so
+  producers who link *to* this one still appear in the dropdown.
+
+The suggested stored-trade-unit re-authorization would 403 all three and break linked producers.
+
+**`GetTradeUnits` is the exception and is now documented as such.** It is not part of the linked-
+producer flow — it feeds the edit dialog's membership list — so it rests on AR-02's general position
+rather than on a cross-TU caller. H-073 adds a chaining argument: it hands an attacker the trade-unit
+codes to aim at `AssignTradeUnits` (AR-03). That chain is real but adds nothing, since AR-03 already
+accepts that any rep may assign trade units, and every rep can read the codes from their own picker.
+Lumping this route in with the other three would have overstated the defence, so the code now says
+which argument each route rests on.
+
+⚠ **Two AR-02 findings landed in the same 2026-09-21 batch (H-069 and H-073), from the same
+scanner.** That is not new exposure — it is one accepted risk being reported twice in one week. The
+entry has now been flagged on seven separate dates and always self-accepted by engineering. No
+further comment, citation or route note will change that; the finding asks for a decision
+engineering cannot make alone.
+
 That makes **six** flags for AR-02 — 2026-06-23, 2026-08-10, twice on 2026-08-18, 2026-09-09 and
 2026-09-14 — every one self-accepted by engineering. The finding's own suggestion ("obtain formal
 security approval if cross-trade-unit access must remain intentional") is the correct one, and it is
