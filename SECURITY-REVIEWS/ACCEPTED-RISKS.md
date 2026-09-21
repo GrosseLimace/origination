@@ -346,6 +346,53 @@ linked-group member, with an inline comment saying the endpoint has no TU filter
 in unselected trade units are covered. Producer details had no equivalent. Apply that test, per
 route, before assuming this entry covers something.
 
+### Update (2026-09-21) — THREE AR-02 findings in one weekly batch: H-069, H-073, H-075
+
+All three come from the same scanner on the same date, all re-accepted with no behaviour change,
+and **all three land on routes that share one dependency.** Read this section before triaging any
+future by-customer finding — it is the trace those findings keep rediscovering.
+
+#### The linked-producer dependency (the reason these routes are unscoped)
+
+`handleSelectLinkedCustomer` in `home.component.ts` handles a user clicking a **linked producer**.
+It has an explicit else-branch for the case where that producer is **not** in the caller's roster —
+commented *"Linked customer is in a different trade unit — fetch them from the API"* — which fetches
+them via `GET /api/customers/{id}` and then calls `_loadCustomerContractsAndTickets` and
+`_loadCustomerData` on them. `_fetchMissingLinkedProducers` separately pulls in linked producers
+absent from `customers()` via `GET /api/customers/by-source/{sourceId}`, plus the reverse-link
+lookup `GET /api/customers/linked-to/{sourceId}` so producers who link *to* this one appear in the
+dropdown.
+
+Everything that loader touches is therefore reached cross-trade-unit **by design**:
+
+| Finding | Routes | Reached via |
+|---|---|---|
+| **H-069** | contracts by-customer / pacing / by-farm / pricing-lines (×2) | `_loadCustomerContractsAndTickets` |
+| **H-073** | customers by-id, by-source, linked-to | `handleSelectLinkedCustomer`, `_fetchMissingLinkedProducers` |
+| **H-075** | dpcontracts by-customer | `_loadCustomerContractsAndTickets` (same loader as H-069) |
+
+Every one of these findings suggests the same fix — resolve the owning trade unit and call
+`ValidateTradeUnitsOrThrowAsync` — and that fix would 403 this path and break the linked-producer
+profile. **This is one accepted design reported three times in a week, not three exposures.**
+
+#### H-075 specifically — the "financial exposure" framing was already answered
+
+H-075 (`claude`, CWE-639, confidence 8/10) presents `ReceivableAmount`, `PrepaidAmount`,
+`UnearnedStorageAmount`, `UnpaidHandlingAmount`, `StorageRate` and `StorageDays` as a distinct class
+of exposure. They are not a first crossing: the **already-accepted**
+`GET /api/contracts/customer/{customerId}` returns `Price` and `TotalValue` — the dollar value of a
+producer's contracts — plus `SettledQuantity` and `OpenBalanceQuantity`, org-wide. That analysis was
+written into this entry on 2026-08-18 specifically so a later scan would not relitigate it. This is
+that scan. `DpContractsController` already carries its inline AR-02 citation; no code change.
+
+#### The exception worth keeping straight
+
+`GET /api/customers/{id}/trade-units` (H-073) is **not** part of the linked-producer flow — it feeds
+the edit dialog's membership list and rests on this entry's general position instead. The code says
+so at the call site. Do not extend the linked-producer defence to it.
+
+#### Detail
+
 **Update (2026-09-21):** re-flagged as **H-069** (`claude`, CWE-639, confidence 9/10) against the
 five `ContractsController` by-customer / by-farm / pricing-line routes — the same five H-060 added
 to the list above on 2026-09-09. **Re-accepted — no change.** All five already carried inline AR-02
@@ -374,7 +421,7 @@ argument had nothing in the code to answer it. `GetByCustomer` now carries the f
 the other four point at it. Expect this to re-flag anyway — unlike H-060 and H-068, the gap here was
 not documentation. **The countersignature is the only thing that closes it.**
 
-**Update (2026-09-21, same batch) — H-073.** A *second* AR-02 finding in the same weekly round
+**H-073 detail.** The *second* AR-02 finding in the same weekly round
 (`claude`, CWE-639, confidence 9/10), against `GetById`, `GetBySourceId`, `GetLinkedTo` and
 `GetTradeUnits` — the same four routes as H-059 (2026-09-09) and H-067 (2026-09-14).
 **Re-accepted — no change.**
