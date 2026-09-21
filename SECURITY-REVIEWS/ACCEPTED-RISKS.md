@@ -7,14 +7,14 @@ these patterns; triage against the AR-IDs below before re-opening.
 
 | ID | Title | Severity | CWE | Status | Accepted | Re-review by |
 |----|-------|----------|-----|--------|----------|-------------|
-| AR-01 | Collaborative edit/delete of shared producer data (no per-record ownership check) | Medium | CWE-639 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
-| AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — **security sign-off pending** | 2026-06-23 | 2027-06-23 |
+| AR-01 | Collaborative edit/delete of shared producer data (no per-record ownership check) | Medium | CWE-639 | Accepted — engineering only (see *Countersignature* below) | 2026-06-23 | 2027-06-23 |
+| AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-05 | Bid-sheet **location** reads unscoped across trade units (writes are gated; the elevators half was fixed 2026-09-14) | High | CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
 | AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements | Medium | CWE-284 | Accepted | 2026-08-11 | 2027-08-11 |
-| AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — **security sign-off pending** | 2026-09-01 | 2027-09-01 |
+| AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-09-01 | 2027-09-01 |
 
 ---
 
@@ -46,6 +46,21 @@ behaviour, and the client is built on it — `customer-notes.component.html` ren
 Pin on **every** note for every user, with no author gate, because reps clean up and correct each
 other's notes on shared producers. Restricting the routes without also changing that UI would give
 users buttons that 403.
+
+> ## Countersignature — decision recorded 2026-09-21
+>
+> **IT Security countersignature will NOT be sought for AR-01, AR-02 or AR-08.** Decided by the
+> project owner (CEgr) on 2026-09-21. These entries stand as **Origination engineering acceptances**
+> and that is their final status, not an interim one.
+>
+> Earlier text in this file — written before the decision — describes taking AR-01/AR-02/AR-08 to
+> asksecurity@scoular.com and calls the countersignature "the only thing that closes it". **That
+> action is closed as declined.** Those passages are left in place because they record why the
+> question was raised, but they are no longer open items and should not be re-raised.
+>
+> Practical consequence, stated plainly so it is not a surprise: the weekly scanner does not read
+> this register, so these entries **will keep re-flagging** — AR-02 is at nine flags. That is now
+> expected noise to be matched against this file during triage, not a signal of anything unresolved.
 
 The scan's one genuinely new point is **procedural, not technical**: "per the audit mandate a
 project-level acceptance does not suppress the finding." That is fair — every AR entry in this file
