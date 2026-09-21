@@ -26,6 +26,9 @@ public class CommodityTradeGroupScopeTests
     /// <summary>The four grades restricted to units 2090/2291/2295 by AddCommodityTradeUnitScope.</summary>
     private static readonly string[] UnitScopedCodes = ["DNGS", "DOSB", "HEC", "YWC"];
 
+    /// <summary>The four flax grades restricted to unit 3811 by AddFlaxCommoditiesForTradeUnit3811.</summary>
+    private static readonly string[] FlaxCodes = ["BFL1", "BFL2", "GFL1", "GFL2"];
+
     private static ApplicationDbContext NewContext()
     {
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -51,6 +54,15 @@ public class CommodityTradeGroupScopeTests
             ("YWC",  "WAXY CORN",                 "CORN") })
             db.Commodities.Add(new Commodity { Id = id++, Code = code, Name = name, Category = cat, IsActive = true, ShowInPlantingIntentions = true, TradeUnitScope = "2090,2291,2295" });
 
+        // Unit-scoped to a single unit (3811, Pulses Trading). Category is the ODS commodity GROUP, which
+        // is why these carry a PlantingCategory: "FEED & FERT INGREDIENTS" is no crop label.
+        foreach (var (code, name) in new[] {
+            ("BFL1", "BROWN FLAX #1"),
+            ("BFL2", "BROWN FLAX #2"),
+            ("GFL1", "GOLDEN FLAX #1"),
+            ("GFL2", "GOLDEN FLAX #2") })
+            db.Commodities.Add(new Commodity { Id = id++, Code = code, Name = name, Category = "FEED & FERT INGREDIENTS", IsActive = true, ShowInPlantingIntentions = true, TradeUnitScope = "3811", PlantingCategory = "Flax" });
+
         // Uncurated noise that must stay out of the planting list regardless of scope.
         db.Commodities.Add(new Commodity { Id = id++, Code = "SORO", Name = "ORGANIC SORGHUM", Category = "SORGHUM", IsActive = true, ShowInPlantingIntentions = false });
         db.Commodities.Add(new Commodity { Id = id++, Code = "RETIRED", Name = "RETIRED", IsActive = false, ShowInPlantingIntentions = true, TradeGroupScope = "Organics" });
@@ -71,8 +83,8 @@ public class CommodityTradeGroupScopeTests
 
         var result = await Repo(db).GetPlantingAsync(CancellationToken.None);
 
-        // 12 conventional + 4 organic + 4 unit-scoped. Scoping is the client's job, not the repository's.
-        Assert.Equal(20, result.Count);
+        // 12 conventional + 4 organic + 4 unit-scoped + 4 flax. Scoping is the client's job, not the repository's.
+        Assert.Equal(24, result.Count);
         foreach (var code in OrganicCodes)
             Assert.Contains(result, c => c.Code == code);
     }
@@ -97,7 +109,7 @@ public class CommodityTradeGroupScopeTests
         var result = await Repo(db).GetPlantingAsync(CancellationToken.None);
 
         // The regression that matters: this change must be invisible to conventional originators.
-        var conventional = result.Where(c => !OrganicCodes.Contains(c.Code) && !UnitScopedCodes.Contains(c.Code)).ToList();
+        var conventional = result.Where(c => !OrganicCodes.Contains(c.Code) && !UnitScopedCodes.Contains(c.Code) && !FlaxCodes.Contains(c.Code)).ToList();
         Assert.Equal(12, conventional.Count);
         Assert.All(conventional, c => Assert.Null(c.TradeGroupScope));
         Assert.All(conventional, c => Assert.Null(c.TradeUnitScope));
@@ -186,6 +198,26 @@ public class CommodityTradeGroupScopeTests
         // and the two columns OR together rather than intersecting.
         Assert.All(rows, c => Assert.Null(c.TradeGroupScope));
         Assert.All(rows, c => Assert.Equal("2090,2291,2295", c.TradeUnitScope));
+    }
+
+    [Fact]
+    public async Task Flax_rows_are_served_unfiltered_scoped_to_3811_alone_and_labelled_Flax()
+    {
+        using var db = NewContext();
+
+        var rows = (await Repo(db).GetPlantingAsync(CancellationToken.None))
+            .Where(c => FlaxCodes.Contains(c.Code)).ToList();
+
+        // Same contract as the other unit-scoped grades: served to everyone, hidden client-side.
+        Assert.Equal(4, rows.Count);
+        // A single-unit scope is just a one-element list; no group scope, because 3811 is in no
+        // Organics group and the two scopes OR together.
+        Assert.All(rows, c => Assert.Equal("3811", c.TradeUnitScope));
+        Assert.All(rows, c => Assert.Null(c.TradeGroupScope));
+        // Category stays the ODS group (the app-wide crop key) and the planting label carries the
+        // crop instead -- otherwise the dashboard would group flax acres under "FEED & FERT INGREDIENTS".
+        Assert.All(rows, c => Assert.Equal("FEED & FERT INGREDIENTS", c.Category));
+        Assert.All(rows, c => Assert.Equal("Flax", c.PlantingCategory));
     }
 
     [Fact]
