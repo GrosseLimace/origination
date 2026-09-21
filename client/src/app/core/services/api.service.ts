@@ -440,7 +440,8 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Updates an existing planting intention */
+  /** Updates an existing planting intention. `tradeUnit` omitted = leave the stored trade unit as is;
+   *  a value must be one of the producer's trade units (the API returns 400 otherwise). */
   updatePlantingIntention(id: number, data: {
     crop: string;
     category?: string;
@@ -448,6 +449,7 @@ export class ApiService {
     description?: string;
     acres: number;
     plantingYear: number;
+    tradeUnit?: string;
   }): Observable<PlantingIntention> {
     return this.http.put<PlantingIntention>(`${this.baseUrl}/plantingintentions/${id}`, data)
       .pipe(catchError(e => this.handleError(e)));

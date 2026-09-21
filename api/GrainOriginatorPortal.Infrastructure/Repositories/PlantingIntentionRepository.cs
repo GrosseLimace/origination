@@ -128,7 +128,7 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
     }
 
     public async Task<PlantingIntention?> UpdateAsync(int intentionId, string crop, string? category, string? type,
-        string? description, int acres, int plantingYear, string currentUser, CancellationToken cancellationToken)
+        string? description, int acres, int plantingYear, string? tradeUnit, string currentUser, CancellationToken cancellationToken)
     {
         var intention = await _appContext.PlantingIntentions
             .Include(p => p.Customer)
@@ -144,6 +144,10 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
         intention.Description = description;
         intention.Acres = acres;
         intention.PlantingYear = plantingYear;
+        if (tradeUnit is not null)
+        {
+            intention.TradeUnit = tradeUnit;
+        }
         intention.ModifiedBy = currentUser;
         intention.ModifiedAt = DateTime.UtcNow;
 

@@ -1773,10 +1773,11 @@ export class HomeComponent {
     });
   }
 
-  editPlantingIntention(data: {intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number}): void {
+  editPlantingIntention(data: {intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit?: string}): void {
     const sel = this.selectedCustomer();
     this.apiService.updatePlantingIntention(data.intentionId, {
-      crop: data.crop, category: data.category, type: data.type, description: data.description, acres: data.acres, plantingYear: data.plantingYear
+      crop: data.crop, category: data.category, type: data.type, description: data.description, acres: data.acres, plantingYear: data.plantingYear,
+      tradeUnit: data.tradeUnit
     }).subscribe({
       next: (updated) => {
         const update = (arr: PlantingIntention[]) => arr.map(p => p.id === data.intentionId ? updated : p);

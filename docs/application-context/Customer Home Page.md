@@ -42,6 +42,17 @@ Stacked in this order inside `@if (showProducerInsights())`:
 | **Harvest Contract Pace** (`contract-pacing-card/`) | Year-over-year contracting pace per harvest window, with a per-commodity table. Fetches its own historical contracts. |
 | **Growth Opportunity** (`growth-opportunity/`) | Projected production (planting acres × yield estimate) vs. bushels contracted, per commodity, plus bushels still available and concrete action items. |
 
+**Planting tab — Trade Unit field.** Each planting intention belongs to one trade unit, because a
+producer on several trade units plants different acres for each and the Planting Intentions
+dashboard sums acres by that field. The Add and Edit dialogs
+(`planting-intentions-table/`) offer the *producer's own* active trade units (fetched on open from
+`GET /api/customers/{id}/trade-units`, with descriptions from `appState.tradeUnitDescriptions`).
+One trade unit → shown read-only; several → the originator must pick, preselected when exactly one
+of them is selected in the header. Same crop, year and type for two trade units are two rows, not
+one accumulated row. The API rejects a trade unit the producer is not active in (400). A producer
+with no membership rows yet falls back to the user's in-scope trade units. The profile itself always
+lists every row regardless of trade unit. Full rationale: [`Planting Intentions Dashboard.md`](./Planting%20Intentions%20Dashboard.md#trade-unit-attribution-of-planting-acres).
+
 **Growth Opportunity** was called "AI Growth Forecast" until 2026-08-12. Nothing about it was AI — it
 rendered a hardcoded sentence and two branches gated behind `const totalProjected = 0` that could
 never execute. It now shows the real coverage breakdown, which previously lived above the table on

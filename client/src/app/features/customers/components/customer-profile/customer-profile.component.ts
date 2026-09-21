@@ -105,7 +105,7 @@ export class CustomerProfileComponent {
   public allCustomerDpContracts = input<DpContract[]>([]);
 
   public onAddPlanting = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  public onEditPlanting = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
+  public onEditPlanting = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit?: string}>();
   public onDeletePlanting = output<number>();
   /** True when the contracts table wants the page at full width (columns expanded on the
    *  contracts tab) so the host page can drop the Notes sidebar below the profile. */

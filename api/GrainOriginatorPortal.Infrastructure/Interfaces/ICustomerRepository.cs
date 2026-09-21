@@ -28,9 +28,14 @@ public interface ICustomerRepository
     /// to scope list results to the caller's entitled trade units.</summary>
     Task<HashSet<long>> GetActiveCustomerIdsInTradeUnitsAsync(IReadOnlyCollection<string> tradeUnits, CancellationToken cancellationToken);
 
-    /// <summary>The customer's first active trade-unit code (or null), used to stamp records
-    /// authoritatively rather than trusting client-supplied trade units.</summary>
+    /// <summary>The customer's first active trade-unit code (or null), ordered by code so the
+    /// result is deterministic for multi-TU producers. Used to stamp records when the caller
+    /// did not choose a trade unit.</summary>
     Task<string?> GetFirstActiveTradeUnitAsync(long customerId, CancellationToken cancellationToken);
+
+    /// <summary>All of the customer's active trade-unit codes from dbo.CustomerTradeUnit, ordered
+    /// by code. Empty when the producer has no membership rows (contracts-only / not yet synced).</summary>
+    Task<List<string>> GetActiveTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken);
 
     /// <summary>All distinct active trade-unit codes from dbo.CustomerTradeUnit, ordered — the
     /// fallback TU catalog when the TradeUnitPreferences DB is unavailable.</summary>

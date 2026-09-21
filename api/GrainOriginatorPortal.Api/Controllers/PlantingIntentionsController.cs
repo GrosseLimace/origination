@@ -50,8 +50,8 @@ public class PlantingIntentionsController : ControllerBase
     public async Task<ActionResult<PlantingIntentionResponse>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may create a planting intention
-        // for any customer. The service derives the authoritative customer name/code/trade-unit and
-        // throws a ValidationException (→ 400) when no trade unit can be determined.
+        // for any customer. The service derives the authoritative customer name/code, keeps the chosen
+        // trade unit when it is one of the producer's, and throws ValidationException (→ 400) otherwise.
         var intention = await _service.CreateAsync(
             request.CustomerId,
             request.CustomerName,
@@ -66,8 +66,8 @@ public class PlantingIntentionsController : ControllerBase
             cancellationToken
         );
         _logger.LogInformation(
-            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}",
-            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop);
+            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}, TradeUnit={TradeUnit}",
+            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop, intention.TradeUnit);
         return Ok(intention);
     }
 
@@ -91,11 +91,12 @@ public class PlantingIntentionsController : ControllerBase
             request.Description,
             request.Acres,
             request.PlantingYear,
+            request.TradeUnit,
             cancellationToken
         ) ?? throw new NotFoundException("PlantingIntention", id);
         _logger.LogInformation(
-            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
-            "AUDIT_UPDATE", "DataMutation", id);
+            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, TradeUnit={TradeUnit}",
+            "AUDIT_UPDATE", "DataMutation", id, updated.TradeUnit);
         return Ok(updated);
     }
 

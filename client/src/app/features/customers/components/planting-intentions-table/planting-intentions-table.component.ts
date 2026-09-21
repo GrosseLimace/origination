@@ -5,7 +5,6 @@ import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowCompo
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { InputComponent } from '@shared/components/input/input.component';
-import { SelectComponent } from '@shared/components/select/select.component';
 import { Customer, PlantingIntention, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
@@ -38,8 +37,7 @@ type PlantingRow = PlantingIntention;
     DialogDescriptionComponent,
     DialogContentComponent,
     DialogFooterComponent,
-    InputComponent,
-    SelectComponent
+    InputComponent
   ],
   templateUrl: './planting-intentions-table.component.html'
 })
@@ -52,13 +50,85 @@ export class PlantingIntentionsTableComponent {
   public isLoading = input(false);
   public plantingIntentions = input<PlantingIntention[]>([]);
   public customer = input.required<Customer>();
+  /** The header's selected trade units — used only to PRESELECT when the producer is on several. */
   public tradeUnits = input<string[]>([]);
   public customerCommodityCodes = input<string[]>([]);
   public selectedYear = input<number>(0);
   public add = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  public edit = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number}>();
+  public edit = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit?: string}>();
   public delete = output<number>();
   public yearSelect = output<number>();
+
+  // ── Trade unit the row belongs to ─────────────────────────────────────────
+  // A producer on several trade units plants different acres for each, and the dashboard sums
+  // acres by the trade unit on the row. So the choices are the PRODUCER's own trade units
+  // (GET /customers/{id}/trade-units), not the header filter. Loaded on dialog open (like the
+  // commodity lists) so a membership change in the edit-customer dialog is picked up.
+  producerTradeUnits: string[] = [];
+  isLoadingProducerTradeUnits = false;
+  private _producerTradeUnitsForCustomerId: number | null = null;
+
+  /** Options for the Add dialog: the producer's trade units; for a producer with no membership
+   *  rows yet (contracts-only / not yet synced) fall back to the user's in-scope trade units. */
+  get tradeUnitOptions(): string[] {
+    if (this.producerTradeUnits.length > 0) return this.producerTradeUnits;
+    return [...this.appState.inScopeTradeUnitCodes()];
+  }
+
+  /** True when the Add options are a fallback because the producer has no trade-unit assignment. */
+  get usingFallbackTradeUnits(): boolean {
+    return this.producerTradeUnits.length === 0 && !this.isLoadingProducerTradeUnits;
+  }
+
+  /** Options for the Edit dialog: the Add options plus the row's current trade unit when the
+   *  producer no longer belongs to it, so the stale tag is visible and can be moved. */
+  get editTradeUnitOptions(): string[] {
+    const options = this.tradeUnitOptions;
+    const current = this.originalEditForm.tradeUnit;
+    return current && !options.includes(current) ? [...options, current] : options;
+  }
+
+  /** "2190 — Pratt, KS" when a description is known, else just the code. Flags stale tags. */
+  tradeUnitLabel(code: string): string {
+    const description = this.appState.tradeUnitDescriptions().get(code);
+    const stale = this.producerTradeUnits.length > 0 && !this.producerTradeUnits.includes(code);
+    return `${code}${description ? ' — ' + description : ''}${stale ? ' (no longer assigned)' : ''}`;
+  }
+
+  /**
+   * The value the Add form starts with:
+   *   one option → that one (nothing to choose);
+   *   several, exactly one of them selected in the header → that one (still changeable);
+   *   otherwise '' → the originator must pick before saving.
+   */
+  defaultTradeUnit(options: readonly string[], headerSelection: readonly string[] = this.tradeUnits()): string {
+    if (options.length === 1) return options[0];
+    const preselected = options.filter(o => headerSelection.includes(o));
+    return preselected.length === 1 ? preselected[0] : '';
+  }
+
+  private _loadProducerTradeUnits(): void {
+    const customerId = this.customer().id;
+    if (this._producerTradeUnitsForCustomerId !== customerId) {
+      this.producerTradeUnits = [];
+      this._producerTradeUnitsForCustomerId = customerId;
+    }
+    this.isLoadingProducerTradeUnits = true;
+    this.apiService.getCustomerTradeUnits(customerId).subscribe({
+      next: rows => {
+        this.producerTradeUnits = rows.filter(r => r.isActive).map(r => r.tradeUnit.trim()).filter(Boolean).sort();
+        this.isLoadingProducerTradeUnits = false;
+        // The Add dialog may have opened before the list arrived; fill the default in now.
+        if (this.showAddDialog && this.addForm.tradeUnit === '') {
+          this.addForm.tradeUnit = this.defaultTradeUnit(this.tradeUnitOptions);
+        }
+      },
+      error: (e: Error) => {
+        this.isLoadingProducerTradeUnits = false;
+        console.error('[PlantingIntentions] Failed to load the producer\'s trade units', e);
+      }
+    });
+  }
 
   allCommodities: Commodity[] = [];
   // Curated subset (ShowInPlantingIntentions) used ONLY for the crop dropdown suggestions.
@@ -152,7 +222,8 @@ export class PlantingIntentionsTableComponent {
     type: '',
     description: '',
     acres: '',
-    plantingYear: ''
+    plantingYear: '',
+    tradeUnit: ''
   };
 
   originalEditForm = {
@@ -161,7 +232,8 @@ export class PlantingIntentionsTableComponent {
     type: '',
     description: '',
     acres: '',
-    plantingYear: ''
+    plantingYear: '',
+    tradeUnit: ''
   };
 
   /** Unique category options for the selected crop — includes Category + unique Tier2/Tier3 values, no duplicates. */
@@ -480,13 +552,18 @@ export class PlantingIntentionsTableComponent {
       description: '',
       acres: '',
       plantingYear: currentYear.toString(),
-      tradeUnit: this.tradeUnits().length > 0 ? this.tradeUnits()[0] : ''
+      // From the cached producer list when we have it; otherwise filled in when the load completes.
+      tradeUnit: this.producerTradeUnits.length > 0 && this._producerTradeUnitsForCustomerId === this.customer().id
+        ? this.defaultTradeUnit(this.tradeUnitOptions)
+        : ''
     };
     this.addCropSearchInput = '';
     this.filteredAddCrops = [];
     this.showAddCropSuggestions = false;
     this._loadCommodities();
     this.showAddDialog = true;
+    // After showAddDialog: the load's completion fills the default only while the dialog is open.
+    this._loadProducerTradeUnits();
     document.body.style.overflow = 'hidden';
   }
 
@@ -512,7 +589,9 @@ export class PlantingIntentionsTableComponent {
 
   /**
    * Emit one crop as either a new row (add) or an acre-accumulation onto an existing
-   * matching row (edit) — "already exists → accumulate, else add".
+   * matching row (edit) — "already exists → accumulate, else add". The trade unit is part of
+   * the match: Pratt soybeans and Tribune soybeans for the same year are two rows, so each
+   * territory's dashboard counts only its own acres.
    */
   private _emitCropForAdd(
     crop: string,
@@ -526,7 +605,8 @@ export class PlantingIntentionsTableComponent {
     const existing = this.plantingIntentions().find(pi =>
       pi.crop === crop &&
       (pi.type || undefined) === type &&
-      pi.plantingYear === year
+      pi.plantingYear === year &&
+      (pi.tradeUnit || '') === tradeUnit
     );
 
     if (existing) {
@@ -574,7 +654,8 @@ export class PlantingIntentionsTableComponent {
       type: row.type || '',
       description: row.description || '',
       acres: row.acres.toString(),
-      plantingYear: row.plantingYear.toString()
+      plantingYear: row.plantingYear.toString(),
+      tradeUnit: row.tradeUnit || ''
     };
     this.editForm = { ...formData };
     this.originalEditForm = { ...formData };
@@ -582,6 +663,7 @@ export class PlantingIntentionsTableComponent {
     this.filteredEditCrops = [];
     this.showEditCropSuggestions = false;
     this._loadCommodities();
+    this._loadProducerTradeUnits();
     this.showEditDialog = true;
     document.body.style.overflow = 'hidden';
   }
@@ -598,7 +680,8 @@ export class PlantingIntentionsTableComponent {
       || this.editForm.type !== this.originalEditForm.type
       || this.editForm.description !== this.originalEditForm.description
       || this.editForm.acres !== this.originalEditForm.acres
-      || this.editForm.plantingYear !== this.originalEditForm.plantingYear;
+      || this.editForm.plantingYear !== this.originalEditForm.plantingYear
+      || this.editForm.tradeUnit !== this.originalEditForm.tradeUnit;
   }
 
   isEditFormValid(): boolean {
@@ -625,7 +708,9 @@ export class PlantingIntentionsTableComponent {
       category: this.editForm.category || undefined,
       type,
       description: this.editForm.description || undefined,
-      acres, plantingYear: year
+      acres, plantingYear: year,
+      // Only sent when the originator changed it — an unchanged value stays untouched server-side.
+      tradeUnit: this.editForm.tradeUnit !== this.originalEditForm.tradeUnit ? this.editForm.tradeUnit : undefined
     });
     this.closeEditDialog();
   }
