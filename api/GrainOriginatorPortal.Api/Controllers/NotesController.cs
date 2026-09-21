@@ -103,14 +103,11 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(MentionCatalogResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<MentionCatalogResponse>> GetMentionCatalog(CancellationToken cancellationToken = default)
     {
-        // Derive the caller's UserId from the UPN claim (e.g. CEgr@scoular.com → CEgr),
-        // matching how vw_UserTradeUnitPreferences.UserId is stored.
-        var upn = User.FindFirst("preferred_username")?.Value
-            ?? User.FindFirst("upn")?.Value
-            ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
-            ?? User.Identity?.Name
-            ?? string.Empty;
-        var userId = upn.Contains('@') ? upn.Split('@')[0] : upn;
+        // The caller's UserId is the UPN prefix (e.g. CEgr@scoular.com → CEgr), matching how
+        // vw_UserTradeUnitPreferences.UserId is stored — which is what
+        // IRequestContextService.GetCurrentUserShortName already resolves. The claim chain used to
+        // be reimplemented here and in EntitlementsController.GetCatalog.
+        var userId = _requestContext.GetCurrentUserShortName();
 
         var response = new MentionCatalogResponse();
 

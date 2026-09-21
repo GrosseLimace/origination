@@ -40,11 +40,13 @@ public class OriginationDbContext : DbContext
 
     // Application tables - Notes and TradeUnits moved to ApplicationDbContext (Origination database)
 
-    // These tables don't exist yet - will return empty data
-    // public DbSet<Farm> Farms => Set<Farm>();
-    // public DbSet<PlantingIntention> PlantingIntentions => Set<PlantingIntention>();
-    // public DbSet<StoredGrain> StoredGrains => Set<StoredGrain>();
-    // public DbSet<SavedList> SavedLists => Set<SavedList>();
+    // Farm has no ODS table yet, so there is no DbSet for it here (FarmRepository returns stubs).
+    //
+    // PlantingIntention and SavedList are NOT missing — they are live DbSets on ApplicationDbContext,
+    // the app-owned context. StoredGrain is configured in THIS file (see OnModelCreating) and read
+    // via SqlQueryRaw in StoredGrainRepository. Commented-out DbSet lines for all three used to sit
+    // here under a "these tables don't exist yet" banner, which had stopped being true and made
+    // wired-up entities look unwired.
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -321,8 +323,7 @@ public class OriginationDbContext : DbContext
 
         // Note and TradeUnit entity configuration moved to ApplicationDbContext
 
-        // Configure PlantingIntention entity - DISABLED: Table doesn't exist in ODS
-        // modelBuilder.Entity<PlantingIntention>(entity => { ... });
+        // PlantingIntention is configured on ApplicationDbContext (app-owned table), not here.
 
         // Configure StoredGrain — keyless result type for SqlQueryRaw (no table/view mapping)
         modelBuilder.Entity<StoredGrain>(entity =>
@@ -340,8 +341,7 @@ public class OriginationDbContext : DbContext
         // table/view mapping; the query needs a latest-snapshot CTE, same as StoredGrain).
         modelBuilder.Entity<DpContract>(entity => entity.HasNoKey());
 
-        // Configure SavedList entity - DISABLED: Table doesn't exist in ODS
-        // modelBuilder.Entity<SavedList>(entity => { ... });
+        // SavedList is configured on ApplicationDbContext (app-owned table), not here.
 
         // Configure Elevator — maps to ctrm.vw_GNP026 (read-only view, no PK)
         modelBuilder.Entity<Elevator>(entity =>

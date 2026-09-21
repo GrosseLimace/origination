@@ -72,7 +72,12 @@ public class BidSheetRepository : IBidSheetRepository
         }
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
-            // A child bid collided with a concurrently-inserted one — reconcile to updates and retry.
+            // Either a child bid collided with a concurrently-inserted one (reconcilable — the
+            // user's value wins), or the location NAME itself lost a race. A name collision is
+            // deliberately not reconciled here: adopting someone else's location would silently
+            // attach this caller's bids to a row they never chose. The service pre-checks the name,
+            // so reaching this is the narrow race window; rethrow and let the caller retry into the
+            // clean "already exists" validation error.
             _logger.LogWarning(ex, "CreateBidSheetLocation hit a unique-constraint race — reconciling");
             if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
             {
@@ -117,6 +122,8 @@ public class BidSheetRepository : IBidSheetRepository
         }
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
+            // As in CreateLocationAsync: a colliding child bid reconciles, a rename onto an
+            // already-taken name does not — that has to surface rather than pick a winner.
             _logger.LogWarning(ex, "UpdateBidSheetLocation hit a unique-constraint race — reconciling");
             if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
                 await _appContext.SaveChangesAsync(cancellationToken);
@@ -372,14 +379,32 @@ public class BidSheetRepository : IBidSheetRepository
             .Where(e => e.State == EntityState.Added)
             .Select(e => e.Entity)
             .ToList();
+        if (added.Count == 0) return false;
+
+        // One query for the whole pending set, not one per bid. This runs over EVERY Added bid —
+        // not just the one that tripped the constraint — so on a large bulk upsert (locations ×
+        // commodities × months) the per-bid version fanned out to a round trip per pending insert
+        // while the user waited on a retry. Narrowed to the affected locations and crop years,
+        // which is selective enough to stay on the index without building an N-term OR.
+        var locationIds = added.Select(b => b.LocationId).Distinct().ToList();
+        var cropYears = added.Select(b => b.CropYear).Distinct().ToList();
+        var candidates = await _appContext.BidSheetLocationBids
+            .Where(b => locationIds.Contains(b.LocationId) && cropYears.Contains(b.CropYear))
+            .ToListAsync(cancellationToken);
+
+        // Uppercase the CommodityCode on both sides of the key: SQL Server's collation is
+        // case-insensitive, so "yc" and "YC" are the same row to the unique index and must be the
+        // same key here too — otherwise a case difference looks like "no collision" and the
+        // duplicate insert is retried straight back into the same violation.
+        var existingByKey = new Dictionary<(int, string, int, int), BidSheetLocationBid>();
+        foreach (var b in candidates)
+            existingByKey.TryAdd((b.LocationId, (b.CommodityCode ?? "").ToUpperInvariant(), b.CropYear, b.Month), b);
+
         var reconciled = false;
         foreach (var bid in added)
         {
-            // SQL Server's case-insensitive collation makes the CommodityCode compare match regardless of case.
-            var existing = await _appContext.BidSheetLocationBids.FirstOrDefaultAsync(
-                b => b.LocationId == bid.LocationId && b.CommodityCode == bid.CommodityCode
-                     && b.CropYear == bid.CropYear && b.Month == bid.Month, cancellationToken);
-            if (existing == null) continue;
+            var key = (bid.LocationId, (bid.CommodityCode ?? "").ToUpperInvariant(), bid.CropYear, bid.Month);
+            if (!existingByKey.TryGetValue(key, out var existing)) continue;
             _appContext.Entry(bid).State = EntityState.Detached; // drop the duplicate insert
             reconciled = true;
             // A user write beats a fed row here too, and takes ownership with it.

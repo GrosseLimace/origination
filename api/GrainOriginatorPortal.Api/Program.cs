@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Identity.Web;
+using Microsoft.AspNetCore.Mvc;
 
 // Polly namespaces
 using Polly;
@@ -22,6 +23,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Models.Responses;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -131,6 +133,14 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAssertion(ctx =>
             GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.CanView(ctx.User)));
 });
+// Audit authorization denials where the framework decides them. The authorization middleware
+// short-circuits on a failed [Authorize] without calling the rest of the pipeline, so
+// SecurityAuditMiddleware (which reads the final status code downstream) never saw the ordinary
+// 401/403s it exists to log. This handler logs and then delegates to the default behaviour.
+builder.Services.AddSingleton<
+    Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler,
+    AuthorizationAuditResultHandler>();
+
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 
 // Usage tracking: bounded in-memory channel + background batch writer
@@ -221,6 +231,58 @@ builder.Services.AddControllers()
         // Prevents mass assignment and forces clients to send only known properties.
         options.JsonSerializerOptions.UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow;
     });
+
+// Make [ApiController]'s automatic model-validation failures use the app's own error envelope.
+//
+// Every controller here carries [ApiController], which short-circuits a data-annotation failure
+// into the framework's RFC7807 ValidationProblemDetails *before* GlobalExceptionHandler or our own
+// ValidationException ever run. That is the single most common validation failure across the whole
+// write surface, and it was the one shape the Angular client can't read — so the identical
+// conceptual error produced two different bodies depending on whether it was caught by an
+// annotation or thrown by hand. One factory, and every controller agrees.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var http = context.HttpContext;
+        var traceId = http.Items[CorrelationIdMiddleware.ItemsKey]?.ToString() ?? http.TraceIdentifier;
+
+        // Field-level detail, same shape a thrown ValidationException produces.
+        var details = context.ModelState
+            .Where(kvp => kvp.Value?.Errors.Count > 0)
+            .SelectMany(kvp => kvp.Value!.Errors.Select(e => new ApiErrorDetail
+            {
+                Field = kvp.Key,
+                // ErrorMessage is empty when the failure came from a binding/parse exception;
+                // don't leak the exception text to the caller, which may name internal types.
+                Message = string.IsNullOrWhiteSpace(e.ErrorMessage)
+                    ? "The value provided is not valid for this field."
+                    : e.ErrorMessage,
+                Code = "VALIDATION_INVALID_FIELD",
+            }))
+            .ToList();
+
+        http.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("GrainOriginatorPortal.Api.ModelValidation")
+            .LogWarning(
+                "Validation error [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {FieldCount} field(s) failed on {Method} {Path}",
+                traceId, "VALIDATION_ERROR", "Validation", details.Count,
+                http.Request.Method, http.Request.Path.Value);
+
+        return new BadRequestObjectResult(new ApiErrorResponse
+        {
+            Error = new ApiErrorBody
+            {
+                Code = "VALIDATION_ERROR",
+                Message = "One or more fields failed validation.",
+                Details = details,
+                TraceId = traceId,
+                Timestamp = DateTime.UtcNow.ToString("O"),
+                Instance = http.Request.Path.Value,
+            }
+        });
+    };
+});
 
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
 builder.Services.AddOpenApi();
@@ -435,6 +497,38 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit = 1000,
                 Window = TimeSpan.FromMinutes(1)
             }));
+
+    // The limiter writes its own rejection, so it never passes through GlobalExceptionHandler —
+    // which left the app's only real 429 with an empty body and no Retry-After, and made the
+    // handler's own 429 branch dead code. Emit the standard error envelope here instead.
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        var http = context.HttpContext;
+        var traceId = http.Items[CorrelationIdMiddleware.ItemsKey]?.ToString() ?? http.TraceIdentifier;
+
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var window)
+            ? (int)window.TotalSeconds
+            : 30;
+        http.Response.Headers.RetryAfter = retryAfter.ToString();
+
+        http.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("GrainOriginatorPortal.Api.RateLimiting")
+            .LogWarning(
+                "Rate limit exceeded [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Method} {Path} → 429",
+                traceId, "RATE_LIMIT_EXCEEDED", "Security", http.Request.Method, http.Request.Path.Value);
+
+        await http.Response.WriteAsJsonAsync(new ApiErrorResponse
+        {
+            Error = new ApiErrorBody
+            {
+                Code = "RATE_LIMIT_EXCEEDED",
+                Message = "Too many requests. Please wait a moment and try again.",
+                TraceId = traceId,
+                Timestamp = DateTime.UtcNow.ToString("O"),
+                Instance = http.Request.Path.Value
+            }
+        }, cancellationToken);
+    };
 });
 
 // =============================================================================

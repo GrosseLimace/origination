@@ -4,6 +4,11 @@ import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface DashboardCacheEntry {
   tradeUnitsKey: string;
+  /** Planting year the year-specific entries below were loaded for. Part of the cache key: the
+   *  dashboard resets selectedPlantingYear to the current year on every construction while this
+   *  cache survives navigation, so matching on tradeUnitsKey alone re-applied another year's
+   *  estimates/market shares/harvest figures. */
+  year: number;
   customers: Customer[];
   contracts: Contract[];
   plantingIntentions: PlantingIntention[];
@@ -244,6 +249,7 @@ export class AppStateService {
 
   setTickets(tickets: Ticket[]): void {
     this.tickets.set(tickets);
+    this.ticketsTradeUnitKey.set(this.selectedTradeUnits().join(','));
     this.ticketsLoaded.set(true);
   }
 
@@ -326,8 +332,16 @@ export class AppStateService {
   // emptiness check would misfire. Reset on TU change / logout via clearTicketsCache().
   ticketsLoaded = signal(false);
 
+  /** Which trade-unit selection `tickets` was loaded for. Consumers that adopt the shared set into
+   *  their own copy must check this: `clearTicketsCache()` and a component's own trade-unit effect
+   *  are independent subscribers to `selectedTradeUnits` with no ordering guarantee between them,
+   *  so there is a window where a component has already cleared its local set for the NEW trade
+   *  unit while this one still holds the PREVIOUS trade unit's tickets. */
+  ticketsTradeUnitKey = signal<string | null>(null);
+
   clearTicketsCache(): void {
     this.tickets.set([]);
+    this.ticketsTradeUnitKey.set(null);
     this.ticketsLoaded.set(false);
   }
 

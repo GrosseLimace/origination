@@ -37,18 +37,20 @@ public class NotesControllerMentionCatalogTests
         var groups = new Mock<IDailyRecapGroupService>();
         groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(visibleGroups.ToList());
 
-        var requestContext = new Mock<IRequestContextService>();
-        requestContext.Setup(r => r.GetCurrentUser()).Returns(callerUpn);
+        // The controller resolves the caller through IRequestContextService, which reads
+        // IHttpContextAccessor rather than ControllerBase.User. Point a REAL RequestContextService
+        // at the same HttpContext so these tests still exercise the actual claim chain instead of
+        // mocking the identity resolution they depend on.
+        var identity = new ClaimsIdentity([new Claim("preferred_username", callerUpn)], "test");
+        var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
+        var accessor = new HttpContextAccessor { HttpContext = httpContext };
 
         var sut = new NotesController(new Mock<INoteService>().Object, db, groups.Object,
             MentionTestDoubles.TeamsChannelStub(registeredChannels),
-            requestContext.Object, new Mock<ILogger<NotesController>>().Object);
+            new RequestContextService(accessor),
+            new Mock<ILogger<NotesController>>().Object);
 
-        var identity = new ClaimsIdentity([new Claim("preferred_username", callerUpn)], "test");
-        sut.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) },
-        };
+        sut.ControllerContext = new ControllerContext { HttpContext = httpContext };
         return sut;
     }
 

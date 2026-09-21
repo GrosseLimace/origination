@@ -294,6 +294,17 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         await _appContext.SaveChangesAsync(cancellationToken);
         // Reflect the persisted child sets back on the returned entity so the upsert response
         // carries them.
+        //
+        // These two reads look redundant — an audit flagged them as such — but they are not, and
+        // replacing them with the in-memory values would introduce a bug:
+        //   • Contacts: a null contactItems means "not provided", which deliberately PRESERVES the
+        //     existing rows (see above). The request carries nothing in that case, so the DB is the
+        //     only place the current contacts exist.
+        //   • Ordering: GetContactsAsync returns primary-first, then SortOrder, then Id. The
+        //     normalized request list isn't guaranteed to be in that order, so the client would get
+        //     a different order depending on which path produced the response.
+        // If this is ever optimised, it has to be GrainOnFarm only, and the ordering has to be
+        // reproduced in memory rather than assumed.
         saved.GrainOnFarm = await GetGrainOnFarmAsync(customerId, cancellationToken);
         saved.Contacts = await GetContactsAsync(customerId, cancellationToken);
         // Structured AUDIT_UPDATE, matching the delete below. M-045 (2026-09-21) found this path
