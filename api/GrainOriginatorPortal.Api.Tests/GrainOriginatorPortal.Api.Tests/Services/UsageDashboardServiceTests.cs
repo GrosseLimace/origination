@@ -65,19 +65,22 @@ public class UsageDashboardServiceTests
         _sut = CreateSut();
     }
 
-    /// <summary>Builds the service as a ViewAll caller — they may pick any manager and default to the
-    /// whole org. Seeds the DB-backed exclusion list (dbo.UsageDashboardExcludedUsers) via the repo
-    /// mock.</summary>
+    /// <summary>Builds the service as a whole-org caller — they may pick any manager and default to the
+    /// whole org. Seeds both DB-backed lists: dbo.UsageDashboardViewAllUsers via the provider mock and
+    /// dbo.UsageDashboardExcludedUsers via the repo mock.</summary>
     private UsageDashboardService CreateSut(params string[] excludeUsers)
-        => CreateSut(new UsageDashboardViewAllList([Caller]), excludeUsers);
+        => CreateSut([Caller], excludeUsers);
 
-    /// <summary>Builds the service as a SCOPED caller — nobody is on the ViewAll list, so the caller
+    /// <summary>Builds the service as a SCOPED caller — the ViewAll table is empty, so the caller
     /// is pinned to their own org subtree and any requested managerId is discarded.</summary>
     private UsageDashboardService CreateScopedSut(params string[] excludeUsers)
-        => CreateSut(UsageDashboardViewAllList.Empty, excludeUsers);
+        => CreateSut([], excludeUsers);
 
-    private UsageDashboardService CreateSut(UsageDashboardViewAllList viewAll, params string[] excludeUsers)
+    private UsageDashboardService CreateSut(string[] viewAllUsers, params string[] excludeUsers)
     {
+        var viewAllMock = new Mock<IUsageDashboardViewAllProvider>();
+        viewAllMock.Setup(v => v.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(viewAllUsers, StringComparer.OrdinalIgnoreCase));
         _repoMock.Setup(r => r.GetExcludedUserIdsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(excludeUsers.ToList());
         _requestContextMock.Setup(r => r.GetCurrentUserShortName()).Returns(Caller);
@@ -86,7 +89,7 @@ public class UsageDashboardServiceTests
         var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
         return new UsageDashboardService(
             _repoMock.Object, _appAccessMock.Object, _managerDirectoryMock.Object, cache, _cacheState,
-            _requestContextMock.Object, viewAll);
+            _requestContextMock.Object, viewAllMock.Object);
     }
 
     private void SetupSubtree(string managerId, params string[] subtreeUserIds)
