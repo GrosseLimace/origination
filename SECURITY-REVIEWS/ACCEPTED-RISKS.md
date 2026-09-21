@@ -346,6 +346,34 @@ linked-group member, with an inline comment saying the endpoint has no TU filter
 in unselected trade units are covered. Producer details had no equivalent. Apply that test, per
 route, before assuming this entry covers something.
 
+**Update (2026-09-21):** re-flagged as **H-069** (`claude`, CWE-639, confidence 9/10) against the
+five `ContractsController` by-customer / by-farm / pricing-line routes — the same five H-060 added
+to the list above on 2026-09-09. **Re-accepted — no change.** All five already carried inline AR-02
+citations, so nothing was undocumented this time; this is a straight re-flag of the accepted
+exposure, which the finding is correct to say still exists.
+
+**This is the SEVENTH flag on AR-02** — 2026-06-23, 2026-08-10, twice on 2026-08-18, 2026-09-09,
+2026-09-14 and 2026-09-21 — every one self-accepted by Origination engineering.
+
+Applying the caller test to these routes settles them the opposite way from H-062, and the evidence
+is concrete: `handleSelectLinkedCustomer` in `home.component.ts` has an explicit else-branch for a
+linked producer who is **not** in the caller's roster — commented *"Linked customer is in a
+different trade unit — fetch them from the API"* — which then calls `_loadCustomerContractsAndTickets`
+on that producer. The suggested fix (resolve the owning trade unit, validate the stored value) would
+403 that path and break the linked-producer profile. Producer details had no equivalent caller and
+was therefore scoped; contracts does, and stays.
+
+Checked at the same time, because the H-062 fix touched this area: `getProducerDetails` still has
+exactly one call site (`handleSelectCustomer`), and the cross-trade-unit linked path does **not**
+reach it — it reads producer details from the already-filtered map. The 2026-09-14 scoping did not
+break the linked-producer view.
+
+**What changed:** comments only. The five routes said "no per-producer object-level authz by design"
+without naming *which* design, so the finding's "the asymmetry is self-evident in the same file"
+argument had nothing in the code to answer it. `GetByCustomer` now carries the full explanation and
+the other four point at it. Expect this to re-flag anyway — unlike H-060 and H-068, the gap here was
+not documentation. **The countersignature is the only thing that closes it.**
+
 That makes **six** flags for AR-02 — 2026-06-23, 2026-08-10, twice on 2026-08-18, 2026-09-09 and
 2026-09-14 — every one self-accepted by engineering. The finding's own suggestion ("obtain formal
 security approval if cross-trade-unit access must remain intentional") is the correct one, and it is
