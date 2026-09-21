@@ -3,7 +3,8 @@
  *
  * Most commodities are unscoped and every user sees them. A few are restricted:
  *   - by trade GROUP  — the Organics & IP crops (HRWO, WHTO, YCO, YSBO)
- *   - by trade UNIT   — specialty soy/corn grades for 2090/2291/2295 (DNGS, DOSB, HEC, YWC)
+ *   - by trade UNIT   — specialty soy/corn grades for 2090/2291/2295 (DNGS, DOSB, HEC, YWC),
+ *                       and the flax grades for 3811 alone (BFL1, BFL2, GFL1, GFL2)
  *
  * Unit scoping exists because a group is too coarse: those three units are only half of
  * Organics & IP, and a group name cannot express a subset of its own units.
