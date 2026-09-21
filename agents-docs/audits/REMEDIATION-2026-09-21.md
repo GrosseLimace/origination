@@ -82,20 +82,35 @@ else.** It cannot be reproduced locally, in Dev, or in QA. This is the same
 model-versus-database drift `sql.handrolled-ddl-faked-migration-history` describes, now confirmed
 live rather than theoretical.
 
-**2. Dev and QA are on a different schema from PROD entirely.** Both carry
-`UQ_BidSheetLocations_BarchartKey` and neither has `IX_BidSheetLocations_TradeUnitCode`, which *is*
-in `main`'s model. They have been deployed from `feature_BidSheetRemodelAndBarchartFeed`, which
-holds **21 migrations `main` does not have** — including `MakeBidSheetLocationsGlobal`, which is
-what dropped per-TU name uniqueness there. So Dev and QA are ahead of `main` on an unmerged branch
-while PROD is behind it. Deploying `main`-lineage code to Dev or QA runs
-`dotnet ef database update` against a history containing migrations that code has never seen.
+**2. Three environments, three different schemas — and this is the one still live.** Dev and QA
+both carry `UQ_BidSheetLocations_BarchartKey` and neither has `IX_BidSheetLocations_TradeUnitCode`,
+which *is* in `main`'s model. Both have been deployed from
+`feature_BidSheetRemodelAndBarchartFeed`, which holds **21 migrations `main` does not have**.
+PROD, meanwhile, is behind `main` and carries the hand-rolled index neither of the others has.
 
-This may be entirely deliberate — that branch was intentionally kept off `main` — but it is worth
-confirming rather than discovering during a deploy.
+So Dev and QA are ahead of `main` on an unmerged branch while PROD is behind it, and deploying
+`main`-lineage code to Dev or QA runs `dotnet ef database update` against a history containing
+migrations that code has never seen.
 
-**3. If anyone proposes adding a global unique index** as the tidy fix, it needs a duplicate-name
-sweep of the target environment first. The table predates any naming rule, and a unique index
-created over existing duplicates fails the deploy.
+**The practical consequence: QA is not a rehearsal for a PROD bid-sheet deploy.** They are not the
+same starting schema, so a clean QA run does not evidence a clean PROD run. Worth saying out loud
+before anyone promotes that work. This may be entirely deliberate — the branch was intentionally
+kept off `main` — but it should be confirmed deliberately rather than met during a deploy.
+
+**3. The remodel already handles all of this — do not re-solve it.** When
+`feature_BidSheetRemodelAndBarchartFeed` reaches PROD, `20260902194934_MakeBidSheetLocationsGlobal`
+drops `UQ_BidSheetLocations_Name_TradeUnit` **by name behind an `IF EXISTS` guard** (one of three
+such guarded drops in that migration), with the reasoning already written down: the index "was
+created by hand in Dev and is declared by no migration and no model — an unguarded drop fails the
+deploy in any environment that never got it." It also merges duplicate names ahead of the index
+work via `*_PreGlobal` snapshots and a `#SurvivorMap`, and it deliberately does **not** add a
+global `UNIQUE(Name)` — the comment notes that would need a duplicate sweep of QA and PROD first,
+and manual locations are user-named.
+
+So the deploy hazard is closed, and the "obvious tidy fix" is already explicitly rejected in the
+migration itself. What remains true is only the **current** state: PROD enforces a constraint EF
+doesn't know about, so a duplicate location name fails there and nowhere else until that migration
+lands.
 
 ## For the dashboard's scoring model
 
