@@ -17,5 +17,6 @@ public interface IPlantingIntentionRepository
         string currentUser, CancellationToken cancellationToken);
     Task<PlantingIntention?> UpdateAsync(int intentionId, string crop, string? category, string? type,
         string? description, int acres, int plantingYear, string currentUser, CancellationToken cancellationToken);
-    Task DeleteAsync(int intentionId, CancellationToken cancellationToken);
+    /// <summary>Soft-deletes the intention, stamping IsDeleted/DeletedAt/DeletedBy.</summary>
+    Task DeleteAsync(int intentionId, string currentUser, CancellationToken cancellationToken);
 }
