@@ -490,44 +490,8 @@ public class DiagnosticsController : ControllerBase
                 .Where(e => e.City != null || e.Address != null)
                 .ToListAsync(cancellationToken);
 
-            var client = _httpFactory.CreateClient();
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("GrainOriginatorPortal/1.0");
-
-            foreach (var elev in toGeocode)
-            {
-                if (cancellationToken.IsCancellationRequested) break;
-
-                var parts = new[] { elev.Address?.Trim(), elev.City?.Trim(), elev.State?.Trim() }
-                    .Where(p => !string.IsNullOrWhiteSpace(p));
-                var query = string.Join(", ", parts);
-                if (string.IsNullOrWhiteSpace(query)) { geoFailed++; continue; }
-
-                try
-                {
-                    await Task.Delay(1100, cancellationToken);
-                    var url = $"https://nominatim.openstreetmap.org/search?format=json&limit=1&q={Uri.EscapeDataString(query)}";
-                    var response = await client.GetAsync(url, cancellationToken);
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                        var results = JsonSerializer.Deserialize<JsonElement[]>(json);
-                        if (results != null && results.Length > 0)
-                        {
-                            elev.Latitude = double.Parse(results[0].GetProperty("lat").GetString()!);
-                            elev.Longitude = double.Parse(results[0].GetProperty("lon").GetString()!);
-                            geocoded++;
-                        }
-                        else { geoFailed++; }
-                    }
-                    else { geoFailed++; }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Geocoding failed for {Code}", elev.ElevatorCode);
-                    geoFailed++;
-                }
-            }
+            (geocoded, geoFailed) = await GeocodeElevatorsAsync(
+                toGeocode, _httpFactory, _logger, saveEvery: null, _appContext, cancellationToken);
 
             await _appContext.SaveChangesAsync(cancellationToken);
         }
@@ -615,48 +579,8 @@ public class DiagnosticsController : ControllerBase
                 .Where(e => e.City != null || e.Address != null)
                 .ToListAsync();
 
-            var client = httpFactory.CreateClient();
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("GrainOriginatorPortal/1.0");
-
-            int done = 0, failed = 0;
-
-            foreach (var elev in toGeocode)
-            {
-                var parts = new[] { elev.Address?.Trim(), elev.City?.Trim(), elev.State?.Trim() }
-                    .Where(p => !string.IsNullOrWhiteSpace(p));
-                var query = string.Join(", ", parts);
-                if (string.IsNullOrWhiteSpace(query)) { failed++; continue; }
-
-                try
-                {
-                    await Task.Delay(1100);
-                    var url = $"https://nominatim.openstreetmap.org/search?format=json&limit=1&q={Uri.EscapeDataString(query)}";
-                    var response = await client.GetAsync(url);
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var json = await response.Content.ReadAsStringAsync();
-                        var results = JsonSerializer.Deserialize<JsonElement[]>(json);
-                        if (results != null && results.Length > 0)
-                        {
-                            elev.Latitude = double.Parse(results[0].GetProperty("lat").GetString()!);
-                            elev.Longitude = double.Parse(results[0].GetProperty("lon").GetString()!);
-                            done++;
-                        }
-                        else { failed++; }
-                    }
-                    else { failed++; }
-
-                    // Save every 50 to avoid losing progress
-                    if ((done + failed) % 50 == 0)
-                        await appContext.SaveChangesAsync();
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Geocoding failed for {Code}", elev.ElevatorCode);
-                    failed++;
-                }
-            }
+            var (done, failed) = await GeocodeElevatorsAsync(
+                toGeocode, httpFactory, logger, saveEvery: 50, appContext, CancellationToken.None);
 
             await appContext.SaveChangesAsync();
             logger.LogInformation("Elevator geocoding complete: {Done} geocoded, {Failed} failed", done, failed);
@@ -665,6 +589,83 @@ public class DiagnosticsController : ControllerBase
         {
             _logger.LogError(ex, "Background elevator geocoding crashed");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Fills in Latitude/Longitude for elevators that lack them, writing onto the tracked entities
+    /// (the caller saves). Returns (geocoded, failed).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both the synchronous refresh and the fire-and-forget background job used to carry their own
+    /// near-identical copy of this loop — same query assembly, same 1.1s pacing, same JSON
+    /// parsing, same swallow-and-count — so a fix to one silently missed the other.
+    /// </para>
+    /// <para>
+    /// Uses the named "nominatim" client, which Program.cs wires with a 10s timeout, 3-attempt
+    /// exponential backoff and a circuit breaker. The old code took a bare, unconfigured client, so
+    /// a Nominatim outage burned through the whole elevator list with no protection at all. The
+    /// query text is deliberately unchanged (free-text <c>q=</c> rather than
+    /// IGeocodeService's structured street/city/state parameters): routing through the service
+    /// would also change which addresses match, and that belongs in its own change with a look at
+    /// the resulting coordinates.
+    /// </para>
+    /// </remarks>
+    private static async Task<(int Geocoded, int Failed)> GeocodeElevatorsAsync(
+        List<ElevatorCache> toGeocode,
+        IHttpClientFactory httpFactory,
+        ILogger logger,
+        int? saveEvery,
+        ApplicationDbContext appContext,
+        CancellationToken cancellationToken)
+    {
+        var client = httpFactory.CreateClient("nominatim");
+        int done = 0, failed = 0;
+
+        foreach (var elev in toGeocode)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+
+            var parts = new[] { elev.Address?.Trim(), elev.City?.Trim(), elev.State?.Trim() }
+                .Where(p => !string.IsNullOrWhiteSpace(p));
+            var query = string.Join(", ", parts);
+            if (string.IsNullOrWhiteSpace(query)) { failed++; continue; }
+
+            try
+            {
+                // Nominatim's usage policy is 1 req/sec. This is a Dev/QA-only admin job, so it
+                // paces itself rather than contending for GeocodeService's shared limiter.
+                await Task.Delay(1100, cancellationToken);
+                var response = await client.GetAsync(
+                    $"search?format=json&limit=1&q={Uri.EscapeDataString(query)}", cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    var results = JsonSerializer.Deserialize<JsonElement[]>(json);
+                    if (results != null && results.Length > 0)
+                    {
+                        elev.Latitude = double.Parse(results[0].GetProperty("lat").GetString()!);
+                        elev.Longitude = double.Parse(results[0].GetProperty("lon").GetString()!);
+                        done++;
+                    }
+                    else { failed++; }
+                }
+                else { failed++; }
+
+                // Checkpoint periodically so a long run doesn't lose everything if it dies.
+                if (saveEvery is { } n && (done + failed) % n == 0)
+                    await appContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Geocoding failed for {Code}", elev.ElevatorCode);
+                failed++;
+            }
+        }
+
+        return (done, failed);
     }
 
     // -------------------------------------------------------------------------
