@@ -70,9 +70,14 @@ export class ApiService {
   private _dedupe<T>(key: string, request: Observable<T>): Observable<T> {
     const cached = this._inFlight.get(key);
     if (cached) return cached as Observable<T>;
+    // finalize sits UPSTREAM of shareReplay so eviction happens when the underlying HTTP call
+    // settles, not when an individual subscriber walks away. The other way round, an unsubscribing
+    // caller (DataPreloadService's switchMap on a trade-unit change) deleted the entry while
+    // refCount: false kept the real request alive — so switching back before it landed fired a
+    // duplicate of the exact call this cache exists to prevent.
     const shared = request.pipe(
-      shareReplay({ bufferSize: 1, refCount: false }),
-      finalize(() => this._inFlight.delete(key))
+      finalize(() => this._inFlight.delete(key)),
+      shareReplay({ bufferSize: 1, refCount: false })
     );
     this._inFlight.set(key, shared);
     return shared;
@@ -87,16 +92,29 @@ export class ApiService {
       if (error.status === 403) {
         const message = error.error?.error?.message || 'Access denied: you are not authorized for this resource.';
         this.toastService.error(message);
+      } else if (error.status === 401) {
+        // Previously fell through to the generic path, where most call sites swallow the error —
+        // so a revoked or expired session showed the user nothing at all. MSAL still drives the
+        // re-auth; this only makes sure they're told why the screen stopped working.
+        this.toastService.error('Your session has expired — please refresh the page to sign in again.');
       }
       // Surface the server's real message (falling back through the common shapes) + status, so
       // callers can show something useful instead of a generic "Server error". For validation
       // errors, prefer the first field-level detail (e.g. "A location named X already exists in
       // this trade unit") over the generic top-level "One or more fields failed validation." text.
-      const errObj = (error.error as { error?: { message?: string; details?: Array<{ message?: string }> } } | null)?.error;
+      const errObj = (error.error as {
+        error?: { message?: string; traceId?: string; details?: Array<{ message?: string }> }
+      } | null)?.error;
       const detailMsg = errObj?.details?.find(d => !!d?.message)?.message;
       const serverMsg = detailMsg ?? errObj?.message ?? (error.error as { message?: string } | null)?.message ?? error.message;
       const wrapped = new Error(serverMsg || 'Server error');
       (wrapped as Error & { status?: number }).status = error.status;
+      // Carry the server's correlation id through to call sites. The API populates it on every
+      // error and builds a "(Ref: …)" message around it specifically so a user can quote it to
+      // support, but it was being dropped here, so no surface in the app ever showed one.
+      if (errObj?.traceId) {
+        (wrapped as Error & { traceId?: string }).traceId = errObj.traceId;
+      }
       return throwError(() => wrapped);
     }
 

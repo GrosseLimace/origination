@@ -994,6 +994,11 @@ export class HomeComponent {
     // updates the cache alongside the live signals so it stays in sync.
     const cachedPi = this._customerPlantingCache.get(customer.id);
     if (cachedPi) {
+      // Bump the counter on the cache-hit path too. The miss path below increments it so an
+      // older in-flight fetch recognises itself as stale; restoring from cache without bumping
+      // left a previous fetch's captured id still matching, so it could land afterwards and
+      // overwrite the freshly-restored data.
+      ++this._piRequestId;
       this.allCustomerPlantingIntentions.set(cachedPi);
       this.customerPlantingIntentions.set(cachedPi);
     } else {
@@ -1395,6 +1400,11 @@ export class HomeComponent {
           const updated = [...customers];
           updated[index] = updatedCustomer;
           this.customers.set(updated);
+          // Mirror into the shared cache too. This local signal duplicates appState.customers, and
+          // every other write site pushes both; this one didn't — so build-list, insights and
+          // unshipped-bushels kept serving the pre-merge commodity list until the next full
+          // trade-unit reload happened to overwrite it.
+          this.appState.setCustomers(updated);
         }
         if (this.selectedCustomer()?.id === customer.id) this.selectedCustomer.set(updatedCustomer);
         this._autoSaveInFlight.delete(customer.id);
@@ -1662,6 +1672,11 @@ export class HomeComponent {
 
   handleSelectLinkedCustomer(customerId: number): void {
     if (customerId === this.selectedCustomer()?.id) return;
+    // Cancel the previous selection's in-flight per-customer fetches, exactly as
+    // handleSelectCustomer and _onTradeUnitsChanged do. Without this, clicking linked producer B
+    // then C left B's fetches running; whichever resolved last won, so C's profile could get
+    // overwritten with B's contracts/tickets/notes.
+    this._cancelSelection$.next();
     // New selection — allow each producer's notes to be re-fetched once (other reps' adds show).
     this._notesRefreshedThisSelection.clear();
     // Reset navigation context — user is manually selecting a linked producer

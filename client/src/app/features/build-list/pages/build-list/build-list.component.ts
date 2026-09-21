@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin, of, catchError, timeout } from 'rxjs';
+import { forkJoin, of, catchError, timeout, Subject, takeUntil } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
@@ -104,6 +104,9 @@ export class BuildListComponent {
   // "the full set"), so a partial slice can't leak to other consumers as if it were complete.
   private _loadedNoteScopeKey = signal<string>('');
   private _scopedNotesFetchInFlight = false;
+  /** Set when a newer note scope was requested while a fetch was in flight; the in-flight
+   *  handler re-runs _ensureNotesForQuery once it settles so the newer scope isn't stranded. */
+  private _scopedNotesFetchSuperseded = false;
   // Batched note-load bookkeeping ('batched' scope): customerIds whose note bodies have already
   // been fetched for DISPLAY, and an in-flight guard so batches serialize (each re-checks on
   // completion for producers that rendered while it was loading).
@@ -198,6 +201,14 @@ export class BuildListComponent {
   // any already-completed ticket-dependent query so the result picks up the new data.
   private _appStateTicketsEffect = effect(() => {
     const appTickets = this.appState.tickets();
+    const appTicketsTu = this.appState.ticketsTradeUnitKey();
+    // Only adopt tickets that belong to the trade units we're currently showing. A length-only
+    // comparison would hydrate from the PREVIOUS trade unit during a switch: our local set is
+    // already cleared for the new TU while appState still holds the old, larger one (the two
+    // clears are independent subscribers to selectedTradeUnits with no ordering guarantee). That
+    // marked tickets ready and let a ticket query silently run against the wrong TU's deliveries.
+    const currentTu = this.appState.selectedTradeUnits().join(',');
+    if (appTicketsTu !== currentTu) return;
     if (appTickets.length > this.tickets().length) {
       untracked(() => {
         this.tickets.set(appTickets);
@@ -673,8 +684,12 @@ export class BuildListComponent {
       const ticketCustomers = new Set<string>(
         this.tickets().filter(t => {
           if (!t.date) return false;
+          // Read the year in UTC. Ticket.date is a bare yyyy-MM-dd, which the Date constructor
+          // parses as UTC midnight, so the local-time getFullYear() rolled a 1 January ticket
+          // back to 31 December of the prior year for every US timezone — wrongly excluding that
+          // delivery from "has deliveries this year".
           const d = new Date(t.date);
-          return d.getFullYear() === thisYear;
+          return d.getUTCFullYear() === thisYear;
         }).map(t => t.customerCode!).filter(Boolean)
       );
       list = list.filter(c => ticketCustomers.has(c.scoularId!));
@@ -1247,6 +1262,8 @@ export class BuildListComponent {
   memberSearchResults = signal<Customer[]>([]);
   memberSearchLoading = signal(false);
   private _memberSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+  /** Cancels an in-flight member search when a newer keystroke supersedes it. */
+  private readonly _cancelMemberSearch$ = new Subject<void>();
 
   readonly memberOverrideCount = computed(() =>
     this.manuallyIncludedCustomers().length + this.manuallyExcludedCustomerIds().size
@@ -2601,15 +2618,24 @@ export class BuildListComponent {
     this._dpFetchInFlight = true;
     const tu = this.appState.selectedTradeUnits();
     const tuParam = tu.length > 0 ? tu : undefined;
+    // Capture the trade units this fetch is for. DataPreloadService clears the shared DP cache
+    // reactively on a trade-unit change; if the user switches while this request is in flight, the
+    // reset fires first and then a stale response would write the OLD trade unit's rows back into
+    // a cache the whole app reads, flipping dpContractsLoaded with the wrong data.
+    const fetchedForTu = tu.join(',');
+    const isStale = () => this.appState.selectedTradeUnits().join(',') !== fetchedForTu;
+
     this.apiService.getDpContracts(tuParam).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._dpFetchInFlight = false;
+        if (isStale()) return;
         this.dpContracts.set(data ?? []);
         this.appState.setDpContracts(data ?? []);  // also flips dpContractsLoaded
         this._dpReady.set(true);                   // re-triggers _dataReadyEffect to run the query
       },
       error: () => {
         this._dpFetchInFlight = false;
+        if (isStale()) return;
         this.dpContracts.set([]);
         this.appState.setDpContracts([]);          // loaded-but-empty, not "still loading"
         this._dpReady.set(true);
@@ -2621,7 +2647,15 @@ export class BuildListComponent {
     const scope = this._noteScope(r);
     if (scope.mode === 'none' || scope.mode === 'batched') return;
     if (scope.mode === 'full') { this._ensureNotesLoaded(); return; }
-    if (this._loadedNoteScopeKey() === scope.key || this._scopedNotesFetchInFlight) return;
+    if (this._loadedNoteScopeKey() === scope.key) return;
+    // A different scope is mid-flight. Remember that this one still needs fetching instead of
+    // dropping it: _commitRefinements calls here exactly once per refine change, so a swallowed
+    // call left _criteriaReadiness permanently false for the newly staged refine — spinner on,
+    // Apply disabled — until the user happened to change something else.
+    if (this._scopedNotesFetchInFlight) {
+      this._scopedNotesFetchSuperseded = true;
+      return;
+    }
     this._scopedNotesFetchInFlight = true;
     const tu = this.appState.selectedTradeUnits();
     // Author ("by me") fetches are NOT TU-filtered: a by-me note on a LINKED producer in another TU
@@ -2633,13 +2667,23 @@ export class BuildListComponent {
         this._scopedNotesFetchInFlight = false;
         this.notes.set(data ?? []);            // DISPLAY only — do NOT warm the full-set cache
         this._loadedNoteScopeKey.set(scope.key); // re-triggers _dataReadyEffect (via notes()) to run the query
+        this._retryScopedNotesIfSuperseded();
       },
       error: () => {
         this._scopedNotesFetchInFlight = false;
         this.notes.set([]);
         this._loadedNoteScopeKey.set(scope.key);
+        this._retryScopedNotesIfSuperseded();
       }
     });
+  }
+
+  /** Re-runs the scoped-note fetch when a newer scope was requested while one was in flight. The
+   *  scope is re-read from current state rather than queued, so only the latest one is fetched. */
+  private _retryScopedNotesIfSuperseded(): void {
+    if (!this._scopedNotesFetchSuperseded) return;
+    this._scopedNotesFetchSuperseded = false;
+    this._ensureNotesForQuery();
   }
 
   /** Batched note loading: fetch note bodies for the producers in the current render window (and
@@ -3176,10 +3220,14 @@ export class BuildListComponent {
     // Debounced API search for add candidates — anything already logically in
     // results (peer or linked sub-row) is filtered out.
     this.memberSearchLoading.set(true);
+    // Cancel a search that already left the debounce. clearTimeout only stops a request that
+    // hasn't fired yet; without this, typing "abc" then "abcd" leaves two requests racing and
+    // whichever resolves last wins, so the list could settle on results for the abandoned term.
+    this._cancelMemberSearch$.next();
     this._memberSearchTimeout = setTimeout(() => {
       const tus = this.effectiveTradeUnits();
       this.apiService.searchCustomers(term, tus.length > 0 ? tus : undefined)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(takeUntil(this._cancelMemberSearch$), takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (results) => {
             const includedIds = new Set(this.manuallyIncludedCustomers().map(c => c.id));
