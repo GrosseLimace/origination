@@ -23,22 +23,17 @@
       {
         "group": "Teams channels",
         "kind": "added",
-        "text": "Typing @ in a note now offers the Teams channels you belong to, as well as people. Pick one and the note is posted straight to that channel."
+        "text": "Typing @ in a note now offers the Teams channels you belong to, as well as people. Pick one and the note is posted straight to that channel. A channel only appears in the list if it has an email address set up in Teams — open the channel, choose Get email address, and it will show up here."
       },
       {
         "group": "Teams channels",
         "kind": "added",
-        "text": "A Daily Recap group can be pointed at a Teams channel instead of email. Mention that group in a note and it posts to the channel rather than mailing everyone. Set it up under Manage Groups."
+        "text": "A Daily Recap group can be pointed at a Teams channel instead of email. Mention that group in a note and it posts to the channel rather than mailing everyone. Set it up under Manage Groups, using the channel email address."
       },
       {
         "group": "Saved lists",
         "kind": "changed",
         "text": "A saved list now shows up whenever any one of its trade units is selected, instead of only when your selection matched exactly. Lists saved across two trade units used to disappear when you looked at one of them on its own."
-      },
-      {
-        "group": "Saved lists",
-        "kind": "changed",
-        "text": "Opening a list runs it against the trade units you have selected now, so the same list works wherever you are rather than being tied to where it was saved."
       },
       {
         "group": "Saved lists",
