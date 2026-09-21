@@ -948,6 +948,27 @@ codebase for `AR-08` returned zero hits, so nothing connected the code to this e
 now cites it. Same failure mode as H-060 and M-039: an undocumented deliberate decision re-flags
 every scan.
 
+**Update (2026-09-21):** re-flagged a **third** time, same route, same suggested fix. **Re-accepted —
+the 2026-09-01 business decision stands, now confirmed three times.** The code already carries the
+AR-08 citation added on 2026-09-14, so this is not a documentation gap.
+
+**A stronger rationale than the one recorded above, and it should be the first answer given.** Every
+version of this finding proposes intersecting mentions with "the caller's entitled roster" — people
+sharing a trade unit with the caller. **Trade units are self-assigned** through the Trade Unit
+Preferences app, so a caller blocked from mentioning someone can join a trade unit that person is in
+and the check then passes. Like the read checks discussed in AR-02's banner, it is a speed bump, not
+a control. It is a slightly firmer speed bump than the read case — joining a trade unit is a
+deliberate, recorded act, where a crafted API call is not — but it prevents nothing.
+
+⚠ **One part of this finding the trade-unit argument does NOT dispose of, recorded so it is not
+lost.** Its sharpest point is not read access but **delivery**: the note is mailed from a *shared
+mailbox* to the named person, so the recipient passively receives producer commercial content
+without ever choosing to look at it. "They could have joined the trade unit anyway" answers a read;
+it answers a push less well, because no act is required of the recipient. The accepted position is
+unchanged and was taken with the exposure understood — `NormalizeMention` keeps the address in-tenant
+so this cannot leave Scoular, and the population is trusted employees. But if this entry is ever
+revisited, **that is the argument to revisit it on**, not the entitlement one.
+
 ### Decision: Partially fixed; the caller-scoping half is accepted as residual risk
 
 **What was fixed** (2026-09-01, this change). `NoteService.ValidatePersonMentionsAsync` now rejects

@@ -191,7 +191,10 @@ public partial class NoteService : INoteService
     /// </para><para>
     /// Deliberately an EXISTENCE check, not an entitlement one: mentions are intentionally not
     /// limited to the caller's own trade units — accepted risk, see SECURITY-REVIEWS/ACCEPTED-RISKS.md
-    /// (<b>AR-08</b>), business decision 2026-09-01, re-confirmed 2026-09-14 after H-063 re-flagged it.
+    /// (<b>AR-08</b>), business decision 2026-09-01, re-confirmed 2026-09-14 and again 2026-09-21.
+    /// The suggested fix — intersect with the caller's entitled roster — would not be a control
+    /// either: trade units are SELF-ASSIGNED via the Trade Unit Preferences app, so a blocked caller
+    /// can join the target's trade unit and pass the check. See AR-02's banner.
     /// The picker only ever offers co-workers, so this costs real UI users nothing; the residual is a
     /// hand-crafted API call. If this is ever reversed, the fix is GetByUserAsync +
     /// GetUsersByTradeUnitsAsync, exactly as DailyRecapGroupService.BuildValidatedMembersAsync does.
