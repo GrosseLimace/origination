@@ -2314,9 +2314,8 @@ export class BidSheetComponent {
       elevatorCode: loc.elevatorCode,
       tradeUnitCode: loc.tradeUnitCode,
       groupName: loc.groupName,
-      isScoularFacility: loc.isScoularFacility ?? false,
-      bids: []
-    } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      isScoularFacility: loc.isScoularFacility ?? false
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.editingLocationName.set(false);
         this.editLocationNameValue.set('');
@@ -2350,9 +2349,8 @@ export class BidSheetComponent {
       elevatorCode: loc.elevatorCode,
       tradeUnitCode: loc.tradeUnitCode,
       groupName: loc.groupName,
-      isScoularFacility: newValue,
-      bids: []
-    } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      isScoularFacility: newValue
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.allMapLocations.update(locs => locs.map(l =>
           l.id === loc.id ? { ...l, isScoularFacility: newValue } : l

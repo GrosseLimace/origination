@@ -6,6 +6,8 @@ Scope: `api/GrainOriginatorPortal.Api`, `api/GrainOriginatorPortal.Infrastructur
 **Findings:** 17 open — 0 critical, 4 high, 5 medium, 8 low
 **Opened:** 2026-09-19 | **Last verified:** 2026-09-19
 
+> **Note (2026-09-21):** Most findings below were resolved or dispositioned (accepted/wont_fix) by the Phase 1 remediation (PR #615) and follow-up status passes recorded in `AUDIT-TRACKING.json` — that file is the current source of truth for per-finding status; this prose file was not rewritten in lockstep. A follow-up dotnet-domain pass on this date sampled Program.cs/DI, controllers, services, repositories, exception handling, and appsettings across environments; no new high/critical issues were found. Two new low/medium findings were added (see bottom of Medium and Low sections) and are tracked as `open` in the JSON.
+
 ## High
 
 ### SecurityAuditMiddleware never runs for the 401/403 cases it exists to log (`dotnet.security-audit-middleware-dead-code`)
@@ -57,6 +59,12 @@ Scope: `api/GrainOriginatorPortal.Api`, `api/GrainOriginatorPortal.Infrastructur
 - **Related findings:** `test-gaps.repository-layer-gap`
 - **Suggested fix:** Add targeted repository tests (real-SQL WebApplicationFactory harness) for `TicketRepository` and `UsageRepository` first.
 
+### Several non-trivial Api services have zero dedicated unit tests (`dotnet.service-layer-test-coverage-gap`) — new 2026-09-21
+- **Files:** `Services/GeocodeService.cs`, `Services/DashboardService.cs`, `Services/ContractService.cs`, `Services/CustomerService.cs`, `Services/TicketService.cs`, `Services/TradeUnitService.cs`, `Services/FarmService.cs`, `Services/QueryLibraryService.cs`
+- No corresponding `*ServiceTests.cs` exists for these, despite controllers depending on them directly and `GeocodeService` (327 lines) carrying non-trivial caching/rate-limit branching. Services-layer sibling of the already-tracked repository test-coverage gap.
+- **Related findings:** `dotnet.repository-test-coverage-gap`, `test-gaps.repository-layer-gap`
+- **Suggested fix:** Prioritize `GeocodeService` and `DashboardService`, then the remaining thinner services.
+
 ## Low
 
 ### DTOs defined inline in controller files as mutable classes instead of Models/Responses records (`dotnet.dtos-inline-in-controllers`)
@@ -101,3 +109,8 @@ Scope: `api/GrainOriginatorPortal.Api`, `api/GrainOriginatorPortal.Infrastructur
 - After rebuilding grain-on-farm and contact child rows in memory and saving, the method re-queries them via separate calls instead of reusing the in-memory values.
 - **Related findings:** `performance.producer-details-redundant-refetch`
 - **Suggested fix:** Project the response directly from the in-memory `grainItems`/`contactItems` collections instead of re-querying after save.
+
+### Production connection strings are committed directly in appsettings.Production.json instead of referenced from Key Vault (`dotnet.production-connection-strings-not-keyvault`) — new 2026-09-21
+- **Files:** `api/GrainOriginatorPortal.Api/appsettings.Production.json`
+- Five `ConnectionStrings` entries hardcode the production SQL server host and database names, with the file's own `TODO` comment acknowledging they should move to Key Vault. No credentials are exposed (auth is `Authentication=Active Directory Default` via Managed Identity), so this is not a secrets leak, but it deviates from the org's Key Vault-reference pattern and exposes internal topology in source control.
+- **Suggested fix:** Move `ConnectionStrings` to Key Vault referenced via App Service settings, or explicitly close out the file's own TODO as an accepted exception.
