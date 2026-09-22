@@ -53,8 +53,8 @@ public class PlantingIntentionsController : ControllerBase
     public async Task<ActionResult<PlantingIntentionResponse>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may create a planting intention
-        // for any customer. The service derives the authoritative customer name/code/trade-unit and
-        // throws a ValidationException (→ 400) when no trade unit can be determined.
+        // for any customer. The service derives the authoritative customer name/code, keeps the chosen
+        // trade unit when it is one of the producer's, and throws ValidationException (→ 400) otherwise.
         var intention = await _service.CreateAsync(
             request.CustomerId,
             request.CustomerName,
@@ -69,8 +69,8 @@ public class PlantingIntentionsController : ControllerBase
             cancellationToken
         );
         _logger.LogInformation(
-            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}, User={User}",
-            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop, _requestContext.GetCurrentUser());
+            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}, TradeUnit={TradeUnit}, User={User}",
+            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop, intention.TradeUnit, _requestContext.GetCurrentUser());
         return Ok(intention);
     }
 
@@ -94,12 +94,31 @@ public class PlantingIntentionsController : ControllerBase
             request.Description,
             request.Acres,
             request.PlantingYear,
+            request.TradeUnit,
             cancellationToken
         ) ?? throw new NotFoundException("PlantingIntention", id);
         _logger.LogInformation(
-            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, User={User}",
-            "AUDIT_UPDATE", "DataMutation", id, _requestContext.GetCurrentUser());
+            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, TradeUnit={TradeUnit}, User={User}",
+            "AUDIT_UPDATE", "DataMutation", id, updated.TradeUnit, _requestContext.GetCurrentUser());
         return Ok(updated);
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>Moves all of a producer's planting intentions from one trade unit to another.
+    /// Called when a producer is unassigned from a trade unit and the originator chooses where the
+    /// acres should now count. Returns the number of rows moved.</summary>
+    [HttpPost("retag")]
+    [ProducesResponseType(typeof(RetagPlantingIntentionsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<RetagPlantingIntentionsResponse>> Retag([FromBody] RetagPlantingIntentionsRequest request, CancellationToken cancellationToken = default)
+    {
+        // Trade units are a UX filter, not an access boundary (AR-01/AR-02). The service still
+        // refuses a target the producer doesn't trade with, which is a data-integrity rule.
+        var moved = await _service.RetagAsync(request.CustomerId, request.FromTradeUnit, request.ToTradeUnit, cancellationToken);
+        _logger.LogInformation(
+            "Planting intentions retagged [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId}, From={From}, To={To}, Count={Count}",
+            "AUDIT_UPDATE", "DataMutation", request.CustomerId, request.FromTradeUnit, request.ToTradeUnit, moved);
+        return Ok(new RetagPlantingIntentionsResponse { Moved = moved });
     }
 
     // -------------------------------------------------------------------------

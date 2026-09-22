@@ -22,4 +22,9 @@ public record UpdatePlantingIntentionRequest
 
     [Range(2020, 2100)]
     public int PlantingYear { get; init; }
+
+    /// <summary>Optional. Null/blank leaves the stored trade unit unchanged; a value must be one of
+    /// the producer's active trade units (validated server-side, 400 otherwise).</summary>
+    [StringLength(100)]
+    public string? TradeUnit { get; init; }
 }

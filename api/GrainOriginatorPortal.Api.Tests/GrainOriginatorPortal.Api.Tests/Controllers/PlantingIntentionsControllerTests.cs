@@ -78,12 +78,12 @@ public class PlantingIntentionsControllerTests
         var updated = new PlantingIntentionResponse { Id = 3, Crop = "Wheat", Acres = 100, PlantingYear = 2026 };
         _serviceMock.Setup(s => s.GetByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
         _serviceMock
-            .Setup(s => s.UpdateAsync(3, "Wheat", null, null, null, 100, 2026, It.IsAny<CancellationToken>()))
+            .Setup(s => s.UpdateAsync(3, "Wheat", null, null, null, 100, 2026, "2190", It.IsAny<CancellationToken>()))
             .ReturnsAsync(updated);
 
         var request = new UpdatePlantingIntentionRequest
         {
-            Crop = "Wheat", Acres = 100, PlantingYear = 2026
+            Crop = "Wheat", Acres = 100, PlantingYear = 2026, TradeUnit = "2190"
         };
 
         // Act
@@ -122,5 +122,56 @@ public class PlantingIntentionsControllerTests
         // Assert
         Assert.IsType<NoContentResult>(result);
         _serviceMock.Verify(s => s.DeleteAsync(4, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // -------------------------------------------------------------------------
+    // The controller forwards the originator's trade-unit choice untouched; the service decides
+    // whether it is one of the producer's.
+    [Fact]
+    public async Task Create_ForwardsChosenTradeUnitToService()
+    {
+        // Arrange
+        var created = new PlantingIntentionResponse { Id = 5, CustomerId = 10, Crop = "Soybeans", Acres = 390, PlantingYear = 2026, TradeUnit = "2210" };
+        _serviceMock
+            .Setup(s => s.CreateAsync(10, "Sample Farms", "SAMPFRM", "2210", "Soybeans", "Soybeans", null, null, 390, 2026, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(created);
+
+        var request = new CreatePlantingIntentionRequest
+        {
+            CustomerId = 10, CustomerName = "Sample Farms", CustomerCode = "SAMPFRM", TradeUnit = "2210",
+            Crop = "Soybeans", Category = "Soybeans", Acres = 390, PlantingYear = 2026
+        };
+
+        // Act
+        var result = await _sut.Create(request);
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(created, ok.Value);
+    }
+
+    // -------------------------------------------------------------------------
+    // Retag moves a producer's rows off a trade unit they've been removed from; the count comes
+    // back so the caller can tell the user what happened.
+    [Fact]
+    public async Task Retag_ReturnsTheNumberOfRowsMoved()
+    {
+        // Arrange
+        _serviceMock
+            .Setup(s => s.RetagAsync(10, "2210", "2190", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2);
+
+        var request = new RetagPlantingIntentionsRequest
+        {
+            CustomerId = 10, FromTradeUnit = "2210", ToTradeUnit = "2190"
+        };
+
+        // Act
+        var result = await _sut.Retag(request);
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(2, Assert.IsType<RetagPlantingIntentionsResponse>(ok.Value).Moved);
+        _serviceMock.Verify(s => s.RetagAsync(10, "2210", "2190", It.IsAny<CancellationToken>()), Times.Once);
     }
 }
