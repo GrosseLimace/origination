@@ -481,6 +481,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false)
                   .HasConversion(v => v, v => v != null ? v.Trim() : v);
             entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.IndustryCode2).HasColumnName("IndustryCode2").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.NopIdNumber).HasColumnName("NopIdNumber").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
             entity.Property(e => e.IsManual).HasColumnName("IsManual").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);

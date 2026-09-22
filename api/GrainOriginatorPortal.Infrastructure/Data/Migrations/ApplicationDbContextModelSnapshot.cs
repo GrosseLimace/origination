@@ -965,6 +965,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("IndustryCode1");
 
+                    b.Property<string>("IndustryCode2")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("IndustryCode2");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -987,6 +992,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("CustomerName");
+
+                    b.Property<string>("NopIdNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("NopIdNumber");
 
                     b.Property<string>("Phone")
                         .HasMaxLength(100)

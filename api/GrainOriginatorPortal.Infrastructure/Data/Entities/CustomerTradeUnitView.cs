@@ -36,6 +36,8 @@ public class CustomerTradeUnitView : ICustomerOdsAttributes
     public string? ExtendedPostalCode { get; set; }
     public string? ExtendedCountry { get; set; }
     public string? IndustryCode1 { get; set; }
+    public string? IndustryCode2 { get; set; }
+    public string? NopIdNumber { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }
     public string? TradeUnit { get; set; }
@@ -62,6 +64,8 @@ public class CustomerTradeUnitView : ICustomerOdsAttributes
         ExtendedPostalCode = ExtendedPostalCode,
         ExtendedCountry = ExtendedCountry,
         IndustryCode1 = IndustryCode1,
+        IndustryCode2 = IndustryCode2,
+        NopIdNumber = OdsValues.NormaliseNopId(NopIdNumber),
         // IsActive is deliberately NOT set from the view: it no longer carries the column, and
         // presence in the view is itself the active signal. CustomerSyncService sets IsActive from
         // presence (true on insert/reactivate, false when a row drops out).
