@@ -66,8 +66,8 @@ public class DpContract
 
     /// <summary>Customer_Id — the CTRM Scoular customer code (same as Customer.ScoularId).</summary>
     public string CustomerCode { get; set; } = string.Empty;
-
-    /// <summary>Trade_Unit_Code — also the MbpLocationSynonym.LocationId used to resolve the location.</summary>
+    /// <summary>Trade_Unit_Code. Was also used as an MbpLocationSynonym.LocationId to resolve a display
+    /// location, until that column was dropped in d60e7a98 — nothing reads it as a LocationId now.</summary>
     public string TradeUnitCode { get; set; } = string.Empty;
 
     /// <summary>Commodity_Code — the CTRM commodity code (e.g. "YC"), used for grouping and crop colors.</summary>

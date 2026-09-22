@@ -61,17 +61,17 @@ for it.
 
 ## Two deliberate divergences from Storage
 
-**1. Location comes from the trade unit, resolved in C#.** Storage joins `ctrm.vw_GNP026` inside its
-ODS query on `Elevator_Code` + `Location_Code`. `vw_GNTA70D1` has *neither* column — only
-`Company_Code`, `Division_Code`, and `Trade_Unit_Code`. A trade unit code **is** a bare `LocationId` in
-`dbo.MbpLocationSynonym` (e.g. `"2115"` → `"Adrian, MO"`), so location is resolved through
-`IMbpLocationSynonymRepository` after the query. The trade-unit *selector* no longer shares this
-bridge: since 2026-09-22 it prefers the Trade Unit Preferences `Description` and falls back to
-`MbpLocationSynonym` only when TUP has none, so a renamed trade unit can read differently here.
-Because that table lives in the app DB it cannot be joined in SQL. `DisplayName` is already the full
-`"City, ST"` string, so the model carries a single `LocationName` rather than Storage's city/state
-pair. Unmatched trade units render `—`; there is deliberately no `Division_Code` fallback, since a
-division can span several towns and would risk showing the wrong place.
+**1. There is no location dimension (the column was dropped).** Storage joins `ctrm.vw_GNP026` inside
+its ODS query on `Elevator_Code` + `Location_Code`. `vw_GNTA70D1` has *neither* column — only
+`Company_Code`, `Division_Code`, and `Trade_Unit_Code`. The original build resolved a `LocationName`
+in C# by treating the trade unit code as a bare `LocationId` in `dbo.MbpLocationSynonym`
+(e.g. `"2115"` → `"Adrian, MO"`), because that table lives in the app DB and cannot be joined in SQL.
+That column was **removed in `d60e7a98`**: the only location signal available was the trade unit the
+user had already picked, so the column was pure restatement. `DpContract` therefore carries no
+location field today, and the table groups strictly by commodity — pinned by the
+"groups strictly by commodity — there is no location dimension" spec. A real delivery point needs the
+elevator code added to the ODS view first, and it would be a *different* lookup than the trade-unit
+one — the composite `"{Org}-{Elevator}"` key that tickets already use, not the bare trade unit code.
 
 **2. Bushels are nullable, and null means "show nothing".** The view reports quantity in whatever
 `Quantity_Uom` says — a `char(2)` CTRM code. Conversion is `DpBushelConversion.ToBushels`:
