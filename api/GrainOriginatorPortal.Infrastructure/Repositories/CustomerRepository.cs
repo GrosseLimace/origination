@@ -210,7 +210,7 @@ public class CustomerRepository : ICustomerRepository
         // TOP 50 keeps the result set bounded — this is a type-ahead, not an export.
         var sql = $@"
             SELECT TOP 50
-                c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1, c.IndustryCode2, c.NopIdNumber,
                 c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
                 c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
                 c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
@@ -252,6 +252,8 @@ public class CustomerRepository : ICustomerRepository
         ScoularId = r.ScoularId?.Trim(),
         Name = r.CustomerName ?? string.Empty,
         IndustryCode1 = r.IndustryCode1,
+        IndustryCode2 = r.IndustryCode2,
+        NopIdNumber = OdsValues.NormaliseNopId(r.NopIdNumber),
         Location = r.MerchandisingCity,
         StateProvince = r.MerchandisingStateProvince,
         AddressLine1 = r.MerchandisingAddressLine1,
@@ -282,6 +284,8 @@ public class CustomerRepository : ICustomerRepository
         public string? ScoularId { get; set; }
         public string? CustomerName { get; set; }
         public string? IndustryCode1 { get; set; }
+        public string? IndustryCode2 { get; set; }
+        public string? NopIdNumber { get; set; }
         public string? MerchandisingCity { get; set; }
         public string? MerchandisingStateProvince { get; set; }
         public string? MerchandisingAddressLine1 { get; set; }
@@ -834,7 +838,7 @@ public class CustomerRepository : ICustomerRepository
         var rows = await _context.Database
             .SqlQueryRaw<OdsCustomerRow>(@"
                 SELECT TOP 1
-                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1, c.IndustryCode2, c.NopIdNumber,
                     c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
                     c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
                     c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,

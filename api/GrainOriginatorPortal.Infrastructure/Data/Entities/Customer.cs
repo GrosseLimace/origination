@@ -54,6 +54,8 @@ public class Customer
     // ODS metadata fields
     public string Farm { get; set; } = string.Empty;
     public string? IndustryCode1 { get; set; } // Used to filter producer customers (PR)
+    public string? IndustryCode2 { get; set; }  // 'OR' marks a certified-organic operation
+    public string? NopIdNumber { get; set; }    // National Organic Program operation id ('0' placeholders normalised to null)
     public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }

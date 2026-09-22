@@ -51,6 +51,23 @@
                     <span class="hidden @4xl/profile:inline">Check Payment</span>
                   </span>
                 }
+                @if (showOrganicBadge()) {
+                  <button
+                    type="button"
+                    (click)="showOrganicDetail.update(v => !v)"
+                    [attr.aria-expanded]="showOrganicDetail()"
+                    aria-controls="organic-certification-panel"
+                    title="Organic producer"
+                    class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green border border-green-200 dark:border-green-800 hover:bg-scoular-green/20 dark:hover:bg-scoular-green/20 transition-colors cursor-pointer"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+                    </svg>
+                    <!-- Short label in a narrow column so the badges stay on the name's row. -->
+                    <span class="@4xl/profile:hidden">Organic</span>
+                    <span class="hidden @4xl/profile:inline">Organic Producer</span>
+                  </button>
+                }
                 </div>
               </div>
               @if (customer().eSignEnabled && showESignRecipients()) {
@@ -71,8 +88,26 @@
                   }
                 </div>
               }
+              @if (showOrganicBadge() && showOrganicDetail()) {
+                <div id="organic-certification-panel" class="mt-2">
+                  <p class="text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Organic</p>
+                  @if (customer().nopId) {
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                      <span class="inline-flex items-center gap-1.5">
+                        <span class="text-gray-500 dark:text-gray-400 @4xl/profile:hidden">NOPID</span>
+                        <span class="text-gray-500 dark:text-gray-400 hidden @4xl/profile:inline">NOP ID</span>
+                        <span class="font-medium text-gray-900 dark:text-gray-100">{{ customer().nopId }}</span>
+                      </span>
+                    </div>
+                  } @else {
+                    <p class="text-sm text-gray-500 dark:text-gray-400 italic">No NOP ID on file for this producer.</p>
+                  }
+                  <!-- Certification status, expiry date and certified commodities arrive with the
+                       NOP certification feed; until then this panel carries the id alone. -->
+                </div>
+              }
               @if (customer().farm) {
-                <p class="text-sm text-gray-500 dark:text-gray-400" [class.mt-3]="customer().eSignEnabled && showESignRecipients()" [class.mt-0.5]="!(customer().eSignEnabled && showESignRecipients())">{{ customer().farm }}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400" [class.mt-3]="anyHeaderPanelOpen()" [class.mt-0.5]="!anyHeaderPanelOpen()">{{ customer().farm }}</p>
               }
               <div class="flex items-center gap-2 mt-2 flex-wrap">
                 <button
