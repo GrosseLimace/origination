@@ -3,8 +3,19 @@
 Scope: coverage breadth across `api/GrainOriginatorPortal.Api.Tests` (xUnit) and `client/` (Vitest)
 Baseline: dotnet test 535/535 passing; Angular vitest 601/601 passing across 51 spec files — the gap is coverage breadth, not currently-failing tests.
 
-**Findings:** 6 open — 3 critical, 2 high, 1 medium
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-19
+**Findings:** 6 total, 3 open (2 critical, 1 high), 3 resolved
+**Opened:** 2026-09-19 | **Last reconciled:** 2026-09-21
+
+## Reconciliation (2026-09-21)
+
+Re-verified all 6 findings directly against current source/test files (not from prior notes):
+
+- `test-gaps.angular-god-components` — **still open, confirmed.** No `.spec.ts` for any of the 5 named god components.
+- `test-gaps.repository-layer-gap` — **still open, confirmed.** No `TicketRepositoryTests.cs`/`UsageRepositoryTests.cs`/`CustomerRepositoryTests.cs`/`ContractRepositoryTests.cs` exist.
+- `test-gaps.entitlement-service-fail-open-path-untested` — **resolved, confirmed.** `UserEntitlementServiceTests.cs` now covers warm-cache fallback, wrapped-`SqlException` fallback, no-cache fail-closed, and deny-before-load.
+- `test-gaps.angular-shared-components-gap` — **corrected from resolved back to open.** Only `linked-producers.spec.ts` was actually added; `table`, `select`, `input`, `dialog`, `card`, and `toast-container` components in `shared/components/` still have zero specs. The prior "resolved" status was an overstated blanket note from the PR #615 batch and did not match the file state.
+- `test-gaps.date-timezone-json-converters-untested` — **resolved, confirmed.** Both `UtcDateTimeJsonConverterTests.cs` and `DateOnlyJsonConverterTests.cs` now exist alongside the pre-existing `CalendarDateJsonConverterTests.cs`.
+- `test-gaps.usage-aggregation-background-service-untested` — **resolved, confirmed.** `UsageAggregationScheduleTests.cs` directly tests the Sunday week-boundary and rollup-window logic called out in the original finding.
 
 ## Critical
 
