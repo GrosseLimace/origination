@@ -40,7 +40,9 @@ public record CustomerResponse
     public string Farm { get; init; } = string.Empty;
     public string? IndustryCode1 { get; init; }
     public string? IndustryCode2 { get; init; }
-    public string? NopIdNumber { get; init; }
+    /// <summary>Real 10-digit NOP operation id, or null. Normalised on ingest, so the client can
+    /// treat any non-null value as genuine — placeholders never reach the wire.</summary>
+    public string? NopId { get; init; }
     public bool IsActive { get; init; }
     public DateTime? EffectiveStartDate { get; init; }
     public DateTime? EffectiveEndDate { get; init; }

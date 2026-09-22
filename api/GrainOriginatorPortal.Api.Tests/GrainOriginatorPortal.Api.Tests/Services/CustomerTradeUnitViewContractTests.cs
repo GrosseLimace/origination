@@ -92,17 +92,22 @@ public class CustomerTradeUnitViewContractTests
     }
 
     [Theory]
+    [InlineData(" 1234567890 ", "1234567890")]   // padded in the source; trimmed on the way in
+    [InlineData("9876543210", "9876543210")]
     [InlineData(null, null)]
     [InlineData("", null)]
     [InlineData("   ", null)]
-    [InlineData("0", null)]
-    [InlineData(" 1234567890 ", "1234567890")]
-    public void NormalisesThePlaceholderNopId(string? raw, string? expected)
+    [InlineData("0", null)]                      // the ~1,525-row placeholder
+    [InlineData("999999999", null)]              // a second sentinel, nine digits, found 2026-09-21
+    [InlineData("123456789", null)]              // nine digits
+    [InlineData("12345678905", null)]            // eleven digits
+    [InlineData("12345678AB", null)]             // right length, not numeric
+    public void NormalisesTheNopIdToTenDigitsOrNothing(string? raw, string? expected)
     {
-        // ODS holds the literal "0" on ~1,525 rows, far more than hold a real 10-digit id.
-        // Letting that through would treat roughly three times the certified population as
-        // having a NOPID on file.
+        // The column cannot be tested for non-empty. ODS holds the literal "0" on ~1,525 rows —
+        // far more than hold a real id — plus one "999999999". The rule is positive rather than
+        // exclusionary: exactly ten digits, or nothing. An exclusion list would have to grow every
+        // time a new sentinel shape appears, and would badge producers in the meantime.
         Assert.Equal(expected, OdsValues.NormaliseNopId(raw));
     }
-
 }

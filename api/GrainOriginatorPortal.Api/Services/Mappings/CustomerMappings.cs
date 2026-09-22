@@ -40,7 +40,7 @@ public static class CustomerMappings
         Farm = c.Farm,
         IndustryCode1 = c.IndustryCode1,
         IndustryCode2 = c.IndustryCode2,
-        NopIdNumber = c.NopIdNumber,
+        NopId = c.NopIdNumber,
         IsActive = c.IsActive,
         EffectiveStartDate = c.EffectiveStartDate,
         EffectiveEndDate = c.EffectiveEndDate,
