@@ -458,7 +458,8 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Updates an existing planting intention */
+  /** Updates an existing planting intention. `tradeUnit` omitted = leave the stored trade unit as is;
+   *  a value must be one of the producer's trade units (the API returns 400 otherwise). */
   updatePlantingIntention(id: number, data: {
     crop: string;
     category?: string;
@@ -466,8 +467,17 @@ export class ApiService {
     description?: string;
     acres: number;
     plantingYear: number;
+    tradeUnit?: string;
   }): Observable<PlantingIntention> {
     return this.http.put<PlantingIntention>(`${this.baseUrl}/plantingintentions/${id}`, data)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Moves every one of a producer's planting intentions from one trade unit to another. Used when
+   *  a producer is unassigned from a trade unit and the originator says where the acres now count.
+   *  The target must be one of the producer's active trade units (the API returns 400 otherwise). */
+  retagPlantingIntentions(customerId: number, fromTradeUnit: string, toTradeUnit: string): Observable<{ moved: number }> {
+    return this.http.post<{ moved: number }>(`${this.baseUrl}/plantingintentions/retag`, { customerId, fromTradeUnit, toTradeUnit })
       .pipe(catchError(e => this.handleError(e)));
   }
 

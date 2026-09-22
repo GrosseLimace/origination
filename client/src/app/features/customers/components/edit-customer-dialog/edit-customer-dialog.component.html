@@ -102,6 +102,13 @@
                 }
               </div>
 
+              @if (isCheckingPlantingIntentions()) {
+                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 py-1">
+                  <svg class="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                  Checking planting intentions…
+                </div>
+              }
+
               @if (isOnboardCandidate() && selectedTuCodes().length === 0) {
                 <p class="text-xs text-amber-600 dark:text-amber-400">
                   This producer isn't in your tables yet — assign at least one trade unit and click <span class="font-medium">Save Changes</span> to add them.
@@ -521,4 +528,57 @@
           </button>
         </app-dialog-footer>
       </app-dialog>
+
+      <!-- Removing a trade unit the producer has planting intentions for. The acres are still
+           being planted, so ask where they should count instead of stranding them on a trade unit
+           the producer has left (a stranded row counts on no single-trade-unit dashboard). -->
+      @if (tuRemovalPrompt(); as prompt) {
+        <div class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50" (click)="cancelTradeUnitRemoval()">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6" (click)="$event.stopPropagation()">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Move this producer's planting intentions?</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-300">
+              {{ prompt.count }} planting intention{{ prompt.count === 1 ? '' : 's' }} ({{ prompt.acres | number }} acres,
+              {{ prompt.years.length === 1 ? 'crop year ' : 'crop years ' }}{{ prompt.years.join(', ') }})
+              {{ prompt.count === 1 ? 'is' : 'are' }} recorded for trade unit {{ prompt.code }}.
+            </p>
+
+            @if (prompt.targets.length > 0) {
+              <div class="mt-4 space-y-2">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Where should these acres count?</label>
+                <select
+                  [ngModel]="tuRemovalTarget()"
+                  (ngModelChange)="tuRemovalTarget.set($event)"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                >
+                  @for (target of prompt.targets; track target) {
+                    <option [value]="target">Move to {{ target }}</option>
+                  }
+                  <option value="">Leave them on {{ prompt.code }}</option>
+                </select>
+                @if (!tuRemovalTarget()) {
+                  <p class="text-xs text-amber-600 dark:text-amber-400">
+                    Left on {{ prompt.code }}, these acres won't be counted on any trade unit's dashboard until someone re-tags them.
+                  </p>
+                }
+              </div>
+            } @else {
+              <p class="mt-4 text-xs text-amber-600 dark:text-amber-400">
+                This producer has no other trade unit to move them to, so the acres stay on {{ prompt.code }} and won't be
+                counted on any trade unit's dashboard. They remain on the producer's profile.
+              </p>
+            }
+
+            <div class="mt-6 flex justify-end gap-2">
+              <button type="button" (click)="cancelTradeUnitRemoval()"
+                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100">
+                Keep {{ prompt.code }}
+              </button>
+              <button type="button" (click)="confirmTradeUnitRemoval()"
+                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 bg-scoular-green-accessible text-white hover:bg-scoular-green">
+                {{ tuRemovalTarget() ? 'Remove and move acres' : 'Remove anyway' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      }
     }
