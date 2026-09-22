@@ -64,8 +64,10 @@ for it.
 **1. Location comes from the trade unit, resolved in C#.** Storage joins `ctrm.vw_GNP026` inside its
 ODS query on `Elevator_Code` + `Location_Code`. `vw_GNTA70D1` has *neither* column — only
 `Company_Code`, `Division_Code`, and `Trade_Unit_Code`. A trade unit code **is** a bare `LocationId` in
-`dbo.MbpLocationSynonym` (e.g. `"2115"` → `"Adrian, MO"`), which is the same bridge the trade-unit
-selector uses, so location is resolved through `IMbpLocationSynonymRepository` after the query.
+`dbo.MbpLocationSynonym` (e.g. `"2115"` → `"Adrian, MO"`), so location is resolved through
+`IMbpLocationSynonymRepository` after the query. The trade-unit *selector* no longer shares this
+bridge: since 2026-09-22 it prefers the Trade Unit Preferences `Description` and falls back to
+`MbpLocationSynonym` only when TUP has none, so a renamed trade unit can read differently here.
 Because that table lives in the app DB it cannot be joined in SQL. `DisplayName` is already the full
 `"City, ST"` string, so the model carries a single `LocationName` rather than Storage's city/state
 pair. Unmatched trade units render `—`; there is deliberately no `Division_Code` fallback, since a
