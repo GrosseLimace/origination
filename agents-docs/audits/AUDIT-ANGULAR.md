@@ -1,87 +1,42 @@
-# Audit: Angular (`angular`)
+# Angular Audit — 2026-09-21
 
-Style guide: `style-guides/angular.md`
-Scope: `client/src/app`
+## Scope
 
-**Findings:** 13 open — 1 critical, 5 high, 5 medium, 2 low
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-19
+Audited `client/` (Angular 21, standalone components, zoneless change detection, Tailwind v4 + `@it/design-system`) against `style-guides/angular.md` from the `audit-angular` skill. This is a single-domain pass per the Code Quality Dashboard calibration run; only `angular` was in scope.
 
-## Critical
+## What was checked
 
-### Business-critical "god" components carry zero test coverage (`angular.god-components-zero-test-coverage`)
-- **Files:** `features/build-list/pages/build-list/build-list.component.ts`, `features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts`, `features/customers/pages/home/home.component.ts`, `features/dashboard/pages/dashboard/dashboard.component.ts`, `features/customers/components/customer-list/customer-list.component.ts`
-- Five files containing the app's most complex logic (bid pricing/map rendering, contract/print orchestration, race-guarded multi-fetch data loading, BFS producer-linking, saved-list/NLQ enrichment) are entirely inside components, up to 4180 lines, with no matching `.spec.ts`.
-- **Related findings:** `test-gaps.angular-god-components`
-- **Suggested fix:** Extract data-fetching/business logic into dedicated services (more unit-testable), then add specs starting with the highest-risk flows.
+- **Version/config compliance**: `package.json`, `angular.json`, `tsconfig.json` — Angular 21.2, Tailwind 4.2, `strict: true` + `strictTemplates`/`strictInjectionParameters`/`strictInputAccessModifiers` all present. Compliant.
+- **Template control flow**: searched for `*ngIf`/`*ngFor`/`*ngSwitch` (legacy structural directives) — none found; the app uses `@if`/`@for`/`@switch` throughout, and every `@for` sampled has a `track` expression.
+- **Standalone/NgModule usage**: no `NgModule` or `standalone: false` found — fully standalone.
+- **XSS surface**: exactly one `bypassSecurityTrustHtml` call app-wide (`HighlightPipe`), and it HTML-escapes input before wrapping it, then only injects its own static `<mark>` markup. Verified safe; also self-documented and pinned by a spec and a comment in `main.ts`.
+- **Observable cleanup**: sampled ~35 files using `.subscribe()`; the overwhelming majority correctly pipe through `takeUntilDestroyed(this.destroyRef)`. No unmanaged-subscription leaks found in the sampled set.
+- **`any` usage**: 39 occurrences across 14 files; most are incidental (test mocks, narrow casts). One genuine pattern-level issue found in `bid-sheet.component.ts` (see findings).
+- **Design system usage**: no redefinition of `scoular-*` classes in `styles.css`; import order (`@it/design-system` before `tailwindcss`) is correct.
+- **Inline `template:` usage** (guide requires `templateUrl` except for very simple templates): 10 components use inline templates, all small UI primitives (button, badge, card, table, dialog, etc.) with a handful of lines each — consistent with the guide's stated exception, not flagged.
+- **Component size and test coverage**: walked directory sizes and spec-file presence per feature area. This surfaced the audit's main findings — see below.
+- **MSAL/auth bootstrap** (`main.ts`): zoneless change detection correctly configured via `provideZonelessChangeDetection()`; token storage decision is explicitly documented against the security guide with a stated threat model. No issues.
 
-## High
+## What was not reviewed
 
-### Route guards can hang navigation indefinitely instead of failing closed (`angular.route-guards-can-hang-navigation`)
-- **Files:** `guards/admin.guard.ts`, `guards/usage-dashboard.guard.ts`, `core/services/user-roles.service.ts`
-- When MSAL interaction settles with no active account, the guard's source pipe returns `EMPTY`, so the backing `ReplaySubject` never emits and `ready$()` never completes — navigation silently stalls with no redirect and no error.
-- **Suggested fix:** Race `ready$()` against a timeout or an "unauthenticated" signal that resolves to `router.createUrlTree(['/'])` so the guard always settles.
+Given the "sample, don't exhaust" mandate for this run, the following were not individually read line-by-line and may warrant a follow-up pass:
+- `core/services/*` business logic correctness (only spec presence and subscription-cleanup patterns were checked)
+- `shared/directives`, `shared/utils` implementation detail
+- E2E (Playwright) test content/coverage
+- Full lint/build run (explicitly out of scope for this invocation)
 
-### @it/design-system (scoular-*) classes are effectively unused across the shared UI kit (`angular.design-system-classes-unused`)
-- **Files:** `shared/components/button/button.component.ts`, `shared/components/badge/badge.component.ts`, `shared/components/card/card.component.ts`, `shared/components/dialog/dialog.component.ts`, `shared/components/table/table.component.ts`
-- Every shared primitive hand-rolls Tailwind variant maps instead of emitting `scoular-btn`/`scoular-badge`/`scoular-card`/`scoular-modal`/`scoular-table`; warning/destructive variants also use generic Tailwind colors instead of mandated `scoular-yellow`/`scoular-red` tokens. Drift is app-wide since most feature templates build on these wrappers.
-- **Suggested fix:** Rewrite the shared primitives to map variant/size inputs onto `scoular-*` classes so feature templates inherit the fix without individual changes.
+## Findings
 
-### Components own state that AppStateService should own, and already reach into it directly (`angular.components-bypass-app-state-service`)
-- **Files:** `core/services/app-state.service.ts`, `features/build-list/pages/build-list/build-list.component.ts`, `features/customers/pages/home/home.component.ts`
-- `AppStateService` exposes ~30 pieces of state as raw writable `signal()` fields (not `.asReadonly()`). Components call `this.appState.queryLibrary.set(...)` directly, bypassing any service-level update method, so multiple unrelated components can independently mutate shared app state.
-- **Suggested fix:** Expose state via `.asReadonly()` and require all writes to go through explicit service methods.
+| ID | Severity | Summary |
+|---|---|---|
+| `angular.untested-god-components` | High | The four largest feature components (build-list 4,244 lines, bid-sheet 3,005, home 2,220, dashboard 1,707 — ~11k lines total) have **zero** `.spec.ts` files. |
+| `angular.god-components-need-decomposition` | Medium | Those same four components mix data-fetching, view-state, and business logic in one class each, contrary to the guide's single-responsibility and service-delegation guidance — and are very likely *why* they're untested. |
+| `angular.home-component-silent-error-swallowing` | Medium | `home.component.ts` has 17 `error: () => {}` no-op handlers on API subscriptions — failures are invisible to users and unlogged. The same shape recurs 34 times across 9 files app-wide; home.component.ts is the worst concentration. |
+| `angular.bid-sheet-any-cast-hides-payload-mismatch` | Low | Two `as any` casts in `bid-sheet.component.ts` exist specifically to smuggle a `bids: []` field that isn't part of `BidSheetLocation` past the compiler's excess-property check. |
 
-### No typed error contract; silent error swallowing across services and components (`angular.no-typed-error-contract-silent-swallowing`)
-- **Files:** `core/services/api.service.ts`, `core/services/data-preload.service.ts`, `features/customers/pages/home/home.component.ts`, `features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts`
-- No typed error class exists anywhere in the app. `DataPreloadService` collapses every dataset failure to `[]` with no signal to the UI; roughly two dozen `.subscribe({ error: () => {} })` blocks swallow failures with no toast, no error state, and no distinguishable empty-vs-failed outcome.
-- **Related findings:** `error-handling.angular-silent-swallowing`
-- **Suggested fix:** Introduce one `ApiError`-style type built centrally in `ApiService`'s error handling, and route every swallowed `error:` callback through `toastService.error(...)` or a component `errorMessage` signal.
+Full detail, file lists, and suggested fixes are in `agents-docs/audits/AUDIT-TRACKING.json` under `audit: "angular"`.
 
-### any type used in ~20+ locations against the explicit no-any rule (`angular.any-type-widespread-usage`)
-- **Files:** `features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts`, `features/customers/components/map/customer-map.component.ts`, `features/customers/components/customer-map/customer-map.component.ts`, `features/customers/components/customer-list/customer-list.component.ts`, `features/dashboard/pages/dashboard/dashboard.component.ts`, `core/services/api.service.ts`
-- `any` is concentrated in Leaflet map interop (`_map: any`, `(marker as any).customerId`, `(L as any).markerClusterGroup`) and in dynamically-shaped HTTP/`forkJoin` results.
-- **Suggested fix:** Type Leaflet interop using the already-installed `@types/leaflet`/`@types/leaflet.markercluster`, and give `forkJoin` call sites a proper `Partial<Record<...>>` result interface.
+## Notes for the next pass
 
-## Medium
-
-### Dead duplicate CustomerMapComponent with a colliding selector (`angular.duplicate-customer-map-component`)
-- **Files:** `features/customers/components/customer-map/customer-map.component.ts`, `features/customers/components/customer-map/customer-map.component.html`
-- A second, different implementation of `CustomerMapComponent` shares the `app-customer-map` selector with the live one; the duplicate is imported nowhere in the app.
-- **Related findings:** `clean-slop.duplicate-customer-map-component`
-- **Suggested fix:** Delete the orphaned `components/customer-map/` folder, or confirm intent and rename/consolidate to avoid a same-selector collision if both are ever imported together.
-
-### Inconsistent OnPush adoption on fully signal-driven components (`angular.inconsistent-onpush-adoption`)
-- **Files:** `shared/components/badge/badge.component.ts`, `shared/components/button/button.component.ts`, `features/customers/pages/home/home.component.ts`
-- Only 20 of 49 components set `ChangeDetectionStrategy.OnPush`; most of the shared UI kit and several feature components are entirely `input()`/signal-driven yet omit it.
-- **Suggested fix:** Add `changeDetection: ChangeDetectionStrategy.OnPush` to the remaining signal-driven components (low-risk, mechanical change).
-
-### Function calls used directly in template bindings instead of computed()/pipes (`angular.function-calls-in-template-bindings`)
-- **Files:** `features/customers/components/customer-profile/customer-profile.component.html`, `features/customers/components/contracts-table/contracts-table.component.html`, `features/dashboard/pages/dashboard/dashboard.component.ts`
-- Recurring pattern (`getContacts()`, `getPricingLinesForContract(contract)`, `commodityChipClass()`, `ticketDisplayNumber()`) re-sorts/re-filters/re-formats on every change-detection pass rather than being memoized.
-- **Related findings:** `performance.angular-template-function-calls`
-- **Suggested fix:** Convert the highest-traffic offenders (especially ones that sort/filter arrays) to `computed()` signals or pure pipes.
-
-### Broad unit-test coverage gap beyond the god components (`angular.broad-unit-test-coverage-gap`)
-- **Files:** `shared/components/card/card.component.ts`, `shared/utils/linked-producers.ts`, `shared/utils/contract-delivery.ts`, `shared/utils/ticket-view-filters.ts`
-- 31 of 49 components (63%) have no `.spec.ts`, including the entire shared UI kit and load-bearing utils like the BFS-based `linked-producers.ts`.
-- **Related findings:** `test-gaps.angular-shared-components-gap`
-- **Suggested fix:** Prioritize specs for shared primitives (high reuse, low cost to test) and untested utils with real branching logic.
-
-### Production bootstrap failures are silently swallowed (`angular.production-bootstrap-failures-swallowed`)
-- **Files:** `client/src/main.ts`
-- `bootstrapApplication(...).catch` only logs in non-production. A production bootstrap failure produces a blank page with zero diagnostic trail.
-- **Related findings:** `logging.bootstrap-failure-not-logged`
-- **Suggested fix:** Log unconditionally (or route through the telemetry sink used elsewhere) and render a minimal static fallback message on bootstrap failure.
-
-## Low
-
-### Stale security comment about bypassSecurityTrustHtml usage (`angular.stale-security-comment-bypasssecuritytrusthtml`)
-- **Files:** `client/src/main.ts`, `shared/pipes/highlight.pipe.ts`
-- `main.ts`'s threat-model comment states no `bypassSecurityTrustHtml` usage anywhere in the app, but `highlight.pipe.ts` does call it (safely, on pre-escaped input, but with no test coverage guarding that).
-- **Suggested fix:** Correct the `main.ts` comment to note the one intentional, escaped exception, and add a spec for `highlight.pipe.ts` asserting it rejects unescaped HTML.
-
-### Duplicated crop/commodity taxonomy logic across multiple utils (`angular.duplicated-commodity-taxonomy-logic`)
-- **Files:** `shared/utils/contract-status.ts`, `shared/utils/production-coverage.ts`, `shared/utils/commodity-aliases.ts`, `shared/utils/crop-group-match.ts`
-- Several utils independently build overlapping commodity-code lookup/conversion maps rather than sharing one source; the codebase's own comments reference a past bug caused by exactly this kind of duplication.
-- **Related findings:** `clean-slop.duplicated-commodity-taxonomy`
-- **Suggested fix:** Extract one shared builder/lookup table that the individual utils consume.
+- The test-coverage and god-component findings are linked (`related_findings`) since fixing decomposition would likely make testing dramatically easier — but they're tracked separately since one is a testing gap and the other is a structural/design issue.
+- The silent-error-swallowing pattern is broader than `home.component.ts` alone; a dedicated sweep of all 34 occurrences across the app would be a reasonable follow-up if error-observability becomes a priority.

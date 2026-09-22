@@ -104,14 +104,6 @@ builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
     // In-memory is right for this: tokens are per-user and short-lived, a cold instance simply
     // re-exchanges, and a distributed cache would be new infrastructure for no correctness gain.
     .AddInMemoryTokenCaches();
-// Who may read the WHOLE org and pick any manager. Everyone else who can open the dashboard —
-// i.e. everyone else in the Super Users group — is scoped to themselves plus their own reports.
-// Deliberately NOT derived from the Admin role: that role is how the Super Users group grants
-// dashboard access to managers and IT/admin alike, so it answers "may I open this", not "how much
-// should I see". Defaults to empty, which scopes everyone rather than opening up.
-var usageDashboardViewAll = builder.Configuration.GetSection("UsageDashboard:ViewAll").Get<string[]>() ?? [];
-builder.Services.AddSingleton(
-    new GrainOriginatorPortal.Api.Authorization.UsageDashboardViewAllList(usageDashboardViewAll));
 builder.Services.AddAuthorization(options =>
 {
     // RequireRole honors the identity's RoleClaimType so it works whether the
@@ -332,6 +324,9 @@ builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
 // Scoped (not singleton like IAppAccessService) because it reads through the scoped
 // IUsageRepository/DbContext; the directory itself is shared via IMemoryCache.
 builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
+// Who may read the WHOLE org and pick any manager, from dbo.UsageDashboardViewAllUsers. Scoped
+// because it reads through IUsageRepository; the result is cached for a minute inside the provider.
+builder.Services.AddScoped<IUsageDashboardViewAllProvider, UsageDashboardViewAllProvider>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();

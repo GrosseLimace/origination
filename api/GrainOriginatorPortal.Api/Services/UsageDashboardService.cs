@@ -35,7 +35,7 @@ public class UsageDashboardService : IUsageDashboardService
     private readonly IMemoryCache _cache;
     private readonly UsageUniverseCacheState _cacheState;
     private readonly IRequestContextService _requestContext;
-    private readonly UsageDashboardViewAllList _viewAll;
+    private readonly IUsageDashboardViewAllProvider _viewAll;
 
     public UsageDashboardService(
         IUsageRepository repo,
@@ -44,7 +44,7 @@ public class UsageDashboardService : IUsageDashboardService
         IMemoryCache cache,
         UsageUniverseCacheState cacheState,
         IRequestContextService requestContext,
-        UsageDashboardViewAllList viewAll)
+        IUsageDashboardViewAllProvider viewAll)
     {
         _repo = repo;
         _appAccess = appAccess;
@@ -55,15 +55,19 @@ public class UsageDashboardService : IUsageDashboardService
         _viewAll = viewAll;
     }
 
-    /// <summary>Whether the caller may read the whole org and choose an arbitrary manager.</summary>
-    private bool CallerCanViewAll()
-        => _viewAll.ShortNames.Contains(_requestContext.GetCurrentUserShortName(), StringComparer.OrdinalIgnoreCase);
+    /// <summary>Whether the caller may read the whole org and choose an arbitrary manager. Sourced
+    /// from dbo.UsageDashboardViewAllUsers via the provider, which caches it for a minute.</summary>
+    private async Task<bool> CallerCanViewAllAsync(CancellationToken cancellationToken)
+    {
+        var viewAll = await _viewAll.GetAsync(cancellationToken);
+        return viewAll.Contains(_requestContext.GetCurrentUserShortName(), StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// The manager whose subtree this request may actually see — NOT necessarily the one the client
     /// asked for.
     /// <para>
-    /// On the <c>UsageDashboard:ViewAll</c> list the requested value passes through untouched, null
+    /// In the <c>dbo.UsageDashboardViewAllUsers</c> table the requested value passes through untouched, null
     /// included, so those few people keep the pick-any dropdown and the whole-org default. Everyone
     /// else is pinned to their OWN short name and the requested value is discarded rather than
     /// rejected — a scoped user has no dropdown, so a <c>managerId</c> arriving from them is either
@@ -81,8 +85,8 @@ public class UsageDashboardService : IUsageDashboardService
     /// construction — the client explains that empty state rather than rendering bare zeros.
     /// </para>
     /// </summary>
-    private string? ResolveEffectiveManagerId(string? requestedManagerId)
-        => CallerCanViewAll() ? requestedManagerId : _requestContext.GetCurrentUserShortName();
+    private async Task<string?> ResolveEffectiveManagerIdAsync(string? requestedManagerId, CancellationToken cancellationToken)
+        => await CallerCanViewAllAsync(cancellationToken) ? requestedManagerId : _requestContext.GetCurrentUserShortName();
 
     /// <summary>
     /// Display labels for the features the dashboard reports on. Iterated to build the
@@ -165,7 +169,7 @@ public class UsageDashboardService : IUsageDashboardService
         // Resolve BEFORE the cache key is built. The key must describe the universe actually
         // returned, not the one that was asked for — keying on the requested value would let a
         // scoped manager's result be served from (or into) another user's cache entry.
-        var effectiveManagerId = ResolveEffectiveManagerId(managerId);
+        var effectiveManagerId = await ResolveEffectiveManagerIdAsync(managerId, cancellationToken);
 
         var cacheKey = $"usage-dash:universe:{_cacheState.Generation}:{NormalizeTradeUnitKey(tradeUnitKey)}:{NormalizeManagerKey(effectiveManagerId)}";
         if (_cache.TryGetValue(cacheKey, out HashSet<string>? cached) && cached is not null)
@@ -759,14 +763,16 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public Task<List<UsageManagerDto>> GetManagersAsync(CancellationToken cancellationToken)
+    public async Task<List<UsageManagerDto>> GetManagersAsync(CancellationToken cancellationToken)
+    {
         // Empty for a scoped caller. Their dropdown is hidden, so they have no use for the roster —
         // and this list is the company org chart (every manager's name and short name), which is
         // not something to hand out just because someone can open the dashboard. Returning empty
         // rather than 403 keeps the client's "no matching managers" path working if it ever asks.
-        => CallerCanViewAll()
-            ? _managerDirectory.GetManagersAsync(cancellationToken)
-            : Task.FromResult(new List<UsageManagerDto>());
+        return await CallerCanViewAllAsync(cancellationToken)
+            ? await _managerDirectory.GetManagersAsync(cancellationToken)
+            : [];
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Per-user drill-down

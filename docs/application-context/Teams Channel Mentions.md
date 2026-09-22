@@ -56,11 +56,13 @@ SQL cannot become an exfiltration path. A channel whose address is missing or fa
 
 ## Feature flag
 
-`environment.teamsChannelMentionsEnabled` — **true** locally and in Dev, **false** in QA and
-production until the Graph consent below is granted. Without consent the channel lookup returns
-nothing, so the flag exists to avoid showing an empty section that looks broken.
+`environment.teamsChannelMentionsEnabled` — **true in every environment since 2026-09-21.** QA
+flipped once its credential + consent were verified live; PROD flipped on the basis that IT grants the
+same before the 2026-09-22 promotion. Without consent the channel lookup returns nothing, so the flag
+exists to avoid showing an empty section that looks broken — if the PROD grant slips, that empty
+section is exactly what users see until it lands.
 
-## The IT ask — DONE in Dev (2026-09-17), QA and PROD pending
+## The IT ask — DONE in Dev (2026-09-17) and QA (verified 2026-09-21), PROD requested for 2026-09-22
 
 **Two** delegated permissions, both with **admin consent**, on the **API app registration**
 (`00078a10-3f3f-4d17-9350-fe90401125ae`) — *not* the SPA registrations:
@@ -103,9 +105,12 @@ client secret anywhere. In `appsettings.Dev.json` that is just:
 "AzureAd": { "ClientCredentials": [ { "SourceType": "SignedAssertionFromManagedIdentity" } ] }
 ```
 
-`ManagedIdentityClientId` is deliberately omitted because the identity is system-assigned. QA and
-Production have **no credential and no consent yet, by design** — a small config change on IT's side
-once Dev is proven, not another build. The three SPA registrations were left untouched.
+`ManagedIdentityClientId` is deliberately omitted because the identity is system-assigned. QA has the
+same block and its credential + consent are live (verified 2026-09-21). `appsettings.Production.json`
+carries the block as of 2026-09-21; the PROD half on IT's side is a federated credential on
+`Origination API - Production` (`e1458bcd-…`) bound to the `app-origination-eus` system-assigned
+identity (principal `a60a898f-0008-4bca-83a9-5bb05dc9d435`), plus the delegated consent above. The
+three SPA registrations were left untouched.
 
 Two operational notes from IT worth keeping:
 

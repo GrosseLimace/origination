@@ -1,6 +1,7 @@
 using System.Security.Claims;
 
 using GrainOriginatorPortal.Api.Authorization;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -16,16 +17,16 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class MeController : ControllerBase
 {
-    private readonly string[] _usageDashboardViewAll;
+    private readonly IUsageDashboardViewAllProvider _viewAllProvider;
 
-    public MeController(IConfiguration configuration)
+    public MeController(IUsageDashboardViewAllProvider viewAllProvider)
     {
-        _usageDashboardViewAll = configuration.GetSection("UsageDashboard:ViewAll").Get<string[]>() ?? [];
+        _viewAllProvider = viewAllProvider;
     }
 
     [HttpGet]
     [ProducesResponseType(typeof(MeResponse), StatusCodes.Status200OK)]
-    public ActionResult<MeResponse> Get()
+    public async Task<ActionResult<MeResponse>> Get(CancellationToken cancellationToken)
     {
         // Try multiple claim names — Microsoft.Identity.Web sets RoleClaimType to
         // "roles" by default for v2 tokens, but the underlying JWT middleware can
@@ -40,11 +41,12 @@ public class MeController : ControllerBase
                         .Distinct()
                         .ToArray();
 
-        // Synthetic role for the UsageDashboard:ViewAll list. Purely presentational — it tells the
+        // Synthetic role for the dbo.UsageDashboardViewAllUsers list. Purely presentational — it tells the
         // SPA whether to render the manager dropdown. The server never reads it back: scoping is
-        // re-derived from config on every request in UsageDashboardService, so forging this role
+        // re-derived from the table on every request in UsageDashboardService, so forging this role
         // client-side changes the menu and nothing else.
-        if (UsageDashboardAccess.CanViewAll(User, _usageDashboardViewAll)
+        var viewAll = await _viewAllProvider.GetAsync(cancellationToken);
+        if (UsageDashboardAccess.CanViewAll(User, viewAll)
             && !roles.Contains(UsageDashboardAccess.ViewAllRole))
         {
             roles = [.. roles, UsageDashboardAccess.ViewAllRole];
