@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
+import { Component, inject, signal, computed, DestroyRef, effect, untracked, isDevMode } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, Subject } from 'rxjs';
@@ -10,10 +10,12 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, Reminder, ReminderDue, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
+import { CustomerRemindersComponent, ReminderDraft } from '../../components/customer-reminders/customer-reminders.component';
+import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
@@ -25,6 +27,7 @@ import { environment } from '@env/environment';
     CustomerListComponent,
     CustomerProfileComponent,
     CustomerNotesComponent,
+    CustomerRemindersComponent,
     CardComponent,
     CardContentComponent,
     CardHeaderComponent,
@@ -43,11 +46,44 @@ export class HomeComponent {
   private readonly userRoles = inject(UserRolesService);
   private readonly destroyRef = inject(DestroyRef);
 
+  /** When a background load or save on this page fails, say so. These subscriptions used to
+   *  carry `error: () => {}`, so an API outage showed up only as panels that were quietly empty
+   *  or stale, with nothing in the console for support to go on (audit finding
+   *  angular.home-component-silent-error-swallowing).
+   *
+   *  Nothing here was asked for by the user: these are background loads and refreshes, so the
+   *  bar for interrupting is high and repetition buys nothing. Once someone has been told the
+   *  data is stale, telling them again does not help them. So a sustained outage is worth at
+   *  most one message a minute, and the same failing source stays quiet for five minutes after
+   *  it has spoken. The wording is deliberately vague about scope, because the toast that gets
+   *  through may be standing in for several failures that were suppressed behind it.
+   *
+   *  Dev builds still log every failure, unthrottled, so local debugging sees everything. */
+  private static readonly BackgroundFailureQuietMs = 60_000;
+  private static readonly BackgroundFailurePerSourceQuietMs = 5 * 60_000;
+  private readonly _backgroundFailureToastAt = new Map<string, number>();
+  private _lastBackgroundFailureToastAt = 0;
+  private _reportBackgroundFailure(what: string, err: unknown): void {
+    if (isDevMode()) console.error(`[Home] failed to ${what}`, err);
+    const now = Date.now();
+    const lastForSource = this._backgroundFailureToastAt.get(what) ?? 0;
+    if (now - lastForSource < HomeComponent.BackgroundFailurePerSourceQuietMs) return;
+    if (now - this._lastBackgroundFailureToastAt < HomeComponent.BackgroundFailureQuietMs) return;
+    this._backgroundFailureToastAt.set(what, now);
+    this._lastBackgroundFailureToastAt = now;
+    this.toastService.error(`Failed to ${what}. Some data may be missing or out of date.`);
+  }
+
   /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Enables the
    *  "Team Lists" tab in the Add-to-List dropdown. */
   readonly isManager = this.userRoles.isAdmin;
   /** Gates the floating calculator launcher (Profitability calc + future calculators). */
   readonly calculatorEnabled = environment.calculatorEnabled;
+  /** Gates the personal follow-up reminders card and the producer-list reminder badge. Off until
+   *  the API app registration has delegated Calendars.ReadWrite with admin consent — the API calls
+   *  Graph on-behalf-of the user, so the permission lives there rather than on the SPA. */
+  readonly remindersEnabled = environment.remindersEnabled;
+  private readonly outlookCalendar = inject(OutlookCalendarService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -106,6 +142,9 @@ export class HomeComponent {
    *  unselected TUs are represented without downloading any note bodies. Full notes are
    *  fetched per-producer on selection into _customerNotesCache. */
   readonly noteLastContacts = signal<NoteLastContact[]>([]);
+  /** The signed-in user's own OPEN follow-ups across all producers — feeds the list badge.
+   *  Private per user: the API only ever returns the caller's own. */
+  readonly myReminders = signal<ReminderDue[]>([]);
   readonly storedGrain = signal<StoredGrain[]>([]);
   readonly dpContracts = signal<DpContract[]>([]);
   readonly savedLists = signal<SavedList[]>([]);
@@ -136,6 +175,14 @@ export class HomeComponent {
   readonly customerTickets = signal<Ticket[]>([]);
   readonly customerPricingLines = signal<ContractPricingLine[]>([]);
   readonly customerNotes = signal<Note[]>([]);
+  /** The signed-in user's open follow-ups for the SELECTED producer only. Unlike notes this is
+   *  not walked across the linked-producer group: a follow-up is about the one producer it was
+   *  set on, and showing a linked producer's reminders here would make "complete" ambiguous. */
+  readonly customerReminders = signal<Reminder[]>([]);
+  readonly isLoadingReminders = signal(false);
+  readonly isSavingReminder = signal(false);
+  /** Incremented on each successful reminder save so the card closes and resets its form. */
+  readonly reminderSaveSucceededCounter = signal(0);
   readonly customerCodeMap = signal<Map<number, string>>(new Map());
   readonly customerPlantingIntentions = signal<PlantingIntention[]>([]);
   readonly customerStoredGrain = signal<StoredGrain[]>([]);
@@ -226,6 +273,12 @@ export class HomeComponent {
       untracked(() => this.noteLastContacts.set(rows));
     });
 
+    // Same for the caller's own open follow-ups, which the preload delivers alongside it.
+    effect(() => {
+      const rows = this.appState.myReminders();
+      untracked(() => this.myReminders.set(rows));
+    });
+
     // React to global trade unit changes made via TradeUnitSelectorComponent
     effect(() => {
       const tradeUnits = this.appState.selectedTradeUnits();
@@ -273,6 +326,7 @@ export class HomeComponent {
       this.plantingIntentions.set(this.appState.plantingIntentions());
       this.isLoadingPlanting.set(false);
       this.noteLastContacts.set(this.appState.noteLastContacts());
+      this.myReminders.set(this.appState.myReminders());
       this.storedGrain.set(this.appState.storedGrain());
       this.dpContracts.set(this.appState.dpContracts());
       this.savedLists.set(this.appState.savedLists());
@@ -285,7 +339,7 @@ export class HomeComponent {
             this.storedGrain.set(data);
             this.appState.setStoredGrain(data);
           },
-          error: () => {}
+          error: (err) => this._reportBackgroundFailure('load stored grain', err)
         });
       }
 
@@ -298,7 +352,7 @@ export class HomeComponent {
             this.dpContracts.set(data);
             this.appState.setDpContracts(data);
           },
-          error: () => {}
+          error: (err) => this._reportBackgroundFailure('load DP contracts', err)
         });
       }
 
@@ -328,7 +382,7 @@ export class HomeComponent {
               this.allCustomerPlantingIntentions.set(intentions);
               this.customerPlantingIntentions.set(intentions);
             },
-            error: () => {}
+            error: (err) => this._reportBackgroundFailure('load planting intentions', err)
           });
       }
       // Reload yield estimates and commodities — not stored in appState so
@@ -402,7 +456,7 @@ export class HomeComponent {
         // may have run before contracts arrived, producing wrong customerIds.
         this._enrichSavedLists(true);
       },
-      error: () => {}
+      error: (err) => this._reportBackgroundFailure('load contracts', err)
     });
 
     // Tickets are no longer bulk-loaded here. They're fetched per-producer on select (applied +
@@ -434,7 +488,7 @@ export class HomeComponent {
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },
-      error: () => {}
+      error: (err) => this._reportBackgroundFailure('load stored grain', err)
     });
 
     // Merge (not replace) for the same reason storage does: the TU-wide fetch and the per-producer
@@ -451,7 +505,7 @@ export class HomeComponent {
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },
-      error: () => {}
+      error: (err) => this._reportBackgroundFailure('load DP contracts', err)
     });
 
     this._loadYieldData();
@@ -477,7 +531,7 @@ export class HomeComponent {
           this._enrichSavedLists();
         }
       },
-      error: () => {}
+      error: (err) => this._reportBackgroundFailure('load saved lists', err)
     });
   }
 
@@ -495,7 +549,7 @@ export class HomeComponent {
           this._pendingProducerDetails = list;
         }
       },
-      error: () => {}
+      error: (err) => this._reportBackgroundFailure('load producer details', err)
     });
   }
 
@@ -654,6 +708,7 @@ export class HomeComponent {
       // Last-contact aggregate (always loaded) — powers recency/"never contacted" resolution
       // without the full note set.
       noteLastContacts: this.appState.noteLastContacts(),
+      myReminders: this.appState.myReminders(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       dpContracts: this.dpContracts(),
@@ -855,7 +910,7 @@ export class HomeComponent {
         this.noteLastContacts.set(list);
         this.appState.setNoteLastContacts(list);
       },
-      error: () => {}
+      error: (err) => this._reportBackgroundFailure('load last-contacted dates', err)
     });
   }
 
@@ -916,6 +971,172 @@ export class HomeComponent {
     });
   }
 
+  // ==========================================================================
+  // Personal follow-up reminders
+  // ==========================================================================
+  // Every reminder here belongs to the signed-in user — the API returns nobody else's. The
+  // running theme in these handlers: the DATABASE is the source of truth and the Outlook event
+  // is a best-effort mirror. A calendar failure never blocks or rolls back the reminder; it just
+  // leaves outlookEventId null, which surfaces as an "Add to Outlook" retry on the row.
+
+  /** Loads the caller's reminders for one producer. No cache: the list is small, and a stale
+   *  due date is worse than a re-fetch. */
+  private _loadCustomerReminders(customerId: number): void {
+    if (!this.remindersEnabled) return;
+
+    this.customerReminders.set([]);
+    this.isLoadingReminders.set(true);
+    this.apiService.getRemindersByCustomer(customerId)
+      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (reminders) => {
+          if (this.selectedCustomer()?.id !== customerId) return;
+          this.customerReminders.set(reminders);
+          this.isLoadingReminders.set(false);
+        },
+        error: () => this.isLoadingReminders.set(false)
+      });
+  }
+
+  /** Create or edit, depending on whether the draft carries an id. */
+  saveReminder(draft: ReminderDraft): void {
+    const customer = this.selectedCustomer();
+    if (!customer) return;
+
+    this.isSavingReminder.set(true);
+
+    if (draft.id === undefined) {
+      this.apiService.createReminder(customer.id, draft.dueAt, draft.subject || undefined, draft.notes)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (created) => {
+            this.customerReminders.update(list => this._sortReminders([...list, created]));
+            this._addMyReminder(created);
+            this.isSavingReminder.set(false);
+            this.reminderSaveSucceededCounter.update(n => n + 1);
+            this.toastService.success('Follow-up added');
+            this._syncReminderToOutlook(created);
+          },
+          error: () => this.isSavingReminder.set(false)
+        });
+      return;
+    }
+
+    const id = draft.id;
+    this.apiService.updateReminder(id, draft.dueAt, draft.subject || undefined, draft.notes,
+      OutlookCalendarService.currentTimeZone())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updated) => {
+          this.customerReminders.update(list => this._sortReminders(list.map(r => r.id === id ? updated : r)));
+          this._addMyReminder(updated);
+          this.isSavingReminder.set(false);
+          this.reminderSaveSucceededCounter.update(n => n + 1);
+          this.toastService.success('Follow-up updated');
+
+          // The API moved the calendar event in the same call — it patches the window rather than
+          // recreating the event, because a delete-and-recreate shows the original slot as
+          // "Canceled". All that is left here is to report a move that did not take.
+          if (updated.outlookEventId) {
+            if (updated.outlookEventMoved === false) {
+              this.toastService.info('Saved, but the Outlook event could not be moved.');
+            }
+          } else {
+            this._syncReminderToOutlook(updated);
+          }
+        },
+        error: () => this.isSavingReminder.set(false)
+      });
+  }
+
+  toggleReminderComplete(reminder: Reminder): void {
+    const next = !reminder.isCompleted;
+    this.apiService.setReminderCompleted(reminder.id, next)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(updated => {
+        // A completed reminder stays on the calendar on purpose: deleting the event makes Outlook
+        // render it as "Canceled", which reads as "this never happened" rather than "done".
+        this.customerReminders.update(list => this._sortReminders(list.map(r => r.id === reminder.id ? updated : r)));
+        if (next) {
+          this._removeMyReminder(reminder.id);
+        } else {
+          this._addMyReminder(updated);
+        }
+      });
+  }
+
+  deleteReminder(reminder: Reminder): void {
+    this.apiService.deleteReminder(reminder.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.customerReminders.update(list => list.filter(r => r.id !== reminder.id));
+        this._removeMyReminder(reminder.id);
+        this.toastService.success('Follow-up deleted');
+        // The API removes the calendar event in the same call. Deleting is the only path that does
+        // so: completing a reminder deliberately leaves the event, because removing it makes Outlook
+        // render the slot as "Canceled", which reads as "this never happened" rather than "done".
+      });
+  }
+
+  /** Retry path for a reminder saved while Outlook was unavailable or consent was declined. */
+  addReminderToOutlook(reminder: Reminder): void {
+    this._syncReminderToOutlook(reminder, true);
+  }
+
+  /**
+   * Writes the reminder to the user's own calendar and records the event id. Silent on failure
+   * during an automatic save (the row already offers a retry); explicit about it when the user
+   * pressed "Add to Outlook" and is waiting for an answer.
+   */
+  private _syncReminderToOutlook(reminder: Reminder, userInitiated = false): void {
+    const link = `${window.location.origin}/?customerId=${reminder.customerId}`;
+
+    // One call now: the API writes the event on-behalf-of the user AND records the id, so there is
+    // no window where the event exists but the row does not know about it.
+    this.outlookCalendar.addToOutlook(reminder, link)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(updated => {
+        // A null event id means the calendar could not be written; the row keeps its retry button.
+        if (!updated?.outlookEventId) {
+          this.toastService.info(
+            userInitiated
+              ? 'Could not add this to Outlook. Your follow-up is still saved here.'
+              : 'Follow-up saved. It could not be added to Outlook — use "Add to Outlook" to retry.'
+          );
+          return;
+        }
+
+        this.customerReminders.update(list => list.map(r => r.id === updated.id ? updated : r));
+        if (userInitiated) this.toastService.success('Added to your Outlook calendar');
+      });
+  }
+
+  private _sortReminders(list: Reminder[]): Reminder[] {
+    return [...list].sort((a, b) => {
+      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+      return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+    });
+  }
+
+  /** Keeps the badge feed in step locally so the list updates without a round trip. */
+  private _addMyReminder(reminder: Reminder): void {
+    const row: ReminderDue = {
+      id: reminder.id,
+      customerId: reminder.customerId,
+      customerCode: reminder.customerCode,
+      dueAt: reminder.dueAt,
+    };
+    const next = [...this.myReminders().filter(r => r.id !== reminder.id), ...(reminder.isCompleted ? [] : [row])];
+    this.myReminders.set(next);
+    this.appState.setMyReminders(next);
+  }
+
+  private _removeMyReminder(reminderId: number): void {
+    const next = this.myReminders().filter(r => r.id !== reminderId);
+    this.myReminders.set(next);
+    this.appState.setMyReminders(next);
+  }
+
   handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
     // Cancel everything still in flight from the prior customer selection so the
     // browser's connection pool isn't blocked by stale linked-producer / notes /
@@ -969,7 +1190,7 @@ export class HomeComponent {
             this._ensureCustomerNotes(updated);
           }
         },
-        error: () => {}
+        error: (err) => this._reportBackgroundFailure('refresh producer details', err)
       });
     }
 
@@ -985,6 +1206,7 @@ export class HomeComponent {
     // Fetch this producer's (and known linked group's) full notes — notes are no longer
     // bulk-downloaded, so selection is what hydrates the notes panel. Cache-hit = instant.
     this._ensureCustomerNotes(customer);
+    this._loadCustomerReminders(customer.id);
 
     // Fetch planting intentions exactly once per customer selection.
     // _loadCustomerData is called multiple times (contracts, tickets, storedGrain callbacks),
@@ -994,6 +1216,11 @@ export class HomeComponent {
     // updates the cache alongside the live signals so it stays in sync.
     const cachedPi = this._customerPlantingCache.get(customer.id);
     if (cachedPi) {
+      // Bump the counter on the cache-hit path too. The miss path below increments it so an
+      // older in-flight fetch recognises itself as stale; restoring from cache without bumping
+      // left a previous fetch's captured id still matching, so it could land afterwards and
+      // overwrite the freshly-restored data.
+      ++this._piRequestId;
       this.allCustomerPlantingIntentions.set(cachedPi);
       this.customerPlantingIntentions.set(cachedPi);
     } else {
@@ -1009,7 +1236,7 @@ export class HomeComponent {
             this.customerPlantingIntentions.set(intentions);
             this._customerPlantingCache.set(customer.id, intentions);
           },
-          error: () => {}
+          error: (err) => this._reportBackgroundFailure('load planting intentions', err)
         });
     }
 
@@ -1152,7 +1379,7 @@ export class HomeComponent {
           this._crossTradeUnitCustomers.set(cache);
         }
       },
-      error: () => {}
+      error: (err) => this._reportBackgroundFailure('update the linked producer contact', err)
     });
   }
 
@@ -1395,6 +1622,11 @@ export class HomeComponent {
           const updated = [...customers];
           updated[index] = updatedCustomer;
           this.customers.set(updated);
+          // Mirror into the shared cache too. This local signal duplicates appState.customers, and
+          // every other write site pushes both; this one didn't — so build-list, insights and
+          // unshipped-bushels kept serving the pre-merge commodity list until the next full
+          // trade-unit reload happened to overwrite it.
+          this.appState.setCustomers(updated);
         }
         if (this.selectedCustomer()?.id === customer.id) this.selectedCustomer.set(updatedCustomer);
         this._autoSaveInFlight.delete(customer.id);
@@ -1548,7 +1780,7 @@ export class HomeComponent {
             });
           }
         },
-        error: () => {}
+        error: (err) => this._reportBackgroundFailure('update the linked producer', err)
       });
     }
 
@@ -1571,7 +1803,7 @@ export class HomeComponent {
               this._crossTradeUnitCustomers.set(cache);
               this._propagatePrimaryContact(fetched, primaryRow);
             },
-            error: () => {}
+            error: (err) => this._reportBackgroundFailure('load a linked producer', err)
           });
         }
       }
@@ -1662,6 +1894,11 @@ export class HomeComponent {
 
   handleSelectLinkedCustomer(customerId: number): void {
     if (customerId === this.selectedCustomer()?.id) return;
+    // Cancel the previous selection's in-flight per-customer fetches, exactly as
+    // handleSelectCustomer and _onTradeUnitsChanged do. Without this, clicking linked producer B
+    // then C left B's fetches running; whichever resolved last won, so C's profile could get
+    // overwritten with B's contracts/tickets/notes.
+    this._cancelSelection$.next();
     // New selection — allow each producer's notes to be re-fetched once (other reps' adds show).
     this._notesRefreshedThisSelection.clear();
     // Reset navigation context — user is manually selecting a linked producer
@@ -1694,7 +1931,7 @@ export class HomeComponent {
             this.allCustomerPlantingIntentions.set(intentions);
             this.customerPlantingIntentions.set(intentions);
           },
-          error: () => {}
+          error: (err) => this._reportBackgroundFailure('load planting intentions', err)
         });
     } else {
       // Linked customer is in a different trade unit — fetch them from the API
@@ -1735,10 +1972,10 @@ export class HomeComponent {
                 this.allCustomerPlantingIntentions.set(intentions);
                 this.customerPlantingIntentions.set(intentions);
               },
-              error: () => {}
+              error: (err) => this._reportBackgroundFailure('load planting intentions', err)
             });
         },
-        error: () => {}
+        error: (err) => this._reportBackgroundFailure('load the selected producer', err)
       });
     }
     // (No-TU special case removed: _ensureCustomerNotes above hydrates the linked

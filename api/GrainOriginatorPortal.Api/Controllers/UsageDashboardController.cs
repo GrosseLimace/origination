@@ -6,6 +6,7 @@ using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -18,7 +19,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 // needs to accept click events from every signed-in user for user-activity tracking.
 // Exclusion administration stays AdminOnly (+ the ExclusionManagers allowlist).
 // These policies decide who may CALL a read. How much of the org each read returns is a separate
-// concern, scoped per caller in UsageDashboardService against UsageDashboard:ViewAll.
+// concern, scoped per caller in UsageDashboardService against dbo.UsageDashboardViewAllUsers.
 [Authorize]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase
@@ -186,13 +187,17 @@ public class UsageDashboardController : ControllerBase
         [FromBody] AddExcludedUserRequest request, CancellationToken cancellationToken = default)
     {
         if (!IsExclusionManager()) return Forbid();
+        // Throw rather than return a bare string: ASP.NET serializes a string body as raw JSON,
+        // which the Angular client's error unwrapping can't read, so the user saw a generic
+        // "Server error" instead of this text. Going through GlobalExceptionHandler puts it in the
+        // standard envelope the client already parses.
         if (string.IsNullOrWhiteSpace(request.UserId))
-            return BadRequest("A user id is required.");
+            throw new ValidationException(nameof(request.UserId), "A user id is required.");
 
         var createdBy = GetCurrentUserShortName() ?? "unknown";
         var added = await _service.AddExcludedUserAsync(request.UserId, request.Reason, createdBy, cancellationToken);
         if (added is null)
-            return Conflict("That user is already excluded.");
+            throw new BusinessException("That user is already excluded.", "USER_ALREADY_EXCLUDED");
 
         return CreatedAtAction(nameof(GetExcludedUsers), new { }, added);
     }

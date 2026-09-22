@@ -421,6 +421,9 @@ public class DailyRecapGroupServiceTests
     [Fact]
     public async Task SetEnabledAsync_NonCreatorMember_Succeeds_AndReportsIsOwnerFalse()
     {
+        // Enabling now pre-reads the group to refuse a memberless one, so this must be visible.
+        _repo.Setup(r => r.GetVisibleByIdAsync(GroupId, It.IsAny<RecapGroupAccess>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Existing(members: Member("person", "mgr")));
         _repo.Setup(r => r.SetEnabledAsync(GroupId, It.IsAny<RecapGroupAccess>(), true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DailyRecapGroup { Id = GroupId, Name = "Daily", CreatedBy = "alice@scoular.com", Enabled = true });
 
@@ -435,6 +438,36 @@ public class DailyRecapGroupServiceTests
     public async Task SetEnabledAsync_NotVisible_ReturnsNull()
     {
         Assert.Null(await _sut.SetEnabledAsync(GroupId, true, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SetEnabledAsync_MemberlessGroup_IsRefused_AndNeverReachesTheRepository()
+    {
+        // Channel-routed entries may legitimately have no members, but the daily recap is built from
+        // the notes their MEMBERS can see — so enabling one would schedule an empty nightly send.
+        _repo.Setup(r => r.GetVisibleByIdAsync(GroupId, It.IsAny<RecapGroupAccess>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Existing());   // no members
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => _sut.SetEnabledAsync(GroupId, true, CancellationToken.None));
+
+        _repo.Verify(r => r.SetEnabledAsync(It.IsAny<int>(), It.IsAny<RecapGroupAccess>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SetEnabledAsync_TurningItOff_SkipsTheMemberCheck()
+    {
+        // Disabling must always work, even on a group that somehow has no members — otherwise a bad
+        // state would be impossible to switch off.
+        _repo.Setup(r => r.SetEnabledAsync(GroupId, It.IsAny<RecapGroupAccess>(), false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DailyRecapGroup { Id = GroupId, Name = "Daily", CreatedBy = "alice@scoular.com", Enabled = false });
+
+        var result = await _sut.SetEnabledAsync(GroupId, false, CancellationToken.None);
+
+        Assert.False(result!.Enabled);
+        _repo.Verify(r => r.GetVisibleByIdAsync(It.IsAny<int>(), It.IsAny<RecapGroupAccess>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     // ── Delete stays creator-only ────────────────────────────────────────────

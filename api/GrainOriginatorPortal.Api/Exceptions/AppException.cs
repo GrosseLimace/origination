@@ -6,26 +6,23 @@ namespace GrainOriginatorPortal.Api.Exceptions;
 public abstract class AppException : Exception
 {
     public string ErrorCode { get; }
-    public IDictionary<string, object> Context { get; }
+
+    // A Context dictionary and a fluent WithContext(key, value) used to live here. Nothing ever
+    // read them — GlobalExceptionHandler, the error responses and the tests all ignored Context —
+    // and the only writer (NotFoundException) stored an entity name and key its own message
+    // already spells out. Write-only state is worse than no state, so it's gone rather than wired
+    // up. Add it back properly (i.e. with a reader) if structured context is ever wanted.
 
     // -------------------------------------------------------------------------
     protected AppException(string message, string errorCode)
         : base(message)
     {
         ErrorCode = errorCode;
-        Context = new Dictionary<string, object>();
     }
 
     protected AppException(string message, string errorCode, Exception innerException)
         : base(message, innerException)
     {
         ErrorCode = errorCode;
-        Context = new Dictionary<string, object>();
-    }
-
-    public AppException WithContext(string key, object value)
-    {
-        Context[key] = value;
-        return this;
     }
 }

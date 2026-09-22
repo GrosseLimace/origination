@@ -9,7 +9,7 @@ namespace GrainOriginatorPortal.Api.Authorization;
 /// which arrives via the "Origination App {Env} Super Users" group. That group is simply how a
 /// business user is granted access; managers and IT/admin alike are added there.</item>
 /// <item><see cref="CanViewAll"/> — how much of it do you see? Answered by the
-/// <c>UsageDashboard:ViewAll</c> config list. Those few get the manager dropdown and the whole
+/// <c>dbo.UsageDashboardViewAllUsers</c> table. Those few get the manager dropdown and the whole
 /// organisation; everyone else is scoped to themselves plus their own reports.</item>
 /// </list>
 /// Exclusion management is separate again — Admin plus the ExclusionManagers allowlist.
@@ -21,9 +21,9 @@ public static class UsageDashboardAccess
     /// administration — a convention test in ControllerAuthorizationTests pins that split.</summary>
     public const string PolicyName = "UsageDashboardViewer";
 
-    /// <summary>Synthetic role /api/me appends for the <c>UsageDashboard:ViewAll</c> list — the
+    /// <summary>Synthetic role /api/me appends for the <c>dbo.UsageDashboardViewAllUsers</c> list — the
     /// people who may read the WHOLE org and pick any manager. The client uses it to show or hide
-    /// the manager dropdown; the server does not trust it back, it re-derives from config.</summary>
+    /// the manager dropdown; the server does not trust it back, it re-derives from the table.</summary>
     public const string ViewAllRole = "UsageDashboardViewAll";
 
     /// <summary>Whether the caller may open the dashboard at all — Super Users group membership,
@@ -38,7 +38,7 @@ public static class UsageDashboardAccess
     /// IT/admin are both granted access. It says nothing about how much of the org they should see,
     /// which is a separate decision and needs its own list.
     /// </para><para>
-    /// It also could not work: every name on the ViewAll list already holds Admin in QA and PROD
+    /// It also could not work: every name in that table already holds Admin in QA and PROD
     /// through those groups, so an Admin-implies-view-all rule would leave nobody scoped in the only
     /// environments that matter, and the self-scoping in UsageDashboardService would be dead code
     /// that still passed its tests.

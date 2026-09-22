@@ -73,7 +73,12 @@ public class BidSheetRepository : IBidSheetRepository
         }
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
-            // A child bid collided with a concurrently-inserted one — reconcile to updates and retry.
+            // Either a child bid collided with a concurrently-inserted one (reconcilable — the
+            // user's value wins), or the location NAME itself lost a race. A name collision is
+            // deliberately not reconciled here: adopting someone else's location would silently
+            // attach this caller's bids to a row they never chose. The service pre-checks the name,
+            // so reaching this is the narrow race window; rethrow and let the caller retry into the
+            // clean "already exists" validation error.
             _logger.LogWarning(ex, "CreateBidSheetLocation hit a unique-constraint race — reconciling");
             if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
                 await _appContext.SaveChangesAsync(cancellationToken);
@@ -105,6 +110,8 @@ public class BidSheetRepository : IBidSheetRepository
         }
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
+            // As in CreateLocationAsync: a colliding child bid reconciles, a rename onto an
+            // already-taken name does not — that has to surface rather than pick a winner.
             _logger.LogWarning(ex, "UpdateBidSheetLocation hit a unique-constraint race — reconciling");
             if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
                 await _appContext.SaveChangesAsync(cancellationToken);
@@ -191,9 +198,23 @@ public class BidSheetRepository : IBidSheetRepository
             }
         }
 
-        // Single SaveChanges to persist all new locations and get their IDs
+        // Single SaveChanges to persist all new locations and get their IDs. If a concurrent bulk
+        // upsert created one of the same locations first, adopt the row that won and re-save —
+        // otherwise this bare save threw and took the entire batch of bids down with it.
         if (newLocations.Count > 0)
-            await _appContext.SaveChangesAsync(cancellationToken);
+        {
+            try
+            {
+                await _appContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+            {
+                _logger.LogWarning(ex, "Bulk bid upsert hit a location unique-constraint race — reconciling");
+                if (await ReconcileDuplicateLocationInsertsAsync(tradeUnitCode, newLocations, byName, byElevator, cancellationToken))
+                    await _appContext.SaveChangesAsync(cancellationToken);
+                else throw;
+            }
+        }
 
         // Batch-load all existing bids for the affected locations (1 query instead of N)
         var locationIds = allLocations.Concat(newLocations).Select(l => l.Id).ToHashSet();
@@ -381,6 +402,58 @@ public class BidSheetRepository : IBidSheetRepository
         => ex.InnerException is SqlException { Number: 2601 or 2627 };
 
     /// <summary>
+    /// Recovers from a unique-constraint race on LOCATION inserts: a concurrent bulk upsert already
+    /// created a location with the same (Name, TradeUnitCode). Detaches our duplicate insert and
+    /// rewrites the caller's lookups to point at the row that won, so the surrounding batch can
+    /// re-save instead of losing every bid in it. Returns true if anything was reconciled.
+    /// </summary>
+    private async Task<bool> ReconcileDuplicateLocationInsertsAsync(
+        string tradeUnitCode,
+        List<BidSheetLocation> newLocations,
+        Dictionary<string, BidSheetLocation> byName,
+        Dictionary<string, BidSheetLocation> byElevator,
+        CancellationToken cancellationToken)
+    {
+        var added = _appContext.ChangeTracker.Entries<BidSheetLocation>()
+            .Where(e => e.State == EntityState.Added)
+            .Select(e => e.Entity)
+            .ToList();
+        if (added.Count == 0) return false;
+
+        var names = added.Select(l => l.Name.Trim()).ToList();
+        // Case-insensitive compare matches the collation behind UQ_BidSheetLocations_Name_TradeUnit.
+        var winners = await _appContext.BidSheetLocations
+            .Where(l => l.TradeUnitCode == tradeUnitCode && names.Contains(l.Name))
+            .ToListAsync(cancellationToken);
+        if (winners.Count == 0) return false;
+
+        var winnerByName = new Dictionary<string, BidSheetLocation>(StringComparer.OrdinalIgnoreCase);
+        foreach (var w in winners)
+            winnerByName.TryAdd(w.Name.Trim(), w);
+
+        var reconciled = false;
+        foreach (var dup in added)
+        {
+            var name = dup.Name.Trim();
+            if (!winnerByName.TryGetValue(name, out var winner)) continue;
+
+            _appContext.Entry(dup).State = EntityState.Detached; // drop our losing insert
+            // Swap, don't just remove: the caller derives the set of location ids to preload
+            // existing bids for from this list, so dropping the entry without substituting the
+            // winner would hide that location's already-stored bids and send the second pass into
+            // an avoidable unique-violation retry.
+            newLocations.Remove(dup);
+            newLocations.Add(winner);
+            byName[name] = winner;
+            if (!string.IsNullOrEmpty(dup.ElevatorCode))
+                byElevator[dup.ElevatorCode!] = winner;
+            reconciled = true;
+        }
+
+        return reconciled;
+    }
+
+    /// <summary>
     /// Recovers from a unique-constraint race on bid inserts: a concurrent request (or a retried
     /// request) already inserted a bid for the same (LocationId, CommodityCode, CropYear, Month).
     /// For each pending Added bid that now collides with a row in the DB, detach the insert and
@@ -393,14 +466,32 @@ public class BidSheetRepository : IBidSheetRepository
             .Where(e => e.State == EntityState.Added)
             .Select(e => e.Entity)
             .ToList();
+        if (added.Count == 0) return false;
+
+        // One query for the whole pending set, not one per bid. This runs over EVERY Added bid —
+        // not just the one that tripped the constraint — so on a large bulk upsert (locations ×
+        // commodities × months) the per-bid version fanned out to a round trip per pending insert
+        // while the user waited on a retry. Narrowed to the affected locations and crop years,
+        // which is selective enough to stay on the index without building an N-term OR.
+        var locationIds = added.Select(b => b.LocationId).Distinct().ToList();
+        var cropYears = added.Select(b => b.CropYear).Distinct().ToList();
+        var candidates = await _appContext.BidSheetLocationBids
+            .Where(b => locationIds.Contains(b.LocationId) && cropYears.Contains(b.CropYear))
+            .ToListAsync(cancellationToken);
+
+        // Uppercase the CommodityCode on both sides of the key: SQL Server's collation is
+        // case-insensitive, so "yc" and "YC" are the same row to the unique index and must be the
+        // same key here too — otherwise a case difference looks like "no collision" and the
+        // duplicate insert is retried straight back into the same violation.
+        var existingByKey = new Dictionary<(int, string, int, int), BidSheetLocationBid>();
+        foreach (var b in candidates)
+            existingByKey.TryAdd((b.LocationId, (b.CommodityCode ?? "").ToUpperInvariant(), b.CropYear, b.Month), b);
+
         var reconciled = false;
         foreach (var bid in added)
         {
-            // SQL Server's case-insensitive collation makes the CommodityCode compare match regardless of case.
-            var existing = await _appContext.BidSheetLocationBids.FirstOrDefaultAsync(
-                b => b.LocationId == bid.LocationId && b.CommodityCode == bid.CommodityCode
-                     && b.CropYear == bid.CropYear && b.Month == bid.Month, cancellationToken);
-            if (existing == null) continue;
+            var key = (bid.LocationId, (bid.CommodityCode ?? "").ToUpperInvariant(), bid.CropYear, bid.Month);
+            if (!existingByKey.TryGetValue(key, out var existing)) continue;
             _appContext.Entry(bid).State = EntityState.Detached; // drop the duplicate insert
             existing.Bid = bid.Bid;
             existing.CommodityName = bid.CommodityName;

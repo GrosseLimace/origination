@@ -28,6 +28,11 @@ public record NoteMention
     /// App queries to resolve <see cref="TradeUnitGroupType"/> members.</summary>
     public const string AppGroupType = "app-group";
 
+    /// <summary>A registered Microsoft Teams channel (<c>dbo.TeamsChannels</c>). The id is that
+    /// row's integer key — NEVER the channel address, which stays in the database and is re-read by
+    /// the workflow at send time.</summary>
+    public const string TeamsChannelType = "teams-channel";
+
     // Explicit lowercase JSON names: the Notes.Mentions column is written with a plain
     // JsonSerializer.Serialize (default PascalCase), but the Instant Share Note Logic App reads
     // these keys case-sensitively as lowercase (item()?['type'/'id'/'email']). These attributes
@@ -39,7 +44,7 @@ public record NoteMention
     // reached no one, with no error anywhere. Failing the request is the loud alternative.
     [Required]
     [StringLength(20)]
-    [AllowedValues(PersonType, TradeUnitType, TradeUnitGroupType, AppGroupType,
+    [AllowedValues(PersonType, TradeUnitType, TradeUnitGroupType, AppGroupType, TeamsChannelType,
         ErrorMessage = "Unknown mention type.")]
     [JsonPropertyName("type")]
     public required string Type { get; init; }

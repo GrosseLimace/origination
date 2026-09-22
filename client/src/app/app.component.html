@@ -5,6 +5,17 @@
       <router-outlet />
     </main>
 <app-toast-container />
+    <!-- Announces the releases the user has not acknowledged yet, once per deploy that carried
+         release notes. The same content stays reachable at /whats-new afterwards.
+         Deferred so the dialog and its release list stay out of the initial bundle — most loads
+         never open it, and the eager cost pushed the initial bundle past its budget. -->
+    @defer (when showWhatsNew()) {
+      <app-whats-new-dialog
+        [isOpen]="showWhatsNew()"
+        [releases]="whatsNew.unseenReleases()"
+        (close)="onWhatsNewClose()"
+      />
+    }
   </div>
 } @else {
   <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">

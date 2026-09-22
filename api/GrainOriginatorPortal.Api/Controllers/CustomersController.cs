@@ -80,6 +80,17 @@ public class CustomersController : ControllerBase
     {
         // No per-producer object-level authz is intentional (trade units are a UX filter, not an
         // access boundary); see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        //
+        // ⚠ THE CROSS-TRADE-UNIT CALLER IS REAL — check it before "fixing" this route.
+        // handleSelectLinkedCustomer in home.component.ts has an explicit else-branch for a
+        // linked producer who is NOT in the caller's roster ("Linked customer is in a different
+        // trade unit — fetch them from the API") and calls exactly this endpoint. The stored-
+        // trade-unit re-authorization H-073 (2026-09-21) suggests would 403 that path and break
+        // the linked-producer profile. Same for GetBySourceId and GetLinkedTo below, which
+        // _fetchMissingLinkedProducers uses to pull in producers outside the roster.
+        //
+        // The test that separates these from routes that HAVE been scoped (H-061, H-062) is
+        // whether a real client path needs the cross-trade-unit read. These three do.
         var customer = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
         return Ok(customer);
@@ -113,30 +124,6 @@ public class CustomersController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Updates an existing customer's contact and farm information.</summary>
-    [HttpPut("{id:long}")]
-    [ProducesResponseType(typeof(CustomerResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<CustomerResponse>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
-    {
-        // Trade units are a UX filter, not an access boundary — any rep may act on any customer.
-        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
-        // Listed there from 2026-09-14 (M-039) — it was always in scope of that entry's rationale but
-        // absent from its route list, so each scan met an apparently-undocumented unguarded mutation.
-        var updated = await _service.UpdateAsync(
-            id,
-            request.Location ?? string.Empty,
-            request.Phone ?? string.Empty,
-            request.Email ?? string.Empty,
-            request.FarmIds ?? new List<string>(),
-            request.LinkedProducerIds ?? new List<string>(),
-            cancellationToken
-        ) ?? throw new NotFoundException("Customer", id);
-
-        return Ok(updated);
-    }
-
-    // -------------------------------------------------------------------------
     /// <summary>Gets a producer's active trade-unit memberships (code + IsManual flag) so the
     /// edit dialog can show which trade units they're on and which are editable vs locked.</summary>
     [HttpGet("{id:long}/trade-units")]
@@ -144,6 +131,13 @@ public class CustomersController : ControllerBase
     public async Task<ActionResult<List<CustomerTradeUnitInfo>>> GetTradeUnits(long id, CancellationToken cancellationToken = default)
     {
         // No per-producer object-level authz is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
+        //
+        // NOTE: unlike GetById / GetBySourceId / GetLinkedTo above, this route is NOT part of the
+        // linked-producer flow — it feeds the edit dialog's membership list. It rests on AR-02's
+        // general position instead. H-073 (2026-09-21) argued it also hands an attacker the trade-
+        // unit codes to aim at AssignTradeUnits (AR-03); that chaining is real but adds nothing,
+        // since AR-03 already accepts that any rep may assign trade units and every rep can read
+        // the codes from their own picker.
         return Ok(await _service.GetTradeUnitsAsync(id, cancellationToken));
     }
 

@@ -48,6 +48,14 @@ public class UsageRepository : IUsageRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<string>> GetViewAllUserIdsAsync(CancellationToken cancellationToken)
+    {
+        return await _appDb.UsageDashboardViewAllUsers
+            .AsNoTracking()
+            .Select(e => e.UserId)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<List<UserDisplayName>> GetDisplayNamesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
     {
         var rows = await _appDb.UserTradeUnitSnapshots

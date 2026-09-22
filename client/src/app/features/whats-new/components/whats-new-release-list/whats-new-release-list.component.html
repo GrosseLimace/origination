@@ -1,0 +1,83 @@
+<!--
+  One copy of the item markup, rendered by both variants through the template outlet below, so
+  the dialog and the history page can frame a release differently without the features
+  themselves drifting apart.
+-->
+<ng-template #itemGroups let-groups>
+  <div class="space-y-5">
+    @for (group of groups; track $index) {
+      <div>
+        @if (group.heading) {
+          <h5 class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">{{ group.heading }}</h5>
+        }
+        <ul class="space-y-2.5" [class.mt-2.5]="group.heading">
+          @for (item of group.items; track $index) {
+            <li class="flex items-start gap-2.5">
+              <span [class]="kindClass(item.kind)">{{ kindLabel(item.kind) }}</span>
+              <span class="text-[length:var(--text-fluid-sm)] leading-relaxed text-gray-700 dark:text-gray-300">{{ item.text }}</span>
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  </div>
+</ng-template>
+
+@if (variant() === 'compact') {
+  <div class="space-y-6">
+    @for (grouped of groupedReleases(); track grouped.release.version) {
+      <section>
+        <!-- Only worth dating when several unseen releases are stacked, so the reader can see
+             where one ends and the next begins. -->
+        @if (groupedReleases().length > 1) {
+          <p class="mb-2.5 text-xs font-medium text-gray-400 dark:text-gray-500">{{ grouped.displayDate }}</p>
+        }
+        <ng-container [ngTemplateOutlet]="itemGroups" [ngTemplateOutletContext]="{ $implicit: grouped.groups }" />
+      </section>
+    }
+  </div>
+} @else {
+  <ol class="space-y-0">
+    @for (grouped of groupedReleases(); track grouped.release.version; let isFirst = $first; let isLast = $last) {
+      <li class="flex gap-4 sm:gap-6">
+        <!-- Dated rail. Hidden below sm, where the date moves inline under the title instead. -->
+        <div class="hidden sm:block w-40 shrink-0 pt-0.5 text-right">
+          <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ grouped.displayDate }}</p>
+          <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">Version {{ grouped.release.version }}</p>
+          @if (isFirst) {
+            <span class="mt-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800 dark:bg-green-900/40 dark:text-green-300">
+              Current
+            </span>
+          }
+        </div>
+
+        <!-- The thread itself: a marker per release, joined by a line that stops at the last one. -->
+        <div class="flex shrink-0 flex-col items-center" aria-hidden="true">
+          <span
+            class="mt-1.5 h-3 w-3 shrink-0 rounded-full ring-4 ring-white dark:ring-gray-800"
+            [class]="isFirst ? 'bg-scoular-green-accessible' : 'bg-gray-300 dark:bg-gray-600'"
+          ></span>
+          @if (!isLast) {
+            <span class="mt-1 w-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
+          }
+        </div>
+
+        <div class="min-w-0 flex-1" [class.pb-10]="!isLast">
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ grouped.release.title }}</h3>
+          <!-- Below sm the rail is gone, so the date has to live here instead. -->
+          <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500 sm:hidden">
+            {{ grouped.displayDate }} · Version {{ grouped.release.version }}
+          </p>
+          @if (grouped.release.summary) {
+            <p class="mt-1.5 text-[length:var(--text-fluid-sm)] leading-relaxed text-gray-500 dark:text-gray-400">
+              {{ grouped.release.summary }}
+            </p>
+          }
+          <div class="mt-4">
+            <ng-container [ngTemplateOutlet]="itemGroups" [ngTemplateOutletContext]="{ $implicit: grouped.groups }" />
+          </div>
+        </div>
+      </li>
+    }
+  </ol>
+}

@@ -16,6 +16,7 @@ public class ApplicationDbContext : DbContext
     }
 
     public DbSet<Note> Notes => Set<Note>();
+    public DbSet<ProducerReminder> ProducerReminders => Set<ProducerReminder>();
     public DbSet<ProducerDetails> ProducerDetails => Set<ProducerDetails>();
     public DbSet<PlantingIntention> PlantingIntentions => Set<PlantingIntention>();
     public DbSet<Commodity> Commodities => Set<Commodity>();
@@ -50,7 +51,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<DailyRecapGroup> DailyRecapGroups => Set<DailyRecapGroup>();
     public DbSet<DailyRecapGroupMember> DailyRecapGroupMembers => Set<DailyRecapGroupMember>();
     public DbSet<DailyRecapGroupCcEmail> DailyRecapGroupCcEmails => Set<DailyRecapGroupCcEmail>();
+    public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
     public DbSet<UsageDashboardExcludedUser> UsageDashboardExcludedUsers => Set<UsageDashboardExcludedUser>();
+    public DbSet<UsageDashboardViewAllUser> UsageDashboardViewAllUsers => Set<UsageDashboardViewAllUser>();
     public DbSet<MbpLocationSynonym> MbpLocationSynonyms => Set<MbpLocationSynonym>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -77,6 +80,45 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.PlantingCategory).HasColumnName("PlantingCategory").HasMaxLength(100).IsRequired(false);
 
             entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_Commodities_Code");
+        });
+
+        modelBuilder.Entity<ProducerReminder>(entity =>
+        {
+            entity.ToTable("ProducerReminders", schema: "dbo");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.DueAt).HasColumnName("DueAt").IsRequired();
+            entity.Property(e => e.Subject).HasColumnName("Subject").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Notes).HasColumnName("Notes").HasMaxLength(2000).IsRequired(false);
+            entity.Property(e => e.OutlookEventId).HasColumnName("OutlookEventId").HasMaxLength(256).IsRequired(false);
+            entity.Property(e => e.IsCompleted).HasColumnName("IsCompleted").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.CompletedAt).HasColumnName("CompletedAt").IsRequired(false);
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
+
+            // Composed from the Customer FK join on read, never stored — same decision as Notes.
+            entity.Ignore(e => e.CustomerName);
+            entity.Ignore(e => e.CustomerCode);
+
+            // NoAction so a Customer rebuild can't wipe user-authored reminders (matches Notes).
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerReminders_Customer_CustomerId");
+
+            // The producer-pane read: one owner's reminders for one producer, newest due first.
+            entity.HasIndex(e => new { e.CustomerId, e.CreatedBy, e.IsCompleted })
+                  .HasDatabaseName("IX_ProducerReminders_CustomerId_CreatedBy_IsCompleted");
+
+            // The badge feed: every OPEN reminder for one owner across all producers. Filtered so
+            // completed rows never enter the index — the feed only ever asks for open ones.
+            entity.HasIndex(e => new { e.CreatedBy, e.DueAt })
+                  .HasDatabaseName("IX_ProducerReminders_CreatedBy_DueAt")
+                  .HasFilter("[IsCompleted] = 0");
         });
 
         modelBuilder.Entity<Note>(entity =>
@@ -156,6 +198,19 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.IsDeleted).HasColumnName("IsDeleted").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.DeletedAt).HasColumnName("DeletedAt").IsRequired(false);
+            entity.Property(e => e.DeletedBy).HasColumnName("DeletedBy").HasMaxLength(255).IsRequired(false);
+
+            // Soft delete is enforced HERE, once, rather than by an IsDeleted predicate on each
+            // query. Note takes the per-query approach and repeats "!IsDeleted" in eleven places:
+            // that works until someone adds a twelfth query and forgets, and then deleted rows
+            // reappear in a view. It matters more here than for notes because these rows are SUMMED
+            // — the trade-unit acreage rollups would silently over-count a deleted plan, giving a
+            // wrong number with no error. A filter on the model cannot be forgotten by new code.
+            //
+            // To read deleted rows deliberately (recovery, audit), use IgnoreQueryFilters().
+            entity.HasQueryFilter(e => !e.IsDeleted);
 
             // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
             // wipe user-authored planting intentions.
@@ -768,6 +823,23 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Timestamp).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
         });
 
+        modelBuilder.Entity<TeamsChannel>(entity =>
+        {
+            entity.ToTable("TeamsChannels", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.TeamId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.TeamName).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.ChannelId).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.DisplayName).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.ChannelEmail).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            // Registration is find-or-create keyed on the channel, so two people picking the same
+            // channel must land on one row rather than racing to create duplicates.
+            entity.HasIndex(e => e.ChannelId).IsUnique().HasDatabaseName("UX_TeamsChannels_ChannelId");
+        });
+
         modelBuilder.Entity<DailyRecapGroup>(entity =>
         {
             entity.ToTable("DailyRecapGroups", schema: "dbo");
@@ -777,6 +849,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.DeliveryMethod).HasMaxLength(20).IsRequired();
             entity.Property(e => e.TeamsChannelEmail).HasMaxLength(256).IsRequired(false);
             entity.Property(e => e.Enabled).HasDefaultValue(true).IsRequired();
+
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
@@ -821,6 +894,20 @@ public class ApplicationDbContext : DbContext
             // Unique so the same account can't be excluded twice; SQL Server's default CI collation
             // makes it case-insensitive, matching how the dashboard keys users.
             entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardExcludedUsers_UserId");
+        });
+
+        modelBuilder.Entity<UsageDashboardViewAllUser>(entity =>
+        {
+            entity.ToTable("UsageDashboardViewAllUsers", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Reason).HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired().HasDefaultValue("system");
+            // Unique so the same account can't be granted whole-org access twice; SQL Server's
+            // default CI collation makes it case-insensitive, matching how the dashboard keys users.
+            entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardViewAllUsers_UserId");
         });
 
         modelBuilder.Entity<MbpLocationSynonym>(entity =>

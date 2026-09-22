@@ -78,19 +78,24 @@ public class ProducerDetailsService : IProducerDetailsService
     /// <inheritdoc />
     public async Task<ProducerDetailsResponse> GetByCustomerAsync(long customerId, CancellationToken cancellationToken)
     {
-        // Scoped, and NOT an AR-02 route any more (removed 2026-09-14). AR-02's rationale is
-        // cross-trade-unit coverage, and no client path depends on it here: this read fires only
-        // from selectCustomer, whose producer always comes from the entitled roster — both
-        // filteredCustomers sources start from customers(), deep links resolve via
-        // customers().find() and give up rather than widening, and the cross-TU linked-producer
-        // cache feeds only the last-contact badge, never a selectable row.
+        // Unscoped by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         //
-        // Contrast GET /api/notes/customer/{id}, which IS fetched for every linked-group member
-        // including producers outside the selected trade units. That one stays under AR-02 on
-        // purpose. The criterion is whether a real client path needs the cross-TU read, not the
-        // shape of the route.
-        await EnsureCustomerEntitledAsync(customerId, "read", cancellationToken);
-
+        // ⚠ A trade-unit check was added here on 2026-09-14 and REVERTED on 2026-09-21. Do not
+        // re-add it. Two independent reasons:
+        //
+        //   1. It is not an access control. Originators self-assign their own trade units through
+        //      the Trade Unit Preferences app, so anyone a check refuses can join the group and
+        //      load the same producer legitimately. A trade-unit test on a READ narrows nothing —
+        //      it only adds a detour. This is what the nine "trade units are a UX filter, not an
+        //      access boundary" comments across this API mean.
+        //   2. It silently broke search-and-click. ODS onboarding candidates carry a real
+        //      CustomerId but have NO CustomerTradeUnit row, so the membership test refused them.
+        //      handleSelectCustomer swallows the error (error: () => {}), and the details fetch is
+        //      the gate for _fetchMissingLinkedProducers, _loadCustomerData and _ensureCustomerNotes
+        //      — so searching a producer you have not onboarded opened a blank profile, with no
+        //      error shown. Exactly the fail-closed-on-unmapped-customer trap that
+        //      IUserEntitlementService.ValidateCustomerAccessAsync documents and is deliberately
+        //      never wired for.
         var pd = await _repository.GetAsync(customerId, cancellationToken);
         if (pd is null)
             return new ProducerDetailsResponse { CustomerId = customerId };
@@ -108,6 +113,12 @@ public class ProducerDetailsService : IProducerDetailsService
         // producer details to LINKED producers outside the caller's selected trade units, and the
         // onboarding flow saves details immediately after assigning membership. An entitlement
         // check here would break both — do not add one without re-opening AR-01.
+        //
+        // M-045 (2026-09-21) argued this write must be scoped because the sibling GET was scoped,
+        // leaving a read-403/write-200 asymmetry. That premise is STALE: the GET scoping was
+        // reverted the same day (see GetByCustomerAsync above). GET and PUT are both open and both
+        // covered by the register; only the DELETE is scoped, for the reasons H-062 records.
+        // The finding's audit half was valid and is fixed in the repository.
         var grainEntries = (request.GrainOnFarm ?? [])
             .Select(g => new GrainOnFarmEntry
             {
@@ -158,6 +169,12 @@ public class ProducerDetailsService : IProducerDetailsService
         // `tradeUnits` list, a `tradeUnitKey`, or a [FromBody] DTO carrying TradeUnitKey, and a
         // DELETE by customer id exposes none of those. The check therefore lives here.
         //
+        // ⚠ THIS IS A SPEED BUMP, NOT AN AUTHORIZATION CONTROL. Originators self-assign trade
+        // units through the Trade Unit Preferences app, so anyone this refuses can join the group
+        // and delete anyway. It is kept only because the route is destructive, hand-cascades to
+        // child rows, and has no client caller — so it costs nothing and blocks a blind id sweep.
+        // Do not cite it as evidence that producer data is entitlement-protected; it is not.
+        //
         // Deliberately NOT covered by AR-01, which still covers the sibling PUT. Three things
         // separate the delete: it has no client caller at all (deleteProducerDetails in
         // api.service.ts is dead code), it hand-cascades to ProducerContacts and
@@ -166,10 +183,11 @@ public class ProducerDetailsService : IProducerDetailsService
         // rationale protects a hand-off workflow that does not exist on this route.
         await EnsureCustomerEntitledAsync(customerId, "delete", cancellationToken);
 
-        return await _repository.DeleteAsync(customerId, cancellationToken);
+        return await _repository.DeleteAsync(customerId, _requestContext.GetCurrentUser(), cancellationToken);
     }
 
-    /// <summary>Throws unless the caller is entitled to a trade unit the customer belongs to.
+    /// <summary>Throws unless the caller holds a trade unit the customer belongs to. Used by the
+    /// DELETE path only — see GetByCustomerAsync for why reads are NOT gated this way.
     /// <para>
     /// Two databases answer this: TradeUnitPreferences says which trade units the USER holds
     /// (<c>UserTradeUnitPreferences</c>), and the Origination DB says which customers sit in them

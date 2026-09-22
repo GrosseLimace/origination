@@ -4,7 +4,7 @@ import { DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
-import { EMPTY, Observable, ReplaySubject, catchError, filter, of, switchMap, take, tap } from 'rxjs';
+import { Observable, ReplaySubject, catchError, filter, of, switchMap, take, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 interface MeResponse {
@@ -52,11 +52,23 @@ export class UserRolesService {
       switchMap(() => {
         const account = this.msalService.instance.getActiveAccount()
           ?? this.msalService.instance.getAllAccounts()[0];
-        if (!account) return EMPTY;
+        // No account: resolve to NO roles rather than EMPTY. EMPTY completes without emitting, so
+        // the tap below never ran, `_ready$` never received a value, and `ready$()` never
+        // completed — leaving every guard that awaits it hanging navigation indefinitely, with no
+        // redirect and no error. Emitting an empty role set fails closed (the guards deny and
+        // redirect) AND lets navigation finish, which is the same thing the adjacent catchError
+        // already does for an HTTP failure.
+        if (!account) return of<MeResponse>({ userId: '', roles: [] });
         return this.http.get<MeResponse>(`${environment.apiBaseUrl}/me`).pipe(
           catchError(() => of<MeResponse>({ userId: '', roles: [] }))
         );
       }),
+      // Backstop so "ready$() always resolves" holds unconditionally. The inner catchError covers
+      // an HTTP failure, which is the realistic case, but anything throwing synchronously inside
+      // the switchMap projection would escape it and error this outer stream — and then tap never
+      // runs, _ready$ never emits, and every guard awaiting it hangs the route silently. Failing
+      // closed with no roles is always preferable to not deciding.
+      catchError(() => of<MeResponse>({ userId: '', roles: [] })),
       tap(response => {
         const roles = response?.roles ?? [];
         this._roles.set(roles);

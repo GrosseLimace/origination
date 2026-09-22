@@ -6,6 +6,7 @@ import { CustomerNotesComponent } from './customer-notes.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, Note, NoteMention } from '@models';
+import { TeamsDirectoryService } from '@core/services/teams-directory.service';
 
 // Covers the note search filter (content + author + created/modified date, ALL typed words required)
 // and the combined view segmentation (@mention = green text, search match = green highlight).
@@ -41,7 +42,10 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [] }) } },
+        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] }) } },
+        // The component injects this to offer Teams channels; the real one needs MSAL, which these
+        // tests have no reason to stand up.
+        { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
       ],
     });

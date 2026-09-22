@@ -5,6 +5,13 @@ namespace GrainOriginatorPortal.Api.Middleware;
 /// per security-guide.md §8.1: "Log auth events, access denials, and suspicious patterns."
 /// Runs after UseAuthentication/UseAuthorization so the response status code is final.
 /// </summary>
+/// <remarks>
+/// This catches denials decided <em>downstream</em> of authorization — a controller returning
+/// Forbid()/Unauthorized(), or a filter like EnforceTradeUnitAccess throwing. Denials decided by
+/// the authorization middleware itself never reach here, because Challenge/Forbid short-circuits
+/// the pipeline without calling the next delegate; <see cref="AuthorizationAuditResultHandler"/>
+/// covers those. Between the two, every 401/403 is logged exactly once.
+/// </remarks>
 public class SecurityAuditMiddleware
 {
     private readonly RequestDelegate _next;

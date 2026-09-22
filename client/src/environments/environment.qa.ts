@@ -4,7 +4,16 @@ export const environment = {
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
+  // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
+  // on THIS environment's SPA app registration, plus a federated identity credential on the
+  // 'Origination API - QA' registration for the on-behalf-of exchange (see appsettings.QA.json).
+  // Both granted 2026-09-21 — enabled. Without them the channel lookup returns nothing, so this
+  // stays false rather than showing an empty, apparently-broken picker section.
+  teamsChannelMentionsEnabled: true,
   calculatorEnabled: true,
+  // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
+  // admin consent on this env SPA app registration. Granted 2026-09-21 — enabled.
+  remindersEnabled: true,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-qa.scoular.com/my-preferences',
