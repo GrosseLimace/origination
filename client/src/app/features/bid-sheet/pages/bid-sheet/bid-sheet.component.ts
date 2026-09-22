@@ -4756,9 +4756,8 @@ export class BidSheetComponent {
       elevatorCode: loc.elevatorCode,
       tradeUnitCode: loc.tradeUnitCode,
       groupName: loc.groupName,
-      isScoularFacility: newValue,
-      bids: []
-    } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      isScoularFacility: newValue
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.allMapLocations.update(locs => locs.map(l =>
           l.id === loc.id ? { ...l, isScoularFacility: newValue } : l

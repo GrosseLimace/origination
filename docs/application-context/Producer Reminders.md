@@ -130,10 +130,13 @@ calendar back to check) needs a broader permission than we asked for.
 
 ## Feature flag
 
-`remindersEnabled` in `client/src/environments/environment*.ts`. True locally and in Dev; **false in
-QA and Production until the API app registration has admin consent for delegated
-`Calendars.ReadWrite`** (see `developer-docs/APP-REGISTRATIONS.md`). With the flag off there is no
-card, no badge, and no `/api/reminders/mine` call.
+`remindersEnabled` in `client/src/environments/environment*.ts`. **True in every environment since
+2026-09-21.** QA flipped on the strength of its credential + consent (verified live). Production flipped
+on the basis that IT adds the federated credential and admin consent for delegated `Calendars.ReadWrite`
+on the `Origination API - Production` registration **before** the 2026-09-22 promotion; the matching
+`AzureAd:ClientCredentials` block is in `appsettings.Production.json`. If the grant slips the reminder
+still saves, the Outlook write silently no-ops and the row shows an "Add to Outlook" retry. With the
+flag off there is no card, no badge, and no `/api/reminders/mine` call.
 
 Consent applies to Dev, QA and Production **together**, not one at a time; the flag is what keeps the
 feature dark until we choose to turn it on.

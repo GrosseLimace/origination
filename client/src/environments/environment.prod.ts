@@ -14,15 +14,26 @@ export const environment = {
   // must be applied to the prod DB. Merge this branch as part of that launch.
   dailyDigestEnabled: true,
   // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
-  // on THIS environment's SPA app registration; without it the channel lookup returns nothing, so
-  // the flag stays off rather than showing an empty, apparently-broken picker section.
-  teamsChannelMentionsEnabled: false,
+  // on THIS environment's SPA app registration, plus a federated identity credential on the
+  // 'Origination API - Production' registration for the on-behalf-of exchange (see
+  // appsettings.Production.json).
+  //
+  // ⚠ Enabled 2026-09-21 on the basis that both land BEFORE the deploy. If the grant slips this
+  // ships an empty channel picker — and because these flags are compiled in at build time
+  // (angular.json fileReplacements), switching it back off needs another full client deploy, not
+  // a config change. Verify the consent is live before releasing.
+  teamsChannelMentionsEnabled: true,
   // Originator Calculators: ON in PROD. Gates the floating calculator launcher on the
   // customer home page (Profitability / Check / Cancel-vs-Roll). Client-side only — no backend.
   calculatorEnabled: true,
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
-  // admin consent on this env SPA app registration; flip to true once that consent is granted.
-  remindersEnabled: false,
+  // admin consent on this env SPA app registration.
+  //
+  // ⚠ Enabled 2026-09-21 on the same basis as the Teams flag above, and it shares the same OBO
+  // plumbing — so the two succeed or fail together. If the consent slips, a reminder saves in the
+  // app but silently fails to create the Outlook event, which is worse than the feature being
+  // absent: the user believes they have been reminded.
+  remindersEnabled: true,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs.scoular.com/my-preferences',
