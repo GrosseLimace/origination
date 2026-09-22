@@ -64,6 +64,13 @@ export class UsageTrackingService {
     this.postClickEvent('email_click', 'customers', 'customer-details', customerId);
   }
 
+  /** Address opened in Google Maps. Uses the generic 'interaction' event type on purpose: the
+   *  usage dashboard tallies event types by explicit string match, so a brand-new type would be
+   *  stored and then counted nowhere. */
+  trackMapClick(customerId: string): void {
+    this.postClickEvent('interaction', 'customers', 'map-click', customerId);
+  }
+
   trackTicketDropdownOpen(customerId?: string): void {
     this.postClickEvent('interaction', 'customers', 'tickets', customerId);
   }
