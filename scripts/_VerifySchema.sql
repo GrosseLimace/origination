@@ -42,6 +42,9 @@
 --   Last regenerated: 2026-09-21 against the snapshot as of migration
 --   20260921152258_AddUsageDashboardViewAllUsers (re-parsed the snapshot; every
 --   previously listed row was reproduced unchanged by the rules above).
+--   Updated 2026-09-22: appended the two flax migrations (20260921202246,
+--   20260921204500). Both are data-only raw SQL, so no table, column or index
+--   row changed; only @Migrations grew.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -601,7 +604,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (49)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (51)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -654,7 +657,9 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260915135233_AddFollowUpQueryLibraryItem'),
 ('20260915153811_AddCommodityPlantingCategory'),
 ('20260921141144_AddPlantingIntentionSoftDelete'),
-('20260921152258_AddUsageDashboardViewAllUsers');
+('20260921152258_AddUsageDashboardViewAllUsers'),
+('20260921202246_AddFlaxCommoditiesForTradeUnit3811'),
+('20260921204500_SplitFlaxPlantingCategoryByColour');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
