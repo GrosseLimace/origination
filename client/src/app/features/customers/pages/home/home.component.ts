@@ -49,16 +49,26 @@ export class HomeComponent {
   /** When a background load or save on this page fails, say so. These subscriptions used to
    *  carry `error: () => {}`, so an API outage showed up only as panels that were quietly empty
    *  or stale, with nothing in the console for support to go on (audit finding
-   *  angular.home-component-silent-error-swallowing). Errors are logged in dev builds; the user
-   *  gets one toast per data source per 30s, and at most one toast every 5s overall, so an
-   *  outage that fails eight calls at once reads as a single message rather than a wall of them. */
+   *  angular.home-component-silent-error-swallowing).
+   *
+   *  Nothing here was asked for by the user: these are background loads and refreshes, so the
+   *  bar for interrupting is high and repetition buys nothing. Once someone has been told the
+   *  data is stale, telling them again does not help them. So a sustained outage is worth at
+   *  most one message a minute, and the same failing source stays quiet for five minutes after
+   *  it has spoken. The wording is deliberately vague about scope, because the toast that gets
+   *  through may be standing in for several failures that were suppressed behind it.
+   *
+   *  Dev builds still log every failure, unthrottled, so local debugging sees everything. */
+  private static readonly BackgroundFailureQuietMs = 60_000;
+  private static readonly BackgroundFailurePerSourceQuietMs = 5 * 60_000;
   private readonly _backgroundFailureToastAt = new Map<string, number>();
   private _lastBackgroundFailureToastAt = 0;
   private _reportBackgroundFailure(what: string, err: unknown): void {
     if (isDevMode()) console.error(`[Home] failed to ${what}`, err);
     const now = Date.now();
-    if (now - (this._backgroundFailureToastAt.get(what) ?? 0) < 30_000) return;
-    if (now - this._lastBackgroundFailureToastAt < 5_000) return;
+    const lastForSource = this._backgroundFailureToastAt.get(what) ?? 0;
+    if (now - lastForSource < HomeComponent.BackgroundFailurePerSourceQuietMs) return;
+    if (now - this._lastBackgroundFailureToastAt < HomeComponent.BackgroundFailureQuietMs) return;
     this._backgroundFailureToastAt.set(what, now);
     this._lastBackgroundFailureToastAt = now;
     this.toastService.error(`Failed to ${what}. Some data may be missing or out of date.`);
