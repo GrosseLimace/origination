@@ -1,29 +1,64 @@
 [
   {
     "version": "2026.09.1",
-    "releasedOn": "2026-09-15",
-    "title": "Release notes in the app, trade unit overlap on saved lists",
-    "summary": "A short note on what changed after each release, and a way to spot producers a saved list is hiding.",
+    "releasedOn": "2026-09-22",
+    "title": "Follow-ups, Teams channels, and lists that follow your trade units",
+    "summary": "Set your own reminders on a producer, send a note straight to a Teams channel, and find your saved lists where you expect them.",
     "items": [
       {
-        "group": "What's New panel",
+        "group": "Follow-ups",
         "kind": "added",
-        "text": "After each release the app tells you what changed. The notice appears once, and you can reopen it any time from the What's New row in your profile menu."
+        "text": "You can set a follow-up on a producer and see it on their page under My Follow-Ups. These are private to you, and nobody else can see them."
       },
       {
-        "group": "What's New panel",
+        "group": "Follow-ups",
         "kind": "added",
-        "text": "Your profile menu now shows which release and build you are running. Include that line when you report a problem and we can tell exactly which version you were on."
+        "text": "Each follow-up also goes on your Outlook calendar, with a reminder the day before, so you get a nudge without having to come back into the app."
+      },
+      {
+        "group": "Follow-ups",
+        "kind": "added",
+        "text": "A producer with a follow-up coming up shows a clock on the producer list, colour-coded by how soon it is due. Build a List has a new Follow-Ups Scheduled card that pulls up everyone you owe a follow-up."
+      },
+      {
+        "group": "Teams channels",
+        "kind": "added",
+        "text": "Typing @ in a note now offers the Teams channels you belong to, as well as people. Pick one and the note is posted straight to that channel. A channel only appears in the list if it has an email address set up in Teams — open the channel, choose Get email address, and it will show up here."
+      },
+      {
+        "group": "Teams channels",
+        "kind": "added",
+        "text": "A Daily Recap group can be pointed at a Teams channel instead of email. Mention that group in a note and it posts to the channel rather than mailing everyone. Set it up under Manage Groups, using the channel email address."
       },
       {
         "group": "Saved lists",
-        "kind": "added",
-        "text": "A saved list now shows which of its producers fall outside your current trade unit selection, so you can see at a glance why a list looks shorter than you expected."
+        "kind": "changed",
+        "text": "A saved list now shows up whenever any one of its trade units is selected, instead of only when your selection matched exactly. Lists saved across two trade units used to disappear when you looked at one of them on its own."
       },
       {
-        "group": "Usage Dashboard",
+        "group": "Saved lists",
         "kind": "fixed",
-        "text": "The activity status column no longer shows stale values for originators who have signed in recently."
+        "text": "Re-saving a list while a different trade unit was selected could permanently drop producers you had added by hand. Those producers are now kept."
+      },
+      {
+        "group": "Build a List",
+        "kind": "changed",
+        "text": "The Crops filter now lists specific commodity codes rather than broad crop groups, so you can separate HRWW from SRWW instead of getting all wheat at once. You can still narrow by state in the same panel."
+      },
+      {
+        "group": "Organic and specialty crops",
+        "kind": "fixed",
+        "text": "Organic and identity-preserved crops now show under their own names, such as Organic Soybeans and Waxy Corn, instead of being counted as the conventional crop. This applies to the Planting Intentions dashboard, the producer's planting table and the print report, and their acres and coverage are now measured against their own contracts. Existing entries pick this up on their own."
+      },
+      {
+        "group": "What's New",
+        "kind": "added",
+        "text": "After each release the app tells you what changed, once. You can reopen it any time from the What's New row in your profile menu."
+      },
+      {
+        "group": "What's New",
+        "kind": "added",
+        "text": "Your profile menu now shows which release and build you are on. Quote that line when you report a problem and we can tell exactly what you were running."
       }
     ]
   }

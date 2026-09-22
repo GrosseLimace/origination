@@ -22,6 +22,11 @@ public interface IUsageRepository
     /// <summary>Short user names (UPN before the '@') kept OUT of the usage dashboard, from
     /// dbo.UsageDashboardExcludedUsers.</summary>
     Task<List<string>> GetExcludedUserIdsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Short user names (UPN before the '@') allowed to read the WHOLE organisation and
+    /// pick any manager, from dbo.UsageDashboardViewAllUsers. Empty means everyone is scoped to
+    /// their own subtree — the fail-closed direction.</summary>
+    Task<List<string>> GetViewAllUserIdsAsync(CancellationToken cancellationToken);
     Task<List<UserDisplayName>> GetDisplayNamesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
 
     /// <summary>All rows of TradeUnitPreferences dbo.vw_UserManagerLookup (~1,150; one per user).

@@ -19,7 +19,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 // needs to accept click events from every signed-in user for user-activity tracking.
 // Exclusion administration stays AdminOnly (+ the ExclusionManagers allowlist).
 // These policies decide who may CALL a read. How much of the org each read returns is a separate
-// concern, scoped per caller in UsageDashboardService against UsageDashboard:ViewAll.
+// concern, scoped per caller in UsageDashboardService against dbo.UsageDashboardViewAllUsers.
 [Authorize]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase

@@ -13,6 +13,8 @@ const HRWO: Row = { code: 'HRWO', tradeGroupScope: 'Organics' };
 // Unit-scoped — the specialty soy/corn grades for three of the six Organics units.
 const DNGS: Row = { code: 'DNGS', tradeUnitScope: '2090,2291,2295' };
 const DOSB: Row = { code: 'DOSB', tradeUnitScope: '2090,2291,2295' };
+// Unit-scoped to ONE unit — the flax grades for 3811 (Pulses Trading).
+const BFL1: Row = { code: 'BFL1', tradeUnitScope: '3811' };
 
 function ctx(groupNames: string[], tradeUnitCodes: string[]): CommodityScopeContext {
   return { groupNames, tradeUnitCodes };
@@ -62,6 +64,15 @@ describe('commodity-scope', () => {
     // Substring matching (which group scope uses) would match 2090, 2093 and 2094 here.
     expect(scopeCommodities([DNGS], ctx([], ['209']))).toHaveLength(0);
     expect(scopeCommodities([{ code: 'X', tradeUnitScope: '209' }], ctx([], ['2090']))).toHaveLength(0);
+  });
+
+  it('handles a single-unit scope: 3811 sees the flax grades, nobody else does', () => {
+    expect(scopeCommodities([BFL1], ctx(['Pulses'], ['3811'])).map(c => c.code)).toEqual(['BFL1']);
+    expect(scopeCommodities([BFL1], CONVENTIONAL)).toHaveLength(0);
+    expect(scopeCommodities([BFL1], ORGANICS_SUBSET)).toHaveLength(0);
+    // Multi-select including 3811 still shows them; 381 / 38110 are not 3811.
+    expect(scopeCommodities([BFL1], ctx([], ['2115', '3811']))).toHaveLength(1);
+    expect(scopeCommodities([BFL1], ctx([], ['381', '38110']))).toHaveLength(0);
   });
 
   it('tolerates whitespace in the stored code list', () => {
