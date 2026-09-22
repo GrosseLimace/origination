@@ -266,7 +266,12 @@ public class GeocodeService : IGeocodeService
                     }).ToList();
 
                     _cache.Set(cacheKey, results, _cacheOptions);
-                    return results;
+                    // Copy on the way out here too. Returning the cached instance itself let the
+                    // first caller after a cache miss mutate the shared entry: a caller that
+                    // cleared its own result list emptied the cache for everyone, so the next
+                    // identical search returned nothing until the entry expired. The cache-hit
+                    // path above already copied; this path did not.
+                    return [.. results];
                 }
             }
             else
