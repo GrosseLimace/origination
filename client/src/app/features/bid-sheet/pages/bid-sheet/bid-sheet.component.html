@@ -1439,20 +1439,23 @@
                             (cdkDragStarted)="draggingColKey.set(col.key)"
                             (cdkDragEnded)="draggingColKey.set('')"
                             class="group/col sticky top-0 z-20 whitespace-nowrap px-4 py-3 text-center text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider border-l border-gray-200 dark:border-gray-700 border-b cursor-grab active:cursor-grabbing transition-colors"
-                            [ngClass]="[priceMode() === 'both' ? 'min-w-[260px]' : 'min-w-[150px]', draggingColKey() === col.key ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800']">
-                          <div class="flex items-center justify-center gap-1.5">
-                            {{ col.label }}
-                            <!-- Revealed on hover rather than always shown: with a dozen columns a
-                                 permanent x on each reads as clutter, and removing one is rare next
-                                 to typing in them. Focus-visible keeps it reachable by keyboard. -->
-                            <button type="button" (click)="removeColumn(col.key)"
-                              (mousedown)="$event.stopPropagation()"
-                              [disabled]="columnMutationBusy()"
-                              [title]="'Remove the ' + col.label + ' column'"
-                              class="shrink-0 p-0.5 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-200/70 dark:hover:bg-gray-700 disabled:opacity-0 transition-all">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                            </button>
-                          </div>
+                            [ngClass]="[priceMode() === 'both' ? 'min-w-[310px]' : 'min-w-[185px]', draggingColKey() === col.key ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800']">
+                          {{ col.label }}
+                          <!-- Absolutely positioned, NOT a flex sibling of the label. Hidden with
+                               opacity it still occupied its slot, so every label sat half a button
+                               left of centre. Out of the flow, the label centres on the cell and the
+                               button rides the right edge. The <th> is sticky, which is a positioned
+                               value, so this anchors to the cell without needing a relative ancestor.
+                               Revealed on hover: with a dozen columns a permanent x on each reads as
+                               clutter, and removing one is rare next to typing in them.
+                               Focus-visible keeps it reachable by keyboard. -->
+                          <button type="button" (click)="removeColumn(col.key)"
+                            (mousedown)="$event.stopPropagation()"
+                            [disabled]="columnMutationBusy()"
+                            [title]="'Remove the ' + col.label + ' column'"
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-200/70 dark:hover:bg-gray-700 disabled:opacity-0 transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
                         </th>
                       }
                       <!-- Add Commodity is the LAST column: a new column appears where this button
