@@ -2185,6 +2185,45 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
     expect(c._seedColumns()).toEqual([]);
   });
 
+  // Reported from QA: clear every commodity, step out to the map, come back, and the whole old set
+  // was there again. The migration marker is set once on load and was never spent, so every open
+  // re-ran the reconstruction -- and clearing the last column is precisely the state that triggers it.
+  it('reconstructs an old arrangement once, not on every open', () => {
+    component.crops.set(['YC']);
+    const c = component as unknown as {
+      _needsColumnSeed: boolean; _legacyMonths: number[] | null; _legacyYears: number[] | null;
+    };
+    c._needsColumnSeed = true;
+    c._legacyMonths = [9];
+    c._legacyYears = [2026];
+
+    component.openEditBids();
+    expect(component.selectedColumns()).toHaveLength(1);
+
+    // The user clears them all, then leaves and comes back.
+    component.selectedColumns.set([]);
+    component.openEditBids();
+
+    expect(component.selectedColumns()).toEqual([]);
+  });
+
+  it('does not reconstruct after the user has saved a list of their own', () => {
+    component.crops.set(['YC']);
+    const c = component as unknown as {
+      _needsColumnSeed: boolean; _legacyMonths: number[] | null; _legacyYears: number[] | null;
+      _saveSelectedColumns(): void;
+    };
+    c._needsColumnSeed = true;
+    c._legacyMonths = [9];
+    c._legacyYears = [2026];
+
+    // Saving anything -- including nothing -- settles what their arrangement is.
+    c._saveSelectedColumns();
+    component.openEditBids();
+
+    expect(component.selectedColumns()).toEqual([]);
+  });
+
   it('still reconstructs an arrangement for a user who has one', () => {
     component.crops.set(['YC']);
     const c = component as unknown as {

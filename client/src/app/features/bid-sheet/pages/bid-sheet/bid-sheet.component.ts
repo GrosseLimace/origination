@@ -3348,7 +3348,13 @@ export class BidSheetComponent {
     // year and reopening Edit Bids no longer changes what the grid shows.
     if (this.selectedColumns().length === 0) {
       const seeded = this._seedColumns();
-      if (seeded.length > 0) this.selectedColumns.set(seeded);
+      if (seeded.length > 0) {
+        this.selectedColumns.set(seeded);
+        // Spent. Reconstructing the old arrangement happens ONCE. Leaving it armed meant that
+        // clearing every column and stepping out to the map brought the whole set back on the way
+        // in, because this runs on every open and the flag only ever reset on a page load.
+        this._needsColumnSeed = false;
+      }
     }
     this._buildEditGrid();
     this._editBidsSavedKeys.clear();
@@ -3579,6 +3585,10 @@ export class BidSheetComponent {
    * so omitting them would blank the map panel's selection every time a column changed.
    */
   private _saveSelectedColumns(): void {
+    // Whatever they just saved IS their arrangement now, empty included, so there is nothing left to
+    // migrate. Cleared here rather than only on the seed path because clearing the last column is
+    // exactly the case that never reaches it.
+    this._needsColumnSeed = false;
     const key = this.preferenceKey();
     if (!key) return;
     const payload = BidSheetComponent.serialiseSelectedColumns(this.selectedColumns());
