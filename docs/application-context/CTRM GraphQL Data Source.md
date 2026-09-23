@@ -1,6 +1,6 @@
 # CTRM GraphQL Data Source
 
-**Status:** Live in Dev/Development and QA. Production still reads the ODS views until its `Ctrm` config block and Key Vault secret are added.
+**Status:** Live in Dev/Development and QA. Production ships **wired but off** (`Ctrm:Source = "ods"`, identity values empty) and still reads the ODS views; turning it on is App Service settings plus the restart they trigger — see *Turning CTRM on in Production* below.
 
 **QA testing caveat.** QA's `GraphQlUri` is the same QA gateway Dev uses, which reads the **nonprod Db2 library, not production CTRM**. A tester comparing a producer against QA ODS is therefore comparing two different vintages of data, so a difference is not automatically a defect. What QA can validate: the right producers appear, contract and ticket counts agree between the two sources for a producer, pricing badges / quantities / elevator names / storage gating are right, and the failure states behave. What QA cannot validate: that CTRM is fresher than ODS - that only shows in production. Flip `Ctrm__Source` between `ctrm` and `ods` as an App Service setting to compare the same producer both ways without a redeploy.
 
@@ -95,6 +95,49 @@ The API's own status taxonomy is handled explicitly: business validation → HTT
 Base `appsettings.json` documents every key with a `// Key` sibling. Per environment: `Source`, `GraphQlUri`, `TenantId`, `ClientId`, `Audience`, `PageSize`, `PageConcurrency`, `TradeUnitCacheMinutes` (15), `TradeUnitContractStrategy` (`perProducer`), `TradeUnitPerProducerConcurrency` (8), `TradeUnitContractConcurrency` (2), `TradeUnitContractMaxPagesPerChunk` (100), `TradeUnitTicketMaxPagesPerWindow` (200), `TradeUnitMaxConcurrentRequests` (6), `BackgroundMaxDeferSeconds` (20), `ServerTimeoutRetries` (0) / `ServerTimeoutRetryDelaySeconds` (8), `InteractiveServerTimeoutRetries` (0) / `InteractiveServerTimeoutRetryDelaySeconds` (3), `InteractivePageConcurrency` (4), `InteractiveWindowSplit` (1 = off), `CrossBookedAppliedTickets` (false), `LiveCacheSeconds`, `TicketLookbackDays` (1095), `HistoricalTicketCacheMinutes`, `RecentTicketDays` (30; Spot Loads).
 
 To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to that environment's Key Vault, confirm APIM egress (no custom NSG rule needed), restart.
+
+## Turning CTRM on in Production (runbook)
+
+Production ships **wired but off**: `appsettings.Production.json` carries a `Ctrm` block with `Source: "ods"` and empty identity values, so a PROD deploy changes nothing at runtime and the flip is App Service settings only. Written 2026-09-23 for the 2026-09-29 release; the API team owns the PROD gateway.
+
+### What must exist before the flip (none of it is code)
+
+| Item | Owner | Why it is a precondition |
+|---|---|---|
+| PROD GraphQL endpoint URL — reads **production** Db2 (not `apiqa.scoular.com`, which serves a nonprod snapshot) | API team | `Ctrm__GraphQlUri` |
+| PROD API audience, `api://<prod-api-app-id>/.default` | API team | `Ctrm__Audience` |
+| Client app registration with a role on the PROD API (same as Dev/QA's `5e9cb280…` or a PROD one) | API team | `Ctrm__ClientId` |
+| That registration's secret in **`kv-orig-eus`** as `Ctrm--ClientSecret` | whoever can write PROD Key Vault | The CTRM client and its `ClientSecretCredential` are a **singleton built at startup** and Key Vault is read at startup — the secret must be in the vault **before** the restart that turns CTRM on |
+| PROD APIM rate-limit policy (calls/period, burst, per-subscription vs per-IP, `Retry-After` on 429) | API team | QA throttled us at roughly 13–26 calls/s sustained; one trade-unit load is ~587 calls at ~13/s. We bound concurrency but not request rate |
+| Whether the PROD gateway needs an APIM subscription key header | API team | We send a bearer token only. A key would be a **code change** |
+| PROD App Service instance count | Infra | `CtrmKeepWarmService` has no single-instance guard: N instances = N× keep-warm load against the quota |
+
+### The flip
+
+1. Confirm the secret is in `kv-orig-eus` and the app's managed identity can read it (it already reads that vault for other secrets).
+2. Set App Service settings on `app-origination-eus` — `Ctrm__GraphQlUri`, `Ctrm__ClientId`, `Ctrm__Audience`, then **last** `Ctrm__Source = ctrm`. Saving restarts the app; that restart is what builds the credential with the secret.
+3. Do **not** change `Ctrm__TenantId` (committed) or any tuning knob — the concurrency and cache settings in base `appsettings.json` are the measured values.
+
+### Verifying it worked
+
+The CTRM diagnostics endpoints are deliberately unavailable in Production (`DenyIfProduction`), so use what every request already carries:
+
+- Open a producer; in the browser network tab the contracts and tickets responses carry `X-Data-Source-Contracts: ctrm…` and `X-Data-Source-Tickets: ctrm…`, and `Server-Timing` shows the CTRM portion. A value of `ods` means the switch did not flip; `NotConfigured` means an identity value is empty; `Unauthorized` means the secret or the role is wrong; `Throttled` means 429.
+- The App Service log stream (PROD inherits `Default: Information`) prints `CTRM contracts: N for producer X` and `CTRM tickets: N rows for producer X` per click, and `CTRM live contracts: … via N per-producer call(s) in Ns` for the first trade-unit load.
+- Spot-check 5–10 known producers against what ODS showed before the flip (contract count, open contracts, ticket count). Expect small differences to be **ODS drift**, not defects — PROD CTRM against PROD ODS is the first like-for-like comparison; in QA the gateway's snapshot made counts differ by whole contracts. Decide beforehand who adjudicates.
+- Two Actionable Insights cards (Unconfirmed Contracts, Unshipped Bushels) and the contract-filtered Build-a-List prompts wait for the first trade-unit contract load of a session — expect 30–60 s once per two hours per trade unit, then cached. That is the known cost the API team's warming and two-step paging work addresses; it is not a flip failure.
+
+### Rolling back
+
+Set `Ctrm__Source = ods`. Both repository switches and keep-warm re-read that key on every call, so after the settings restart PROD is on ODS again. Nothing else needs to change; the identity settings can stay.
+
+### What a failure looks like to users, and what it is not
+
+A CTRM read that fails shows an amber **"Contracts could not be loaded"** (or tickets) with a Retry button — never an empty list. There is **no automatic ODS fallback**, by design: silently mixing sources would be worse than an honest failure. If one producer's call fails twice inside a trade-unit walk, the whole walk fails, so a short 429 burst is visible as this message for its duration. There is no alerting on it — the API has no Application Insights SDK; the log stream is the only signal.
+
+### Known caveat carried from QA
+
+QA's `ctrm.vw_GNTA39D1` storage view is empty, so C-prefix (customer-storage) unapplied tickets never appear in QA; PROD's view is populated, so they will. Testers comparing QA to PROD will see that difference — it is the QA view, not the code.
 
 ## Deliberate divergences from ODS (decided, not defects)
 
