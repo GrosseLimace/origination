@@ -150,6 +150,31 @@ Caden
 
 ---
 
+## 4. Hope and Travis — the three product questions the cards left open
+
+**To:** Hope, Travis (cc Marc)
+**Subject:** Origination mobile: three quick decisions before we build
+
+Hi Hope, Travis,
+
+Thanks for the scope session; Marc's eleven cards gave us everything we needed to write the API contract. Three things the cards do not settle change what we build, so a quick answer on each would help:
+
+1. **How much offline?** Card #644 caps note history because of poor signal, and #643 and #647 have originators editing on-farm details and planting intentions while standing at the farm. Which do you need?
+   - **(a)** Survive a dropped connection during a visit: the app keeps working on what it has loaded, and a note you type while offline is saved and sent when signal returns. Edits to on-farm details or planting intentions made offline show a "couldn't save, retry" message.
+   - **(b)** Work for hours with no signal at all: every add and edit is stored on the phone and sent later, including on-farm and planting changes, with a conflict message if someone else changed the same record in the meantime.
+   Option (a) is simpler and safer; (b) is more work and needs a security exception for how long the phone keeps a login. Which matches how originators actually work?
+
+2. **Which trade units offer storage?** Card #648 hides the Storage tab entirely for producers at trade units with no storage programme. Nothing in our systems records that today. Who can give us the list, and where should it live: a flag per trade unit that an admin maintains, or is it derivable from CTRM (for example, any trade unit with a storage programme code)?
+
+3. **What phones will originators use?** Company-issued phones enrolled in Intune, personal phones with the company portal, or personal phones with nothing installed? IT Security's rules for an internet-facing app depend on this: an enrolled or portal-managed phone lets us use the browser app we are planning; unmanaged personal phones would push us to an app-store install and a longer timeline.
+
+Everything else on the cards is unambiguous and we are proceeding.
+
+Thanks,
+Caden
+
+---
+
 ## After sending
 
 - Record the send date and the named contact per team in [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) `Status` column.
