@@ -144,6 +144,7 @@ public class BidSheetController : ControllerBase
             CropCode = request.CropCode,
             Month = request.Month,
             CropYear = request.CropYear,
+            SelectedColumns = request.SelectedColumns,
             CropOrder = request.CropOrder,
             HiddenCrops = request.HiddenCrops,
             SelectedMonths = request.SelectedMonths,
