@@ -27,7 +27,7 @@ import { commodityHex } from '@shared/utils/commodity-color';
 import { barchartDisplayName, barchartSaveName, isScoularListing } from '../../utils/barchart-location-name';
 import { buildBidSheetExport, downloadWorkbook, writeBidSheetWorkbook, ExcelJSModule } from '../../utils/bid-sheet-export';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
-import { formatBasis } from '../../utils/basis-format';
+import { formatBasis, normalizeBasis } from '../../utils/basis-format';
 import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
@@ -3425,7 +3425,10 @@ export class BidSheetComponent {
         // show; the save writes each to its own column. Reading a mode-selected value into bids is
         // how a basis would end up filed as a cash price.
         bids[col.key] = entry?.cashBid ?? '';
-        basisBids[col.key] = entry?.basisBid ?? '';
+        // Display form, sign and all: a negative already shows its "-" here, so a positive hiding
+        // its "+" reads as an inconsistency rather than as a convention. normalizeBasis takes it back
+        // off at every boundary that leaves this screen.
+        basisBids[col.key] = formatBasis(entry?.basisBid ?? '');
         originalBasisBids[col.key] = basisBids[col.key];
         coverageChips[col.key] = this.coverageChipFor(entry);
         boardChips[col.key] = this.cellBoardFor(locationId, col.year, col.crop, col.month);
@@ -3646,6 +3649,16 @@ export class BidSheetComponent {
     return crops.flatMap(crop => months.flatMap(month => years.map(year => ({ crop, year, month }))));
   }
 
+  /**
+   * Has this cell's basis actually changed?
+   *
+   * Compares the storage form, so "5" typed over a cell showing "+5" is not a change. A plain string
+   * comparison of the two would call it one, mark the cell dirty, and send a no-op write.
+   */
+  basisChanged(row: EditBidsRow, key: string): boolean {
+    return normalizeBasis(row.basisBids[key]) !== normalizeBasis(row.originalBasisBids[key]);
+  }
+
   /** Handles arrow key navigation between bid input cells in the edit grid. */
   onBidKeyDown(event: KeyboardEvent, rowIdx: number, colIdx: number): void {
     const key = event.key;
@@ -3703,8 +3716,10 @@ export class BidSheetComponent {
         // re-save does not rewrite every fed row as manual.
         const current = (row.bids[col.key] ?? '').trim();
         const original = (row.originalBids[col.key] ?? '').trim();
-        const currentBasis = (row.basisBids[col.key] ?? '').trim();
-        const originalBasis = (row.originalBasisBids[col.key] ?? '').trim();
+        // Normalised on both sides: the cell holds "+5" and the server holds "5", and a user who
+        // retypes the same number without the plus has not changed anything.
+        const currentBasis = normalizeBasis(row.basisBids[col.key]);
+        const originalBasis = normalizeBasis(row.originalBasisBids[col.key]);
         // Either price changing dirties the cell, and BOTH are always sent -- the upsert writes what
         // it is given, so omitting the untouched one would blank it.
         if (current !== original || currentBasis !== originalBasis) {
@@ -3815,7 +3830,9 @@ export class BidSheetComponent {
       const coverageChips = { ...row.coverageChips };
       for (const [colKey, val] of saved) {
         originalBids[colKey] = val.bid;
-        originalBasisBids[colKey] = val.basisBid;
+        // Back into display form. The payload carries what the server stored, which has no sign of
+        // its own, and leaving it bare would make the cell read as edited the moment it went clean.
+        originalBasisBids[colKey] = formatBasis(val.basisBid);
         delete boardChips[colKey];
         delete coverageChips[colKey];
       }

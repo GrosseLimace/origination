@@ -32,3 +32,18 @@ export function formatBasis(raw: string | null | undefined): string {
   // and basis is written to whatever precision the originator typed.
   return `+${value}`;
 }
+
+/**
+ * A basis value as it should be STORED: the display "+" taken back off.
+ *
+ * The Edit Bids cells hold the display form, because a negative shows its sign there and a positive
+ * hiding its own reads as an inconsistency. Everything leaving those cells for the server, or being
+ * compared against what the server holds, goes through here first -- otherwise the "+" lands in the
+ * database, and the next comparison against a fed value that has no "+" reports a change nobody made.
+ *
+ * Also the safe way to compare two basis values: "5" and "+5" are the same bid.
+ */
+export function normalizeBasis(raw: string | null | undefined): string {
+  const value = (raw ?? '').trim();
+  return value.startsWith('+') ? value.slice(1).trim() : value;
+}

@@ -495,6 +495,44 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(component.selectedColumns().map(p => p.month)).toEqual([12]);
   });
 
+  // The grid shows a negative basis with its "-", so a positive hiding its "+" reads as an
+  // inconsistency. The cells therefore hold the DISPLAY form -- which means the sign has to be taken
+  // back off at every boundary, or it lands in the database and then makes fed cells look edited.
+  it('sends the basis WITHOUT its display plus, so the sign never reaches the server', () => {
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 9 }]);
+    component.editBidsRows.set([{
+      ...row('A', 'YC#2026#9', ''),
+      bids: { 'YC#2026#9': '' },
+      originalBids: { 'YC#2026#9': '' },
+      basisBids: { 'YC#2026#9': '+5' },
+      originalBasisBids: { 'YC#2026#9': '' },
+    }] as never);
+
+    const dirty = (component as unknown as { _buildDirtyBids(): Array<{ basisBid: string }> })._buildDirtyBids();
+
+    expect(dirty).toHaveLength(1);
+    expect(dirty[0].basisBid).toBe('5');
+  });
+
+  it('does not call a cell edited when the same basis is retyped without the plus', () => {
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 9 }]);
+    const r = {
+      ...row('A', 'YC#2026#9', '4.98'),
+      bids: { 'YC#2026#9': '4.98' },
+      originalBids: { 'YC#2026#9': '4.98' },
+      basisBids: { 'YC#2026#9': '5' },       // typed bare
+      originalBasisBids: { 'YC#2026#9': '+5' }, // held signed
+    };
+    component.editBidsRows.set([r] as never);
+
+    expect(component.basisChanged(r as never, 'YC#2026#9')).toBe(false);
+    expect((component as unknown as { _buildDirtyBids(): unknown[] })._buildDirtyBids()).toHaveLength(0);
+
+    // A real change is still a change.
+    r.basisBids['YC#2026#9'] = '6';
+    expect(component.basisChanged(r as never, 'YC#2026#9')).toBe(true);
+  });
+
   it('saves a cell against its own column year, not the primary one', () => {
     component.crops.set(['YC']);
     component.selectedColumns.set([

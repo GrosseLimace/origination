@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBasis } from './basis-format';
+import { formatBasis, normalizeBasis } from './basis-format';
 
 /**
  * The sign carries the meaning of a basis quote, so the only interesting cases are the ones where it
@@ -42,5 +42,26 @@ describe('formatBasis', () => {
     expect(formatBasis('   ')).toBe('');
     expect(formatBasis(null)).toBe('');
     expect(formatBasis(undefined)).toBe('');
+  });
+});
+
+describe('normalizeBasis', () => {
+  it('takes the display plus back off', () => {
+    expect(normalizeBasis('+5')).toBe('5');
+    expect(normalizeBasis('+0.4500')).toBe('0.4500');
+  });
+
+  it('leaves everything else as it is', () => {
+    expect(normalizeBasis('5')).toBe('5');
+    expect(normalizeBasis('-30')).toBe('-30');
+    expect(normalizeBasis('even')).toBe('even');
+    expect(normalizeBasis('')).toBe('');
+    expect(normalizeBasis(null)).toBe('');
+  });
+
+  it('round-trips with formatBasis, which is what keeps the sign out of the database', () => {
+    for (const stored of ['5', '-30', '0', '0.4500', 'even', '']) {
+      expect(normalizeBasis(formatBasis(stored))).toBe(stored);
+    }
   });
 });

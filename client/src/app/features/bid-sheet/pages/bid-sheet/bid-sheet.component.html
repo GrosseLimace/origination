@@ -1688,7 +1688,7 @@
                               <!-- Basis sits beside cash rather than under it, so the two read as the pair
                                    an originator quotes. The board symbol rides on the basis, which
                                    is the number the board denominates and the way originators write it. -->
-                              @let basisSymbol = (row.basisBids[col.key] && row.basisBids[col.key] === row.originalBasisBids[col.key] && row.boardChips[col.key]) ? row.boardChips[col.key] : '';
+                              @let basisSymbol = (row.basisBids[col.key] && !basisChanged(row, col.key) && row.boardChips[col.key]) ? row.boardChips[col.key] : '';
                               <div class="relative flex-1 min-w-0 group overflow-hidden">
                               <!-- Carries the grid's cell id only in basis mode, where the cash input is
                                    not rendered at all: without it, arrow-key navigation and the
@@ -1709,7 +1709,7 @@
                                 class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                                 [ngClass]="cellReadOnly()
                                   ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
-                                  : (row.basisBids[col.key] !== row.originalBasisBids[col.key]
+                                  : (basisChanged(row, col.key)
                                     ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                     : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                               />
