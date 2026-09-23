@@ -36,8 +36,23 @@ Dev is confirmed ready on our side: the private endpoint exists, DNS resolves to
 answers on that path. **What we have not confirmed is your side.** Our existing BarChart feed in Dev
 runs on the older platform, so we cannot assume a newer pipeline routes the same way.
 
-**Question for you:** will the organic feed post from the same network as your existing Dev
-integration? If not, tell us early — QA connectivity is a separate request that queues.
+### What we need, precisely: the VNet — not the application name
+
+DNS zone links and routing are configured **per network**, not per application or per identity. That
+single fact decides how much work QA is:
+
+- **Same VNet as the BarChart QA gateway** → you inherit the existing link and route. Nothing extra
+  is needed, and we simply add this feed to a request already in flight.
+- **A different VNet** → it needs its own DNS link and its own route, even though the destination
+  App Service is identical. Same team, but genuinely additional work, and it queues.
+
+So the question is not "which system is calling" but:
+
+> **Which subscription, resource group and VNet will the pipeline run in?**
+
+Tell us that and we can either fold it into the open request or raise the right one. Until we have
+it we cannot ask the network team anything useful, because an application name does not tell them
+what to configure.
 
 ## Authentication
 
@@ -196,7 +211,8 @@ re-sending the same message converges rather than duplicating. A failed run can 
    anything that does not line up shows up immediately.
 
 2. **Your managed identity's name and object id** — once the pipeline exists.
-3. **Which network the pipeline posts from**, per the connectivity section. This is the one that
+3. **The subscription, resource group and VNet the pipeline will run in** — see the connectivity
+   section for why the VNet specifically, and not the application name. This is the one that
    determines the date.
 4. **Can you send a run id on each message?** This matters more than it looks. Because you send one
    message per producer, there is no batch boundary, so we cannot tell "not sent tonight" from
