@@ -39,9 +39,11 @@ public interface IBidSheetRepository
     /// </summary>
     Task BulkUpsertBidsAsync(IEnumerable<BidUpsertInput> requests, string userId, CancellationToken cancellationToken);
     Task<BidSheetPreference?> GetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken);
-    Task SetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear,
-        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
-        string? selectedBidSheetIds, CancellationToken cancellationToken);
+    /// <summary>
+    /// Upserts the caller's preference row. See <see cref="BidSheetPreferenceUpdate"/> for which
+    /// fields are assigned unconditionally and which treat null as "leave alone".
+    /// </summary>
+    Task SetPreferenceAsync(string userId, BidSheetPreferenceUpdate update, CancellationToken cancellationToken);
 
     // ---- Sheets --------------------------------------------------------------------------------
     // A sheet is a named, shareable working set of locations. It replaced the trade unit as the thing

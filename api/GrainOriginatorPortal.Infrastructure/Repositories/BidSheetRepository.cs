@@ -318,25 +318,25 @@ public class BidSheetRepository : IBidSheetRepository
             .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
     }
 
-    public async Task SetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear,
-        string? cropOrder, string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
-        string? selectedBidSheetIds, CancellationToken cancellationToken)
+    public async Task SetPreferenceAsync(string userId, BidSheetPreferenceUpdate update, CancellationToken cancellationToken)
     {
         var existing = await _appContext.BidSheetPreferences
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == update.TradeUnitKey, cancellationToken);
 
         if (existing is not null)
         {
-            existing.CropCode = cropCode;
-            existing.Month = month;
-            existing.CropYear = cropYear;
-            if (cropOrder is not null) existing.CropOrder = cropOrder;
-            if (hiddenCrops is not null) existing.HiddenCrops = hiddenCrops;
-            if (selectedMonths is not null) existing.SelectedMonths = selectedMonths;
-            if (selectedYears is not null) existing.SelectedYears = selectedYears;
-            if (printLayout is not null) existing.PrintLayout = printLayout;
-            if (priceMode is not null) existing.PriceMode = priceMode;
-            if (selectedBidSheetIds is not null) existing.SelectedBidSheetIds = selectedBidSheetIds;
+            // The panel triple is assigned even when null -- callers always re-send it, so a null is
+            // a real "no selection". Everything below is opt-in: null means "not touching it".
+            existing.CropCode = update.CropCode;
+            existing.Month = update.Month;
+            existing.CropYear = update.CropYear;
+            if (update.CropOrder is not null) existing.CropOrder = update.CropOrder;
+            if (update.HiddenCrops is not null) existing.HiddenCrops = update.HiddenCrops;
+            if (update.SelectedMonths is not null) existing.SelectedMonths = update.SelectedMonths;
+            if (update.SelectedYears is not null) existing.SelectedYears = update.SelectedYears;
+            if (update.PrintLayout is not null) existing.PrintLayout = update.PrintLayout;
+            if (update.PriceMode is not null) existing.PriceMode = update.PriceMode;
+            if (update.SelectedBidSheetIds is not null) existing.SelectedBidSheetIds = update.SelectedBidSheetIds;
             existing.ModifiedAt = DateTime.UtcNow;
         }
         else
@@ -344,17 +344,17 @@ public class BidSheetRepository : IBidSheetRepository
             _appContext.BidSheetPreferences.Add(new BidSheetPreference
             {
                 UserId = userId,
-                TradeUnitKey = tradeUnitKey,
-                CropCode = cropCode,
-                Month = month,
-                CropYear = cropYear,
-                CropOrder = cropOrder,
-                HiddenCrops = hiddenCrops,
-                SelectedMonths = selectedMonths,
-                SelectedYears = selectedYears,
-                PrintLayout = printLayout,
-                PriceMode = priceMode,
-                SelectedBidSheetIds = selectedBidSheetIds,
+                TradeUnitKey = update.TradeUnitKey,
+                CropCode = update.CropCode,
+                Month = update.Month,
+                CropYear = update.CropYear,
+                CropOrder = update.CropOrder,
+                HiddenCrops = update.HiddenCrops,
+                SelectedMonths = update.SelectedMonths,
+                SelectedYears = update.SelectedYears,
+                PrintLayout = update.PrintLayout,
+                PriceMode = update.PriceMode,
+                SelectedBidSheetIds = update.SelectedBidSheetIds,
                 ModifiedAt = DateTime.UtcNow
             });
         }

@@ -2,6 +2,7 @@ using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Abstractions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -137,7 +138,20 @@ public class BidSheetController : ControllerBase
     {
         if (request.TradeUnitKey != GlobalPreferenceKey)
             await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), cancellationToken);
-        await _service.SetPreferenceAsync(request.TradeUnitKey, request.CropCode, request.Month, request.CropYear, request.CropOrder, request.HiddenCrops, request.SelectedMonths, request.SelectedYears, request.PrintLayout, request.PriceMode, request.SelectedBidSheetIds, cancellationToken);
+        await _service.SetPreferenceAsync(new BidSheetPreferenceUpdate
+        {
+            TradeUnitKey = request.TradeUnitKey,
+            CropCode = request.CropCode,
+            Month = request.Month,
+            CropYear = request.CropYear,
+            CropOrder = request.CropOrder,
+            HiddenCrops = request.HiddenCrops,
+            SelectedMonths = request.SelectedMonths,
+            SelectedYears = request.SelectedYears,
+            PrintLayout = request.PrintLayout,
+            PriceMode = request.PriceMode,
+            SelectedBidSheetIds = request.SelectedBidSheetIds
+        }, cancellationToken);
         return NoContent();
     }
 

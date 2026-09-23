@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Infrastructure.Abstractions;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -17,9 +18,8 @@ public interface IBidSheetService
     Task BulkUpsertBidsAsync(List<UpsertBidSheetBidRequest> requests, CancellationToken cancellationToken);
 
     Task<BidSheetPreferenceResponse?> GetPreferenceAsync(string tradeUnitKey, CancellationToken cancellationToken);
-    Task SetPreferenceAsync(string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder,
-        string? hiddenCrops, string? selectedMonths, string? selectedYears, string? printLayout, string? priceMode,
-        string? selectedBidSheetIds, CancellationToken cancellationToken);
+    /// <summary>Upserts the current user's preference row. The user comes from the request context.</summary>
+    Task SetPreferenceAsync(BidSheetPreferenceUpdate update, CancellationToken cancellationToken);
 
     // ---- Sheets --------------------------------------------------------------------------------
     // A sheet is a named, shareable working set of locations. Everyone on a sheet can edit its
