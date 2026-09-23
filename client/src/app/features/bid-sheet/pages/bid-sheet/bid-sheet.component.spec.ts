@@ -394,32 +394,20 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(component.editGridColumns().map(c => c.key)).toEqual(['YC#2026#9', 'YC#2026#12']);
   });
 
-  it('bands contiguous runs of a year for the header row', () => {
-    // A real run now, not the degenerate one the cross product produced: with year innermost no two
-    // adjacent columns ever shared a year, so every span was 1 and the row said nothing.
+  // Every label carries code, month and year on one line. There WAS a band row above the headers
+  // that took the year when more than one was in play, so a header read "YC Dec" and you looked up a
+  // row to learn which December. One column's identity in two places, and a row of header height for
+  // it.
+  it('labels every column with code, month and year, whatever else is on the grid', () => {
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 9 }]);
+    expect(component.editGridColumns()[0].label).toBe('YC Sep 2026');
+
+    // Adding a second year must not shorten the first label.
     component.selectedColumns.set([
       { crop: 'YC', year: 2026, month: 12 },
       { crop: 'YC', year: 2027, month: 1 },
-      { crop: 'YC', year: 2027, month: 2 },
     ]);
-    expect(component.editGridYearBands()).toEqual([
-      { year: 2026, span: 1 }, { year: 2027, span: 2 },
-    ]);
-
-    // Alternating years still band one apiece.
-    component.selectedColumns.set([
-      { crop: 'YC', year: 2026, month: 9 },
-      { crop: 'YC', year: 2027, month: 9 },
-      { crop: 'YC', year: 2026, month: 12 },
-    ]);
-    expect(component.editGridYearBands()).toEqual([
-      { year: 2026, span: 1 }, { year: 2027, span: 1 }, { year: 2026, span: 1 },
-    ]);
-
-    // A single year needs no band row at all, and the header carries the year instead.
-    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 9 }]);
-    expect(component.editGridYearBands()).toEqual([]);
-    expect(component.editGridColumns()[0].label).toBe('YC Sep 2026');
+    expect(component.editGridColumns().map(c => c.label)).toEqual(['YC Dec 2026', 'YC Jan 2027']);
   });
 
   it('folds print columns into contiguous runs of a crop, keyed with the year', () => {
@@ -505,14 +493,6 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     component.removeColumn('YC#2026#9');
     expect(calls[0]).toBe('flush');
     expect(component.selectedColumns().map(p => p.month)).toEqual([12]);
-  });
-
-  it('drops the year from the column label once the band row is carrying it', () => {
-    component.selectedColumns.set([
-      { crop: 'YC', year: 2026, month: 12 },
-      { crop: 'YC', year: 2027, month: 1 },
-    ]);
-    expect(component.editGridColumns().map(c => c.label)).toEqual(['YC Dec', 'YC Jan']);
   });
 
   it('saves a cell against its own column year, not the primary one', () => {

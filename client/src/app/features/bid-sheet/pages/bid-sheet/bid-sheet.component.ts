@@ -1191,10 +1191,6 @@ export class BidSheetComponent {
    */
   readonly editGridColumns = computed(() => {
     const picks = this.selectedColumns();
-    // With one year in play the header carries it, as before. With several, the year band row above
-    // carries it instead -- repeating it per column would trip over itself in the width a bid column
-    // has.
-    const multiYear = new Set(picks.map(p => p.year)).size > 1;
     const seen = new Set<string>();
     const columns: Array<{ key: string; crop: string; month: number; year: number; label: string; board: string }> = [];
     for (const pick of picks) {
@@ -1206,10 +1202,12 @@ export class BidSheetComponent {
         crop: pick.crop,
         month: pick.month,
         year: pick.year,
-        label: multiYear
-          ? `${pick.crop} ${BidSheetComponent.MONTH_NAMES[pick.month]}`
-          : `${pick.crop} ${BidSheetComponent.MONTH_NAMES[pick.month]} ${pick.year}`,
-        // Named once here; only deviating cells repeat a board.
+        // Code, month and year on one line, always. It used to drop the year whenever more than one
+        // was in play and let a band row above carry it instead, which cost a row of header height
+        // and split one column's identity across two places.
+        label: `${pick.crop} ${BidSheetComponent.MONTH_NAMES[pick.month]} ${pick.year}`,
+        // Not shown in the header any more -- it made every header two lines tall. Still carried
+        // because the Excel export takes it, and print resolves its own.
         board: this.boardConsensus(pick.crop, pick.year, pick.month)
       });
     }
@@ -1222,25 +1220,6 @@ export class BidSheetComponent {
    */
   private readonly _gridColumnKeys = computed(() => new Set(this.editGridColumns().map(c => c.key)));
 
-  /**
-   * Column index → the year band above it, for the extra header row. One entry per contiguous run of
-   * the same year, so a run of N columns yields one cell spanning N.
-   *
-   * This used to be decorative: with year innermost in the cross product, no two adjacent columns
-   * ever shared a year and every span was 1. Now that the columns are an arbitrary list, a run like
-   * Dec 26 | Jan 27 | Feb 27 bands properly as 2026 over one column and 2027 over two.
-   */
-  readonly editGridYearBands = computed(() => {
-    const columns = this.editGridColumns();
-    if (new Set(columns.map(c => c.year)).size < 2) return [];
-    const bands: Array<{ year: number; span: number }> = [];
-    for (const col of columns) {
-      const last = bands[bands.length - 1];
-      if (last && last.year === col.year) last.span++;
-      else bands.push({ year: col.year, span: 1 });
-    }
-    return bands;
-  });
 
   // --- Commodities lookup ---
   allCommodities = signal<Commodity[]>([]);
