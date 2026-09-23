@@ -42,6 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\GrainOriginatorPortal.Application\GrainOriginatorPortal.Application.csproj" />
     <ProjectReference Include="..\GrainOriginatorPortal.Infrastructure\GrainOriginatorPortal.Infrastructure.csproj" />
   </ItemGroup>
 

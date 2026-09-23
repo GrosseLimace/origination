@@ -101,7 +101,7 @@ load), which would otherwise render as `1/1/01`.
 | Conversion helper | `api/GrainOriginatorPortal.Infrastructure/Data/DpBushelConversion.cs` (pure static, unit-tested) |
 | Context | `api/GrainOriginatorPortal.Infrastructure/Data/DpOdsDbContext.cs` |
 | Repository | `api/GrainOriginatorPortal.Infrastructure/Repositories/DpContractRepository.cs` |
-| Service | `api/GrainOriginatorPortal.Api/Services/DpContractService.cs` |
+| Service | `api/GrainOriginatorPortal.Application/Services/DpContractService.cs` |
 | DTO / mapper | `Models/Responses/DpContractResponse.cs`, `Services/Mappings/DpContractMappings.cs` |
 | Controller | `api/GrainOriginatorPortal.Api/Controllers/DpContractsController.cs` |
 | Client model | `client/src/app/models/dp-contract.model.ts` |

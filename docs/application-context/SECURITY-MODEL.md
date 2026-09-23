@@ -72,5 +72,5 @@ any need to grant a permission to someone who isn't in the corresponding AAD gro
 ## Relevant code
 
 - [api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs](../../api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs) — the trade-unit filter (UX scoping; fail-CLOSED on an uncached outage).
-- [api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs](../../api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs) — `ValidateCustomerAccessAsync` lives here.
+- [api/GrainOriginatorPortal.Application/Services/UserEntitlementService.cs](../../api/GrainOriginatorPortal.Application/Services/UserEntitlementService.cs) — `ValidateCustomerAccessAsync` lives here.
 - [api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs](../../api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs) — example of a controller where the GETs intentionally skip the check.

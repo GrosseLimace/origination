@@ -179,8 +179,8 @@
       "files": [
         "api/GrainOriginatorPortal.Api/Controllers/EntitlementsController.cs",
         "api/GrainOriginatorPortal.Api/Controllers/MeController.cs",
-        "api/GrainOriginatorPortal.Api/Models/Responses/UserPreferenceDto.cs",
-        "api/GrainOriginatorPortal.Api/Models/Responses/DashboardSummaryResponse.cs"
+        "api/GrainOriginatorPortal.Application/Models/Responses/UserPreferenceDto.cs",
+        "api/GrainOriginatorPortal.Application/Models/Responses/DashboardSummaryResponse.cs"
       ],
       "suggested_fix": "Move these into Models/Responses as records with init accessors.",
       "opened_in": {
@@ -217,7 +217,7 @@
       "title": "File-organization drift from \"one type per file\"",
       "description": "Bundles roughly 30 unrelated record types in a single file, versus the one-type-per-file convention followed elsewhere.",
       "files": [
-        "api/GrainOriginatorPortal.Api/Models/UsageDashboardDtos.cs"
+        "api/GrainOriginatorPortal.Application/Models/UsageDashboardDtos.cs"
       ],
       "suggested_fix": "Split into individual files under Models/Responses, or explicitly note this file as a deliberate grouping exception.",
       "opened_in": {
@@ -1474,7 +1474,7 @@
       "description": "All 23 controllers carry [ApiController], and Program.cs never configures ApiBehaviorOptions.InvalidModelStateResponseFactory. So any data-annotation failure on the 21 validated request DTOs is short-circuited by the ASP.NET Core framework default into RFC7807 ValidationProblemDetails JSON before GlobalExceptionHandler or the app's own ValidationException ever run. This is the single most common validation-failure path across the whole write surface, and it never matches the mandated {error:{code,message,details,traceId,timestamp,instance}} shape, while the exact same conceptual failure thrown manually as ValidationException elsewhere produces a completely different shape.",
       "files": [
         "api/GrainOriginatorPortal.Api/Program.cs",
-        "api/GrainOriginatorPortal.Api/Models/Requests/CreateNoteRequest.cs",
+        "api/GrainOriginatorPortal.Application/Models/Requests/CreateNoteRequest.cs",
         "api/GrainOriginatorPortal.Api/Middleware/GlobalExceptionHandler.cs"
       ],
       "suggested_fix": "Configure builder.Services.Configure<ApiBehaviorOptions>(o => o.InvalidModelStateResponseFactory = ctx => ...) to build the same ApiErrorResponse envelope GlobalExceptionHandler produces for a thrown ValidationException, sourcing error.details from ModelState.",
@@ -1556,7 +1556,7 @@
       "files": [
         "api/GrainOriginatorPortal.Api/Controllers/DiagnosticsController.cs",
         "api/GrainOriginatorPortal.Api/Program.cs",
-        "api/GrainOriginatorPortal.Api/Services/GeocodeService.cs"
+        "api/GrainOriginatorPortal.Application/Services/GeocodeService.cs"
       ],
       "suggested_fix": "Resolve the client via httpFactory.CreateClient(\"nominatim\") in both diagnostics geocoding paths instead of the default client.",
       "related_findings": [
@@ -1683,7 +1683,7 @@
       "title": "StoredGrainService's entitlement-scoping logic has zero test coverage, unlike the identical logic in DpContractService",
       "description": "StoredGrainService.GetAllAsync duplicates DpContractService.GetAllAsync line-for-line (repo fetch, GetAllowedTradeUnitCodesAsync, filter to allowedCustomerIds, fail-closed 503 on entitlements outage), but there is no StoredGrainServiceTests.cs or any test file anywhere referencing StoredGrainService. DpContractService has the equivalent logic pinned by DpContractServiceTests.cs. A future refactor that accidentally drops the allowedCustomerIds filter from StoredGrainService would ship a real cross-trade-unit data leak with nothing to catch it.",
       "files": [
-        "api/GrainOriginatorPortal.Api/Services/StoredGrainService.cs"
+        "api/GrainOriginatorPortal.Application/Services/StoredGrainService.cs"
       ],
       "suggested_fix": "Add a StoredGrainServiceTests.cs mirroring DpContractServiceTests.cs's three entitlement-scoping tests.",
       "related_findings": [
@@ -1744,7 +1744,7 @@
       "files": [
         "api/GrainOriginatorPortal.Api/Program.cs",
         "api/GrainOriginatorPortal.Api/Controllers/MeController.cs",
-        "api/GrainOriginatorPortal.Api/Authorization/UsageDashboardAccess.cs",
+        "api/GrainOriginatorPortal.Application/Authorization/UsageDashboardAccess.cs",
         "client/src/app/core/services/user-roles.service.ts"
       ],
       "suggested_fix": "Record this as a deliberate architectural deviation (a new SECURITY-REVIEWS or ADR entry) explaining that a full RBAC model was scoped out in favor of a single Admin role plus entitlement-based data scoping.",
@@ -1829,7 +1829,7 @@
       "title": "UserEntitlementService's SQL-outage fail-open/fail-closed cache logic has only 1 of ~6 behavioral branches tested",
       "description": "UserEntitlementServiceTests.cs contains exactly one [Fact], covering only the customer-has-no-trade-unit-mapping deny path. The SqlException handler in GetAllowedTradeUnitCodesAsync -- which serves a 10-minute last-known-good cache on a transient DB outage, or fails closed to an empty set with no cache -- is completely untested, as is ValidateTradeUnitsOrThrowAsync's deny path and the has-access/no-access branches of ValidateCustomerAccessAsync. This is the exact security-critical logic the class's own doc comment calls fail-closed, not silently allow -- a regression here could silently flip to fail-open (serving all trade units) or incorrectly fail-closed (denying all access) during a DB blip, undetected by the green test suite.",
       "files": [
-        "api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs",
+        "api/GrainOriginatorPortal.Application/Services/UserEntitlementService.cs",
         "api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests/Services/UserEntitlementServiceTests.cs",
         "api/GrainOriginatorPortal.Infrastructure/Repositories/EntitlementsRepository.cs"
       ],
@@ -2164,7 +2164,7 @@
       "title": "GeocodeService.SearchAsync caches only the first result but returns the full list, so a later cache hit silently truncates to 1",
       "description": "A cache miss calls Nominatim, builds up to limit results (up to 5), returns the full list, but caches only results[0]. The cache-hit branch then returns a list containing exactly that one cached point. The same query+limit returns a different-shaped result depending purely on cache warmth -- a disambiguation dropdown that showed 5 candidates on first search silently shows 1 on the next identical search.",
       "files": [
-        "api/GrainOriginatorPortal.Api/Services/GeocodeService.cs"
+        "api/GrainOriginatorPortal.Application/Services/GeocodeService.cs"
       ],
       "suggested_fix": "Cache the full result list keyed by query+limit, or skip caching multi-result searches entirely.",
       "opened_in": {
@@ -2181,7 +2181,7 @@
       "title": "GeocodeBatchAsync doesn't use the shared rate-limiting semaphore, allowing bursts past Nominatim's 1 req/sec policy",
       "description": "GeocodeService is registered as a singleton specifically so _rateLimiter (SemaphoreSlim) and _lastNominatimCall serialize all Nominatim calls across concurrent requests; GeocodeSingleAsync and SearchAsync both acquire the semaphore first. GeocodeBatchAsync never touches either, only self-pacing with its own internal 1100ms delay between items in its own loop. Two concurrent callers will send simultaneous requests to Nominatim, violating the documented 1 req/sec limit and risking an IP-level throttle that would break geocoding app-wide.",
       "files": [
-        "api/GrainOriginatorPortal.Api/Services/GeocodeService.cs"
+        "api/GrainOriginatorPortal.Application/Services/GeocodeService.cs"
       ],
       "suggested_fix": "Have GeocodeBatchAsync acquire _rateLimiter and honor _lastNominatimCall the same way GeocodeSingleAsync does.",
       "opened_in": {
@@ -2292,8 +2292,8 @@
       "description": "FarmsController exposes GET/GET-by-id/GET-by-customer/POST endpoints backed by IFarmService -> FarmService -> IFarmRepository -> FarmRepository. FarmRepository is explicitly documented as a stub implementation since no Farms table exists in the ODS yet: every read method logs a warning and returns an empty list/null, and CreateAsync unconditionally throws NotImplementedException. Confirmed via repo-wide grep that the Angular client has zero API calls to /api/farms and no other C# caller exists beyond DI registration. This is a full dead vertical slice (controller, service, repository, interfaces, entity, mapping, DTOs) that does nothing useful and is unreachable from the real app.",
       "files": [
         "api/GrainOriginatorPortal.Api/Controllers/FarmsController.cs",
-        "api/GrainOriginatorPortal.Api/Services/FarmService.cs",
-        "api/GrainOriginatorPortal.Api/Services/IFarmService.cs",
+        "api/GrainOriginatorPortal.Application/Services/FarmService.cs",
+        "api/GrainOriginatorPortal.Application/Services/IFarmService.cs",
         "api/GrainOriginatorPortal.Infrastructure/Repositories/FarmRepository.cs",
         "api/GrainOriginatorPortal.Infrastructure/Interfaces/IFarmRepository.cs"
       ],
@@ -2332,8 +2332,8 @@
       "title": "AppException.Context/WithContext is populated but never read anywhere",
       "description": "AppException defines a Context dictionary and a fluent WithContext(key, value) method. NotFoundException is the only caller, populating EntityName/Key on construction. Grepped the entire api/ tree including GlobalExceptionHandler.cs and all test files: .Context is never read and WithContext is never called for logging, error responses, or test assertions. The whole mechanism is write-only dead infrastructure.",
       "files": [
-        "api/GrainOriginatorPortal.Api/Exceptions/AppException.cs",
-        "api/GrainOriginatorPortal.Api/Exceptions/NotFoundException.cs",
+        "api/GrainOriginatorPortal.Application/Exceptions/AppException.cs",
+        "api/GrainOriginatorPortal.Application/Exceptions/NotFoundException.cs",
         "api/GrainOriginatorPortal.Api/Middleware/GlobalExceptionHandler.cs"
       ],
       "suggested_fix": "Either wire Context into GlobalExceptionHandler's structured logging/response (e.g. attach to the dev-only Debug payload) or remove Context/WithContext and the two WithContext calls in NotFoundException.",
@@ -2376,7 +2376,7 @@
       "description": "DiagnosticsController.RefreshElevatorCache and its private GeocodeElevatorsBackground each independently build a Nominatim query, delay between calls, parse the JSON response, and catch/log failures -- near-identical ~35-line blocks. Meanwhile GeocodeService (registered as a singleton IGeocodeService, injected cleanly into GeocodeController) already implements the same call with a shared rate limiter, response caching, structured PII-safe logging, and cancellation, less safely reinvented here (no cache, raw exception swallowing, no fingerprinting of addresses in logs).",
       "files": [
         "api/GrainOriginatorPortal.Api/Controllers/DiagnosticsController.cs",
-        "api/GrainOriginatorPortal.Api/Services/GeocodeService.cs",
+        "api/GrainOriginatorPortal.Application/Services/GeocodeService.cs",
         "api/GrainOriginatorPortal.Api/Controllers/GeocodeController.cs"
       ],
       "suggested_fix": "Extract the per-elevator build-query/geocode/assign step into one shared private method reused by both entry points, or route both through IGeocodeService.GeocodeSingleAsync for caching and consistent logging.",
@@ -2548,11 +2548,11 @@
       "title": "Several non-trivial Api services have zero dedicated unit tests",
       "description": "GeocodeService (327 lines: rate limiting, caching, outbound Nominatim calls), DashboardService (135 lines), ContractService (110 lines), CustomerService (94 lines), TicketService (87 lines), TradeUnitService (46 lines), FarmService (41 lines), and QueryLibraryService (44 lines) have no corresponding *ServiceTests.cs, even though controllers depend on them directly and several (GeocodeService especially) contain non-trivial branching and caching logic. This is a services-layer instance of the same gap already tracked for repositories (dotnet.repository-test-coverage-gap / test-gaps.repository-layer-gap).",
       "files": [
-        "api/GrainOriginatorPortal.Api/Services/GeocodeService.cs",
-        "api/GrainOriginatorPortal.Api/Services/DashboardService.cs",
-        "api/GrainOriginatorPortal.Api/Services/ContractService.cs",
-        "api/GrainOriginatorPortal.Api/Services/CustomerService.cs",
-        "api/GrainOriginatorPortal.Api/Services/TicketService.cs"
+        "api/GrainOriginatorPortal.Application/Services/GeocodeService.cs",
+        "api/GrainOriginatorPortal.Application/Services/DashboardService.cs",
+        "api/GrainOriginatorPortal.Application/Services/ContractService.cs",
+        "api/GrainOriginatorPortal.Application/Services/CustomerService.cs",
+        "api/GrainOriginatorPortal.Application/Services/TicketService.cs"
       ],
       "suggested_fix": "Prioritize GeocodeService (caching/rate-limit branches, already has a known cache-truncation bug tracked separately) and DashboardService, then the remaining thinner services.",
       "related_findings": [
@@ -2708,7 +2708,7 @@
       "title": "GeocodeService.SearchAsync handed back the cached list itself after a cache miss, letting one caller empty the shared entry",
       "description": "On a cache hit SearchAsync returned a defensive copy, but on a cache miss it stored the freshly built list in IMemoryCache and returned that same instance. Any caller that mutated its own result mutated the cache entry: clearing the returned list emptied the cached entry, so the next identical search returned zero results until the entry expired. The in-code comment on the cache-hit path already stated the intent (\"handing back the cached instance would let any caller mutation corrupt the entry for everyone\"); the miss path simply did not follow it.",
       "files": [
-        "api/GrainOriginatorPortal.Api/Services/GeocodeService.cs"
+        "api/GrainOriginatorPortal.Application/Services/GeocodeService.cs"
       ],
       "suggested_fix": "Return a copy on the cache-miss path too.",
       "opened_in": {

@@ -79,7 +79,7 @@ Scope: `api/GrainOriginatorPortal.Api`, `api/GrainOriginatorPortal.Infrastructur
 - **Suggested fix:** Add a debug/warn log when no recognized action-parameter shape is found.
 
 ### File-organization drift from "one type per file" (`dotnet.usage-dashboard-dtos-file-organization`)
-- **Files:** `api/GrainOriginatorPortal.Api/Models/UsageDashboardDtos.cs`
+- **Files:** `api/GrainOriginatorPortal.Application/Models/UsageDashboardDtos.cs`
 - Bundles roughly 30 unrelated record types in a single file, versus the one-type-per-file convention followed elsewhere.
 - **Suggested fix:** Split into individual files under `Models/Responses`, or explicitly note this file as a deliberate grouping exception.
 
