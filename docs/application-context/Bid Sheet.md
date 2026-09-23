@@ -75,7 +75,8 @@ per-sheet rename). This replaced `dbo.BidSheetLocationOrders`, which held one pr
 location ids per user per trade unit and was dropped by `RetireBidSheetLocationOrders`.
 
 **`BidSheetPreferences`** — Per-user, one row under the key `__global__`:
-`CropCode?`, `Month?` (`null` = no preference, `1–12`; a stored `0` is a pre-retirement Yearly value, cleaned on load), `CropYear?`, `CropOrder` (JSON array), `HiddenCrops` (JSON array), `SelectedMonths` (JSON array), `SelectedYears` (JSON array), `PriceMode`, `SelectedBidSheetIds` (JSON array of sheet ids — see [Several sheets at once](#several-sheets-at-once)), `PrintLayout` (JSON — see [Print / export](#print--export)).
+`CropCode?`, `Month?` (`null` = no preference, `1–12`; a stored `0` is a pre-retirement Yearly value, cleaned on load), `CropYear?`, `SelectedColumns` (JSON array of column picks — see [Choosing columns](#choosing-columns)), `PriceMode`, `SelectedBidSheetIds` (JSON array of sheet ids — see [Several sheets at once](#several-sheets-at-once)), `PrintLayout` (JSON — see [Print / export](#print--export)).
+Plus four **superseded** columns kept for migration and rollback only, never written: `CropOrder`, `HiddenCrops`, `SelectedMonths`, `SelectedYears`.
 
 ## Several sheets at once
 
@@ -449,20 +450,69 @@ data being honest rather than a fault.
 
 `BidSheetPreferences` persists per-user, per-trade-unit selections so the screen opens with the user's last-used filters. Fields:
 
-- `CropCode` — selected commodity (e.g., `CORN`).
+- `CropCode` — the map panel's selected commodity (e.g., `CORN`).
 - `Month` — `null` = no month preference, `1–12` = a specific delivery month. (`0` meant the retired Yearly view; the API rejects it and no row carries it.)
 - `CropYear`.
-- `CropOrder` — JSON array of commodity codes for display ordering.
-- `HiddenCrops` — JSON array of dehidden commodities.
-- `SelectedMonths` — JSON array (e.g., `[3, 6, 9, 12]`).
+- `SelectedColumns` — JSON array of Edit Bids column picks, in display order (below).
+- `PriceMode` — `cash` | `basis` | `both`.
+- `SelectedBidSheetIds` — JSON array of the sheet ids the user last had open.
 - `PrintLayout` — JSON blob of the print dialog's options (below).
+
+Superseded, read once and never written — see [Choosing columns](#choosing-columns):
+
+- `CropOrder` — JSON array of commodity codes for display ordering.
+- `HiddenCrops` — JSON array of hidden commodities.
+- `SelectedMonths` — JSON array (e.g., `[3, 6, 9, 12]`).
+- `SelectedYears` — JSON array (e.g., `[2026, 2027]`).
+
+The panel triple (`CropCode`/`Month`/`CropYear`) is assigned **unconditionally** on every write,
+because every caller re-sends it; every other field treats `null` as "leave alone" and `"[]"` as
+"clear". `BidSheetPreferenceUpdate` (Infrastructure/Abstractions) carries that contract by name —
+it used to be twelve positional parameters through three layers, where a field inserted in the wrong
+slot compiled clean and wrote into the neighbouring column.
+
+## Choosing columns
+
+Edit Bids columns are an **explicit ordered list**, one pick per column: `+ Add column` sits in the
+Locations header, each pick is one crop + crop year + delivery month, headers drag to reorder and
+carry an `×` to remove. Capped at 24 added interactively.
+
+They used to be the **cross product** of three toolbar dropdowns — crops × months × years, nested
+crop → month → year, with months force-sorted into calendar order. That could not express a run of
+months crossing a year boundary: *Dec 2026, Jan 2027, Feb 2027* had to be asked for as years
+`{2026,2027}` × months `{12,1,2}`, which produced all six combinations led by Jan-26. The problem
+was the shape of the selection, not its ordering, so no re-sort could fix it.
+
+Consequences worth knowing:
+
+- The **map panel no longer feeds the grid.** Stepping the panel to another year and reopening Edit
+  Bids does not change the columns; the saved list wins, and is only seeded when empty.
+- **Migration is lazy.** A row whose `SelectedColumns` is `NULL` marks a user who predates the
+  change; `_seedColumns` synthesises the old cross product from the four superseded fields, in the
+  old nesting, so their first open looks identical to their last. It is written back only when they
+  next change a column, and the 24-column cap is NOT applied to it. `"[]"` is different from
+  `NULL` — it means the user removed every column deliberately, and is left alone.
+- **Duplicates are refused twice**, in the load sanitiser and again in the `editGridColumns`
+  projection. The template tracks the header row and every body cell by the column key, so two picks
+  agreeing on crop+year+month are an NG0955 that takes the screen down.
+- The picker's crop list comes from `filteredCommodities`, which applies the user's group and
+  trade-unit scope — not `allCommodities`, which would offer organics to originators outside that
+  desk.
+- **Reorder does not flush or rebuild**; add and remove do. An order change leaves the key set
+  identical, so rebuilding would only serve to discard an edit typed but not blurred.
 
 Persisted via `setBidSheetPreference`, under a single key per user — the constant `__global__`. There
 used to be one row per trade unit (and one per combination of them), so each desk kept its own
 arrangement; with the sheet no longer scoped by trade unit there is one arrangement per person. The
 `RetireBidSheetLocationOrders` migration deleted the rows saved under the old keys, which nothing could
-read any more. Column order, hidden crops, months and years that belong to a *sheet* rather than to a
-person live on the sheet and are shared with its members.
+read any more.
+
+> **Do not put column preferences on the sheet.** `BidSheets` carries `CropOrder`, `HiddenCrops`,
+> `SelectedMonths` and `SelectedYears`, with a `PUT /bidsheet/sheets/{id}/layout` endpoint and an
+> `ApiService.setBidSheetLayout` to write them. That whole path is **dead**: nothing on the client
+> calls it and `_applySheet` ignores those four fields. It looks like the natural home for
+> `SelectedColumns` and is not — a sheet is shared with its members, and which columns you are
+> looking at is yours, the same reasoning that puts `SelectedBidSheetIds` on the per-user row.
 
 ## Print / export
 
@@ -470,7 +520,17 @@ Edit Bids → **Print** opens a dialog with a live preview (left) and options (r
 self-contained HTML document into `window.open('', '_blank')` and calls `print()`; the popup is
 `about:blank`, so the logo must be an absolute `window.location.origin` URL (`printLogoUrl`).
 
-**One model, two renderers.** `utils/print-layout.ts` turns the selected crops / periods / locations
+Print takes a **subset of the grid's columns**, ticked in the dialog's Columns list. There is one
+list where there were two (Crops and Months), which could describe the printed columns between them
+only while columns were their cross product; and no drag handles, because the grid header is now the
+single place columns are ordered. Print is multi-year — it used to build every column against the
+first selected year, so a multi-year grid printed one year's numbers under every heading.
+
+`printCropGroups` folds the ticked columns into **contiguous same-crop runs**, one `PrintCropGroup`
+per run. The same crop in two non-adjacent runs therefore draws two bands, in grid order: merging
+them would silently reorder the printed sheet away from the screen.
+
+**One model, two renderers.** `utils/print-layout.ts` turns those groups and the locations
 into a `PrintLayoutModel` — tables of styled cells with column widths in inches. The dialog preview
 renders that model with a generic `@for` table (`[style]="printCellStyle(cell, isHeader)"`), and
 `renderPrintDocument` serialises the same model and the same `cellStyleMap` into the popup HTML. Every
@@ -497,8 +557,9 @@ not stretched; each table is `page-break-inside: avoid`, and tables flow rather 
 Landscape letter, `@page` margin = `PRINT_GEOMETRY.PAGE_MARGIN_IN` (one constant drives both the
 CSS and the width maths).
 
-**Persisted options** (`PrintLayout` JSON): `{ yearlyRows: [{ enabled, offset, oldNew }], address,
-phone, highlightScoular, layoutStyle }`. `parsePrintLayoutStyle` maps the retired `sideBySide` /
+**Persisted options** (`PrintLayout` JSON): `{ address, phone, highlightScoular, layoutStyle }`.
+(`yearlyRows` belonged to the retired Yearly period and is ignored on read.) Which columns are
+ticked is NOT persisted — it is a per-print choice, like the crop/month sets it replaced. `parsePrintLayoutStyle` maps the retired `sideBySide` /
 `stacked` values (and anything malformed) to the default; the next save rewrites the blob.
 
 ## Auth and feature flags
@@ -540,6 +601,9 @@ phone, highlightScoular, layoutStyle }`. `parsePrintLayoutStyle` maps the retire
 | 403 on a `/api/bidsheet/...` call | User isn't entitled to the requested TU | `UserEntitlementService.ValidateTradeUnitsOrThrowAsync` — check the user's entitlement set |
 | Printed sheet has no logo | Relative asset path inside the `about:blank` popup | `printLogoUrl` must be `window.location.origin` + path |
 | Print columns squeezed / headers ellipsised, or preview ≠ print | Widths and band split no longer come from the same builder | `utils/print-layout.ts` — `buildLocationsDown` / `buildLocationsAcross` are the only source; run `print-layout.spec.ts` |
+| A printed sheet splits into bands that plainly fit on one | `fitLocationsDown` bands by COLUMN budget; a run whose crop name is long forces every bid column wider | `fitLocationsDown` — `measureValueIn` divides the crop name across its run, so a one-column run of a long code widens the whole sheet |
+| Edit Bids opens with no columns | The user removed them all (`SelectedColumns = "[]"`), which is respected rather than re-seeded | `+ Add column` in the Locations header; `_seedColumns` only runs when the list is empty AND the stored value was `NULL` |
+| A column the user added is missing after a reload | The column save was fire-and-forget and failed | Network tab for `PUT /bidsheet/preference` carrying `selectedColumns`; check `BidSheetPreferences.SelectedColumns` |
 | Print dialog opens on "Locations down" though the user picked something else before | Persisted `layoutStyle` was a retired value (`sideBySide` / `stacked`) | `parsePrintLayoutStyle` — expected migration; the next save rewrites it |
 | Leaflet warnings about non-ESM module | Pre-existing build warning; safe to ignore unless build actually fails | Build output: `Module 'leaflet' ... is not ESM` |
 
