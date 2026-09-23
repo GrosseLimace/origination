@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft for stakeholder meeting (Phase 0) |
-| **Date** | 2026-09-15 |
+| **Status** | Phase 1 (Contract) — scope fixed by cards #641–#651 on 2026-09-23; OpenAPI draft written |
+| **Date** | 2026-09-15, updated 2026-09-23 |
 | **Owner** | Origination app team |
 | **Governing docs** | SEC-ARCH-BURDI-001 v1.0 (Security Architecture Specification: Burdi Design Pattern, 2026-03-25); [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) v1.7 |
 | **Companion docs** | [MEETING-QUESTIONS.md](MEETING-QUESTIONS.md) · [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) · [ADR-001](../adr/ADR-001-mobile-surface-topology.md) · [openapi/](../../openapi/README.md) |
@@ -65,6 +65,32 @@ What Burdi does provide and we will reuse (paths under `Burdi.DriverApp/src/app/
 | Platform readiness | [START-HERE.md](../../developer-docs/START-HERE.md) already lists provision-if-enabled `swa-origination-{dev,qa}-eus`, `swa-origination-eus` and `ext-origination-*` domains | Flip `externalApp.enabled` |
 
 **Documentation conflict to resolve with Infrastructure:** EXTERNAL-SPA-GUIDE.md says a *dedicated* `Origination External - {Env}` SPA app registration; [APP-REGISTRATIONS.md](../../developer-docs/APP-REGISTRATIONS.md) ("External SPA" section) says the *existing* SPA registration is reused. We need the dedicated one (§5.1).
+
+## 3.1 Scope as decided (cards #641–#651, 2026-09-23)
+
+Users are **originators only**. Phase 1 is eight producer-centric cards; Phase 2 is three.
+
+| Card | Feature | Reads from | Writes | Notes for the design |
+|---|---|---|---|---|
+| #641 | Producer search and detail | Origination DB | — | Search only; bulk list building and actionable insights are desktop-only |
+| #642 | Tap-to-call / tap-to-email | Origination DB | — | Native dialer, not Teams (cell reliability). Contact PII on the device, never cached |
+| #643 | Edit on-farm details | Origination DB | **Yes** | Capacity, acres, grain on farm; attributed and timestamped |
+| #644 | Add and view notes | Origination DB | **Yes** | Pinned note first, then 10 most recent; add is the primary action |
+| #645 | Contract cards | **ODS view** | — | Number, quantity, price, delivery, special type; no dollar value |
+| #646 | Ticket roll-up | **ODS view** | — | Count + bushels per group; no line items, weights, crop or location |
+| #647 | Planting intentions | Origination DB | **Yes** | View, add, update; crop, acres, year only |
+| #648 | Storage + DP cards | **ODS views** | — | Storage tab hidden when the trade unit offers none; DP data exists only in Prod |
+| #649 | Prospect capture (Phase 2) | new | Yes | New entity; overlaps issue #518 |
+| #650 | Directions (Phase 2) | — | — | Native maps link; desktop already has it (`feature_AddressMapLink`) |
+| #651 | Dictated notes (Phase 2) | — | — | Device speech-to-text into `createNote`; no AI summarisation |
+
+What this changes versus the original assumptions:
+
+- **Three write paths, not one.** Notes, on-farm details and planting intentions. The offline decision (meeting Q3) now matters for all three; the OpenAPI contract carries `clientRequestId` on every mutation and `expectedModifiedAt` on updates so either answer can be implemented.
+- **ODS reads are in scope** for four of eight screens, so the serverless cold-start risk applies to the core experience. The contract returns 503 with a retry hint and the client serves cache first.
+- **Reminders and bid view are out.** They were candidates in the first draft and are not on any card.
+- **A new data fact is required:** which trade units offer storage (card #648). Nothing in the system records this today; meeting question 13.
+- **Contract:** [openapi/specification.yaml](../../openapi/specification.yaml), 16 operations, and the workflow/offline table in [openapi/README.md](../../openapi/README.md).
 
 ## 4. Target topology (ADR-001, Option 3: hybrid, split-ready)
 
@@ -138,7 +164,7 @@ The mobile surface is the first place where "entitlement is a UX filter" is unac
 
 - `ng add @angular/pwa --project origination-mobile`; `ngsw-config.json` under `projects/mobile/`.
 - Reads served from cache via `dataGroups` with absolute cross-origin URL patterns: reference data (1 day), my customers and customer detail (1 hour, 3-second network timeout), recent notes (short). **Never cache ODS producer-master fields or contact PII.**
-- Writes queued: note creation only, with a client-generated `clientRequestId` and a server unique index so a duplicate returns the existing row. Everything else fails gracefully with a clear offline message.
+- Writes: note creation is queued, with a client-generated `clientRequestId` and a server unique index so a duplicate returns the existing row. On-farm detail edits (#643) and planting-intention add/update (#647) **default to graceful failure with a retry prompt** until meeting Q3 is answered; if "hours offline" is required they join the same queue, with `expectedModifiedAt` conflicts surfaced to the user rather than silently overwritten.
 - Port Burdi's guard, storage and sync patterns into `projects/mobile/src/app/core/offline/` on top of the `idb` package.
 - sessionStorage reality: iOS kills backgrounded PWAs and each relaunch is a new session, so offline-after-relaunch is impossible under `SessionStorage`. v1 offline means "survive a signal drop mid-session" unless Security grants a `LocalStorage` exception for the mobile client (meeting question 3).
 - M-030 response: Conditional Access implies Intune-enforced device encryption; DTOs exclude PII; cache TTLs are short; logout and bootstrap failure paths wipe IndexedDB and Cache Storage. Documented as an exception. The Capacitor branch closes it with secure storage.
@@ -156,8 +182,8 @@ Roughly 10–14 calendar weeks for a modest feature set. Platform waits dominate
 
 | Phase | ~Weeks | Work | Exit criteria |
 |---|---|---|---|
-| **0 Discovery** | 1 | Stakeholder meeting ([MEETING-QUESTIONS.md](MEETING-QUESTIONS.md)); pick users, client form and v1 operations (target ≤ ~12); ADR draft | Decisions recorded |
-| **1 Contract** | 1–2 | Fill `openapi/specification.yaml` and `openapi/README.md`; finalise ADR-001; send **one** security pre-review package bundling the four exceptions with pending AR-01/02/08; submit platform requests E1–E3 and E7–E10 | Infrastructure acknowledges; Data Integrations confirms pass-through and scope; pre-review scheduled |
+| **0 Discovery** | 1 | **DONE 2026-09-23.** Scope cards #641–#651; users = originators; PWA-first stands. Still open from the question list: device posture (Q2), offline depth (Q3), Security's view of the exceptions (Q5), APIM token model (Q6), token lifetime (Q7), app-registration model (Q8), storage-per-trade-unit source (Q13) | Decisions recorded |
+| **1 Contract** | 1–2 | **IN PROGRESS.** OpenAPI draft written (16 operations) and workflow/offline table filled; finalise ADR-001; send **one** security pre-review package (four exceptions; AR-01/02/08 countersigns were declined 2026-09-21, so cite them as accepted-by-owner, do not re-raise); submit platform requests E1–E3 and E7–E10; get Q2/Q3/Q13 answered | Infrastructure acknowledges; Data Integrations confirms pass-through and scope; pre-review scheduled |
 | **2 Backend** | 3–4 | PR 1: mechanical `Application` extraction (move files and csproj, preserve namespaces, no refactors; existing tests compile unchanged). PR 2: `Mobile` assembly with policies, filters, audit, rate limit, `DesktopAccess` convention, convention and drift tests. SAST gates in `ci.yml` | Dev serves `api/mobile/v1/*`; all tests and drift check green |
 | **3 Client** | 3–4 (overlaps Phase 2 once the spec is frozen) | Second Angular project, libs move, generated client, PWA, offline core, MSAL bootstrap with telemetry, environment files, Vitest and Playwright mobile projects, `deploy-mobile-dev.yml` | Installed PWA on a test phone works against Dev; `MSAL.Bootstrap*` events visible |
 | **4 QA wiring** | 2 plus waits | QA environment file (APIM prefix and scope), `deploy-mobile-qa.yml`, Conditional Access pilot on iOS and Android, APIM policy verification (429, correlation id, header stripping), audit log review | End-to-end through WAF → APIM → private App Service in QA |
@@ -171,8 +197,9 @@ Roughly 10–14 calendar weeks for a modest feature set. Platform waits dominate
 3. **AR-01…05 reopen plus the countersign backlog.** Package everything once, in Phase 1, not at Phase 5.
 4. **Conditional Access device compliance versus iOS browsers.** Pilot early; may force Intune plus Authenticator, or Capacitor.
 5. **sessionStorage cold-open on phones** (2–5 s on LTE; no offline after relaunch). Decide v1 offline scope at the meeting.
-6. **ODS serverless auto-pause** (up to 60 s cold start). Keep ODS-backed operations out of v1 or make them cache-first with explicit UX.
-7. **Producer PII on devices.** Cut DTOs without contact fields unless click-to-call is required; never cache them.
+6. **ODS serverless auto-pause** (up to 60 s cold start). Four of eight Phase 1 screens read ODS (contracts, tickets, storage, DP), so this cannot be avoided; the contract returns 503 with a retry hint and the client is cache-first with a visible "refreshing" state. DP data exists only in Prod, so Dev/QA cannot exercise that screen with real data.
+7. **Producer PII on devices.** Card #642 requires contact phone and email on the phone. Return them, never cache them, and say so in the storage exception.
+7a. **Storage tab visibility needs a fact that does not exist.** Card #648 hides the tab for trade units with no storage programme; no per-trade-unit flag exists. Owner and source needed before Phase 2 backend work.
 8. **Shared identity and single host until the split.** Blast-radius only; ODS and TradeUnitPreferences contexts are read-only anyway.
 9. **Developer gravity toward `ApiService`/`AppStateService`.** ESLint boundaries and a generated-client-only design from day one.
 10. **External dependencies on poor signal.** Google Fonts, Nominatim geocoding (do not expose on mobile), `@it/design-system` CSS size.
