@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { ComponentRef } from '@angular/core';
 import { CustomerProfileComponent } from './customer-profile.component';
@@ -162,5 +162,55 @@ describe('CustomerProfileComponent — crop year scoping', () => {
 
     expect(component.availablePlantingYears).toEqual([2027, 2026, 2025]);
     expect(component.visiblePlantingIntentions().some(pi => pi.plantingYear === 2025)).toBe(true);
+  });
+});
+
+// Covers the click-to-open-in-Google-Maps address link: which address gets mapped, when the
+// link is suppressed, and that opening one is recorded for usage reporting.
+describe('CustomerProfileComponent — address map link', () => {
+  let component: CustomerProfileComponent;
+  let ref: ComponentRef<CustomerProfileComponent>;
+  let tracking: { trackMapClick: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    tracking = { trackMapClick: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: {} },
+        { provide: ThemeService, useValue: {} },
+        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {}, ...tracking } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerProfileComponent, {
+      set: { template: '', templateUrl: undefined, imports: [] },
+    });
+    const fixture = TestBed.createComponent(CustomerProfileComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+  });
+
+  it('displays and maps the Extended address, including the ZIP', () => {
+    ref.setInput('customer', makeCustomer({
+      addressLine1: 'PO Box 5', location: 'Omaha', stateProvince: 'IA',
+      extendedAddressLine1: '1234 County Rd 12', extendedCity: 'Hastings',
+      extendedStateProvince: 'NE', extendedPostalCode: '68901',
+    }));
+
+    expect(component.getContactAddress()).toBe('1234 County Rd 12, Hastings, NE 68901');
+    expect(component.getMapsUrl()).toContain('1234%20County%20Rd%2012');
+  });
+
+  it('suppresses the link when only a state is known', () => {
+    ref.setInput('customer', makeCustomer({ location: '', stateProvince: 'NE' }));
+
+    expect(component.getMapsUrl()).toBeNull();
+  });
+
+  it('tracks the click so map opens show up in usage reporting', () => {
+    ref.setInput('customer', makeCustomer({ id: 42, location: 'Hastings', stateProvince: 'NE' }));
+
+    component.trackMapClick();
+
+    expect(tracking.trackMapClick).toHaveBeenCalledWith('42');
   });
 });

@@ -20,6 +20,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract,
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { formatPhoneDisplay } from '@shared/utils/phone';
+import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
@@ -141,6 +142,10 @@ export class CustomerProfileComponent {
 
   trackEmailClick(): void {
     this.usageTracking.trackEmailClick(this.customer().id.toString());
+  }
+
+  trackMapClick(): void {
+    this.usageTracking.trackMapClick(this.customer().id.toString());
   }
 
   // Local state - signals
@@ -480,11 +485,6 @@ export class CustomerProfileComponent {
    *  that panel reads the same computed directly.) */
   get totalContracted(): number { return this.contractMetrics().totalContracted; }
 
-  getCustomerAddress(): string {
-    const c = this.customer();
-    return [c.addressLine1, c.location, c.stateProvince, c.postalCode].filter(v => !!v).join(', ');
-  }
-
   /** Splits ScoularView recipients string into individual entries.
    *  Handles commas inside names (e.g., "Ade, Clay 785-555-1234") by only splitting
    *  on commas that separate complete name+phone pairs. */
@@ -756,9 +756,15 @@ export class CustomerProfileComponent {
     return `${startMonth} - ${endMonth}`;
   }
 
+  /** Displayed producer address. Extended fields win over Merchandising and the ZIP is included,
+   *  so the text matches the address the producer map actually pins. */
   getContactAddress(): string {
-    const c = this.customer();
-    return [c.addressLine1, c.location, c.stateProvince].filter(v => !!v).join(', ');
+    return formatAddressLine(resolveCustomerAddress(this.customer()));
+  }
+
+  /** Google Maps deep link for the displayed address, or null when there is too little to search on. */
+  getMapsUrl(): string | null {
+    return googleMapsSearchUrl(resolveCustomerAddress(this.customer()));
   }
 
   /** User-entered contacts, primary first then saved order. Older cached customers without a
