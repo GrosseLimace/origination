@@ -3594,8 +3594,13 @@ export class BidSheetComponent {
    *
    * For a user who predates SelectedColumns, this reproduces the OLD cross product exactly -- same
    * crop filter, same crop order, same crop → month → year nesting -- so their first open after the
-   * upgrade looks identical to their last open before it. For everyone else it is the panel's current
-   * crop set for the panel's month and year, which is what the grid used to seed itself with anyway.
+   * upgrade looks identical to their last open before it.
+   *
+   * For everyone else: the sheet's priced crops, for TODAY's month and year. Read off the clock, not
+   * off the map panel. The panel has no say in what the grid shows -- that is the point of the
+   * columns being chosen explicitly -- and a default that quietly tracked it would be the one
+   * remaining thread between the two, surfacing only for the users least able to explain it (a new
+   * one, or anyone who had just cleared their columns).
    *
    * The 24-column cap is deliberately NOT applied: someone arriving from three years x several months
    * may already be over it, and truncating their view on upgrade would read as data loss.
@@ -3603,8 +3608,8 @@ export class BidSheetComponent {
   private _seedColumns(): EditBidColumnPick[] {
     const hidden = this._needsColumnSeed ? this._legacyHiddenCrops : new Set<string>();
     const order = this._needsColumnSeed ? this._legacyCropOrder : null;
-    const months = (this._needsColumnSeed && this._legacyMonths) || [this.selectedMonth()];
-    const years = (this._needsColumnSeed && this._legacyYears) || [this.selectedYear() || new Date().getFullYear()];
+    const months = (this._needsColumnSeed && this._legacyMonths) || [BidSheetComponent.currentMonth()];
+    const years = (this._needsColumnSeed && this._legacyYears) || [new Date().getFullYear()];
 
     let crops = this.crops().filter(c => !hidden.has(c));
     if (order && order.length > 0) {

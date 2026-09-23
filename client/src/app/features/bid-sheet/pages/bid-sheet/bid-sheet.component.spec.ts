@@ -2164,10 +2164,41 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
   it('opens on the current month everywhere the Yearly period used to be the default', () => {
     const now = new Date().getMonth() + 1;
     expect(component.selectedMonth()).toBe(now);
-    // The grid's own month selection is gone; a freshly seeded column list inherits the panel's month.
     component.crops.set(['YC']);
     const seeded = (component as unknown as { _seedColumns(): Array<{ month: number }> })._seedColumns();
     expect(seeded.map(p => p.month)).toEqual([now]);
+  });
+
+  // The map panel and the grid are separate selections. openEditBids used to re-seed the grid's year
+  // and month from the panel on EVERY entry, which quietly collapsed a multi-year arrangement on
+  // paths nobody associates with the grid -- adding a location reopens it. Nothing pushes the panel
+  // into the grid now, including the default for someone who has no columns at all: that reads off
+  // the clock. This is the regression test for the thread being cut.
+  it('never seeds columns from the map panel, even with no columns saved', () => {
+    const thisYear = new Date().getFullYear();
+    const thisMonth = new Date().getMonth() + 1;
+    component.crops.set(['YC']);
+
+    // Point the panel somewhere else entirely.
+    component.selectedMonth.set(thisMonth === 1 ? 12 : 1);
+    component.selectedYear.set(thisYear + 1);
+
+    const seeded = (component as unknown as {
+      _seedColumns(): Array<{ crop: string; year: number; month: number }>;
+    })._seedColumns();
+
+    expect(seeded).toEqual([{ crop: 'YC', year: thisYear, month: thisMonth }]);
+  });
+
+  it('leaves an existing column list alone when the grid is reopened', () => {
+    component.crops.set(['YC']);
+    component.selectedColumns.set([{ crop: 'SB', year: 2030, month: 4 }]);
+    component.selectedMonth.set(7);
+    component.selectedYear.set(2028);
+
+    component.openEditBids();
+
+    expect(component.selectedColumns()).toEqual([{ crop: 'SB', year: 2030, month: 4 }]);
   });
 
   // Preferences saved before the change carry 0, alone or mixed in with real months.

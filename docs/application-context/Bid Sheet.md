@@ -485,8 +485,11 @@ was the shape of the selection, not its ordering, so no re-sort could fix it.
 
 Consequences worth knowing:
 
-- The **map panel no longer feeds the grid.** Stepping the panel to another year and reopening Edit
-  Bids does not change the columns; the saved list wins, and is only seeded when empty.
+- The **map panel and the grid are fully separate.** Stepping the panel to another year and
+  reopening Edit Bids does not change the columns. Nothing pushes the panel into the grid at all --
+  not even the default for a user with no columns saved, which reads the current month and year off
+  the clock. (The filter bar was already a separate source again, via `filterableCrops` /
+  `filterableYears`, so that fixing the filter could not change what the grid saves.)
 - **Migration is lazy.** A row whose `SelectedColumns` is `NULL` marks a user who predates the
   change; `_seedColumns` synthesises the old cross product from the four superseded fields, in the
   old nesting, so their first open looks identical to their last. It is written back only when they
