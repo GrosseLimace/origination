@@ -56,6 +56,31 @@ membership. Decide before that feature lands. Tracked in the audit fix tracker.
 
 ## API shape and organisation
 
+### Certification ingest DTOs opt out of `JsonUnmappedMemberHandling.Disallow`
+`api.unmapped-members-skipped` · `Models/Requests/OrganicCertificationIngestRequest.cs` and its
+three nested records
+
+`Program.cs` sets `UnmappedMemberHandling.Disallow` for the whole API as mass-assignment hardening
+(security-guide.md §4.1). These four records carry
+`[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Skip)]` and so ignore unknown fields instead
+of rejecting the request.
+
+The payload is produced by a third party from USDA data. Under the global rule, one new field added
+on their side would make **every** nightly message 400 until we shipped a matching DTO — a feed that
+fails closed on a harmless addition, with certification data silently not arriving meanwhile.
+
+The hardening exists to stop a caller setting properties they should not. Nothing here binds to a
+persistence type: these are inert records, and `OrganicCertificationIngestService` copies field by
+field into the entity, so an unknown member is dropped rather than assigned. The endpoint is also
+reachable only by a machine identity holding a specific app role, not by users. The BarChart ingest
+endpoint hit the same problem and solved it by taking a raw `string` body, which costs it validation,
+model binding and an OpenAPI schema; `Skip` keeps all three.
+
+**Revisit if:** one of these records is ever bound to an EF entity or reused on a user-facing
+endpoint — at that point the global rule should apply again and the opt-out must come off. Note the
+contact-PII fields (`contactFirstName`, `contactLastName`, `phone`, `email`) are ignored *because* of
+this attribute; under `Disallow` their presence would have been a hard error.
+
 ### DTOs declared inline in controllers
 `dotnet.dtos-inline-in-controllers` · `EntitlementsController`, `MeController`
 

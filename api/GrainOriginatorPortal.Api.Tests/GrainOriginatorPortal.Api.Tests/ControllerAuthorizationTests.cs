@@ -33,6 +33,7 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(GeocodeController) };
         yield return new object[] { typeof(MeController) };
         yield return new object[] { typeof(NotesController) };
+        yield return new object[] { typeof(OrganicCertificationIngestController) };
         yield return new object[] { typeof(PlantingIntentionsController) };
         yield return new object[] { typeof(ProducerDetailsController) };
         yield return new object[] { typeof(QueryLibraryController) };
@@ -116,5 +117,41 @@ public class ControllerAuthorizationTests
         var clickEvent = actions.Single(m => m.Name == nameof(UsageDashboardController.TrackClickEvent));
         Assert.DoesNotContain(clickEvent.GetCustomAttributes<AuthorizeAttribute>(inherit: true),
             a => a.Policy == "AdminOnly" || a.Policy == UsageDashboardAccess.PolicyName);
+    }
+
+    /// <summary>
+    /// The certification ingest endpoint writes compliance data on behalf of a machine identity, so
+    /// it must carry its named policy and not merely [Authorize]. A bare [Authorize] would admit any
+    /// signed-in user — every employee with the app open — to an endpoint that overwrites producer
+    /// certification records. That is the mistake this test exists to catch, and it is easy to make,
+    /// because the class-level attribute looks protective either way.
+    /// </summary>
+    [Fact]
+    public void OrganicCertificationIngestController_RequiresTheIngestPolicy()
+    {
+        var policies = typeof(OrganicCertificationIngestController)
+            .GetCustomAttributes<AuthorizeAttribute>(inherit: true)
+            .Select(a => a.Policy)
+            .ToList();
+
+        Assert.Contains(OrganicIngestAccess.PolicyName, policies);
+    }
+
+    /// <summary>
+    /// No action on the ingest controller may opt out of authentication. Pinned separately from the
+    /// class attribute because [AllowAnonymous] on a single action silently overrides it.
+    /// </summary>
+    [Fact]
+    public void OrganicCertificationIngestController_HasNoAnonymousActions()
+    {
+        var anonymous = typeof(OrganicCertificationIngestController)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => !m.IsSpecialName)
+            .Where(m => m.GetCustomAttributes<AllowAnonymousAttribute>(inherit: true).Any())
+            .Select(m => m.Name)
+            .ToList();
+
+        Assert.True(anonymous.Count == 0,
+            $"These ingest actions allow anonymous access: {string.Join(", ", anonymous)}");
     }
 }
