@@ -75,16 +75,16 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             .GroupBy(x => x.CustomerId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.Code).ToList());
 
-        // Same batching pattern for ProducerGrainOnFarm → per-group on-hand/target rows.
+        // Same batching pattern for ProducerGrainOnFarm → per-commodity on-hand/grade/target rows.
         var grainRows = await _appContext.ProducerGrainOnFarm.AsNoTracking()
             .Where(g => customerIds.Contains(g.CustomerId))
-            .Select(g => new { g.CustomerId, g.CommodityGroup, g.BushelsOnHand, g.TargetBushels, g.Grade })
+            .Select(g => new { g.CustomerId, g.CommodityCode, g.BushelsOnHand, g.TargetBushels, g.Grade })
             .ToListAsync(cancellationToken);
         var grainByCustomer = grainRows
             .GroupBy(x => x.CustomerId)
             .ToDictionary(g => g.Key, g => g.Select(x => new GrainOnFarmEntry
             {
-                CommodityGroup = x.CommodityGroup,
+                CommodityCode = x.CommodityCode,
                 BushelsOnHand = x.BushelsOnHand,
                 TargetBushels = x.TargetBushels,
                 Grade = x.Grade
@@ -239,8 +239,8 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             }
         }
 
-        // Same rebuild pattern for dbo.ProducerGrainOnFarm — replace the customer's per-group
-        // grain-on-farm set. Dedupe by group (last write wins); skip blank groups.
+        // Same rebuild pattern for dbo.ProducerGrainOnFarm — replace the customer's per-commodity
+        // grain-on-farm set. Dedupe by commodity code (last write wins); skip blank codes.
         var oldGrain = await _appContext.ProducerGrainOnFarm
             .Where(g => g.CustomerId == customerId)
             .ToListAsync(cancellationToken);
@@ -249,8 +249,8 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             _appContext.ProducerGrainOnFarm.RemoveRange(oldGrain);
         }
         var grainItems = grainOnFarm
-            .Where(g => !string.IsNullOrWhiteSpace(g.CommodityGroup))
-            .GroupBy(g => g.CommodityGroup.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(g => !string.IsNullOrWhiteSpace(g.CommodityCode))
+            .GroupBy(g => g.CommodityCode.Trim(), StringComparer.OrdinalIgnoreCase)
             .Select(g => g.Last())
             .ToList();
         foreach (var item in grainItems)
@@ -258,7 +258,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             _appContext.ProducerGrainOnFarm.Add(new ProducerGrainOnFarm
             {
                 CustomerId = customerId,
-                CommodityGroup = item.CommodityGroup.Trim(),
+                CommodityCode = item.CommodityCode.Trim(),
                 BushelsOnHand = item.BushelsOnHand,
                 TargetBushels = item.TargetBushels,
                 Grade = string.IsNullOrWhiteSpace(item.Grade) ? null : item.Grade.Trim()
@@ -445,14 +445,14 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             .ToListAsync(cancellationToken);
     }
 
-    /// <summary>Composes the per-group grain-on-farm rows for a customer from dbo.ProducerGrainOnFarm.</summary>
+    /// <summary>Composes the per-commodity grain-on-farm rows for a customer from dbo.ProducerGrainOnFarm.</summary>
     private async Task<List<GrainOnFarmEntry>> GetGrainOnFarmAsync(long customerId, CancellationToken cancellationToken)
     {
         return await _appContext.ProducerGrainOnFarm.AsNoTracking()
             .Where(g => g.CustomerId == customerId)
             .Select(g => new GrainOnFarmEntry
             {
-                CommodityGroup = g.CommodityGroup,
+                CommodityCode = g.CommodityCode,
                 BushelsOnHand = g.BushelsOnHand,
                 TargetBushels = g.TargetBushels,
                 Grade = g.Grade

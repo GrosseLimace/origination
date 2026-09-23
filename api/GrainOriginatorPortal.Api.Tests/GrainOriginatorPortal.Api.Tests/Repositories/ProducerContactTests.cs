@@ -216,7 +216,7 @@ public class ProducerContactTests
         {
             CustomerId = 100, ScoularId = "S1", CustomerName = "Smith Farm",
             Contacts = new[] { Contact("Dad", isPrimary: true) },
-            GrainOnFarm = new[] { new GrainOnFarmEntry { CommodityGroup = "Corn", BushelsOnHand = 10 } }
+            GrainOnFarm = new[] { new GrainOnFarmEntry { CommodityCode = "YC", BushelsOnHand = 10 } }
         }, "tuser", CancellationToken.None);
 
         await repo.DeleteAsync(100, "tester", CancellationToken.None);

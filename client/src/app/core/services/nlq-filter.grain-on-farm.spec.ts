@@ -7,7 +7,7 @@ import { Customer } from '@models';
 function customer(
   id: number,
   name: string,
-  grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[]
+  grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[]
 ): Customer {
   return {
     id, name, farm: '', location: '', phone: '', email: '',
@@ -24,9 +24,9 @@ describe('NlqFilterService — grain on farm + target', () => {
   beforeEach(() => { svc = new NlqFilterService(); });
 
   // Alpha: corn 80k @ $5.50, grade "4.4%" | Bravo: wheat 20k, no target | Charlie: soybeans 5k @ $12.25 | Delta: none
-  const alpha = customer(1, 'Alpha Farms', [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 5.5, grade: '4.4%' }]);
-  const bravo = customer(2, 'Bravo Farms', [{ commodityGroup: 'Wheat', bushelsOnHand: 20000 }]);
-  const charlie = customer(3, 'Charlie Farms', [{ commodityGroup: 'Soybeans', bushelsOnHand: 5000, targetBushels: 12.25 }]);
+  const alpha = customer(1, 'Alpha Farms', [{ commodityCode: 'Corn', bushelsOnHand: 80000, targetBushels: 5.5, grade: '4.4%' }]);
+  const bravo = customer(2, 'Bravo Farms', [{ commodityCode: 'Wheat', bushelsOnHand: 20000 }]);
+  const charlie = customer(3, 'Charlie Farms', [{ commodityCode: 'Soybeans', bushelsOnHand: 5000, targetBushels: 12.25 }]);
   const delta = customer(4, 'Delta Farms', []);
   const all = [alpha, bravo, charlie, delta];
 
@@ -129,9 +129,9 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
   let svc: NlqFilterService;
   beforeEach(() => { svc = new NlqFilterService(); });
 
-  const alpha = customer(1, 'Alpha Farms', [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 5.5, grade: '4.4%' }]);
-  const bravo = customer(2, 'Bravo Farms', [{ commodityGroup: 'Wheat', bushelsOnHand: 20000 }]);
-  const charlie = customer(3, 'Charlie Farms', [{ commodityGroup: 'Soybeans', bushelsOnHand: 5000, targetBushels: 12.25 }]);
+  const alpha = customer(1, 'Alpha Farms', [{ commodityCode: 'Corn', bushelsOnHand: 80000, targetBushels: 5.5, grade: '4.4%' }]);
+  const bravo = customer(2, 'Bravo Farms', [{ commodityCode: 'Wheat', bushelsOnHand: 20000 }]);
+  const charlie = customer(3, 'Charlie Farms', [{ commodityCode: 'Soybeans', bushelsOnHand: 5000, targetBushels: 12.25 }]);
   const delta = customer(4, 'Delta Farms', []);
   const all = [alpha, bravo, charlie, delta];
 
@@ -176,11 +176,56 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
     // substring matcher had no way to resolve SRWW -> wheat without a lookup table. _promptCategory
     // is what routes crop scoping to the grainOnFarm rows instead of the generic commodities list
     // (mirrors how a real Grain on Farm library prompt stamps the category at save time).
-    const echo = customer(5, 'Echo Farms', [{ commodityGroup: 'SRWW', bushelsOnHand: 15000 }]);
+    const echo = customer(5, 'Echo Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 15000 }]);
     const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
     const result = svc.applyRefinementFilters([...all, echo],
       { _promptCategory: 'Grain on Farm', crops: ['Wheat'] } as never, [], [], { commodities })
       .map(c => c.id).sort((a, b) => a - b);
     expect(result).toContain(5);
+  });
+});
+
+// Since 2026-09-23 rows hold commodity CODES. The blocks above keep crop-group values on purpose:
+// they are exactly what legacy rows saved before the switch look like, and must keep working.
+describe('NlqFilterService — grain on farm keyed by commodity code', () => {
+  let svc: NlqFilterService;
+  beforeEach(() => { svc = new NlqFilterService(); });
+
+  const commodities = [
+    { id: 1, code: 'YC', name: 'YELLOW CORN', category: 'Corn', isActive: true },
+    { id: 2, code: 'HRWW', name: 'HARD RED WINTER WHEAT', category: 'Wheat', isActive: true },
+    { id: 3, code: 'SRWW', name: 'SOFT RED WINTER WHEAT', category: 'Wheat', isActive: true },
+  ];
+  const foxtrot = customer(6, 'Foxtrot Farms', [{ commodityCode: 'YC', bushelsOnHand: 30000 }]);
+  const golf = customer(7, 'Golf Farms', [{ commodityCode: 'HRWW', bushelsOnHand: 25000 }, { commodityCode: 'SRWW', bushelsOnHand: 4000 }]);
+  const hotel = customer(8, 'Hotel Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 18000 }]);
+  const legacy = customer(9, 'India Farms', [{ commodityCode: 'Wheat', bushelsOnHand: 22000 }]);
+  const all = [foxtrot, golf, hotel, legacy];
+
+  const refine = (f: Record<string, unknown>) =>
+    svc.applyRefinementFilters(all, f as never, [], [], { commodities } as never).map(c => c.id).sort((a, b) => a - b);
+
+  it('a group chip scopes the bushel refine to that group\'s code rows (and legacy group rows)', () => {
+    // Before the switch this path used a substring test, so a "Wheat" chip could never match HRWW.
+    expect(refine({ grainOnFarmBushelsOver: 10000, crops: ['Wheat'] })).toEqual([7, 8, 9]);
+    expect(refine({ grainOnFarmBushelsOver: 10000, crops: ['Corn'] })).toEqual([6]);
+  });
+
+  it('a code chip is precise: HRWW does not pick up an SRWW-only producer', () => {
+    // Golf's HRWW row alone clears 20k; Hotel has only SRWW. The legacy "Wheat" row still matches
+    // an HRWW chip through its group, because it has no code to be precise about.
+    expect(refine({ grainOnFarmBushelsOver: 20000, crops: ['HRWW'] })).toEqual([7, 9]);
+  });
+
+  it('sums only the in-scope code rows', () => {
+    // Golf holds 29k wheat in total but only 4k SRWW.
+    expect(refine({ grainOnFarmBushelsOver: 10000, crops: ['SRWW'] })).toEqual([8, 9]);
+  });
+
+  it('"wheat on farm" in a prompt matches producers holding wheat codes', () => {
+    const result = svc.parseAndFilter('wheat on farm', { ...ctx(all), commodities } as never);
+    const ids = result.customers.map(c => c.id).sort((a, b) => a - b);
+    expect(ids).toEqual(expect.arrayContaining([7, 8]));
+    expect(ids).not.toContain(6);
   });
 });

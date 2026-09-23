@@ -1525,11 +1525,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("BushelsOnHand");
 
-                    b.Property<string>("CommodityGroup")
+                    b.Property<string>("CommodityCode")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
-                        .HasColumnName("CommodityGroup");
+                        .HasColumnName("CommodityCode");
 
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
@@ -1546,9 +1546,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CustomerId", "CommodityGroup")
+                    b.HasIndex("CustomerId", "CommodityCode")
                         .IsUnique()
-                        .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Group");
+                        .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Commodity");
 
                     b.ToTable("ProducerGrainOnFarm", "dbo");
                 });

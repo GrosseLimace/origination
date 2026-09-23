@@ -38,7 +38,8 @@ public record ContactItemResponse
 
 public record GrainOnFarmItemResponse
 {
-    public string CommodityGroup { get; init; } = string.Empty;
+    /// <summary>Commodity code, or a legacy crop-group name on rows saved before codes.</summary>
+    public string CommodityCode { get; init; } = string.Empty;
     public decimal? BushelsOnHand { get; init; }
     public decimal? TargetBushels { get; init; }
     public string? Grade { get; init; }

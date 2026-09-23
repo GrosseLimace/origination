@@ -3,16 +3,22 @@ using System.Text.Json.Serialization;
 namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 /// <summary>
-/// Per-commodity-group "grain on farm" for a producer: how many bushels of a crop group (e.g. Corn,
-/// Wheat, Soybeans) are currently on the farm and the target the farmer wants on hand. One row per
-/// (customer, commodity group). The group is the Commodity.Category the rest of the app groups crops by.
-/// Replaced as a set on upsert (mirrors the CustomerCommodity child-table pattern).
+/// Per-commodity "grain on farm" for a producer: how many bushels of one commodity (e.g. YC, HRWW,
+/// YSBO) are currently on the farm, a grade note, and the $/bu target. One row per (customer,
+/// commodity code). Replaced as a set on upsert (mirrors the CustomerCommodity child-table pattern).
+///
+/// Keyed by CODE, the same values the producer's Commodities chips hold, so HRWW and SRWW are two
+/// rows rather than one "Wheat". Before 2026-09-23 the column held a crop GROUP ("Corn", "Wheat");
+/// the RenameGrainOnFarmGroupToCommodityCode migration renamed it without rewriting data, because a
+/// group cannot be mapped to one code without guessing. Readers must therefore accept either a code
+/// or a legacy group name — the client's crop matcher resolves both.
 /// </summary>
 public class ProducerGrainOnFarm
 {
     public int Id { get; set; }
     public long CustomerId { get; set; }
-    public string CommodityGroup { get; set; } = string.Empty;
+    /// <summary>Commodity code (Commodity.Code), or a legacy crop-group name on rows saved before codes.</summary>
+    public string CommodityCode { get; set; } = string.Empty;
     public decimal? BushelsOnHand { get; set; }
     public decimal? TargetBushels { get; set; }
     /// <summary>Free-text grade / quality note (e.g. "4.4%", "TW 58"). Not necessarily numeric.</summary>
@@ -26,7 +32,7 @@ public class ProducerGrainOnFarm
 /// (read) and passed to the repository upsert (write). Not an EF entity.</summary>
 public class GrainOnFarmEntry
 {
-    public string CommodityGroup { get; set; } = string.Empty;
+    public string CommodityCode { get; set; } = string.Empty;
     public decimal? BushelsOnHand { get; set; }
     public decimal? TargetBushels { get; set; }
     public string? Grade { get; set; }

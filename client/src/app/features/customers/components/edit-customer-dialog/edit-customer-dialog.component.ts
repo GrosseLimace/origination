@@ -7,6 +7,8 @@ import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
+import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, grainOnFarmTitle } from '@shared/utils/grain-on-farm';
+import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { AppStateService } from '@core/services/app-state.service';
 
 @Component({
@@ -53,7 +55,7 @@ export class EditCustomerDialogComponent {
     eSignEnabled: boolean;
     tradeUnitCodes: string[];        // Desired ACTIVE manual TU set — reconciled on "Save Changes".
     reconcileTradeUnits: boolean;    // Only reconcile when it's safe + meaningful (see canReconcileTradeUnits).
-    grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[];
+    grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[];
   }>();
 
   // ── Trade-unit assignment / management ──────────────────────────────────
@@ -233,43 +235,110 @@ export class EditCustomerDialogComponent {
   filteredCommodities = signal<Commodity[]>([]);
   showSuggestions = signal(false);
 
-  // ── Grain on Farm (per commodity GROUP: on-hand + target) ───────────────
+  // ── Grain on Farm (per commodity CODE: on-hand, grade, target) ──────────
   // Numbers are kept as strings for the inputs and parsed on save (mirrors editBinCapacity).
-  editGrainOnFarm = signal<{ commodityGroup: string; bushelsOnHand: string; targetBushels: string; grade: string }[]>([]);
-  newGrainGroup = signal(''); // commodity group selected in the "add row" dropdown
-  /** Commodity groups never offered for Grain on Farm (title-cased, matched case-insensitively). */
-  private static readonly HIDDEN_GRAIN_GROUPS = new Set(['other grain']);
+  // Rows are keyed by commodity code, the same values as the Commodities chips. A row saved before
+  // 2026-09-23 may hold a crop-group name instead ("Corn"); it round-trips untouched and is flagged
+  // in the template so the user can swap it for a code. See shared/utils/grain-on-farm.ts.
+  editGrainOnFarm = signal<{ commodityCode: string; bushelsOnHand: string; targetBushels: string; grade: string }[]>([]);
+  newGrainCode = signal(''); // commodity code selected in the "add row" dropdown
 
-  /** Distinct commodity groups (Commodity.category — e.g. Corn, Wheat, Soybeans) not yet added,
-   *  for the add dropdown. Sourced from the curated commodity list the dialog already loads.
-   *  "Other Grain" is excluded — it's not a meaningful on-farm grain category. */
-  readonly availableGrainGroups = computed(() => {
-    const used = new Set(this.editGrainOnFarm().map(r => r.commodityGroup));
-    const groups = new Set<string>();
-    for (const c of this.scopedCommodities()) {
-      const g = this._titleCaseGroup(c.category);
-      if (g && !used.has(g) && !EditCustomerDialogComponent.HIDDEN_GRAIN_GROUPS.has(g.toLowerCase())) {
-        groups.add(g);
+  /** Dropdown options: one list of every planting-intentions commodity the user's trade units can
+   *  see — the same list the planting crop picker offers. */
+  readonly grainOptions = computed(() => buildGrainOnFarmOptions({
+    // The flag guard matters only in the full-catalog fallback (_loadCommoditiesFallback), where it
+    // keeps a couple of thousand non-crop codes out; the planting list is all true.
+    planting: this.scopedCommodities().filter(c => c.showInPlantingIntentions),
+    used: this.editGrainOnFarm().map(r => r.commodityCode),
+  }));
+
+  /** Whether the grain "add a commodity" list is open. A custom list rather than a native <select>
+   *  because the browser opens a native one upward near the bottom of the dialog, and that can't be
+   *  overridden; this one always drops down, like the Commodities search below it. */
+  grainPickerOpen = signal(false);
+  /** Label for the picker button: the chosen commodity, or the placeholder. */
+  readonly grainPickerLabel = computed(() =>
+    this.grainOptions().find(o => o.code === this.newGrainCode())?.label ?? 'Add a commodity…');
+
+  /** Keyboard-highlighted option while the list is open (-1 = none). */
+  grainPickerActive = signal(-1);
+
+  /** Arrow keys open the list and move the highlight, Enter picks it, Escape closes — what a native
+   *  <select> gave keyboard users for free. */
+  onGrainPickerKeydown(event: KeyboardEvent): void {
+    const options = this.grainOptions();
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!options.length) return;
+      if (!this.grainPickerOpen()) {
+        this.grainPickerOpen.set(true);
+        const current = options.findIndex(o => o.code === this.newGrainCode());
+        this.grainPickerActive.set(current >= 0 ? current : 0);
+      } else {
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        this.grainPickerActive.set((this.grainPickerActive() + step + options.length) % options.length);
       }
+      queueMicrotask(() => document.getElementById(`grain-opt-${this.grainPickerActive()}`)?.scrollIntoView({ block: 'nearest' }));
+    } else if (event.key === 'Enter' && this.grainPickerOpen()) {
+      event.preventDefault();
+      const picked = options[this.grainPickerActive()];
+      if (picked) this.selectGrainOption(picked.code);
+    } else if (event.key === 'Escape' && this.grainPickerOpen()) {
+      event.preventDefault();
+      event.stopPropagation(); // close the list, not the whole dialog
+      this.grainPickerOpen.set(false);
     }
-    return [...groups].sort((a, b) => a.localeCompare(b));
-  });
-
-  /** Normalizes a group label to title case so the data's ALL-CAPS categories
-   *  ("CORN", "FEED & FERT INGREDIENTS") read as "Corn", "Feed & Fert Ingredients". */
-  private _titleCaseGroup(value: string | undefined): string {
-    return (value || '').trim().toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
   }
 
+  selectGrainOption(code: string): void {
+    this.newGrainCode.set(code);
+    this.grainPickerOpen.set(false);
+    this.grainPickerActive.set(-1);
+  }
+
+  /** Close on blur, delayed so a mousedown on an option lands first (same as hideSuggestionsDelayed). */
+  closeGrainPickerDelayed(): void {
+    setTimeout(() => this.grainPickerOpen.set(false), 200);
+  }
+
+  private readonly _grainCommodityByCode = computed(() =>
+    indexCommoditiesByCode(this.appState.commodities(), this.allCommodities()));
+  private readonly _grainLookup = computed(() => buildCropGroupLookup([...this.appState.commodities(), ...this.allCommodities()]));
+
+  /** Codes this dialog session put onto the Commodities chips because a grain row was added for
+   *  a commodity the producer didn't have yet. Tracked so removing that grain row takes the chip
+   *  back off — but never a chip the user or the producer's tickets/contracts already had. */
+  private _grainAutoAddedCommodities = new Set<string>();
+
+  /** A row still holding a pre-code crop-group name ("Corn"). Only a real group name qualifies, so a
+   *  code missing from the active catalog is never flagged, and nothing is flagged before load. */
+  isLegacyGrainRow(value: string): boolean {
+    return isLegacyGrainGroup(value, this._grainCommodityByCode(), this._grainLookup());
+  }
+
+  /** Hover text for a row: the commodity name, or the legacy-row explanation. */
+  grainRowTitle(value: string): string {
+    return grainOnFarmTitle(value, this._grainCommodityByCode(), this._grainLookup());
+  }
+
+  /** Adds a grain row and, when the producer doesn't already list that commodity, adds it to their
+   *  Commodities chips too (as a user-added, removable chip), so the two lists stay in step. */
   addGrainRow(): void {
-    const group = this.newGrainGroup().trim();
-    if (!group || this.editGrainOnFarm().some(r => r.commodityGroup === group)) return;
-    this.editGrainOnFarm.update(rows => [...rows, { commodityGroup: group, bushelsOnHand: '', targetBushels: '', grade: '' }]);
-    this.newGrainGroup.set('');
+    const code = this.newGrainCode().trim();
+    if (!code || this.editGrainOnFarm().some(r => r.commodityCode.toLowerCase() === code.toLowerCase())) return;
+    this.editGrainOnFarm.update(rows => [...rows, { commodityCode: code, bushelsOnHand: '', targetBushels: '', grade: '' }]);
+    if (!this.editCommodities().some(c => c.toLowerCase() === code.toLowerCase())) {
+      this.editCommodities.update(c => [...c, code]);
+      this._grainAutoAddedCommodities.add(code);
+    }
+    this.newGrainCode.set('');
   }
 
-  removeGrainRow(commodityGroup: string): void {
-    this.editGrainOnFarm.update(rows => rows.filter(r => r.commodityGroup !== commodityGroup));
+  removeGrainRow(commodityCode: string): void {
+    this.editGrainOnFarm.update(rows => rows.filter(r => r.commodityCode !== commodityCode));
+    if (this._grainAutoAddedCommodities.delete(commodityCode)) {
+      this.editCommodities.update(c => c.filter(x => x !== commodityCode));
+    }
   }
 
   // ── Collapsible sections (edit dialog) ──────────────────────────────────
@@ -354,12 +423,14 @@ export class EditCustomerDialogComponent {
         this.editESignEnabled.set(customer.eSignEnabled);
         this.editContacts.set(this._contactsFromCustomer(customer));
         this.editGrainOnFarm.set((customer.grainOnFarm || []).map(g => ({
-          commodityGroup: g.commodityGroup,
+          commodityCode: g.commodityCode,
           bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
           targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
           grade: g.grade ?? ''
         })));
-        this.newGrainGroup.set('');
+        this.newGrainCode.set('');
+        this._grainAutoAddedCommodities.clear();
+        this.grainPickerOpen.set(false);
 
         // Store original values
         this._originalAcres = customer.totalAcres || 0;
@@ -425,7 +496,10 @@ export class EditCustomerDialogComponent {
     this.editBinCapacity = '';
     this.editCommodities.set([]);
     this.editGrainOnFarm.set([]);
-    this.newGrainGroup.set('');
+    this.newGrainCode.set('');
+    this._grainAutoAddedCommodities.clear();
+    this.grainPickerOpen.set(false);
+    this.grainPickerActive.set(-1);
     this.editContacts.set([]);
     this.editLinkedProducerIds.set([]);
     this.removedIncomingIds.set([]);
@@ -522,7 +596,7 @@ export class EditCustomerDialogComponent {
   private _serializeGrain(): string {
     return JSON.stringify(
       this.editGrainOnFarm()
-        .map(r => ({ g: r.commodityGroup, h: r.bushelsOnHand.trim(), t: r.targetBushels.trim(), gr: r.grade.trim() }))
+        .map(r => ({ g: r.commodityCode, h: r.bushelsOnHand.trim(), t: r.targetBushels.trim(), gr: r.grade.trim() }))
         .sort((a, b) => a.g.localeCompare(b.g))
     );
   }
@@ -736,12 +810,15 @@ export class EditCustomerDialogComponent {
     this.editBinCapacity = String(this._originalBinCapacity || 0);
     this.editCommodities.set([...this._originalCommodities]);
     this.editGrainOnFarm.set((this.customer()?.grainOnFarm || []).map(g => ({
-      commodityGroup: g.commodityGroup,
+      commodityCode: g.commodityCode,
       bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
       targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
       grade: g.grade ?? ''
     })));
-    this.newGrainGroup.set('');
+    this.newGrainCode.set('');
+    this._grainAutoAddedCommodities.clear();
+    this.grainPickerOpen.set(false);
+    this.grainPickerActive.set(-1);
     this.editLinkedProducerIds.set([...this._originalLinkedProducerIds]);
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(this._originalESignEnabled);
@@ -801,9 +878,9 @@ export class EditCustomerDialogComponent {
         tradeUnitCodes: this.selectedTuCodes(),
         reconcileTradeUnits: this.canReconcileTradeUnits(),
         grainOnFarm: this.editGrainOnFarm()
-          .filter(r => r.commodityGroup)
+          .filter(r => r.commodityCode)
           .map(r => ({
-            commodityGroup: r.commodityGroup,
+            commodityCode: r.commodityCode,
             bushelsOnHand: r.bushelsOnHand.trim() ? this._parseNumericInput(r.bushelsOnHand) : undefined,
             targetBushels: r.targetBushels.trim() ? this._parseDecimalInput(r.targetBushels) : undefined,
             grade: r.grade.trim() || undefined

@@ -324,9 +324,9 @@
                          into "25,000" over "bu". flex-wrap is the pressure valve instead — a whole
                          cell moves to the next line rather than a number splitting from its unit. -->
                     <div class="mt-1 ml-[21px] flex flex-col gap-y-1 w-fit text-xs">
-                      @for (g of grainOnFarmRows(); track g.commodityGroup) {
+                      @for (g of grainOnFarmRows(); track g.commodityCode) {
                         <div class="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-                          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap" [ngClass]="grainChipClass(g.commodityGroup)">{{ g.commodityGroup }}</span>
+                          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap" [ngClass]="grainChipClass(g.commodityCode)" [title]="grainChipTitle(g.commodityCode)">{{ g.commodityCode }}</span>
                           <span class="text-sm tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-400 cursor-help" title="On hand">{{ (g.bushelsOnHand || 0) | number }} bu</span>
                           @if (g.grade?.trim()) {
                             <span class="text-sm whitespace-nowrap text-gray-600 dark:text-gray-400 cursor-help" title="Grade">{{ g.grade }}</span>
