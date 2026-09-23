@@ -3341,6 +3341,10 @@ export class BidSheetComponent {
     // The grid is the SHEET's. Every path in here narrows the map back to it first, so the rows the
     // grid builds from bidEntries are the sheet's rows -- in All scope they would be everyone's.
     if (this.mapScope() === 'all') this.setMapScope('sheet');
+    // The catalog popup belongs to the map. It is positioned over the map pane, which the grid now
+    // covers, so leaving it open parks a panel of published bids on top of the locations with no
+    // obvious way to dismiss it -- its close button is behind the grid.
+    if (this.catalogDetailKey()) this.closeCatalogDetail();
     // Focus target for the grid: an explicit name (e.g. a just-added location) or, by default, the
     // panel's selected location. Passing it as an argument avoids forcing the panel into detail mode.
     const focusLocation = focusLocationName ?? this.panelSelectedName();
@@ -3657,6 +3661,17 @@ export class BidSheetComponent {
    */
   basisChanged(row: EditBidsRow, key: string): boolean {
     return normalizeBasis(row.basisBids[key]) !== normalizeBasis(row.originalBasisBids[key]);
+  }
+
+  /**
+   * A published basis as it should be read in the catalog popup: signed, or a dash when the vendor
+   * published none for that period.
+   *
+   * These rows hold numbers rather than the strings every other basis surface carries, so they need
+   * their own way in rather than reusing the grid's.
+   */
+  basisCellText(value: number | null | undefined): string {
+    return value == null ? '--' : formatBasis(value.toString());
   }
 
   /** Handles arrow key navigation between bid input cells in the edit grid. */

@@ -264,9 +264,9 @@
                             <td class="py-1 text-right text-gray-500 dark:text-gray-400">{{ formatMonthYear(row.month, row.cropYear) }}</td>
                             @if (priceMode() === 'both') {
                               <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ row.cash != null ? row.cash : '--' }}</td>
-                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ row.basis != null ? row.basis : '--' }}</td>
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ basisCellText(row.basis) }}</td>
                             } @else {
-                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ (priceMode() === 'basis' ? row.basis : row.cash) ?? '--' }}</td>
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ priceMode() === 'basis' ? basisCellText(row.basis) : (row.cash ?? '--') }}</td>
                             }
                           </tr>
                         }

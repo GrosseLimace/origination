@@ -942,6 +942,26 @@ describe('BidSheetComponent — catalog pin price label in Both mode', () => {
   // Catalog pins build their label here rather than through _getDisplayBid, so the "+" on a positive
   // basis had to be added in both places. One kind of pin showing "+5" while the other shows "5" on
   // the same map is worse than neither doing it.
+  it('signs a positive basis in the published-bids popup, and dashes a missing one', () => {
+    // These rows carry numbers, not the strings every other basis surface holds, so the popup needs
+    // its own way in -- which is how it was missed when the rest of the map was signed.
+    expect(component.basisCellText(5)).toBe('+5');
+    expect(component.basisCellText(-30)).toBe('-30');
+    expect(component.basisCellText(0)).toBe('0');
+    expect(component.basisCellText(null)).toBe('--');
+    expect(component.basisCellText(undefined)).toBe('--');
+  });
+
+  it('closes the published-bids popup when the grid opens over it', () => {
+    component.catalogDetailKey.set('SOME-LOCATION-KEY');
+
+    component.openEditBids();
+
+    // The popup is positioned over the map pane, which the grid covers -- left open, it parks itself
+    // on top of the locations with its own close button behind the grid.
+    expect(component.catalogDetailKey()).toBeNull();
+  });
+
   it('signs a positive basis on a catalog pin, in Both mode and in Basis mode', () => {
     const label = (component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation): string | null })
       ._catalogPriceLabel;
