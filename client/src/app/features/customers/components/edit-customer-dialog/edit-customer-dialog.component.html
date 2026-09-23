@@ -255,7 +255,7 @@
                 </div>
               </div>
 
-              <!-- Grain on Farm (per commodity group: bushels on hand + target) -->
+              <!-- Grain on Farm (per commodity code: bushels on hand, grade, target) -->
               <div class="space-y-2">
                 <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -266,19 +266,40 @@
 
                 <!-- Add control stays above the entered amounts -->
                 <div class="flex items-center gap-2">
-                  <select [ngModel]="newGrainGroup()" (ngModelChange)="newGrainGroup.set($event)"
-                    class="flex-1 h-9 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green">
-                    <option value="">Add a commodity…</option>
-                    @for (g of availableGrainGroups(); track g) {
-                      <option [value]="g">{{ g }}</option>
+                  <!-- Custom list, not a native <select>: a native one opens upward near the bottom of
+                       the dialog and the direction can't be controlled. This one always drops down. -->
+                  <div class="relative flex-1 min-w-0">
+                    <button type="button" (click)="grainPickerOpen.set(!grainPickerOpen()); grainPickerActive.set(-1)" (blur)="closeGrainPickerDelayed()"
+                      (keydown)="onGrainPickerKeydown($event)" aria-haspopup="listbox" [attr.aria-expanded]="grainPickerOpen()"
+                      class="w-full h-9 px-2 pr-7 flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-left focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                      [class.text-gray-900]="!!newGrainCode()" [class.dark:text-white]="!!newGrainCode()"
+                      [class.text-gray-500]="!newGrainCode()" [class.dark:text-gray-400]="!newGrainCode()">
+                      <span class="truncate">{{ grainPickerLabel() }}</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 transition-transform" [class.rotate-180]="grainPickerOpen()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    @if (grainPickerOpen()) {
+                      <div role="listbox" class="absolute left-0 top-full z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        @for (g of grainOptions(); track g.code) {
+                          <button type="button" role="option" tabindex="-1" [attr.id]="'grain-opt-' + $index" [attr.aria-selected]="g.code === newGrainCode()" (mousedown)="selectGrainOption(g.code)"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                            [class.bg-gray-100]="g.code === newGrainCode() || $index === grainPickerActive()" [class.dark:bg-gray-700]="g.code === newGrainCode() || $index === grainPickerActive()">
+                            {{ g.label }}
+                          </button>
+                        } @empty {
+                          <div class="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                            {{ isLoadingCommodities() ? 'Loading commodities…' : 'No more commodities to add' }}
+                          </div>
+                        }
+                      </div>
                     }
-                  </select>
-                  <button type="button" (click)="addGrainRow()" [disabled]="!newGrainGroup()"
+                  </div>
+                  <button type="button" (click)="addGrainRow()" [disabled]="!newGrainCode()"
                     class="shrink-0 inline-flex items-center gap-1 px-3 h-9 rounded-md text-sm font-medium bg-scoular-green-accessible text-white hover:bg-scoular-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                     Add
                   </button>
                 </div>
+                <p class="text-[0.7rem] text-gray-500 dark:text-gray-400">Same list as Planting Intentions. Picking one the producer doesn't have also adds it to their Commodities.</p>
 
                 @if (editGrainOnFarm().length > 0) {
                   <div class="space-y-1.5">
@@ -289,9 +310,15 @@
                       <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Target</span>
                       <span></span>
                     </div>
-                    @for (row of editGrainOnFarm(); track row.commodityGroup) {
+                    @for (row of editGrainOnFarm(); track row.commodityCode) {
                       <div class="grid grid-cols-[1fr_1fr_1fr_1fr_1.25rem] items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-600 bg-gray-50/70 dark:bg-gray-700/40 px-2 py-1.5">
-                        <span class="min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-200">{{ row.commodityGroup }}</span>
+                        <span class="min-w-0 flex items-center gap-1 text-sm font-semibold text-gray-800 dark:text-gray-200" [title]="grainRowTitle(row.commodityCode)">
+                          <span class="truncate">{{ row.commodityCode }}</span>
+                          @if (isLegacyGrainRow(row.commodityCode)) {
+                            <!-- Saved before Grain on Farm used codes: still valid, but a crop group. -->
+                            <span class="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase tracking-wide bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Group</span>
+                          }
+                        </span>
                         <input type="text" inputmode="numeric" [(ngModel)]="row.bushelsOnHand" placeholder="Bushels"
                           class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
                         <input type="text" [(ngModel)]="row.grade" placeholder="Grade"
@@ -301,7 +328,7 @@
                           <input type="text" inputmode="decimal" [(ngModel)]="row.targetBushels" placeholder="Target"
                             class="w-full h-8 pl-5 pr-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
                         </div>
-                        <button type="button" (click)="removeGrainRow(row.commodityGroup)" title="Remove {{ row.commodityGroup }}" class="shrink-0 text-gray-400 hover:text-scoular-red transition-colors">
+                        <button type="button" (click)="removeGrainRow(row.commodityCode)" title="Remove {{ row.commodityCode }}" class="shrink-0 text-gray-400 hover:text-scoular-red transition-colors">
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                         </button>
                       </div>
