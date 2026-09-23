@@ -8,6 +8,24 @@ public class BidSheetPreference
     public string? CropCode { get; set; }
     public int? Month { get; set; }    // null=no preference, 0=yearly, 1-12=monthly
     public int? CropYear { get; set; } // null=no preference
+    /// <summary>
+    /// The Edit Bids columns, as a JSON array of picks in the order the user arranged them:
+    /// <c>[{"c":"YC","y":2026,"m":12},{"c":"YC","y":2027,"m":1}]</c>. One pick is exactly one
+    /// column, so a run that crosses a year boundary -- Dec 2026, Jan 2027, Feb 2027 -- is now
+    /// expressible. It was not under the crop x month x year cross product this replaced, which
+    /// could only ever produce every combination of the three, in its own order.
+    ///
+    /// Stored as picks rather than the client's packed "CROP#YEAR#MONTH" cell key on purpose: that
+    /// key is already reconstructed in three places on the client, and making the database a fourth
+    /// would tie the storage format to a UI detail.
+    /// </summary>
+    public string? SelectedColumns { get; set; }
+
+    // ---- Superseded by SelectedColumns ----------------------------------------------------------
+    // These four described the old cross product. Nothing writes them any more; they are read once,
+    // to synthesise a column list for a user who has not opened the new grid yet, so nobody loses
+    // their arrangement on upgrade. Kept rather than dropped so a rollback still finds it intact.
+
     public string? CropOrder { get; set; } // JSON array of crop codes, e.g. ["CORN","WHEAT"]
     public string? HiddenCrops { get; set; } // JSON array of deselected crop codes, e.g. ["MILO"]
     public string? SelectedMonths { get; set; } // JSON array of selected months, e.g. [4,5,6] or [0] for yearly

@@ -734,6 +734,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("SelectedColumns")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("SelectedMonths")
                         .HasColumnType("nvarchar(max)");
 

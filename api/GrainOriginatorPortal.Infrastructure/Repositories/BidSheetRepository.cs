@@ -330,6 +330,7 @@ public class BidSheetRepository : IBidSheetRepository
             existing.CropCode = update.CropCode;
             existing.Month = update.Month;
             existing.CropYear = update.CropYear;
+            if (update.SelectedColumns is not null) existing.SelectedColumns = update.SelectedColumns;
             if (update.CropOrder is not null) existing.CropOrder = update.CropOrder;
             if (update.HiddenCrops is not null) existing.HiddenCrops = update.HiddenCrops;
             if (update.SelectedMonths is not null) existing.SelectedMonths = update.SelectedMonths;
@@ -348,6 +349,7 @@ public class BidSheetRepository : IBidSheetRepository
                 CropCode = update.CropCode,
                 Month = update.Month,
                 CropYear = update.CropYear,
+                SelectedColumns = update.SelectedColumns,
                 CropOrder = update.CropOrder,
                 HiddenCrops = update.HiddenCrops,
                 SelectedMonths = update.SelectedMonths,

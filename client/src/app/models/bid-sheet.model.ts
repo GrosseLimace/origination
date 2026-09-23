@@ -134,15 +134,45 @@ export interface BidSheetPreferenceUpdate {
   cropCode: string | null;
   month: number | null;
   cropYear: number | null;
+  /**
+   * The Edit Bids columns, as a JSON array of picks in display order:
+   * `[{"c":"YC","y":2026,"m":12},{"c":"YC","y":2027,"m":1}]`. One pick is one column.
+   */
+  selectedColumns?: string | null;
+  /** @deprecated Superseded by `selectedColumns`; read once to synthesise a column list, never written. */
   cropOrder?: string | null;
+  /** @deprecated Superseded by `selectedColumns`. */
   hiddenCrops?: string | null;
+  /** @deprecated Superseded by `selectedColumns`. */
   selectedMonths?: string | null;
-  /** JSON array of the crop years shown in the Edit Bids grid, e.g. `[2026,2027]`. */
+  /** @deprecated Superseded by `selectedColumns`. */
   selectedYears?: string | null;
   printLayout?: string | null;
   priceMode?: string | null;
   /** The sheet the user last had open, so the screen reopens where they left it. */
   selectedBidSheetIds?: string | null;
+}
+
+/**
+ * What `GET /bidsheet/preference` returns — the stored row, or null when the user has none yet.
+ *
+ * Every field is nullable because the row is built up one screen setting at a time. A null
+ * `selectedColumns` specifically means "has not opened the new Edit Bids grid yet", which is the
+ * signal to synthesise a column list from the four deprecated fields.
+ */
+export interface BidSheetPreferenceRead {
+  tradeUnitKey: string;
+  cropCode: string | null;
+  month: number | null;
+  cropYear: number | null;
+  selectedColumns: string | null;
+  cropOrder: string | null;
+  hiddenCrops: string | null;
+  selectedMonths: string | null;
+  selectedYears: string | null;
+  printLayout: string | null;
+  priceMode: string | null;
+  selectedBidSheetIds: string | null;
 }
 
 /**

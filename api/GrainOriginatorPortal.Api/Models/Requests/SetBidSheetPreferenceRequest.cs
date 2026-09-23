@@ -12,6 +12,11 @@ public record SetBidSheetPreferenceRequest
 
     public int? Month { get; init; }
     public int? CropYear { get; init; }
+    /// <summary>JSON array of Edit Bids column picks, <c>[{"c":"YC","y":2026,"m":12}]</c>, in
+    /// display order. Null leaves the stored value alone; "[]" clears it.</summary>
+    [StringLength(4000)]
+    public string? SelectedColumns { get; init; }
+
     public string? CropOrder { get; init; }
     public string? HiddenCrops { get; init; }
     public string? SelectedMonths { get; init; }

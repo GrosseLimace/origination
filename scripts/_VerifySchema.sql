@@ -298,6 +298,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetPreferences', 'PriceMode',      'nvarchar(10)',  1),
 ('dbo', 'BidSheetPreferences', 'PrintLayout',    'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedBidSheetIds', 'nvarchar(200)', 1),
+('dbo', 'BidSheetPreferences', 'SelectedColumns',    'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedMonths',     'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'SelectedYears',  'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'TradeUnitKey',   'nvarchar(500)', 0),
@@ -768,7 +769,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260921152258_AddUsageDashboardViewAllUsers'),
 ('20260921193322_AddCustomerIndustryCode2AndNopId'),
 ('20260921202246_AddFlaxCommoditiesForTradeUnit3811'),
-('20260921204500_SplitFlaxPlantingCategoryByColour');
+('20260921204500_SplitFlaxPlantingCategoryByColour'),
+('20260923132920_AddSelectedColumnsToBidSheetPreference');
 
 
 -- =============================================================================

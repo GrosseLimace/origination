@@ -669,6 +669,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CropCode).HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.Month).IsRequired(false);
             entity.Property(e => e.CropYear).IsRequired(false);
+            entity.Property(e => e.SelectedColumns).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.CropOrder).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);

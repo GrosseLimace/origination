@@ -37,6 +37,15 @@ public record BidSheetPreferenceUpdate
 
     // ---- Null leaves the stored value alone ------------------------------------------------------
 
+    /// <summary>
+    /// JSON array of Edit Bids column picks, <c>[{"c":"YC","y":2026,"m":12}]</c>, in display order.
+    /// </summary>
+    public string? SelectedColumns { get; init; }
+
+    /// <summary>
+    /// Superseded by <see cref="SelectedColumns"/>. Retained so an existing user's arrangement can
+    /// be synthesised once on upgrade, and so a rollback still finds it.
+    /// </summary>
     public string? CropOrder { get; init; }
 
     public string? HiddenCrops { get; init; }
