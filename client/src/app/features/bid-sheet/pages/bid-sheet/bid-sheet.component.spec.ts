@@ -356,37 +356,86 @@ describe('BidSheetComponent — board symbols and printed values', () => {
   // navigating away and back. Every selected year is editable, which means every cell has to carry its
   // own year through the save.
 
-  it('lays columns out crop then month then year, so the same month is adjacent across years', () => {
-    component.crops.set(['YC']);
-    component.editBidsYears.set([2026, 2027]);
-    component.editBidsMonths.set([9, 12]);
+  it('shows columns in the order they were picked, including a run across a year boundary', () => {
+    // The case the cross product could not express. Asking for these three months meant selecting
+    // years {2026,2027} and months {12,1,2}, which produced all six combinations led by Jan-26.
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 12 },
+      { crop: 'YC', year: 2027, month: 1 },
+      { crop: 'YC', year: 2027, month: 2 },
+    ]);
 
-    const keys = component.editGridColumns().map(c => c.key);
+    expect(component.editGridColumns().map(c => c.key))
+      .toEqual(['YC#2026#12', 'YC#2027#1', 'YC#2027#2']);
+    // Three columns, not six: nothing is conjured by having ticked a year.
+    expect(component.editGridColumns()).toHaveLength(3);
+  });
 
-    // Sep-26 beside Sep-27 -- year-over-year is the comparison, so the years sit together.
-    expect(keys).toEqual(['YC#2026#9', 'YC#2027#9', 'YC#2026#12', 'YC#2027#12']);
-    expect(component.editGridColumns().map(c => c.year)).toEqual([2026, 2027, 2026, 2027]);
+  it('keeps an arbitrary order rather than re-sorting into calendar order', () => {
+    component.selectedColumns.set([
+      { crop: 'SB', year: 2027, month: 3 },
+      { crop: 'YC', year: 2026, month: 9 },
+      { crop: 'SB', year: 2026, month: 5 },
+    ]);
+
+    expect(component.editGridColumns().map(c => c.key))
+      .toEqual(['SB#2027#3', 'YC#2026#9', 'SB#2026#5']);
+  });
+
+  it('drops duplicate picks, which would collide on the template track key', () => {
+    // Two picks agreeing on crop+year+month produce one key. The template tracks the header row and
+    // every body cell by it, so a duplicate is an NG0955 that takes the screen down.
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 9 },
+      { crop: 'YC', year: 2026, month: 9 },
+      { crop: 'YC', year: 2026, month: 12 },
+    ]);
+
+    expect(component.editGridColumns().map(c => c.key)).toEqual(['YC#2026#9', 'YC#2026#12']);
   });
 
   it('bands contiguous runs of a year for the header row', () => {
-    component.crops.set(['YC']);
-    component.editBidsYears.set([2026, 2027]);
-    component.editBidsMonths.set([9, 12]);
-
-    // Four columns alternating year => four bands of one, one per column.
-    expect(component.editGridYearBands()).toEqual([
-      { year: 2026, span: 1 }, { year: 2027, span: 1 },
-      { year: 2026, span: 1 }, { year: 2027, span: 1 },
+    // A real run now, not the degenerate one the cross product produced: with year innermost no two
+    // adjacent columns ever shared a year, so every span was 1 and the row said nothing.
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 12 },
+      { crop: 'YC', year: 2027, month: 1 },
+      { crop: 'YC', year: 2027, month: 2 },
     ]);
-    // A single year needs no band row at all.
-    component.editBidsYears.set([2026]);
+    expect(component.editGridYearBands()).toEqual([
+      { year: 2026, span: 1 }, { year: 2027, span: 2 },
+    ]);
+
+    // Alternating years still band one apiece.
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 9 },
+      { crop: 'YC', year: 2027, month: 9 },
+      { crop: 'YC', year: 2026, month: 12 },
+    ]);
+    expect(component.editGridYearBands()).toEqual([
+      { year: 2026, span: 1 }, { year: 2027, span: 1 }, { year: 2026, span: 1 },
+    ]);
+
+    // A single year needs no band row at all, and the header carries the year instead.
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 9 }]);
     expect(component.editGridYearBands()).toEqual([]);
+    expect(component.editGridColumns()[0].label).toBe('YC Sep 2026');
+  });
+
+  it('drops the year from the column label once the band row is carrying it', () => {
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 12 },
+      { crop: 'YC', year: 2027, month: 1 },
+    ]);
+    expect(component.editGridColumns().map(c => c.label)).toEqual(['YC Dec', 'YC Jan']);
   });
 
   it('saves a cell against its own column year, not the primary one', () => {
     component.crops.set(['YC']);
-    component.editBidsYears.set([2026, 2027]);
-    component.editBidsMonths.set([9]);
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 9 },
+      { crop: 'YC', year: 2027, month: 9 },
+    ]);
     component.editBidsRows.set([{
       ...row('A', 'YC#2027#9', '5.55'),
       originalBids: { 'YC#2027#9': '' },

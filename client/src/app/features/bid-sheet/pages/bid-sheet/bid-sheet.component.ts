@@ -28,6 +28,22 @@ import {
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
 } from '../../utils/print-layout';
 
+/**
+ * One Edit Bids column, as the user chose it: a single crop in a single delivery month of a single
+ * crop year.
+ *
+ * The grid used to derive its columns as the cross product of three separately-chosen sets -- crops
+ * x months x years. That could not express a run of months crossing a year boundary: asking for Dec
+ * 2026, Jan 2027, Feb 2027 meant selecting years {2026,2027} and months {12,1,2}, which yields all
+ * six combinations with Jan 26 leading. Picking columns one at a time makes the arrangement say
+ * exactly what it means, and makes the order the user's rather than a consequence of the nesting.
+ */
+export interface EditBidColumnPick {
+  crop: string;
+  year: number;
+  month: number;
+}
+
 interface EditBidsRow {
   /**
    * The location this row is, and the row's identity. Required, not optional: a name does not identify
@@ -174,6 +190,48 @@ export class BidSheetComponent {
       ? [...new Set(raw.map(Number).filter(m => Number.isInteger(m) && m >= 1 && m <= 12))]
       : [];
     return months.length > 0 ? months : [BidSheetComponent.currentMonth()];
+  }
+
+  /**
+   * A saved column list made safe to render: well-formed picks only, in the order stored.
+   *
+   * De-duplication is not cosmetic. The template tracks both the header row and every body cell by
+   * the column key, so two picks that agree on crop+year+month would produce a duplicate track key
+   * and Angular would throw NG0955, taking the whole screen down. The picker refuses duplicates, but
+   * a hand-edited row must not be able to do that either -- hence here, and again where the columns
+   * are projected.
+   */
+  static parseSelectedColumns(raw: unknown): EditBidColumnPick[] {
+    if (typeof raw !== 'string' || raw.trim() === '') return [];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<string>();
+    const picks: EditBidColumnPick[] = [];
+    for (const entry of parsed) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const e = entry as { c?: unknown; y?: unknown; m?: unknown };
+      const crop = typeof e.c === 'string' ? e.c.trim() : '';
+      const year = Math.trunc(Number(e.y));
+      const month = Math.trunc(Number(e.m));
+      if (crop === '') continue;
+      if (!Number.isInteger(year) || year < 1900 || year > 2999) continue;
+      if (!Number.isInteger(month) || month < 1 || month > 12) continue;
+      const key = `${crop}#${year}#${month}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      picks.push({ crop, year, month });
+    }
+    return picks;
+  }
+
+  /** The wire form of a column list: terse, because it is read and written whole. */
+  static serialiseSelectedColumns(picks: EditBidColumnPick[]): string {
+    return JSON.stringify(picks.map(p => ({ c: p.crop, y: p.year, m: p.month })));
   }
 
   // --- Data ---
@@ -965,6 +1023,42 @@ export class BidSheetComponent {
   }
 
   /**
+   * The grid's columns, in display order. The single source of what Edit Bids shows.
+   *
+   * Empty means "not seeded yet" rather than "no columns": openEditBids fills it on first open, from
+   * the saved list or, for a user who predates it, by synthesising the old cross product so their
+   * arrangement survives the upgrade. See _seedColumns.
+   */
+  readonly selectedColumns = signal<EditBidColumnPick[]>([]);
+
+  /**
+   * Ceiling on how many columns can be ADDED interactively. Both mode renders two inputs per cell, so
+   * 24 columns is already ~48 inputs a row, and _buildEditGrid rebuilds all of them on a price-mode
+   * toggle, a rename and a star click.
+   *
+   * Deliberately not applied to the synthesised list: a user arriving from the old cross product may
+   * already be over it, and silently dropping their columns on upgrade would look like data loss.
+   * Refusing a 25th Add costs them nothing by comparison -- nothing is lost, the button just stops.
+   */
+  static readonly MAX_EDIT_BID_COLUMNS = 24;
+  readonly maxEditBidColumns = BidSheetComponent.MAX_EDIT_BID_COLUMNS;
+
+  /**
+   * True when the loaded preference row had no SelectedColumns at all -- an existing user meeting the
+   * new grid for the first time. Their columns are synthesised from the legacy fields below.
+   *
+   * Distinct from "the saved list was empty", which is a user who removed every column on purpose and
+   * must not have the old cross product handed back to them.
+   */
+  private _needsColumnSeed = false;
+
+  /** Legacy inputs stashed by _loadPreference, used once by _seedColumns. Never written back. */
+  private _legacyCropOrder: string[] | null = null;
+  private _legacyHiddenCrops = new Set<string>();
+  private _legacyMonths: number[] | null = null;
+  private _legacyYears: number[] | null = null;
+
+  /**
    * Crop years shown in the grid, in column order. Canonical -- mirrors editBidsMonths.
    *
    * Multi-year exists so old crop and new crop can be entered and compared without stepping the year
@@ -1071,47 +1165,61 @@ export class BidSheetComponent {
   private static readonly MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   /**
-   * Grid columns: crop × month × year.
+   * Grid columns: the user's list, projected.
    *
-   * Nested crop → month → year on purpose, so the SAME month from each selected year lands side by
-   * side ("Sep 26 | Sep 27 | Dec 26 | Dec 27"). Year-over-year is the comparison originators are
-   * making, and grouping by year instead would put Sep-26 and Sep-27 at opposite ends of a crop block.
-   * Crop stays outermost so onCropColumnDrop can keep moving a whole crop as one block.
+   * Order is theirs -- whatever they dragged the headers into -- not a consequence of any nesting.
+   * The key format is unchanged from when columns were a cross product, which is why every
+   * column-keyed store (cell values, dirty tracking, board and coverage chips, the save payload,
+   * keyboard navigation, the export) carries over untouched.
+   *
+   * De-duplicates again, after the load sanitiser already has: this is the projection the template
+   * tracks by, and a duplicate key here is an NG0955 that takes the screen down. Cheap insurance on a
+   * list this short.
    */
   readonly editGridColumns = computed(() => {
-    const months = this.editBidsMonths();
-    const crops = this.editBidsCrops();
-    const years = this.editBidsYears();
-    const multiYear = years.length > 1;
-    // editBidsMonths is the canonical month order (calendar order by default, reorderable via the print
-    // dialog's Months list); editBidsYears is the canonical year order.
-    return crops.flatMap(crop =>
-      months.flatMap(m =>
-        years.map(year => ({
-          key: this._colKey(crop, year, m),
-          crop,
-          month: m,
-          year,
-          // With one year the header carries it, as before. With several, the year band row above the
-          // headers carries it instead -- repeating it per column would trip over itself in the width
-          // a bid column has.
-          label: multiYear
-            ? `${crop} ${BidSheetComponent.MONTH_NAMES[m]}`
-            : `${crop} ${BidSheetComponent.MONTH_NAMES[m]} ${year}`,
-          // Named once here; only deviating cells repeat a board.
-          board: this.boardConsensus(crop, year, m)
-        }))
-      )
-    );
+    const picks = this.selectedColumns();
+    // With one year in play the header carries it, as before. With several, the year band row above
+    // carries it instead -- repeating it per column would trip over itself in the width a bid column
+    // has.
+    const multiYear = new Set(picks.map(p => p.year)).size > 1;
+    const seen = new Set<string>();
+    const columns: Array<{ key: string; crop: string; month: number; year: number; label: string; board: string }> = [];
+    for (const pick of picks) {
+      const key = this._colKey(pick.crop, pick.year, pick.month);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      columns.push({
+        key,
+        crop: pick.crop,
+        month: pick.month,
+        year: pick.year,
+        label: multiYear
+          ? `${pick.crop} ${BidSheetComponent.MONTH_NAMES[pick.month]}`
+          : `${pick.crop} ${BidSheetComponent.MONTH_NAMES[pick.month]} ${pick.year}`,
+        // Named once here; only deviating cells repeat a board.
+        board: this.boardConsensus(pick.crop, pick.year, pick.month)
+      });
+    }
+    return columns;
   });
+
+  /**
+   * The keys currently on the grid. Used to refuse a duplicate in the Add-column picker, and by print
+   * to tell a live column from one it has to fall back for.
+   */
+  private readonly _gridColumnKeys = computed(() => new Set(this.editGridColumns().map(c => c.key)));
 
   /**
    * Column index → the year band above it, for the extra header row. One entry per contiguous run of
    * the same year, so a run of N columns yields one cell spanning N.
+   *
+   * This used to be decorative: with year innermost in the cross product, no two adjacent columns
+   * ever shared a year and every span was 1. Now that the columns are an arbitrary list, a run like
+   * Dec 26 | Jan 27 | Feb 27 bands properly as 2026 over one column and 2027 over two.
    */
   readonly editGridYearBands = computed(() => {
     const columns = this.editGridColumns();
-    if (this.editBidsYears().length < 2) return [];
+    if (new Set(columns.map(c => c.year)).size < 2) return [];
     const bands: Array<{ year: number; span: number }> = [];
     for (const col of columns) {
       const last = bands[bands.length - 1];
@@ -2006,6 +2114,18 @@ export class BidSheetComponent {
             changed = true;
           }
 
+          // The grid's columns. Null here is meaningful: it marks a user who has not opened the new
+          // grid yet, whose list is synthesised from the four legacy fields below. Absent rather than
+          // empty, so a user who deliberately removed every column is not re-seeded behind them.
+          const selectedColumnsJson = pref?.selectedColumns ?? null;
+          const savedColumns = BidSheetComponent.parseSelectedColumns(selectedColumnsJson);
+          if (savedColumns.length > 0) {
+            this.selectedColumns.set(savedColumns);
+            this._needsColumnSeed = false;
+          } else {
+            this._needsColumnSeed = selectedColumnsJson === null;
+          }
+
           // Apply hidden crops if available
           const hiddenCropsJson = pref?.hiddenCrops ?? null;
           if (hiddenCropsJson) {
@@ -2014,6 +2134,7 @@ export class BidSheetComponent {
           } else {
             this.hiddenCrops.set(new Set());
           }
+          this._legacyHiddenCrops = new Set(this.hiddenCrops());
 
           // Apply selected months if available
           const selectedMonthsJson = pref?.selectedMonths ?? null;
@@ -2021,6 +2142,7 @@ export class BidSheetComponent {
             // Cleaned, not trusted: a preference saved before the Yearly period was retired carries 0.
             try { this.editBidsMonths.set(BidSheetComponent.cleanMonths(JSON.parse(selectedMonthsJson))); }
             catch { this.editBidsMonths.set([BidSheetComponent.currentMonth()]); }
+            this._legacyMonths = this.editBidsMonths();
           }
 
           // Apply the Edit Bids year selection. Sanitized rather than trusted, like the print layout is:
@@ -2034,7 +2156,10 @@ export class BidSheetComponent {
                     .sort((a, b) => a - b)
                     .slice(0, BidSheetComponent.MAX_EDIT_BIDS_YEARS)
                 : [];
-              if (years.length > 0) this.editBidsYears.set(years);
+              if (years.length > 0) {
+                this.editBidsYears.set(years);
+                this._legacyYears = years;
+              }
             } catch { /* invalid JSON — keep whatever openEditBids seeded */ }
           }
 
@@ -2044,6 +2169,7 @@ export class BidSheetComponent {
             try {
               const savedOrder: string[] = JSON.parse(cropOrderJson);
               this.cropOrder.set(savedOrder);
+              this._legacyCropOrder = savedOrder;
               // Bring back any crop the user added but has not priced yet. The server derives its commodity
               // list from saved BIDS, so a crop with none is absent from it, and the bid load runs before
               // this -- which is why an added-then-unused column disappeared on a page reload. The saved
@@ -3255,6 +3381,12 @@ export class BidSheetComponent {
     if (this.editBidsYears().length <= 1) this.editBidsYears.set([year]);
     // Same rule as the years just above: a single month follows the panel, several are the user's own.
     if (this.editBidsMonths().length <= 1) this.editBidsMonths.set([this.selectedMonth()]);
+    // Seed the column list on first open. Only when empty: a saved arrangement, or one the user built
+    // this session, is theirs and must not be re-derived from the panel underneath them.
+    if (this.selectedColumns().length === 0) {
+      const seeded = this._seedColumns();
+      if (seeded.length > 0) this.selectedColumns.set(seeded);
+    }
     this._buildEditGrid();
     this._editBidsSavedKeys.clear();
     this.editBidsMode.set(true);
@@ -3482,6 +3614,48 @@ export class BidSheetComponent {
       month: this.selectedMonth(),
       cropYear: this.selectedYear() || null
     };
+  }
+
+  /**
+   * Persists the grid's column list. Fire-and-forget like its neighbours: losing a column arrangement
+   * to a dropped request is worth less than blocking the UI on every add.
+   *
+   * The _panelPrefFields spread is not optional -- the server assigns crop/month/year unconditionally,
+   * so omitting them would blank the map panel's selection every time a column changed.
+   */
+  private _saveSelectedColumns(): void {
+    const key = this.preferenceKey();
+    if (!key) return;
+    const payload = BidSheetComponent.serialiseSelectedColumns(this.selectedColumns());
+    this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), selectedColumns: payload })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save selected columns', err); } });
+  }
+
+  /**
+   * The column list to open with, for a grid that has none.
+   *
+   * For a user who predates SelectedColumns, this reproduces the OLD cross product exactly -- same
+   * crop filter, same crop order, same crop → month → year nesting -- so their first open after the
+   * upgrade looks identical to their last open before it. For everyone else it is the panel's current
+   * crop set for the panel's month and year, which is what the grid used to seed itself with anyway.
+   *
+   * The 24-column cap is deliberately NOT applied: someone arriving from three years x several months
+   * may already be over it, and truncating their view on upgrade would read as data loss.
+   */
+  private _seedColumns(): EditBidColumnPick[] {
+    const hidden = this._needsColumnSeed ? this._legacyHiddenCrops : new Set<string>();
+    const order = this._needsColumnSeed ? this._legacyCropOrder : null;
+    const months = (this._needsColumnSeed && this._legacyMonths) || [this.selectedMonth()];
+    const years = (this._needsColumnSeed && this._legacyYears) || [this.selectedYear() || new Date().getFullYear()];
+
+    let crops = this.crops().filter(c => !hidden.has(c));
+    if (order && order.length > 0) {
+      const orderMap = new Map(order.map((code, idx) => [code, idx]));
+      crops = [...crops].sort((a, b) =>
+        (orderMap.get(a) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(b) ?? Number.MAX_SAFE_INTEGER));
+    }
+    return crops.flatMap(crop => months.flatMap(month => years.map(year => ({ crop, year, month }))));
   }
 
   /** Persists the Edit Bids year selection, so it survives a reload and the add-location round trip. */
