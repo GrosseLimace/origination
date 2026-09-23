@@ -252,6 +252,43 @@ describe('buildLocationsDown', () => {
     expect(cropsIn(tables[0])).toBe(4);
   });
 
+  // ── uneven and repeated runs ────────────────────────────────────────────────────────────────
+  // Groups are contiguous runs of one crop now, not one group per crop, so their sizes are arbitrary
+  // and the same crop can appear more than once. Neither was possible under the cross product, where
+  // every group had exactly months x years columns.
+
+  it('keeps a wide run and a lone column on ONE band when the columns fit', () => {
+    // The regression the old banding produced: dividing the page budget by the WIDEST group made a
+    // group of 6 beside a group of 1 look like it needed two bands, for seven columns that fit on one.
+    const groups = [realGroup('Corn', 6), realGroup('Soy', 1)];
+    const tables = buildLocationsDown({ groups, locations: [loc('Scoular Pratt', groups, REAL_VALUE, true)], cropColors });
+    expect(tables).toHaveLength(1);
+    expect(cropsIn(tables[0])).toBe(2);
+  });
+
+  it('still splits when the columns genuinely do not fit', () => {
+    const groups = Array.from({ length: 8 }, (_, i) => realGroup(`Crop${i}`, 6));
+    const tables = buildLocationsDown({ groups, locations: [loc('Scoular Pratt', groups, REAL_VALUE, true)], cropColors });
+    expect(tables.length).toBeGreaterThan(1);
+    // Whatever the split, no band may exceed the page.
+    for (const t of tables) expect(sum(t.colWidthsIn)).toBeLessThanOrEqual(G.PAGE_WIDTH_IN + 1e-6);
+  });
+
+  it('draws the same crop twice when it appears in two non-adjacent runs', () => {
+    // The grid's order is the user's and print matches it, so YC | SB | YC is three bands, not two.
+    // Merging the two YC runs would silently reorder the printed sheet away from the screen.
+    const groups = [realGroup('Corn', 1), realGroup('Soy', 1), realGroup('Corn', 1)];
+    const [t] = buildLocationsDown({ groups, locations: [loc('Scoular Pratt', groups, REAL_VALUE, true)], cropColors });
+    expect(cropsIn(t)).toBe(3);
+    expect(t.headerRows[0].slice(1).map(c => c.text)).toEqual(['Corn', 'Soy', 'Corn']);
+  });
+
+  it('never lets an uneven band exceed the page width', () => {
+    const groups = [realGroup('Corn', 5), realGroup('Soy', 1), realGroup('Milo', 3), realGroup('Wheat', 2)];
+    const tables = buildLocationsDown({ groups, locations: [loc('Scoular Pratt', groups, REAL_VALUE, true), loc('CHS Cullison', groups, REAL_VALUE)], cropColors });
+    for (const t of tables) expect(sum(t.colWidthsIn)).toBeLessThanOrEqual(G.PAGE_WIDTH_IN + 1e-6);
+  });
+
   it('steps the type size down rather than splitting when four crops × four periods only fit smaller', () => {
     const groups = Array.from({ length: 4 }, (_, i) => realGroup(`Crop${i}`, 4));
     const tables = buildLocationsDown({ groups, locations: [loc('Short', groups, REAL_VALUE)], cropColors });

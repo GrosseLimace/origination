@@ -171,7 +171,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       location('Rolled', [bid({ locationId: 2, underlyingFuture: 'ZCZ26' })]),
       location('Also', [bid({ locationId: 3, underlyingFuture: 'ZCU26' })]),
     );
-    component.editBidsYears.set([2026]);
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 8 }]);
     const col = { crop: 'YC', month: 8, year: 2026 };
 
     // On the column's own board the header already says it -- repeating it on every cell is what
@@ -184,7 +184,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
   // Together they stamped a hand-typed price with a board it was never quoted against.
   it('does not print a board on an unsaved override', () => {
     seed(location('A', [bid({ underlyingFuture: 'ZCU26' })]));
-    component.editBidsYears.set([2026]);
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 8 }]);
     const dirty = { ...row('A', 'YC#2026#8', '9.99'), originalBids: { 'YC#2026#8': '4.98' } };
 
     const printed = component.printCellValue(dirty as never, { crop: 'YC', month: 8, year: 2026 });
@@ -197,7 +197,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
   // toggle; reading row.bids regardless is what printed a Basis sheet full of cash prices.
   it('prints the basis figure when the sheet is showing basis', () => {
     seed(location('A', [bid({ underlyingFuture: 'ZCU26' })]));
-    component.editBidsYears.set([2026]);
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 8 }]);
     const both = {
       ...row('A', 'YC#2026#8', '4.98'),
       basisBids: { 'YC#2026#8': '-30' }, originalBasisBids: { 'YC#2026#8': '-30' },
@@ -213,7 +213,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
 
   it('still splits the pair apart when the column names its own price type', () => {
     seed(location('A', [bid({ underlyingFuture: 'ZCU26' })]));
-    component.editBidsYears.set([2026]);
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 8 }]);
     const both = {
       ...row('A', 'YC#2026#8', '4.98'),
       basisBids: { 'YC#2026#8': '-30' }, originalBasisBids: { 'YC#2026#8': '-30' },
@@ -228,7 +228,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
   // saved basis value looks overridden and loses its board.
   it('judges an override against the price type actually being printed', () => {
     seed(location('A', [bid({ underlyingFuture: 'ZCZ26' })]));
-    component.editBidsYears.set([2026]);
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 8 }]);
     component.priceMode.set('basis');
     const edited = {
       ...row('A', 'YC#2026#8', '4.98'),
@@ -241,7 +241,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
 
   it('leaves an empty cell empty rather than printing a bare board', () => {
     seed(location('A', [bid()]));
-    component.editBidsYears.set([2026]);
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 8 }]);
 
     expect(component.printCellValue(row('A', 'YC#2026#8', '') as never, { crop: 'YC', month: 8, year: 2026 })).toBe('');
   });
@@ -422,6 +422,91 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(component.editGridColumns()[0].label).toBe('YC Sep 2026');
   });
 
+  it('folds print columns into contiguous runs of a crop, keyed with the year', () => {
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 12 },
+      { crop: 'SB', year: 2026, month: 12 },
+      { crop: 'YC', year: 2027, month: 1 },
+    ]);
+    component.printSelectedColumns.set(new Set(component.editGridColumns().map(c => c.key)));
+
+    const groups = component.printCropGroups();
+    // Three runs, not two crops: print matches the grid's order rather than re-sorting it.
+    expect(groups.map(g => g.crop)).toEqual(['YC', 'SB', 'YC']);
+  });
+
+  it('gives print columns distinct keys for the same month in different years', () => {
+    // Print's key used to be crop#month with NO year, so Dec 2026 and Dec 2027 collided in the
+    // values record and the second silently overwrote the first -- invisible while print was
+    // single-year, a wrong sheet as soon as columns carry their own year.
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 12 },
+      { crop: 'YC', year: 2027, month: 12 },
+    ]);
+    component.printSelectedColumns.set(new Set(component.editGridColumns().map(c => c.key)));
+
+    const keys = component.printCropGroups().flatMap(g => g.columns.map(c => c.key));
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toEqual(['YC#2026#12', 'YC#2027#12']);
+  });
+
+  it('prints only the ticked columns', () => {
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 9 },
+      { crop: 'YC', year: 2026, month: 12 },
+    ]);
+    component.printSelectedColumns.set(new Set(['YC#2026#12']));
+
+    expect(component.printCropGroups().flatMap(g => g.columns.map(c => c.key))).toEqual(['YC#2026#12']);
+  });
+
+  it('reorders columns without rebuilding the grid, so an unsaved edit survives', () => {
+    // Add and remove change the KEY SET, so both have to flush and rebuild. A reorder does not --
+    // every bids/originalBids/chips entry stays valid -- and rebuilding would re-read bidLookup and
+    // throw away a value the user has typed but not blurred.
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 9 },
+      { crop: 'YC', year: 2026, month: 12 },
+    ]);
+    const typed = { ...row('A', 'YC#2026#9', '9.99'), originalBids: { 'YC#2026#9': '4.00' } };
+    component.editBidsRows.set([typed] as never);
+
+    let rebuilt = false;
+    (component as unknown as { _buildEditGrid(): void })._buildEditGrid = () => { rebuilt = true; };
+
+    component.onColumnDrop({ previousIndex: 0, currentIndex: 1 } as never);
+
+    expect(component.editGridColumns().map(c => c.key)).toEqual(['YC#2026#12', 'YC#2026#9']);
+    expect(rebuilt).toBe(false);
+    expect(component.editBidsRows()[0].bids['YC#2026#9']).toBe('9.99');
+  });
+
+  it('flushes pending edits before a column is added or removed', () => {
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 9 }]);
+    const calls: string[] = [];
+    (component as unknown as { _saveDirtyBids(cb: () => void): void })._saveDirtyBids = (cb) => {
+      calls.push('flush');
+      cb();
+    };
+    (component as unknown as { _buildEditGrid(): void })._buildEditGrid = () => { calls.push('rebuild'); };
+    (component as unknown as { _saveSelectedColumns(): void })._saveSelectedColumns = () => { calls.push('save'); };
+
+    component.addColumnCrop.set('YC');
+    component.addColumnYear.set(2026);
+    component.addColumnMonth.set(12);
+    component.addColumn();
+
+    // The flush comes first; the mutation happens inside its callback, so a failed save leaves the
+    // columns alone rather than reshaping the grid out from under an edit that never landed.
+    expect(calls[0]).toBe('flush');
+    expect(component.selectedColumns().map(p => p.month)).toEqual([9, 12]);
+
+    calls.length = 0;
+    component.removeColumn('YC#2026#9');
+    expect(calls[0]).toBe('flush');
+    expect(component.selectedColumns().map(p => p.month)).toEqual([12]);
+  });
+
   it('drops the year from the column label once the band row is carrying it', () => {
     component.selectedColumns.set([
       { crop: 'YC', year: 2026, month: 12 },
@@ -470,25 +555,34 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     expect(saved.boardChips['YC#2027#9']).toBe('ZCU27');
   });
 
-  it('collapses the picker label and refuses to exceed the year cap or empty the grid', () => {
-    component.editBidsYears.set([2026]);
-    expect(component.editBidsYearsLabel()).toBe('2026');
-    component.editBidsYears.set([2026, 2027]);
-    expect(component.editBidsYearsLabel()).toBe('2 Years');
+  // The three-year cap existed because columns were a cross product, where a fourth year multiplied
+  // every crop and month again. Columns are picked one at a time now, so years are not a dimension and
+  // the ceiling is simply on the number of columns.
+  it('caps how many columns can be added, but never truncates a synthesised list', () => {
+    const many = Array.from({ length: BidSheetComponent.MAX_EDIT_BID_COLUMNS }, (_, i) =>
+      ({ crop: 'YC', year: 2026, month: (i % 12) + 1 }));
+    component.selectedColumns.set(many.slice(0, BidSheetComponent.MAX_EDIT_BID_COLUMNS));
+    expect(component.atColumnLimit()).toBe(true);
+    expect(component.canAddColumn()).toBe(false);
 
-    component.openYearDropdown();
-    component.toggleEditYear(2028);
-    expect(component.pendingYears()).toEqual([2026, 2027, 2028]);
+    // A list arriving from the old cross product may already be over the cap. It is shown in full --
+    // silently dropping columns on upgrade would read as lost work.
+    const over = Array.from({ length: 30 }, (_, i) => ({ crop: 'YC', year: 2026 + i, month: 3 }));
+    component.selectedColumns.set(over);
+    expect(component.editGridColumns()).toHaveLength(30);
+  });
 
-    // At the cap, a fourth is refused rather than silently dropping one.
-    component.toggleEditYear(2029);
-    expect(component.pendingYears()).toEqual([2026, 2027, 2028]);
-    expect(component.yearAtLimit(2029)).toBe(true);
+  it('refuses a duplicate pick from the picker', () => {
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 9 }]);
+    component.addColumnCrop.set('YC');
+    component.addColumnYear.set(2026);
+    component.addColumnMonth.set(9);
+    expect(component.addColumnIsDuplicate()).toBe(true);
+    expect(component.canAddColumn()).toBe(false);
 
-    // The last year cannot be removed -- a grid with no years has no columns.
-    component.pendingYears.set([2026]);
-    component.toggleEditYear(2026);
-    expect(component.pendingYears()).toEqual([2026]);
+    component.addColumnMonth.set(10);
+    expect(component.addColumnIsDuplicate()).toBe(false);
+    expect(component.canAddColumn()).toBe(true);
   });
 
   it('offers the years with bids plus one beyond, so a new crop year can be started', () => {
@@ -2090,9 +2184,10 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
   it('opens on the current month everywhere the Yearly period used to be the default', () => {
     const now = new Date().getMonth() + 1;
     expect(component.selectedMonth()).toBe(now);
-    expect(component.editBidsMonths()).toEqual([now]);
-    expect(component.pendingMonths()).toEqual([now]);
-    expect(component.editBidsMonthsLabel()).toBe('1 Month');
+    // The grid's own month selection is gone; a freshly seeded column list inherits the panel's month.
+    component.crops.set(['YC']);
+    const seeded = (component as unknown as { _seedColumns(): Array<{ month: number }> })._seedColumns();
+    expect(seeded.map(p => p.month)).toEqual([now]);
   });
 
   // Preferences saved before the change carry 0, alone or mixed in with real months.
@@ -2102,17 +2197,53 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
     expect(BidSheetComponent.cleanMonths('nonsense')).toEqual([new Date().getMonth() + 1]);
   });
 
-  it('keeps the last ticked month rather than falling back to Yearly', () => {
-    component.pendingMonths.set([10]);
-    component.toggleEditMonth(10);
-    expect(component.pendingMonths()).toEqual([10]);
+  // Months used to be force-sorted into calendar order on every confirm, which is exactly what made a
+  // run across a year boundary unrepresentable. A picked list keeps the order it was given.
+  it('does not re-sort picked columns into calendar order', () => {
+    component.selectedColumns.set([
+      { crop: 'YC', year: 2026, month: 12 },
+      { crop: 'YC', year: 2027, month: 1 },
+      { crop: 'YC', year: 2027, month: 2 },
+    ]);
+    expect(component.editGridColumns().map(c => c.month)).toEqual([12, 1, 2]);
   });
 
-  it('orders months by calendar, with nothing pinned in front', () => {
-    component.pendingMonths.set([11, 3, 10]);
-    component.editBidsMonths.set([1]);
-    component.confirmMonthSelection();
-    expect(component.editBidsMonths()).toEqual([3, 10, 11]);
+  // The synthesis path is the one place calendar order still applies, because it is reproducing what
+  // the old cross product produced for a user who has not touched the new grid yet.
+  it('synthesises the old cross product, in the old order, for a user with no saved columns', () => {
+    component.crops.set(['YC', 'SB']);
+    const c = component as unknown as {
+      _needsColumnSeed: boolean; _legacyMonths: number[] | null; _legacyYears: number[] | null;
+      _legacyCropOrder: string[] | null; _legacyHiddenCrops: Set<string>;
+      _seedColumns(): Array<{ crop: string; year: number; month: number }>;
+    };
+    c._needsColumnSeed = true;
+    c._legacyMonths = [9, 12];
+    c._legacyYears = [2026, 2027];
+    c._legacyCropOrder = ['SB', 'YC'];
+    c._legacyHiddenCrops = new Set();
+
+    // crop -> month -> year, exactly as editGridColumns nested it before.
+    expect(c._seedColumns().map(p => `${p.crop}#${p.year}#${p.month}`)).toEqual([
+      'SB#2026#9', 'SB#2027#9', 'SB#2026#12', 'SB#2027#12',
+      'YC#2026#9', 'YC#2027#9', 'YC#2026#12', 'YC#2027#12',
+    ]);
+  });
+
+  it('honours the legacy hidden-crop list when synthesising', () => {
+    component.crops.set(['YC', 'SB']);
+    const c = component as unknown as {
+      _needsColumnSeed: boolean; _legacyMonths: number[] | null; _legacyYears: number[] | null;
+      _legacyCropOrder: string[] | null; _legacyHiddenCrops: Set<string>;
+      _seedColumns(): Array<{ crop: string }>;
+    };
+    c._needsColumnSeed = true;
+    c._legacyMonths = [9];
+    c._legacyYears = [2026];
+    c._legacyCropOrder = null;
+    c._legacyHiddenCrops = new Set(['SB']);
+
+    expect(c._seedColumns().map(p => p.crop)).toEqual(['YC']);
   });
 
   // One vendor bid in five delivers before its contract month; the bridge fills those months with the
@@ -2457,8 +2588,7 @@ describe('BidSheetComponent — two locations that share a name stay apart', () 
   });
 
   it('builds one grid row per location, with distinct track keys', () => {
-    component.editBidsYears.set([2026]);
-    component.editBidsMonths.set([8]);
+    component.selectedColumns.set([{ crop: 'YC', year: 2026, month: 8 }]);
     component.crops.set(['YC']);
     (component as unknown as { _buildEditGrid(): void })._buildEditGrid();
 

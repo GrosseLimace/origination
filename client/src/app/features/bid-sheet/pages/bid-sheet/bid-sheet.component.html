@@ -1339,170 +1339,6 @@
                 }
 
                 <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-                <!-- Years. Replaces the old ‹ 2026 › stepper: one control instead of two governing the
-                     same concept, and it covers what the arrows did (pick 2027 rather than step to it).
-                     Same staged Cancel/Done shape as Months and Crops. -->
-                <div class="relative ml-2">
-                  <button (click)="openYearDropdown()"
-                    class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
-                    <span class="font-medium tabular-nums">{{ editBidsYearsLabel() }}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                  @if (showYearDropdown()) {
-                    <div class="fixed inset-0 z-40" (click)="cancelYearSelection()"></div>
-                    <div class="absolute left-0 top-full mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
-                      <div class="py-1 max-h-56 overflow-auto">
-                        @for (y of editBidsYearChoices(); track y) {
-                          <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-white"
-                                 [ngClass]="yearAtLimit(y) ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'">
-                            <input type="checkbox" [checked]="pendingYears().includes(y)" (change)="toggleEditYear(y)"
-                              [disabled]="yearAtLimit(y)"
-                              class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer disabled:cursor-not-allowed" />
-                            <span class="tabular-nums">{{ y }}</span>
-                          </label>
-                        }
-                      </div>
-                      <!-- Stated rather than left to be discovered by a checkbox that quietly does
-                           nothing: columns are crops x months x years, and Both mode doubles the inputs. -->
-                      <p class="px-3 pb-1 text-[10px] leading-tight text-gray-400 dark:text-gray-500">
-                        Up to {{ maxEditBidsYears }} years at once.
-                      </p>
-                      <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
-                        <button (click)="cancelYearSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                        <button (click)="confirmYearSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">Done</button>
-                      </div>
-                    </div>
-                  }
-                </div>
-                <div class="relative">
-                  <button (click)="openMonthDropdown()"
-                    class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
-                    <span class="font-medium">{{ editBidsMonthsLabel() }}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                  @if (showMonthDropdown()) {
-                    <div class="fixed inset-0 z-40" (click)="cancelMonthSelection()"></div>
-                    <div class="absolute left-0 top-full mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
-                      <div class="py-1 max-h-56 overflow-auto">
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(1)" (change)="toggleEditMonth(1)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        January
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(2)" (change)="toggleEditMonth(2)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        February
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(3)" (change)="toggleEditMonth(3)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        March
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(4)" (change)="toggleEditMonth(4)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        April
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(5)" (change)="toggleEditMonth(5)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        May
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(6)" (change)="toggleEditMonth(6)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        June
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(7)" (change)="toggleEditMonth(7)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        July
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(8)" (change)="toggleEditMonth(8)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        August
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(9)" (change)="toggleEditMonth(9)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        September
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(10)" (change)="toggleEditMonth(10)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        October
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(11)" (change)="toggleEditMonth(11)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        November
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(12)" (change)="toggleEditMonth(12)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        December
-                      </label>
-                      </div>
-                      <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
-                        <button (click)="cancelMonthSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                        <button (click)="confirmMonthSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">Done</button>
-                      </div>
-                    </div>
-                  }
-                </div>
-                <div class="relative">
-                  <button (click)="openCropDropdown()"
-                    class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
-                    <span class="font-medium">Crops</span>
-                    <span class="text-sm text-gray-400">({{ editBidsCrops().length }}/{{ crops().length }})</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                  @if (showCropDropdown()) {
-                    <div class="fixed inset-0 z-40" (click)="cancelCropSelection()"></div>
-                    <div class="absolute left-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
-                      @if (crops().length > 0) {
-                        <div class="py-1 max-h-56 overflow-auto">
-                          @for (crop of crops(); track crop) {
-                            <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                              <input type="checkbox" [checked]="!pendingHiddenCrops().has(crop)" (change)="toggleCropVisibility(crop)"
-                                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                              {{ crop }}
-                            </label>
-                          }
-                        </div>
-                      }
-                      <!-- Adding lives here rather than behind the grid's small + button, which was easy
-                           to miss: the dropdown is already where crops are managed, and on a sheet with
-                           no crops yet it is the only thing this menu shows. A picked commodity appears
-                           in the list above, ticked, and lands on the grid with Done. -->
-                      <div class="p-2 border-t border-gray-100 dark:border-gray-700">
-                        <input
-                          type="text"
-                          [ngModel]="addCommodityQuery()"
-                          (ngModelChange)="addCommodityQuery.set($event)"
-                          placeholder="Add a commodity…"
-                          class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green placeholder-gray-400"
-                        />
-                      </div>
-                      @if (addCommodityQuery().length > 0) {
-                        @if (filteredCommodities(addCommodityQuery()).length > 0) {
-                          <div class="max-h-44 overflow-y-auto py-1 border-t border-gray-100 dark:border-gray-700">
-                            @for (c of filteredCommodities(addCommodityQuery()); track c.code) {
-                              <button
-                                type="button"
-                                (mousedown)="selectEditBidCommodity(c)"
-                                class="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                [class.opacity-40]="crops().includes(c.code)"
-                              >
-                                {{ c.name }}
-                                @if (crops().includes(c.code)) {
-                                  <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">(already added)</span>
-                                }
-                              </button>
-                            }
-                          </div>
-                        } @else {
-                          <p class="px-3 py-2 text-sm text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">No crops found</p>
-                        }
-                      }
-                      <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
-                        <button (click)="cancelCropSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                        <button (click)="confirmCropSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">Done</button>
-                      </div>
-                    </div>
-                  }
-                </div>
-                <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
                 <!-- Same control as the sheet header, with Both added: an originator comparing elevators
                      wants the flat price and the basis side by side, not one flip at a time. -->
                 @if (barchartEnabled) {
@@ -1582,7 +1418,7 @@
                         }
                       </tr>
                     }
-                    <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onCropColumnDrop($event)"
+                    <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onColumnDrop($event)"
                         class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
                       <!-- Names the ticked sheets in the corner cell: with several sheets in play, the
                            grid otherwise looks identical whichever ones are open. -->
@@ -1599,19 +1435,112 @@
                               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
                           }
+                          <!-- Add column lives here, not in the toolbar, because a column IS a
+                               position in this header row -- you add one where it will appear. It
+                               replaced three separate Years / Months / Crops dropdowns whose cross
+                               product could not express a run of months across a year boundary. -->
+                          <button type="button" cdkOverlayOrigin #addColumnTrigger="cdkOverlayOrigin"
+                            (click)="toggleAddColumn()"
+                            [disabled]="columnMutationBusy()"
+                            [title]="atColumnLimit()
+                              ? 'At the ' + maxEditBidColumns + '-column limit — remove one to add another'
+                              : 'Add a bid column'"
+                            class="shrink-0 inline-flex items-center gap-1 px-1.5 py-1 rounded normal-case text-xs font-semibold tracking-normal text-scoular-green-accessible dark:text-scoular-green hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                            Add column
+                          </button>
+
+                          <!-- Rendered through Overlay, not as an absolute child: this sits inside a
+                               sticky <th> inside an overflow-auto scroller, which clips an absolutely
+                               positioned panel whatever its z-index. Overlay also keeps it attached to
+                               the trigger while the grid scrolls sideways. -->
+                          <ng-template cdkConnectedOverlay
+                            [cdkConnectedOverlayOrigin]="addColumnTrigger"
+                            [cdkConnectedOverlayOpen]="showAddColumn()"
+                            [cdkConnectedOverlayHasBackdrop]="true"
+                            cdkConnectedOverlayBackdropClass="cdk-overlay-transparent-backdrop"
+                            [cdkConnectedOverlayPositions]="addColumnOverlayPositions"
+                            (backdropClick)="showAddColumn.set(false)"
+                            (detach)="showAddColumn.set(false)">
+                            <div class="w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl p-3 normal-case tracking-normal"
+                                 (keydown.escape)="showAddColumn.set(false)">
+
+                              <!-- Crop -->
+                              <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Commodity</label>
+                              <input type="text" [ngModel]="addColumnQuery()" (ngModelChange)="addColumnQuery.set($event)"
+                                placeholder="Search commodities…"
+                                class="w-full mb-1.5 px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                              <div class="max-h-36 overflow-auto rounded border border-gray-200 dark:border-gray-700 mb-3">
+                                @for (c of addColumnCropChoices(); track c.code) {
+                                  <button type="button" (click)="addColumnCrop.set(c.code)"
+                                    [class]="addColumnCrop() === c.code
+                                      ? 'w-full text-left px-2 py-1.5 text-sm bg-scoular-green/10 dark:bg-scoular-green/20 text-gray-900 dark:text-white'
+                                      : 'w-full text-left px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                                    <span class="font-semibold">{{ c.code }}</span>
+                                    <span class="text-gray-500 dark:text-gray-400"> — {{ c.name }}</span>
+                                  </button>
+                                } @empty {
+                                  <p class="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">No commodities match.</p>
+                                }
+                              </div>
+
+                              <!-- Year + month -->
+                              <div class="flex gap-2 mb-3">
+                                <div class="flex-1">
+                                  <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Crop year</label>
+                                  <select [ngModel]="addColumnYear()" (ngModelChange)="addColumnYear.set(+$event)"
+                                    class="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                                    @for (y of editBidsYearChoices(); track y) { <option [value]="y">{{ y }}</option> }
+                                  </select>
+                                </div>
+                                <div class="flex-1">
+                                  <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Month</label>
+                                  <select [ngModel]="addColumnMonth()" (ngModelChange)="addColumnMonth.set(+$event)"
+                                    class="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                                    @for (m of monthChoices; track m.value) { <option [value]="m.value">{{ m.label }}</option> }
+                                  </select>
+                                </div>
+                              </div>
+
+                              @if (addColumnIsDuplicate()) {
+                                <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">That column is already on the sheet.</p>
+                              } @else if (atColumnLimit()) {
+                                <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">{{ maxEditBidColumns }} columns is the limit — remove one to add another.</p>
+                              }
+
+                              <div class="flex gap-2">
+                                <button type="button" (click)="showAddColumn.set(false)"
+                                  class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">Close</button>
+                                <button type="button" (click)="addColumn()" [disabled]="!canAddColumn()"
+                                  class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors">Add</button>
+                              </div>
+                              <!-- Stays open after Add, with crop and year still set, so a run of
+                                   months is Add / change month / Add rather than three trips. -->
+                            </div>
+                          </ng-template>
                         </span>
                       </th>
                       @for (col of editGridColumns(); track col.key) {
                         <th cdkDrag cdkDragLockAxis="x"
-                            (cdkDragStarted)="draggingCrop.set(col.crop)"
-                            (cdkDragEnded)="draggingCrop.set('')"
+                            (cdkDragStarted)="draggingColKey.set(col.key)"
+                            (cdkDragEnded)="draggingColKey.set('')"
                             class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 transition-colors"
-                            [ngClass]="[priceMode() === 'both' ? 'min-w-[260px]' : 'min-w-[150px]', draggingCrop() === col.crop ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800']">
+                            [ngClass]="[priceMode() === 'both' ? 'min-w-[260px]' : 'min-w-[150px]', draggingColKey() === col.key ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800']"
+                            class="group/col">
                           <div class="flex items-center justify-center gap-1.5">
                             <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
                             </span>
                             {{ col.label }}
+                            <!-- Revealed on hover rather than always shown: with a dozen columns a
+                                 permanent x on each reads as clutter, and removing one is rare next
+                                 to typing in them. Focus-visible keeps it reachable by keyboard. -->
+                            <button type="button" (click)="removeColumn(col.key)"
+                              [disabled]="columnMutationBusy()"
+                              [title]="'Remove the ' + col.label + ' column'"
+                              class="shrink-0 p-0.5 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-200/70 dark:hover:bg-gray-700 disabled:opacity-0 transition-all">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                            </button>
                           </div>
                           @if (col.board) {
                             <!-- The board this column's bids are quoted against. Chosen by majority
@@ -1721,7 +1650,7 @@
                         </td>
                         @for (col of editGridColumns(); track col.key; let colIdx = $index) {
                           <td class="px-3 py-2.5 transition-colors"
-                              [ngClass]="draggingCrop() === col.crop ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
+                              [ngClass]="draggingColKey() === col.key ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
                             <div class="flex items-start gap-1.5">
                             @if (priceMode() !== 'basis') {
                             <!-- The wrapper exists for the board letter: trade notation inside the box,
@@ -1910,7 +1839,7 @@
                             </div>
                           }
                         } @else {
-                          <p class="text-center text-gray-400 py-8 text-sm">Select at least one crop and one month</p>
+                          <p class="text-center text-gray-400 py-8 text-sm">Select at least one column</p>
                         }
                         <!-- Footer -->
                         <div style="margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;">
@@ -1943,35 +1872,30 @@
                           </div>
                         </div>
                       </div>
-                      <!-- Crops (drag to reorder — order drives the grid + print) -->
+                      <!-- Columns. One list where there were two -- crops and months could describe
+                           the printed columns between them only while columns were their cross
+                           product. No drag handles: the grid header is where columns are ordered now,
+                           and print follows it, so there is one place to arrange them instead of two
+                           that had to agree. -->
                       <div>
-                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Crops</h4>
-                        <div cdkDropList (cdkDropListDropped)="onPrintCropDrop($event)" class="space-y-1">
-                          @for (crop of editBidsCrops(); track crop) {
-                            <div cdkDrag class="flex items-center gap-1.5 rounded px-0.5 py-0.5">
-                              <span cdkDragHandle class="shrink-0 cursor-grab text-gray-300 hover:text-gray-500 select-none px-0.5" title="Drag to reorder">⠿</span>
-                              <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
-                                <input type="checkbox" [checked]="printSelectedCrops().has(crop)" (change)="togglePrintCrop(crop)"
-                                  class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
-                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ crop }}</span>
-                              </label>
-                            </div>
-                          }
+                        <div class="flex items-center justify-between mb-3">
+                          <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Columns</h4>
+                          <button type="button" (click)="toggleAllPrintColumns()"
+                            class="text-xs font-medium text-scoular-green-accessible dark:text-scoular-green hover:underline">
+                            {{ allPrintColumnsSelected() ? 'None' : 'All' }}
+                          </button>
                         </div>
-                      </div>
-                      <!-- Months (drag to reorder — order drives the grid + print column order) -->
-                      <div>
-                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Months</h4>
-                        <div cdkDropList (cdkDropListDropped)="onPrintMonthDrop($event)" class="space-y-1">
-                          @for (month of editBidsMonths(); track month) {
-                            <div cdkDrag class="flex items-center gap-1.5 rounded px-0.5 py-0.5">
-                              <span cdkDragHandle class="shrink-0 cursor-grab text-gray-300 hover:text-gray-500 select-none px-0.5" title="Drag to reorder">⠿</span>
-                              <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
-                                <input type="checkbox" [checked]="printSelectedMonths().has(month)" (change)="togglePrintMonth(month)"
-                                  class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
-                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ getMonthName(month) }}</span>
-                              </label>
-                            </div>
+                        <div class="space-y-1 max-h-56 overflow-auto">
+                          @for (col of editGridColumns(); track col.key) {
+                            <label class="flex items-center gap-2.5 cursor-pointer rounded px-0.5 py-0.5">
+                              <input type="checkbox" [checked]="printSelectedColumns().has(col.key)" (change)="togglePrintColumn(col.key)"
+                                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                              <span class="text-sm text-gray-700 dark:text-gray-300">
+                                {{ col.crop }} <span class="tabular-nums">{{ getMonthName(col.month) }} {{ col.year }}</span>
+                              </span>
+                            </label>
+                          } @empty {
+                            <p class="text-xs text-gray-500 dark:text-gray-400">The grid has no columns to print.</p>
                           }
                         </div>
                       </div>

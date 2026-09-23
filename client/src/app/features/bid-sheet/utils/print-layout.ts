@@ -405,21 +405,51 @@ export function buildLocationsDown(input: Omit<PrintLayoutInput, 'style'>): Prin
 function fitLocationsDown(groups: PrintCropGroup[], locs: PrintLocation[]) {
   const G = PRINT_GEOMETRY;
   const allCols = groups.flatMap(g => g.columns);
-  const periodsPerCrop = maxOf(groups.map(g => g.columns.length));
 
   /** Narrowest bid column that keeps every header, value and crop band on one line. */
   const measureValueIn = (fontPx: number): number => Math.max(
     maxOf(allCols.map(c => textWidthIn(c.compactLabel, fontPx, { bold: true }))),
     widestValueIn(locs, allCols, fontPx),
-    // The crop name spans its k columns; make sure it fits too.
+    // The crop name spans its k columns; make sure it fits too. A one-column group therefore has to
+    // fit its whole crop name over a single column, which widens every bid column on the sheet --
+    // correct, since the band header must not wrap, but it does mean one lone column of a
+    // long-named commodity can cost the whole sheet a font size.
     maxOf(groups.map(g => textWidthIn(g.crop, fontPx + 1, { bold: true }) / g.columns.length))
   );
+
+  /**
+   * How many groups fit on one band, measured in COLUMNS rather than in groups.
+   *
+   * This used to divide the page's column budget by the WIDEST group and band by that quotient. That
+   * was exact while columns were a cross product, because every group then had the same number of
+   * columns. Against contiguous runs the sizes are arbitrary, and dividing by the widest is far too
+   * pessimistic: groups of 8 and 1 with a 12-column budget gave floor(12/8) = 1 group per band, so
+   * nine columns that fit comfortably on one band were split across two -- and chooseFit, preferring
+   * fewer splits, then walked the font size down hunting for a fit that did not exist.
+   *
+   * Grow the band count until no band's total columns exceed the budget. Taking the widest is what
+   * GUARANTEED a band never overflowed, so that guarantee is re-established by measuring the actual
+   * bands rather than by assuming they are uniform.
+   */
+  const bandCeilingFor = (columnCapacity: number): number => {
+    if (groups.length <= 1) return 1;
+    const start = Math.max(1, Math.ceil(allCols.length / columnCapacity));
+    for (let count = start; count <= groups.length; count++) {
+      const ceiling = Math.ceil(groups.length / count);
+      const widest = maxOf(balancedChunks(groups, ceiling).map(b => b.reduce((n, g) => n + g.columns.length, 0)));
+      // ceiling === 1 is one group per band: nothing narrower exists, so a group wider than the page
+      // on its own is accepted here and handled by the font ladder instead of looping forever.
+      if (widest <= columnCapacity || ceiling === 1) return ceiling;
+    }
+    return 1;
+  };
 
   const fit = (fontPx: number) => {
     const nameIn = widestNameIn(locs, fontPx);
     const valueIn = measureValueIn(fontPx);
-    const cropsPerBandCeiling = Math.max(1, Math.floor(Math.floor((G.PAGE_WIDTH_IN - nameIn) / valueIn) / periodsPerCrop));
-    const splits = Math.ceil(groups.length / cropsPerBandCeiling);
+    const columnCapacity = Math.max(1, Math.floor((G.PAGE_WIDTH_IN - nameIn) / valueIn));
+    const cropsPerBandCeiling = bandCeilingFor(columnCapacity);
+    const splits = balancedChunks(groups, cropsPerBandCeiling).length;
     // Two header rows (crop band one step larger, then the period labels) plus one row per location.
     const bandIn = rowHeightIn(fontPx + 1) + rowHeightIn(fontPx) + locs.length * rowHeightIn(fontPx);
     return { fontPx, nameIn, valueIn, cropsPerBandCeiling, splits, pages: pagesFor(stackedHeightIn(splits, bandIn)) };
