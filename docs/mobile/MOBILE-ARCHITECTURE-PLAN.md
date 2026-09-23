@@ -5,8 +5,8 @@
 | **Status** | Phase 1 (Contract) — scope fixed by cards #641–#651 on 2026-09-23; OpenAPI draft written |
 | **Date** | 2026-09-15, updated 2026-09-23 |
 | **Owner** | Origination app team |
-| **Governing docs** | SEC-ARCH-BURDI-001 v1.0 (Security Architecture Specification: Burdi Design Pattern, 2026-03-25); [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) v1.7 |
-| **Companion docs** | [MEETING-QUESTIONS.md](MEETING-QUESTIONS.md) · [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) · [ADR-001](../adr/ADR-001-mobile-surface-topology.md) · [openapi/](../../openapi/README.md) |
+| **Governing docs** | [SEC-ARCH-BURDI-001 v1.0](reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md) (Security Architecture Specification: Burdi Design Pattern, IT Security, 2026-03-25; repo copy); [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) v1.7 |
+| **Companion docs** | [MEETING-QUESTIONS.md](MEETING-QUESTIONS.md) · [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) · [REQUEST-MESSAGES.md](REQUEST-MESSAGES.md) · [ADR-001](../adr/ADR-001-mobile-surface-topology.md) · [openapi/](../../openapi/README.md) |
 
 ## 1. Purpose
 

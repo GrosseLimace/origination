@@ -5,7 +5,7 @@
 | **Status** | Proposed (awaiting Phase 0 decisions and Solutions Architect / IT Security countersign) |
 | **Date** | 2026-09-15 |
 | **Deciders** | Origination app team; IT Security; Solutions Architect (countersign) |
-| **Related** | [docs/mobile/MOBILE-ARCHITECTURE-PLAN.md](../mobile/MOBILE-ARCHITECTURE-PLAN.md) · [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) · SEC-ARCH-BURDI-001 v1.0 · [SECURITY-REVIEWS/ACCEPTED-RISKS.md](../../SECURITY-REVIEWS/ACCEPTED-RISKS.md) |
+| **Related** | [docs/mobile/MOBILE-ARCHITECTURE-PLAN.md](../mobile/MOBILE-ARCHITECTURE-PLAN.md) · [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) · [SEC-ARCH-BURDI-001 v1.0](../mobile/reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md) (repo copy) · [SECURITY-REVIEWS/ACCEPTED-RISKS.md](../../SECURITY-REVIEWS/ACCEPTED-RISKS.md) |
 
 ## Context
 
