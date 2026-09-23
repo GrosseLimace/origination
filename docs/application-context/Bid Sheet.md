@@ -487,8 +487,7 @@ Consequences worth knowing:
 
 - The **map panel and the grid are fully separate.** Stepping the panel to another year and
   reopening Edit Bids does not change the columns. Nothing pushes the panel into the grid at all --
-  and there is no default: a grid with no columns opens EMPTY and waits to be told what to show,
-  with a prompt in the first row. (The filter bar was already a separate source again, via `filterableCrops` /
+  and there is no default: a grid with no columns opens EMPTY and waits to be told what to show. (The filter bar was already a separate source again, via `filterableCrops` /
   `filterableYears`, so that fixing the filter could not change what the grid saves.)
 - **Migration is lazy, and it is the ONLY reason anything is seeded.** A row whose `SelectedColumns`
   is `NULL` *and* which carries at least one of the four superseded fields marks a user who predates
