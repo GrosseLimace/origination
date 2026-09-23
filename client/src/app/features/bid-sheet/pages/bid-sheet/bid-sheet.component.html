@@ -1412,6 +1412,9 @@
                     @if (editGridYearBands().length > 1) {
                       <tr class="bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                         <th class="sticky top-0 left-0 z-30 px-4 py-1.5 border-r border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"></th>
+                        <!-- Spacer over the Add column, so the year bands stay aligned with the bid
+                             columns they label. -->
+                        <th class="sticky top-0 z-20 w-12 px-1 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"></th>
                         @for (band of editGridYearBands(); track $index) {
                           <th [attr.colspan]="band.span"
                               class="sticky top-0 z-20 px-2 py-1.5 text-center text-xs font-bold tabular-nums text-gray-500 dark:text-gray-400 border-b border-l border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">{{ band.year }}</th>
@@ -1435,90 +1438,89 @@
                               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
                           }
-                          <!-- Add column lives here, not in the toolbar, because a column IS a
-                               position in this header row -- you add one where it will appear. It
-                               replaced three separate Years / Months / Crops dropdowns whose cross
-                               product could not express a run of months across a year boundary. -->
-                          <button type="button" cdkOverlayOrigin #addColumnTrigger="cdkOverlayOrigin"
-                            (click)="toggleAddColumn()"
-                            [disabled]="columnMutationBusy()"
-                            [title]="atColumnLimit()
-                              ? 'At the ' + maxEditBidColumns + '-column limit — remove one to add another'
-                              : 'Add a bid column'"
-                            class="shrink-0 inline-flex items-center gap-1 px-1.5 py-1 rounded normal-case text-xs font-semibold tracking-normal text-scoular-green-accessible dark:text-scoular-green hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                            Add column
-                          </button>
-
-                          <!-- Rendered through Overlay, not as an absolute child: this sits inside a
-                               sticky <th> inside an overflow-auto scroller, which clips an absolutely
-                               positioned panel whatever its z-index. Overlay also keeps it attached to
-                               the trigger while the grid scrolls sideways. -->
-                          <ng-template cdkConnectedOverlay
-                            [cdkConnectedOverlayOrigin]="addColumnTrigger"
-                            [cdkConnectedOverlayOpen]="showAddColumn()"
-                            [cdkConnectedOverlayHasBackdrop]="true"
-                            cdkConnectedOverlayBackdropClass="cdk-overlay-transparent-backdrop"
-                            [cdkConnectedOverlayPositions]="addColumnOverlayPositions"
-                            (backdropClick)="showAddColumn.set(false)"
-                            (detach)="showAddColumn.set(false)">
-                            <div class="w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl p-3 normal-case tracking-normal"
-                                 (keydown.escape)="showAddColumn.set(false)">
-
-                              <!-- Crop -->
-                              <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Commodity</label>
-                              <input type="text" [ngModel]="addColumnQuery()" (ngModelChange)="addColumnQuery.set($event)"
-                                placeholder="Search commodities…"
-                                class="w-full mb-1.5 px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
-                              <div class="max-h-36 overflow-auto rounded border border-gray-200 dark:border-gray-700 mb-3">
-                                @for (c of addColumnCropChoices(); track c.code) {
-                                  <button type="button" (click)="addColumnCrop.set(c.code)"
-                                    [class]="addColumnCrop() === c.code
-                                      ? 'w-full text-left px-2 py-1.5 text-sm bg-scoular-green/10 dark:bg-scoular-green/20 text-gray-900 dark:text-white'
-                                      : 'w-full text-left px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'">
-                                    <span class="font-semibold">{{ c.code }}</span>
-                                    <span class="text-gray-500 dark:text-gray-400"> — {{ c.name }}</span>
-                                  </button>
-                                } @empty {
-                                  <p class="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">No commodities match.</p>
-                                }
-                              </div>
-
-                              <!-- Year + month -->
-                              <div class="flex gap-2 mb-3">
-                                <div class="flex-1">
-                                  <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Crop year</label>
-                                  <select [ngModel]="addColumnYear()" (ngModelChange)="addColumnYear.set(+$event)"
-                                    class="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                                    @for (y of editBidsYearChoices(); track y) { <option [value]="y">{{ y }}</option> }
-                                  </select>
-                                </div>
-                                <div class="flex-1">
-                                  <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Month</label>
-                                  <select [ngModel]="addColumnMonth()" (ngModelChange)="addColumnMonth.set(+$event)"
-                                    class="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                                    @for (m of monthChoices; track m.value) { <option [value]="m.value">{{ m.label }}</option> }
-                                  </select>
-                                </div>
-                              </div>
-
-                              @if (addColumnIsDuplicate()) {
-                                <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">That column is already on the sheet.</p>
-                              } @else if (atColumnLimit()) {
-                                <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">{{ maxEditBidColumns }} columns is the limit — remove one to add another.</p>
-                              }
-
-                              <div class="flex gap-2">
-                                <button type="button" (click)="showAddColumn.set(false)"
-                                  class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">Close</button>
-                                <button type="button" (click)="addColumn()" [disabled]="!canAddColumn()"
-                                  class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors">Add</button>
-                              </div>
-                              <!-- Stays open after Add, with crop and year still set, so a run of
-                                   months is Add / change month / Add rather than three trips. -->
-                            </div>
-                          </ng-template>
                         </span>
+                      </th>
+                      <!-- Add column is its OWN column rather than an affordance inside the Locations
+                           cell: a column is a position in this header row, so the control that makes
+                           one belongs in the row, at the place the next one will appear. Icon-only
+                           because this column's width is paid for on every body row. Not sticky -- it
+                           slides under the frozen Locations cell on a horizontal scroll, which is
+                           correct; the row identifier is what has to stay pinned, not this. -->
+                      <th class="sticky top-0 z-20 w-12 px-1 py-3.5 text-center border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                        <button type="button" cdkOverlayOrigin #addColumnTrigger="cdkOverlayOrigin"
+                          (click)="toggleAddColumn()"
+                          [disabled]="columnMutationBusy()"
+                          [title]="atColumnLimit()
+                            ? 'At the ' + maxEditBidColumns + '-column limit — remove one to add another'
+                            : 'Add a bid column'"
+                          aria-label="Add a bid column"
+                          class="inline-flex items-center justify-center w-7 h-7 rounded text-scoular-green-accessible dark:text-scoular-green hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                        </button>
+                        <ng-template cdkConnectedOverlay
+                          [cdkConnectedOverlayOrigin]="addColumnTrigger"
+                          [cdkConnectedOverlayOpen]="showAddColumn()"
+                          [cdkConnectedOverlayHasBackdrop]="true"
+                          cdkConnectedOverlayBackdropClass="cdk-overlay-transparent-backdrop"
+                          [cdkConnectedOverlayPositions]="addColumnOverlayPositions"
+                          (backdropClick)="showAddColumn.set(false)"
+                          (detach)="showAddColumn.set(false)">
+                          <div class="w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl p-3 normal-case tracking-normal"
+                               (keydown.escape)="showAddColumn.set(false)">
+
+                            <!-- Crop -->
+                            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Commodity</label>
+                            <input type="text" [ngModel]="addColumnQuery()" (ngModelChange)="addColumnQuery.set($event)"
+                              placeholder="Search commodities…"
+                              class="w-full mb-1.5 px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                            <div class="max-h-36 overflow-auto rounded border border-gray-200 dark:border-gray-700 mb-3">
+                              @for (c of addColumnCropChoices(); track c.code) {
+                                <button type="button" (click)="addColumnCrop.set(c.code)"
+                                  [class]="addColumnCrop() === c.code
+                                    ? 'w-full text-left px-2 py-1.5 text-sm bg-scoular-green/10 dark:bg-scoular-green/20 text-gray-900 dark:text-white'
+                                    : 'w-full text-left px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                                  <span class="font-semibold">{{ c.code }}</span>
+                                  <span class="text-gray-500 dark:text-gray-400"> — {{ c.name }}</span>
+                                </button>
+                              } @empty {
+                                <p class="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">No commodities match.</p>
+                              }
+                            </div>
+
+                            <!-- Year + month -->
+                            <div class="flex gap-2 mb-3">
+                              <div class="flex-1">
+                                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Crop year</label>
+                                <select [ngModel]="addColumnYear()" (ngModelChange)="addColumnYear.set(+$event)"
+                                  class="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                                  @for (y of editBidsYearChoices(); track y) { <option [value]="y">{{ y }}</option> }
+                                </select>
+                              </div>
+                              <div class="flex-1">
+                                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Month</label>
+                                <select [ngModel]="addColumnMonth()" (ngModelChange)="addColumnMonth.set(+$event)"
+                                  class="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                                  @for (m of monthChoices; track m.value) { <option [value]="m.value">{{ m.label }}</option> }
+                                </select>
+                              </div>
+                            </div>
+
+                            @if (addColumnIsDuplicate()) {
+                              <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">That column is already on the sheet.</p>
+                            } @else if (atColumnLimit()) {
+                              <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">{{ maxEditBidColumns }} columns is the limit — remove one to add another.</p>
+                            }
+
+                            <div class="flex gap-2">
+                              <button type="button" (click)="showAddColumn.set(false)"
+                                class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">Close</button>
+                              <button type="button" (click)="addColumn()" [disabled]="!canAddColumn()"
+                                class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors">Add</button>
+                            </div>
+                            <!-- Stays open after Add, with crop and year still set, so a run of
+                                 months is Add / change month / Add rather than three trips. -->
+                          </div>
+                        </ng-template>
                       </th>
                       @for (col of editGridColumns(); track col.key) {
                         <th cdkDrag cdkDragLockAxis="x"
@@ -1648,6 +1650,9 @@
                             }
                           </div>
                         </td>
+                        <!-- Under the Add column. Empty by design: it exists to reserve the width the
+                             header button occupies, so the bid columns line up with their headers. -->
+                        <td class="w-12 px-1"></td>
                         @for (col of editGridColumns(); track col.key; let colIdx = $index) {
                           <td class="px-3 py-2.5 transition-colors"
                               [ngClass]="draggingColKey() === col.key ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
@@ -1745,9 +1750,9 @@
                           Add Location
                         </div>
                       </td>
-                      <!-- The sticky Location cell above accounts for the +1; the trailing "add
-                           commodity" header cell this used to cover is gone. -->
-                      <td [attr.colspan]="editGridColumns().length"></td>
+                      <!-- The sticky Location cell above accounts for one; the +1 is the Add column
+                           beside it, which has no content on this row. -->
+                      <td [attr.colspan]="editGridColumns().length + 1"></td>
                     </tr>
                     }
                   </tbody>
