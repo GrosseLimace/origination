@@ -4069,8 +4069,6 @@ export class BidSheetComponent {
   /** Template hooks onto the shared renderers (the preview binds these with `[style]`). */
   readonly printCellStyle = cellStyleMap;
   readonly printColWidths = tableColWidthPcts;
-  // Monthly columns have no separate config: each month picked in the Months list prints as "May (2026)"
-  // for the viewed year.
 
   onPrintPhoneInput(event: Event): void {
     const raw = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 10);
