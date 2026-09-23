@@ -1418,13 +1418,12 @@
                     @if (editGridYearBands().length > 1) {
                       <tr class="bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                         <th class="sticky top-0 left-0 z-30 px-4 py-1.5 border-r border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"></th>
-                        <!-- Spacer over the Add column, so the year bands stay aligned with the bid
-                             columns they label. -->
-                        <th class="sticky top-0 z-20 w-12 px-1 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"></th>
                         @for (band of editGridYearBands(); track $index) {
                           <th [attr.colspan]="band.span"
                               class="sticky top-0 z-20 px-2 py-1.5 text-center text-xs font-bold tabular-nums text-gray-500 dark:text-gray-400 border-b border-l border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">{{ band.year }}</th>
                         }
+                        <!-- Over the Add Commodity column, which the bands do not label. -->
+                        <th class="sticky top-0 z-20 border-l border-gray-200 dark:border-gray-700 border-b bg-gray-100 dark:bg-gray-900"></th>
                         <th class="sticky top-0 z-20 w-full border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"></th>
                       </tr>
                     }
@@ -1447,22 +1446,52 @@
                           }
                         </span>
                       </th>
-                      <!-- Add column is its OWN column rather than an affordance inside the Locations
-                           cell: a column is a position in this header row, so the control that makes
-                           one belongs in the row, at the place the next one will appear. Icon-only
-                           because this column's width is paid for on every body row. Not sticky -- it
-                           slides under the frozen Locations cell on a horizontal scroll, which is
-                           correct; the row identifier is what has to stay pinned, not this. -->
-                      <th class="sticky top-0 z-20 w-12 px-1 py-3.5 text-center border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                      @for (col of editGridColumns(); track col.key) {
+                        <!-- No cdkDragHandle: the whole header is the grab target, so there is no grip
+                             icon competing with the label for the width of a bid column. The remove
+                             button stops mousedown from reaching the drag, or clicking it would begin
+                             a drag instead. -->
+                        <th cdkDrag cdkDragLockAxis="x"
+                            (cdkDragStarted)="draggingColKey.set(col.key)"
+                            (cdkDragEnded)="draggingColKey.set('')"
+                            class="group/col sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-l border-gray-200 dark:border-gray-700 border-b cursor-grab active:cursor-grabbing transition-colors"
+                            [ngClass]="[priceMode() === 'both' ? 'min-w-[260px]' : 'min-w-[150px]', draggingColKey() === col.key ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800']">
+                          <div class="flex items-center justify-center gap-1.5">
+                            {{ col.label }}
+                            <!-- Revealed on hover rather than always shown: with a dozen columns a
+                                 permanent x on each reads as clutter, and removing one is rare next
+                                 to typing in them. Focus-visible keeps it reachable by keyboard. -->
+                            <button type="button" (click)="removeColumn(col.key)"
+                              (mousedown)="$event.stopPropagation()"
+                              [disabled]="columnMutationBusy()"
+                              [title]="'Remove the ' + col.label + ' column'"
+                              class="shrink-0 p-0.5 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-200/70 dark:hover:bg-gray-700 disabled:opacity-0 transition-all">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                            </button>
+                          </div>
+                          @if (col.board) {
+                            <!-- The board this column's bids are quoted against. Chosen by majority
+                                 across the column's fed cells (a tie breaks alphabetically, so it
+                                 never flip-flops between loads); a cell on a DIFFERENT board shows
+                                 its own symbol too, so the disagreement is on screen. -->
+                            <div class="mt-1 text-xs leading-none font-semibold normal-case tracking-normal text-gray-500 dark:text-gray-400">{{ col.board }}</div>
+                          }
+                        </th>
+                      }
+                      <!-- Add Commodity is the LAST column: a new column appears where this button
+                           is, so the button has to sit where the next one will go. It keeps its label
+                           here in a way it could not when it sat between Locations and the bids --
+                           at the end of the row that width was empty anyway. -->
+                      <th class="sticky top-0 z-20 whitespace-nowrap px-3 py-3.5 text-left border-l border-gray-200 dark:border-gray-700 border-b bg-gray-50 dark:bg-gray-800">
                         <button type="button" cdkOverlayOrigin #addColumnTrigger="cdkOverlayOrigin"
                           (click)="toggleAddColumn()"
                           [disabled]="columnMutationBusy()"
                           [title]="atColumnLimit()
                             ? 'At the ' + maxEditBidColumns + '-column limit — remove one to add another'
                             : 'Add a bid column'"
-                          aria-label="Add a bid column"
-                          class="inline-flex items-center justify-center w-7 h-7 rounded text-scoular-green-accessible dark:text-scoular-green hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                          class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded normal-case tracking-normal text-xs font-semibold text-scoular-green-accessible dark:text-scoular-green hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                          Add Commodity
                         </button>
                         <ng-template cdkConnectedOverlay
                           [cdkConnectedOverlayOrigin]="addColumnTrigger"
@@ -1529,37 +1558,6 @@
                           </div>
                         </ng-template>
                       </th>
-                      @for (col of editGridColumns(); track col.key) {
-                        <th cdkDrag cdkDragLockAxis="x"
-                            (cdkDragStarted)="draggingColKey.set(col.key)"
-                            (cdkDragEnded)="draggingColKey.set('')"
-                            class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 transition-colors"
-                            [ngClass]="[priceMode() === 'both' ? 'min-w-[260px]' : 'min-w-[150px]', draggingColKey() === col.key ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800']"
-                            class="group/col">
-                          <div class="flex items-center justify-center gap-1.5">
-                            <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
-                            </span>
-                            {{ col.label }}
-                            <!-- Revealed on hover rather than always shown: with a dozen columns a
-                                 permanent x on each reads as clutter, and removing one is rare next
-                                 to typing in them. Focus-visible keeps it reachable by keyboard. -->
-                            <button type="button" (click)="removeColumn(col.key)"
-                              [disabled]="columnMutationBusy()"
-                              [title]="'Remove the ' + col.label + ' column'"
-                              class="shrink-0 p-0.5 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-200/70 dark:hover:bg-gray-700 disabled:opacity-0 transition-all">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                            </button>
-                          </div>
-                          @if (col.board) {
-                            <!-- The board this column's bids are quoted against. Chosen by majority
-                                 across the column's fed cells (a tie breaks alphabetically, so it
-                                 never flip-flops between loads); a cell on a DIFFERENT board shows
-                                 its own symbol too, so the disagreement is on screen. -->
-                            <div class="mt-1 text-xs leading-none font-semibold normal-case tracking-normal text-gray-500 dark:text-gray-400">{{ col.board }}</div>
-                          }
-                        </th>
-                      }
                       <!-- Slack eater. The table is width:100% with auto layout, so without somewhere
                            for the spare width to go it is shared across the real columns and the
                            Locations cell -- the widest -- swallows most of it. That is what made one
@@ -1665,21 +1663,22 @@
                             }
                           </div>
                         </td>
-                        <!-- Under the Add column. Empty by design: it exists to reserve the width the
-                             header button occupies, so the bid columns line up with their headers. -->
-                        <td class="w-12 px-1"></td>
                         @for (col of editGridColumns(); track col.key; let colIdx = $index) {
-                          <td class="px-3 py-2.5 transition-colors"
+                          <td class="px-3 py-2.5 border-l border-gray-200 dark:border-gray-700 transition-colors"
                               [ngClass]="draggingColKey() === col.key ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
                             <div class="flex items-start gap-1.5">
                             @if (priceMode() !== 'basis') {
                             <!-- The wrapper exists for the board letter: trade notation inside the box,
                                  right behind where the quote sits ("-80 ZCU26"). It hides while the cell is
                                  being edited so it can never read as part of what was typed. -->
+                            <!-- Resolved once: the input needs it to reserve room, and the symbol
+                                 needs it to position against. '' when no symbol applies. -->
+                            @let cashSymbol = (priceMode() === 'cash' && row.bids[col.key] && row.bids[col.key] === row.originalBids[col.key] && row.boardChips[col.key]) ? row.boardChips[col.key] : '';
                             <div class="relative flex-1 min-w-0 group overflow-hidden">
                             <input
                               type="text"
                               [attr.id]="'bid-' + rowIdx + '-' + col.key"
+                              [style.paddingRight]="cashSymbol ? 'calc(0.75rem + ' + cashSymbol.length + 'ch + 5px)' : null"
                               [ngModel]="row.bids[col.key]"
                               (ngModelChange)="updateBid(rowIdx, col.key, $event)"
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
@@ -1699,9 +1698,9 @@
                                  mislabelling a manual bid. font-mono makes every character 1ch wide, so
                                  "centre + half the value's length" lands the symbol flush beside the
                                  number rather than parked at the far edge of the box. -->
-                            @if (priceMode() === 'cash' && row.bids[col.key] && row.bids[col.key] === row.originalBids[col.key] && row.boardChips[col.key]; as chip) {
+                            @if (cashSymbol) {
                               <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-sm text-gray-500 dark:text-gray-400 group-focus-within:opacity-0 transition-opacity"
-                                    [style.left]="'calc(50% + ' + (row.bids[col.key].length / 2) + 'ch + 5px)'">{{ chip }}</span>
+                                    [style.left]="'calc(50% + ' + (row.bids[col.key].length / 2) + 'ch - ' + (cashSymbol.length / 2) + 'ch + 2.5px)'">{{ cashSymbol }}</span>
                             }
                             </div>
                             }
@@ -1709,6 +1708,7 @@
                               <!-- Basis sits beside cash rather than under it, so the two read as the pair
                                    an originator quotes. The board symbol rides on the basis, which
                                    is the number the board denominates and the way originators write it. -->
+                              @let basisSymbol = (row.basisBids[col.key] && row.basisBids[col.key] === row.originalBasisBids[col.key] && row.boardChips[col.key]) ? row.boardChips[col.key] : '';
                               <div class="relative flex-1 min-w-0 group overflow-hidden">
                               <!-- Carries the grid's cell id only in basis mode, where the cash input is
                                    not rendered at all: without it, arrow-key navigation and the
@@ -1717,6 +1717,7 @@
                               <input
                                 type="text"
                                 [attr.id]="priceMode() === 'basis' ? 'bid-' + rowIdx + '-' + col.key : null"
+                                [style.paddingRight]="basisSymbol ? 'calc(0.75rem + ' + basisSymbol.length + 'ch + 5px)' : null"
                                 [ngModel]="row.basisBids[col.key]"
                                 [ngModelOptions]="{ standalone: true }"
                                 (ngModelChange)="updateBasisBid(rowIdx, col.key, $event)"
@@ -1733,9 +1734,9 @@
                                     : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                               />
                               <!-- Same guards as the cash side: fed value present and untouched. -->
-                              @if (row.basisBids[col.key] && row.basisBids[col.key] === row.originalBasisBids[col.key] && row.boardChips[col.key]; as chip) {
+                              @if (basisSymbol) {
                                 <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-sm text-gray-500 dark:text-gray-400 group-focus-within:opacity-0 transition-opacity"
-                                      [style.left]="'calc(50% + ' + (row.basisBids[col.key].length / 2) + 'ch + 5px)'">{{ chip }}</span>
+                                      [style.left]="'calc(50% + ' + (row.basisBids[col.key].length / 2) + 'ch - ' + (basisSymbol.length / 2) + 'ch + 2.5px)'">{{ basisSymbol }}</span>
                               }
                               </div>
                             }
@@ -1750,6 +1751,9 @@
                             }
                           </td>
                         }
+                        <!-- Under Add Commodity: empty, but it holds that column's width so the bid
+                             cells stay under their own headers. -->
+                        <td class="border-l border-gray-200 dark:border-gray-700"></td>
                         <td class="w-full"></td>
                       </tr>
                     }
