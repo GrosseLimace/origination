@@ -176,17 +176,36 @@ re-sending the same message converges rather than duplicating. A failed run can 
 
 ## What we need from you
 
-1. **Your managed identity's name and object id** — once the pipeline exists.
-2. **Which network the pipeline posts from**, per the connectivity section. This is the one that
+1. **One real message, captured verbatim — the highest-value thing on this list.**
+
+   The payload above was written from your description of the feed rather than from a captured
+   message, so every field name in it is our best reading rather than something we have verified.
+
+   That matters because of how the endpoint handles fields it does not recognise. Unknown fields
+   are ignored, deliberately, so you can extend the payload without waiting on us — but the same
+   rule means a field **we** have spelled wrong is also ignored. If `nopOperationStatus` turns out
+   to be `operationStatus`, nothing errors: we store the certification with a blank status and
+   return `"accepted": true`. Your logs show success, ours show success, and the gap only surfaces
+   when someone opens a producer profile and finds it empty.
+
+   Required fields do not have this problem — a mismatch there fails loudly with a 400 on your
+   first call. It is the optional ones that fail quietly, and they are most of the payload.
+
+   Send one message exactly as your pipeline would emit it, including any fields we have not listed.
+   Sanitised values are fine; it is the **field names** we need. We run it against the contract and
+   anything that does not line up shows up immediately.
+
+2. **Your managed identity's name and object id** — once the pipeline exists.
+3. **Which network the pipeline posts from**, per the connectivity section. This is the one that
    determines the date.
-3. **Can you send a run id on each message?** This matters more than it looks. Because you send one
+4. **Can you send a run id on each message?** This matters more than it looks. Because you send one
    message per producer, there is no batch boundary, so we cannot tell "not sent tonight" from
    "unchanged" — which means we can never mark an operation inactive from absence alone. A run id
    on each message would let us group a night's set and detect what dropped out. Without it,
    deactivation can only come from an explicit Surrendered or Revoked status.
-4. **Maximum lengths** for the string fields, so our columns are sized from fact rather than
+5. **Maximum lengths** for the string fields, so our columns are sized from fact rather than
    estimate. Current limits are in the OpenAPI spec; tell us if any are too tight.
-5. **Does `certificateNumber` change on renewal?** There is no certificate issue date anywhere in
+6. **Does `certificateNumber` change on renewal?** There is no certificate issue date anywhere in
    the data, so if the number changes on reissue it is the closest proxy we have for "something was
    renewed" — which a business rule on our side currently needs and cannot otherwise compute.
 
