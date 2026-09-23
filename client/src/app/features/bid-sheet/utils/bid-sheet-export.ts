@@ -77,7 +77,11 @@ export interface BidSheetExportModel {
 
 // Cash is dollars with up to four places (4.2575 happens); basis is cents and written as typed.
 const CASH_FORMAT = '0.00##';
-const BASIS_FORMAT = 'General';
+// Positive / negative / zero sections, so a positive basis shows its "+" as it does on screen. A
+// FORMAT rather than a "+" glued to the text: the cell stays a real number, so it still sorts and
+// sums. Four optional places match what General showed -- trailing zeros dropped, and nothing
+// rounded away short of the precision basis is quoted to.
+const BASIS_FORMAT = '+0.####;-0.####;0';
 
 /** Column number (1-based) -> Excel letters: 1 -> A, 27 -> AA. */
 export function columnLetter(n: number): string {

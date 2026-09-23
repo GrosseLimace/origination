@@ -27,6 +27,7 @@ import { commodityHex } from '@shared/utils/commodity-color';
 import { barchartDisplayName, barchartSaveName, isScoularListing } from '../../utils/barchart-location-name';
 import { buildBidSheetExport, downloadWorkbook, writeBidSheetWorkbook, ExcelJSModule } from '../../utils/bid-sheet-export';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
+import { formatBasis } from '../../utils/basis-format';
 import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
@@ -2547,9 +2548,13 @@ export class BidSheetComponent {
   private _getDisplayBid(locationId: number, year: number | null, crop: string, month: number, includeContract = true): string {
     const primary = this._getLatestBid(locationId, year, crop, month);
     const basis = (this._getLatestEntry(locationId, year, crop, month)?.basisBid ?? '').trim();
+    // A positive basis is signed so it cannot be read as a small cash price. In basis mode the
+    // "primary" value IS the basis -- _applyBidFilterSources puts whichever side the toggle shows
+    // into the entry's bid field -- so that one needs signing too.
+    const signedBasis = formatBasis(basis);
     const value = this.priceMode() === 'both'
-      ? (primary && basis ? `${primary} / ${basis}` : (primary || basis))
-      : primary;
+      ? (primary && basis ? `${primary} / ${signedBasis}` : (primary || signedBasis))
+      : (this.priceMode() === 'basis' ? formatBasis(primary) : primary);
     if (!includeContract) return value;
     // Every fed value names the contract it is quoted against: a Year cell because its value is one
     // month standing in for a year, a month cell because the board is what makes two bids comparable
@@ -4183,7 +4188,12 @@ export class BidSheetComponent {
     const overridden = live && (wantBasis
       ? value !== (row.originalBasisBids[gridKey] ?? '').trim()
       : value !== (row.originalBids[gridKey] ?? '').trim());
-    if (overridden) return value;
+
+    // Signed only now, where it is emitted. The comparison above has to come first: it weighs the
+    // value against the stored original, which carries no sign of its own, so signing any earlier
+    // would make every positive basis look like an unsaved override and drop its board symbol.
+    const shown = wantBasis ? formatBasis(value) : value;
+    if (overridden) return shown;
 
     // Paper says it once in the header and only repeats it on a cell that disagrees -- unlike the
     // screen, which labels every fed bid. Print cannot afford the repetition: the values feed the
@@ -4191,7 +4201,7 @@ export class BidSheetComponent {
     // sheet to 9px type, or overflow the page outright in Both mode.
     const cellBoard = this.cellBoardFor(row.locationId, col.year, col.crop, col.month);
     const consensus = this.boardConsensus(col.crop, col.year, col.month);
-    return cellBoard && cellBoard !== consensus ? `${value} (${cellBoard})` : value;
+    return cellBoard && cellBoard !== consensus ? `${shown} (${cellBoard})` : shown;
   }
 
   /**

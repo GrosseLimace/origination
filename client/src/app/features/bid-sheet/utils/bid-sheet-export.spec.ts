@@ -88,7 +88,8 @@ describe('bid-sheet export — Both mode mirrors the grid with cash and basis si
 
   it('formats cash and basis columns and freezes Location plus both header rows', () => {
     expect(sheet.numberFormats[2]).toBe('0.00##');
-    expect(sheet.numberFormats[3]).toBe('General');
+    // Basis is signed by the FORMAT, not by text, so the cell stays a number Excel can sort and sum.
+    expect(sheet.numberFormats[3]).toBe('+0.####;-0.####;0');
     expect(sheet.numberFormats[4]).toBeUndefined();  // Symbol is text
     expect(sheet.freeze).toEqual({ xSplit: 1, ySplit: 2 });
   });
@@ -107,7 +108,19 @@ describe('bid-sheet export — a single-price mode exports only that price', () 
     const sheet = buildBidSheetExport(input({ priceMode: 'basis' })).sheet;
     expect(sheet.headerRows[1].slice(1)).toEqual(['Basis', 'Symbol', 'Basis', 'Symbol']);
     expect(sheet.rows[0]).toEqual(['AA Belpre', null, 'ZCZ26', -30, 'ZCH27']);
-    expect(sheet.numberFormats).toEqual({ 2: 'General', 4: 'General' });
+    expect(sheet.numberFormats).toEqual({ 2: '+0.####;-0.####;0', 4: '+0.####;-0.####;0' });
+  });
+
+  it('keeps a positive basis a NUMBER, leaving the leading + to the cell format', () => {
+    // Gluing a "+" onto the text would make Excel treat the column as text: no sorting, no sums, and
+    // a green "number stored as text" warning on every cell.
+    const sheet = buildBidSheetExport(input({
+      priceMode: 'basis',
+      rows: [{ name: 'AA Belpre', bids: {}, basisBids: { 'ZC#2026#9': '20' }, boardChips: {} }],
+    })).sheet;
+
+    expect(sheet.rows[0][1]).toBe(20);
+    expect(sheet.numberFormats[2]).toBe('+0.####;-0.####;0');
   });
 });
 
