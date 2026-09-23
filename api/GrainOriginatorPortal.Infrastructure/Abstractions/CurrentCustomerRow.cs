@@ -11,6 +11,8 @@ public sealed class CurrentCustomerRow : ICustomerOdsAttributes
     public string? ScoularId { get; set; }
     public string? CustomerName { get; set; }
     public string? IndustryCode1 { get; set; }
+    public string? IndustryCode2 { get; set; }
+    public string? NopIdNumber { get; set; }
     public string? MerchandisingCity { get; set; }
     public string? MerchandisingStateProvince { get; set; }
     public string? MerchandisingAddressLine1 { get; set; }

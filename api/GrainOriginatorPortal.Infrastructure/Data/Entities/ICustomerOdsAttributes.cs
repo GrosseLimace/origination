@@ -28,6 +28,13 @@ public interface ICustomerOdsAttributes
     string? ExtendedPostalCode { get; }
     string? ExtendedCountry { get; }
     string? IndustryCode1 { get; }
+
+    /// <summary>Secondary industry code. 'OR' marks a certified-organic operation.</summary>
+    string? IndustryCode2 { get; }
+
+    /// <summary>National Organic Program operation id. The source holds the literal "0" as a
+    /// placeholder on a large number of rows; the sync normalises that to null on the way in.</summary>
+    string? NopIdNumber { get; }
     DateTime? EffectiveStartDate { get; }
     DateTime? EffectiveEndDate { get; }
 }

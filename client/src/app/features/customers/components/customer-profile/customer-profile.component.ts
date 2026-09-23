@@ -19,6 +19,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
+import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
@@ -152,6 +153,7 @@ export class CustomerProfileComponent {
   activeTab = signal('contracts');
   showProducerInsights = signal(false);
   showESignRecipients = signal(false);
+  showOrganicDetail = signal(false);
   showEditDialog = signal(false);
   showPrintReport = signal(false);
   showAddToListMenu = signal(false); // "Add to List" header dropdown open state
@@ -286,6 +288,7 @@ export class CustomerProfileComponent {
       // If we arrived with an explicit openPlantingYear (e.g. from the dashboard), keep it.
       const _customer = this.customer();
       this.showESignRecipients.set(false);
+      this.showOrganicDetail.set(false);
       this.showGrainOnFarm.set(false); // collapse the grain-on-farm breakdown — default closed per producer
       this.cancelAddToList();
       const pendingYear = this.openPlantingYear();
@@ -484,6 +487,21 @@ export class CustomerProfileComponent {
    *  marketSharePercentage were dropped when the coverage breakdown moved to Growth Opportunity —
    *  that panel reads the same computed directly.) */
   get totalContracted(): number { return this.contractMetrics().totalContracted; }
+
+  /** Whether the organic badge shows for this producer. Two producer-level conditions OR'd —
+   *  the CTRM organic industry code, or a real NOP id on file. See @shared/utils/organic-visibility
+   *  for why both are needed when they overlap almost completely. */
+  readonly showOrganicBadge = computed(() => isOrganicSectionVisible({
+    industryCode2: this.customer()?.industryCode2,
+    nopId: this.customer()?.nopId,
+  }));
+
+  /** True while either expandable header panel is open. Drives the spacing on the farm line below
+   *  them — before the organic panel existed that binding keyed on eSign alone, which would have
+   *  left the farm name jammed against an open organic panel. */
+  readonly anyHeaderPanelOpen = computed(() =>
+    (this.customer()?.eSignEnabled === true && this.showESignRecipients()) || this.showOrganicDetail()
+  );
 
   /** Splits ScoularView recipients string into individual entries.
    *  Handles commas inside names (e.g., "Ade, Clay 785-555-1234") by only splitting

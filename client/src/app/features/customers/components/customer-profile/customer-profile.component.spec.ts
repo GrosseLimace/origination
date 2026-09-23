@@ -214,3 +214,73 @@ describe('CustomerProfileComponent — address map link', () => {
     expect(tracking.trackMapClick).toHaveBeenCalledWith('42');
   });
 });
+
+// Covers the organic producer badge: which producers get it, and the header-panel spacing computed
+// it introduced. The gate itself is unit-tested in @shared/utils/organic-visibility.spec.ts — these
+// assert the component wires the producer's own fields into it and nothing else.
+describe('CustomerProfileComponent — organic producer badge', () => {
+  let component: CustomerProfileComponent;
+  let ref: ComponentRef<CustomerProfileComponent>;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: {} },
+        { provide: ThemeService, useValue: {} },
+        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerProfileComponent, {
+      set: { template: '', templateUrl: undefined, imports: [] },
+    });
+    const fixture = TestBed.createComponent(CustomerProfileComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+  });
+
+  it('shows the badge on the organic industry code alone', () => {
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    expect(component.showOrganicBadge()).toBe(true);
+  });
+
+  it('shows the badge on a real NOP id alone — the five producers coded CV or DA', () => {
+    ref.setInput('customer', makeCustomer({ industryCode2: 'CV', nopId: '1234567890' }));
+    expect(component.showOrganicBadge()).toBe(true);
+  });
+
+  it('hides the badge for a conventional producer', () => {
+    ref.setInput('customer', makeCustomer({ industryCode2: 'CV' }));
+    expect(component.showOrganicBadge()).toBe(false);
+  });
+
+  it('hides the badge when the producer carries neither signal', () => {
+    ref.setInput('customer', makeCustomer());
+    expect(component.showOrganicBadge()).toBe(false);
+  });
+
+  it('opens and closes the detail panel independently of the badge', () => {
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    expect(component.showOrganicDetail()).toBe(false);
+
+    component.showOrganicDetail.set(true);
+    expect(component.showOrganicBadge()).toBe(true);
+    expect(component.anyHeaderPanelOpen()).toBe(true);
+  });
+
+  it('reports no header panel open when both are closed', () => {
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR', eSignEnabled: true }));
+    expect(component.anyHeaderPanelOpen()).toBe(false);
+  });
+
+  it('still reports the eSign panel — the spacing binding was eSign-only before the organic panel', () => {
+    ref.setInput('customer', makeCustomer({ eSignEnabled: true }));
+    component.showESignRecipients.set(true);
+    expect(component.anyHeaderPanelOpen()).toBe(true);
+  });
+
+  it('does not treat an open eSign panel as open when the producer has no eSign', () => {
+    ref.setInput('customer', makeCustomer({ eSignEnabled: false }));
+    component.showESignRecipients.set(true);
+    expect(component.anyHeaderPanelOpen()).toBe(false);
+  });
+});
