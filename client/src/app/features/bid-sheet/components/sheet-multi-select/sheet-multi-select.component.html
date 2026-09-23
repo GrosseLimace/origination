@@ -15,6 +15,19 @@
     <div class="fixed inset-0 z-[1250]" (click)="close()"></div>
 
     <div class="absolute left-0 top-full mt-1 min-w-[15rem] max-w-[22rem] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[1300] overflow-hidden">
+      @if (showAllOption()) {
+        <!-- Above the sheets, not below them. It is the widest thing the map can show, so it belongs
+             at the root of the list rather than as a footnote under it -- and the list below scrolls,
+             which put this out of sight entirely once someone had a dozen sheets. Not a checkbox:
+             it is not a sheet, it is the other thing the map can be. -->
+        <button type="button" (click)="onPickAll()"
+                class="w-full text-left px-3 py-2 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                [class]="showingAll() ? 'text-scoular-green-accessible dark:text-scoular-green font-semibold' : 'text-gray-700 dark:text-gray-300'">
+          All locations
+        </button>
+        <div class="border-t border-gray-200 dark:border-gray-700"></div>
+      }
+
       <div class="max-h-64 overflow-auto py-1">
         @for (sheet of sheets(); track sheet.id) {
           <!-- The checkbox adds to the selection; the NAME replaces it. Both on one row because both
@@ -66,15 +79,17 @@
         }
       </div>
 
-      @if (showAllOption()) {
-        <div class="border-t border-gray-200 dark:border-gray-700"></div>
-        <!-- Not a sheet, so not a checkbox: it is the other thing the map can be. -->
-        <button type="button" (click)="onPickAll()"
-                class="w-full text-left px-3 py-2 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
-                [class]="showingAll() ? 'text-scoular-green-accessible dark:text-scoular-green font-semibold' : 'text-gray-700 dark:text-gray-300'">
-          All locations
+      <!-- Ticks still apply as they are made, so the map moves with the selection and you can see
+           what you are choosing. This is only a deliberate way OUT: clicking into empty space to
+           dismiss works but is not something the list advertises, and on the map that empty space is
+           a pin you did not mean to hit. No Cancel, because there is nothing staged to throw away. -->
+      <div class="border-t border-gray-200 dark:border-gray-700 px-2 py-1.5 flex justify-end">
+        <button type="button" (click)="close()"
+                class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
+          Done
         </button>
-      }
+      </div>
+
     </div>
   }
 </div>

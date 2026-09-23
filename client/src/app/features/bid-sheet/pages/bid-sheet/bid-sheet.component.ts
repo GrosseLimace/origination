@@ -3530,6 +3530,11 @@ export class BidSheetComponent {
       month: this.addColumnMonth()
     };
     this._mutateColumns(cols => [...cols, pick]);
+    // Closes on Add. It used to stay open with crop and year still set, on the theory that a run of
+    // months is quicker that way -- but adding one column and being left staring at the form reads
+    // as though the Add did not take, and the new column is behind the panel where it cannot be seen.
+    // Adding several is the rarer case, and it costs one more click.
+    this.showAddColumn.set(false);
   }
 
   /** Removes one column. Flushes first: a dirty cell in it would otherwise never reach the server. */
