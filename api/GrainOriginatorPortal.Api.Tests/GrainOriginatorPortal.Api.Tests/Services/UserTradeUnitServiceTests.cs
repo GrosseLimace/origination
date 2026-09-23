@@ -71,35 +71,41 @@ public class UserTradeUnitServiceTests
         Assert.Empty(result);
     }
 
-    // The location next to each code resolves with a two-source fallback: MbpLocationSynonym
-    // DisplayName first, else the entitlements Description, else blank.
+    // The location next to each code resolves with a two-source fallback: the Trade Unit Preferences
+    // Description first (the label users actually maintain in TUP), else the MbpLocationSynonym
+    // DisplayName from the static MBPLOCSYN export, else blank. TUP must win where both exist —
+    // MBP is a frozen 2026-07-30 snapshot and used to override live renames with stale names.
     [Fact]
-    public async Task GetForCurrentUserAsync_ResolvesLocation_MbpFirstThenEntitlementsThenBlank()
+    public async Task GetForCurrentUserAsync_ResolvesLocation_TupFirstThenMbpThenBlank()
     {
         // Arrange — three codes in one group covering all three fallback branches.
         _entitlementsMock
             .Setup(e => e.GetByUserAsync("tuser", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<UserTradeUnitPreference>
             {
-                // In MBP master AND has an entitlements desc -> MBP wins.
-                new() { GroupName = "West", TradeUnitCode = "2115", Description = "Entitlements Adrian" },
-                // NOT in MBP master but has an entitlements desc -> falls back to entitlements.
-                new() { GroupName = "West", TradeUnitCode = "9999", Description = "Pratt, KS" },
+                // In MBP master AND has a TUP description -> TUP wins (this is the renamed case).
+                new() { GroupName = "West", TradeUnitCode = "2115", Description = "Adrian, MO" },
+                // No TUP description but present in MBP master -> falls back to MBP.
+                new() { GroupName = "West", TradeUnitCode = "9999", Description = null },
                 // In neither -> blank.
                 new() { GroupName = "West", TradeUnitCode = "0000", Description = null },
             });
-        // Only 2115 resolves in the location master.
+        // 2115 and 9999 resolve in the location master; 2115's entry is the stale name.
         _locationsMock
             .Setup(l => l.GetDisplayNamesByLocationIdsAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["2115"] = "Adrian, MO" });
+            .ReturnsAsync(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["2115"] = "Stale Export Name",
+                ["9999"] = "Pratt, KS",
+            });
 
         // Act
         var result = await _sut.GetForCurrentUserAsync(CancellationToken.None);
 
-        // Assert — MBP preferred, entitlements fallback, else blank.
+        // Assert — TUP preferred, MBP fallback, else blank.
         var units = Assert.Single(result).TradeUnits;
-        Assert.Equal("Adrian, MO", units.Single(u => u.Code == "2115").Description);   // MBP wins over entitlements
-        Assert.Equal("Pratt, KS", units.Single(u => u.Code == "9999").Description);    // entitlements fallback
+        Assert.Equal("Adrian, MO", units.Single(u => u.Code == "2115").Description);   // TUP wins over MBP
+        Assert.Equal("Pratt, KS", units.Single(u => u.Code == "9999").Description);    // MBP fallback
         Assert.True(string.IsNullOrEmpty(units.Single(u => u.Code == "0000").Description)); // neither -> blank
     }
 

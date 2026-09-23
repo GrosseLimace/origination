@@ -62,9 +62,24 @@ public record ContactItemRequest
 
 public record GrainOnFarmItemRequest
 {
-    [Required]
+    /// <summary>Commodity code (e.g. "YC"). A legacy crop-group name is accepted so an existing
+    /// pre-code row round-trips unchanged when the producer is saved. Not [Required] only so a
+    /// client cached from before 2026-09-23 can still send <see cref="CommodityGroup"/> instead;
+    /// a row carrying neither is dropped by the repository, like any blank row.</summary>
     [StringLength(100)]
-    public required string CommodityGroup { get; init; }
+    public string? CommodityCode { get; init; }
+
+    /// <summary>DEPRECATED — the pre-2026-09-23 name for <see cref="CommodityCode"/>. Accepted for one
+    /// release so a browser tab still running the old SPA mid-deploy neither gets a 400 on save nor
+    /// wipes the producer's grain rows (the set is replaced on every upsert). Remove after the next
+    /// PROD release.</summary>
+    [StringLength(100)]
+    public string? CommodityGroup { get; init; }
+
+    /// <summary>The value to persist: the code, else the legacy field.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string EffectiveCommodityCode =>
+        !string.IsNullOrWhiteSpace(CommodityCode) ? CommodityCode : CommodityGroup ?? string.Empty;
 
     [Range(0, 1_000_000_000)]
     public decimal? BushelsOnHand { get; init; }

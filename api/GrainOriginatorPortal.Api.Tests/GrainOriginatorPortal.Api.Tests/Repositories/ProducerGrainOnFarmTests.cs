@@ -31,25 +31,25 @@ public class ProducerGrainOnFarmTests
     private static ProducerDetailsRepository Repo(ApplicationDbContext db) =>
         new(db, NullLogger<ProducerDetailsRepository>.Instance);
 
-    private static GrainOnFarmEntry Entry(string group, decimal? onHand, decimal? target) =>
-        new() { CommodityGroup = group, BushelsOnHand = onHand, TargetBushels = target };
+    private static GrainOnFarmEntry Entry(string code, decimal? onHand, decimal? target) =>
+        new() { CommodityCode = code, BushelsOnHand = onHand, TargetBushels = target };
 
     private static ProducerDetailsUpsertArgs Args(IReadOnlyList<GrainOnFarmEntry> grain) =>
         new() { CustomerId = 100, ScoularId = "S1", CustomerName = "Smith Farm", GrainOnFarm = grain };
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task Upsert_PersistsGrainRows_AndGetComposesGroups()
+    public async Task Upsert_PersistsGrainRows_AndGetComposesCodes()
     {
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(Args(new[] { Entry("Corn", 80_000, 100_000), Entry("Soybeans", 40_000, 50_000) }),
+        await repo.UpsertAsync(Args(new[] { Entry("YC", 80_000, 100_000), Entry("YSB", 40_000, 50_000) }),
             "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
         Assert.NotNull(pd);
-        var corn = Assert.Single(pd!.GrainOnFarm, g => g.CommodityGroup == "Corn");
+        var corn = Assert.Single(pd!.GrainOnFarm, g => g.CommodityCode == "YC");
         Assert.Equal(80_000, corn.BushelsOnHand);
         Assert.Equal(100_000, corn.TargetBushels);
         Assert.Equal(2, pd.GrainOnFarm.Count);
@@ -62,29 +62,29 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(Args(new[] { Entry("Corn", 80_000, 100_000), Entry("Soybeans", 40_000, null) }),
+        await repo.UpsertAsync(Args(new[] { Entry("YC", 80_000, 100_000), Entry("YSB", 40_000, null) }),
             "tuser", CancellationToken.None);
-        // Re-save with only corn → soybeans row should be gone.
-        await repo.UpsertAsync(Args(new[] { Entry("Corn", 90_000, 110_000) }), "tuser", CancellationToken.None);
+        // Re-save with only YC → the YSB row should be gone.
+        await repo.UpsertAsync(Args(new[] { Entry("YC", 90_000, 110_000) }), "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
         var only = Assert.Single(pd!.GrainOnFarm);
-        Assert.Equal("Corn", only.CommodityGroup);
+        Assert.Equal("YC", only.CommodityCode);
         Assert.Equal(90_000, only.BushelsOnHand);
     }
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task Upsert_DropsBlankGroups()
+    public async Task Upsert_DropsBlankCodes()
     {
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(Args(new[] { Entry("Corn", 10, 20), Entry("  ", 99, 99) }), "tuser", CancellationToken.None);
+        await repo.UpsertAsync(Args(new[] { Entry("YC", 10, 20), Entry("  ", 99, 99) }), "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
         Assert.Single(pd!.GrainOnFarm);
-        Assert.Equal("Corn", pd.GrainOnFarm[0].CommodityGroup);
+        Assert.Equal("YC", pd.GrainOnFarm[0].CommodityCode);
     }
 
     // -------------------------------------------------------------------------
@@ -94,10 +94,56 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(Args(new[] { Entry("Corn", 10, 20) }), "tuser", CancellationToken.None);
+        await repo.UpsertAsync(Args(new[] { Entry("YC", 10, 20) }), "tuser", CancellationToken.None);
         await repo.UpsertAsync(Args(Array.Empty<GrainOnFarmEntry>()), "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
         Assert.Empty(pd!.GrainOnFarm);
+    }
+
+    // -------------------------------------------------------------------------
+    // The reason for keying by code: two codes in the same crop group are separate rows.
+    [Fact]
+    public async Task Upsert_KeepsTwoCodesFromTheSameGroupAsSeparateRows()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        await repo.UpsertAsync(Args(new[] { Entry("HRWW", 30_000, 7), Entry("SRWW", 12_000, null) }),
+            "tuser", CancellationToken.None);
+
+        var pd = await repo.GetAsync(100, CancellationToken.None);
+        Assert.Equal(new[] { "HRWW", "SRWW" }, pd!.GrainOnFarm.Select(g => g.CommodityCode).OrderBy(c => c));
+    }
+
+    // -------------------------------------------------------------------------
+    // Rows saved before codes hold a crop-group name; re-saving the producer must keep them as-is.
+    [Fact]
+    public async Task Upsert_RoundTripsALegacyGroupRowAlongsideCodes()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        await repo.UpsertAsync(Args(new[] { Entry("Wheat", 5_000, null), Entry("YC", 10, null) }),
+            "tuser", CancellationToken.None);
+
+        var pd = await repo.GetAsync(100, CancellationToken.None);
+        Assert.Contains(pd!.GrainOnFarm, g => g.CommodityCode == "Wheat" && g.BushelsOnHand == 5_000);
+        Assert.Contains(pd.GrainOnFarm, g => g.CommodityCode == "YC");
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_DedupesCodesCaseInsensitively_LastWins()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        await repo.UpsertAsync(Args(new[] { Entry("yc", 1, null), Entry(" YC ", 2, null) }), "tuser", CancellationToken.None);
+
+        var pd = await repo.GetAsync(100, CancellationToken.None);
+        var only = Assert.Single(pd!.GrainOnFarm);
+        Assert.Equal("YC", only.CommodityCode);
+        Assert.Equal(2, only.BushelsOnHand);
     }
 }

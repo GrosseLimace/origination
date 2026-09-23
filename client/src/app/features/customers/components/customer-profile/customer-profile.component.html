@@ -281,12 +281,23 @@
                     }
                   </div>
                 }
-                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
-                  </svg>
-                  <span>{{ getContactAddress() }}</span>
-                </div>
+                @if (getMapsUrl(); as mapsUrl) {
+                  <a [href]="mapsUrl" target="_blank" rel="noopener noreferrer"
+                     (click)="trackMapClick()" title="Open in Google Maps"
+                     class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    <span>{{ getContactAddress() }}</span>
+                  </a>
+                } @else {
+                  <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    <span>{{ getContactAddress() }}</span>
+                  </div>
+                }
                 @if (getCustomerPhone()) {
                   <a [href]="'tel:' + getCustomerPhone()" (click)="trackCallClick()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -359,9 +370,9 @@
                          into "25,000" over "bu". flex-wrap is the pressure valve instead — a whole
                          cell moves to the next line rather than a number splitting from its unit. -->
                     <div class="mt-1 ml-[21px] flex flex-col gap-y-1 w-fit text-xs">
-                      @for (g of grainOnFarmRows(); track g.commodityGroup) {
+                      @for (g of grainOnFarmRows(); track g.commodityCode) {
                         <div class="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-                          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap" [ngClass]="grainChipClass(g.commodityGroup)">{{ g.commodityGroup }}</span>
+                          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap" [ngClass]="grainChipClass(g.commodityCode)" [title]="grainChipTitle(g.commodityCode)">{{ g.commodityCode }}</span>
                           <span class="text-sm tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-400 cursor-help" title="On hand">{{ (g.bushelsOnHand || 0) | number }} bu</span>
                           @if (g.grade?.trim()) {
                             <span class="text-sm whitespace-nowrap text-gray-600 dark:text-gray-400 cursor-help" title="Grade">{{ g.grade }}</span>

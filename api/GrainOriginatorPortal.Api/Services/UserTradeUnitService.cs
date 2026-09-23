@@ -37,12 +37,17 @@ public class UserTradeUnitService : IUserTradeUnitService
             var rows = await _entitlements.GetByUserAsync(userId, cancellationToken);
 
             // The location shown next to each trade unit is resolved with a two-source fallback:
-            //   1. dbo.MbpLocationSynonym (the MBPLOCSYN master): the trade unit code IS a bare LocationId
-            //      (e.g. "2115" -> "2115"; NOT the composite "2115-ADRIAN") -> its curated DisplayName
-            //      ("Adrian, MO"). Preferred source.
-            //   2. If that table has no DisplayName for the code, fall back to the entitlements-view
-            //      Description (the source used before MbpLocationSynonym).
+            //   1. vw_UserTradeUnitPreferences.Description — the label maintained in the Trade Unit
+            //      Preferences app itself. Preferred source, so the name a user sees here is the one
+            //      they see when they manage their assignments in TUP.
+            //   2. If TUP has no Description for the code, fall back to dbo.MbpLocationSynonym (the
+            //      MBPLOCSYN master): the trade unit code IS a bare LocationId (e.g. "2115" -> "2115";
+            //      NOT the composite "2115-ADRIAN") -> its DisplayName ("Adrian, MO"). This is a static
+            //      2026-07-30 export that nothing refreshes, so it only fills gaps — it must not
+            //      override the live TUP label (it used to, which is how stale names reached the UI).
             //   3. If both are missing, show nothing (just the code).
+            // The other TU surfaces (/trade-units, /notes/mention-catalog, /entitlements/catalog) read
+            // the TUP Description only, so this ordering is what keeps all four agreeing on a label.
             var grouped = rows
                 .Select(u => new { GroupName = u.GroupName ?? "Default", u.TradeUnitCode, u.Description })
                 .GroupBy(u => u.GroupName)
@@ -59,22 +64,22 @@ public class UserTradeUnitService : IUserTradeUnitService
             return grouped
                 .Select(g =>
                 {
-                    // Dedupe by code within the group; location = MbpLocationSynonym DisplayName, else the
-                    // entitlements Description, else blank.
+                    // Dedupe by code within the group; location = the TUP Description, else the
+                    // MbpLocationSynonym DisplayName, else blank.
                     var units = g
                         .GroupBy(u => u.TradeUnitCode)
                         .Select(cg =>
                         {
                             var mbpDisplayName = displayNames.GetValueOrDefault(cg.Key.Trim());
-                            var entitlementsDescription = cg
+                            var tupDescription = cg
                                 .Select(x => x.Description)
                                 .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d));
                             return new TradeUnitOptionResponse
                             {
                                 Code = cg.Key,
-                                Description = !string.IsNullOrWhiteSpace(mbpDisplayName)
-                                    ? mbpDisplayName
-                                    : entitlementsDescription
+                                Description = !string.IsNullOrWhiteSpace(tupDescription)
+                                    ? tupDescription
+                                    : mbpDisplayName
                             };
                         })
                         .OrderBy(o => o.Code)

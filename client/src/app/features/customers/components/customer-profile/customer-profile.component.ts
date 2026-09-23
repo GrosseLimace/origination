@@ -18,9 +18,12 @@ import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
 import { commodityChipClass } from '@shared/utils/commodity-color';
+import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
+import { grainOnFarmColorKey, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
+import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
@@ -76,9 +79,18 @@ export class CustomerProfileComponent {
   toggleGrainOnFarm(): void {
     if (this.grainOnFarmRows().length > 0) this.showGrainOnFarm.update(v => !v);
   }
+  // Rows hold a commodity code (or a legacy crop-group name). Colour by the crop group so YC, YCNG
+  // and an old "Corn" row are all corn amber; hover shows the commodity name. Lazy computeds, so
+  // reading the `commodities` input declared further down is safe.
+  private readonly _grainLookup = computed(() => buildCropGroupLookup(this.commodities()));
+  private readonly _grainByCode = computed(() => indexCommoditiesByCode(this.commodities()));
   /** Tailwind chip classes for a grain-on-farm commodity — the shared per-crop color. */
-  grainChipClass(commodity: string): string {
-    return commodityChipClass(commodity);
+  grainChipClass(value: string): string {
+    return commodityChipClass(grainOnFarmColorKey(value, this._grainLookup()));
+  }
+  /** Hover text for a grain-on-farm chip: the commodity name, or the legacy-row note. */
+  grainChipTitle(value: string): string {
+    return grainOnFarmTitle(value, this._grainByCode(), this._grainLookup());
   }
   public selectedTradeUnits = input<string[]>([]);
   public contracts = input<Contract[]>([]);
@@ -120,7 +132,7 @@ export class CustomerProfileComponent {
   public allCustomerDpContracts = input<DpContract[]>([]);
 
   public onAddPlanting = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  public onEditPlanting = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
+  public onEditPlanting = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit?: string}>();
   public onDeletePlanting = output<number>();
   /** True when the contracts table wants the page at full width (columns expanded on the
    *  contracts tab) so the host page can drop the Notes sidebar below the profile. */
@@ -136,7 +148,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -156,6 +168,10 @@ export class CustomerProfileComponent {
 
   trackEmailClick(): void {
     this.usageTracking.trackEmailClick(this.customer().id.toString());
+  }
+
+  trackMapClick(): void {
+    this.usageTracking.trackMapClick(this.customer().id.toString());
   }
 
   // Local state - signals
@@ -466,7 +482,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
@@ -509,11 +525,6 @@ export class CustomerProfileComponent {
    *  marketSharePercentage were dropped when the coverage breakdown moved to Growth Opportunity —
    *  that panel reads the same computed directly.) */
   get totalContracted(): number { return this.contractMetrics().totalContracted; }
-
-  getCustomerAddress(): string {
-    const c = this.customer();
-    return [c.addressLine1, c.location, c.stateProvince, c.postalCode].filter(v => !!v).join(', ');
-  }
 
   /** Whether the organic badge shows for this producer. Two producer-level conditions OR'd —
    *  the CTRM organic industry code, or a real NOP id on file. See @shared/utils/organic-visibility
@@ -801,9 +812,15 @@ export class CustomerProfileComponent {
     return `${startMonth} - ${endMonth}`;
   }
 
+  /** Displayed producer address. Extended fields win over Merchandising and the ZIP is included,
+   *  so the text matches the address the producer map actually pins. */
   getContactAddress(): string {
-    const c = this.customer();
-    return [c.addressLine1, c.location, c.stateProvince].filter(v => !!v).join(', ');
+    return formatAddressLine(resolveCustomerAddress(this.customer()));
+  }
+
+  /** Google Maps deep link for the displayed address, or null when there is too little to search on. */
+  getMapsUrl(): string | null {
+    return googleMapsSearchUrl(resolveCustomerAddress(this.customer()));
   }
 
   /** User-entered contacts, primary first then saved order. Older cached customers without a

@@ -42,6 +42,29 @@ Stacked in this order inside `@if (showProducerInsights())`:
 | **Harvest Contract Pace** (`contract-pacing-card/`) | Year-over-year contracting pace per harvest window, with a per-commodity table. Fetches its own historical contracts. |
 | **Growth Opportunity** (`growth-opportunity/`) | Projected production (planting acres × yield estimate) vs. bushels contracted, per commodity, plus bushels still available and concrete action items. |
 
+**Planting tab — Trade Unit field.** Each planting intention belongs to one trade unit, because a
+producer on several trade units plants different acres for each and the Planting Intentions
+dashboard sums acres by that field. The Add and Edit dialogs
+(`planting-intentions-table/`) offer the *producer's own* active trade units (fetched on open from
+`GET /api/customers/{id}/trade-units`, with descriptions from `appState.tradeUnitDescriptions`).
+One trade unit → shown read-only; several → the originator must pick, preselected when exactly one
+of them is selected in the header. Same crop, year and type for two trade units are two rows, not
+one accumulated row. The API rejects a trade unit the producer is not active in (400). A producer
+with no membership rows yet falls back to the user's in-scope trade units. The profile itself always
+lists every row regardless of trade unit, and the Planting table's fourth column shows each row's
+trade unit (it replaced Created On, which the table no longer displays). Full rationale:
+[`Planting Intentions Dashboard.md`](./Planting%20Intentions%20Dashboard.md#trade-unit-attribution-of-planting-acres).
+
+**Removing a trade unit moves the acres.** In the Edit Producer Details dialog, removing a trade
+unit chip that has planting intentions against it opens a prompt showing how many rows, how many
+acres and which crop years, and offers the producer's remaining trade units. Confirming with a
+destination calls `POST /api/plantingintentions/retag` on Save. Declining leaves the rows on the
+trade unit the producer has left, where no trade-unit dashboard counts them until someone re-tags
+them, which the prompt says plainly. The producer's intentions are fetched once, on the first
+removal, so a dialog that never removes a trade unit costs nothing extra. Nothing is blocked: a
+trade unit with planting intentions is still removable, because the nightly sync can drop a
+membership with no user present anyway.
+
 **Growth Opportunity** was called "AI Growth Forecast" until 2026-08-12. Nothing about it was AI — it
 rendered a hardcoded sentence and two branches gated behind `const totalProjected = 0` that could
 never execute. It now shows the real coverage breakdown, which previously lived above the table on
@@ -227,6 +250,8 @@ The Planting Intentions tab's **crop dropdown is curated**. Instead of all ~250 
 **"All Producers" mode** (in the trade-unit selector): selecting it clears the TU scope and lets the customer list search **every** producer — including ODS producers with no contract/ticket yet. This is how a producer who isn't in any trade unit gets found so they can be onboarded. Single-group users (who previously never saw the group dropdown) now get it too. The mode is session-only (`appState.allProducersMode`) and never persisted — a reload returns the user to their real trade group.
 
 **Edit Producer dialog — trade units** ([`edit-customer-dialog.component.ts`](../../client/src/app/features/customers/components/edit-customer-dialog/edit-customer-dialog.component.ts)): a producer's trade-unit memberships are shown and managed here. Sync-sourced TUs (from a contract/ticket) are **locked** (not removable); manually-added TUs (`IsManual`) are **removable**. Assigning a TU to an onboard candidate (a producer not yet in our tables) inserts them into `dbo.Customer`/`dbo.CustomerTradeUnit` with `IsManual = 1`, so the nightly sync's soft-delete pass won't deactivate them. The assign dropdown lists **all** trade units (`GET /trade-units`), not just the user's entitled set (a product decision).
+
+**Edit Producer dialog — Grain on Farm** ([`grain-on-farm.ts`](../../client/src/app/shared/utils/grain-on-farm.ts)): grain on farm is recorded per commodity **code** (`dbo.ProducerGrainOnFarm.CommodityCode`), the same values as the Commodities chips beside it, so HRWW and SRWW are separate rows with their own bushels, grade and target. The add dropdown is a single list of exactly the Planting Intentions commodities, scoped to the user's trade units and labelled and sorted the same way ("YELLOW CORN (YC)"). It is a custom list rather than a native select so it always opens downward. Producer codes outside that list (e.g. a ticket-only BLY) are not offered. Adding a row for a commodity the producer does not list also adds it to their Commodities chips as a user-added chip; removing that row in the same session takes the chip back off. **Legacy rows:** before 2026-09-23 the column was `CommodityGroup` and held a crop group ("Corn", "Wheat"). The rename migration kept those values because a group cannot be mapped to one code without guessing. They still display, colour and filter correctly, and the dialog tags them "Group" so a user can swap one for a code. Profile and Build-A-List chips show the code, coloured by its crop group, with the commodity name on hover. The API accepts the old `commodityGroup` request field for one release so a stale browser tab cannot wipe grain rows mid-deploy.
 
 ## User actions
 

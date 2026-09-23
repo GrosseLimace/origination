@@ -28,6 +28,7 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
+import { grainOnFarmColorKey } from '@shared/utils/grain-on-farm';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -397,8 +398,9 @@ export class BuildListComponent {
     return matchesCropSelection(value, selectedCrops, this._cropGroupLookup(), opts);
   }
 
-  /** Grain-on-farm rows record a crop GROUP ("Corn"), never a code, so a precise code chip has to
-   *  fall back to its group there — see matchesCropSelection's groupOnlyValue. */
+  /** Grain-on-farm rows hold a commodity CODE, but rows saved before 2026-09-23 hold a crop GROUP
+   *  ("Corn") with no code to be precise about. groupOnlyValue lets a code chip still match those
+   *  legacy rows via its group; it never fires for a code value, so code rows stay exact. */
   private static readonly GROUP_ONLY: MatchCropOptions = { groupOnlyValue: true };
 
 
@@ -649,7 +651,7 @@ export class BuildListComponent {
       const grainRowsFor = (c: Customer) => {
         const rows = c.grainOnFarm ?? [];
         return !selectedCrops.isEmpty
-          ? rows.filter(g => !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops, BuildListComponent.GROUP_ONLY))
+          ? rows.filter(g => !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY))
           : rows;
       };
       // Grade is free text — pull the first number out ("4.4%" -> 4.4, "TW 58" -> 58) for over/under.
@@ -947,7 +949,7 @@ export class BuildListComponent {
       } else if (dim === 'Grain on Farm') {
         // Scope crop matching to the producer's grain-on-farm rows (with bushels on hand).
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops, BuildListComponent.GROUP_ONLY) && (g.bushelsOnHand ?? 0) > 0
+          !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY) && (g.bushelsOnHand ?? 0) > 0
         ));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => this._matchesCropFilter(crop, selectedCrops)));
@@ -1131,7 +1133,7 @@ export class BuildListComponent {
     if (this.showGrainOnFarmFilters()) {
       for (const c of this.filteredCustomers()) {
         for (const g of (c.grainOnFarm ?? [])) {
-          if ((g.bushelsOnHand ?? 0) > 0) add(g.commodityGroup);
+          if ((g.bushelsOnHand ?? 0) > 0) add(g.commodityCode);
         }
       }
     }
@@ -4131,7 +4133,7 @@ export class BuildListComponent {
    */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
     return (customer.grainOnFarm ?? [])
-      .filter(g => !!g.commodityGroup && (g.bushelsOnHand ?? 0) > 0)
+      .filter(g => !!g.commodityCode && (g.bushelsOnHand ?? 0) > 0)
       .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
   }
 
@@ -4275,7 +4277,7 @@ export class BuildListComponent {
     }
     if (this.showGrainOnFarmFilters()) {
       return this.grainOnFarmBreakdown(customer)
-        .map(g => ({ text: `${g.commodityGroup} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: g.commodityGroup }));
+        .map(g => ({ text: `${g.commodityCode} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: grainOnFarmColorKey(g.commodityCode, this._cropGroupLookup()) }));
     }
     return [];
   }

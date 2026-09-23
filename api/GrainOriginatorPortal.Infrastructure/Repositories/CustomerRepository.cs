@@ -815,10 +815,23 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<string?> GetFirstActiveTradeUnitAsync(long customerId, CancellationToken cancellationToken)
     {
+        // OrderBy makes "first" deterministic; without it SQL Server returns storage order, which
+        // tagged multi-TU producers' records to whichever membership row happened to be inserted first.
         return await _appContext.CustomerTradeUnits
             .Where(ctu => ctu.CustomerId == customerId && ctu.IsActive)
+            .OrderBy(ctu => ctu.TradeUnit)
             .Select(ctu => ctu.TradeUnit)
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<List<string>> GetActiveTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken)
+    {
+        return await _appContext.CustomerTradeUnits
+            .AsNoTracking()
+            .Where(ctu => ctu.CustomerId == customerId && ctu.IsActive)
+            .OrderBy(ctu => ctu.TradeUnit)
+            .Select(ctu => ctu.TradeUnit)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<List<string>> GetAllActiveTradeUnitCodesAsync(CancellationToken cancellationToken)

@@ -125,7 +125,7 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
     }
 
     public async Task<PlantingIntention?> UpdateAsync(int intentionId, string crop, string? category, string? type,
-        string? description, int acres, int plantingYear, string currentUser, CancellationToken cancellationToken)
+        string? description, int acres, int plantingYear, string? tradeUnit, string currentUser, CancellationToken cancellationToken)
     {
         var intention = await _appContext.PlantingIntentions
             .Include(p => p.Customer)
@@ -141,6 +141,10 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
         intention.Description = description;
         intention.Acres = acres;
         intention.PlantingYear = plantingYear;
+        if (tradeUnit is not null)
+        {
+            intention.TradeUnit = tradeUnit;
+        }
         intention.ModifiedBy = currentUser;
         intention.ModifiedAt = DateTime.UtcNow;
 
@@ -150,6 +154,30 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
         intention.CustomerName = intention.Customer?.Name ?? string.Empty;
         intention.CustomerCode = intention.Customer?.ScoularId ?? string.Empty;
         return intention;
+    }
+
+    public async Task<int> RetagAsync(long customerId, string fromTradeUnit, string toTradeUnit, string currentUser, CancellationToken cancellationToken)
+    {
+        // Soft-deleted rows are excluded by the entity's global query filter, so a deleted plan
+        // doesn't follow the producer to their new trade unit.
+        var rows = await _appContext.PlantingIntentions
+            .Where(p => p.CustomerId == customerId && p.TradeUnit == fromTradeUnit)
+            .ToListAsync(cancellationToken);
+        if (rows.Count == 0) return 0;
+
+        var now = DateTime.UtcNow;
+        foreach (var row in rows)
+        {
+            row.TradeUnit = toTradeUnit;
+            row.ModifiedBy = currentUser;
+            row.ModifiedAt = now;
+        }
+        await _appContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Retagged {Count} planting intention(s) for customer {CustomerId} from {FromTradeUnit} to {ToTradeUnit}",
+            rows.Count, customerId, fromTradeUnit, toTradeUnit);
+        return rows.Count;
     }
 
     public async Task DeleteAsync(int intentionId, string currentUser, CancellationToken cancellationToken)

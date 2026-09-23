@@ -14,6 +14,7 @@ import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/u
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { commodityColor, commodityChipClass, commodityRowClass } from '@shared/utils/commodity-color';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
+import { inSelectedTradeUnits } from '@shared/utils/planting-trade-unit-filter';
 
 @Component({
   selector: 'app-dashboard',
@@ -46,6 +47,18 @@ export class DashboardComponent {
    *  read says nothing about that list. */
   readonly cropYearLoadFailed = signal(false);
   private readonly _customerIdSet = computed(() => new Set(this.customers().map(c => c.id)));
+  // Planting rows are tagged with the trade unit they were recorded for, and every acre figure on
+  // this page counts a row only under that trade unit (see inSelectedTradeUnits). A producer on
+  // Pratt and Tribune therefore contributes only Pratt acres to the Pratt view. In "All Producers"
+  // mode there is no territory, so the set is empty and no row is filtered out.
+  private readonly _scopedTradeUnitSet = computed(() =>
+    this.appStateService.allProducersMode()
+      ? new Set<string>()
+      : new Set(this.appStateService.inScopeTradeUnitCodes())
+  );
+  private _inScope(p: PlantingIntention, customerIdSet: Set<number>, tradeUnitSet: Set<string>): boolean {
+    return customerIdSet.has(p.customerId) && inSelectedTradeUnits(p, tradeUnitSet);
+  }
   readonly storedGrain = computed(() => {
     const customerIds = new Set(this.appStateService.customers().map(c => c.id));
     return this.appStateService.storedGrain().filter(s => customerIds.has(s.customerId));
@@ -298,9 +311,10 @@ export class DashboardComponent {
 
   readonly filteredIntentionsForYear = computed(() => {
     const customerIdSet = this._customerIdSet();
+    const tradeUnitSet = this._scopedTradeUnitSet();
     return this.plantingIntentions().filter(p => {
       if (+p.plantingYear !== +this.selectedPlantingYear()) return false;
-      if (!customerIdSet.has(p.customerId)) return false;
+      if (!this._inScope(p, customerIdSet, tradeUnitSet)) return false;
       if (this.selectedCropFilter()) {
         const commodity = this._commodityByCode().get(p.crop);
         const category = plantingCategory(p, commodity);
@@ -317,8 +331,9 @@ export class DashboardComponent {
   readonly acresTrend = computed(() => {
     const prevYear = this.selectedPlantingYear() - 1;
     const customerIdSet = this._customerIdSet();
+    const tradeUnitSet = this._scopedTradeUnitSet();
     const prevAcres = this.plantingIntentions()
-      .filter(p => +p.plantingYear === prevYear && customerIdSet.has(p.customerId))
+      .filter(p => +p.plantingYear === prevYear && this._inScope(p, customerIdSet, tradeUnitSet))
       .reduce((sum, p) => sum + p.acres, 0);
     if (prevAcres === 0) return null;
     return ((this.totalAcresForYear() - prevAcres) / prevAcres) * 100;
@@ -362,10 +377,11 @@ export class DashboardComponent {
 
   readonly availableCrops = computed(() => {
     const customerIdSet = this._customerIdSet();
+    const tradeUnitSet = this._scopedTradeUnitSet();
     const crops = new Set<string>();
 
     for (const p of this.plantingIntentions()) {
-      if (!customerIdSet.has(p.customerId)) continue;
+      if (!this._inScope(p, customerIdSet, tradeUnitSet)) continue;
       const commodity = this._commodityByCode().get(p.crop);
       const category = plantingCategory(p, commodity);
       if (category) crops.add(this._toTitleCase(category));
@@ -510,6 +526,9 @@ export class DashboardComponent {
           byKey: new Map(),
         };
         map.set(p.customerId, entry);
+      } else if (p.tradeUnit && !entry.tradeUnit.split(', ').includes(p.tradeUnit)) {
+        // Rows for the same producer can carry different trade units when several are selected.
+        entry.tradeUnit = entry.tradeUnit ? `${entry.tradeUnit}, ${p.tradeUnit}` : p.tradeUnit;
       }
       entry.acres += p.acres;
       entry.production += production;
@@ -600,9 +619,13 @@ export class DashboardComponent {
     // When a crop is selected at the top, "without intentions" narrows to:
     //   producers who work with that crop (per their crops list) but have NO intention
     //   for THAT crop this year. Otherwise: producers with NO intention at all this year.
+    // A producer whose only rows this year belong to ANOTHER of their trade units has no intentions
+    // for this territory, so they belong in this list.
+    const tradeUnitSet = this._scopedTradeUnitSet();
     const matchingIntentionCustomers = new Set<number>();
     for (const p of this.plantingIntentions()) {
       if (+p.plantingYear !== +year) continue;
+      if (!inSelectedTradeUnits(p, tradeUnitSet)) continue;
       if (cropFilter) {
         const commodity = this._commodityByCode().get(p.crop);
         const category = plantingCategory(p, commodity);
@@ -1347,9 +1370,10 @@ export class DashboardComponent {
 
   private _calculateYieldRows(): void {
     const customerIdSet = this._customerIdSet();
+    const tradeUnitSet = this._scopedTradeUnitSet();
 
     const forGlobalTUs = this.plantingIntentions().filter(p =>
-      customerIdSet.has(p.customerId)
+      this._inScope(p, customerIdSet, tradeUnitSet)
     );
 
     // Available years

@@ -202,8 +202,9 @@ export function buildCropSelection(
 }
 
 export interface MatchCropOptions {
-  /** Set ONLY when the value is a crop GROUP with no code recorded alongside it (grain-on-farm
-   *  rows). Lets a precise code chip still match those rows via its own group. */
+  /** Set ONLY for a field whose value may be a crop GROUP with no code recorded alongside it (grain-on-farm
+   *  rows saved before 2026-09-23). Lets a precise code chip still match those rows via its own group;
+   *  harmless for a code value, which never equals its own group. */
   readonly groupOnlyValue?: boolean;
 }
 
@@ -234,9 +235,11 @@ export function matchesCropSelection(
   if (sel.codes.size > 0) {
     const codeForName = lookup?.codeByName.get(v);
     if (codeForName && sel.codes.has(codeForName)) return true;
-    // Only for a field that records the crop as a GROUP and nothing finer (grain-on-farm rows hold
-    // "Corn", never "YC"). There is no code-level detail there to be precise about, so a code chip
-    // matches its own group. Never enable this for a row that also carries a code — it would let a
+    // Only for a field that may record the crop as a GROUP and nothing finer (legacy grain-on-farm rows
+    // hold "Corn"; newer ones hold "YC"). There is no code-level detail on a group row to be precise
+    // about, so a code chip matches its own group. `valueGroup === v` keeps code rows exact. A code chip
+    // must never match a sibling code this way. Never enable it on the GROUP field of a record that also has a
+    // separate code field (a contract's commodityGroup) — it would let a
     // HRWW chip match an SRWW contract through its shared "Wheat" group.
     if (opts?.groupOnlyValue) {
       const valueGroup = resolveCropGroup(v, lookup);
