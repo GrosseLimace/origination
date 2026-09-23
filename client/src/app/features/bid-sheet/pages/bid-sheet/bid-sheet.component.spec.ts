@@ -2161,12 +2161,8 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
 
   // The business dropped the Yearly period: a fed Year cell meant the nearest open month and a typed one
   // the crop year, and the two sat side by side as if comparable. Every view now opens on a real month.
-  it('opens on the current month everywhere the Yearly period used to be the default', () => {
-    const now = new Date().getMonth() + 1;
-    expect(component.selectedMonth()).toBe(now);
-    component.crops.set(['YC']);
-    const seeded = (component as unknown as { _seedColumns(): Array<{ month: number }> })._seedColumns();
-    expect(seeded.map(p => p.month)).toEqual([now]);
+  it('opens the map and panel on the current month, where Yearly used to be the default', () => {
+    expect(component.selectedMonth()).toBe(new Date().getMonth() + 1);
   });
 
   // The map panel and the grid are separate selections. openEditBids used to re-seed the grid's year
@@ -2174,20 +2170,31 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
   // paths nobody associates with the grid -- adding a location reopens it. Nothing pushes the panel
   // into the grid now, including the default for someone who has no columns at all: that reads off
   // the clock. This is the regression test for the thread being cut.
-  it('never seeds columns from the map panel, even with no columns saved', () => {
-    const thisYear = new Date().getFullYear();
-    const thisMonth = new Date().getMonth() + 1;
+  it('opens with NO columns when there is no saved arrangement, whatever the panel says', () => {
+    component.crops.set(['YC', 'SB']);
+    component.selectedMonth.set(7);
+    component.selectedYear.set(2028);
+    const c = component as unknown as {
+      _needsColumnSeed: boolean;
+      _seedColumns(): Array<{ crop: string }>;
+    };
+    c._needsColumnSeed = true;   // no SelectedColumns stored...
+
+    // ...and no legacy grid fields either, so there is nothing to reconstruct. The grid waits to be
+    // told what to show rather than filling itself with every priced commodity.
+    expect(c._seedColumns()).toEqual([]);
+  });
+
+  it('still reconstructs an arrangement for a user who has one', () => {
     component.crops.set(['YC']);
-
-    // Point the panel somewhere else entirely.
-    component.selectedMonth.set(thisMonth === 1 ? 12 : 1);
-    component.selectedYear.set(thisYear + 1);
-
-    const seeded = (component as unknown as {
+    const c = component as unknown as {
+      _needsColumnSeed: boolean; _legacyMonths: number[] | null;
       _seedColumns(): Array<{ crop: string; year: number; month: number }>;
-    })._seedColumns();
+    };
+    c._needsColumnSeed = true;
+    c._legacyMonths = [9];       // one legacy grid field is enough to mark them as an old user
 
-    expect(seeded).toEqual([{ crop: 'YC', year: thisYear, month: thisMonth }]);
+    expect(c._seedColumns()).toHaveLength(1);
   });
 
   it('leaves an existing column list alone when the grid is reopened', () => {

@@ -1058,7 +1058,7 @@ export class BidSheetComponent {
 
   /** Legacy inputs stashed by _loadPreference, used once by _seedColumns. Never written back. */
   private _legacyCropOrder: string[] | null = null;
-  private _legacyHiddenCrops = new Set<string>();
+  private _legacyHiddenCrops: Set<string> | null = null;
   private _legacyMonths: number[] | null = null;
   private _legacyYears: number[] | null = null;
 
@@ -2126,8 +2126,6 @@ export class BidSheetComponent {
           if (hiddenCropsJson) {
             try { this._legacyHiddenCrops = new Set(JSON.parse(hiddenCropsJson)); }
             catch { this._legacyHiddenCrops = new Set(); }
-          } else {
-            this._legacyHiddenCrops = new Set();
           }
 
           const selectedMonthsJson = pref?.selectedMonths ?? null;
@@ -3596,20 +3594,28 @@ export class BidSheetComponent {
    * crop filter, same crop order, same crop → month → year nesting -- so their first open after the
    * upgrade looks identical to their last open before it.
    *
-   * For everyone else: the sheet's priced crops, for TODAY's month and year. Read off the clock, not
-   * off the map panel. The panel has no say in what the grid shows -- that is the point of the
-   * columns being chosen explicitly -- and a default that quietly tracked it would be the one
-   * remaining thread between the two, surfacing only for the users least able to explain it (a new
-   * one, or anyone who had just cleared their columns).
+   * For everyone else it returns NOTHING. A grid with no columns stays empty and waits to be told
+   * what to show: guessing a set the user did not ask for is the behaviour the explicit column list
+   * replaced, and it would be the last place the screen still decided for them.
    *
-   * The 24-column cap is deliberately NOT applied: someone arriving from three years x several months
-   * may already be over it, and truncating their view on upgrade would read as data loss.
+   * The 24-column cap is deliberately NOT applied to a migration: someone arriving from three years
+   * x several months may already be over it, and truncating their view would read as data loss.
    */
   private _seedColumns(): EditBidColumnPick[] {
-    const hidden = this._needsColumnSeed ? this._legacyHiddenCrops : new Set<string>();
-    const order = this._needsColumnSeed ? this._legacyCropOrder : null;
-    const months = (this._needsColumnSeed && this._legacyMonths) || [BidSheetComponent.currentMonth()];
-    const years = (this._needsColumnSeed && this._legacyYears) || [new Date().getFullYear()];
+    if (!this._needsColumnSeed) return [];
+
+    // Only an OLD ARRANGEMENT is worth reconstructing. These four are written by the Edit Bids grid
+    // and nothing else -- the map panel writes CropCode/Month/CropYear -- so one of them being
+    // present is what says this person used the old grid. With none of them, there is nothing to
+    // carry over and the grid opens empty rather than guessing.
+    const hasOldArrangement = this._legacyMonths !== null || this._legacyYears !== null
+      || this._legacyCropOrder !== null || this._legacyHiddenCrops !== null;
+    if (!hasOldArrangement) return [];
+
+    const hidden = this._legacyHiddenCrops ?? new Set<string>();
+    const order = this._legacyCropOrder;
+    const months = this._legacyMonths ?? [BidSheetComponent.currentMonth()];
+    const years = this._legacyYears ?? [new Date().getFullYear()];
 
     let crops = this.crops().filter(c => !hidden.has(c));
     if (order && order.length > 0) {

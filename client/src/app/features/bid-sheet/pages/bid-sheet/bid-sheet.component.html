@@ -1734,9 +1734,19 @@
                           </td>
                         }
                         <!-- Under Add Commodity: empty, but it holds that column's width so the bid
-                             cells stay under their own headers. -->
-                        <td class="border-l border-gray-200 dark:border-gray-700"></td>
-                        <td class="w-full"></td>
+                             cells stay under their own headers. On the FIRST row only, and only while
+                             there are no columns at all, it carries the prompt instead -- the grid no
+                             longer guesses a set of columns, so without this a new sheet is just a
+                             list of locations with nothing to say why. -->
+                        <td class="border-l border-gray-200 dark:border-gray-700 whitespace-nowrap px-3"
+                            [attr.colspan]="editGridColumns().length === 0 ? 2 : 1">
+                          @if (editGridColumns().length === 0 && rowIdx === 0) {
+                            <span class="text-sm text-gray-400 dark:text-gray-500">Pick a commodity to start entering bids.</span>
+                          }
+                        </td>
+                        @if (editGridColumns().length > 0) {
+                          <td class="w-full"></td>
+                        }
                       </tr>
                     }
                     @if (true) {

@@ -487,12 +487,16 @@ Consequences worth knowing:
 
 - The **map panel and the grid are fully separate.** Stepping the panel to another year and
   reopening Edit Bids does not change the columns. Nothing pushes the panel into the grid at all --
-  not even the default for a user with no columns saved, which reads the current month and year off
-  the clock. (The filter bar was already a separate source again, via `filterableCrops` /
+  and there is no default: a grid with no columns opens EMPTY and waits to be told what to show,
+  with a prompt in the first row. (The filter bar was already a separate source again, via `filterableCrops` /
   `filterableYears`, so that fixing the filter could not change what the grid saves.)
-- **Migration is lazy.** A row whose `SelectedColumns` is `NULL` marks a user who predates the
-  change; `_seedColumns` synthesises the old cross product from the four superseded fields, in the
-  old nesting, so their first open looks identical to their last. It is written back only when they
+- **Migration is lazy, and it is the ONLY reason anything is seeded.** A row whose `SelectedColumns`
+  is `NULL` *and* which carries at least one of the four superseded fields marks a user who predates
+  the change; `_seedColumns` synthesises the old cross product from them, in the old nesting, so
+  their first open looks identical to their last. Those four are written only by the Edit Bids grid
+  (the panel writes `CropCode`/`Month`/`CropYear`), which is what makes their presence a reliable
+  test for "used the old grid". With none of them present there is nothing to reconstruct and the
+  grid stays empty. It is written back only when they
   next change a column, and the 24-column cap is NOT applied to it. `"[]"` is different from
   `NULL` — it means the user removed every column deliberately, and is left alone.
 - **Duplicates are refused twice**, in the load sanitiser and again in the `editGridColumns`
