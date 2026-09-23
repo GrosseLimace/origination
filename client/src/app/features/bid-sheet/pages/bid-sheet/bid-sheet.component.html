@@ -1403,7 +1403,13 @@
                    bottom edge just sat there: you had to drop, scroll by hand, pick the row up again,
                    and repeat. The class alone doesn't do it -- the directive has to be present. -->
               <div class="flex-1 overflow-auto" cdkScrollable>
-                <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
+                <!-- width:100% and NO min-width:max-content. The trailing slack cell is width:100%,
+                     and under max-content sizing a percentage cell contributes a whole container width
+                     to the table's intrinsic width -- so the table overflowed and showed a horizontal
+                     scrollbar even with zero bid columns. The max-content floor was belt-and-braces
+                     anyway: the Locations cell and every bid column carry their own min-w-*, which is
+                     what actually forces the scrollbar once there are genuinely too many columns. -->
+                <table class="border-collapse text-sm" style="width: 100%;">
                   <thead>
                     <!-- Year band, only with several years selected. Columns run crop -> month -> year,
                          so each band is one contiguous run and this row says which year the pair of
@@ -1419,6 +1425,7 @@
                           <th [attr.colspan]="band.span"
                               class="sticky top-0 z-20 px-2 py-1.5 text-center text-xs font-bold tabular-nums text-gray-500 dark:text-gray-400 border-b border-l border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">{{ band.year }}</th>
                         }
+                        <th class="sticky top-0 z-20 w-full border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"></th>
                       </tr>
                     }
                     <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onColumnDrop($event)"
@@ -1553,6 +1560,11 @@
                           }
                         </th>
                       }
+                      <!-- Slack eater. The table is width:100% with auto layout, so without somewhere
+                           for the spare width to go it is shared across the real columns and the
+                           Locations cell -- the widest -- swallows most of it. That is what made one
+                           bid column sit beside a Locations column several times its natural size. -->
+                      <th class="sticky top-0 z-20 w-full border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"></th>
                     </tr>
                   </thead>
                   <!-- autoScrollStep defaults to 2px per frame, which on a long sheet is a crawl. 18
@@ -1583,9 +1595,12 @@
                                     : 'cursor-not-allowed text-gray-200 dark:text-gray-700 flex-shrink-0'">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
                             </span>
-                            <!-- Wraps to a second line rather than truncating: BarChart names carry the
-                                 company AND the site ("Farmers Cooperative Dorchester - Beattie"), which
-                                 a single ellipsised line cuts off exactly where it stops being useful. -->
+                            <!-- One line, not clamped to two and not ellipsised. BarChart names carry the
+                                 company AND the site ("Farmers Cooperative Dorchester - Beattie"), so
+                                 cutting one short removes exactly the part that distinguishes it. The
+                                 column is free to size to the longest name because the trailing slack
+                                 column takes the spare width -- before that existed, this cell absorbed
+                                 it all and had to be clamped to stop it swallowing the grid. -->
                             @if (renamingRow() === row.locationId) {
                               <!-- Adding a batch from BarChart lands on this screen, so the vendor's
                                    name is corrected here rather than one dialog at a time. -->
@@ -1618,7 +1633,7 @@
                             } @else {
                               <!-- The name sizes to its text rather than filling the cell, so the pencil sits
                                    against the end of the name instead of floating off at the far right. -->
-                              <span class="min-w-0 text-sm font-medium text-gray-900 dark:text-white leading-tight line-clamp-2 break-words" [title]="row.name">{{ row.name }}</span>
+                              <span class="text-sm font-medium text-gray-900 dark:text-white leading-tight whitespace-nowrap" [title]="row.name">{{ row.name }}</span>
                               @if (true) {
                                 <button (click)="startRenameRow(row, $event)" title="Rename location"
                                         class="shrink-0 p-1 rounded text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors">
@@ -1735,6 +1750,7 @@
                             }
                           </td>
                         }
+                        <td class="w-full"></td>
                       </tr>
                     }
                     @if (true) {
@@ -1750,9 +1766,9 @@
                           Add Location
                         </div>
                       </td>
-                      <!-- The sticky Location cell above accounts for one; the +1 is the Add column
-                           beside it, which has no content on this row. -->
-                      <td [attr.colspan]="editGridColumns().length + 1"></td>
+                      <!-- The sticky Location cell above accounts for one; the +2 is the Add column
+                           beside it and the trailing slack column, neither of which has content here. -->
+                      <td [attr.colspan]="editGridColumns().length + 2"></td>
                     </tr>
                     }
                   </tbody>

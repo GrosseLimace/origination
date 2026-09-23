@@ -74,6 +74,19 @@
    overflow-hidden and there is no scrollbar to recover it. Every current menu is
    left-anchored in a filter bar, which is why this has not bitten. */
 
+/* CDK Overlay sits ABOVE all of the above.
+
+   @angular/cdk/overlay-prebuilt.css puts .cdk-overlay-container at z-index 1000. That is below the
+   bid sheet's own Leaflet-era tiers -- the Edit Bids panel alone is z-[1100] -- so a CDK-positioned
+   popover opened from inside Edit Bids renders BEHIND it and reads as simply missing. 1350 clears
+   the highest tier in use (z-[1300]).
+
+   CDK overlays are the exception to the note above about collision detection: they reposition
+   themselves, which is why the Add-column picker uses one. It hangs off a sticky <th> inside an
+   overflow-auto scroller, and a plain absolutely-positioned panel is clipped there whatever its
+   z-index. */
+.cdk-overlay-container { z-index: 1350; }
+
 /* Base styles */
 html {
   scrollbar-gutter: stable;

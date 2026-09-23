@@ -238,7 +238,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-09-11
+Last Updated: 2026-09-23
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -264,6 +264,7 @@ Last Updated: 2026-09-11
 | @angular/router | 21.2.23 | MIT | Client-side routing |
 | @angular/forms | 21.2.23 | MIT | Reactive forms |
 | @angular/animations | 21.2.23 | MIT | Animation support |
+| @angular/cdk | 21.2.14 | MIT | Component primitives — drag-and-drop (bid sheet column/row reorder), scrolling, and Overlay (the Add-column picker, which must escape a clipping scroll container) |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
