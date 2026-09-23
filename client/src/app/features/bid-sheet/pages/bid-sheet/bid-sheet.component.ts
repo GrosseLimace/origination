@@ -5428,15 +5428,23 @@ export class BidSheetComponent {
    * a location can have one instrument published without the other, since they're independent feeds.
    */
   private _catalogPriceLabel(loc: BarchartCatalogLocation, includeBoard = true): string | null {
-    const cash = loc.matchedBidPrice;
+    // matchedBidPrice carries whichever instrument the toggle asked for: the catalog search is run
+    // with instrumentType 'bidBasis' in basis mode and 'bidCash' otherwise, so in basis mode this
+    // field IS the basis. matchedBasisPrice is only populated in Both mode, by the second request.
+    const primary = loc.matchedBidPrice;
     const basis = loc.matchedBasisPrice;
+    const primaryIsBasis = this.priceMode() === 'basis';
     let value: string | null;
     if (this.priceMode() !== 'both') {
-      value = cash != null ? cash.toString() : null;
-    } else if (cash != null && basis != null) {
-      value = `${cash} / ${basis}`;
+      value = primary != null
+        ? (primaryIsBasis ? formatBasis(primary.toString()) : primary.toString())
+        : null;
+    } else if (primary != null && basis != null) {
+      value = `${primary} / ${formatBasis(basis.toString())}`;
     } else {
-      value = cash != null ? cash.toString() : (basis != null ? basis.toString() : null);
+      value = primary != null
+        ? primary.toString()
+        : (basis != null ? formatBasis(basis.toString()) : null);
     }
     if (value == null) return null;
     if (!includeBoard) return value;

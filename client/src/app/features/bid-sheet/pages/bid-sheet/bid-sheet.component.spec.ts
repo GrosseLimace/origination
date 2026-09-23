@@ -901,6 +901,29 @@ describe('BidSheetComponent — catalog pin price label in Both mode', () => {
     expect(label.call(component, catalogLoc({ matchedBasisPrice: -30 }))).toBe('-30');
   });
 
+  // Catalog pins build their label here rather than through _getDisplayBid, so the "+" on a positive
+  // basis had to be added in both places. One kind of pin showing "+5" while the other shows "5" on
+  // the same map is worse than neither doing it.
+  it('signs a positive basis on a catalog pin, in Both mode and in Basis mode', () => {
+    const label = (component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation): string | null })
+      ._catalogPriceLabel;
+
+    component.priceMode.set('both');
+    expect(label.call(component, catalogLoc({ matchedBidPrice: 4.98, matchedBasisPrice: 5 }))).toBe('4.98 / +5');
+    expect(label.call(component, catalogLoc({ matchedBasisPrice: 5 }))).toBe('+5');
+    // Negatives already carry their sign.
+    expect(label.call(component, catalogLoc({ matchedBidPrice: 4.98, matchedBasisPrice: -30 }))).toBe('4.98 / -30');
+
+    // In basis mode the catalog searches instrumentType 'bidBasis', so matchedBidPrice IS the basis.
+    component.priceMode.set('basis');
+    expect(label.call(component, catalogLoc({ matchedBidPrice: 5 }))).toBe('+5');
+    expect(label.call(component, catalogLoc({ matchedBidPrice: -30 }))).toBe('-30');
+
+    // Cash is never signed.
+    component.priceMode.set('cash');
+    expect(label.call(component, catalogLoc({ matchedBidPrice: 4.98 }))).toBe('4.98');
+  });
+
   it('returns null when neither price is published, regardless of mode', () => {
     component.priceMode.set('both');
     const label = (component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation): string | null })
