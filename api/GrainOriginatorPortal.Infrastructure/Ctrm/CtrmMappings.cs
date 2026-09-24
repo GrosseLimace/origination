@@ -271,6 +271,11 @@ public static class CtrmMappings
                 TicketNumber = Clean(header.TicketNumber) ?? string.Empty,
                 TicketSuffix = Clean(header.TicketSuffix),
 
+                // What the screens show as the ticket number (client ticketDisplayNumber falls back to
+                // TicketNumber when this is blank). CTRM's form is unpadded - "P388159" against ODS's
+                // "P   388159" - a display-only difference, accepted 2026-09-24.
+                ShipmentTicketNumber = Clean(header.ShipmentTicketNumber),
+
                 // Keeps the prefix character, which IsApplied reads to classify U/L/C as unapplied.
                 CtrmContractNumber = Clean(d.ContractNumber),
 
@@ -316,10 +321,10 @@ public static class CtrmMappings
                 // SourceTicket*Id pair are ODS surrogates with no CTRM equivalent. ElevatorCity/State stay
                 // null here and are filled by the ODS elevator lookup, exactly as on the ODS path.
                 //
-                // Left unset because NOTHING reads them (2026-08-28 usage trace): ShipmentTicketNumber,
-                // UnloadOrganizationCode and LoadoutQuantity are populated by ODS but rendered nowhere and
-                // read by no server logic, so they are no longer projected or mapped. If a screen ever
-                // needs one, re-add it to TicketProjection, this mapping, and the trace.
+                // Left unset because NOTHING reads them (2026-08-28 usage trace): UnloadOrganizationCode
+                // and LoadoutQuantity are populated by ODS but rendered nowhere and read by no server
+                // logic, so they are no longer projected or mapped. If a screen ever needs one, re-add it
+                // to TicketProjection, this mapping, and the trace - as ShipmentTicketNumber was, above.
             })
             .ToList();
     }

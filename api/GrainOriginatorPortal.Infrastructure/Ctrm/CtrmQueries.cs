@@ -57,7 +57,7 @@ public static class CtrmQueries
     /// <para><b>Deliberately minimal.</b> This API resolves fields per-row, so every projected field costs
     /// real time on the detail rows - a minimal projection measured 1.4s against 2.7s for the old full one
     /// on the same 194-row window. A 2026-08-28 usage trace dropped everything nothing reads:
-    /// header <c>shipmentTicketNumber</c>, <c>loadOrganizationCode</c>, <c>unloadOrganizationCode</c>,
+    /// header <c>loadOrganizationCode</c>, <c>unloadOrganizationCode</c>,
     /// <c>loadElevatorCode</c>, <c>loadoutQuantity</c>; detail <c>ticketStatusCode</c>,
     /// <c>appliedGrossQuantity</c>, <c>appliedDockQuantity</c> (the entity's AppliedDockQuantity is fed
     /// from <c>appliedNetQuantity</c>, in pounds, as on ODS), <c>appliedShrinkQuantity</c>,
@@ -66,10 +66,14 @@ public static class CtrmQueries
     /// and detail <c>priceSequence</c>. <c>unloadQuantity</c> stays: Actionable Insights reads it as a
     /// fallback quantity. Re-adding a field means also mapping it in <see cref="CtrmMappings"/> and
     /// proving a consumer.</para>
+    ///
+    /// <para>Header <c>shipmentTicketNumber</c> was dropped by that trace and re-added 2026-09-24: since
+    /// 2026-09-04 the tickets grid, the applied tickets under a contract and Spot Loads display it
+    /// (client <c>ticketDisplayNumber</c>). It is one field per header, not per detail row.</para>
     /// </remarks>
     private const string TicketProjection = """
         ticketPrefix ticketNumber ticketSuffix ticketBLDate productCode
-        unloadQuantity
+        shipmentTicketNumber unloadQuantity
         details {
           ticketSequenceNumber
           customerCode organizationCode elevatorCode gradeCode

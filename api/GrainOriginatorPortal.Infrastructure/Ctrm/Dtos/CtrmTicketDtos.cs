@@ -25,6 +25,10 @@ public sealed class CtrmTicketDto
     public DateTime? TicketBLDate { get; set; }
     public string? ProductCode { get; set; }
 
+    /// <summary>The full ticket number the screens display. CTRM writes it unpadded ("P388159") where
+    /// ODS pads the prefix ("P   388159") - a display-only difference, accepted.</summary>
+    public string? ShipmentTicketNumber { get; set; }
+
     public decimal? UnloadQuantity { get; set; }
 
     public List<CtrmTicketDetailDto> Details { get; set; } = [];

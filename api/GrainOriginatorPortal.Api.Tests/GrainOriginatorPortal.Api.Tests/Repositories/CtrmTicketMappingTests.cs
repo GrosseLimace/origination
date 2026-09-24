@@ -44,6 +44,7 @@ public class CtrmTicketMappingTests
         TicketSuffix = "",
         TicketBLDate = new DateTime(2025, 11, 19),
         ProductCode = "YC",
+        ShipmentTicketNumber = "T408279",
         UnloadQuantity = 120_000m,
         Details = details.ToList()
     };
@@ -168,6 +169,17 @@ public class CtrmTicketMappingTests
         // Filled later by the ODS location lookup, exactly as on the ODS path.
         Assert.Null(ticket.ElevatorCity);
         Assert.Null(ticket.ElevatorState);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void ShipmentTicketNumber_ComesFromTheHeader()
+    {
+        // The screens display this, not the bare TicketNumber (client ticketDisplayNumber). Left unmapped,
+        // CTRM mode silently showed "408279" where ODS mode shows the full number.
+        var ticket = Assert.Single(CtrmMappings.ToTickets(Header(Detail()), "TATOBIN"));
+
+        Assert.Equal("T408279", ticket.ShipmentTicketNumber);
     }
 
     // -------------------------------------------------------------------------
