@@ -17,6 +17,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
     /// a per-call audit table. Certification joins to a producer by NOP id rather than by
     /// customer, because one NOP id legitimately covers several customer records.
     ///
+    /// PreviousStatus and StatusChangedOn exist because the feed sends current state only. Once
+    /// ingest overwrites a status the prior value is unrecoverable, and the organics desk asked to
+    /// see what a certification changed FROM, not merely that it changed.
+    ///
     /// No seed data. A migration seed reaches production, and fabricated certification records
     /// must never appear there.
     /// </summary>
@@ -45,8 +49,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     OperationName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
                     OperationOtherNames = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     OperationStatus = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    PreviousStatus = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     ScoularId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     SourceLastUpdateDate = table.Column<DateTime>(type: "date", nullable: true),
+                    StatusChangedOn = table.Column<DateTime>(type: "datetime2", nullable: true),
                     StatusEffectiveDate = table.Column<DateTime>(type: "date", nullable: true),
                     TotalAcreage = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
                     UpdatedOn = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "GETUTCDATE()")

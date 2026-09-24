@@ -140,6 +140,41 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Records a status transition before the incoming status overwrites the stored one.
+    ///
+    /// Must run BEFORE the assignment, and is the only chance to capture it — the feed sends
+    /// current state only, so once OperationStatus is replaced the prior value is gone for good.
+    ///
+    /// Three rules, each of which matters:
+    /// <list type="bullet">
+    /// <item>A first sighting is NOT a change. A brand-new operation has nothing to have changed
+    /// from, and reporting one would put a spurious flag on every producer the first night.</item>
+    /// <item>An unchanged status leaves both fields ALONE. They mark the last real transition, not
+    /// the last message — clearing them nightly would make the flag vanish the day after it
+    /// appeared, which is precisely when the desk needs it.</item>
+    /// <item>Comparison is trimmed and case-insensitive, so "Certified" and "certified " are the
+    /// same status and do not manufacture a transition out of source formatting.</item>
+    /// </list>
+    /// A move to or from an empty status is deliberately not treated as a transition: "changed from
+    /// nothing" is not actionable, and the source omitting a status is a data gap rather than a
+    /// certification event.
+    /// </summary>
+    private static void CaptureStatusTransition(
+        OrganicCertification target,
+        string? incomingStatus,
+        DateTime now)
+    {
+        var before = target.OperationStatus?.Trim();
+        var after = incomingStatus?.Trim();
+
+        if (string.IsNullOrEmpty(before) || string.IsNullOrEmpty(after)) return;
+        if (string.Equals(before, after, StringComparison.OrdinalIgnoreCase)) return;
+
+        target.PreviousStatus = before;
+        target.StatusChangedOn = now;
+    }
+
     private static void ApplyOperation(
         OrganicCertification target,
         OrganicOperationDto source,
@@ -148,6 +183,9 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         Guid batchId,
         DateTime now)
     {
+        // Before anything overwrites OperationStatus.
+        CaptureStatusTransition(target, source.NopOperationStatus, now);
+
         target.ScoularId = scoularId;
         target.CustomerId = customerId;
         target.OperationName = source.OperationName;

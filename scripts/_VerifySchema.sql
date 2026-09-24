@@ -146,7 +146,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (419)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (421)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -411,8 +411,10 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertification', 'OperationName',        'nvarchar(255)',  1),
 ('dbo', 'OrganicCertification', 'OperationOtherNames',  'nvarchar(500)',  1),
 ('dbo', 'OrganicCertification', 'OperationStatus',      'nvarchar(50)',   1),
+('dbo', 'OrganicCertification', 'PreviousStatus',       'nvarchar(50)',   1),
 ('dbo', 'OrganicCertification', 'ScoularId',            'nvarchar(50)',   1),
 ('dbo', 'OrganicCertification', 'SourceLastUpdateDate', 'date',           1),
+('dbo', 'OrganicCertification', 'StatusChangedOn',      'datetime2',      1),
 ('dbo', 'OrganicCertification', 'StatusEffectiveDate',  'date',           1),
 ('dbo', 'OrganicCertification', 'TotalAcreage',         'decimal(18,2)',  1),
 ('dbo', 'OrganicCertification', 'UpdatedOn',            'datetime2',      0),

@@ -51,8 +51,36 @@ public class OrganicCertification
     /// rather than an enum — it is third-party vocabulary and an unexpected value must not throw.</summary>
     public string? OperationStatus { get; set; }
 
-    /// <summary>When the current status began — the "certified since" date. Backward-looking.</summary>
+    /// <summary>When the current status began — the "certified since" date. Backward-looking.
+    /// This is the certifier's own date and is what the profile should DISPLAY.</summary>
     public DateTime? StatusEffectiveDate { get; set; }
+
+    /// <summary>
+    /// The status this operation held before the current one, captured at ingest when an incoming
+    /// message disagrees with what we hold.
+    ///
+    /// Required because the feed only ever sends CURRENT state: the moment ingest overwrites
+    /// OperationStatus the prior value is gone, and no re-request brings it back. The organics desk
+    /// asked to see not just that a status changed but what it changed FROM, which is unanswerable
+    /// without capturing it as it happens.
+    ///
+    /// Null on a record we have never seen before — a first sighting is not a change.
+    /// </summary>
+    public string? PreviousStatus { get; set; }
+
+    /// <summary>
+    /// When WE observed the status change (UTC). Deliberately distinct from
+    /// <see cref="StatusEffectiveDate"/>, which is when the certifier says the new status took
+    /// effect — the two answer different questions and both are wanted.
+    ///
+    /// Display uses the effective date ("Surrendered on 3 Aug"). This one drives the
+    /// "changed recently" signal, because the desk wants changes picked up on the day the feed
+    /// brings them in, regardless of how far back the certifier dated them.
+    ///
+    /// Retained across later ingests that carry the same status — it marks the last actual change,
+    /// not the last message.
+    /// </summary>
+    public DateTime? StatusChangedOn { get; set; }
 
     /// <summary>When the NEXT annual update is due. Forward-looking, and frequently null.</summary>
     public DateTime? AnniversaryDate { get; set; }

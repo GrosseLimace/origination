@@ -1383,6 +1383,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("OperationStatus");
 
+                    b.Property<string>("PreviousStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("PreviousStatus");
+
                     b.Property<string>("ScoularId")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
@@ -1391,6 +1396,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("SourceLastUpdateDate")
                         .HasColumnType("date")
                         .HasColumnName("SourceLastUpdateDate");
+
+                    b.Property<DateTime?>("StatusChangedOn")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("StatusChangedOn");
 
                     b.Property<DateTime?>("StatusEffectiveDate")
                         .HasColumnType("date")

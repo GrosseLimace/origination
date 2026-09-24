@@ -331,6 +331,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CertifierName).HasColumnName("CertifierName").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.OperationStatus).HasColumnName("OperationStatus").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.StatusEffectiveDate).HasColumnName("StatusEffectiveDate").HasColumnType("date").IsRequired(false);
+            entity.Property(e => e.PreviousStatus).HasColumnName("PreviousStatus").HasMaxLength(50).IsRequired(false);
+            // datetime2, not date: this is an observation timestamp, unlike the calendar dates around it.
+            entity.Property(e => e.StatusChangedOn).HasColumnName("StatusChangedOn").IsRequired(false);
             entity.Property(e => e.AnniversaryDate).HasColumnName("AnniversaryDate").HasColumnType("date").IsRequired(false);
             entity.Property(e => e.SourceLastUpdateDate).HasColumnName("SourceLastUpdateDate").HasColumnType("date").IsRequired(false);
             entity.Property(e => e.HasCertificate).HasColumnName("HasCertificate").HasDefaultValue(false).IsRequired();

@@ -194,6 +194,136 @@ public class OrganicCertificationIngestServiceTests
     }
 
     [Fact]
+    public async Task AFirstSightingIsNotAStatusChange()
+    {
+        // A brand-new operation has nothing to have changed from. Getting this wrong would put a
+        // "status changed" flag on every producer the first night the feed runs.
+        using var db = NewContext();
+
+        await Service(db).IngestAsync(Request(status: "Certified"));
+
+        var stored = await db.OrganicCertifications.SingleAsync();
+        Assert.Null(stored.PreviousStatus);
+        Assert.Null(stored.StatusChangedOn);
+    }
+
+    [Fact]
+    public async Task AChangedStatusCapturesWhatItChangedFromAndWhen()
+    {
+        // The desk asked to see not just THAT a status changed but what it changed FROM. The feed
+        // sends current state only, so this is the one and only chance to record it.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(status: "Certified"));
+        await service.IngestAsync(Request(status: "Surrendered"));
+
+        var stored = await db.OrganicCertifications.SingleAsync();
+        Assert.Equal("Surrendered", stored.OperationStatus);
+        Assert.Equal("Certified", stored.PreviousStatus);
+        Assert.Equal(Now.UtcDateTime, stored.StatusChangedOn);
+    }
+
+    [Fact]
+    public async Task AnUnchangedStatusLeavesTheTransitionAlone()
+    {
+        // The flag marks the last real transition, not the last message. Clearing these on every
+        // nightly re-send would make the flag disappear the day after it appeared — exactly when
+        // the desk needs to see it.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(status: "Certified"));
+        await service.IngestAsync(Request(status: "Surrendered"));
+        await service.IngestAsync(Request(status: "Surrendered"));
+        await service.IngestAsync(Request(status: "Surrendered"));
+
+        var stored = await db.OrganicCertifications.SingleAsync();
+        Assert.Equal("Certified", stored.PreviousStatus);
+        Assert.Equal(Now.UtcDateTime, stored.StatusChangedOn);
+    }
+
+    [Fact]
+    public async Task CasingAndPaddingDoNotManufactureAChange()
+    {
+        // Source formatting must not look like a certification event.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(status: "Certified"));
+        await service.IngestAsync(Request(status: "  certified "));
+
+        var stored = await db.OrganicCertifications.SingleAsync();
+        Assert.Null(stored.PreviousStatus);
+        Assert.Null(stored.StatusChangedOn);
+    }
+
+    [Fact]
+    public async Task ASecondChangeReplacesTheFirst()
+    {
+        // PreviousStatus is the status immediately before the current one, not the original.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(status: "Certified"));
+        await service.IngestAsync(Request(status: "Suspended"));
+        await service.IngestAsync(Request(status: "Revoked"));
+
+        var stored = await db.OrganicCertifications.SingleAsync();
+        Assert.Equal("Revoked", stored.OperationStatus);
+        Assert.Equal("Suspended", stored.PreviousStatus);
+    }
+
+    [Fact]
+    public async Task AMissingStatusOnEitherSideIsNotATransition()
+    {
+        // "Changed from nothing" is not actionable, and the source omitting a status is a data gap
+        // rather than a certification event. Neither direction should raise the flag.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(status: null));
+        await service.IngestAsync(Request(status: "Certified"));
+
+        var stored = await db.OrganicCertifications.SingleAsync();
+        Assert.Equal("Certified", stored.OperationStatus);
+        Assert.Null(stored.PreviousStatus);
+
+        await service.IngestAsync(Request(status: null));
+
+        stored = await db.OrganicCertifications.SingleAsync();
+        Assert.Null(stored.PreviousStatus);
+        Assert.Null(stored.StatusChangedOn);
+    }
+
+    [Fact]
+    public async Task TheEffectiveDateStaysSeparateFromWhenWeObservedTheChange()
+    {
+        // Two different questions, both wanted. The certifier's effective date is what the profile
+        // displays ("Surrendered on 28 Feb"); StatusChangedOn is when the feed brought it to us,
+        // which is what drives the "changed recently" signal.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(status: "Certified"));
+
+        var backdated = Request(status: "Surrendered") with
+        {
+            Operation = Request().Operation with
+            {
+                NopOperationStatus = "Surrendered",
+                StatusEffectiveDate = new DateTime(2026, 2, 28, 0, 0, 0, DateTimeKind.Utc),
+            },
+        };
+        await service.IngestAsync(backdated);
+
+        var stored = await db.OrganicCertifications.SingleAsync();
+        Assert.Equal(new DateTime(2026, 2, 28), stored.StatusEffectiveDate);
+        Assert.Equal(Now.UtcDateTime, stored.StatusChangedOn);
+        Assert.NotEqual(stored.StatusEffectiveDate, stored.StatusChangedOn);
+    }
+
+    [Fact]
     public async Task MissingNopIdRejectsTheMessageAndStillAudits()
     {
         // The one failure that loses the whole message: with no NOP id there is no key to store it
