@@ -102,12 +102,17 @@ public class CustomerTradeUnitViewContractTests
     [InlineData("123456789", null)]              // nine digits
     [InlineData("12345678905", null)]            // eleven digits
     [InlineData("12345678AB", null)]             // right length, not numeric
+    [InlineData("9999999999", null)]            // ten 9s — right length, still a sentinel
+    [InlineData("0000000000", null)]            // the same shape at the other end of the range
+    [InlineData("1223334444", "1223334444")]    // repeated digits are fine; only ALL-same is rejected
     public void NormalisesTheNopIdToTenDigitsOrNothing(string? raw, string? expected)
     {
         // The column cannot be tested for non-empty. ODS holds the literal "0" on ~1,525 rows —
         // far more than hold a real id — plus one "999999999". The rule is positive rather than
-        // exclusionary: exactly ten digits, or nothing. An exclusion list would have to grow every
-        // time a new sentinel shape appears, and would badge producers in the meantime.
+        // exclusionary: exactly ten digits and not all the same digit, or nothing. An exclusion list
+        // would have to grow every time a new sentinel appears, and would badge producers meanwhile.
+        // 9999999999 is why the all-same-digit guard exists: it cleared the length and digit
+        // checks and reached a live profile as a fabricated id.
         Assert.Equal(expected, OdsValues.NormaliseNopId(raw));
     }
 }

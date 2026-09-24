@@ -29,11 +29,16 @@ public static class OdsValues
         if (string.IsNullOrEmpty(trimmed)) return null;
         if (trimmed.Length != NopIdLength) return null;
 
+        // A run of one repeated digit is a sentinel, not an id: ODS carries 9999999999, which is
+        // exactly ten digits and so passed the length and digit checks above. Crooked Creek Acres
+        // reached dbo.Customer with it and rendered "NOP ID 9999999999" on the profile.
+        var allSameDigit = true;
         foreach (var ch in trimmed)
         {
             if (!char.IsAsciiDigit(ch)) return null;
+            if (ch != trimmed[0]) allSameDigit = false;
         }
 
-        return trimmed;
+        return allSameDigit ? null : trimmed;
     }
 }
