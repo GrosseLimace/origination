@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Infrastructure.Ctrm;
@@ -350,4 +351,42 @@ public static class CtrmQueries
           }
         }
         """;
+
+    /// <summary>
+    /// Several producers in ONE request, as GraphQL aliases. Each alias is its own <c>contracts</c> field on
+    /// either the indexed singular <c>customerId</c> filter (one code per alias) or the two-code
+    /// <c>customerIds</c> list (two codes per alias).
+    /// </summary>
+    /// <remarks>
+    /// <para>Why this exists: the trade-unit walk was 587 HTTP round trips at ~0.5 s each, six in flight -
+    /// 36-73 s for one unit. The server resolves aliases one after another, so a request costs roughly the
+    /// sum of its aliases, but the round trips collapse: 10 aliases x 2 codes measured 30 requests and 15 s
+    /// for the same unit with the identical 2,705 contracts (2026-09-24). Fewer requests also spend less of
+    /// the APIM rate quota, which is a volume budget.</para>
+    /// <para>Two codes per alias, not three: the <c>customerIds</c> list plan is known to time out (HC0045)
+    /// at three or more codes and has been measured safe at exactly two. One code per alias is the fully
+    /// indexed path and is what a failed batch is retried on.</para>
+    /// <para>Built inline rather than with variables because alias names are positional; the codes are
+    /// JSON-serialised so a stray quote in a code cannot break the document. No '#' anywhere - see the
+    /// class remarks. Takes only the first page per alias; a producer with more than <paramref name="take"/>
+    /// contracts reports <c>hasNextPage</c> and the caller tops that producer up with the paged read.</para>
+    /// </remarks>
+    public static string ContractsByCustomersAliased(IReadOnlyList<IReadOnlyList<string>> groups, int take, string prefix)
+    {
+        var sb = new StringBuilder("query {\n");
+        for (var i = 0; i < groups.Count; i++)
+        {
+            var group = groups[i];
+            var filter = group.Count == 1
+                ? "customerId: " + JsonSerializer.Serialize(group[0])
+                : "customerIds: " + JsonSerializer.Serialize(group);
+            sb.Append("  a").Append(i).Append(": contracts(skip: 0, take: ").Append(take).Append(", ")
+              .Append(filter).Append(", contractPrefixType: ").Append(JsonSerializer.Serialize(prefix)).Append(") {\n")
+              .Append("    pageInfo { hasNextPage }\n    items {\n")
+              .Append(ContractCoreProjection)
+              .Append("\n    }\n  }\n");
+        }
+        sb.Append('}');
+        return sb.ToString();
+    }
 }

@@ -564,6 +564,11 @@ public sealed class CtrmContractReader
     /// once the API owner fixes its plan.</summary>
     public const string CustomerIdsStrategy = "customerIds";
 
+    /// <summary>Strategy name for GraphQL-aliased batching: several producers per HTTP request, each alias on
+    /// the indexed singular filter or the two-code list. The measured winner on 2026-09-24 - see
+    /// <see cref="FetchAliasedAsync"/>.</summary>
+    public const string AliasedStrategy = "aliased";
+
     /// <summary>
     /// Full-history read for a producer set, by whichever strategy <c>Ctrm:TradeUnitContractStrategy</c> names.
     /// </summary>
@@ -578,9 +583,11 @@ public sealed class CtrmContractReader
     private Task<CtrmReadResult<List<CtrmContractDto>>> FetchForProducersAsync(List<string> codes)
     {
         var strategy = _configuration["Ctrm:TradeUnitContractStrategy"]?.Trim();
-        return string.Equals(strategy, CustomerIdsStrategy, StringComparison.OrdinalIgnoreCase)
-            ? FetchByCustomerIdsAsync(codes)
-            : FetchPerProducerAsync(codes);
+        if (string.Equals(strategy, CustomerIdsStrategy, StringComparison.OrdinalIgnoreCase))
+            return FetchByCustomerIdsAsync(codes);
+        if (string.Equals(strategy, AliasedStrategy, StringComparison.OrdinalIgnoreCase))
+            return FetchAliasedAsync(codes);
+        return FetchPerProducerAsync(codes);
     }
 
     /// <summary>
@@ -648,6 +655,154 @@ public sealed class CtrmContractReader
             Detail = truncated ? "At least one producer exceeded the per-producer page cap." : null,
             Value = all
         };
+    }
+
+    /// <summary>
+    /// The per-producer walk with the round trips collapsed: several producers per HTTP request as GraphQL
+    /// aliases, each alias still on the indexed path. Same data as <see cref="FetchPerProducerAsync"/> -
+    /// verified as the identical contract-id set - in a fraction of the requests.
+    /// </summary>
+    /// <remarks>
+    /// <para>Measured 2026-09-24 on the 587-producer unit, clean gateway, identical 2,705 contracts every
+    /// run: one producer per call 62 s / 587 requests; 5 aliases 25 s / 118; 10 aliases 32 s / 59;
+    /// <b>10 aliases x 2 codes 15 s / 30 requests</b>. Client concurrency 6 is right - 3 starves it (59 s),
+    /// 8 adds nothing. The gain is round trips, not server work: the server resolves aliases one after
+    /// another, so per-request time grows with the alias count (5 -> 1.3 s, 10 -> 2.3-3.7 s, 20 -> 5.7 s p50)
+    /// and 20 aliases put the slowest request at 13 s, uncomfortably near the 30 s HC0045 cutoff. That is why
+    /// the defaults are 10 aliases x 2 codes rather than 20 x 1.</para>
+    ///
+    /// <para><b>Failure handling keeps the one rule that protects accuracy:</b> a failed batch is retried once,
+    /// and if it still fails the WHOLE read fails with an empty value - never a shorter list that reads as
+    /// "these producers have no contracts". The retry deliberately switches to ONE code per alias: the
+    /// two-code <c>customerIds</c> list is the path the API owner has described as plan-unstable, while the
+    /// singular filter is indexed. So a regression in the list plan degrades this read to the slower singular
+    /// shape rather than to an outage. A partial GraphQL result (data plus errors) is a failure here for the
+    /// same reason - an alias that errored is a producer whose contracts we do not have.</para>
+    ///
+    /// <para>Each alias takes only the first page. A producer with more than <see cref="PageSize"/> contracts
+    /// (none in the measured unit; the largest had 78) reports <c>hasNextPage</c> and is topped up with the
+    /// paged <see cref="FetchProducerCoreAsync"/>, so correctness does not depend on the page size.</para>
+    /// </remarks>
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchAliasedAsync(List<string> codes)
+    {
+        var aliasCount = Math.Clamp(ReadInt("Ctrm:TradeUnitAliasCount", 10), 1, 25);
+        var codesPerAlias = Math.Clamp(ReadInt("Ctrm:TradeUnitAliasCodesPerAlias", 2), 1, 2);
+        var concurrency = Math.Clamp(ReadInt("Ctrm:TradeUnitPerProducerConcurrency", 8), 1, 16);
+        var batches = codes.Chunk(aliasCount * codesPerAlias).Select(b => b.ToList()).ToList();
+        using var slot = new SemaphoreSlim(concurrency, concurrency);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var topUps = new int[1];
+
+        async Task<CtrmReadResult<List<CtrmContractDto>>> One(List<string> batch)
+        {
+            await slot.WaitAsync(CancellationToken.None);
+            try
+            {
+                var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchAliasBatchAsync(batch, codesPerAlias, topUps));
+                if (!read.Ok)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+                    read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchAliasBatchAsync(batch, 1, topUps));
+                }
+                return read;
+            }
+            finally
+            {
+                slot.Release();
+            }
+        }
+
+        var results = await Task.WhenAll(batches.Select(One));
+
+        var failure = results.FirstOrDefault(r => !r.Ok);
+        if (failure is not null)
+            return new CtrmReadResult<List<CtrmContractDto>>
+            {
+                Status = failure.Status,
+                HttpStatus = failure.HttpStatus,
+                ErrorCode = failure.ErrorCode,
+                Detail = $"Trade-unit contract read failed on one of {batches.Count} batched request(s) covering {codes.Count} producer(s), after a retry on singular aliases: {failure.Detail}",
+                Value = []
+            };
+
+        var all = results.SelectMany(r => r.Value ?? []).ToList();
+
+        _logger.LogInformation(
+            "CTRM live contracts: {Count} purchase contracts (full history) across {Producers} producer(s) via {Calls} batched call(s) ({Aliases} alias(es) x {CodesPerAlias} code(s), {TopUps} paged top-up(s)) in {Seconds}s.",
+            all.Count, codes.Count, batches.Count, aliasCount, codesPerAlias, topUps[0], stopwatch.Elapsed.TotalSeconds.ToString("F0"));
+
+        return new CtrmReadResult<List<CtrmContractDto>> { Status = CtrmReadStatus.Ok, Value = all };
+    }
+
+    /// <summary>
+    /// One aliased request for one batch of producers. Returns a failure - never a partial list - if any
+    /// alias is missing or errored; tops up any alias that has a second page via the paged read.
+    /// </summary>
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchAliasBatchAsync(List<string> batch, int codesPerAlias, int[] topUps)
+    {
+        var groups = batch.Chunk(codesPerAlias).Select(g => (IReadOnlyList<string>)g.ToList()).ToList();
+        var document = CtrmQueries.ContractsByCustomersAliased(groups, PageSize, CtrmMappings.PurchasePrefix);
+
+        var result = await CtrmServerTimeoutRetry.RunAsync(
+            () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmContractDto>>>(document, null, CancellationToken.None),
+            _configuration, _logger, $"aliased contracts batch of {batch.Count} producer(s)",
+            interactive: false);
+
+        // Partial is not "mostly fine" here. The client reports data-plus-errors as PartialSuccess so a
+        // single-field query can still use what came back; for an aliased batch an errored alias is a
+        // producer with no contracts in hand, and passing that through would shorten the list silently.
+        if (result.Status == CtrmReadStatus.PartialSuccess)
+            return new CtrmReadResult<List<CtrmContractDto>>
+            {
+                Status = CtrmReadStatus.QueryError, HttpStatus = result.HttpStatus, ErrorCode = result.ErrorCode,
+                Detail = $"At least one alias in a batch of {batch.Count} producer(s) errored: {result.Detail}", Value = []
+            };
+        if (!result.Ok)
+            return new CtrmReadResult<List<CtrmContractDto>>
+            {
+                Status = result.Status, HttpStatus = result.HttpStatus, ErrorCode = result.ErrorCode,
+                Detail = result.Detail, Value = []
+            };
+        if (result.Value is not { } pages)
+            return new CtrmReadResult<List<CtrmContractDto>>
+            {
+                Status = CtrmReadStatus.Error, HttpStatus = result.HttpStatus,
+                Detail = "CTRM returned no data for an aliased contracts batch.", Value = []
+            };
+
+        var all = new List<CtrmContractDto>();
+        for (var i = 0; i < groups.Count; i++)
+        {
+            if (!pages.TryGetValue($"a{i}", out var page) || page is null)
+                return new CtrmReadResult<List<CtrmContractDto>>
+                {
+                    Status = CtrmReadStatus.Error, HttpStatus = result.HttpStatus,
+                    Detail = $"CTRM returned no contracts object for alias a{i} ({groups[i].Count} producer(s)).", Value = []
+                };
+
+            if (page.PageInfo?.HasNextPage == true)
+            {
+                // More than one page behind a single alias: read those producers the paged way instead of
+                // trusting a first page. Rare (the measured unit's largest producer had 78 contracts).
+                foreach (var code in groups[i])
+                {
+                    var full = await FetchProducerCoreAsync(code, interactive: false);
+                    if (!full.Ok)
+                        return new CtrmReadResult<List<CtrmContractDto>>
+                        {
+                            Status = full.Status, HttpStatus = full.HttpStatus, ErrorCode = full.ErrorCode,
+                            Detail = $"Paged top-up for producer {code} failed: {full.Detail}", Value = []
+                        };
+                    all.AddRange(full.Value ?? []);
+                }
+                Interlocked.Increment(ref topUps[0]);
+                continue;
+            }
+
+            all.AddRange(page.Items);
+        }
+
+        return new CtrmReadResult<List<CtrmContractDto>> { Status = CtrmReadStatus.Ok, Value = all };
     }
 
     /// <summary>
