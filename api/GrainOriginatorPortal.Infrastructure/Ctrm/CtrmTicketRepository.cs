@@ -282,10 +282,14 @@ public sealed class CtrmTicketRepository : ITicketRepository
         // this set as one the keep-warm service should maintain.
         _warmRegistry?.Touch(codes, DateTime.UtcNow);
 
-        // Contracts first, then tickets - not together. The contract pages are ~25s server-side scans and
-        // running the ticket walk alongside them starved the contract read past the client timeout (measured
-        // 2026-08-27). Contracts are normally already cached by the home-page load, so this costs nothing
-        // warm and keeps the server sane cold.
+        // Contracts first, then tickets - not together. The ticket FETCH does not need the contracts (it asks
+        // by producer code and date window); only the applied/unapplied SORT below does. The order is about
+        // the gateway, re-measured 2026-09-24 with the batched contract walk: run together, total time was no
+        // better (84 s vs 85 s; 78 s vs 104 s), the contract walk the Insights cards wait on slowed from
+        // ~40 s to 65-82 s, and 2 of its 59 batches failed each round (HC0045 server timeouts and dropped
+        // connections) - the gateway has a fixed throughput and both reads saturate it. The original 2026-08-27
+        // reason (contract pages were ~25 s list scans) no longer applies but the conclusion still holds.
+        // Contracts are normally already cached by the home-page load, so this costs nothing warm.
         var contracts = await _contractReader.GetForProducersAsync(codes, cancellationToken);
         var read = await _reader.GetForProducersHistoryAsync(codes, cancellationToken);
         if (!read.Ok)

@@ -217,10 +217,13 @@ public sealed class CtrmContractRepository : IContractRepository
 
         var read = await _reader.GetForProducersAsync(codes, cancellationToken);
 
-        // Tickets AFTER contracts, never alongside. The contract pages are ~25s server-side scans and the
-        // ticket walk is 100+ requests; run together they starved the contract read past the client timeout
-        // (measured 2026-08-27). The contract list is what the page is waiting on, so it goes first and the
-        // tickets warm behind it.
+        // Tickets AFTER contracts, never alongside. Re-measured 2026-09-24 with the batched contract walk:
+        // run together, the pair finished no sooner (84 s vs 85 s; 78 s vs 104 s), the contract walk slowed
+        // from ~40 s to 65-82 s, and 2 of its 59 batches failed each round (HC0045 timeouts, dropped
+        // connections) - the gateway's throughput is fixed and both reads saturate it. The contract list is
+        // what the page is waiting on (two Insights cards and every contract prompt), so it goes first and gets
+        // the gateway to itself; the tickets warm behind it. (The original 2026-08-27 reason - contract pages
+        // were ~25 s list scans - no longer applies; the conclusion does.)
         WarmTicketsInBackground(codes, tradeUnits);
 
         if (!read.Ok)
