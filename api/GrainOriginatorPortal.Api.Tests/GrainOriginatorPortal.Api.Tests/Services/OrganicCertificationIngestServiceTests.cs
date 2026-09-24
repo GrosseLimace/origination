@@ -194,6 +194,49 @@ public class OrganicCertificationIngestServiceTests
     }
 
     [Fact]
+    public async Task AnAbsentCollectionDoesNotDeleteWhatIsAlreadyStored()
+    {
+        // The real cost of unknown-member Skip, found in review: if the sender renames "items" to
+        // anything else, it binds as null — indistinguishable from a deliberate omission. Clearing
+        // on null would turn a typo on their side into silent deletion of every stored crop, and
+        // return "accepted": true while doing it. Under Disallow that typo would have been a 400.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(
+            scopes: [Scope("CROPS")], items: [Item("I1"), Item("I2")]));
+
+        // Same producer, but the sender's payload no longer carries either collection.
+        var result = await service.IngestAsync(Request(scopes: null, items: null));
+
+        Assert.True(result.Accepted);
+        Assert.Equal(1, await db.OrganicCertificationScopes.CountAsync());
+        Assert.Equal(2, await db.OrganicCertificationItems.CountAsync());
+
+        // And it is reported rather than passing unnoticed.
+        Assert.Contains(result.Rejections, r => r.Code == "SCOPES_ABSENT");
+        Assert.Contains(result.Rejections, r => r.Code == "ITEMS_ABSENT");
+    }
+
+    [Fact]
+    public async Task AnExplicitlyEmptyCollectionDoesClear()
+    {
+        // The counterpart, and the one that must keep working: an empty array is a real statement
+        // rather than a missing one, and it is the normal shape for a surrendered operation.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(scopes: [Scope("CROPS")], items: [Item("I1")]));
+        var result = await service.IngestAsync(Request(scopes: [], items: []));
+
+        Assert.Equal(0, result.ScopesStored);
+        Assert.Equal(0, result.ItemsStored);
+        Assert.Empty(await db.OrganicCertificationScopes.ToListAsync());
+        Assert.Empty(await db.OrganicCertificationItems.ToListAsync());
+        Assert.Empty(result.Rejections);
+    }
+
+    [Fact]
     public async Task AFirstSightingIsNotAStatusChange()
     {
         // A brand-new operation has nothing to have changed from. Getting this wrong would put a
@@ -351,14 +394,15 @@ public class OrganicCertificationIngestServiceTests
         // sender-side bug, which is why the duplicate is named rather than de-duplicated quietly.
         using var db = NewContext();
 
+        // Scopes sent as an explicit empty array, not omitted — this test is about duplicate
+        // handling and should not incidentally exercise the absent-collection path.
         var result = await Service(db).IngestAsync(Request(
-            items: [Item("I1"), Item("I1", "Duplicate"), Item("I2")]));
+            scopes: [], items: [Item("I1"), Item("I1", "Duplicate"), Item("I2")]));
 
         Assert.True(result.Accepted);
         Assert.Equal(2, result.ItemsStored);
 
-        var rejection = Assert.Single(result.Rejections);
-        Assert.Equal("DUPLICATE_ITEM_ID", rejection.Code);
+        var rejection = Assert.Single(result.Rejections, r => r.Code == "DUPLICATE_ITEM_ID");
         Assert.Equal("I1", rejection.Identifier);
     }
 
@@ -368,11 +412,11 @@ public class OrganicCertificationIngestServiceTests
         using var db = NewContext();
 
         var result = await Service(db).IngestAsync(Request(
-            scopes: [Scope("CROPS"), Scope("crops"), Scope("HANDLING")]));
+            scopes: [Scope("CROPS"), Scope("crops"), Scope("HANDLING")], items: []));
 
         Assert.True(result.Accepted);
         Assert.Equal(2, result.ScopesStored);
-        Assert.Equal("DUPLICATE_SCOPE", Assert.Single(result.Rejections).Code);
+        Assert.Single(result.Rejections, r => r.Code == "DUPLICATE_SCOPE");
     }
 
     [Fact]

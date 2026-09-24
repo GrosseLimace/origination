@@ -221,8 +221,29 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         DateTime now,
         List<OrganicCertificationRejection> rejections)
     {
+        // ABSENT is not the same as EMPTY, and the difference is the whole cost of the
+        // unknown-member Skip trade (Caden Egr, review 2026-09-24). Under Skip a property the
+        // sender renames binds as null, indistinguishable from one they deliberately omitted —
+        // so clearing here would turn a typo on their side into silent deletion of every stored
+        // scope. Under the API-wide Disallow that same typo would have been a loud 400.
+        //
+        // So: an explicit empty array is a real statement ("this operation has none") and clears.
+        // Absence is treated as no information, leaves the stored set alone, and is reported so
+        // it cannot pass unnoticed.
+        if (scopes is null)
+        {
+            rejections.Add(new OrganicCertificationRejection
+            {
+                Element = "scopes",
+                Code = "SCOPES_ABSENT",
+                Message = "No scopes property in the payload. Existing scopes were left unchanged; "
+                        + "send an empty array to clear them.",
+            });
+            return certification.Scopes.Count;
+        }
+
         certification.Scopes.Clear();
-        if (scopes is null || scopes.Count == 0) return 0;
+        if (scopes.Count == 0) return 0;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -274,8 +295,23 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         DateTime now,
         List<OrganicCertificationRejection> rejections)
     {
+        // Same absent-versus-empty rule as ApplyScopes — see the note there. It matters more here:
+        // an empty items array is the NORMAL shape for a surrendered operation, so this path runs
+        // legitimately and often, and must not be conflated with the sender renaming the property.
+        if (items is null)
+        {
+            rejections.Add(new OrganicCertificationRejection
+            {
+                Element = "items",
+                Code = "ITEMS_ABSENT",
+                Message = "No items property in the payload. Existing items were left unchanged; "
+                        + "send an empty array to clear them.",
+            });
+            return certification.Items.Count;
+        }
+
         certification.Items.Clear();
-        if (items is null || items.Count == 0) return 0;
+        if (items.Count == 0) return 0;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
