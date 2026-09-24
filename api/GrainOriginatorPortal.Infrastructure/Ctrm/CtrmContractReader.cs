@@ -663,13 +663,15 @@ public sealed class CtrmContractReader
     /// verified as the identical contract-id set - in a fraction of the requests.
     /// </summary>
     /// <remarks>
-    /// <para>Measured 2026-09-24 on the 587-producer unit, clean gateway, identical 2,705 contracts every
-    /// run: one producer per call 62 s / 587 requests; 5 aliases 25 s / 118; 10 aliases 32 s / 59;
-    /// <b>10 aliases x 2 codes 15 s / 30 requests</b>. Client concurrency 6 is right - 3 starves it (59 s),
-    /// 8 adds nothing. The gain is round trips, not server work: the server resolves aliases one after
-    /// another, so per-request time grows with the alias count (5 -> 1.3 s, 10 -> 2.3-3.7 s, 20 -> 5.7 s p50)
-    /// and 20 aliases put the slowest request at 13 s, uncomfortably near the 30 s HC0045 cutoff. That is why
-    /// the defaults are 10 aliases x 2 codes rather than 20 x 1.</para>
+    /// <para>Measured 2026-09-24 on the 587-producer unit, identical 2,705 contracts every run. Batching
+    /// alone: one producer per call 62 s / 587 requests; 20 producers per request at 6 in flight 15-44 s / 30
+    /// requests depending on the gateway's mood. Then the in-flight cap, which batching had freed up - the
+    /// walk is now ~59 requests, so the request-rate quota that capped one-per-call at ~6 in flight no longer
+    /// binds: <b>10 producers per request (5 aliases x 2 codes) at 16 in flight measured 4.7-8.3 s</b> across a
+    /// slow and a fast gateway, slowest request 7-9 s. Twenty per request at 16 in flight was as fast (5.3 s)
+    /// but put the slowest request at 13-23 s live, uncomfortably near the 30 s HC0045 cutoff; so the defaults
+    /// are 5 aliases x 2 codes and a batch cap of 16. The server resolves aliases one after another, so
+    /// per-request time grows with the alias count - the gain is round trips and concurrency, not server work.</para>
     ///
     /// <para><b>Failure handling keeps the one rule that protects accuracy:</b> a failed batch is retried once,
     /// and if it still fails the WHOLE read fails with an empty value - never a shorter list that reads as
@@ -685,9 +687,11 @@ public sealed class CtrmContractReader
     /// </remarks>
     private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchAliasedAsync(List<string> codes)
     {
-        var aliasCount = Math.Clamp(ReadInt("Ctrm:TradeUnitAliasCount", 10), 1, 25);
+        var aliasCount = Math.Clamp(ReadInt("Ctrm:TradeUnitAliasCount", 5), 1, 25);
         var codesPerAlias = Math.Clamp(ReadInt("Ctrm:TradeUnitAliasCodesPerAlias", 2), 1, 2);
-        var concurrency = Math.Clamp(ReadInt("Ctrm:TradeUnitPerProducerConcurrency", 8), 1, 16);
+        // Batches have their OWN in-flight cap, not the per-producer one and not the shared background pool -
+        // see CtrmTradeUnitThrottle.RunContractBatchAsync for the measurements behind that.
+        var concurrency = Math.Clamp(ReadInt("Ctrm:TradeUnitContractBatchConcurrency", 16), 1, 32);
         var batches = codes.Chunk(aliasCount * codesPerAlias).Select(b => b.ToList()).ToList();
         using var slot = new SemaphoreSlim(concurrency, concurrency);
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -698,11 +702,11 @@ public sealed class CtrmContractReader
             await slot.WaitAsync(CancellationToken.None);
             try
             {
-                var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchAliasBatchAsync(batch, codesPerAlias, topUps));
+                var read = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => FetchAliasBatchAsync(batch, codesPerAlias, topUps));
                 if (!read.Ok)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(2));
-                    read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => FetchAliasBatchAsync(batch, 1, topUps));
+                    read = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => FetchAliasBatchAsync(batch, 1, topUps));
                 }
                 return read;
             }

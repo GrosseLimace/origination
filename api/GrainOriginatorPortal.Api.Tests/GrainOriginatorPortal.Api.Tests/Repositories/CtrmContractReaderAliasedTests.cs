@@ -120,6 +120,7 @@ public class CtrmContractReaderAliasedTests
             ["Ctrm:TradeUnitContractStrategy"] = strategy,
             ["Ctrm:TradeUnitAliasCount"] = aliasCount.ToString(),
             ["Ctrm:TradeUnitAliasCodesPerAlias"] = codesPerAlias.ToString(),
+            ["Ctrm:TradeUnitContractBatchConcurrency"] = "16",
             ["Ctrm:TradeUnitPerProducerConcurrency"] = "6",
             ["Ctrm:LiveCacheSeconds"] = "60",
             ["Ctrm:ServerTimeoutRetries"] = "0",

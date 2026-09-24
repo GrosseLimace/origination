@@ -16,14 +16,86 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 [Collection("CtrmThrottle")]
 public class CtrmTradeUnitThrottleTests
 {
-    private static IConfiguration Config(int cap = 2, int deferSeconds = 20) =>
+    private static IConfiguration Config(int cap = 2, int deferSeconds = 20, int batchCap = 16) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Ctrm:TradeUnitMaxConcurrentRequests"] = cap.ToString(),
+            ["Ctrm:TradeUnitContractBatchConcurrency"] = batchCap.ToString(),
             ["Ctrm:BackgroundMaxDeferSeconds"] = deferSeconds.ToString()
         }).Build();
 
     public CtrmTradeUnitThrottleTests() => CtrmTradeUnitThrottle.ResetForTests();
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ContractBatchesHaveTheirOwnCap_AndDoNotQueueBehindTheSharedPool()
+    {
+        // Why this matters: live on 2026-09-24 a contract walk took 150 s instead of ~48 s because it shared
+        // six slots with another trade unit's ~160 ticket pages. Batches must not wait on that pool, and the
+        // shared cap must not widen just because batches want more in flight (8 ticket pages in flight
+        // produced server timeouts the same day).
+        var config = Config(cap: 2, batchCap: 4);
+        var sharedRelease = new TaskCompletionSource();
+        var sharedRunning = 0;
+
+        // Saturate the SHARED pool and hold it.
+        var shared = Enumerable.Range(0, 2).Select(_ => CtrmTradeUnitThrottle.RunAsync(config, async () =>
+        {
+            Interlocked.Increment(ref sharedRunning);
+            await sharedRelease.Task;
+            return 0;
+        })).ToList();
+        while (Volatile.Read(ref sharedRunning) < 2) await Task.Delay(10);
+
+        // Batches still run - four of them at once, their own cap - while the shared pool is full.
+        var batchRunning = 0;
+        var batchPeak = 0;
+        var batchRelease = new TaskCompletionSource();
+        var batches = Enumerable.Range(0, 6).Select(_ => CtrmTradeUnitThrottle.RunContractBatchAsync(config, async () =>
+        {
+            var now = Interlocked.Increment(ref batchRunning);
+            lock (config) { if (now > batchPeak) batchPeak = now; }
+            await batchRelease.Task;
+            Interlocked.Decrement(ref batchRunning);
+            return 0;
+        })).ToList();
+
+        while (Volatile.Read(ref batchRunning) < 4) await Task.Delay(10);
+        await Task.Delay(100);
+        Assert.Equal(4, batchPeak);                                  // capped by ITS cap, not the shared 2
+        Assert.Equal(2, Volatile.Read(ref sharedRunning));           // and the shared pool was untouched
+
+        batchRelease.SetResult();
+        sharedRelease.SetResult();
+        await Task.WhenAll(batches.Concat(shared));
+        Assert.Equal(4, batchPeak);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ContractBatchesStillYieldToAnInteractiveRead()
+    {
+        // The separate pool must not lose the priority rule: a click still comes first.
+        var config = Config(batchCap: 8);
+        var started = false;
+
+        using (CtrmTradeUnitThrottle.Interactive())
+        {
+            var batch = CtrmTradeUnitThrottle.RunContractBatchAsync(config, () =>
+            {
+                started = true;
+                return Task.FromResult(0);
+            });
+
+            await Task.Delay(500);
+            Assert.False(started, "a contract batch ran while an interactive read was in flight");
+
+            CtrmTradeUnitThrottle.ResetForTests();
+            await batch;
+        }
+
+        Assert.True(started);
+    }
 
     // -------------------------------------------------------------------------
     [Fact]
