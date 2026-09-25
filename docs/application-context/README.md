@@ -56,3 +56,4 @@ These files originally lived under `developer-docs/Application Context/`, but `d
 - [`developer-docs/GITHUB-ACTIONS-CICD.md`](../../developer-docs/GITHUB-ACTIONS-CICD.md) — deployment pipeline.
 - [`developer-docs/NETWORK-DIAGRAM.md`](../../developer-docs/NETWORK-DIAGRAM.md) — Azure infrastructure layout.
 - Root [`README.md`](../../README.md) — app architecture, full API endpoint list, SBOM.
+- [`docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md`](../operations/OUTAGE-RECOVERY-PLAYBOOK.md) — what to check before handing the app back to users after a network/Azure outage.
