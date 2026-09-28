@@ -361,26 +361,24 @@
                     }
                   </div>
                   @if (showGrainOnFarm() && grainOnFarmRows().length > 0) {
-                    <!-- Invisible 3-column grid: chip | on-hand (bu) | target ($). No box/headers; columns
-                         line up across rows, w-fit keeps it tight under the line. -->
-                    <!-- Per-row flex (not a shared grid): absent grade/target take no space, so the
-                         target sits right after the bushels when there's no grade.
-                         Every cell is whitespace-nowrap: this column is a third of the card, and
-                         without it flex shrinks each cell to min-content and breaks "25,000 bu"
-                         into "25,000" over "bu". flex-wrap is the pressure valve instead — a whole
-                         cell moves to the next line rather than a number splitting from its unit. -->
-                    <div class="mt-1 ml-[21px] flex flex-col gap-y-1 w-fit text-xs">
+                    <!-- Invisible 4-column grid: chip | on-hand (bu) | grade | target ($). No box/headers;
+                         one line per commodity, numbers right-aligned so they line up across rows.
+                         Everything is 13px (chip included) and whitespace-nowrap so "25,000 bu"
+                         never splits from its unit. This column is a third of the card, so the grade
+                         column is the pressure valve: minmax(0,auto) lets it shrink and ellipsize
+                         (full text on hover) instead of the row wrapping. pl + max-w-full (border-box)
+                         keeps the indented grid inside the column so that shrink can kick in.
+                         Absent grade/target render an empty cell to hold the column positions. -->
+                    <div class="mt-1 pl-[21px] grid grid-cols-[auto_auto_minmax(0,auto)_auto] items-center gap-x-1.5 gap-y-1 w-fit max-w-full text-[13px]">
                       @for (g of grainOnFarmRows(); track g.commodityCode) {
-                        <div class="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-                          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap" [ngClass]="grainChipClass(g.commodityCode)" [title]="grainChipTitle(g.commodityCode)">{{ g.commodityCode }}</span>
-                          <span class="text-sm tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-400 cursor-help" title="On hand">{{ (g.bushelsOnHand || 0) | number }} bu</span>
-                          @if (g.grade?.trim()) {
-                            <span class="text-sm whitespace-nowrap text-gray-600 dark:text-gray-400 cursor-help" title="Grade">{{ g.grade }}</span>
-                          }
-                          @if ((g.targetBushels || 0) > 0) {
-                            <span class="text-sm tabular-nums whitespace-nowrap font-medium text-scoular-green-accessible dark:text-scoular-green cursor-help" title="Target">{{ g.targetBushels | currency:'USD':'symbol':'1.2-2' }}</span>
-                          }
-                        </div>
+                        <span class="justify-self-start inline-flex items-center px-1.5 py-0.5 rounded font-medium whitespace-nowrap" [ngClass]="grainChipClass(g.commodityCode)" [title]="grainChipTitle(g.commodityCode)">{{ g.commodityCode }}</span>
+                        <span class="text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-400 cursor-help" title="On hand">{{ (g.bushelsOnHand || 0) | number }} bu</span>
+                        <span class="truncate text-gray-500 dark:text-gray-400 cursor-help" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() }}</span>
+                        @if ((g.targetBushels || 0) > 0) {
+                          <span class="text-right tabular-nums whitespace-nowrap font-medium text-scoular-green-accessible dark:text-scoular-green cursor-help" title="Target">{{ g.targetBushels | currency:'USD':'symbol':'1.2-2' }}</span>
+                        } @else {
+                          <span></span>
+                        }
                       }
                     </div>
                   }
