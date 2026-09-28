@@ -126,9 +126,12 @@ public class CustomersController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Gets a producer's active trade-unit memberships (code + IsManual flag) so the
     /// edit dialog can show which trade units they're on and which are editable vs locked.</summary>
+    /// <param name="includeActivity">False skips the open-activity check - a full contract and
+    /// unapplied-ticket read for the producer - and leaves every HasOpenActivity at true. For callers
+    /// that only need the codes, such as the planting-intention trade-unit picker.</param>
     [HttpGet("{id:long}/trade-units")]
     [ProducesResponseType(typeof(List<CustomerTradeUnitInfo>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<CustomerTradeUnitInfo>>> GetTradeUnits(long id, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<CustomerTradeUnitInfo>>> GetTradeUnits(long id, [FromQuery] bool includeActivity = true, CancellationToken cancellationToken = default)
     {
         // No per-producer object-level authz is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         //
@@ -138,7 +141,9 @@ public class CustomersController : ControllerBase
         // unit codes to aim at AssignTradeUnits (AR-03); that chaining is real but adds nothing,
         // since AR-03 already accepts that any rep may assign trade units and every rep can read
         // the codes from their own picker.
-        return Ok(await _service.GetTradeUnitsAsync(id, cancellationToken));
+        return Ok(includeActivity
+            ? await _service.GetTradeUnitsAsync(id, cancellationToken)
+            : await _service.GetTradeUnitMembershipsAsync(id, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
