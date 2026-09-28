@@ -180,8 +180,9 @@ public sealed class CtrmTicketRepository : ITicketRepository
             tickets.Count);
 
         // DurationMs appended, prefix unchanged — see the note on the equivalent line in
-        // CtrmContractRepository. This is the only queryable record of how long a successful CTRM
-        // ticket read took; Server-Timing carries it outside Production only.
+        // CtrmContractRepository, including why this is time-to-answer rather than the CTRM call in
+        // isolation. This is the only queryable record of how long a successful CTRM ticket read took;
+        // Server-Timing carries it outside Production only.
         _logger.LogInformation(
             "CTRM tickets: {Count} rows for producer {ScoularId} (live; {Open} open contract(s)) in {DurationMs}ms.",
             tickets.Count, code, openPurchaseContractIds.Count, _provenance.TicketsMs);

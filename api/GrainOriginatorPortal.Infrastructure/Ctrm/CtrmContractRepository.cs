@@ -91,6 +91,13 @@ public sealed class CtrmContractRepository : IContractRepository
         // App Service log stream both look for the "CTRM contracts: N for producer X" prefix, so it stays
         // intact. It is the only place a slow-but-successful CTRM read becomes queryable — the
         // Server-Timing header carrying the same number is emitted outside Production only.
+        //
+        // Read it as time-to-answer, not as the CTRM call alone. The provenance stopwatch starts when the
+        // request's provenance is created, so this also covers resolving the producer code, which is one
+        // indexed lookup against our own database. That is a millisecond or two against a CTRM read
+        // measured in seconds, and the same basis the Server-Timing header already reports, so the two
+        // agree. If the CTRM segment ever needs isolating, time the reader call itself rather than
+        // changing this number's meaning underneath anyone reading it.
         _logger.LogInformation("CTRM contracts: {Count} for producer {ScoularId} ({Source}, all dates) in {DurationMs}ms.",
             contracts.Count, code, fromSet ? "trade-unit cache, live refresh behind it" : "live", _provenance.ContractsMs);
 
