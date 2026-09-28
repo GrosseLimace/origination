@@ -53,6 +53,20 @@ describe('ApiService', () => {
     req.flush({});
   });
 
+  it('getCustomerTradeUnits() asks for the activity check by default', () => {
+    service.getCustomerTradeUnits(42).subscribe();
+    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/42/trade-units`);
+    expect(req.request.params.has('includeActivity')).toBe(false);
+    req.flush([]);
+  });
+
+  it('getCustomerTradeUnits() can skip the activity check', () => {
+    service.getCustomerTradeUnits(42, { includeActivity: false }).subscribe();
+    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/42/trade-units`);
+    expect(req.request.params.get('includeActivity')).toBe('false');
+    req.flush([]);
+  });
+
   // ── DP Contracts ───────────────────────────────────────────────────────────
 
   it('getDpContracts() calls GET /dpcontracts', () => {

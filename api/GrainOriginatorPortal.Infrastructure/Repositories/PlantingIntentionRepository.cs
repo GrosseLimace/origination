@@ -174,9 +174,11 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
         }
         await _appContext.SaveChangesAsync(cancellationToken);
 
+        // The ids make the move reversible: afterwards the moved rows are indistinguishable from any
+        // already on the target trade unit, and ModifiedBy only says who touched them last.
         _logger.LogInformation(
-            "Retagged {Count} planting intention(s) for customer {CustomerId} from {FromTradeUnit} to {ToTradeUnit}",
-            rows.Count, customerId, fromTradeUnit, toTradeUnit);
+            "Retagged {Count} planting intention(s) for customer {CustomerId} from {FromTradeUnit} to {ToTradeUnit} by {User}: IntentionIds={IntentionIds}",
+            rows.Count, customerId, fromTradeUnit, toTradeUnit, currentUser, string.Join(",", rows.Select(r => r.Id)));
         return rows.Count;
     }
 
