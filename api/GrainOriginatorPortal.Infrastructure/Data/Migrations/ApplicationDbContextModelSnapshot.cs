@@ -413,6 +413,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("IndustryCode1");
 
+                    b.Property<string>("IndustryCode2")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("IndustryCode2");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -435,6 +440,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("CustomerName");
+
+                    b.Property<string>("NopIdNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("NopIdNumber");
 
                     b.Property<string>("Phone")
                         .HasMaxLength(100)
@@ -1525,11 +1535,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("BushelsOnHand");
 
-                    b.Property<string>("CommodityGroup")
+                    b.Property<string>("CommodityCode")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
-                        .HasColumnName("CommodityGroup");
+                        .HasColumnName("CommodityCode");
 
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
@@ -1546,9 +1556,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CustomerId", "CommodityGroup")
+                    b.HasIndex("CustomerId", "CommodityCode")
                         .IsUnique()
-                        .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Group");
+                        .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Commodity");
 
                     b.ToTable("ProducerGrainOnFarm", "dbo");
                 });

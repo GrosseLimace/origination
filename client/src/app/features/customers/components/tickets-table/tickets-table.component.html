@@ -5,6 +5,19 @@
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
           <p class="mt-3 text-sm">Loading tickets...</p>
         </div>
+      } @else if (loadError()) {
+        <!-- A failed read must never look like a producer with no deliveries. -->
+        <div class="text-center py-8">
+          <svg class="mx-auto h-12 w-12 text-amber-500 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+          </svg>
+          <p class="mt-2 text-gray-700 dark:text-gray-300 font-medium">Tickets could not be loaded</p>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ loadError() }}</p>
+          <button type="button" (click)="retryLoad.emit()"
+                  class="mt-4 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
+            Retry
+          </button>
+        </div>
       } @else if (unappliedTickets.length === 0) {
         <div class="text-center py-8 text-gray-500 dark:text-gray-400">
           <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

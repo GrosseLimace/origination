@@ -43,12 +43,12 @@ public class PlantingIntentionSoftDeleteTests
         return db;
     }
 
-    // The repository also takes the read-only ODS context; none of the paths under test touch
-    // it, so an empty in-memory one is enough.
+    // No ODS context: this branch removed it from the repository entirely when the last runtime
+    // ODS contract read was dropped, so producer scoping now comes from the app's own Customer /
+    // CustomerTradeUnit tables. main's version of this helper passed an empty in-memory ODS context
+    // because none of the paths under test touched it - here there is nothing to pass.
     private static PlantingIntentionRepository Repo(ApplicationDbContext db) =>
-        new(new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
-                .UseInMemoryDatabase($"planting-softdelete-ods-{Guid.NewGuid()}").Options),
-            db, NullLogger<PlantingIntentionRepository>.Instance);
+        new(db, NullLogger<PlantingIntentionRepository>.Instance);
 
     // -------------------------------------------------------------------------
     // The point of the change: the plan is recoverable afterwards.

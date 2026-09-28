@@ -14,6 +14,7 @@
       [producerDetailsMap]="producerDetailsMap()"
       [linkedProducerCustomers]="crossTradeUnitCustomers()"
       (selectCustomer)="handleSelectCustomer($event)"
+      (prefetchCustomer)="handlePrefetchCustomer($event)"
       (clearSelection)="handleClearSelection()"
     />
   </div>
@@ -55,6 +56,11 @@
             [isLoadingEstimates]="isLoadingYieldData()"
             [isLoadingContracts]="isLoadingContracts()"
             [isLoadingUnappliedTickets]="isLoadingUnappliedTickets()"
+            [contractsLoadError]="contractsLoadError()"
+            [ticketsLoadError]="ticketsLoadError()"
+            [pricingLinesLoadError]="pricingLinesLoadError()"
+            (retryContracts)="retryCustomerContracts()"
+            (retryTickets)="retryCustomerTickets()"
             [isLoadingPricingLines]="isLoadingPricingLines()"
             [isLoadingPlanting]="isLoadingPlanting()"
             [isLoadingStoredGrain]="isLoadingStoredGrain()"
