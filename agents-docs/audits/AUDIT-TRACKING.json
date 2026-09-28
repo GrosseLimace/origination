@@ -2800,7 +2800,7 @@
       "id": "logging.ctrm-dependency-latency-never-logged",
       "audit": "logging",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "CTRM dependency-call duration is computed but never reaches structured logs, only a non-prod response header",
       "description": "CtrmProvenance.RecordContracts/RecordTickets stamp ContractsMs/TicketsMs (elapsed time for each CTRM contracts/tickets read) via a Stopwatch, but the only consumers are CtrmProvenanceMiddleware (which emits them as a Server-Timing header, and only when !environment.IsProduction, so this never reaches prod) and DiagnosticsController (an on-demand manual endpoint). No repository or client code passes these values to ILogger, so durationMs never appears on the many LogInformation/LogWarning/LogError lines already emitted for CTRM reads in CtrmContractRepository.cs, CtrmTicketRepository.cs, and CtrmGraphQlClient.cs. The style guide lists durationMs as a required-when-applicable field for dependency calls (4.1) and calls out dependency calls that materially degrade latency as a required log point (7.2). This integration has known, explicitly-documented severe latency (a cold contracts(customerIds:) page for 500 producers is 22-25s per CtrmServerTimeoutRetry.cs comments, right at the 30s HC0045 timeout), so a call that is slow-but-succeeds today is invisible in Log Analytics/App Insights in production; only an outright failure is diagnosable from logs, and a support engineer investigating a slow-but-successful CTRM page load in prod has to reproduce the issue rather than query for it.",
       "files": [
@@ -2817,7 +2817,12 @@
         "date": "2026-09-28"
       },
       "last_verified": "2026-09-28",
-      "notes": "[2026-09-28] Found during logging reconciliation while reviewing the CTRM GraphQL integration merged since the 2026-09-21 pass (feature_CtrmGraphQlSpike). Confirmed via grep: ContractsMs/TicketsMs are set in CtrmProvenance.cs and read only in CtrmProvenanceMiddleware.cs (header, non-prod) and DiagnosticsController.cs (manual endpoint) — no _logger call in the Ctrm/ directory references either property."
+      "notes": "[2026-09-28] Found during logging reconciliation while reviewing the CTRM GraphQL integration merged since the 2026-09-21 pass (feature_CtrmGraphQlSpike). Confirmed via grep: ContractsMs/TicketsMs are set in CtrmProvenance.cs and read only in CtrmProvenanceMiddleware.cs (header, non-prod) and DiagnosticsController.cs (manual endpoint) — no _logger call in the Ctrm/ directory references either property.",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "The per-producer contract and ticket reads now carry {DurationMs} on both their success and their failure log line, taken from the ContractsMs/TicketsMs the provenance object already measured. On the failure paths the provenance Record call was moved above the log so the number is populated: how long CTRM took to FAIL is the more useful of the two, since it separates a fast rejection from a gateway timeout. DurationMs is appended rather than woven into the message text on purpose, so the CTRM contracts: N for producer X prefix the turn-on runbook and the App Service log stream look for stays intact. This matters more than its medium severity suggests once PROD flips to CTRM: the API carries no Application Insights SDK, the diagnostics endpoints are blocked in Production, and the Server-Timing header carrying the same numbers is emitted outside Production only, so these log lines are the only queryable record of CTRM latency in PROD."
     },
     {
       "id": "logging.ctrm-keepwarm-cycles-lack-run-id",
@@ -2999,6 +3004,28 @@
         "test-gaps.contract-status-pacing-logic-untested"
       ],
       "notes": "[2026-09-28] Found while writing contract-status.spec.ts for test-gaps.contract-status-pacing-logic-untested. NOT fixed: unlike a plain defect this changes a number users read, so it needs an owner decision first. Current behaviour is documented by a passing test rather than left implicit."
+    },
+    {
+      "id": "performance.ctrm-read-ahead-ungated-on-data-source",
+      "audit": "performance",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "Hover prefetch and the post-click convergence re-read ran regardless of whether the backend was reading CTRM or ODS",
+      "description": "Two client behaviours exist to hide CTRM GraphQL latency: a 350ms hover prefetch on the producer list, and a 4s post-click convergence re-read that swaps in anything the live read changed behind a warm trade-unit cache. Neither was gated on the data source. PROD runs Ctrm:Source=ods and does exactly one read per producer click today; with these ungated it would instead do up to two per click plus one per hovered row, against ODS, which answers fast and has no server-side trade-unit cache to converge on. Data is unaffected; the cost is unmeasured extra ODS read load on the busiest page, and it would have landed at the deploy rather than at the CTRM flip.",
+      "files": [
+        "client/src/app/features/customers/pages/home/home.component.ts",
+        "client/src/environments/environment.prod.ts"
+      ],
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Both now gate on a new environment.ctrmReadAheadEnabled flag: true in local, Dev and QA, which run Ctrm:Source=ctrm, and false in Production, which runs ods. Verified in the built production bundle, where it compiles to false. Follows the existing flag convention rather than plumbing a runtime data-source signal to the client. The tradeoff is recorded in the flag comment: it is compiled in at build time, so unlike Ctrm__Source it needs a client redeploy rather than a restart. Flip CTRM on first, verify, then redeploy with it true; the read-ahead is an optimisation and never a correctness requirement, so separating the two steps is safe.",
+      "notes": "[2026-09-28] Raised in the CTRM PROD readiness pass on 2026-09-24 as an open decision and settled here ahead of the 2026-09-29 deploy."
     }
   ]
 }
