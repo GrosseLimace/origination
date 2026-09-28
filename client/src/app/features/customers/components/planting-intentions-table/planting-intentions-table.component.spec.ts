@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { ComponentRef, signal } from '@angular/core';
-import { of } from 'rxjs';
+import { NEVER, of } from 'rxjs';
 import { PlantingIntentionsTableComponent } from './planting-intentions-table.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
@@ -34,11 +34,14 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   let ref: ComponentRef<PlantingIntentionsTableComponent>;
   let memberships: Membership[];
   let tradeUnitCalls: unknown[][];
+  // When set, the trade-units request never answers, as when it is queued behind slow CTRM reads.
+  let tradeUnitsNeverAnswer: boolean;
   const inScopeTradeUnitCodes = signal<readonly string[]>(['2190']);
 
   beforeEach(() => {
     memberships = [];
     tradeUnitCalls = [];
+    tradeUnitsNeverAnswer = false;
     TestBed.configureTestingModule({
       providers: [
         {
@@ -46,7 +49,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
           useValue: {
             getCommodities: () => of([]),
             getPlantingCommodities: () => of([]),
-            getCustomerTradeUnits: (...args: unknown[]) => { tradeUnitCalls.push(args); return of(memberships); },
+            getCustomerTradeUnits: (...args: unknown[]) => { tradeUnitCalls.push(args); return tradeUnitsNeverAnswer ? NEVER : of(memberships); },
           },
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
@@ -147,6 +150,40 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
       [42, { includeActivity: false }],
       [42, { includeActivity: false }],
     ]);
+  });
+
+  it('offers the trade units the customer list carries at once, without waiting on the request', () => {
+    // The 30s-plus wait in QA: the request queued behind slow CTRM reads. With the codes already on
+    // the customer, the picker must be usable even if that request never comes back.
+    tradeUnitsNeverAnswer = true;
+    ref.setInput('customer', makeCustomer({ activeTradeUnits: ['2210', '2190'] }));
+    ref.setInput('tradeUnits', ['2210']);
+
+    component.openAddDialog();
+
+    expect(component.isLoadingProducerTradeUnits).toBe(false);
+    expect(component.tradeUnitOptions).toEqual(['2190', '2210']);
+    expect(component.addForm.tradeUnit).toBe('2210');
+  });
+
+  it('still refreshes from the server behind the list it already showed', () => {
+    // A membership can change after the customer list loaded; the answer, when it lands, wins.
+    memberships = [member('2190')];
+    ref.setInput('customer', makeCustomer({ activeTradeUnits: ['2190', '2210'] }));
+
+    component.openAddDialog();
+
+    expect(tradeUnitCalls.length).toBe(1);
+    expect(component.tradeUnitOptions).toEqual(['2190']);
+  });
+
+  it('falls back to the loading state when the customer carries no trade units', () => {
+    // A customer fetched on its own (not from the list) has no activeTradeUnits: behave as before.
+    tradeUnitsNeverAnswer = true;
+
+    component.openAddDialog();
+
+    expect(component.isLoadingProducerTradeUnits).toBe(true);
   });
 
   it('labels a code with its description', () => {

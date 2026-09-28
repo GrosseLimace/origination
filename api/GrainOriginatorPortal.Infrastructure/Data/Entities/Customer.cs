@@ -49,6 +49,9 @@ public class Customer
     // ACH-enabled = base.Customer.PaymentMethod == 'H'. Transient (not a dbo.Customer column);
     // enriched at read time from ODS, like ESignEnabled.
     public bool AchEnabled { get; set; }
+    // The producer's active trade-unit codes, from dbo.CustomerTradeUnit. Transient; enriched on the
+    // list reads so the planting dialog can offer them without a request of its own.
+    public List<string> ActiveTradeUnits { get; set; } = new();
     public Coordinates? Coordinates { get; set; }
 
     // ODS metadata fields

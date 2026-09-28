@@ -113,7 +113,18 @@ export class PlantingIntentionsTableComponent {
       this.producerTradeUnits = [];
       this._producerTradeUnitsForCustomerId = customerId;
     }
-    this.isLoadingProducerTradeUnits = true;
+    // Show the codes the customer list already carries straight away. Waiting on the request below
+    // is what made this dialog slow: when CTRM is slow, the browser's few connections to the API are
+    // all held by contract and ticket reads, and this small call queued behind them for 30s or more.
+    // The request still runs, quietly, to pick up a membership changed since the list loaded.
+    const known = (this.customer().activeTradeUnits ?? []).map(t => t.trim()).filter(Boolean);
+    if (this.producerTradeUnits.length === 0 && known.length > 0) {
+      this.producerTradeUnits = [...known].sort();
+      if (this.showAddDialog && this.addForm.tradeUnit === '') {
+        this.addForm.tradeUnit = this.defaultTradeUnit(this.tradeUnitOptions);
+      }
+    }
+    this.isLoadingProducerTradeUnits = this.producerTradeUnits.length === 0;
     // Codes only: the open-activity check the edit-customer dialog needs is a contract and ticket read
     // for the producer, which kept this picker waiting seconds for a flag it never uses.
     this.apiService.getCustomerTradeUnits(customerId, { includeActivity: false }).subscribe({

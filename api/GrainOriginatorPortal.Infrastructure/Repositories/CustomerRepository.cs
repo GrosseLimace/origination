@@ -73,6 +73,7 @@ public class CustomerRepository : ICustomerRepository
 
         await EnrichCustomersWithESignAsync(customers, cancellationToken);
         await EnrichCustomersWithAchAsync(customers, cancellationToken);
+        await EnrichCustomersWithTradeUnitsAsync(customers, cancellationToken);
         _logger.LogInformation("Returning {Count} customers from Customer{Filter}", customers.Count, filterMsg);
         return customers;
     }
@@ -169,6 +170,7 @@ public class CustomerRepository : ICustomerRepository
 
         await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
         await EnrichCustomersWithAchAsync(scoredCustomers, cancellationToken);
+        await EnrichCustomersWithTradeUnitsAsync(scoredCustomers, cancellationToken);
         // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
         _logger.LogInformation("Customer search returned {Count} customers from Customer", scoredCustomers.Count);
         return scoredCustomers;
@@ -396,6 +398,40 @@ public class CustomerRepository : ICustomerRepository
     }
 
     /// <summary>
+    /// Attaches each customer's active trade-unit codes: one Origination query for the whole list.
+    /// </summary>
+    /// <remarks>
+    /// The planting-intention dialog needs exactly this, and used to fetch it on open. When CTRM is slow
+    /// the browser's handful of connections to the API are all held by slow contract and ticket reads,
+    /// so that small request queued behind them for 30 seconds or more. Carried on the list the page has
+    /// already loaded, the dialog opens with no request at all.
+    /// </remarks>
+    private async Task EnrichCustomersWithTradeUnitsAsync(List<Customer> customers, CancellationToken cancellationToken = default)
+    {
+        if (customers.Count == 0) return;
+
+        var ids = customers.Select(c => c.Id).Distinct().ToList();
+
+        var rows = await _appContext.CustomerTradeUnits
+            .AsNoTracking()
+            .Where(t => t.IsActive && ids.Contains(t.CustomerId))
+            .Select(t => new { t.CustomerId, t.TradeUnit })
+            .ToListAsync(cancellationToken);
+
+        var byCustomer = rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.TradeUnit))
+            .GroupBy(r => r.CustomerId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => r.TradeUnit.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(c => c, StringComparer.Ordinal).ToList());
+
+        foreach (var customer in customers)
+        {
+            if (byCustomer.TryGetValue(customer.Id, out var codes)) customer.ActiveTradeUnits = codes;
+        }
+    }
+
+    /// <summary>
     /// Calculates a relevance score for a customer name based on how well it matches the search terms.
     /// Higher scores indicate better matches.
     /// </summary>
@@ -546,6 +582,7 @@ public class CustomerRepository : ICustomerRepository
 
         await EnrichCustomersWithESignAsync(customers, cancellationToken);
         await EnrichCustomersWithAchAsync(customers, cancellationToken);
+        await EnrichCustomersWithTradeUnitsAsync(customers, cancellationToken);
         return customers;
     }
 

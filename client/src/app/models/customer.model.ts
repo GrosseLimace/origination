@@ -28,6 +28,9 @@ export interface Customer {
   linkedProducerIds: string[];
   eSignEnabled: boolean;
   achEnabled: boolean;             // base.Customer.PaymentMethod == 'H'
+  /** The producer's active trade-unit codes. Carried on list and search results; absent on a
+   *  single-customer fetch, where callers use getCustomerTradeUnits instead. */
+  activeTradeUnits?: string[];
 
   /** CTRM industry code slot 2. 'OR' marks an organic producer — see @shared/utils/organic-visibility.
    *  Slot 1 is deliberately absent: originations.vw_CustomerTradeUnits filters on IndustryCode1 = 'PR',
