@@ -397,25 +397,12 @@ public sealed class CtrmContractRepository : IContractRepository
     private static bool Matches(string? value, string code) =>
         string.Equals(value?.Trim(), code, StringComparison.OrdinalIgnoreCase);
 
-    private async Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(scoularId)) return scoularId.Trim();
-
-        // The customer-to-code mapping is ours, not CTRM's. Resolving it is how we know which producer was
-        // asked for — it is not an ODS source for contract content.
-        var resolved = await _appContext.Customers.AsNoTracking()
-            .Where(c => c.Id == customerId)
-            .Select(c => c.ScoularId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            _logger.LogWarning("CTRM contracts: customer {CustomerId} not found or has no ScoularId.", customerId);
-            return null;
-        }
-
-        return resolved.Trim();
-    }
+    /// <summary>
+    /// The producer code this read was asked for. See <see cref="CtrmProducerCode"/>; the mapping is ours,
+    /// not CTRM's, and is not an ODS source for contract content.
+    /// </summary>
+    private Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken) =>
+        CtrmProducerCode.ResolveAsync(_appContext, _logger, "CTRM contracts", customerId, scoularId, cancellationToken);
 
     /// <summary>
     /// Producer codes in scope: all active producers when no trade unit is selected, otherwise those in

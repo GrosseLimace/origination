@@ -1,4 +1,3 @@
-using System.Globalization;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
@@ -130,7 +129,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         // Opt-in supplement: a second, contract-scoped read that can see a ticket booked entirely under
         // another customer code. Off by default on measured evidence (see the remarks) because it doubles
         // the date scans, which are the whole cost of this read.
-        if (ReadBool("Ctrm:CrossBookedAppliedTickets"))
+        if (ReadBool("Ctrm:CrossBookedAppliedTickets", fallback: false))
         {
             var crossBooked = await _reader.GetForContractsAsync([.. openPurchaseContractIds], cancellationToken);
             if (!crossBooked.Ok)
@@ -635,13 +634,11 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
     /// <summary>The configured Spot Loads lookback, for callers outside this class.</summary>
     public static int RecentTicketDaysFrom(IConfiguration configuration) =>
-        Math.Max(1, int.TryParse(configuration["Ctrm:RecentTicketDays"]?.Trim(),
-            NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 30);
+        Math.Max(1, CtrmConfig.ReadInt(configuration, "Ctrm:RecentTicketDays", 30));
 
-    private int ReadInt(string key, int fallback) =>
-        int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : fallback;
+    /// <summary>Reads an int setting, falling back when absent or unparseable. See <see cref="CtrmConfig"/>.</summary>
+    private int ReadInt(string key, int fallback) => CtrmConfig.ReadInt(_configuration, key, fallback);
+
     /// <summary>
     /// Attaches a logging continuation to a task this method is abandoning, so a fault on it is reported
     /// here instead of arriving later as an unobserved task exception.
@@ -653,25 +650,13 @@ public sealed class CtrmTicketRepository : ITicketRepository
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
 
-    /// <summary>Reads a boolean setting; absent or unparseable means false.</summary>
-    private bool ReadBool(string key) =>
-        bool.TryParse(_configuration[key]?.Trim(), out var parsed) && parsed;
+    /// <summary>Reads a boolean setting, falling back when absent or unparseable. See <see cref="CtrmConfig"/>.</summary>
+    private bool ReadBool(string key, bool fallback) => CtrmConfig.ReadBool(_configuration, key, fallback);
 
-    private async Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(scoularId)) return scoularId.Trim();
-
-        var resolved = await _appContext.Customers.AsNoTracking()
-            .Where(c => c.Id == customerId)
-            .Select(c => c.ScoularId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            _logger.LogWarning("CTRM tickets: customer {CustomerId} not found or has no ScoularId.", customerId);
-            return null;
-        }
-
-        return resolved.Trim();
-    }
+    /// <summary>
+    /// The producer code this read was asked for. See <see cref="CtrmProducerCode"/>; the mapping is ours,
+    /// not CTRM's, and is not an ODS source for ticket content.
+    /// </summary>
+    private Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken) =>
+        CtrmProducerCode.ResolveAsync(_appContext, _logger, "CTRM tickets", customerId, scoularId, cancellationToken);
 }
