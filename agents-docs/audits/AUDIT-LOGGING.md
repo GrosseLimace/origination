@@ -1,10 +1,19 @@
 # Audit: Logging & Observability (`logging`)
 
 Style guide: `style-guides/logging.md`
-Scope: structured logging/correlation across `api/GrainOriginatorPortal.Api`, App Insights/Log Analytics posture, and `client/` error/telemetry handling
+Scope: structured logging/correlation across `api/GrainOriginatorPortal.Api`, App Insights/Log Analytics posture, and `client/` error/telemetry handling. This pass also reviewed the new CTRM GraphQL integration (`Services/Ctrm`, `Infrastructure/Ctrm`) merged since the last pass.
 
-**Findings:** 8 total — 3 resolved, 2 accepted, 3 open (1 critical, 1 high, 1 medium; the low background-job finding was reopened, see below)
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-21 (reconciliation pass)
+**Findings:** 10 total — 2 resolved, 3 accepted, 5 open (1 critical, 1 high, 2 medium, 1 low)
+**Opened:** 2026-09-19 | **Last verified:** 2026-09-28 (reconciliation pass)
+
+## Reconciliation notes (2026-09-28)
+
+Re-verified all 8 prior findings against current repo state; every one is unchanged since the 2026-09-21 pass (grep/read confirmed each file is in the same state described previously — see `last_verified` bumps in `AUDIT-TRACKING.json`). No status changes this pass.
+
+New this pass: the branch history since 2026-09-21 (`650fae20` and earlier merges) added a substantial new CTRM GraphQL dependency integration — `CtrmGraphQlClient`, `CtrmContractReader`/`Repository`, `CtrmTicketReader`/`Repository`, `CtrmServerTimeoutRetry`, `CtrmKeepWarmService`, `CtrmProvenanceMiddleware`, `SurfaceCtrmFailuresAttribute`. Reviewed it against the guide's dependency-call logging rules (7.2, 7.4) and correlation rules (§6). Overall it is unusually well-instrumented for a first pass — structured `{ErrorCode}`/`{ErrorCategory}` fields, CTRM's own correlation id captured and threaded through failure details, careful distinction between retryable server-side timeouts (`HC0045`) and real failures, and deliberate warnings (not silent empty results) on every read that doesn't complete. Two gaps found:
+
+- CTRM dependency-call duration is captured (`CtrmProvenance.ContractsMs`/`TicketsMs`) but only ever reaches a dev-only response header and a manual diagnostics endpoint — never a structured log field (medium, new).
+- The new `CtrmKeepWarmService` background loop does substantive multi-step I/O per cycle but, unlike the two background services fixed in PR #615, has no per-cycle `BeginScope` (low, new).
 
 ## Reconciliation notes (2026-09-21)
 
@@ -39,6 +48,12 @@ Re-verified all 8 prior findings against current repo state rather than re-audit
 - Re-verified: `developer-docs/START-HERE.md` still only references generic platform-level Smart Detection; no file under `developer-docs/` documents an app-specific sampling percentage, saved KQL queries, an operational dashboard/workbook, or alert-to-on-call mapping.
 - **Suggested fix:** Add an Observability section to `developer-docs/CLAUDE.md` recording the sampling setting, a few saved KQL queries, and per-environment alert/action-group mapping.
 
+### CTRM dependency-call duration is computed but never reaches structured logs, only a non-prod response header (`logging.ctrm-dependency-latency-never-logged`) — new
+- **Files:** `Infrastructure/Ctrm/CtrmProvenance.cs`, `Middleware/CtrmProvenanceMiddleware.cs`, `Infrastructure/Ctrm/CtrmContractRepository.cs`, `Infrastructure/Ctrm/CtrmTicketRepository.cs`
+- `CtrmProvenance.RecordContracts`/`RecordTickets` stamp `ContractsMs`/`TicketsMs` via a `Stopwatch`, but the only consumers are `CtrmProvenanceMiddleware` (a `Server-Timing` header, gated to non-production) and `DiagnosticsController` (a manual, on-demand endpoint). No repository or client code passes these values into any `ILogger` call, so `durationMs` never appears on the many structured log lines already emitted for CTRM reads. The guide lists `durationMs` as required-when-applicable for dependency calls (§4.1) and calls out latency-degrading dependency calls as a required log point (§7.2). This integration has explicitly documented severe latency (a cold `contracts(customerIds:)` page for 500 producers runs 22-25s, per `CtrmServerTimeoutRetry.cs`'s own comments — right at the 30s server timeout), so a call that is slow-but-succeeds in production is invisible to Log Analytics/App Insights; only an outright failure is diagnosable from logs today.
+- **Related findings:** `logging.api-insights-instrumentation-unverified`
+- **Suggested fix:** Thread `provenance.ContractsMs`/`TicketsMs` (or a locally-scoped `Stopwatch`) into the existing success/failure log lines in `CtrmContractRepository`/`CtrmTicketRepository` as a structured `{DurationMs}` property.
+
 ## Medium — accepted
 
 ### API has no Application Insights/OpenTelemetry SDK reference; telemetry flow relies entirely on unverified platform auto-instrumentation (`logging.api-insights-instrumentation-unverified`)
@@ -50,14 +65,19 @@ Re-verified all 8 prior findings against current repo state rather than re-audit
 - **Files:** `client/src/app/core/services/api.service.ts`, `Middleware/GlobalExceptionHandler.cs`
 - Fixed via PR #615: `ApiService.handleError` (`api.service.ts:117-118`) now reads `errObj.traceId` and attaches it to the thrown `Error`. Verified directly in the current file.
 
-## Low — open (status changed: reopened from resolved)
+## Low — open
+
+### CtrmKeepWarmService warm cycles do not scope their logs with a per-cycle correlation id (`logging.ctrm-keepwarm-cycles-lack-run-id`) — new
+- **Files:** `Services/CtrmKeepWarmService.cs`
+- `WarmActiveSetsAsync` runs every `Ctrm:KeepWarmMinutes` (default 5) and, per active producer set, issues a contracts read, a ticket-history read, and a Spot Loads read, logging a warning per read that doesn't complete plus a final summary line — none of it scoped with a per-cycle or per-set id the way HTTP requests get `TraceId` via `RequestContextMiddleware`, or the way `CustomerSyncBackgroundService`/`UsageAggregationBackgroundService` already got a `RunId` scope via PR #615. If two producer sets are warmed in the same cycle and one logs failures, there's no field to filter Log Analytics down to just that set/cycle's lines.
+- **Related findings:** `logging.background-job-runs-lack-correlation-id`
+- **Suggested fix:** Wrap each cycle or per-set iteration in `_logger.BeginScope(new { CycleId = Guid.NewGuid(), Producers = codes.Count })`, matching the pattern already used in the two fixed background services.
+
+## Low — accepted
 
 ### Scheduled background services don't mint a per-run correlation id (`logging.background-job-runs-lack-correlation-id`)
 - **Files:** `Services/CustomerSyncBackgroundService.cs`, `Services/UsageAggregationBackgroundService.cs`, `Services/UsageTrackingBackgroundService.cs`
-- The bulk status-reconciliation pass on 2026-09-21 marked this `resolved`, but re-verification here found the fix only 2/3 applied: `CustomerSyncBackgroundService` and `UsageAggregationBackgroundService` now wrap each run in `_logger.BeginScope(...RunId...)`, but `UsageTrackingBackgroundService` has no such scope — its start/stop/batch-error logs still carry no per-run identifier.
-- **Suggested fix:** Apply the same `ILogger.BeginScope(new { RunId = Guid.NewGuid() })` wrap to `UsageTrackingBackgroundService.ExecuteAsync`.
-
-## Low — accepted
+- `CustomerSyncBackgroundService` and `UsageAggregationBackgroundService` wrap each run in `_logger.BeginScope(...RunId...)` (PR #615); `UsageTrackingBackgroundService` is deliberately excluded — a comment at the top of its `ExecuteAsync` explains it's a continuous 5-second flush loop (~17k iterations/day) that logs nothing but errors, so a per-flush id would add Log Analytics cardinality without answering a question anyone asks. Recorded as accepted rather than open.
 
 ### User's UPN (email-shaped identifier) is written into every structured log line app-wide (`logging.user-upn-logged-on-every-request`)
 - **Files:** `Middleware/RequestContextMiddleware.cs`
@@ -65,4 +85,4 @@ Re-verified all 8 prior findings against current repo state rather than re-audit
 
 ## Overall health
 
-Structured logging discipline within the .NET API itself remains genuinely good: consistent `ILogger<T>` usage, message templates with named placeholders, sensible level selection, a real `TraceId`/`ServiceName`/`Operation`/`UserId` scope threaded through every request (now with input validation on the inbound correlation id), and dedicated security-audit logging for 401/403. The weak point is still the front half of the stack: the Angular SPA has no error/exception telemetry client at all despite the team's own documentation mandating one for any MSAL app, a prod bootstrap failure is still invisible, and nothing in the repo can confirm whether the backend's structured fields actually reach Log Analytics without direct Azure verification. Dashboards, alerts, and sampling remain undocumented for this specific app. One low-severity background-job fix was found to be incomplete during reconciliation.
+Structured logging discipline within the .NET API itself remains genuinely good: consistent `ILogger<T>` usage, message templates with named placeholders, sensible level selection, a real `TraceId`/`ServiceName`/`Operation`/`UserId` scope threaded through every request (now with input validation on the inbound correlation id), and dedicated security-audit logging for 401/403. The new CTRM GraphQL integration continues that discipline — structured error codes/categories, CTRM's own correlation id captured and surfaced in failure details, careful separation of retryable server-side timeouts from real failures, and warnings (never silent empty results) on every read that doesn't complete — with two gaps: dependency-call latency is captured but never logged, and one new background loop lacks a per-cycle scope. The weak point is still the front half of the stack: the Angular SPA has no error/exception telemetry client at all despite the team's own documentation mandating one for any MSAL app, a prod bootstrap failure is still invisible, and nothing in the repo can confirm whether the backend's structured fields actually reach Log Analytics without direct Azure verification. Dashboards, alerts, and sampling remain undocumented for this specific app.

@@ -1,5 +1,10 @@
 # Angular Audit — 2026-09-21
 
+**Findings:** 14 open — 1 critical, 4 high, 6 medium, 3 low (5 resolved, 1 accepted)
+**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
+
+> **Note (2026-09-28):** Reconciliation pass. `AUDIT-TRACKING.json` remains the source of truth for status; this file's original finding text below is unchanged except where noted. Re-checked all 8 still-open findings that name a concrete count (any-usage, OnPush adoption, test-coverage gap, app-state raw signals, silent-error-swallowing, dialog escape key, icon-button aria-labels) — all still reproduce, though test coverage (28/49 vs 18/49 components) and OnPush adoption (23/49 vs 20/49) have both improved since the last pass. One new medium finding: `angular.dialog-and-table-subscribe-without-cleanup` — `EditCustomerDialogComponent` (7 subscribe() calls) and `PlantingIntentionsTableComponent` (3 subscribe() calls, DestroyRef injected but unused) have no `takeUntilDestroyed()`/`ngOnDestroy` cleanup, contradicting this file's original note below that no unmanaged-subscription leaks were found — the original sample evidently missed these two. See the JSON entry for detail.
+
 ## Scope
 
 Audited `client/` (Angular 21, standalone components, zoneless change detection, Tailwind v4 + `@it/design-system`) against `style-guides/angular.md` from the `audit-angular` skill. This is a single-domain pass per the Code Quality Dashboard calibration run; only `angular` was in scope.
@@ -33,6 +38,7 @@ Given the "sample, don't exhaust" mandate for this run, the following were not i
 | `angular.god-components-need-decomposition` | Medium | Those same four components mix data-fetching, view-state, and business logic in one class each, contrary to the guide's single-responsibility and service-delegation guidance — and are very likely *why* they're untested. |
 | `angular.home-component-silent-error-swallowing` | Medium | `home.component.ts` has 17 `error: () => {}` no-op handlers on API subscriptions — failures are invisible to users and unlogged. The same shape recurs 34 times across 9 files app-wide; home.component.ts is the worst concentration. |
 | `angular.bid-sheet-any-cast-hides-payload-mismatch` | Low | Two `as any` casts in `bid-sheet.component.ts` exist specifically to smuggle a `bids: []` field that isn't part of `BidSheetLocation` past the compiler's excess-property check. |
+| `angular.dialog-and-table-subscribe-without-cleanup` | Medium | *(2026-09-28)* `EditCustomerDialogComponent` and `PlantingIntentionsTableComponent` — both non-singleton, repeatedly mounted/destroyed — call `.subscribe()` with no `takeUntilDestroyed()`/`ngOnDestroy` cleanup. |
 
 Full detail, file lists, and suggested fixes are in `agents-docs/audits/AUDIT-TRACKING.json` under `audit: "angular"`.
 

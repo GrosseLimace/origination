@@ -4,7 +4,11 @@ Style guide: `style-guides/error-handling.md`
 Scope: exception flow and API error contracts across `api/GrainOriginatorPortal.Api`, and `client/` error handling
 
 **Findings:** 2 open (1 high, 1 medium) — 6 resolved, 1 accepted
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-21
+**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
+
+## Reconciliation note (2026-09-28)
+
+Calibration re-run, scoped to `error-handling` only. Re-read both remaining open findings against current `HEAD`: `api.service.ts`'s `handleError()` (lines 88-124) is unchanged — still wraps every `HttpErrorResponse` into a bare `Error` with `.status`/`.traceId` bolted on, no `ApiError` type exists, `error.code` is still never read. `EntitlementsController.GetCatalog` (`EntitlementsController.cs:155-159`) still catches `Exception`, logs at Warning, and returns `Ok(new EntitlementsCatalogResponse())` unconditionally. Neither finding has regressed or been fixed since the 2026-09-21 pass. A targeted grep for new empty catch blocks (`api/` and `client/src/`) turned up nothing on the .NET side; the one Angular hit (`activity-summary.component.ts`) is presentational `localStorage`/date-parsing defensiveness with explanatory comments, not a contract-swallowing gap, so it was not logged as a new finding. No new findings this pass.
 
 ## Reconciliation note (2026-09-21)
 
