@@ -682,18 +682,25 @@ public class CustomerRepository : ICustomerRepository
         return AssignTradeUnitsResult.Ok;
     }
 
-    public async Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken)
+    public Task<List<CustomerTradeUnitMembership>> GetTradeUnitMembershipsAsync(long customerId, CancellationToken cancellationToken)
     {
         // All memberships for this producer — active AND previously-removed (soft-deactivated). The
         // dialog shows active ones as chips; inactive ones are offered as re-addable suggestions so a
         // user can undo a removal even for a TU that isn't in the entitlements catalog. (There's at
         // most one row per (CustomerId, TradeUnit), so a code is either active or inactive, not both.)
-        var memberships = await _appContext.CustomerTradeUnits
+        // HasOpenActivity is left at its fail-safe default (true = locked): working it out costs a
+        // contract and a ticket read, which only the edit-customer dialog needs - see GetTradeUnitsAsync.
+        return _appContext.CustomerTradeUnits
             .AsNoTracking()
             .Where(t => t.CustomerId == customerId)
             .OrderBy(t => t.TradeUnit)
             .Select(t => new CustomerTradeUnitMembership { TradeUnit = t.TradeUnit, IsManual = t.IsManual, IsActive = t.IsActive })
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var memberships = await GetTradeUnitMembershipsAsync(customerId, cancellationToken);
 
         if (memberships.Count == 0) return memberships;
 

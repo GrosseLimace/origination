@@ -127,6 +127,23 @@ public class CustomersControllerTests
         var returned = Assert.IsAssignableFrom<List<CustomerTradeUnitInfo>>(ok.Value);
         Assert.Equal(2, returned.Count);
         Assert.Contains(returned, t => t.TradeUnit == "2190" && !t.HasOpenActivity);
+        _serviceMock.Verify(s => s.GetTradeUnitMembershipsAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task GetTradeUnits_WithoutActivity_SkipsTheActivityCheck()
+    {
+        // The planting-intention picker only needs the codes. The activity check behind the default read
+        // is a contract and ticket read for the producer - the seconds the picker used to wait.
+        var tus = new List<CustomerTradeUnitInfo> { new() { TradeUnit = "2057", IsManual = false, IsActive = true } };
+        _serviceMock.Setup(s => s.GetTradeUnitMembershipsAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync(tus);
+
+        var result = await _sut.GetTradeUnits(7, includeActivity: false);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Same(tus, ok.Value);
+        _serviceMock.Verify(s => s.GetTradeUnitsAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // -------------------------------------------------------------------------

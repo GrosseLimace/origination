@@ -1,10 +1,26 @@
 # Audit: Test Gap Analysis (`test-gaps`)
 
 Scope: coverage breadth across `api/GrainOriginatorPortal.Api.Tests` (xUnit) and `client/` (Vitest)
-Baseline: dotnet test 535/535 passing; Angular vitest 601/601 passing across 51 spec files — the gap is coverage breadth, not currently-failing tests.
+Baseline (unverified this run per the audit's hard limits — no test suite executed): dotnet 535/535 and vitest 601/601 as of the last reconciliation; the gap is coverage breadth, not currently-failing tests.
 
-**Findings:** 6 total, 3 open (2 critical, 1 high), 3 resolved
-**Opened:** 2026-09-19 | **Last reconciled:** 2026-09-21
+**Findings:** 10 total, 6 open (2 critical, 4 high/medium split below), 3 resolved, plus this run's 4 new opens
+**Opened:** 2026-09-19 | **Last reconciled:** 2026-09-28
+
+## Reconciliation (2026-09-28)
+
+Main has moved substantially since the last reconciliation (2026-09-22): the organic-producer, grain-on-farm, and CTRM GraphQL batching work merged 2026-09-23 through 2026-09-28 (448 files, ~79k insertions across the feature branches). Re-verified the 2 still-open findings directly against current source, and sampled the new surface area for the same risk pattern (pure/orchestration logic with no direct assertions) rather than re-reading the full diff.
+
+- `test-gaps.angular-god-components` — **still open, confirmed.** Still zero `.spec.ts` for all 5 named components. New corroborating evidence: `bid-sheet.component.ts`'s inline basis-sign display logic took 4 separate fix/feat commits (2026-09-19 to 2026-09-24) to get right across three different surfaces (published-bids popup, Edit Bids cells, catalog pins) — a live illustration of the risk this finding describes, in a component with no spec to have caught it.
+- `test-gaps.repository-layer-gap` — **still open, confirmed**, with one nuance: `CtrmOutageEndToEndTests.cs` (new, part of the CTRM work) now constructs a real `TicketRepository` as a fallback collaborator, but only exercises it through that wiring — no assertion touches `TicketRepository`'s own filtering/status logic. `UsageRepository` still has no test construction of any kind.
+
+New findings from sampling the new CTRM and shared-utils surface (both merged since the last reconciliation):
+
+- `test-gaps.contract-status-pacing-logic-untested` (high) — `contract-status.ts`'s `computeHarvestPacePct` exists specifically because two call sites (free-text pacing query, refine-panel checkbox) previously computed the same pacing number differently; zero test now covers any of its year-boundary rules. Same file's `isContractUnconfirmed`/`isContractCustomerConfirmed` are deliberately non-inverse — an easy accidental revert with no CI signal.
+- `test-gaps.ctrm-customer-codes-untested` (high) — `CtrmCustomerCodes.Normalize` exists to guard a measured CTRM API failure mode (an 8+ char code fails the *entire* filtered chunk, not just itself); zero test on a pure, cheap-to-test static function shared by both CTRM readers.
+- `test-gaps.accounting-money-formatter-untested` (medium) — `formatAccountingMoney` was extracted after two byte-for-byte copies (a pipe and a report builder) already drifted once; now the single source of truth for signed-dollar display app-wide, with no test.
+- `test-gaps.ctrm-keep-warm-service-untested` (medium) — `CtrmKeepWarmService`'s cadence/source/keep-for gating and per-producer-set failure isolation is the CTRM-surface sibling of the now-resolved `usage-aggregation-background-service-untested` finding, added after that one was fixed, with the same shape of untested branching.
+
+None of the sampled organic-producer or grain-on-farm pure-logic utils (`grain-on-farm.ts`, `crop-group-match.ts`, `reminder-due.ts`, `commodity-scope.ts`, `saved-list-trade-units.ts`, `planting-category.ts`, `planting-trade-unit-filter.ts`, `address.ts`, `organic-visibility.ts`, `ticket-display.ts`, `ticket-sort.ts`) turned up a gap — each already has a matching `.spec.ts`. The CTRM GraphQL integration itself is unusually well covered (14 dedicated xUnit test files under `Repositories/Ctrm*Tests.cs`), so this reconciliation's new findings concentrate in the two spots that pattern didn't reach: a shared formatting/pacing util and a background service.
 
 ## Reconciliation (2026-09-21)
 
@@ -64,4 +80,4 @@ No widespread weak-test pattern found. Existing Angular specs use `@testing-libr
 
 ## Overall coverage health
 
-Both suites are green (535/535 dotnet, 601/601 vitest) but the number is a floor, not a ceiling: the gap concentrates in exactly the code with the most real-world blast radius — the five largest Angular feature components, the two largest .NET repositories, and the security-critical entitlement fail-open/fail-closed path — while trivial/presentational code and pure calculator logic are comparatively well covered. Where tests exist they are qualitatively solid, so the fix is breadth, not a rewrite. Highest-leverage next tests: (1) `UserEntitlementService`'s untested branches (security-critical, cheap — pure mocking, no DB), (2) the UTC/DateOnly converter round-trip tests (cheap, prevents a bug class that already happened once), (3) `TicketRepository`/`UsageRepository` baseline tests, (4) `linked-producers.ts` BFS edge cases, (5) god-component logic extraction + specs (highest effort, highest total risk reduction).
+The gap continues to concentrate in code with the most real-world blast radius rather than being spread evenly: the five largest Angular feature components and the two largest .NET repositories remain the biggest unmitigated pieces from the original pass, and this run's new findings show the same pattern repeating on the newest surface (CTRM/organic work) — the orchestration/background-service layer and one shared formatting/pacing util are the gaps, while the CTRM GraphQL integration itself and the new organic/grain-on-farm pure-utils are, like the pricing calculators before them, comparatively well covered. Where tests exist they are qualitatively solid, so the fix remains breadth, not a rewrite. Highest-leverage next tests, in priority order: (1) `contract-status.ts` pacing/confirmation rules (cheap, pure function, already documented one drift bug), (2) `CtrmCustomerCodes.Normalize` (cheap, pure function, guards a measured API failure mode), (3) `formatAccountingMoney` (cheap, pure function, already drifted once), (4) `TicketRepository`/`UsageRepository` baseline tests, (5) `CtrmKeepWarmService` cadence-gating tests, (6) god-component logic extraction + specs (highest effort, highest total risk reduction, now with 4 bug-fix commits as live evidence of the cost of deferring it).

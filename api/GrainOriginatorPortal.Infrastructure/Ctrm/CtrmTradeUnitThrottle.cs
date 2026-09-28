@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.Extensions.Configuration;
 
 namespace GrainOriginatorPortal.Infrastructure.Ctrm;
@@ -120,7 +119,7 @@ public static class CtrmTradeUnitThrottle
 
     private static async Task DeferToInteractiveAsync(IConfiguration configuration)
     {
-        var maxDefer = TimeSpan.FromSeconds(Math.Clamp(ReadInt(configuration, "Ctrm:BackgroundMaxDeferSeconds", 20), 0, 300));
+        var maxDefer = TimeSpan.FromSeconds(Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:BackgroundMaxDeferSeconds", 20), 0, 300));
         if (maxDefer <= TimeSpan.Zero) return;
 
         var waited = TimeSpan.Zero;
@@ -137,7 +136,7 @@ public static class CtrmTradeUnitThrottle
         lock (Init)
         {
             if (_slots is not null) return _slots;
-            var capacity = Math.Clamp(ReadInt(configuration, "Ctrm:TradeUnitMaxConcurrentRequests", 6), 1, 16);
+            var capacity = Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:TradeUnitMaxConcurrentRequests", 6), 1, 16);
             _slots = new SemaphoreSlim(capacity, capacity);
             return _slots;
         }
@@ -149,14 +148,11 @@ public static class CtrmTradeUnitThrottle
         lock (Init)
         {
             if (_batchSlots is not null) return _batchSlots;
-            var capacity = Math.Clamp(ReadInt(configuration, "Ctrm:TradeUnitContractBatchConcurrency", 16), 1, 32);
+            var capacity = Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:TradeUnitContractBatchConcurrency", 16), 1, 32);
             _batchSlots = new SemaphoreSlim(capacity, capacity);
             return _batchSlots;
         }
     }
-
-    private static int ReadInt(IConfiguration configuration, string key, int fallback) =>
-        int.TryParse(configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : fallback;
 
     private sealed class InteractiveScope : IDisposable
     {
