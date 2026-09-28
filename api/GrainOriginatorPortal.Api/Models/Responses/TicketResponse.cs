@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using GrainOriginatorPortal.Infrastructure.Json;
+
 namespace GrainOriginatorPortal.Api.Models.Responses;
 
 /// <summary>Wire shape for a delivery ticket. Entity-shaped (Decision 1), including the entity's
@@ -23,7 +26,10 @@ public record TicketResponse
     public string? ElevatorCity { get; init; }
     public string? ElevatorState { get; init; }
     public string? Date { get; init; }
+    // Calendar dates, not timestamps - same day-shift reasoning as ContractResponse.
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? FinalSettledDate { get; init; }
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? ParsedDate { get; init; }
     public decimal? UnloadQuantity { get; init; }
     public decimal? LoadoutQuantity { get; init; }

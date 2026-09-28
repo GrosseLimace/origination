@@ -1,4 +1,6 @@
 // Project namespaces
+using GrainOriginatorPortal.Infrastructure.Abstractions;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
@@ -74,5 +76,43 @@ public class CustomerTradeUnitViewContractTests
 
         Assert.DoesNotContain("IsActive", names);
         Assert.DoesNotContain("IsDeleted", names);
+    }
+    [Theory]
+    [InlineData("IndustryCode2")]
+    [InlineData("NopIdNumber")]
+    public void DeclaresTheOrganicColumnsOnBothSyncSources(string column)
+    {
+        // Added to originations.vw_CustomerTradeUnits on 2026-09-21 so the organic gate can read
+        // them from the main sync pass rather than only for manually onboarded producers. Both
+        // sources must carry them: ICustomerOdsAttributes is what ApplyAttributes copies from, so
+        // a property here that one source lacks is the "Invalid column name" failure again.
+        Assert.NotNull(typeof(CustomerTradeUnitView).GetProperty(column));
+        Assert.NotNull(typeof(CurrentCustomerRow).GetProperty(column));
+        Assert.NotNull(typeof(ICustomerOdsAttributes).GetProperty(column));
+    }
+
+    [Theory]
+    [InlineData(" 1234567890 ", "1234567890")]   // padded in the source; trimmed on the way in
+    [InlineData("9876543210", "9876543210")]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("0", null)]                      // the ~1,525-row placeholder
+    [InlineData("999999999", null)]              // a second sentinel, nine digits, found 2026-09-21
+    [InlineData("123456789", null)]              // nine digits
+    [InlineData("12345678905", null)]            // eleven digits
+    [InlineData("12345678AB", null)]             // right length, not numeric
+    [InlineData("9999999999", null)]            // ten 9s — right length, still a sentinel
+    [InlineData("0000000000", null)]            // the same shape at the other end of the range
+    [InlineData("1223334444", "1223334444")]    // repeated digits are fine; only ALL-same is rejected
+    public void NormalisesTheNopIdToTenDigitsOrNothing(string? raw, string? expected)
+    {
+        // The column cannot be tested for non-empty. ODS holds the literal "0" on ~1,525 rows —
+        // far more than hold a real id — plus one "999999999". The rule is positive rather than
+        // exclusionary: exactly ten digits and not all the same digit, or nothing. An exclusion list
+        // would have to grow every time a new sentinel appears, and would badge producers meanwhile.
+        // 9999999999 is why the all-same-digit guard exists: it cleared the length and digit
+        // checks and reached a live profile as a fabricated id.
+        Assert.Equal(expected, OdsValues.NormaliseNopId(raw));
     }
 }

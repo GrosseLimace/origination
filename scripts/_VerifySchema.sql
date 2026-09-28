@@ -45,6 +45,12 @@
 --   Updated 2026-09-22: appended the two flax migrations (20260921202246,
 --   20260921204500). Both are data-only raw SQL, so no table, column or index
 --   row changed; only @Migrations grew.
+--   Updated 2026-09-22 (organic badge): added migration 20260921193322_AddCustomer
+--   IndustryCode2AndNopId and the two dbo.Customer columns it creates
+--   (IndustryCode2, NopIdNumber), both nvarchar(100) NULL, so Columns grew to 371.
+--   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
+--   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
+--   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -142,7 +148,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (369)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (371)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -232,6 +238,8 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Customer', 'ExtendedPrimaryPhone',       'nvarchar(100)', 1),
 ('dbo', 'Customer', 'ExtendedStateProvince',      'nvarchar(50)',  1),
 ('dbo', 'Customer', 'IndustryCode1',              'nvarchar(50)',  1),
+('dbo', 'Customer', 'IndustryCode2',              'nvarchar(100)', 1),
+('dbo', 'Customer', 'NopIdNumber',                'nvarchar(100)', 1),
 ('dbo', 'Customer', 'IsActive',                   'bit',           0),
 ('dbo', 'Customer', 'IsManual',                   'bit',           0),
 ('dbo', 'Customer', 'MerchandisingCity',          'nvarchar(255)', 1),
@@ -429,7 +437,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- ProducerGrainOnFarm
 ('dbo', 'ProducerGrainOnFarm', 'Id',             'int',           0),
 ('dbo', 'ProducerGrainOnFarm', 'BushelsOnHand',  'decimal(18,2)', 1),
-('dbo', 'ProducerGrainOnFarm', 'CommodityGroup', 'nvarchar(100)', 0),
+('dbo', 'ProducerGrainOnFarm', 'CommodityCode',  'nvarchar(100)', 0),
 ('dbo', 'ProducerGrainOnFarm', 'CustomerId',     'bigint',        0),
 ('dbo', 'ProducerGrainOnFarm', 'Grade',          'nvarchar(100)', 1),
 ('dbo', 'ProducerGrainOnFarm', 'TargetBushels',  'decimal(18,2)', 1),
@@ -594,7 +602,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'FeatureUsageDaily',           'UQ_FeatureUsageDaily'),
 ('dbo', 'MbpLocationSynonym',          'IX_MbpLocationSynonym_LocationId'),
 ('dbo', 'ProducerDetails',             'IX_ProducerDetails_CustomerId'),
-('dbo', 'ProducerGrainOnFarm',         'UQ_ProducerGrainOnFarm_Customer_Group'),
+('dbo', 'ProducerGrainOnFarm',         'UQ_ProducerGrainOnFarm_Customer_Commodity'),
 ('dbo', 'TeamsChannels',               'UX_TeamsChannels_ChannelId'),
 ('dbo', 'UsageDashboardExcludedUsers', 'IX_UsageDashboardExcludedUsers_UserId'),
 ('dbo', 'UsageDashboardViewAllUsers',  'IX_UsageDashboardViewAllUsers_UserId'),
@@ -604,7 +612,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (51)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (52)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -658,8 +666,10 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260915153811_AddCommodityPlantingCategory'),
 ('20260921141144_AddPlantingIntentionSoftDelete'),
 ('20260921152258_AddUsageDashboardViewAllUsers'),
+('20260921193322_AddCustomerIndustryCode2AndNopId'),
 ('20260921202246_AddFlaxCommoditiesForTradeUnit3811'),
-('20260921204500_SplitFlaxPlantingCategoryByColour');
+('20260921204500_SplitFlaxPlantingCategoryByColour'),
+('20260923124207_RenameGrainOnFarmGroupToCommodityCode');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

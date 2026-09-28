@@ -122,7 +122,7 @@ public class ProducerDetailsService : IProducerDetailsService
         var grainEntries = (request.GrainOnFarm ?? [])
             .Select(g => new GrainOnFarmEntry
             {
-                CommodityGroup = g.CommodityGroup,
+                CommodityCode = g.EffectiveCommodityCode,
                 BushelsOnHand = g.BushelsOnHand,
                 TargetBushels = g.TargetBushels,
                 Grade = g.Grade

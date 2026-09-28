@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using GrainOriginatorPortal.Infrastructure.Json;
+
 namespace GrainOriginatorPortal.Api.Models.Responses;
 
 /// <summary>Wire shape for a contract pricing line. Entity-shaped (Decision 1), including the
@@ -14,6 +17,10 @@ public record ContractPricingLineResponse
     public decimal? BasisPrice { get; init; }
     public decimal? HedgePrice { get; init; }
     public decimal? FreightAdjustment { get; init; }
+    // Calendar date, not a timestamp. Without this the global UTC converter stamps midnight
+    // Unspecified with a 'Z' and a Central user sees the pricing line a day early - the same
+    // shift ContractResponse's dates already avoid.
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? PriceDate { get; init; }
     public string? PriceCurrency { get; init; }
     public string? TraderInitials { get; init; }

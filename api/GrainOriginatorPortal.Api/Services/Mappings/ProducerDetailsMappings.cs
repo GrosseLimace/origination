@@ -24,7 +24,7 @@ public static class ProducerDetailsMappings
         ModifiedAt = p.ModifiedAt,
         GrainOnFarm = p.GrainOnFarm.Select(g => new GrainOnFarmItemResponse
         {
-            CommodityGroup = g.CommodityGroup,
+            CommodityCode = g.CommodityCode,
             BushelsOnHand = g.BushelsOnHand,
             TargetBushels = g.TargetBushels,
             Grade = g.Grade,

@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { Customer } from '@models';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { AppStateService } from '@core/services/app-state.service';
+import { resolveCustomerAddress } from '@shared/utils/address';
 import { environment } from '@env/environment';
 import * as L from 'leaflet';
 
@@ -267,23 +268,6 @@ export class CustomerMapComponent {
   }
 
   /**
-   * Resolves the best address for a customer using Extended fields with Merchandising fallback.
-   */
-  private _resolveAddress(customer: Customer): { street: string; city: string; state: string; zip: string; county: string } {
-    const street = customer.extendedAddressLine1
-      || customer.extendedAddressLine2
-      || customer.extendedAddressLine3
-      || customer.extendedAddressLine4
-      || customer.addressLine1
-      || '';
-    const city = customer.extendedCity || customer.location || '';
-    const state = customer.extendedStateProvince || customer.stateProvince || '';
-    const zip = customer.extendedPostalCode || customer.postalCode || '';
-    const county = customer.extendedCountry || '';
-    return { street, city, state, zip, county };
-  }
-
-  /**
    * Builds a geocode cache key from resolved address parts.
    * Includes street when available for street-level precision; falls back to city+state+zip.
    */
@@ -301,7 +285,7 @@ export class CustomerMapComponent {
     // ── Phase 1: Collect initial coords (cached or state-based fallback) ──
     for (const customer of this.customers()) {
       if (!this._map) return;
-      const addr = this._resolveAddress(customer);
+      const addr = resolveCustomerAddress(customer);
       const cacheKey = this._geocodeCacheKey(addr);
       const coords = this._geocodeCache.has(cacheKey)
         ? this._geocodeCache.get(cacheKey)!
@@ -327,7 +311,7 @@ export class CustomerMapComponent {
     // ── Phase 2: Geocode unique addresses in the background, update markers ──
     const addressGroups = new Map<string, { addr: { street: string; city: string; state: string; zip: string }; customerIds: number[] }>();
     for (const customer of this.customers()) {
-      const addr = this._resolveAddress(customer);
+      const addr = resolveCustomerAddress(customer);
       if (!addr.city && !addr.state && !addr.zip) continue;
       const key = this._geocodeCacheKey(addr);
       if (!addressGroups.has(key)) addressGroups.set(key, { addr, customerIds: [] });
@@ -432,7 +416,7 @@ export class CustomerMapComponent {
   }
 
   private _buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
-    const addr = this._resolveAddress(customer);
+    const addr = resolveCustomerAddress(customer);
     const locationParts = this._escapeHtml([addr.city, addr.state].filter(Boolean).join(', '));
     const contactLine = this._escapeHtml(customer.phone
       ? customer.phone
@@ -515,7 +499,7 @@ export class CustomerMapComponent {
   }
 
   private _getCoordinatesForCustomer(customer: Customer): { lat: number; lng: number } {
-    const addr = this._resolveAddress(customer);
+    const addr = resolveCustomerAddress(customer);
     const stateStr = addr.state.toLowerCase().trim();
 
     // Try the state as-is first, then try the expanded full name (handles both "sc" and "south carolina")

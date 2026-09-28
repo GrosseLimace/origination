@@ -8,6 +8,8 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Route("api/[controller]")]
 [Authorize]
 [Produces("application/json")]
+// A failed CTRM read must not reach the browser as an empty list - see SurfaceCtrmFailuresAttribute.
+[SurfaceCtrmFailures]
 public class TicketsController : ControllerBase
 {
     private readonly ITicketService _service;
