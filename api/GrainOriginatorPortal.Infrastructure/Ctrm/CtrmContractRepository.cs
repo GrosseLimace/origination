@@ -74,10 +74,12 @@ public sealed class CtrmContractRepository : IContractRepository
         var read = await _reader.GetForProducerCoreAsync(code, cancellationToken);
         if (!read.Ok)
         {
-            _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
-                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            // Record before logging so DurationMs is populated: how long CTRM took to fail is the number
+            // that separates a fast rejection from a gateway timeout, and it is the more useful of the two.
             _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
             _provenance.RecordFailure("contracts", read.Status, read.Detail);
+            _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail} (after {DurationMs}ms)",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail, _provenance.ContractsMs);
             return [];
         }
 
@@ -85,8 +87,19 @@ public sealed class CtrmContractRepository : IContractRepository
         var fromSet = read.Origin == CtrmReadOrigin.TradeUnitCache;
         _provenance.RecordContracts("ctrm", fromSet ? "OkFromTradeUnitCache" : "Ok", contracts.Count);
 
-        _logger.LogInformation("CTRM contracts: {Count} for producer {ScoularId} ({Source}, all dates).",
-            contracts.Count, code, fromSet ? "trade-unit cache, live refresh behind it" : "live");
+        // DurationMs is appended rather than woven into the text on purpose: the turn-on runbook and the
+        // App Service log stream both look for the "CTRM contracts: N for producer X" prefix, so it stays
+        // intact. It is the only place a slow-but-successful CTRM read becomes queryable — the
+        // Server-Timing header carrying the same number is emitted outside Production only.
+        //
+        // Read it as time-to-answer, not as the CTRM call alone. The provenance stopwatch starts when the
+        // request's provenance is created, so this also covers resolving the producer code, which is one
+        // indexed lookup against our own database. That is a millisecond or two against a CTRM read
+        // measured in seconds, and the same basis the Server-Timing header already reports, so the two
+        // agree. If the CTRM segment ever needs isolating, time the reader call itself rather than
+        // changing this number's meaning underneath anyone reading it.
+        _logger.LogInformation("CTRM contracts: {Count} for producer {ScoularId} ({Source}, all dates) in {DurationMs}ms.",
+            contracts.Count, code, fromSet ? "trade-unit cache, live refresh behind it" : "live", _provenance.ContractsMs);
 
         return contracts;
     }
@@ -397,25 +410,12 @@ public sealed class CtrmContractRepository : IContractRepository
     private static bool Matches(string? value, string code) =>
         string.Equals(value?.Trim(), code, StringComparison.OrdinalIgnoreCase);
 
-    private async Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(scoularId)) return scoularId.Trim();
-
-        // The customer-to-code mapping is ours, not CTRM's. Resolving it is how we know which producer was
-        // asked for — it is not an ODS source for contract content.
-        var resolved = await _appContext.Customers.AsNoTracking()
-            .Where(c => c.Id == customerId)
-            .Select(c => c.ScoularId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            _logger.LogWarning("CTRM contracts: customer {CustomerId} not found or has no ScoularId.", customerId);
-            return null;
-        }
-
-        return resolved.Trim();
-    }
+    /// <summary>
+    /// The producer code this read was asked for. See <see cref="CtrmProducerCode"/>; the mapping is ours,
+    /// not CTRM's, and is not an ODS source for contract content.
+    /// </summary>
+    private Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken cancellationToken) =>
+        CtrmProducerCode.ResolveAsync(_appContext, _logger, "CTRM contracts", customerId, scoularId, cancellationToken);
 
     /// <summary>
     /// Producer codes in scope: all active producers when no trade unit is selected, otherwise those in

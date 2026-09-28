@@ -33,10 +33,12 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   let component: PlantingIntentionsTableComponent;
   let ref: ComponentRef<PlantingIntentionsTableComponent>;
   let memberships: Membership[];
+  let tradeUnitCalls: unknown[][];
   const inScopeTradeUnitCodes = signal<readonly string[]>(['2190']);
 
   beforeEach(() => {
     memberships = [];
+    tradeUnitCalls = [];
     TestBed.configureTestingModule({
       providers: [
         {
@@ -44,7 +46,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
           useValue: {
             getCommodities: () => of([]),
             getPlantingCommodities: () => of([]),
-            getCustomerTradeUnits: () => of(memberships),
+            getCustomerTradeUnits: (...args: unknown[]) => { tradeUnitCalls.push(args); return of(memberships); },
           },
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
@@ -131,6 +133,20 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     expect(component.usingFallbackTradeUnits).toBe(true);
     expect(component.tradeUnitOptions).toEqual(['2190']);
     expect(component.addForm.tradeUnit).toBe('2190');
+  });
+
+  it('asks for the codes only, skipping the server\'s slow open-activity check', () => {
+    // The activity check is a contract and ticket read for the producer. The picker never reads
+    // hasOpenActivity, so both dialogs must opt out of it.
+    memberships = [member('2190')];
+
+    component.openAddDialog();
+    component.openEditDialog(makeIntention({ id: 7 }));
+
+    expect(tradeUnitCalls).toEqual([
+      [42, { includeActivity: false }],
+      [42, { includeActivity: false }],
+    ]);
   });
 
   it('labels a code with its description', () => {

@@ -18,6 +18,7 @@ namespace GrainOriginatorPortal.Api.Tests.Controllers;
 public class PlantingIntentionsControllerTests
 {
     private readonly Mock<IPlantingIntentionService> _serviceMock;
+    private readonly CapturingLogger<PlantingIntentionsController> _logger = new();
     private readonly PlantingIntentionsController _sut;
 
     public PlantingIntentionsControllerTests()
@@ -26,8 +27,7 @@ public class PlantingIntentionsControllerTests
         // The request context names the actor in the AUDIT_ log lines (M-043); a stub suffices here.
         var requestContext = new Mock<IRequestContextService>();
         requestContext.Setup(r => r.GetCurrentUser()).Returns("tester");
-        _sut = new PlantingIntentionsController(_serviceMock.Object, requestContext.Object,
-            new Mock<ILogger<PlantingIntentionsController>>().Object);
+        _sut = new PlantingIntentionsController(_serviceMock.Object, requestContext.Object, _logger);
     }
 
     // -------------------------------------------------------------------------
@@ -92,6 +92,27 @@ public class PlantingIntentionsControllerTests
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(updated, ok.Value);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Update_ThatMovesTheTradeUnit_AuditsWhereItCameFromAndWho()
+    {
+        // Moving a row changes which trade unit's acreage it counts toward. Without the previous trade
+        // unit in the audit line, the move could not be traced or undone (AR-01 update 2026-09-28).
+        _serviceMock.Setup(s => s.GetByIdAsync(3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PlantingIntentionResponse { Id = 3, Crop = "Wheat", TradeUnit = "2210" });
+        _serviceMock
+            .Setup(s => s.UpdateAsync(3, "Wheat", null, null, null, 100, 2026, "2190", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PlantingIntentionResponse { Id = 3, Crop = "Wheat", TradeUnit = "2190" });
+
+        await _sut.Update(3, new UpdatePlantingIntentionRequest { Crop = "Wheat", Acres = 100, PlantingYear = 2026, TradeUnit = "2190" });
+
+        var audit = _logger.Audit("AUDIT_UPDATE").Fields;
+        Assert.Equal(3, audit["IntentionId"]);
+        Assert.Equal("2210", audit["FromTradeUnit"]);
+        Assert.Equal("2190", audit["TradeUnit"]);
+        Assert.Equal("tester", audit["User"]);
     }
 
     // -------------------------------------------------------------------------
@@ -173,5 +194,14 @@ public class PlantingIntentionsControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(2, Assert.IsType<RetagPlantingIntentionsResponse>(ok.Value).Moved);
         _serviceMock.Verify(s => s.RetagAsync(10, "2210", "2190", It.IsAny<CancellationToken>()), Times.Once);
+
+        // The audit line names the actor. It did not until 2026-09-28, the same gap M-043 closed on
+        // create/update/delete: a bulk move of a producer's acres with no record of who made it.
+        var audit = _logger.Audit("AUDIT_UPDATE").Fields;
+        Assert.Equal(10L, audit["CustomerId"]);
+        Assert.Equal("2210", audit["From"]);
+        Assert.Equal("2190", audit["To"]);
+        Assert.Equal(2, audit["Count"]);
+        Assert.Equal("tester", audit["User"]);
     }
 }

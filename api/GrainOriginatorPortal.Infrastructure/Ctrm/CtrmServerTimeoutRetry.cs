@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -42,11 +41,11 @@ public static class CtrmServerTimeoutRetry
             // Both default to 0. CTRM cannot cancel a query that overruns - it runs to completion
             // whatever either side configures - so a re-send only ever adds a competing copy. A missing
             // key must fail safe rather than silently restore the old 1/4 budgets.
-            ? Math.Clamp(ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetries", 0), 0, 4)
-            : Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetries", 0), 0, 10);
+            ? Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetries", 0), 0, 4)
+            : Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:ServerTimeoutRetries", 0), 0, 10);
         var delay = interactive
-            ? TimeSpan.FromSeconds(Math.Clamp(ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetryDelaySeconds", 3), 0, 30))
-            : TimeSpan.FromSeconds(Math.Clamp(ReadInt(configuration, "Ctrm:ServerTimeoutRetryDelaySeconds", 8), 0, 60));
+            ? TimeSpan.FromSeconds(Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetryDelaySeconds", 3), 0, 30))
+            : TimeSpan.FromSeconds(Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:ServerTimeoutRetryDelaySeconds", 8), 0, 60));
 
         var result = await attempt();
         for (var i = 1; i <= retries && IsServerTimeout(result); i++)
@@ -63,7 +62,4 @@ public static class CtrmServerTimeoutRetry
 
     public static bool IsServerTimeout<T>(CtrmReadResult<T> result) =>
         !result.Ok && string.Equals(result.ErrorCode, ServerTimeoutCode, StringComparison.OrdinalIgnoreCase);
-
-    private static int ReadInt(IConfiguration configuration, string key, int fallback) =>
-        int.TryParse(configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : fallback;
 }

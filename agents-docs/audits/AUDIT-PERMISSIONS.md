@@ -4,9 +4,29 @@ Style guide: `style-guides/permissions-model.md`
 Scope: ASP.NET Core authorization, trade-unit entitlement scoping, Angular permission checks, `SECURITY-REVIEWS/ACCEPTED-RISKS.md`, `docs/application-context/SECURITY-MODEL.md`
 
 **Findings:** 1 open — 0 critical, 0 high, 1 medium, 0 low (5 resolved/accepted since the last pass)
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-21
+**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
 
-## Reconciliation notes (this pass)
+## Reconciliation notes (2026-09-28 pass)
+
+No permission-relevant files changed since the 2026-09-21 pass: `SECURITY-REVIEWS/ACCEPTED-RISKS.md`
+and `docs/application-context/SECURITY-MODEL.md` both still show 2026-09-21 as their last commit
+touching this area, and `git log --diff-filter=A -- '*Controller.cs'` shows no controllers added since
+then (still 27, unchanged from the last pass). Re-verified anyway rather than trusting the tracker:
+
+- `EnforceTradeUnitAccessAttribute.cs` still tracks the `enforced` flag and still logs
+  `ENTITLEMENTS_FILTER_NOT_APPLIED` when no scoping parameter matches — the silent-noop fix holds.
+- `SECURITY-REVIEWS/ACCEPTED-RISKS.md:53` still carries the unchanged "IT Security countersignature
+  will NOT be sought for AR-01, AR-02 or AR-08" banner from the project owner's 2026-09-21 decision.
+  No new automated re-flags of AR-02 recorded since the last pass.
+- `docs/application-context/SECURITY-MODEL.md:46` still documents the deliberate no-RBAC-model and
+  no-in-app-audit-trail deviations.
+- Spot-checked all 27 controllers for an authorization gate (`[Authorize]` or
+  `[Authorize(Policy = ...)]`); all 27 have one, including `DiagnosticsController`
+  (`[Authorize(Policy = "AdminOnly")]`, missed by an initial literal-bracket grep but present).
+
+No new findings this pass; all six existing findings hold in their current status.
+
+## Reconciliation notes (2026-09-21 pass)
 
 `AUDIT-TRACKING.json` statuses were already current — three findings marked `resolved`, two marked
 `accepted`, one still `open`. Re-verified each against the current tree rather than trusting the

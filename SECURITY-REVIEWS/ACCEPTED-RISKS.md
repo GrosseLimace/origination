@@ -344,6 +344,56 @@ emits `AUDIT_DELETE` with the cascade counts, and the controller logs misses too
 below is corrected. **Lesson: when an entry leans on a compensating control, verify the control
 exists on every route it covers — a stated mitigation is not an implemented one.**
 
+### Update (2026-09-28) — moving planting intentions between trade units: `POST retag` and the `TradeUnit` field on `PUT`
+
+Two scan findings against the planting-intention trade-unit work that shipped in PR #656
+(`fix_PlantingIntentionTradeUnit`):
+
+1. **`POST /api/plantingintentions/retag`** re-tags every planting intention a producer has on
+   `fromTradeUnit` to `toTradeUnit`, with `[Authorize]` as the only gate. `toTradeUnit` is checked
+   against the **producer's** active trade units; `fromTradeUnit` is not checked at all; neither is
+   checked against the **caller's** entitlements, and `[EnforceTradeUnitAccess]` could not fire here
+   anyway (the request has no `TradeUnitKey`).
+2. **`PUT /api/plantingintentions/{id}`** gained a client-settable `TradeUnit`, applied through the same
+   producer-membership check, so any authenticated user can move one row to another trade unit. The
+   finding notes this route was already listed here, but argues the new field is not covered.
+
+**Both re-accepted — no caller-entitlement check added.** The technical descriptions are accurate.
+The remedy both propose, `ValidateTradeUnitsOrThrowAsync` on the caller, is the one the AR-02 banner
+explains is not a control in this application: originators self-assign trade units in Trade Unit
+Preferences, so anyone the check refused could join the trade unit and repeat the move a moment
+later. It would also break the route's actual caller. Retag runs straight after a producer is
+removed from a trade unit, which AR-03 lets any rep do. A caller-entitlement check on `fromTradeUnit`
+would therefore refuse exactly the rep doing that legitimate clean-up, and `fromTradeUnit` cannot be
+checked against the producer either, because the producer has just left it. Both routes do keep the
+rule that does mean something: the **target** must be one of the producer's own active trade units
+(`PlantingIntentionService.ResolveTradeUnitAsync`), which is data integrity, not access control.
+
+The finding's comparison with `GetAllAsync` (reads filtered by caller entitlement, fail-closed) is the
+documented `GetAllAsync`-scoped / `GetByCustomerAsync`-open split recorded under AR-02. That filter
+scopes the list and dashboard views to the caller's trade units; it is a presentation boundary, and
+the producer's full planting set is readable through `GetByCustomerAsync` by design.
+
+**What the review found missing, and fixed (2026-09-28).** Following the M-043 rule — verify the
+log line's fields, not just its presence — the compensating control on these two routes was thinner
+than this entry's rationale claims:
+
+| Route | Audit line before | Gap | Fixed |
+|---|---|---|---|
+| `POST retag` (controller `AUDIT_UPDATE`) | customer, from, to, count | **no actor** — the same gap M-043 closed on create/update/delete | `User` added |
+| `POST retag` (repository line) | count, customer, from, to | after the move the rows are indistinguishable from those already on the target, so the move could not be undone | `User` and the moved `IntentionIds` added |
+| `PUT {id}` (`AUDIT_UPDATE`) | id, new trade unit, user | **no previous trade unit**, so a move could not be traced or reversed | `FromTradeUnit` added |
+
+Each moved row also carries `ModifiedBy` / `ModifiedAt`. Covered by
+`PlantingIntentionsControllerTests.Retag_ReturnsTheNumberOfRowsMoved` and
+`Update_ThatMovesTheTradeUnit_AuditsWhereItCameFromAndWho`, and by `PlantingIntentionRetagTests`
+(live rows only, soft-deleted rows stay put, ids and actor logged). The retag assertion was
+mutation-verified: removing `User` from the line fails it. Both controller actions carry inline
+citations to this update.
+
+**Re-evaluate if** trade-unit membership stops being self-service, at which point caller-entitlement
+checks become meaningful on every route in this entry, not only these two.
+
 ### Decision: Accepted
 
 **Rationale.** The portal is an internal tool for Scoular grain originators. Producer notes,

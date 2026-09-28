@@ -59,9 +59,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var cadenceMinutes = ReadInt("Ctrm:KeepWarmMinutes", 5);
-                if (cadenceMinutes <= 0) continue;
-                if (DateTime.UtcNow - lastRunUtc < TimeSpan.FromMinutes(cadenceMinutes)) continue;
-                if (!string.Equals(_configuration["Ctrm:Source"]?.Trim(), "ctrm", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!ShouldWarmNow(cadenceMinutes, _configuration["Ctrm:Source"], DateTime.UtcNow, lastRunUtc)) continue;
 
                 lastRunUtc = DateTime.UtcNow;
                 await WarmActiveSetsAsync(stoppingToken);
@@ -75,11 +73,42 @@ public sealed class CtrmKeepWarmService : BackgroundService
         _logger.LogInformation("CtrmKeepWarmService stopped.");
     }
 
+    /// <summary>
+    /// Whether this tick should run a warm cycle.
+    /// </summary>
+    /// <remarks>
+    /// Pulled out of the loop so the three gates can be tested without a timer, a registry or a CTRM
+    /// server. Every input is read fresh each tick rather than captured at startup, so an App Service
+    /// config override takes effect without a restart:
+    /// <list type="bullet">
+    /// <item><c>Ctrm:KeepWarmMinutes</c> at or below zero disables warming outright.</item>
+    /// <item>A cycle that has not yet reached that cadence since <paramref name="lastRunUtc"/> is skipped.</item>
+    /// <item>Warming runs only while <c>Ctrm:Source</c> is <c>ctrm</c>, so an environment reading ODS
+    /// never issues CTRM traffic.</item>
+    /// </list>
+    /// All three must pass; any one of them failing skips the tick.
+    /// </remarks>
+    internal static bool ShouldWarmNow(int cadenceMinutes, string? configuredSource, DateTime nowUtc, DateTime lastRunUtc) =>
+        cadenceMinutes > 0
+        && nowUtc - lastRunUtc >= TimeSpan.FromMinutes(cadenceMinutes)
+        && string.Equals(configuredSource?.Trim(), "ctrm", StringComparison.OrdinalIgnoreCase);
+
     private async Task WarmActiveSetsAsync(CancellationToken stoppingToken)
     {
         var keepFor = TimeSpan.FromHours(Math.Max(1, ReadInt("Ctrm:KeepWarmForHours", 2)));
         var sets = _registry.ActiveSets(keepFor, DateTime.UtcNow);
         if (sets.Count == 0) return;
+
+        // One id for the whole cycle, in the same scope fields HTTP requests get from
+        // RequestContextMiddleware. Cycles overlap sets and can interleave under load, so without this
+        // there is no field in Log Analytics that narrows the output to a single cycle's lines.
+        using var cycleScope = _logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["ServiceName"] = "GrainOriginatorPortal.Api",
+            ["Operation"] = "CtrmKeepWarm.Cycle",
+            ["TraceId"] = Guid.NewGuid().ToString("N"),
+            ["Sets"] = sets.Count,
+        });
 
         var started = DateTime.UtcNow;
 
@@ -124,6 +153,6 @@ public sealed class CtrmKeepWarmService : BackgroundService
             sets.Count, (DateTime.UtcNow - started).TotalSeconds);
     }
 
-    private int ReadInt(string key, int fallback) =>
-        int.TryParse(_configuration[key]?.Trim(), out var parsed) ? parsed : fallback;
+    /// <summary>Reads an int setting, falling back when absent or unparseable. See <see cref="CtrmConfig"/>.</summary>
+    private int ReadInt(string key, int fallback) => CtrmConfig.ReadInt(_configuration, key, fallback);
 }

@@ -2,25 +2,41 @@
 
 Scope: dead code, duplication, and stale artifacts across `api/`, `client/`, `scripts/`, and `SECURITY-REVIEWS/scripts/`
 
-**Findings:** 23 total — 19 resolved, 2 open, 1 wont_fix, 1 accepted (0 critical, 5 high, 12 medium, 6 low by original severity)
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-21
+**Findings:** 25 total — 19 resolved, 4 open, 1 wont_fix, 1 accepted (0 critical, 5 high, 13 medium, 7 low by original severity)
+**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
+
+## 2026-09-28 reconciliation
+
+Re-verified the two findings still open from the 2026-09-21 pass (dead Farms API vertical, disagreeing commodity taxonomies) by re-reading/re-grepping every file each one names — both unchanged, both still blocked on a product decision rather than a mechanical cleanup.
+
+Also reviewed the new CTRM GraphQL integration (`Services/Ctrm/`, `Infrastructure/Ctrm/`, `CtrmKeepWarmService.cs` — roughly 5,300 lines across 16 files) merged since the last pass, since it's the only material change to the repo in that window. It's well-engineered: nearly every non-obvious method carries a WHY comment (e.g. `ContractRepositorySwitch`'s doc comment explains *why* the source flag is read per-call instead of captured at construction), and the `ContractRepositorySwitch`/`TicketRepositorySwitch` pair's structural duplication is deliberate and explicitly cross-referenced in their doc comments, not slop. Found two new copy-paste-drift findings instead: the same `ReadInt`/`ReadBool` config-parsing helper is independently reimplemented six times across the vertical (and the copies have already started to diverge — different `CultureInfo` handling, one dropped the fallback parameter), and `ResolveScoularIdAsync` is duplicated near-verbatim between the Contract and Ticket repositories. Neither is high severity; both are exactly the kind of "same logic drifting apart across near-duplicate files" pattern this audit exists to catch.
+
+## Open (4)
+
+### Config-parsing helpers (`ReadInt`/`ReadBool`) reimplemented 6 times across the new CTRM vertical (`clean-slop.ctrm-config-reader-duplicated-six-times`) — medium
+- **Files:** `Infrastructure/Ctrm/CtrmContractReader.cs`, `CtrmTicketReader.cs`, `CtrmTicketRepository.cs`, `CtrmServerTimeoutRetry.cs`, `CtrmTradeUnitThrottle.cs`, `Api/Services/CtrmKeepWarmService.cs`
+- Each file defines its own private `ReadInt(string key, int fallback)` / `ReadBool(string key, bool fallback)` over `_configuration[key]?.Trim()`. Most are byte-identical, but `CtrmKeepWarmService`'s `ReadInt` drops the `NumberStyles`/`CultureInfo.InvariantCulture` arguments the others use, and `CtrmTicketRepository`'s `ReadBool` drops the `fallback` parameter — the copies are already diverging.
+- **Suggested fix:** Extract one internal static `CtrmConfig.ReadInt`/`ReadBool(IConfiguration, key, fallback)` helper — `CtrmServerTimeoutRetry` and `CtrmTradeUnitThrottle` already use the static-with-`IConfiguration`-parameter shape needed — and repoint all six call sites, fixing the drift in the same pass.
+
+### `ResolveScoularIdAsync` duplicated near-verbatim between the Contract and Ticket repositories (`clean-slop.ctrm-resolve-scoularid-duplicated`) — low
+- **Files:** `Infrastructure/Ctrm/CtrmContractRepository.cs`, `CtrmTicketRepository.cs`
+- Both define the same private lookup (customer → `ScoularId` via `_appContext.Customers`, warn-and-return-null if missing), differing only in the log message ("CTRM contracts" vs "CTRM tickets").
+- **Suggested fix:** Low urgency — only two call sites. Extract to a shared helper if a third caller appears; otherwise acceptable as-is.
+
+### Entire Farms REST API is a non-functional stub with no caller (`clean-slop.dead-farms-api-vertical`) — high
+- **Files:** `Controllers/FarmsController.cs`, `Services/FarmService.cs`, `Services/IFarmService.cs`, `Repositories/FarmRepository.cs`, `Interfaces/IFarmRepository.cs`
+- Re-verified 2026-09-28: all five files still exist unchanged, no real callers. Unchanged since 2026-09-21.
+- **Suggested fix:** Remove the whole Farms vertical, or explicitly return 501/404. Keep-or-delete is a product call.
+
+### Independently-maintained commodity taxonomy/alias maps overlap but disagree (`clean-slop.duplicated-commodity-taxonomy`) — medium
+- **Files:** `shared/utils/commodity-aliases.ts`, `shared/utils/crop-group-match.ts`, `shared/utils/contract-status.ts`, `shared/utils/production-coverage.ts`
+- Re-verified 2026-09-28: still separate, still disagree on corn/wheat/milo groupings. Unchanged since 2026-09-21.
+- **Related findings:** `angular.duplicated-commodity-taxonomy-logic`
+- **Suggested fix:** Extract one shared builder/lookup table, but only as a product decision on which taxonomy wins.
 
 ## 2026-09-21 reconciliation
 
 Independently re-verified all 23 findings against the current repo state (not just the tracker's prior "Fixed on branch fix_AuditPhase1Findings" notes) by reading or grepping every file each finding names. All 19 prior "resolved" claims held up under direct inspection — most were fixed by outright deletion (`qa-setup.sql`, `migrate-bid-sheet.sql`, the six stale `Scripts/` files, `CheckMbpLocationCoverage.sql`, `admin.guard.ts`, the footer/tabs/textarea components, the duplicate `customer-map` folder, `core/services/index.ts`) or by call sites being repointed at the surviving shared implementation (`buildLbsPerBushelMap`, `IRequestContextService`, `IGeocodeService`, `formatAccountingMoney`, `toSavedListPayload`). Two are notable because the actual fix took a different shape than the suggested one: `commodityRowClass()` was kept and the dashboard call site was changed to use it (rather than deleting the wrapper), and the customers-signal drift bug was fixed by adding the missing `appState.setCustomers(...)` call rather than removing the duplicate local signal entirely. The two still-open items (dead Farms API vertical, disagreeing commodity taxonomies) were re-confirmed unchanged and still require a product decision, not a mechanical cleanup. `wont_fix` and `accepted` items are unchanged. No corrections to prior status were needed and no new clean-slop findings were added in this pass; see `AUDIT-TRACKING.json` for per-finding re-verification notes.
-
-## Open (2)
-
-### Entire Farms REST API is a non-functional stub with no caller (`clean-slop.dead-farms-api-vertical`) — high
-- **Files:** `Controllers/FarmsController.cs`, `Services/FarmService.cs`, `Services/IFarmService.cs`, `Repositories/FarmRepository.cs`, `Interfaces/IFarmRepository.cs`
-- Re-verified 2026-09-21: all five files still exist unchanged. `FarmRepository` is explicitly documented as a stub since no Farms table exists in the ODS: every read logs a warning and returns empty/null, `CreateAsync` throws `NotImplementedException`. Zero real Angular callers (grep hits are all test-fixture customer names like "Alpha Farms") and no other C# caller beyond DI registration — a full dead vertical slice.
-- **Suggested fix:** Remove the whole Farms vertical, or explicitly return 501/404 and drop the pretend CRUD surface. Keep-or-delete is a product call, not a mechanical cleanup.
-
-### Independently-maintained commodity taxonomy/alias maps overlap but disagree (`clean-slop.duplicated-commodity-taxonomy`) — medium
-- **Files:** `shared/utils/commodity-aliases.ts`, `shared/utils/crop-group-match.ts`, `shared/utils/contract-status.ts`, `shared/utils/production-coverage.ts`
-- Re-verified 2026-09-21: both files still exist as separate, independently-maintained synonym lists that disagree (corn/wheat/milo groupings differ), so this is deliberately not unified — reconciling them would change query results.
-- **Related findings:** `angular.duplicated-commodity-taxonomy-logic`
-- **Suggested fix:** Extract one shared builder/lookup table, but only as a product decision on which taxonomy wins.
 
 ## Resolved (19)
 
@@ -61,4 +77,6 @@ All fixed on branch `fix_AuditPhase1Findings`, merged to main 2026-09-21 via PR 
 
 ## Overall health
 
-The 2026-09-19 audit found a repo with real engineering care in load-bearing logic undermined by a lack of cleanup discipline. PR #615 closed out 19 of 23 findings the same week, almost entirely by deletion or by repointing call sites at the surviving shared implementation — a healthy sign that the findings were accurate and the fixes were the cheap, low-risk kind (delete dead code, converge on one already-correct helper) rather than risky rewrites. The two items still open both require a product decision (keep-or-delete Farms; which commodity taxonomy wins) rather than more engineering effort, and the one `wont_fix` is blocked on an operational fact (has this script already run in each environment) the repo doesn't track anywhere.
+The 2026-09-19 audit found a repo with real engineering care in load-bearing logic undermined by a lack of cleanup discipline. PR #615 closed out 19 of 23 findings the same week, almost entirely by deletion or by repointing call sites at the surviving shared implementation — a healthy sign that the findings were accurate and the fixes were the cheap, low-risk kind (delete dead code, converge on one already-correct helper) rather than risky rewrites. The Farms-vertical and commodity-taxonomy items both still require a product decision (keep-or-delete Farms; which taxonomy wins) rather than more engineering effort, and the one `wont_fix` is blocked on an operational fact (has this script already run in each environment) the repo doesn't track anywhere.
+
+The 2026-09-28 pass found the same pattern repeating in new code: the CTRM GraphQL integration is well-documented and its one piece of deliberate structural duplication (the ODS/CTRM repository switches) is explained inline, but six independent `ReadInt`/`ReadBool` reimplementations across the vertical have already started to diverge in behavior, and `ResolveScoularIdAsync` is copy-pasted between the two repositories. Both are cheap, low-risk extractions — the same shape of fix that worked well in PR #615 — rather than anything requiring a product call.

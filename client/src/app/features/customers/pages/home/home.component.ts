@@ -1579,12 +1579,17 @@ export class HomeComponent {
     // trade-unit cache (instant, but up to a few minutes old) with the live read started behind it;
     // re-reading once that read has landed swaps in anything that changed, silently, via the same
     // retract-then-replace path every background refresh uses. Cancelled if the user moves on.
-    timer(HomeComponent.CLICK_CONVERGENCE_MS)
-      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        if (this.selectedCustomer()?.id !== customerId) return;
-        this._refreshCustomerContractsAndTickets(customerId, scoularId);
-      });
+    // Gated with the hover prefetch: there is nothing to converge on unless the backend answered from
+    // a warm trade-unit cache with a live read behind it, which only the CTRM path does. Against ODS
+    // the first answer is already the live one, so this would just read everything a second time.
+    if (environment.ctrmReadAheadEnabled) {
+      timer(HomeComponent.CLICK_CONVERGENCE_MS)
+        .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => {
+          if (this.selectedCustomer()?.id !== customerId) return;
+          this._refreshCustomerContractsAndTickets(customerId, scoularId);
+        });
+    }
 
     // A hover prefetch may already hold this producer's contracts and tickets. They are applied through
     // the SAME functions the network path uses, so the only difference is that the click pays no round
@@ -1662,6 +1667,10 @@ export class HomeComponent {
    *  signal and no loading flag: results sit in a side map until the producer is actually selected, so a
    *  prefetch can never repaint the screen for a producer the user is not looking at. */
   handlePrefetchCustomer(customer: Customer): void {
+    // Only worth a round trip when the backend is reading CTRM. Against ODS this is one extra read
+    // per hovered row for no gain, on a page where scanning a list touches many rows.
+    if (!environment.ctrmReadAheadEnabled) return;
+
     const id = customer.id;
     if (this.selectedCustomer()?.id === id) return;
     if (this._customerLoadedAt.has(id) || this._prefetched.has(id) || this._prefetchInFlight.has(id)) return;

@@ -4,9 +4,11 @@ Style guide: `style-guides/csharp.md`
 Scope: `api/GrainOriginatorPortal.Api`, `api/GrainOriginatorPortal.Infrastructure`, `api/GrainOriginatorPortal.Api.Tests`
 
 **Findings:** 17 open — 0 critical, 4 high, 5 medium, 8 low
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-19
+**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
 
 > **Note (2026-09-21):** Most findings below were resolved or dispositioned (accepted/wont_fix) by the Phase 1 remediation (PR #615) and follow-up status passes recorded in `AUDIT-TRACKING.json` — that file is the current source of truth for per-finding status; this prose file was not rewritten in lockstep. A follow-up dotnet-domain pass on this date sampled Program.cs/DI, controllers, services, repositories, exception handling, and appsettings across environments; no new high/critical issues were found. Two new low/medium findings were added (see bottom of Medium and Low sections) and are tracked as `open` in the JSON.
+>
+> **Note (2026-09-28):** Reconciliation pass. `AUDIT-TRACKING.json` remains the source of truth for status; this file's finding text is unchanged. Since the 2026-09-21 pass, ~120 files changed under `api/`, dominated by a large new `Ctrm/` subsystem (`feature_CtrmGraphQlSpike`, PR #656 — an ODS/CTRM comparison spike behind the `Ctrm:Source` config switch) plus a planting-intention soft-delete feature and an organic-producer NOPID validation fix. Sampled the three still-open dotnet findings against current code (all three still reproduce as described — see per-finding notes in the JSON) and reviewed the new `Ctrm/` subsystem (`ICtrmGraphQlClient`, `CtrmServerTimeoutRetry`, `CtrmTradeUnitThrottle`, `ContractRepositorySwitch`, `CtrmContractReader`) plus `PlantingIntentionService.cs` for the outbound-call, DI, and exception-handling concerns this guide cares about. Both areas are unusually well-documented (extensive `<remarks>` blocks recording measured gateway behavior, retry rationale, and throttling tradeoffs) and no new high/critical findings resulted. One candidate — a per-producer `await` inside a `foreach` in `CtrmContractReader.FetchProducersBatchAsync`'s page-continuation top-up path (around line 791) — was reviewed and NOT recorded as a finding: it is an explicitly-documented rare fallback (multi-page producers inside an aliased batch, "rare" per the code's own comment) rather than the systemic per-item-call pattern the style guide flags, and already runs under `CtrmTradeUnitThrottle`'s concurrency gate.
 
 ## High
 
