@@ -477,8 +477,15 @@
             </div>
 
             <!-- Move the row to another of the producer's trade units. A tag the producer no longer
-                 belongs to is listed as "(no longer assigned)" so it can be corrected here. -->
-            @if (editTradeUnitOptions.length > 1) {
+                 belongs to is listed as "(no longer assigned)" so it can be corrected here.
+                 Until the producer's own list arrives the options are the fallback (every in-scope
+                 trade unit), so show the loading state rather than a list that is about to shrink. -->
+            @if (isLoadingProducerTradeUnits && producerTradeUnits.length === 0) {
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
+                <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center text-sm text-gray-400 dark:text-gray-500">Loading trade units...</div>
+              </div>
+            } @else if (editTradeUnitOptions.length > 1) {
               <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
                 <select

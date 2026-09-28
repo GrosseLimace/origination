@@ -61,6 +61,13 @@ public class CustomerService : ICustomerService
     }
 
     /// <inheritdoc />
+    public async Task<List<CustomerTradeUnitInfo>> GetTradeUnitMembershipsAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var memberships = await _repository.GetTradeUnitMembershipsAsync(customerId, cancellationToken);
+        return memberships.Select(m => m.ToInfo()).ToList();
+    }
+
+    /// <inheritdoc />
     public Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken) =>
         _repository.AssignTradeUnitsAsync(customerId, tradeUnitCodes, _requestContext.GetCurrentUser(), cancellationToken);
 

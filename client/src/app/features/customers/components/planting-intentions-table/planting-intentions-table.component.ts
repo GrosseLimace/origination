@@ -114,7 +114,9 @@ export class PlantingIntentionsTableComponent {
       this._producerTradeUnitsForCustomerId = customerId;
     }
     this.isLoadingProducerTradeUnits = true;
-    this.apiService.getCustomerTradeUnits(customerId).subscribe({
+    // Codes only: the open-activity check the edit-customer dialog needs is a contract and ticket read
+    // for the producer, which kept this picker waiting seconds for a flag it never uses.
+    this.apiService.getCustomerTradeUnits(customerId, { includeActivity: false }).subscribe({
       next: rows => {
         this.producerTradeUnits = rows.filter(r => r.isActive).map(r => r.tradeUnit.trim()).filter(Boolean).sort();
         this.isLoadingProducerTradeUnits = false;
