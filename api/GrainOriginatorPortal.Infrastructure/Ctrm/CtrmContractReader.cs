@@ -1005,19 +1005,9 @@ public sealed class CtrmContractReader
         };
     }
 
-    /// <summary>
-    /// Reads an int setting, falling back when absent or unparseable.
-    /// </summary>
-    /// <remarks>
-    /// Uses the indexer rather than <c>GetValue&lt;int&gt;</c> because that extension lives in
-    /// Microsoft.Extensions.Configuration.Binder, which this project does not reference.
-    /// </remarks>
-    private int ReadInt(string key, int fallback) =>
-        int.TryParse(_configuration[key]?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : fallback;
+    /// <summary>Reads an int setting, falling back when absent or unparseable. See <see cref="CtrmConfig"/>.</summary>
+    private int ReadInt(string key, int fallback) => CtrmConfig.ReadInt(_configuration, key, fallback);
 
-    /// <summary>Reads a boolean setting, falling back when absent or unparseable.</summary>
-    private bool ReadBool(string key, bool fallback) =>
-        bool.TryParse(_configuration[key]?.Trim(), out var parsed) ? parsed : fallback;
+    /// <summary>Reads a boolean setting, falling back when absent or unparseable. See <see cref="CtrmConfig"/>.</summary>
+    private bool ReadBool(string key, bool fallback) => CtrmConfig.ReadBool(_configuration, key, fallback);
 }
