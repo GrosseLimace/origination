@@ -33,8 +33,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Partially addressed — the duplicated Nominatim geocoding is de-duplicated and moved onto the resilient named client. The wider service-layer extraction is outstanding; severity re-rated to medium (AdminOnly policy, schema endpoints are Dev/QA-only)."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Partially addressed — the duplicated Nominatim geocoding is de-duplicated and moved onto the resilient named client. The wider service-layer extraction is outstanding; severity re-rated to medium (AdminOnly policy, schema endpoints are Dev/QA-only). [2026-09-28] Re-checked: DiagnosticsController.cs (1105 lines) still injects OriginationDbContext/ApplicationDbContext/TradeUnitPreferencesDbContext/IHttpClientFactory directly and still runs SqlQueryRaw for schema introspection. Still open."
     },
     {
       "id": "dotnet.duplicated-entitlement-catalog-logic",
@@ -51,8 +51,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed. Deliberately deferred: extracting IEntitlementsCatalogService touches NotesController, which several concurrently-active branches also touch, so it was the worst merge-conflict surface for the least value while fix_AuditPhase1Findings was in flight. Now unblocked."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed. Deliberately deferred: extracting IEntitlementsCatalogService touches NotesController, which several concurrently-active branches also touch, so it was the worst merge-conflict surface for the least value while fix_AuditPhase1Findings was in flight. Now unblocked. [2026-09-28] Re-checked: both controllers still inject TradeUnitPreferencesDbContext directly and NotesController.cs:109 still comments that the catalog logic is duplicated with EntitlementsController.GetCatalog. Still open, now further deferred behind the CTRM GraphQL spike work."
     },
     {
       "id": "dotnet.inconsistent-trade-unit-entitlement-filtering",
@@ -166,8 +166,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed and outstanding. Partially reduced (StoredGrainService, UserEntitlementService and the JSON converters now covered), but TicketRepository and UsageRepository still have no direct tests — they need a real-SQL harness, not a unit test."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed and outstanding. Partially reduced (StoredGrainService, UserEntitlementService and the JSON converters now covered), but TicketRepository and UsageRepository still have no direct tests — they need a real-SQL harness, not a unit test. [2026-09-28] Re-checked: no TicketRepositoryTests.cs or UsageRepositoryTests.cs exist. Still open."
     },
     {
       "id": "dotnet.dtos-inline-in-controllers",
@@ -401,8 +401,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed but over-rated: 38 raw signals with no asReadonly() is accurate, but \"components already reach into it directly\" is 2 call sites across all features, not a pattern."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed but over-rated: 38 raw signals with no asReadonly() is accurate, but \"components already reach into it directly\" is 2 call sites across all features, not a pattern.\n[2026-09-28] Re-checked: app-state.service.ts now exposes 14 raw signal() fields, still with zero .asReadonly() wrappers (down from 38 — some state appears to have moved out of the service since the last pass, not been fixed). Still open."
     },
     {
       "id": "angular.no-typed-error-contract-silent-swallowing",
@@ -424,8 +424,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed and outstanding — a design item. Undercounted, in fact: 34 `error: () => {}` sites plus 13 catchError(() => of([])) in the preload service. The traceId half was fixed (handleError now carries it) and 401 now surfaces a session-expired toast."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed and outstanding — a design item. Undercounted, in fact: 34 `error: () => {}` sites plus 13 catchError(() => of([])) in the preload service. The traceId half was fixed (handleError now carries it) and 401 now surfaces a session-expired toast.\n[2026-09-28] Re-checked: no ApiError/AppError-style typed error class exists anywhere in src/app. Empty `error: () => {}` handlers are down to 10 (from 34) — home.component.ts's 17 were resolved separately (see angular.home-component-silent-error-swallowing) via a shared _reportBackgroundFailure pattern; the remaining 10 sites elsewhere have not adopted it. Still open."
     },
     {
       "id": "angular.any-type-widespread-usage",
@@ -446,8 +446,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed — 39 non-spec sites, concentrated in Leaflet interop. Outstanding."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed — 39 non-spec sites, concentrated in Leaflet interop. Outstanding.\n[2026-09-28] Re-checked: still 39 non-spec `: any`/`as any`/`<any>` sites, same concentration (bid-sheet Leaflet interop, customer-map, api.service.ts dailyrecapgroups payloads). No change since last pass."
     },
     {
       "id": "angular.duplicate-customer-map-component",
@@ -486,8 +486,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed and deliberately deferred: 29 components, and OnPush breaks silently wherever a parent mutates an array in place. The actual per-cycle cost the perf findings described was removed by converting the hot getter to a computed()."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed and deliberately deferred: 29 components, and OnPush breaks silently wherever a parent mutates an array in place. The actual per-cycle cost the perf findings described was removed by converting the hot getter to a computed().\n[2026-09-28] Re-checked: 23 of 49 components now set OnPush (up from 20). Gap narrowed slightly but still open; deferral rationale unchanged."
     },
     {
       "id": "angular.function-calls-in-template-bindings",
@@ -531,8 +531,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Partially addressed — linked-producers.ts (the BFS utility, including all three non-termination cases) is now covered. The shared UI-kit component specs remain outstanding."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Partially addressed — linked-producers.ts (the BFS utility, including all three non-termination cases) is now covered. The shared UI-kit component specs remain outstanding.\n[2026-09-28] Re-checked: 28 of 49 components (57%) now have a .spec.ts, up from 18/49 (37%). Real progress, but 21 components — including parts of the shared UI kit — are still untested. Still open."
     },
     {
       "id": "angular.production-bootstrap-failures-swallowed",
@@ -699,8 +699,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed. Blocked on a fact nobody recorded: has B4_migrate_createdby.sql run in each environment? If PROD is still pending, the non-unique DisplayName join must be fixed first; if it has run, the script should be archived."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed. Blocked on a fact nobody recorded: has B4_migrate_createdby.sql run in each environment? If PROD is still pending, the non-unique DisplayName join must be fixed first; if it has run, the script should be archived.\n[2026-09-28] Re-verified: script and its ambiguous DisplayName joins are unchanged. Same operational blind spot -- no record in-repo of whether this has run per environment."
     },
     {
       "id": "sql.orphaned-stale-script-nonexistent-column",
@@ -745,19 +745,20 @@
     {
       "id": "sql.customertradeunit-cascade-delete-breaks-pattern",
       "audit": "sql",
-      "severity": "medium",
+      "severity": "high",
       "status": "open",
-      "title": "CustomerTradeUnit->Customer cascade delete breaks the codebase's own documented pattern",
-      "description": "Every other FK to Customer in this file is explicitly NoAction with a comment explaining it's deliberate. CustomerTradeUnit's Customer FK is Cascade with no comment, so a Customer rebuild could silently delete manually-curated rows.",
+      "title": "CustomerTradeUnit->Customer cascade delete breaks the codebase's own documented pattern, and manual rows now exist",
+      "description": "Every other FK to Customer in this file is explicitly NoAction with a comment explaining it's deliberate. CustomerTradeUnit's Customer FK is Cascade with no comment. The prior pass called this 'inert today, decide before the manual-curation feature ships' -- that premise is now false: PUT /api/customers/{id}/trade-units (CustomersController.AssignTradeUnits -> CustomerService.AssignTradeUnitsAsync -> CustomerRepository.AssignTradeUnitsAsync, api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs:553-651) is live, [Authorize]-only (no admin gate, per accepted risk AR-03 in SECURITY-REVIEWS/ACCEPTED-RISKS.md), and inserts CustomerTradeUnit rows with IsManual = true today. Real hand-curated membership data now sits behind the Cascade FK. The specific trigger (a hard DELETE of a Customer row) does not exist yet -- CustomerSyncService.SyncAsync is upsert + soft-delete only (IsActive = false), never a hard delete/rebuild -- so nothing destroys this data today. But the only thing preventing loss is that no code path currently issues a hard Customer delete, which is a fragile invariant to rely on for protecting manually-entered data.",
       "files": [
-        "api/GrainOriginatorPortal.Infrastructure/Data/ApplicationDbContext.cs"
+        "api/GrainOriginatorPortal.Infrastructure/Data/ApplicationDbContext.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs"
       ],
-      "suggested_fix": "Change CustomerTradeUnit's Customer FK to NoAction/Restrict to match the established pattern, or add a comment justifying the difference.",
+      "suggested_fix": "Change CustomerTradeUnit's Customer FK to NoAction/Restrict to match the established pattern, independent of whether a hard-delete path is ever added. Also update docs/application-context/STYLE-DEVIATIONS.md, which still frames this as a future/pending decision ('Decide before that feature lands') -- the feature (feature_NewCustomerTradeUnits, merged 2026-05-27 per migration AddIsManualFlags) has already shipped.",
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed and TIME-SENSITIVE. Inert today (all rows come from the ODS sync) but feature_NewCustomerTradeUnits introduces manually curated rows, after which a Customer rebuild silently destroys hand-entered membership. Decide before that feature starts."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed and TIME-SENSITIVE. Inert today (all rows come from the ODS sync) but feature_NewCustomerTradeUnits introduces manually curated rows, after which a Customer rebuild silently destroys hand-entered membership. Decide before that feature starts.\n[2026-09-28] Re-verified via a sub-agent trace of the write path: the manual-onboarding feature this finding warned about is already live (AssignTradeUnitsAsync sets IsManual = true on real requests), so this is no longer a future risk gated on a feature landing -- manually-curated rows exist in the table now. Severity raised medium -> high on that basis. Confirmed there is still no hard-delete/rebuild path for Customer (soft-delete only), so no data has actually been destroyed by this misconfiguration yet; the gap is the FK shape, not an observed incident."
     },
     {
       "id": "sql.unjustified-string-primary-keys",
@@ -790,8 +791,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed — values are correctly parameterised today, so no live injection path; converting to FromSqlInterpolated is still worth doing."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed — values are correctly parameterised today, so no live injection path; converting to FromSqlInterpolated is still worth doing.\n[2026-09-28] Re-verified: CustomerRepository.SearchAsync (line ~155) still builds the WHERE text via C# $\"...\" interpolation of parameter names only, then calls FromSqlRaw with a matching SqlParameter[]. Unchanged since last pass."
     },
     {
       "id": "sql.nocheck-foreign-keys-never-revalidated",
@@ -807,8 +808,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed — three FKs added WITH NOCHECK and never revalidated; the only occurrence of WITH CHECK CHECK CONSTRAINT in the repo is the comment saying to do it. Next step is a read-only orphan count per environment, not a code change."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed — three FKs added WITH NOCHECK and never revalidated; the only occurrence of WITH CHECK CHECK CONSTRAINT in the repo is the comment saying to do it. Next step is a read-only orphan count per environment, not a code change.\n[2026-09-28] Re-verified: migration file unchanged, no later migration revalidates these three FKs."
     },
     {
       "id": "sql.non-idempotent-alter-scripts",
@@ -837,18 +838,17 @@
       "title": "Location master data hardcoded independently in two scripts",
       "description": "Both scripts embed roughly a thousand-plus literal location rows independently rather than one sourcing from the other's target table, guaranteeing drift over time.",
       "files": [
-        "api/GrainOriginatorPortal.Api/Scripts/CheckMbpLocationCoverage.sql",
         "api/GrainOriginatorPortal.Api/Scripts/PopulateMbpLocationSynonym.sql"
       ],
-      "suggested_fix": "Have the coverage-check script query the populated table directly instead of maintaining a separate hardcoded list.",
+      "suggested_fix": "Source the location rows from a tracked location table instead of embedding them literally in the script, if a canonical source table ever exists.",
       "related_findings": [
         "clean-slop.hardcoded-location-data-duplicated"
       ],
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Half addressed: CheckMbpLocationCoverage.sql was deleted as a spent one-off. PopulateMbpLocationSynonym.sql stays (it is the live QA/PROD load path) and gained a row-count guard on its MERGE."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Half addressed: CheckMbpLocationCoverage.sql was deleted as a spent one-off. PopulateMbpLocationSynonym.sql stays (it is the live QA/PROD load path) and gained a row-count guard on its MERGE.\n[2026-09-28] Re-verified: CheckMbpLocationCoverage.sql confirmed still absent (deleted); dropped it from files since the finding is now solely about PopulateMbpLocationSynonym.sql's ~1,000+ embedded literal rows. No functional change to that script this pass."
     },
     {
       "id": "sql.yn-flags-as-nvarchar-not-bit",
@@ -945,8 +945,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: CorrelationIdMiddleware.IsWellFormed() now rejects anything over 64 chars or outside [A-Za-z0-9-_.:], falling back to Activity.TraceId or a fresh GUID. Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. Still resolved."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: CorrelationIdMiddleware.IsWellFormed() now rejects anything over 64 chars or outside [A-Za-z0-9-_.:], falling back to Activity.TraceId or a fresh GUID. Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. Still resolved.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
       "id": "logging.client-side-telemetry-missing",
@@ -969,8 +969,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: client/package.json still has no @microsoft/applicationinsights-* dependency, no app-insights.service.ts exists anywhere under client/src, and ErrorHandler is still bound to GlobalErrorHandler (console-only in dev, silent in prod). Still the audit's only open critical; unchanged since 2026-09-19. Needs the same decision as before: implement client App Insights, or amend developer-docs/CLAUDE.md to stop mandating it."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: client/package.json still has no @microsoft/applicationinsights-* dependency, no app-insights.service.ts exists anywhere under client/src, and ErrorHandler is still bound to GlobalErrorHandler (console-only in dev, silent in prod). Still the audit's only open critical; unchanged since 2026-09-19. Needs the same decision as before: implement client App Insights, or amend developer-docs/CLAUDE.md to stop mandating it.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
       "id": "logging.bootstrap-failure-not-logged",
@@ -990,8 +990,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: main.ts:117-121 catch still gates console.error behind 'if (!environment.production)', so a prod bootstrap failure still produces zero diagnostic trail (blank page, nothing in console, nothing in telemetry since none exists). Unchanged since 2026-09-19; still blocked on the same decision as logging.client-side-telemetry-missing."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: main.ts:117-121 catch still gates console.error behind 'if (!environment.production)', so a prod bootstrap failure still produces zero diagnostic trail (blank page, nothing in console, nothing in telemetry since none exists). Unchanged since 2026-09-19; still blocked on the same decision as logging.client-side-telemetry-missing.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
       "id": "logging.api-insights-instrumentation-unverified",
@@ -1009,8 +1009,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: GrainOriginatorPortal.Api.csproj and Program.cs still have no Application Insights, OpenTelemetry, or Serilog package reference. Codeless attach remains the documented, deliberate choice (developer-docs/CLAUDE.md); whether BeginScope fields actually surface as Log Analytics custom dimensions is still an unverified KQL check, not a code defect. Recorded in STYLE-DEVIATIONS.md. Unchanged, still accepted."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: GrainOriginatorPortal.Api.csproj and Program.cs still have no Application Insights, OpenTelemetry, or Serilog package reference. Codeless attach remains the documented, deliberate choice (developer-docs/CLAUDE.md); whether BeginScope fields actually surface as Log Analytics custom dimensions is still an unverified KQL check, not a code defect. Recorded in STYLE-DEVIATIONS.md. Unchanged, still accepted.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
       "id": "logging.frontend-correlation-id-not-surfaced",
@@ -1027,8 +1027,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: ApiService.handleError (api.service.ts:117-118) now reads errObj.traceId and attaches it to the thrown Error. Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. Still resolved."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: ApiService.handleError (api.service.ts:117-118) now reads errObj.traceId and attaches it to the thrown Error. Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. Still resolved.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
       "id": "logging.sampling-and-dashboards-undocumented",
@@ -1044,8 +1044,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: developer-docs/START-HERE.md still only mentions generic platform-level Smart Detection; no file documents an app-specific sampling percentage, saved KQL queries, a dashboard/workbook, or alert-to-on-call mapping. Unchanged since 2026-09-19, still outstanding."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: developer-docs/START-HERE.md still only mentions generic platform-level Smart Detection; no file documents an app-specific sampling percentage, saved KQL queries, a dashboard/workbook, or alert-to-on-call mapping. Unchanged since 2026-09-19, still outstanding.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
       "id": "logging.background-job-runs-lack-correlation-id",
@@ -1063,8 +1063,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified and status corrected from resolved to open: CustomerSyncBackgroundService and UsageAggregationBackgroundService now wrap each run in _logger.BeginScope(...RunId...) (fixed via PR #615), but UsageTrackingBackgroundService — one of the three files this finding names — still has no per-run scope; its ExecuteAsync logs (start/stop/batch errors) carry no RunId. The fix was only 2/3 applied.\n[2026-09-21] Re-run reopened this as 2/3 applied. Verified: the third service was skipped on purpose (PR #615) with the reasoning recorded in code. Recorded as accepted rather than open.",
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified and status corrected from resolved to open: CustomerSyncBackgroundService and UsageAggregationBackgroundService now wrap each run in _logger.BeginScope(...RunId...) (fixed via PR #615), but UsageTrackingBackgroundService — one of the three files this finding names — still has no per-run scope; its ExecuteAsync logs (start/stop/batch errors) carry no RunId. The fix was only 2/3 applied.\n[2026-09-21] Re-run reopened this as 2/3 applied. Verified: the third service was skipped on purpose (PR #615) with the reasoning recorded in code. Recorded as accepted rather than open.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.",
       "accepted_rationale": "Per-run scope is applied to the two scheduled jobs (CustomerSyncBackgroundService, UsageAggregationBackgroundService). UsageTrackingBackgroundService is deliberately excluded and says so in a comment at the top of ExecuteAsync: it is a continuous 5-second flush loop (~17k iterations/day) that logs nothing but errors, so a per-flush id would add Log Analytics cardinality without answering a question anyone asks; its error lines already carry batch context."
     },
     {
@@ -1081,8 +1081,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: RequestContextMiddleware still resolves preferred_username (UPN) into the UserId scope field on every request. Formally accepted and recorded as AR-09 in SECURITY-REVIEWS/ACCEPTED-RISKS.md (Low, CWE-532, accepted 2026-09-21, review 2027-09-21). Unchanged, still accepted."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: RequestContextMiddleware still resolves preferred_username (UPN) into the UserId scope field on every request. Formally accepted and recorded as AR-09 in SECURITY-REVIEWS/ACCEPTED-RISKS.md (Low, CWE-532, accepted 2026-09-21, review 2027-09-21). Unchanged, still accepted.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
       "id": "performance.tickets-table-spot-loads-quadratic-getter",
@@ -1123,8 +1123,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed; part of the deferred OnPush work."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed; part of the deferred OnPush work. [2026-09-28] Re-verified against current contracts-table.component.ts: still no changeDetection declared, getAppliedTickets() is still an unmemoized filter+sort over the full tickets() input, getPricingInfo()/getPricingLinesForContract() still called repeatedly per row via pricingLinesMap() lookups. No regression, no fix; still open."
     },
     {
       "id": "performance.angular-template-function-calls",
@@ -1145,8 +1145,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed; duplicate of angular.function-calls-in-template-bindings."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed; duplicate of angular.function-calls-in-template-bindings. [2026-09-28] Re-verified; same three template files, no memoization added. Still open."
     },
     {
       "id": "performance.angular-onpush-coverage-gap",
@@ -1169,8 +1169,26 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed; duplicate of angular.inconsistent-onpush-adoption."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed; duplicate of angular.inconsistent-onpush-adoption. [2026-09-28] Re-counted: 23 of 49 component.ts files now declare OnPush (up slightly from 20/47), but the ratio and the named offenders (activity-summary, tickets-table, edit-customer-dialog, planting-intentions-table, home) are unchanged. Still open."
+    },
+    {
+      "id": "performance.usage-dashboard-duplicate-scope-resolution-per-widget",
+      "audit": "performance",
+      "severity": "low",
+      "status": "open",
+      "title": "Every usage-dashboard widget endpoint independently re-resolves the same user-scope set",
+      "description": "UsageDashboardService.GetUserIdSetAsync (called once per public method: GetSummaryAsync, GetUsersAsync, GetDailyActiveAsync, GetFeatureSessionsAsync, GetWeeklyTrendAsync, GetActivityBreakdownAsync, GetUnderusedFeaturesAsync, GetQueryLibraryUsageAsync, GetQuerySearchGapsAsync) re-runs GetSnapshotUserIdsAsync/GetSubtreeUserIdsAsync and GetExcludedUserIdsAsync from scratch for the same (tradeUnitKey, managerId) pair. The usage-dashboard page fires roughly nine of these as separate parallel HTTP requests on load, so the same small reference tables (UserTradeUnitSnapshots, UsageDashboardExcludedUsers) are queried up to 9x per page view instead of once. AppAccessService.GetAccessSetAsync (the more expensive external call in the same chain) is already IMemoryCache-backed, so this is the one piece of that resolution chain still uncached.",
+      "files": [
+        "api/GrainOriginatorPortal.Api/Services/UsageDashboardService.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Repositories/UsageRepository.cs"
+      ],
+      "suggested_fix": "Cache the resolved user-id HashSet per (tradeUnitKey, managerId) with a short TTL (seconds, matching page-load burst timing) the same way AppAccessService caches its access set, or hoist scope resolution to a single call the controller layer shares across the page's widget requests.",
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-28] New finding opened during reconciliation pass while reviewing the UsageDashboard feature added since 2026-09-21. Each underlying query is on a small table (no join fan-out), so this is a minor, inferred optimization opportunity rather than a proven bottleneck — flagged low severity, not measured."
     },
     {
       "id": "performance.bidsheet-reconcile-n-plus-one",
@@ -1295,8 +1313,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: both commodity-aliases.ts and crop-group-match.ts still exist as separate files with independently-maintained synonym lists. Deliberately NOT unified: they overlap but DISAGREE (corn/wheat/milo synonyms differ), so reconciling them changes query results. That is a product decision, not a cleanup. Unchanged since 2026-09-19, still open."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: both commodity-aliases.ts and crop-group-match.ts still exist as separate files with independently-maintained synonym lists. Deliberately NOT unified: they overlap but DISAGREE (corn/wheat/milo synonyms differ), so reconciling them changes query results. That is a product decision, not a cleanup. Unchanged since 2026-09-19, still open. [2026-09-28] Re-verified: commodity-aliases.ts, crop-group-match.ts, contract-status.ts, production-coverage.ts remain separate, still disagree. Still open."
     },
     {
       "id": "clean-slop.duplicate-conversion-map-builder",
@@ -1502,8 +1520,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed; the contract-level root cause of angular.no-typed-error-contract-silent-swallowing. Note \"discards error.details outright\" is overstated — handleError does read details[].message; it discards code, traceId (now fixed) and the structured array."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed; the contract-level root cause of angular.no-typed-error-contract-silent-swallowing. Note \"discards error.details outright\" is overstated — handleError does read details[].message; it discards code, traceId (now fixed) and the structured array. [2026-09-28] Re-verified against current api.service.ts handleError() (lines 88-124): still a bare Error with .status/.traceId bolted on, no ApiError type, error.code still never read. No regressions, no change since prior pass."
     },
     {
       "id": "error-handling.controllers-return-adhoc-error-bodies-bypassing-envelope",
@@ -1587,8 +1605,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed and deliberate today (the log text says \"returning empty lists\"). Whether the mention picker should 503 instead of degrading is a product call."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed and deliberate today (the log text says \"returning empty lists\"). Whether the mention picker should 503 instead of degrading is a product call. [2026-09-28] Re-verified: EntitlementsController.cs:155-159 catch(Exception) still logs Warning and returns Ok(new EntitlementsCatalogResponse()) unconditionally. No regressions."
     },
     {
       "id": "error-handling.traceid-never-surfaced-to-frontend",
@@ -1700,7 +1718,7 @@
       "id": "permissions.access-control-risk-acceptances-lack-independent-signoff",
       "audit": "permissions",
       "severity": "medium",
-      "status": "open",
+      "status": "accepted",
       "title": "High-severity object-level-authorization risk acceptances (AR-01, AR-02, AR-08) are self-accepted by engineering with no independent security sign-off",
       "description": "SECURITY-REVIEWS/ACCEPTED-RISKS.md is an unusually mature, well-maintained record of deliberate authorization decisions, but AR-01 (shared-record edit/delete), AR-02 (customer-scoped reads open cross-trade-unit), and AR-08 (mention recipients not scoped to caller's trade units) remain self-accepted by Origination engineering with no independent security sign-off. As of 2026-09-21 this is now a deliberate, final decision -- the project owner (CEgr) explicitly decided IT Security countersignature will NOT be sought for these three entries -- not a pending action. AR-02 alone has been independently re-flagged by automated scanners 9 times since 2026-06-23 and re-accepted by engineering each time. The governance gap (no independent review of HIGH-severity access-control risk acceptances) is unchanged; it has moved from awaiting an answer to answered no by engineering itself.",
       "files": [
@@ -1710,8 +1728,9 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified. SECURITY-REVIEWS/ACCEPTED-RISKS.md now records that the project owner (CEgr) decided on 2026-09-21 that IT Security countersignature will NOT be sought for AR-01/AR-02/AR-08 -- superseding the prior pending-countersignature-request note, which is now stale. Kept open: the underlying no-independent-signoff fact is unchanged, only its finality."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified. SECURITY-REVIEWS/ACCEPTED-RISKS.md now records that the project owner (CEgr) decided on 2026-09-21 that IT Security countersignature will NOT be sought for AR-01/AR-02/AR-08 -- superseding the prior pending-countersignature-request note, which is now stale. Kept open: the underlying no-independent-signoff fact is unchanged, only its finality. [2026-09-28] Re-checked: SECURITY-REVIEWS/ACCEPTED-RISKS.md:53 still carries the unchanged 2026-09-21 banner; no new re-flags of AR-02 recorded and no controllers were added since the last pass that would touch this. Still open, unchanged.\n[2026-09-28] Closed as accepted at the project owner's direction. It had been re-verified and re-opened by three consecutive audit runs without the underlying decision changing; leaving it open was costing attention on every run without adding information. Do not re-raise.",
+      "accepted_rationale": "No code fix applies, and the finding's own suggested_fix says so. SECURITY-REVIEWS/ACCEPTED-RISKS.md records the project owner's decision of 2026-09-21 that IT Security countersignature will not be sought for AR-01, AR-02 and AR-08. That decision was reconfirmed on 2026-09-28. The underlying fact the finding describes, that these acceptances carry no independent sign-off, is accurate and unchanged; it is a deliberate governance position rather than an oversight, so the finding is accepted rather than left open. Re-raising it does not surface new information. If org policy later requires independent sign-off on high-severity accepted risks regardless of an engineering owner's decision, that is a process change to take up with asksecurity@scoular.com, not a code change here."
     },
     {
       "id": "permissions.storedgrain-customer-route-missing-from-ar02-registry",
@@ -1751,8 +1770,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Deliberate: authorization is two Azure AD app roles plus trade-unit data scoping. Adding a permissions table would mean a second source of truth beside AAD group membership, which is where access is actually administered. Documented in docs/application-context/SECURITY-MODEL.md."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Deliberate: authorization is two Azure AD app roles plus trade-unit data scoping. Adding a permissions table would mean a second source of truth beside AAD group membership, which is where access is actually administered. Documented in docs/application-context/SECURITY-MODEL.md. [2026-09-28] Re-checked: docs/application-context/SECURITY-MODEL.md:46 still documents the deviation and no Role/Permission/RolePermission/UserRole entities have appeared since. Still accepted, unchanged."
     },
     {
       "id": "permissions.role-change-audit-trail-gap",
@@ -1769,8 +1788,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Follows from the above: Admin membership lives in an AAD group and the ViewAll list in config, so neither is ever mutated through app code and these events cannot exist in our telemetry. That history is in Azure AD's audit log. Documented in SECURITY-MODEL.md."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Follows from the above: Admin membership lives in an AAD group and the ViewAll list in config, so neither is ever mutated through app code and these events cannot exist in our telemetry. That history is in Azure AD's audit log. Documented in SECURITY-MODEL.md. [2026-09-28] Re-checked: SecurityAuditMiddleware.cs still the only in-app audit trail (401/403 events); no role/access-list mutation path has been added to app code since. Still accepted, unchanged."
     },
     {
       "id": "test-gaps.angular-god-components",
@@ -1794,8 +1813,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed and outstanding — wants the business logic extracted into testable units first, which is a multi-session effort rather than a test-writing one."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed and outstanding — wants the business logic extracted into testable units first, which is a multi-session effort rather than a test-writing one. [2026-09-28] Re-checked: still zero .spec.ts for all 5 components. New corroborating evidence: bid-sheet.component.ts's inline basis-sign display logic needed 4 separate fix/feat commits between 2026-09-19 and 2026-09-24 (836f228d, b737efda, e05a3145, 300fc554) to get the sign correct across the published-bids popup, Edit Bids cells, and catalog pins — each a symptom of the same rule living untested in 3+ places inside a component with no spec at all."
     },
     {
       "id": "test-gaps.repository-layer-gap",
@@ -1818,8 +1837,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Confirmed; duplicate of dotnet.repository-test-coverage-gap. Note the count is if anything understated: UsageRepository's two \"test mentions\" are Mock<IUsageRepository>, which never runs the implementation."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Confirmed; duplicate of dotnet.repository-test-coverage-gap. Note the count is if anything understated: UsageRepository's two \"test mentions\" are Mock<IUsageRepository>, which never runs the implementation. [2026-09-28] Re-checked: still confirmed. One nuance since the CTRM GraphQL work merged: CtrmOutageEndToEndTests.cs now constructs a real TicketRepository as the fallback collaborator for CtrmTicketRepository's outage path, but only exercises it through that fallback wiring, not any assertion on TicketRepository's own filtering/status logic. No test still constructs UsageRepository at all."
     },
     {
       "id": "test-gaps.entitlement-service-fail-open-path-untested",
@@ -1934,8 +1953,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. [2026-09-21 re-verified] Confirmed in code: app-state.service.ts's DashboardCacheEntry now carries a documented plantingYear field as part of the cache key."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. [2026-09-21 re-verified] Confirmed in code: app-state.service.ts's DashboardCacheEntry now carries a documented plantingYear field as part of the cache key. [2026-09-28] Re-verified: the field is named `year` (not `plantingYear`, a naming drift from the original note, not a regression); dashboard.component.ts's restore guard checks `cached.tradeUnitsKey === tradeUnitsKey && cached.year === this.selectedPlantingYear()` before restoring. Still fixed, no regression."
     },
     {
       "id": "code-review.dashboard-summary-load-race",
@@ -1954,8 +1973,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. [2026-09-21 re-verified] Confirmed in code: _loadDashboardData now captures requestId = ++this._loadRequestId and checks it before applying the response, matching its siblings."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. [2026-09-21 re-verified] Confirmed in code: _loadDashboardData now captures requestId = ++this._loadRequestId and checks it before applying the response, matching its siblings. [2026-09-28] Re-verified: dashboard.component.ts:1265-1284 still guards this loader (and the other two _loadRequestId call sites at 1105/1164) the same way. No regression."
     },
     {
       "id": "code-review.saved-list-cache-stale-on-customer-roster-growth",
@@ -2301,8 +2320,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-21",
-      "notes": "[2026-09-21] Re-verified: FarmsController.cs, FarmService.cs, IFarmService.cs, FarmRepository.cs, and IFarmRepository.cs all still exist unchanged; repo-wide grep for actual Angular API calls (not just the word \"farms\", which only matches test fixture customer names like \"Alpha Farms\") confirms zero client callers. Unchanged since 2026-09-19, still open. Keep-or-delete is a product call: it is a placeholder for an ODS table that does not exist yet."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-21] Re-verified: FarmsController.cs, FarmService.cs, IFarmService.cs, FarmRepository.cs, and IFarmRepository.cs all still exist unchanged; repo-wide grep for actual Angular API calls (not just the word \"farms\", which only matches test fixture customer names like \"Alpha Farms\") confirms zero client callers. Unchanged since 2026-09-19, still open. Keep-or-delete is a product call: it is a placeholder for an ODS table that does not exist yet. [2026-09-28] Re-verified: all five files (FarmsController.cs, FarmService.cs, IFarmService.cs, FarmRepository.cs, IFarmRepository.cs) still present unchanged; still no real callers. Still open, still a product decision."
     },
     {
       "id": "clean-slop.stale-dbset-comments-originationdbcontext",
@@ -2738,8 +2757,8 @@
       "opened_in": {
         "date": "2026-09-22"
       },
-      "last_verified": "2026-09-22",
-      "notes": "[2026-09-22] Surfaced while writing the dialog spec. Not fixed in that pass because it is a source change and the spec work was scoped to tests only."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-22] Surfaced while writing the dialog spec. Not fixed in that pass because it is a source change and the spec work was scoped to tests only.\n[2026-09-28] Re-checked: dialog.component.ts still has no keydown.escape handling. Still open."
     },
     {
       "id": "angular.icon-only-buttons-lack-accessible-names",
@@ -2756,8 +2775,257 @@
       "opened_in": {
         "date": "2026-09-22"
       },
-      "last_verified": "2026-09-22",
-      "notes": "[2026-09-22] Surfaced while writing the shared component specs. Likely recurs on other icon-only controls; a sweep is worth doing."
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-22] Surfaced while writing the shared component specs. Likely recurs on other icon-only controls; a sweep is worth doing.\n[2026-09-28] Re-checked: dialog.component.ts and toast-container.component.ts still have no aria-label on their icon-only close/dismiss buttons. Still open."
+    },
+    {
+      "id": "angular.dialog-and-table-subscribe-without-cleanup",
+      "audit": "angular",
+      "severity": "medium",
+      "status": "open",
+      "title": "Component subscribe() calls with no takeUntilDestroyed/DestroyRef cleanup",
+      "description": "EditCustomerDialogComponent makes 7 apiService.subscribe() calls (loading planting commodities, trade units, customer trade units, planting intentions, commodities, customers, and removing a dormant trade unit) with no DestroyRef, no takeUntilDestroyed(), and no ngOnDestroy anywhere in the 1045-line file. PlantingIntentionsTableComponent injects DestroyRef but never applies it to any of its 3 subscribe() calls. Both are non-singleton components that are mounted and torn down repeatedly (a dialog opened per customer, a table rendered per customer detail view), so an in-flight request that outlives the component can still call .set()/mutate component state after destruction, and repeated opens can pile up concurrent in-flight subscriptions. This is the style guide's 'Use takeUntilDestroyed() for observable cleanup' rule (Component Best Practices #3).",
+      "files": [
+        "client/src/app/features/customers/components/edit-customer-dialog/edit-customer-dialog.component.ts",
+        "client/src/app/features/customers/components/planting-intentions-table/planting-intentions-table.component.ts"
+      ],
+      "suggested_fix": "Inject DestroyRef in EditCustomerDialogComponent and pipe every subscribe() through takeUntilDestroyed(this.destroyRef); wire the already-injected DestroyRef in PlantingIntentionsTableComponent into its 3 subscribe() call sites the same way.",
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-28] New — found during the angular-domain reconciliation pass while sampling the 27 files app-wide that call .subscribe(); these are the only 2 of the 27 with zero cleanup wiring (the other 24 already use takeUntilDestroyed correctly, and a third case, UserTradeUnitsService, is a providedIn:'root' singleton with a refreshInFlight guard so it's not a leak)."
+    },
+    {
+      "id": "logging.ctrm-dependency-latency-never-logged",
+      "audit": "logging",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "CTRM dependency-call duration is computed but never reaches structured logs, only a non-prod response header",
+      "description": "CtrmProvenance.RecordContracts/RecordTickets stamp ContractsMs/TicketsMs (elapsed time for each CTRM contracts/tickets read) via a Stopwatch, but the only consumers are CtrmProvenanceMiddleware (which emits them as a Server-Timing header, and only when !environment.IsProduction, so this never reaches prod) and DiagnosticsController (an on-demand manual endpoint). No repository or client code passes these values to ILogger, so durationMs never appears on the many LogInformation/LogWarning/LogError lines already emitted for CTRM reads in CtrmContractRepository.cs, CtrmTicketRepository.cs, and CtrmGraphQlClient.cs. The style guide lists durationMs as a required-when-applicable field for dependency calls (4.1) and calls out dependency calls that materially degrade latency as a required log point (7.2). This integration has known, explicitly-documented severe latency (a cold contracts(customerIds:) page for 500 producers is 22-25s per CtrmServerTimeoutRetry.cs comments, right at the 30s HC0045 timeout), so a call that is slow-but-succeeds today is invisible in Log Analytics/App Insights in production; only an outright failure is diagnosable from logs, and a support engineer investigating a slow-but-successful CTRM page load in prod has to reproduce the issue rather than query for it.",
+      "files": [
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmProvenance.cs",
+        "api/GrainOriginatorPortal.Api/Middleware/CtrmProvenanceMiddleware.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmContractRepository.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmTicketRepository.cs"
+      ],
+      "suggested_fix": "Pass provenance.ContractsMs/TicketsMs (or a locally-scoped Stopwatch around the CTRM read) into the existing success/failure log lines in CtrmContractRepository and CtrmTicketRepository as a structured {DurationMs} property, so slow-but-successful CTRM reads are queryable in Log Analytics without needing the dev-only Server-Timing header or the manual diagnostics endpoint.",
+      "related_findings": [
+        "logging.api-insights-instrumentation-unverified"
+      ],
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-28] Found during logging reconciliation while reviewing the CTRM GraphQL integration merged since the 2026-09-21 pass (feature_CtrmGraphQlSpike). Confirmed via grep: ContractsMs/TicketsMs are set in CtrmProvenance.cs and read only in CtrmProvenanceMiddleware.cs (header, non-prod) and DiagnosticsController.cs (manual endpoint) — no _logger call in the Ctrm/ directory references either property.",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "The per-producer contract and ticket reads now carry {DurationMs} on both their success and their failure log line, taken from the ContractsMs/TicketsMs the provenance object already measured. On the failure paths the provenance Record call was moved above the log so the number is populated: how long CTRM took to FAIL is the more useful of the two, since it separates a fast rejection from a gateway timeout. DurationMs is appended rather than woven into the message text on purpose, so the CTRM contracts: N for producer X prefix the turn-on runbook and the App Service log stream look for stays intact. This matters more than its medium severity suggests once PROD flips to CTRM: the API carries no Application Insights SDK, the diagnostics endpoints are blocked in Production, and the Server-Timing header carrying the same numbers is emitted outside Production only, so these log lines are the only queryable record of CTRM latency in PROD."
+    },
+    {
+      "id": "logging.ctrm-keepwarm-cycles-lack-run-id",
+      "audit": "logging",
+      "severity": "low",
+      "status": "resolved",
+      "title": "CtrmKeepWarmService warm cycles do not scope their logs with a per-cycle correlation id",
+      "description": "CtrmKeepWarmService.WarmActiveSetsAsync runs every Ctrm:KeepWarmMinutes (default 5) and, per active producer set, issues a contracts read, a ticket-history read, and a Spot Loads read, logging a warning per read that does not complete plus a final LogInformation summarizing sets maintained and elapsed seconds. None of these lines carry a per-cycle or per-set identifier the way HTTP requests get TraceId via RequestContextMiddleware, so if two or more producer sets are warmed in the same cycle (or overlapping cycles under load) and one logs failures, Log Analytics has no field to filter down to just that set/cycle's lines the way section 6 (correlation) and the existing accepted finding logging.background-job-runs-lack-correlation-id already call out for other background services. Unlike UsageTrackingBackgroundService (accepted as exempt because it is a trivial 5-second flush loop), this service does substantive multi-step, multi-producer-set I/O each cycle, so a run/set-scoped id would answer a real question ('which cycle logged this failure and what else happened in it').",
+      "files": [
+        "api/GrainOriginatorPortal.Api/Services/CtrmKeepWarmService.cs"
+      ],
+      "suggested_fix": "Wrap each WarmActiveSetsAsync cycle (or each per-set iteration) in _logger.BeginScope(new { CycleId = Guid.NewGuid(), Producers = codes.Count }), matching the pattern already used in CustomerSyncBackgroundService and UsageAggregationBackgroundService.",
+      "related_findings": [
+        "logging.background-job-runs-lack-correlation-id"
+      ],
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-28] Found during logging reconciliation while reviewing the CTRM GraphQL integration. Verified CtrmKeepWarmService.cs has no BeginScope call anywhere in the file, unlike the two background services already fixed for this pattern via PR #615.",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "WarmActiveSetsAsync now opens an ILogger scope per cycle carrying ServiceName, Operation (CtrmKeepWarm.Cycle), a fresh TraceId and the set count, matching the fields CustomerSyncBackgroundService and UsageAggregationBackgroundService already use and the fields RequestContextMiddleware puts on HTTP requests. Every warning and the closing summary in a cycle now share one filterable id. Done alongside the keep-warm test work since it is the same method; it was not in the batch originally picked."
+    },
+    {
+      "id": "clean-slop.ctrm-config-reader-duplicated-six-times",
+      "audit": "clean-slop",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "ReadInt/ReadBool config-parsing helpers independently reimplemented 6 times across the new CTRM vertical",
+      "description": "The CTRM GraphQL integration merged since the 2026-09-21 audit (Services/Ctrm, Infrastructure/Ctrm) reimplements the same private ReadInt(string key, int fallback) / ReadBool(string key, bool fallback) config-parsing helpers independently in six places: CtrmContractReader.cs, CtrmTicketReader.cs, CtrmTicketRepository.cs, CtrmServerTimeoutRetry.cs, CtrmTradeUnitThrottle.cs, and CtrmKeepWarmService.cs. Most copies are byte-identical (int.TryParse/bool.TryParse over _configuration[key]?.Trim()), but CtrmKeepWarmService.cs's copy drops the NumberStyles/CultureInfo.InvariantCulture arguments the others use, and CtrmTicketRepository.cs's ReadBool drops the fallback parameter entirely (different signature) — classic copy-paste drift where the duplicates have already started to diverge.",
+      "files": [
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmContractReader.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmTicketReader.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmTicketRepository.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmServerTimeoutRetry.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmTradeUnitThrottle.cs",
+        "api/GrainOriginatorPortal.Api/Services/CtrmKeepWarmService.cs"
+      ],
+      "suggested_fix": "Extract one internal static CtrmConfig.ReadInt/ReadBool(IConfiguration, key, fallback) helper (CtrmServerTimeoutRetry.cs and CtrmTradeUnitThrottle.cs already use the static-with-IConfiguration-parameter shape) and have all six call sites delegate to it, fixing the CultureInfo/signature drift in the same pass.",
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "Found while reviewing the new CTRM GraphQL integration (merged since the 2026-09-21 clean-slop pass) for the categories in the clean-slop skill (copy-paste drift). Confirmed via direct grep + read of all six files; StableHash(IEnumerable<string>) is also byte-identical between CtrmContractReader.cs and CtrmTicketReader.cs but was left out of the fix scope since it is only duplicated twice and is already noted as intentionally mirrored in the two Switch classes' doc comments.",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Added CtrmConfig.ReadInt/ReadBool(IConfiguration, key, fallback) in Infrastructure/Ctrm. All six sites now delegate: CtrmContractReader, CtrmTicketReader and CtrmTicketRepository keep one-line private wrappers so their ~25 call sites are unchanged, while CtrmServerTimeoutRetry and CtrmTradeUnitThrottle call CtrmConfig directly since their signature already matched. A seventh inline copy in CtrmTicketRepository.RecentTicketDaysFrom was folded in too. Both drifts named in the finding are fixed: CtrmKeepWarmService now parses with InvariantCulture like everything else, and CtrmTicketRepository.ReadBool takes an explicit fallback instead of meaning false implicitly (its one call site now reads fallback: false). System.Globalization imports left unused by the change were removed from three files."
+    },
+    {
+      "id": "clean-slop.ctrm-resolve-scoularid-duplicated",
+      "audit": "clean-slop",
+      "severity": "low",
+      "status": "resolved",
+      "title": "ResolveScoularIdAsync duplicated near-verbatim between CtrmContractRepository and CtrmTicketRepository",
+      "description": "CtrmContractRepository.cs and CtrmTicketRepository.cs each define a private async Task<string?> ResolveScoularIdAsync(long customerId, string? scoularId, CancellationToken) that is identical apart from the log message (\"CTRM contracts\" vs \"CTRM tickets\") and one extra explanatory comment in the contract version. Both look up appContext.Customers by customerId and return the trimmed ScoularId, falling back with a warning log when the customer has none.",
+      "files": [
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmContractRepository.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmTicketRepository.cs"
+      ],
+      "suggested_fix": "Move the lookup into a small shared helper (e.g. a method on a CtrmCustomerCodes-adjacent class, since that file already owns producer/customer code concerns) parameterized by the log prefix, or accept the duplication as two call sites is a low bar for extraction — flagging for awareness rather than urgency.",
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "Found while reviewing the new CTRM GraphQL integration for copy-paste drift. Low severity: only two call sites, low churn risk, and the two Repository classes are already documented as deliberately parallel (see ContractRepositorySwitch/TicketRepositorySwitch doc comments).",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Extracted CtrmProducerCode.ResolveAsync(appContext, logger, what, customerId, scoularId, ct). Both repositories now delegate through a one-line wrapper, passing their own logger so the warning keeps its own category and their own label so the message text is unchanged. Deliberately a new file rather than a method on CtrmCustomerCodes, which is pure and has no database dependency."
+    },
+    {
+      "id": "test-gaps.contract-status-pacing-logic-untested",
+      "audit": "test-gaps",
+      "severity": "high",
+      "status": "resolved",
+      "title": "contract-status.ts's harvest-pacing and confirmation-status rules are untested despite each existing to fix a documented drift bug",
+      "description": "computeHarvestPacePct's own doc comment says it exists because the free-text pacing query and the refine-panel checkbox used to compute year-over-year booked-bushel pacing differently and gave different answers to the same question -- it now contains non-obvious rules (pace against the producer's own max delivery year, not calendar year; include ALL contracts not just open ones; same-point-last-year cutoff) with zero test asserting any of them. isContractUnconfirmed and isContractCustomerConfirmed are also non-inverses by design (both return false for terminal Fulfilled/Cancelled contracts) -- an easy rule to flip back to a naive negation with no CI signal. None of the four exported functions in this file have a spec.",
+      "files": [
+        "client/src/app/shared/utils/contract-status.ts"
+      ],
+      "suggested_fix": "Add contract-status.spec.ts: pace-pct cases (no contracts, no prior-year data, mid-crop-year cutoff, straddling calendar year-end), and the Fulfilled/Cancelled non-inverse case for isContractUnconfirmed vs isContractCustomerConfirmed.",
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-28] New since the last test-gaps reconciliation (2026-09-22) -- file's own comments describe a previously-shipped pacing-drift bug between two call sites, the same 'converter exists to fix a documented bug' pattern the date-timezone-json-converters finding covered on the .NET side.",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Added contract-status.spec.ts (30 tests) covering all four exported functions. The headline case is pinned directly: for a terminal Fulfilled or Cancelled contract the customer never confirmed, BOTH isContractUnconfirmed and isContractCustomerConfirmed return false, with a companion test proving they ARE exact opposites for every non-terminal contract, which is what makes collapsing one into a negation of the other easy to miss in review. Also covers the overdue rules including the shared sub-0.1% completion threshold, and the pacing rules: max-delivery-year bucketing, the calendar-year straddle, all contracts counting rather than only open ones, and the same-point-last-year cutoff. Verified by mutation: collapsing the two predicates into a naive negation failed the non-inverse test. Fixtures are built from the real Contract type with no casts, so a model change breaks compilation."
+    },
+    {
+      "id": "test-gaps.ctrm-customer-codes-untested",
+      "audit": "test-gaps",
+      "severity": "high",
+      "status": "resolved",
+      "title": "CtrmCustomerCodes.Normalize, the shared customerIds filter guard, has zero test coverage",
+      "description": "Normalize's own doc comment documents a measured production failure mode: an 8+ character customer code makes the whole customerIds-filtered CTRM call fail with a generic error, taking every producer in that chunk down with it, not just the offending one. NormalizeKeepingAll exists as a second variant for callers that don't hit the filter, after the dropping variant was used incorrectly on one such caller and silently vanished a producer. Both variants -- trim, de-dup, sort, and the length-based drop/keep split -- are used by both the CTRM contract and ticket readers and have no direct test.",
+      "files": [
+        "api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmCustomerCodes.cs"
+      ],
+      "suggested_fix": "Add CtrmCustomerCodesTests.cs: an 8-char code is dropped by Normalize but kept by NormalizeKeepingAll, dedup is case-insensitive, output is sorted, null/empty collection returns empty.",
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-28] New since the last test-gaps reconciliation (2026-09-22), part of the CTRM GraphQL work merged 2026-09-24/28. Cheap fix: pure static function, no mocking needed.",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Added CtrmCustomerCodesTests.cs (16 cases). Pins the 7-character boundary inclusive, that Normalize drops an over-length code while NormalizeKeepingAll keeps it, that only the offending code is dropped and it is reported via the out parameter, that trimming happens BEFORE the length test in both directions, case-insensitive de-duplication keeping the first occurrence casing, case-insensitive sort ordering, null input, and blank/whitespace/null elements being discarded without appearing in dropped. Two behaviours the finding left open were resolved from the source and asserted: de-duplication and ordering are OrdinalIgnoreCase, not ordinal."
+    },
+    {
+      "id": "test-gaps.accounting-money-formatter-untested",
+      "audit": "test-gaps",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "formatAccountingMoney, the shared financial-display formatter, has zero test coverage",
+      "description": "The function's own doc comment says it was extracted because AccountingCurrencyPipe and the calculator report builder's reportMoneyAccounting held byte-for-byte identical formatting logic (parenthesized negatives, '$ ' prefix with a space, floored fraction digits) and had already drifted apart once. It is now the single source of truth for how every dollar figure with a sign is displayed across the app, with no test covering the negative-parentheses case, the fraction-digit floor, or null/undefined input.",
+      "files": [
+        "client/src/app/shared/utils/accounting-money.ts"
+      ],
+      "suggested_fix": "Add accounting-money.spec.ts: positive value, negative value (parentheses, no minus sign), null/undefined input treated as 0, maxFractionDigits below 2 floored to 2, maxFractionDigits above 2 honored.",
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-28] New since the last test-gaps reconciliation (2026-09-22). Same 'dedup that already drifted once' risk pattern as the two other new findings this run, on the money-display path this time.",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Added accounting-money.spec.ts (9 tests) covering positive, negative rendered in parentheses with an explicit assertion that no minus sign appears, comma grouping, null and undefined treated as zero, zero and negative zero never rendering as a parenthesised zero, maxFractionDigits below 2 floored to 2, above 2 honoured, and minimum padding. Expected strings were derived by running the real implementation rather than guessed. Verified by mutation: replacing the parentheses with a minus sign failed 4 of the 9."
+    },
+    {
+      "id": "test-gaps.ctrm-keep-warm-service-untested",
+      "audit": "test-gaps",
+      "severity": "medium",
+      "status": "open",
+      "title": "CtrmKeepWarmService's cadence-gating and per-producer-set failure isolation logic has zero test coverage",
+      "description": "WarmActiveSetsAsync/ExecuteAsync contain several independently-gated branches read fresh every cycle so App Service config overrides apply without a restart: cadence-minutes disable-at-zero, source-must-equal-ctrm gating, keep-for-hours filtering via CtrmWarmRegistry.ActiveSets, and a per-producer-set try/catch so one set's failure doesn't end the cycle or clobber another set's warm cache. This is the same shape of untested day/interval-gating logic the now-resolved usage-aggregation-background-service-untested finding covered on the usage-aggregation service -- CtrmKeepWarmService is the CTRM-surface equivalent and was added after that finding was fixed.",
+      "files": [
+        "api/GrainOriginatorPortal.Api/Services/CtrmKeepWarmService.cs"
+      ],
+      "suggested_fix": "Extract the cadence/gating decision (given now, lastRunUtc, cadenceMinutes, source config) into a pure function and unit test the zero-disables-it, source-not-ctrm-skips-it, and cadence-not-elapsed-skips-it cases directly; separately test that one producer set throwing doesn't stop the loop over the rest.",
+      "related_findings": [
+        "test-gaps.usage-aggregation-background-service-untested"
+      ],
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "notes": "[2026-09-28] New since the last test-gaps reconciliation (2026-09-22), part of the CTRM GraphQL/keep-warm work merged 2026-09-24/28.\n[2026-09-28] HALF CLOSED, left open deliberately. The cadence/source gating the suggested fix asks for first is done: ShouldWarmNow(cadenceMinutes, configuredSource, nowUtc, lastRunUtc) was extracted as a pure internal static and is covered by CtrmKeepWarmServiceTests (29 cases) pinning zero and negative cadence disabling warming, the >= boundary being inclusive, a backwards clock, first run from DateTime.MinValue, Trim + OrdinalIgnoreCase source matching as equality rather than prefix or contains, each gate blocking on its own, and a 12-tick simulation showing a 5-minute cadence holds to the clock instead of drifting a minute per cycle. Verified by mutation: loosening the cadence gate, flipping the boundary to exclusive and switching the source comparison to Ordinal failed 8 of the 29. The per-producer-set failure isolation half is NOT covered and is unreachable from a unit test as the code stands: WarmActiveSetsAsync is private, its only caller sits behind a real one-minute PeriodicTimer, and CtrmContractReader and CtrmTicketReader are sealed classes with no interface that convert transport failures into non-Ok CtrmReadResults rather than exceptions, so nothing can drive the catch arm the isolation lives in. All three were verified directly rather than taken on trust. Closing that half needs an application-source change (make the method internal and put the two readers behind interfaces), which is a design decision rather than a test gap, so it was not done unilaterally."
+    },
+    {
+      "id": "code-review.harvest-pace-cutoff-anchored-to-wrong-year",
+      "audit": "code-review",
+      "severity": "medium",
+      "status": "open",
+      "title": "Harvest pacing returns no answer for a producer whose latest delivery year is ahead of the current calendar year",
+      "description": "computeHarvestPacePct buckets contracts by the producer's own max delivery year (maxYear and maxYear-1) but builds its same-point-last-year cutoff from the calendar clock: new Date(today.getFullYear()-1, today.getMonth(), today.getDate()). The two only line up when maxYear equals the current calendar year. For a producer booked a year ahead, the prior-year bucket is the current calendar year while the cutoff sits a full year before it, so every dated contract in that bucket fails the cutoff, lastYearBu falls to 0, and the function returns null and the card shows nothing. Demonstrated with today = 2026-09-28: a producer with max delivery year 2026 and the same data shape returns +20%, while the identical relationship with max delivery year 2027 returns null. The failure is data-dependent in a way that hides it: the cutoff is opt-in per contract (a contract with no contractDate is always included), so the same producer returns +20% if the prior-year rows happen to carry no booking date. This function exists specifically because two earlier implementations disagreed about pacing, which is why the remaining inconsistency is worth settling deliberately.",
+      "files": [
+        "client/src/app/shared/utils/contract-status.ts"
+      ],
+      "suggested_fix": "Decide what the comparison should anchor to and make the cutoff follow the bucket. Anchoring to the bucket, for example new Date(maxYear-1, today.getMonth(), today.getDate()), makes the rule self-consistent for producers booked ahead, but it changes the number shown for them, so it is a product decision for whoever owns the pacing rule rather than a silent code change. The behaviour is currently pinned by a test named for it so the decision is not lost.",
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "related_findings": [
+        "test-gaps.contract-status-pacing-logic-untested"
+      ],
+      "notes": "[2026-09-28] Found while writing contract-status.spec.ts for test-gaps.contract-status-pacing-logic-untested. NOT fixed: unlike a plain defect this changes a number users read, so it needs an owner decision first. Current behaviour is documented by a passing test rather than left implicit."
+    },
+    {
+      "id": "performance.ctrm-read-ahead-ungated-on-data-source",
+      "audit": "performance",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "Hover prefetch and the post-click convergence re-read ran regardless of whether the backend was reading CTRM or ODS",
+      "description": "Two client behaviours exist to hide CTRM GraphQL latency: a 350ms hover prefetch on the producer list, and a 4s post-click convergence re-read that swaps in anything the live read changed behind a warm trade-unit cache. Neither was gated on the data source, so neither could follow PROD between ODS and CTRM. Against ODS they buy nothing and cost up to two reads per click plus one per hovered row where PROD does one today; against CTRM the re-read is what replaces a trade-unit-cached answer that can be minutes old. Ungated, whichever way PROD is pointed one of those two costs is being paid unnecessarily.",
+      "files": [
+        "client/src/app/features/customers/pages/home/home.component.ts",
+        "client/src/environments/environment.prod.ts"
+      ],
+      "opened_in": {
+        "date": "2026-09-28"
+      },
+      "last_verified": "2026-09-28",
+      "resolved_in": {
+        "date": "2026-09-28",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Both now gate on a new environment.ctrmReadAheadEnabled flag, set per environment to match that environment's Ctrm:Source: true in local, Dev and QA, and true in Production because PROD flips to CTRM on 2026-09-29, the same day this ships. Follows the existing flag convention rather than plumbing a runtime data-source signal to the client. The tradeoff is recorded in the flag comment: being compiled in at build time, unlike Ctrm__Source it needs a client redeploy rather than a restart, so a CTRM rollback is instant while this flag would stay on until a redeploy (harmless briefly, worth a redeploy if the rollback stands). Known and accepted cost of shipping it ON: between the deploy and the moment Ctrm__Source is set to ctrm, PROD is on ODS with read-ahead active — hours of extra ODS reads, never wrong data, accepted to avoid a second client deploy on flip day.",
+      "notes": "[2026-09-28] Raised in the CTRM PROD readiness pass on 2026-09-24 as an open decision and settled here ahead of the 2026-09-29 deploy.\n[2026-09-28] Shipped ON in Production, corrected from an initial OFF. The first cut assumed PROD would stay on ODS after the 2026-09-29 deploy, which the committed appsettings.Production.json (Source ods, identity values empty) supports on its own — but the flip is an App Service settings change happening the same day, so OFF would have meant stale clicks and a second client deploy. Caught in review; the lesson is that a build-time flag mirroring a runtime setting has to be set from the deploy PLAN, not from what the committed config says."
     }
   ]
 }

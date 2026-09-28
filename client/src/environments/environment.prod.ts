@@ -26,6 +26,27 @@ export const environment = {
   // Originator Calculators: ON in PROD. Gates the floating calculator launcher on the
   // customer home page (Profitability / Check / Cancel-vs-Roll). Client-side only — no backend.
   calculatorEnabled: true,
+  // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
+  // convergence re-read. Both exist to hide CTRM GraphQL latency, and both cost an extra read per
+  // hovered row and per click.
+  //
+  // MUST TRACK the effective Ctrm:Source. ON because PROD flips to CTRM on 2026-09-29, the same day
+  // this ships. Without it a click can render a trade-unit-cached answer minutes old with no
+  // convergence pass behind it to replace it — the stale-read problem the 4s re-read exists to
+  // solve. Turn it OFF again if PROD is ever rolled back to ODS for more than a short window:
+  // against ODS the read-ahead buys nothing (it answers fast and keeps no server-side trade-unit
+  // cache to converge on) and just multiplies reads on the busiest page.
+  //
+  // ⚠ Compiled in at build time (angular.json fileReplacements), so unlike Ctrm__Source this is NOT
+  // an App Service setting — changing it needs a client redeploy, not a restart. That asymmetry is
+  // the thing to remember: rolling CTRM back is instant, but this flag will still be on until a
+  // redeploy. Harmless for a brief rollback (extra ODS reads, correct data), worth a redeploy if
+  // the rollback is going to stand.
+  //
+  // Known cost of shipping it ON: between this deploy and the moment Ctrm__Source is set to ctrm,
+  // PROD is on ODS with read-ahead active. Accepted deliberately to avoid a second client deploy
+  // on flip day; the exposure is hours of extra ODS reads, never wrong data.
+  ctrmReadAheadEnabled: true,
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration.
   //

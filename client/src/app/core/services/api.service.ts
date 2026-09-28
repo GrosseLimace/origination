@@ -268,9 +268,14 @@ export class ApiService {
   /** A producer's trade-unit memberships for the edit dialog. Includes active memberships (shown as
    *  chips) AND previously-removed ones (isActive=false), which the dialog offers as re-addable
    *  suggestions. hasOpenActivity=false on an active locked (isManual=false) TU means it's dormant →
-   *  removable. */
-  getCustomerTradeUnits(customerId: number): Observable<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]> {
-    return this.http.get<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]>(`${this.baseUrl}/customers/${customerId}/trade-units`)
+   *  removable.
+   *
+   *  `includeActivity: false` skips the server's open-activity check (a full contract and unapplied-
+   *  ticket read for the producer) for callers that only need the codes; hasOpenActivity then comes
+   *  back true on every row and means nothing. */
+  getCustomerTradeUnits(customerId: number, options: { includeActivity?: boolean } = {}): Observable<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]> {
+    const params = options.includeActivity === false ? new HttpParams().set('includeActivity', 'false') : undefined;
+    return this.http.get<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]>(`${this.baseUrl}/customers/${customerId}/trade-units`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 

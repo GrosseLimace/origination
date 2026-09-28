@@ -15,6 +15,12 @@ export const environment = {
   // so this is on. Without them the lookup returns nothing and the picker section looks broken.
   teamsChannelMentionsEnabled: true,
   calculatorEnabled: true,
+  // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
+  // convergence re-read. Both exist to hide CTRM GraphQL latency behind a warm trade-unit cache,
+  // and both cost an extra read per hovered row and per click. Worth it when the backend is
+  // reading CTRM; pure extra load when it is reading ODS, which answers fast and has no server-side
+  // trade-unit cache to converge on. ON here because this environment runs Ctrm:Source=ctrm.
+  ctrmReadAheadEnabled: true,
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite with
   // admin consent on the API app registration, same credential as above. Granted in QA 2026-09-18.
   remindersEnabled: true,

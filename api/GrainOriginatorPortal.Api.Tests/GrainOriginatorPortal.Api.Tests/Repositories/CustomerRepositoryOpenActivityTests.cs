@@ -123,4 +123,58 @@ public class CustomerRepositoryOpenActivityTests
         Assert.Equal(["3000"], open);
         tickets.Verify(r => r.GetByCustomerAsync(It.IsAny<long>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    // -------------------------------------------------------------------------
+    private static (CustomerRepository Sut, Mock<IContractRepository> Contracts, Mock<ITicketRepository> Tickets) BuildWithMemberships()
+    {
+        var ods = new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
+            .UseInMemoryDatabase($"openact-ods-{Guid.NewGuid()}").Options);
+        var app = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"openact-app-{Guid.NewGuid()}").Options);
+        app.Customers.Add(new Customer { Id = 7, ScoularId = Producer, Name = "Test Farm", IsActive = true });
+        app.CustomerTradeUnits.AddRange(
+            new CustomerTradeUnit { CustomerId = 7, TradeUnit = "4056", IsActive = true },
+            new CustomerTradeUnit { CustomerId = 7, TradeUnit = "2190", IsActive = false });
+        app.SaveChanges();
+
+        var contracts = new Mock<IContractRepository>(MockBehavior.Strict);
+        var tickets = new Mock<ITicketRepository>(MockBehavior.Strict);
+        var sut = new CustomerRepository(ods, app, tickets.Object, contracts.Object,
+            new Mock<ILogger<CustomerRepository>>().Object);
+        return (sut, contracts, tickets);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task MembershipsAloneReadNeitherContractsNorTickets()
+    {
+        // Strict mocks: any contract or ticket read fails the test. This is the planting picker's read, and
+        // the whole point is that it costs one Origination query, not a CTRM round trip.
+        var (sut, _, _) = BuildWithMemberships();
+
+        var memberships = await sut.GetTradeUnitMembershipsAsync(7, CancellationToken.None);
+
+        Assert.Equal(["2190", "4056"], memberships.Select(m => m.TradeUnit));
+        Assert.Equal([false, true], memberships.Select(m => m.IsActive));
+        // Not computed, so left at the fail-safe default: locked.
+        Assert.All(memberships, m => Assert.True(m.HasOpenActivity));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheDefaultReadStillWorksOutWhichTradeUnitsAreLocked()
+    {
+        // The edit-customer dialog relies on this: 4056 has an open contract (locked), 2190 has nothing
+        // (dormant, removable). Splitting out the codes-only read must not change it.
+        var (sut, contracts, tickets) = BuildWithMemberships();
+        contracts.Setup(r => r.GetByCustomerAsync(It.IsAny<long>(), Producer, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([OpenContract("4056")]);
+        tickets.Setup(r => r.GetUnappliedByCustomerAsync(It.IsAny<long>(), Producer, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var memberships = await sut.GetTradeUnitsAsync(7, CancellationToken.None);
+
+        Assert.True(memberships.Single(m => m.TradeUnit == "4056").HasOpenActivity);
+        Assert.False(memberships.Single(m => m.TradeUnit == "2190").HasOpenActivity);
+    }
 }

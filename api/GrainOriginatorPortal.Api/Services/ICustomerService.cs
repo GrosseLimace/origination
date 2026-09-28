@@ -17,6 +17,8 @@ public interface ICustomerService
 
 
     Task<List<CustomerTradeUnitInfo>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken);
+    /// <summary>The memberships alone, without the open-activity check (HasOpenActivity stays true).</summary>
+    Task<List<CustomerTradeUnitInfo>> GetTradeUnitMembershipsAsync(long customerId, CancellationToken cancellationToken);
     Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken);
     Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, CancellationToken cancellationToken);
 }
