@@ -8,12 +8,7 @@
       {
         "group": "Contracts and tickets",
         "kind": "changed",
-        "text": "Contracts, pricing and tickets now come straight from CTRM, Scoular's contract system, instead of a copy of it. What you see on a producer, on Actionable Insights and in Build a List matches CTRM."
-      },
-      {
-        "group": "Contracts and tickets",
-        "kind": "changed",
-        "text": "The first time you open Actionable Insights or run a Build a List prompt for a trade unit, it can take up to a minute while it loads that trade unit's contracts. After that it is quick for as long as you keep working in it."
+        "text": "Contracts, pricing and tickets now come straight from CTRM, Scoular's contract system, instead of a copy of it. The first time you open Actionable Insights or run a Build a List prompt for a trade unit, it can take up to a minute to load; after that it is quick for as long as you keep working in it."
       },
       {
         "group": "Contracts and tickets",
@@ -49,11 +44,6 @@
         "group": "Planting intentions",
         "kind": "added",
         "text": "When you remove a producer from a trade unit that has planting intentions, you are asked where those acres should count instead."
-      },
-      {
-        "group": "Planting intentions",
-        "kind": "fixed",
-        "text": "The trade unit list when adding or editing a planting intention now appears straight away, instead of taking several seconds."
       },
       {
         "group": "Grain on farm",
