@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin, of, catchError, timeout, Subject, takeUntil } from 'rxjs';
+import { forkJoin, of, catchError, timeout, tap, Subject, takeUntil } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
@@ -28,6 +28,7 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
+import { grainOnFarmColorKey } from '@shared/utils/grain-on-farm';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -68,6 +69,15 @@ import { environment } from '@env/environment';
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+
+  /** True when the trade-unit contract or ticket read FAILED, so an empty result set is an outage
+   *  rather than a genuine answer. Every empty state on this screen has to check it: a CTRM timeout
+   *  otherwise reads as "no producers found", which is indistinguishable from a real empty list. */
+  readonly sourceLoadFailed = computed(() =>
+    this.appState.contractsLoadFailed() || this.appState.ticketsLoadFailed());
+
+  /** A read that timed out client-side rather than failing - the data is still coming. */
+  readonly sourceLoadPending = this.appState.sourceLoadPending;
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
@@ -141,9 +151,33 @@ export class BuildListComponent {
     this._dpReady();
     this._ticketsReady();
     this._contractsReady();
+    // TRACKED, not just read inside untracked() below. The failure flags flip AFTER a query is already
+    // staged - the user types a ticket prompt while the read is in flight, and it fails a moment later.
+    // Nothing else this effect tracks changes on that path (the [] fallback never calls setTickets, so
+    // _ticketsReady stays false), so without this dependency the effect never re-runs and the query hangs
+    // on "Processing query..." exactly as it did before the guard was added.
+    this.sourceLoadFailed();
+    this.appState.sourceLoadPending();   // tracked for the same reason: it flips after a query is staged
     this._storageReady();
     if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes() || this.waitingForDp()) && this.coreDataLoaded()) {
       untracked(() => {
+        // A staged query waits for data to ARRIVE. If the read that would deliver it FAILED, waiting is
+        // futile - the spinner would sit on "Processing query..." for the rest of the session, which is
+        // worse than the empty list this whole effort set out to fix: at least an empty list ends.
+        //
+        // Found by the failure drill on 2026-08-27: with CTRM unreachable, the producer screen and the
+        // dashboard both showed their error states correctly, but Build-a-List hung. The error banner
+        // lives in the results branch, and a stalled query never reaches it.
+        if (this.sourceLoadFailed() || this.appState.sourceLoadPending()) {
+          this.waitingForTickets.set(false);
+          this.waitingForNotes.set(false);
+          this.waitingForDp.set(false);
+          this.isProcessing.set(false);
+          // Render whatever the query can answer from what did load; the banner explains the gap.
+          this._applyNlqFilter();
+          return;
+        }
+
         // Re-check if the needed data is now available
         const q = this.queryText();
         const ticketsOk = !this.nlqFilterService.queryInvolvesTickets(q) || this._ticketsReady();
@@ -364,8 +398,9 @@ export class BuildListComponent {
     return matchesCropSelection(value, selectedCrops, this._cropGroupLookup(), opts);
   }
 
-  /** Grain-on-farm rows record a crop GROUP ("Corn"), never a code, so a precise code chip has to
-   *  fall back to its group there — see matchesCropSelection's groupOnlyValue. */
+  /** Grain-on-farm rows hold a commodity CODE, but rows saved before 2026-09-23 hold a crop GROUP
+   *  ("Corn") with no code to be precise about. groupOnlyValue lets a code chip still match those
+   *  legacy rows via its group; it never fires for a code value, so code rows stay exact. */
   private static readonly GROUP_ONLY: MatchCropOptions = { groupOnlyValue: true };
 
 
@@ -616,7 +651,7 @@ export class BuildListComponent {
       const grainRowsFor = (c: Customer) => {
         const rows = c.grainOnFarm ?? [];
         return !selectedCrops.isEmpty
-          ? rows.filter(g => !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops, BuildListComponent.GROUP_ONLY))
+          ? rows.filter(g => !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY))
           : rows;
       };
       // Grade is free text — pull the first number out ("4.4%" -> 4.4, "TW 58" -> 58) for over/under.
@@ -914,7 +949,7 @@ export class BuildListComponent {
       } else if (dim === 'Grain on Farm') {
         // Scope crop matching to the producer's grain-on-farm rows (with bushels on hand).
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops, BuildListComponent.GROUP_ONLY) && (g.bushelsOnHand ?? 0) > 0
+          !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY) && (g.bushelsOnHand ?? 0) > 0
         ));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => this._matchesCropFilter(crop, selectedCrops)));
@@ -1098,7 +1133,7 @@ export class BuildListComponent {
     if (this.showGrainOnFarmFilters()) {
       for (const c of this.filteredCustomers()) {
         for (const g of (c.grainOnFarm ?? [])) {
-          if ((g.bushelsOnHand ?? 0) > 0) add(g.commodityGroup);
+          if ((g.bushelsOnHand ?? 0) > 0) add(g.commodityCode);
         }
       }
     }
@@ -1238,11 +1273,10 @@ export class BuildListComponent {
   // True when the contracts fetch failed/timed out on the last load. Lets the results area
   // distinguish "couldn't load contract data" from a genuine zero-match — a contract-aware
   // query running against a silently-empty contracts array would otherwise read as "0 producers".
-  contractsLoadFailed = signal(false);
-  // Same idea for tickets: true when the bulk ticket fetch failed or exceeded the client
-  // timeout on the last load. A ticket-aware query running against a silently-empty ticket
-  // array would otherwise read as "0 producers" instead of "could not load ticket data".
-  ticketsLoadFailed = signal(false);
+  // Both live on AppStateService rather than here: customer-list and the trade-unit preload hit the same
+  // reads, and three private copies of these flags meant sourceLoadFailed missed most outages.
+  readonly contractsLoadFailed = this.appState.contractsLoadFailed;
+  readonly ticketsLoadFailed = this.appState.ticketsLoadFailed;
   showRefinePanel = signal(false);
   pendingRefinements = signal<RefinementFilters>({});
   appliedRefinements = signal<RefinementFilters>({});
@@ -2134,10 +2168,6 @@ export class BuildListComponent {
     // forkJoin below resolves (covers the cache-restore background-refresh window).
     this._contractsReady.set(false);
     this._storageReady.set(false);
-    // Reset the contracts-failure flag so a retry / fresh load starts clean.
-    this.contractsLoadFailed.set(false);
-    // Reset the tickets-failure flag too — same reasoning.
-    this.ticketsLoadFailed.set(false);
     // Only reset coreDataLoaded when clearing signals (TU change / initial load).
     // For background refreshes (clearSignals=false with existing data), keep it true
     // so the UI stays interactive while fresh data loads behind the scenes.
@@ -2168,7 +2198,9 @@ export class BuildListComponent {
     // query runs while it's missing, so page load never waits on the note download)
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
+      contracts: this.apiService.getContracts(tuParam).pipe(
+        tap(() => this.appState.setContractsLoadFailed(false)),
+        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
@@ -2233,7 +2265,19 @@ export class BuildListComponent {
     let ticketFetchFailed = false;
     this.apiService.getTickets(tuParam).pipe(
       timeout(310000),
-      catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); }),
+      tap(() => {
+        this.appState.setTicketsLoadFailed(false);
+        this.appState.setSourceLoadPending(false);
+      }),
+      // A TIMEOUT is not a failure. Whichever source answers, it keeps working and caches the result, so
+      // a retry shortly after succeeds - which makes "could not be loaded" a false statement. Only a real
+      // error arms the failed flag; a timeout says "still loading". The 310s bound above earns its keep on
+      // the CTRM path too: a cold trade-unit walk has been measured at up to 211s.
+      catchError((err) => {
+        if (err?.name === 'TimeoutError') this.appState.setSourceLoadPending(true);
+        else ticketFetchFailed = true;
+        return of([] as Ticket[]);
+      }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;
@@ -2248,7 +2292,7 @@ export class BuildListComponent {
       }
       // Only flag a failure when nothing usable came back at all — the appState fallback
       // above means the data genuinely arrived (via another consumer), so that's a success.
-      this.ticketsLoadFailed.set(ticketFetchFailed && this.tickets().length === 0);
+      this.appState.setTicketsLoadFailed(ticketFetchFailed && this.tickets().length === 0);
       this._ticketsReady.set(true);
     });
   }
@@ -2769,9 +2813,6 @@ export class BuildListComponent {
   /** Fetches fresh data for specific trade units and runs the NLQ filter. */
   private _fetchAndFilter(tradeUnits: string[]): void {
     const queryGen = this._queryGenId; // Capture to detect if a newer query supersedes this one
-    // Reset the contracts/tickets-failure flags — a fresh fetch is about to (re)determine them.
-    this.contractsLoadFailed.set(false);
-    this.ticketsLoadFailed.set(false);
 
     // Fast path: if requested TUs match what's already loaded AND all data the query
     // needs is ready, skip the fetch and run NLQ directly against in-memory data.
@@ -2807,8 +2848,12 @@ export class BuildListComponent {
     let ticketFetchFailed = false;
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
-      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); })),
+      contracts: this.apiService.getContracts(tuParam).pipe(
+        tap(() => this.appState.setContractsLoadFailed(false)),
+        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
+      tickets: this.apiService.getTickets(tuParam).pipe(
+        tap(() => this.appState.setTicketsLoadFailed(false)),
+        catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: fetchingNotes
         ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
@@ -2823,7 +2868,7 @@ export class BuildListComponent {
         this._mergeProducerDetails(data.producerDetails);
         this.contracts.set(data.contracts);
         this.tickets.set(data.tickets);
-        this.ticketsLoadFailed.set(ticketFetchFailed && data.tickets.length === 0);
+        this.appState.setTicketsLoadFailed(ticketFetchFailed && data.tickets.length === 0);
         this.notes.set(data.notes);
         // Warm the shared lazy cache so other consumers (home enrichment, customer-list
         // saved lists) and this page's next query skip the download.
@@ -3405,7 +3450,9 @@ export class BuildListComponent {
     const tuKey = [...tuParam].sort().join(',');
     forkJoin({
       contracts: forkJoin(years.map(y => this.apiService.getContractsByCropYear(y, tus).pipe(
-        catchError(() => of([] as Contract[]))
+        // Flagged rather than silently empty: this feeds the planting-coverage view, where [] reads as
+        // "nobody has contracts for this crop year".
+        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })
       ))),
       estimates: tuKey
         ? forkJoin(years.map(y => this.apiService.getDashboardPlantingEstimates(tuKey, y).pipe(
@@ -4086,7 +4133,7 @@ export class BuildListComponent {
    */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
     return (customer.grainOnFarm ?? [])
-      .filter(g => !!g.commodityGroup && (g.bushelsOnHand ?? 0) > 0)
+      .filter(g => !!g.commodityCode && (g.bushelsOnHand ?? 0) > 0)
       .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
   }
 
@@ -4230,7 +4277,7 @@ export class BuildListComponent {
     }
     if (this.showGrainOnFarmFilters()) {
       return this.grainOnFarmBreakdown(customer)
-        .map(g => ({ text: `${g.commodityGroup} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: g.commodityGroup }));
+        .map(g => ({ text: `${g.commodityCode} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: grainOnFarmColorKey(g.commodityCode, this._cropGroupLookup()) }));
     }
     return [];
   }

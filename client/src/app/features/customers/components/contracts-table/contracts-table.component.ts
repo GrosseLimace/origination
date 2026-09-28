@@ -50,9 +50,28 @@ export class ContractsTableComponent {
   public pricingLines = input<ContractPricingLine[]>([]);
   public customer = input.required<Customer>();
   public openContractId = input<number | null>(null);
+
+  /** Set when the contract read FAILED, as opposed to returning nothing. The two are
+   *  indistinguishable in the data, and showing "no contracts found" for a CTRM outage is how a
+   *  grower's book appears empty. Null means no error. */
+  public loadError = input<string | null>(null);
+
+  /** Set when the PRICING-LINE read failed while the contract rows themselves are fine. Rendered in the
+   *  pricing section rather than over the whole table: the quantities and dates on screen are correct, so
+   *  replacing them with an error would withhold good data. */
+  public pricingLoadError = input<string | null>(null);
+
+  /** Asks the parent to retry the failed read. */
+  public retryLoad = output<void>();
   /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines
    *  section shows "Loading…" instead of disappearing when this is the case. */
   public isLoadingPricingLines = input(false);
+  /** True while /api/tickets/customer/{id} is in flight. Without this the Applied Tickets
+   *  header renders "(0)" while the fetch is still running, because getAppliedTickets()
+   *  filters a tickets input that legitimately starts empty — and "(0)" is indistinguishable
+   *  from a contract that genuinely has no applied tickets. Contracts arrive in ~2s and
+   *  tickets take three date windows, so that window is always visible. */
+  public isLoadingTickets = input(false);
   /** Emitted when the optional fulfillment columns are shown/hidden, so the page can give the
    *  contracts table full width (drop the Notes sidebar below) while expanded. */
   public expandedColumnsChange = output<boolean>();
@@ -425,7 +444,11 @@ export class ContractsTableComponent {
       this.expandedPricingSections.delete(contractId);
     } else {
       this.expandedRows.add(contractId);
-      this.usageTracking.trackContractExpand(contractId.toString());
+      // Record the source contract id (e.g. PCW227498), not the row id. The row id is an ODS surrogate on
+      // one source and a synthetic hash on the other, so a label lookup keyed on it can only ever resolve
+      // for one of them; the source id IS the label and is stable across both.
+      const expanded = this.contracts().find(c => c.id === contractId);
+      this.usageTracking.trackContractExpand(expanded?.sourceContractId ?? contractId.toString());
       // Defer scroll so the expanded content renders first
       setTimeout(() => this._scrollToContract(contractId), 0);
     }

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
-import { catchError, debounceTime, switchMap, map } from 'rxjs/operators';
+import { catchError, debounceTime, switchMap, map, tap } from 'rxjs/operators';
 import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
 import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails } from '@models';
 import { MsalService } from '@azure/msal-angular';
@@ -57,6 +57,12 @@ export class CustomerListComponent {
   public linkedProducerCustomers = input<Customer[]>([]);
   public selectCustomer = output<Customer>();
   public clearSelection = output<void>();
+  /** Emitted once the pointer has rested on a row long enough to suggest a click is coming, so the
+   *  parent can warm that producer's contracts and tickets. Dwell-gated: a pointer sweeping down the
+   *  list emits nothing, so scrolling past fifty producers costs no requests. */
+  public prefetchCustomer = output<Customer>();
+  private _hoverTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly PREFETCH_DWELL_MS = 350;
 
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
@@ -324,6 +330,7 @@ export class CustomerListComponent {
     });
 
     this.destroyRef.onDestroy(() => {
+      this.onRowLeave();
       if (this._scrollTimeoutId !== null) clearTimeout(this._scrollTimeoutId);
     });
   }
@@ -500,7 +507,9 @@ export class CustomerListComponent {
     // emptiness check could misfire (or skip the fetch after a partial write). ticketsLoaded is only
     // true once a TU-wide set has been loaded; it's reset on TU change.
     if (this.nlqFilterService.queryInvolvesTickets(query) && !this.appStateService.ticketsLoaded()) {
-      missing['tickets'] = this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[])));
+      missing['tickets'] = this.apiService.getTickets(tuParam).pipe(
+        tap(() => this.appStateService.setTicketsLoadFailed(false)),
+        catchError(() => { this.appStateService.setTicketsLoadFailed(true); return of([] as Ticket[]); }));
     }
     if (this.nlqFilterService.queryInvolvesPlanting(query) && this.appStateService.plantingIntentions().length === 0) {
       missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
@@ -511,7 +520,9 @@ export class CustomerListComponent {
     // while commodity-specific prompts silently fall back to customer.commodities and
     // still return producers, making the failure look intermittent.
     if (this.nlqFilterService.queryInvolvesContracts(query) && this.appStateService.contracts().length === 0) {
-      missing['contracts'] = this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[])));
+      missing['contracts'] = this.apiService.getContracts(tuParam).pipe(
+        tap(() => this.appStateService.setContractsLoadFailed(false)),
+        catchError(() => { this.appStateService.setContractsLoadFailed(true); return of([] as Contract[]); }));
     }
     // Notes (full set with bodies/authors): fetch ONLY for prompts that actually read note
     // content/authors/pinned/counts, or whose refine filters do. Recency ("not contacted",
@@ -834,5 +845,20 @@ export class CustomerListComponent {
     }
     // Return original if not 10 digits
     return phone;
+  }
+
+  onRowEnter(customer: Customer): void {
+    this.onRowLeave();
+    this._hoverTimer = setTimeout(() => {
+      this._hoverTimer = null;
+      this.prefetchCustomer.emit(customer);
+    }, CustomerListComponent.PREFETCH_DWELL_MS);
+  }
+
+  onRowLeave(): void {
+    if (this._hoverTimer !== null) {
+      clearTimeout(this._hoverTimer);
+      this._hoverTimer = null;
+    }
   }
 }

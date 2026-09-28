@@ -374,6 +374,51 @@ export class AppStateService {
   contractsLoading = signal(false);
   todaysTicketsLoading = signal(false);
 
+  /**
+   * Set when the trade-unit-wide CONTRACT read failed, as opposed to returning nothing.
+   *
+   * Build-a-List and Actionable Insights filter these signals in memory, so a failed read leaves them
+   * empty and every prompt answers "no producers found" - which is what happened twice during CTRM
+   * development before anyone realised the gateway had timed out. Screens must check this before showing
+   * an empty state.
+   */
+  contractsLoadFailed = signal(false);
+
+  /** Same, for the trade-unit-wide ticket read behind the delivery and unapplied prompts. */
+  ticketsLoadFailed = signal(false);
+
+  /**
+   * Set when a trade-unit read did not FAIL but had not finished in time - the client gave up waiting.
+   *
+   * Measured 2026-08-27: a cold trade-unit ticket walk is 1-2+ minutes (33,313 tickets across three
+   * windows for 587 producers; 80,219 for 1,271), while the client times out at 60s. That timeout is a
+   * client decision, not a CTRM failure - the server carries on and caches the result, so a retry a
+   * moment later succeeds. Telling the user "could not be loaded from CTRM" in that situation is simply
+   * false, and it is the message they saw during the first cold test.
+   */
+  sourceLoadPending = signal(false);
+
+  /** Records that a read timed out client-side rather than failing. See sourceLoadPending. */
+  setSourceLoadPending(pending: boolean): void { this.sourceLoadPending.set(pending); }
+
+  /**
+   * Records the outcome of the TRADE-UNIT-WIDE contract read. Call it on success too.
+   *
+   * <b>Clear it from a tap BEFORE the catchError, never from setContracts.</b> Clearing inside the setter
+   * looks tidier and is wrong: the failure path resolves to an empty array that flows through
+   * setContracts one operator later, so the flag was set and then cleared in the same tick and the banner
+   * could never appear. A tap placed ahead of catchError only ever sees a real emission.
+   *
+   * Scope matters as much as timing. This flag means "the trade-unit contract list is missing", which is
+   * what Build-a-List and customer-list filter against. A producer-scoped read (pacing history) or another
+   * screen's read (the dashboard's crop year) failing does NOT belong here - it would put an outage banner
+   * on Build-a-List while its list was perfectly fine.
+   */
+  setContractsLoadFailed(failed: boolean): void { this.contractsLoadFailed.set(failed); }
+
+  /** Same for the trade-unit-wide ticket reads. See setContractsLoadFailed. */
+  setTicketsLoadFailed(failed: boolean): void { this.ticketsLoadFailed.set(failed); }
+
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
   dashboardCache = signal<DashboardCacheEntry | null>(null);
 

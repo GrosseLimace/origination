@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 
@@ -343,6 +344,8 @@ public class CustomerSyncService
         target.Name                  = source.CustomerName ?? string.Empty;
         target.ScoularId             = source.ScoularId;
         target.IndustryCode1         = source.IndustryCode1;
+        target.IndustryCode2         = source.IndustryCode2;
+        target.NopIdNumber           = OdsValues.NormaliseNopId(source.NopIdNumber);
         target.EffectiveStartDate    = source.EffectiveStartDate;
         target.EffectiveEndDate      = source.EffectiveEndDate;
         target.Phone                 = source.MerchandisingPhone;

@@ -19,7 +19,13 @@
         <div class="grid grid-cols-2 gap-4 mb-4">
           <div class="rounded-xl p-4" [style]="cardStyle">
             <div [style]="labelStyle">{{ currentCropYear() - 1 }}</div>
-            <div class="text-2xl text-white mt-1">{{ totalBushelsLastYear() > 0 ? (totalBushelsLastYear() | number:'1.0-0') : '—' }}</div>
+            @if (historyUnavailable()) {
+              <!-- Without this, an unreadable history renders as an em-dash and reads as "contracted
+                   nothing last year", which inverts the comparison the card exists to make. -->
+              <div class="text-sm text-white/80 mt-1" title="Prior-year contracts could not be read from CTRM">Unavailable</div>
+            } @else {
+              <div class="text-2xl text-white mt-1">{{ totalBushelsLastYear() > 0 ? (totalBushelsLastYear() | number:'1.0-0') : '—' }}</div>
+            }
             <div [style]="sublabelStyle">bushels contracted in harvest window</div>
           </div>
           <div class="rounded-xl p-4" [style]="cardStyle">

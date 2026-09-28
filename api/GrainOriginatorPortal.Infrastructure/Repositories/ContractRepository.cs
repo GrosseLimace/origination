@@ -357,43 +357,16 @@ public class ContractRepository : IContractRepository
     /// check and all downstream C# `== null` tests treat these contracts as open. Call
     /// after materializing contracts from the ODS.
     /// </summary>
+    // Both of these now live in ContractStatusCalculator so the CTRM repository computes status and
+    // normalizes the min-date sentinel from identical code — otherwise flipping the CTRM feature
+    // flag could change a producer's contract statuses for reasons unrelated to the data.
+    // Kept as thin private forwarders so the existing call sites read unchanged.
+
     private static void NormalizeOpenClosedDates(IEnumerable<Contract> contracts)
-    {
-        foreach (var c in contracts)
-            if (c.ClosedDate.HasValue && c.ClosedDate.Value <= OdsConstants.OpenClosedDateSentinel)
-                c.ClosedDate = null;
-    }
+        => ContractStatusCalculator.NormalizeOpenClosedDates(contracts);
 
     private static ContractStatus CalculateContractStatus(Contract contract, DateTime today)
-    {
-        // NOTE: Fulfilled status requires ticket data to calculate delivery progress
-        // Once tickets are available, check if 100% delivered and return Fulfilled
-
-        // Check delivery period dates
-        if (contract.DeliveryStart.HasValue && contract.DeliveryEnd.HasValue)
-        {
-            // If today is before delivery period starts, it's pending
-            if (today < contract.DeliveryStart.Value)
-            {
-                return ContractStatus.Pending;
-            }
-
-            // If today is within the delivery period, it's active
-            if (today >= contract.DeliveryStart.Value && today <= contract.DeliveryEnd.Value)
-            {
-                return ContractStatus.Active;
-            }
-
-            // If delivery period has passed, it's overdue (until we can verify fulfillment via tickets)
-            if (today > contract.DeliveryEnd.Value)
-            {
-                return ContractStatus.Overdue;
-            }
-        }
-
-        // Default to pending for contracts without delivery dates
-        return ContractStatus.Pending;
-    }
+        => ContractStatusCalculator.Calculate(contract, today);
 
     private sealed class ContractHedgeRow
     {

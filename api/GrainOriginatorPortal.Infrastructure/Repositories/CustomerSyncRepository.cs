@@ -38,7 +38,7 @@ public class CustomerSyncRepository : ICustomerSyncRepository
         return await _odsDb.Database
             .SqlQueryRaw<CurrentCustomerRow>(@"
                 SELECT
-                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1, c.IndustryCode2, c.NopIdNumber,
                     c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
                     c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
                     c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,

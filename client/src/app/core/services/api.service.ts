@@ -321,8 +321,10 @@ export class ApiService {
   /** Fetches closed historical contracts for Contract Pacing year-over-year comparison. */
   getHistoricalContractsForPacing(customerId: number): Observable<Contract[]> {
     return this._dedupe(`contracts-pacing:${customerId}`,
+      // Rethrows rather than swallowing: on the CTRM path an empty list is indistinguishable from a
+      // failed read, and the pacing card would silently show no history.
       this.http.get<Contract[]>(`${this.baseUrl}/contracts/pacing/${customerId}`)
-        .pipe(catchError(() => of([] as Contract[])))
+        .pipe(catchError(e => this.handleError(e)))
     );
   }
 
@@ -334,8 +336,10 @@ export class ApiService {
     }
     const tuKey = (tradeUnits && tradeUnits.length > 0) ? tradeUnits.slice().sort().join(',') : '';
     return this._dedupe(`contracts-by-crop-year:${cropYear}:${tuKey}`,
+      // Rethrows rather than swallowing: this feeds the planting-coverage prompts, where a failed read
+      // returning [] reads as "nobody has contracts for this crop year".
       this.http.get<Contract[]>(`${this.baseUrl}/contracts/by-crop-year/${cropYear}`, { params })
-        .pipe(catchError(() => of([] as Contract[])))
+        .pipe(catchError(e => this.handleError(e)))
     );
   }
 
@@ -452,7 +456,8 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Updates an existing planting intention */
+  /** Updates an existing planting intention. `tradeUnit` omitted = leave the stored trade unit as is;
+   *  a value must be one of the producer's trade units (the API returns 400 otherwise). */
   updatePlantingIntention(id: number, data: {
     crop: string;
     category?: string;
@@ -460,8 +465,17 @@ export class ApiService {
     description?: string;
     acres: number;
     plantingYear: number;
+    tradeUnit?: string;
   }): Observable<PlantingIntention> {
     return this.http.put<PlantingIntention>(`${this.baseUrl}/plantingintentions/${id}`, data)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Moves every one of a producer's planting intentions from one trade unit to another. Used when
+   *  a producer is unassigned from a trade unit and the originator says where the acres now count.
+   *  The target must be one of the producer's active trade units (the API returns 400 otherwise). */
+  retagPlantingIntentions(customerId: number, fromTradeUnit: string, toTradeUnit: string): Observable<{ moved: number }> {
+    return this.http.post<{ moved: number }>(`${this.baseUrl}/plantingintentions/retag`, { customerId, fromTradeUnit, toTradeUnit })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -700,7 +714,7 @@ export class ApiService {
 
   /** Creates or updates producer details for a customer. `contacts` array order is the display
    *  order; omitting the property entirely preserves the customer's existing contact rows. */
-  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityGroup: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[] }): Observable<ProducerDetails> {
+  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityCode: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[] }): Observable<ProducerDetails> {
     return this.http.put<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`, data)
       .pipe(catchError(e => this.handleError(e)));
   }

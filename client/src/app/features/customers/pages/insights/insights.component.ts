@@ -151,7 +151,6 @@ export class InsightsComponent {
   // Read directly from appState — DataPreloadService populates these on TU change
   readonly customers = this.appState.customers;
   readonly contracts = this.appState.contracts;
-  readonly tickets = this.appState.tickets;
   readonly todaysTickets = this.appState.todaysTickets;
   readonly commodities = this.appState.commodities;
   // Page shell waits only on customers (needed to group every category). Once customers are
