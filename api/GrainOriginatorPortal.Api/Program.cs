@@ -366,7 +366,8 @@ builder.Services.AddSingleton<IAppAccessService, AppAccessService>();
 // against its own app registration, so this is the one place in the app using a
 // ClientSecretCredential. The secret comes from Key Vault as 'Ctrm--ClientSecret' (Key Vault
 // maps '--' to ':'); when any piece is missing the credential stays null and the client reports
-// NotConfigured so callers fall back to ODS rather than failing.
+// NotConfigured. That is a FAILED read, not a fallback: with Ctrm:Source=ctrm the contract and ticket
+// screens show a load error. Rolling back to ODS is the setting Ctrm__Source=ods.
 // Longer term the cleaner shape is an app-role grant to the App Service managed identity, which
 // would remove the secret entirely and match how Graph is done above.
 builder.Services.AddSingleton<GrainOriginatorPortal.Infrastructure.Ctrm.ICtrmGraphQlClient>(sp =>

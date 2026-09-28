@@ -697,16 +697,40 @@ public sealed class CtrmContractReader
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var topUps = new int[1];
 
+        // Load-shedding under a slow gateway (2026-09-28). Once one batch has failed on BOTH attempts the
+        // read is going to fail whatever the other batches return, and every further request only adds to
+        // the pile: the server runs a timed-out query to completion regardless (70 s and more, measured by
+        // the API team), so a doomed walk was leaving up to twice its batch count queued on the database,
+        // and keep-warm was re-sending the lot five minutes later. Batches not yet started are not sent,
+        // and a batch in flight that then fails skips its own retry. A batch that fails paired but succeeds
+        // singular does NOT trip this - that is the list-plan regression the retry exists for.
+        var doomed = 0;
+        CtrmReadResult<List<CtrmContractDto>>? firstFailure = null;
+        var notSent = 0;
+
         async Task<CtrmReadResult<List<CtrmContractDto>>> One(List<string> batch)
         {
             await slot.WaitAsync(CancellationToken.None);
             try
             {
+                if (Volatile.Read(ref doomed) == 1)
+                {
+                    Interlocked.Increment(ref notSent);
+                    return firstFailure!;
+                }
+
                 var read = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => FetchAliasBatchAsync(batch, codesPerAlias, topUps));
                 if (!read.Ok)
                 {
+                    if (Volatile.Read(ref doomed) == 1) return read;    // another batch already failed twice
                     await Task.Delay(TimeSpan.FromSeconds(2));
+                    if (Volatile.Read(ref doomed) == 1) return read;
                     read = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => FetchAliasBatchAsync(batch, 1, topUps));
+                    if (!read.Ok)
+                    {
+                        Interlocked.CompareExchange(ref firstFailure, read, null);
+                        Volatile.Write(ref doomed, 1);
+                    }
                 }
                 return read;
             }
@@ -718,16 +742,21 @@ public sealed class CtrmContractReader
 
         var results = await Task.WhenAll(batches.Select(One));
 
-        var failure = results.FirstOrDefault(r => !r.Ok);
+        var failure = firstFailure ?? results.FirstOrDefault(r => !r.Ok);
         if (failure is not null)
+        {
+            var skipped = Volatile.Read(ref notSent);
             return new CtrmReadResult<List<CtrmContractDto>>
             {
                 Status = failure.Status,
                 HttpStatus = failure.HttpStatus,
                 ErrorCode = failure.ErrorCode,
-                Detail = $"Trade-unit contract read failed on one of {batches.Count} batched request(s) covering {codes.Count} producer(s), after a retry on singular aliases: {failure.Detail}",
+                Detail = $"Trade-unit contract read failed on one of {batches.Count} batched request(s) covering {codes.Count} producer(s), after a retry on singular aliases"
+                    + (skipped > 0 ? $"; {skipped} batch(es) not sent once the read was known to be failing" : "")
+                    + $": {failure.Detail}",
                 Value = []
             };
+        }
 
         var all = results.SelectMany(r => r.Value ?? []).ToList();
 

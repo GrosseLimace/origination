@@ -8,7 +8,7 @@
       {
         "group": "Contracts and tickets",
         "kind": "changed",
-        "text": "Contracts, pricing and tickets now come straight from CTRM, Scoular's contract system, instead of a copy of it. The first time you open Actionable Insights or run a Build a List prompt for a trade unit, it can take up to a minute to load; after that it is quick for as long as you keep working in it."
+        "text": "Contracts, pricing and tickets now come straight from CTRM, Scoular's contract system, instead of a copy of it. Lists and insights built from contracts or tickets, such as the Unconfirmed Contracts and Unshipped Bushels cards or a Build a List prompt about contracts or deliveries, can take up to a minute the first time you open them for a trade unit; after that they are quick for as long as you keep working. Everything else loads as before."
       },
       {
         "group": "Contracts and tickets",
