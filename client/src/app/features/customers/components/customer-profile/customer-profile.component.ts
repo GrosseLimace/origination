@@ -105,6 +105,20 @@ export class CustomerProfileComponent {
   public isLoadingEstimates = input(false);
   public isLoadingContracts = input(false);
   public isLoadingUnappliedTickets = input(false);
+
+  /** Non-null when the read FAILED rather than returning nothing - forwarded to the tables so they can
+   *  say so instead of showing their empty state. */
+  /** True when this producer's prior-year pacing history could not be read. Forwarded to the pacing
+   *  card so it can say the comparison is incomplete instead of showing it as flat. */
+  readonly historicalContractsFailed = signal(false);
+
+  public contractsLoadError = input<string | null>(null);
+  public ticketsLoadError = input<string | null>(null);
+  public pricingLinesLoadError = input<string | null>(null);
+
+  /** Bubbled up from the tables' Retry buttons. */
+  public retryContracts = output<void>();
+  public retryTickets = output<void>();
   public isLoadingPricingLines = input(false);
   public isLoadingPlanting = input(false);
   public isLoadingStoredGrain = input(false);
@@ -317,10 +331,23 @@ export class CustomerProfileComponent {
     // endpoint is only hit once. ApiService also dedupes by `contracts-pacing:{id}` key.
     effect(() => {
       const id = this.customer()?.id;
+
+      // Cleared as the fetch is kicked, so a previous producer's failure never shows against this one.
+      this.historicalContractsFailed.set(false);
+
       if (id == null) { this.historicalContracts.set([]); return; }
       this.apiService.getHistoricalContractsForPacing(id)
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(contracts => this.historicalContracts.set(contracts));
+        .subscribe({
+          next: contracts => { this.historicalContracts.set(contracts); this.historicalContractsFailed.set(false); },
+          error: () => {
+            // Producer-scoped, so it stays local: the trade-unit-wide flag drives Build-a-List's banner
+            // and this read says nothing about that list. Cleared to [] rather than left stale so the
+            // pacing card cannot present another producer's history as this one's.
+            this.historicalContracts.set([]);
+            this.historicalContractsFailed.set(true);
+          }
+        });
     });
 
     // Effect: auto-select the newest planting year when data changes.

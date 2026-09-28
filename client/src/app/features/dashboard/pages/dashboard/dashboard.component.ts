@@ -41,6 +41,11 @@ export class DashboardComponent {
   // Harvest & Contracts tab so older planting years still surface closed historical contracts
   // that vw_CurrentContracts (which feeds appState.contracts) has filtered out.
   private readonly _cropYearContracts = signal<Contract[]>([]);
+
+  /** True when the crop-year contract read failed, so Harvest & Contracts is missing data rather than
+   *  reporting genuine zeros. Dashboard-scoped: the trade-unit-wide flag drives Build-a-List, and this
+   *  read says nothing about that list. */
+  readonly cropYearLoadFailed = signal(false);
   private readonly _customerIdSet = computed(() => new Set(this.customers().map(c => c.id)));
   // Planting rows are tagged with the trade unit they were recorded for, and every acre figure on
   // this page counts a row only under that trade unit (see inSelectedTradeUnits). A producer on
@@ -1005,10 +1010,24 @@ export class DashboardComponent {
     effect(() => {
       const year = this.selectedPlantingYear();
       const tus = this.appStateService.selectedTradeUnits();
+
+      // Cleared on year/trade-unit change, so last year's failure does not caption this year's chart
+      // while the new read is still in flight.
+      this.cropYearLoadFailed.set(false);
+
       untracked(() => {
         this.apiService.getContractsByCropYear(year, tus.length > 0 ? tus : undefined)
           .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe(contracts => this._cropYearContracts.set(contracts));
+          .subscribe({
+            next: contracts => { this._cropYearContracts.set(contracts); this.cropYearLoadFailed.set(false); },
+            error: () => {
+              // Cleared, so Harvest & Contracts cannot show last year's numbers under this year's
+              // heading. Flagged LOCALLY: this is the dashboard's own read, and the trade-unit-wide flag
+              // drives Build-a-List's banner, which this says nothing about.
+              this._cropYearContracts.set([]);
+              this.cropYearLoadFailed.set(true);
+            }
+          });
       });
     });
 

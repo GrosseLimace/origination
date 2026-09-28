@@ -1,7 +1,7 @@
 import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, merge, of } from 'rxjs';
-import { catchError, distinctUntilChanged, filter, switchMap, take, tap } from 'rxjs/operators';
+import { catchError, distinctUntilChanged, filter, switchMap, take, tap, timeout } from 'rxjs/operators';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
@@ -65,6 +65,8 @@ export class DataPreloadService {
         // render as soon as their data lands rather than waiting on the slowest core query.
         this.appState.customersLoading.set(true);
         this.appState.contractsLoading.set(true);
+        this.appState.contractsLoadFailed.set(false);
+        this.appState.ticketsLoadFailed.set(false);
         this.appState.todaysTicketsLoading.set(true);
         this.appState.clearDashboardCache();
         this.appState.clearPreloadedDashboardSummary();
@@ -95,7 +97,12 @@ export class DataPreloadService {
           })
         );
         const contracts$ = this.apiService.getContracts(tradeUnits).pipe(
-          catchError(() => of([] as Contract[])),
+          // Cleared HERE, ahead of the catchError, so only a real emission clears it. Doing it inside
+          // setContracts meant the [] fallback below cleared the flag the catchError had just set.
+          tap(() => this.appState.setContractsLoadFailed(false)),
+          // Still resolves to [] so the rest of the page loads, but the failure is RECORDED - otherwise
+          // every contract-based prompt reports "no producers found" for what is actually an outage.
+          catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); }),
           tap(data => {
             this.appState.setContracts(data);
             this.appState.contractsLoading.set(false);
@@ -104,7 +111,22 @@ export class DataPreloadService {
           })
         );
         const todaysTickets$ = this.apiService.getTodaysTickets(tradeUnits).pipe(
-          catchError(() => of([] as Ticket[])),
+          // Above the honest cold time for this read (measured 3-5s, and the server now serves it
+          // stale-while-revalidate so a caller should rarely wait at all), but bounded so the Spot Loads
+          // skeleton cannot spin forever if the gateway stalls.
+          timeout(60000),
+          tap(() => {
+            this.appState.setTicketsLoadFailed(false);
+            this.appState.setSourceLoadPending(false);
+          }),
+          // A TIMEOUT is not a failure: the server keeps working and caches the result, so a retry shortly
+          // after succeeds. Saying "could not be loaded from CTRM" for it would be false - same distinction
+          // the trade-unit ticket read makes in build-list.
+          catchError((err) => {
+            if (err?.name === 'TimeoutError') this.appState.setSourceLoadPending(true);
+            else this.appState.setTicketsLoadFailed(true);
+            return of([] as Ticket[]);
+          }),
           tap(data => {
             this.appState.setTodaysTickets(data);
             this.appState.todaysTicketsLoading.set(false);

@@ -8,13 +8,11 @@ namespace GrainOriginatorPortal.Infrastructure.Repositories;
 
 public class PlantingIntentionRepository : IPlantingIntentionRepository
 {
-    private readonly OriginationDbContext _context;
     private readonly ApplicationDbContext _appContext;
     private readonly ILogger<PlantingIntentionRepository> _logger;
 
-    public PlantingIntentionRepository(OriginationDbContext context, ApplicationDbContext appContext, ILogger<PlantingIntentionRepository> logger)
+    public PlantingIntentionRepository(ApplicationDbContext appContext, ILogger<PlantingIntentionRepository> logger)
     {
-        _context = context;
         _appContext = appContext;
         _logger = logger;
     }
@@ -27,23 +25,22 @@ public class PlantingIntentionRepository : IPlantingIntentionRepository
         var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
         if (tuList is { Count: > 0 })
         {
-            // Find customer codes from TU contracts + customer/TU memberships, then load
-            // ALL their planting (cross-TU). Codes are resolved to CustomerIds and the
-            // planting filter is on the FK column (CustomerCode column is gone in Phase 3b).
-            var contractCustomerCodes = await _context.Contracts
-                .AsNoTracking()
-                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
-                         && c.TradeUnit != null && tuList.Contains(c.TradeUnit))
-                .Select(c => c.CtrmCustomerId!)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
+            // Scope on the app's OWN customer/trade-unit snapshot, then load ALL their planting
+            // (cross-TU). The planting filter is on the FK column (CustomerCode was dropped in Phase 3b).
+            //
+            // This used to also union in producer codes from ODS base.vw_CurrentContracts. That read is
+            // gone: it was the last ODS *contract* read on the CTRM path, and measuring it showed the
+            // union could not add a single producer this screen can render. Across trade units 1340,
+            // 2057, 2115 and 2190 (2026-09-08) the contract scan contributed 29-30 codes apiece that
+            // membership alone missed, and every one of them was absent from dbo.Customer entirely -
+            // commercial counterparties (ADM, Bunge, grain companies) that Scoular buys from. Since
+            // codes are resolved to CustomerIds through dbo.Customer, a code with no customer row can
+            // never produce a planting record. Producers in dbo.Customer but missing a membership row
+            // would have been a real loss; there were zero of those on all four units.
             var customerIds = await _appContext.Customers
                 .AsNoTracking()
-                .Where(c => c.IsActive &&
-                    ((c.ScoularId != null && contractCustomerCodes.Contains(c.ScoularId))
-                     || _appContext.CustomerTradeUnits.Any(ctu =>
-                            ctu.CustomerId == c.Id && ctu.IsActive && tuList.Contains(ctu.TradeUnit))))
+                .Where(c => c.IsActive && _appContext.CustomerTradeUnits.Any(ctu =>
+                        ctu.CustomerId == c.Id && ctu.IsActive && tuList.Contains(ctu.TradeUnit)))
                 .Select(c => c.Id)
                 .ToListAsync(cancellationToken);
 

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ThemeService } from '@core/services/theme.service';
 import { ApiService } from '@core/services/api.service';
+import { AppStateService } from '@core/services/app-state.service';
 import { Contract, HarvestWindow } from '@models';
 
 type PacingDirection = 'up' | 'down' | 'flat';
@@ -39,6 +40,18 @@ export class ContractPacingCardComponent {
 
   private readonly themeService = inject(ThemeService);
   private readonly apiService = inject(ApiService);
+  private readonly appState = inject(AppStateService);
+
+  /** True when this producer's prior-year history could not be read, so the year-over-year comparison
+   *  is understated rather than genuinely flat. Producer-scoped: never the trade-unit-wide flag. */
+  readonly historyLoadFailed = signal(false);
+
+  /** Set by the parent when IT was the one that failed to read the history. The card self-fetches only
+   *  when the parent supplies nothing, so the failure can originate on either side. */
+  public parentHistoryLoadFailed = input(false);
+
+  /** Either source failing means the comparison is understated. */
+  readonly historyUnavailable = computed(() => this.historyLoadFailed() || this.parentHistoryLoadFailed());
   private readonly destroyRef = inject(DestroyRef);
 
   /** Closed historical contracts — supplied by parent OR self-fetched if parent doesn't pass them. */
@@ -51,13 +64,25 @@ export class ContractPacingCardComponent {
     effect(() => {
       const id = this.customerId();
       const parentSupplied = this.historicalContracts();
+
+      // Reset where the fetch STARTS, not just when one succeeds: otherwise switching from a producer
+      // whose history failed to one still loading shows the previous producer's failure for a beat.
+      this.historyLoadFailed.set(false);
+
       if (id == null || parentSupplied.length > 0) {
         this._selfFetchedHistorical.set([]);
         return;
       }
       this.apiService.getHistoricalContractsForPacing(id)
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(contracts => this._selfFetchedHistorical.set(contracts));
+        .subscribe({
+          next: contracts => { this._selfFetchedHistorical.set(contracts); this.historyLoadFailed.set(false); },
+          // LOCAL, not the trade-unit-wide flag: this is one producer's prior-year history. Flagging it
+          // globally would put "contract data could not be loaded" on Build-a-List while its own list was
+          // fine. Pacing compares this year against last, so a miss understates the comparison rather
+          // than emptying the card - hence a note on the card, not a blocking error.
+          error: () => this.historyLoadFailed.set(true)
+        });
     });
   }
 

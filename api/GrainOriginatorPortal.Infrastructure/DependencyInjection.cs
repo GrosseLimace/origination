@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
@@ -114,6 +115,21 @@ public static class DependencyInjection
 #endif
         });
 
+        // Singleton so one date-window fetch is shared by every request and every producer, rather
+        // than each scoped repository paging the window again. ICtrmGraphQlClient is registered in
+        // the Api project (it needs IHttpClientFactory and a credential).
+        // Live per-producer readers. Singleton so their short request-coalescing cache is shared:
+        // selecting a producer triggers the contract list, the pricing lines and the pacing card, which all
+        // want the same rows, so one CTRM call serves all three instead of three identical round trips.
+        services.AddSingleton<CtrmContractReader>();
+        services.AddSingleton<CtrmTicketReader>();
+        services.AddSingleton<CtrmWarmRegistry>();
+
+
+        // Scoped: one per HTTP request, so the provenance middleware reports what THIS request's
+        // repositories actually did rather than what was configured when it arrived.
+        services.AddScoped<CtrmProvenance>();
+
         // ── Repositories (per-domain, added incrementally during the Phase 2 migration) ──
         services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
         services.AddScoped<ICommodityRepository, CommodityRepository>();
@@ -127,8 +143,20 @@ public static class DependencyInjection
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IReminderRepository, ReminderRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
-        services.AddScoped<ITicketRepository, TicketRepository>();
-        services.AddScoped<IContractRepository, ContractRepository>();
+        // Tickets follow the same switch pattern as contracts. The CTRM ticket repository still needs
+        // the ODS one — for the ticket-key index, the storage gate and the location lookup, none of
+        // which CTRM can supply.
+        services.AddScoped<TicketRepository>();
+        services.AddScoped<CtrmTicketRepository>();
+        services.AddScoped<ITicketRepository, TicketRepositorySwitch>();
+
+        // Contracts resolve through a switch that picks ODS or CTRM per call from Ctrm:Source.
+        // Both concrete repositories are registered because the switch holds one of each, and the
+        // CTRM one delegates the reads it cannot serve (pacing history, crop year, farm, by-number)
+        // straight to the ODS one. Default is ODS — see ContractRepositorySwitch.
+        services.AddScoped<ContractRepository>();
+        services.AddScoped<CtrmContractRepository>();
+        services.AddScoped<IContractRepository, ContractRepositorySwitch>();
         services.AddScoped<IBidSheetRepository, BidSheetRepository>();
         services.AddScoped<IBarchartIngestRepository, BarchartIngestRepository>();
         services.AddScoped<IBarchartCatalogRepository, BarchartCatalogRepository>();

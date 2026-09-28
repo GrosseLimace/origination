@@ -513,7 +513,12 @@
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Contracted delivery volume by month</p>
               </div>
               <div class="px-5 pt-5 pb-4">
-                @if (contractsForYear().length === 0) {
+                @if (cropYearLoadFailed()) {
+                  <!-- An outage must not read as a year with no contracts. -->
+                  <div class="flex items-center justify-center h-32 text-sm text-amber-700 dark:text-amber-300 text-center px-4">
+                    Contract data for {{ selectedPlantingYear() }} could not be loaded from CTRM, so this chart is incomplete. Please retry shortly.
+                  </div>
+                } @else if (contractsForYear().length === 0) {
                   <div class="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500 italic">No contract data for {{ selectedPlantingYear() }}</div>
                 } @else {
                   <div class="flex gap-4">
@@ -637,7 +642,13 @@
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">Sales Opportunities</h3>
                   <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Open and unpriced bushels by commodity</p>
                 </div>
-                @if (salesOpportunityRows().length === 0) {
+                @if (cropYearLoadFailed()) {
+                  <!-- Same reasoning as the Harvest Timeline above: an outage must not read as a year with
+                       no contracts. Missed on the first pass because this panel has its own empty state. -->
+                  <div class="flex items-center justify-center py-16 text-sm text-amber-700 dark:text-amber-300 text-center px-4">
+                    Contract data for {{ selectedPlantingYear() }} could not be loaded from CTRM, so these figures are incomplete. Please retry shortly.
+                  </div>
+                } @else if (salesOpportunityRows().length === 0) {
                   <div class="flex items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500 italic">No contract data for {{ selectedPlantingYear() }}</div>
                 } @else {
                   <div class="overflow-x-auto">

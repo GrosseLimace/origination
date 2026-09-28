@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 
 // Polly namespaces
 using Polly;
+using Polly.Timeout;
 
 // Rate limiting
 using System.Threading.RateLimiting;
@@ -151,6 +152,10 @@ builder.Services.AddHostedService<UsageAggregationBackgroundService>();
 // trigger endpoint shares the same code path.
 builder.Services.AddSingleton<CustomerSyncService>();
 builder.Services.AddHostedService<CustomerSyncBackgroundService>();
+
+// Keeps the trade-unit-wide CTRM caches warm for recently-used producer sets, so Build-a-List prompts
+// never pay for a cache that expired between uses. No-op unless Ctrm:Source is 'ctrm'.
+builder.Services.AddHostedService<CtrmKeepWarmService>();
 
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
 // OnAuthenticationFailed fires when the token is present but invalid (bad signature,
@@ -356,6 +361,33 @@ builder.Services.AddSingleton<IGraphDirectoryClient>(sp =>
 // user universe and the daily-digest People picker. Singleton so all requests share the cache.
 builder.Services.AddSingleton<IAppAccessService, AppAccessService>();
 
+// CTRM GraphQL client (DB2Connector.GraphQL spike) — singleton so the cached token is shared.
+// Unlike Graph, this API is not an Azure first-party resource: it needs client credentials
+// against its own app registration, so this is the one place in the app using a
+// ClientSecretCredential. The secret comes from Key Vault as 'Ctrm--ClientSecret' (Key Vault
+// maps '--' to ':'); when any piece is missing the credential stays null and the client reports
+// NotConfigured so callers fall back to ODS rather than failing.
+// Longer term the cleaner shape is an app-role grant to the App Service managed identity, which
+// would remove the secret entirely and match how Graph is done above.
+builder.Services.AddSingleton<GrainOriginatorPortal.Infrastructure.Ctrm.ICtrmGraphQlClient>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var tenantId = config.GetValue<string>("Ctrm:TenantId")?.Trim();
+    var clientId = config.GetValue<string>("Ctrm:ClientId")?.Trim();
+    var clientSecret = config.GetValue<string>("Ctrm:ClientSecret")?.Trim();
+
+    Azure.Core.TokenCredential? ctrmCredential =
+        !string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret)
+            ? new ClientSecretCredential(tenantId, clientId, clientSecret)
+            : null;
+
+    return new GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient(
+        ctrmCredential,
+        sp.GetRequiredService<IHttpClientFactory>(),
+        config,
+        sp.GetRequiredService<ILogger<GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient>>());
+});
+
 // Configure CORS — allowed origins come from configuration so they can be overridden
 // per environment via Azure App Service settings without code changes.
 builder.Services.AddCors(options =>
@@ -400,7 +432,8 @@ builder.Services.AddHttpClient("nominatim", client =>
         // Only retry on transient network/timeout failures — not 4xx
         ShouldHandle = args => ValueTask.FromResult(
             args.Outcome.Exception is HttpRequestException ||
-            args.Outcome.Exception is TaskCanceledException)
+            args.Outcome.Exception is TaskCanceledException ||
+            args.Outcome.Exception is TimeoutRejectedException)
     });
 
     // Circuit breaker: opens after 50% failure rate over 5+ requests in 30s window (§6.3)
@@ -411,6 +444,12 @@ builder.Services.AddHttpClient("nominatim", client =>
         MinimumThroughput = 5,
         BreakDuration = TimeSpan.FromSeconds(30)
     });
+
+    // Per ATTEMPT. Innermost so each retry gets its own clock. Sized to the slowest legitimate request
+    // we have measured - a 500-row contract page with pricing lines at ~12s, or a customerIds crop-year
+    // page at ~8-20s - with headroom, and well under the server's own 30s HC0045 limit so we give up
+    // at the same point it does rather than after it.
+    pipeline.AddTimeout(TimeSpan.FromSeconds(30));
 });
 
 // Microsoft Graph (app-access spike): same resilience shape as nominatim, but only 2 retries —
@@ -446,6 +485,62 @@ builder.Services.AddHttpClient("graph", client =>
         MinimumThroughput = 5,
         BreakDuration = TimeSpan.FromSeconds(30)
     });
+});
+
+// CTRM GraphQL: BaseAddress is the FULL endpoint URL (single POST target, no relative paths), so
+// it comes from config rather than being hard-coded — each environment points at its own gateway.
+// Timeout is 30s rather than 10s because a cold contract-snapshot page has been measured at ~3.4s
+// and the API is an on-prem node behind APIM, not an Azure-local service.
+builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient.HttpClientName, client =>
+{
+    var uri = builder.Configuration.GetValue<string>("Ctrm:GraphQlUri")?.Trim();
+    if (!string.IsNullOrEmpty(uri))
+        client.BaseAddress = new Uri(uri);
+    // The OVERALL budget for one logical call, retries included. The per-attempt limit is the AddTimeout
+    // strategy in the pipeline below. These used to be one 30-second number, which meant a slow-but-fine
+    // attempt was retried inside a budget it had already spent - the retries could not succeed, and the
+    // producer screen saw "Timed out reaching the CTRM gateway" under load. 3 attempts x 35s + backoff.
+    client.Timeout = TimeSpan.FromSeconds(110);
+})
+.AddHttpMessageHandler<CorrelationIdOutboundHandler>()
+.AddResilienceHandler("ctrm", pipeline =>
+{
+    pipeline.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.FromMilliseconds(500),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromSeconds(10),
+        // Exceptions only — never status codes. This API answers HTTP 500 for caller-input
+        // validation failures, so retrying on status would triple the cost of a bad query and
+        // still fail. A 401 likewise has to reach CtrmGraphQlClient unretried to be reported
+        // as Unauthorized.
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is HttpRequestException ||
+            args.Outcome.Exception is TaskCanceledException)
+    });
+
+    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        FailureRatio = 0.5,
+        SamplingDuration = TimeSpan.FromSeconds(30),
+        MinimumThroughput = 5,
+        BreakDuration = TimeSpan.FromSeconds(30)
+    });
+
+    // PER-ATTEMPT limit, innermost so it wraps the individual request rather than the retry sequence.
+    // There was none: the comment on client.Timeout above claimed one but nothing enforced it, so a single
+    // hung attempt could hold a request for the whole 110-second client budget.
+    //
+    // 35 seconds, not 30, on purpose: the server's own limit is 30s and it answers HC0045 as a GraphQL
+    // error we retry deliberately (CtrmServerTimeoutRetry - the server finishes and caches the query after
+    // erroring). Timing out at 30 would abort that answer in flight and turn a recoverable server-side
+    // timeout into an opaque client abort.
+    //
+    // TimeoutRejectedException is deliberately NOT in the retry ShouldHandle above: a hung attempt should
+    // fail fast to EgressBlocked, which names the remediation, rather than being retried twice more.
+    pipeline.AddTimeout(TimeSpan.FromSeconds(35));
 });
 
 // A second Graph client for the ONE call that must never be re-sent: creating an Outlook calendar
@@ -575,11 +670,12 @@ if (app.Environment.IsDevelopment())
             );
             app.Logger.LogInformation("DB connections warmed up successfully.");
 
-            // SyncCommoditiesAsync deliberately NOT called here. dbo.Commodities is hand-curated
-            // (Code/Name/Category plus Tier1/Tier2/Tier3/BaseUOM which the ODS sync doesn't know
-            // about), so we don't want the startup to scan the 2M-row vw_CurrentTickets view on
-            // every dev restart just to confirm there's nothing new to add. The method is still
-            // callable on demand via the diagnostics endpoint if a one-time backfill is needed.
+            // No commodity sync runs here, and there is no longer one to run. dbo.Commodities is
+            // hand-curated (Code/Name/Category plus Tier1/Tier2/Tier3/BaseUOM, none of which a scan of
+            // ODS contracts could supply), so the repository's ODS-scanning SyncAsync was never wired to
+            // anything and has been removed. The Dev-only POST /api/diagnostics/commodities/seed endpoint
+            // remains for a one-time backfill; it has always carried its own query rather than calling
+            // that method.
         }
         catch (Exception ex)
         {
@@ -649,6 +745,13 @@ app.UseMiddleware<SecurityAuditMiddleware>();
 // Usage tracking — records every authenticated API request for the usage dashboard.
 // Runs after auth so UserId is resolved. Non-blocking: writes to a bounded channel.
 app.UseMiddleware<UsageTrackingMiddleware>();
+
+// Reports which source (ODS or CTRM) actually served each response's contract and ticket data, as
+// X-Data-Source* headers visible in the browser's Network tab. The two sources are mapped to look
+// identical in the response body, so without this there is no way to confirm from the client which
+// one you are looking at. Non-production only — diagnostic detail with no place in a prod response.
+if (!app.Environment.IsProduction())
+    app.UseMiddleware<CtrmProvenanceMiddleware>();
 
 // Map controller routes and require a valid Azure AD bearer token on every endpoint.
 // Health check and OpenAPI endpoints are mapped separately and are not covered here.
