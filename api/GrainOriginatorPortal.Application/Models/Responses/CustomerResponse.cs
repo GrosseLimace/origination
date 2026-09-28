@@ -34,6 +34,9 @@ public record CustomerResponse
 
     public bool ESignEnabled { get; init; }
     public bool AchEnabled { get; init; }
+    /// <summary>The producer's active trade-unit codes. Populated on list and search reads; empty on
+    /// single-customer reads, where callers fetch <c>/customers/{id}/trade-units</c> instead.</summary>
+    public List<string> ActiveTradeUnits { get; init; } = new();
     public string? ScoularViewRecipients { get; init; }
     public string? Guild { get; init; }
     public CoordinatesResponse? Coordinates { get; init; }

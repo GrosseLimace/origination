@@ -34,6 +34,7 @@ public static class CustomerMappings
         LinkedProducerIds = c.LinkedProducerIds,
         ESignEnabled = c.ESignEnabled,
         AchEnabled = c.AchEnabled,
+        ActiveTradeUnits = c.ActiveTradeUnits,
         ScoularViewRecipients = c.ScoularViewRecipients,
         Guild = c.Guild,
         Coordinates = c.Coordinates is null ? null : new CoordinatesResponse { Lat = c.Coordinates.Lat, Lng = c.Coordinates.Lng },
