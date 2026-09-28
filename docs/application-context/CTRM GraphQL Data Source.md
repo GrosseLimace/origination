@@ -98,25 +98,26 @@ To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to t
 
 ## Turning CTRM on in Production (runbook)
 
-Production ships **wired but off**: `appsettings.Production.json` carries a `Ctrm` block with `Source: "ods"` and empty identity values, so a PROD deploy changes nothing at runtime and the flip is App Service settings only. Written 2026-09-23 for the 2026-09-29 release; the API team owns the PROD gateway.
+**Status 2026-09-28: Production ships ON.** `appsettings.Production.json` carries `Source: "ctrm"` and the PROD identity values, so the 2026-09-29 deploy turns CTRM on by itself; there is nothing to set in App Service. Rollback stays a setting (below). Originally written 2026-09-23 as a "wired but off" flip; the plan changed once the API team delivered the PROD environment on 2026-09-28.
 
-### What must exist before the flip (none of it is code)
+### What had to exist first — all done 2026-09-28
 
-| Item | Owner | Why it is a precondition |
+| Item | Value / status | Where it lives |
 |---|---|---|
-| PROD GraphQL endpoint URL — reads **production** Db2 (not `apiqa.scoular.com`, which serves a nonprod snapshot) | API team | `Ctrm__GraphQlUri` |
-| PROD API audience, `api://<prod-api-app-id>/.default` | API team | `Ctrm__Audience` |
-| Client app registration with a role on the PROD API (same as Dev/QA's `5e9cb280…` or a PROD one) | API team | `Ctrm__ClientId` |
-| That registration's secret in **`kv-orig-eus`** as `Ctrm--ClientSecret` — **status 2026-09-24: secret received from the API team, NOT yet in the vault.** Add via Portal (Secrets → Generate/Import) or `az keyvault secret set --file`; confirm with `az keyvault secret show … --query attributes.enabled`. Never paste it into chat, tickets or email. | whoever can write PROD Key Vault (Key Vault Secrets Officer on `kv-orig-eus`) | The CTRM client and its `ClientSecretCredential` are a **singleton built at startup** and Key Vault is read at startup — the secret must be in the vault **before** the restart that turns CTRM on. Harmless to add early: with `Ctrm:ClientId` empty the credential is never built. |
-| PROD APIM rate-limit policy (calls/period, burst, per-subscription vs per-IP, `Retry-After` on 429) | API team | QA throttled us at roughly 13–26 calls/s sustained; one trade-unit load is ~587 calls at ~13/s. We bound concurrency but not request rate |
-| Whether the PROD gateway needs an APIM subscription key header | API team | We send a bearer token only. A key would be a **code change** |
-| PROD App Service instance count | Infra | `CtrmKeepWarmService` has no single-instance guard: N instances = N× keep-warm load against the quota |
+| PROD GraphQL endpoint — reads **production** Db2 (not `apiqa.scoular.com`) | `https://api.scoular.com/internal/graphql`; a single POST to that path | `Ctrm:GraphQlUri` |
+| API audience | `api://243ea5dc-2187-44aa-aa62-3d303608be53/.default` — the API team confirmed it is the same in every environment | `Ctrm:Audience` |
+| Client app registration | `scoular-graphql-client-prod`, appid `25ce2e75-76b6-4fb9-a6bf-ed76ef11adae` (service principal object id `06642509-1de5-4ebc-8e7f-a0342383f0d6`), holding **Db2.Read.All** on `scoular-graphql-api` | `Ctrm:ClientId` |
+| That registration's secret | In **`kv-orig-eus`** as `Ctrm--ClientSecret`, added and enabled 2026-09-28. The registration's only secret expires **2028-07-15** — rotate before then. Never paste it into chat, tickets or email. | Key Vault, read at startup by the app's managed identity |
+| Subscription key | None expected (API team, 2026-09-28). We send a bearer token only. | — |
+| Rate limit | **3,000 calls per 60 s for `scoular-graphql-client-prod`**, keyed per identity. Raised from the default 1,000 by the API team on 2026-09-28 at our request, sized at about 3× our worst case: a cold trade-unit load is ~60–130 contract calls plus ~70 for ticket history, and keep-warm repeats them every 5 min per trade unit in use. A 429 now carries `Retry-After` and `X-RateLimit-Remaining`. **Our client does not act on `Retry-After` yet:** a 429 surfaces as `Throttled` in the provenance headers and a load error with Retry on screen. Honouring `Retry-After` in the CTRM HTTP pipeline is a follow-up if the limit is ever reached. | API team policy |
+| End-to-end check | A laptop smoke test with this identity and secret passed 2026-09-28: token issued with Db2.Read.All, `query { __typename }` 200, a production `contracts` read 200. | `Documents\ctrm-measure-2026-09-17\prod-smoke-test.ps1` (not in the repo) |
+| PROD App Service instance count | Still to confirm with Infra: `CtrmKeepWarmService` has no single-instance guard, so N instances = N× keep-warm calls against the rate limit. | — |
 
-### The flip
+### Deploying it
 
-1. Confirm the secret is in `kv-orig-eus` and the app's managed identity can read it (it already reads that vault for other secrets).
-2. Set App Service settings on `app-origination-eus` — `Ctrm__GraphQlUri`, `Ctrm__ClientId`, `Ctrm__Audience`, then **last** `Ctrm__Source = ctrm`. Saving restarts the app; that restart is what builds the credential with the secret.
-3. Do **not** change `Ctrm__TenantId` (committed) or any tuning knob — the concurrency and cache settings in base `appsettings.json` are the measured values.
+1. The PROD `vw_CustomerTradeUnits` view change (`Scripts/AddIndustryCode2AndNopIdToCustomerTradeUnitsView.sql`) runs first; it is manual in every environment.
+2. Run **Originations Deploy to PROD** on `main`. It applies the EF migrations, deploys, and the restart that follows builds the CTRM credential with the vault secret.
+3. Do **not** set `Ctrm__*` App Service settings — they would override the committed values. The concurrency and cache settings in base `appsettings.json` are the measured values.
 
 ### Verifying it worked
 
