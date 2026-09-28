@@ -74,10 +74,12 @@ public sealed class CtrmContractRepository : IContractRepository
         var read = await _reader.GetForProducerCoreAsync(code, cancellationToken);
         if (!read.Ok)
         {
-            _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail}",
-                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            // Record before logging so DurationMs is populated: how long CTRM took to fail is the number
+            // that separates a fast rejection from a gateway timeout, and it is the more useful of the two.
             _provenance.RecordContracts("ctrm", read.Status.ToString(), 0);
             _provenance.RecordFailure("contracts", read.Status, read.Detail);
+            _logger.LogError("CTRM contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} — {Detail} (after {DurationMs}ms)",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail, _provenance.ContractsMs);
             return [];
         }
 
@@ -85,8 +87,12 @@ public sealed class CtrmContractRepository : IContractRepository
         var fromSet = read.Origin == CtrmReadOrigin.TradeUnitCache;
         _provenance.RecordContracts("ctrm", fromSet ? "OkFromTradeUnitCache" : "Ok", contracts.Count);
 
-        _logger.LogInformation("CTRM contracts: {Count} for producer {ScoularId} ({Source}, all dates).",
-            contracts.Count, code, fromSet ? "trade-unit cache, live refresh behind it" : "live");
+        // DurationMs is appended rather than woven into the text on purpose: the turn-on runbook and the
+        // App Service log stream both look for the "CTRM contracts: N for producer X" prefix, so it stays
+        // intact. It is the only place a slow-but-successful CTRM read becomes queryable — the
+        // Server-Timing header carrying the same number is emitted outside Production only.
+        _logger.LogInformation("CTRM contracts: {Count} for producer {ScoularId} ({Source}, all dates) in {DurationMs}ms.",
+            contracts.Count, code, fromSet ? "trade-unit cache, live refresh behind it" : "live", _provenance.ContractsMs);
 
         return contracts;
     }

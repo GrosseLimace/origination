@@ -112,10 +112,13 @@ public sealed class CtrmTicketRepository : ITicketRepository
         {
             // No ODS fallback: serving ODS tickets while the screen is meant to show CTRM would hide the
             // failure and invalidate any conclusion drawn about CTRM's coverage.
-            _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
-                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            // Record before logging so DurationMs is populated — see the equivalent note in
+            // CtrmContractRepository. How long it took to fail distinguishes a fast rejection from a
+            // gateway timeout.
             _provenance.RecordTickets("ctrm", read.Status.ToString(), 0);
             _provenance.RecordFailure("tickets", read.Status, read.Detail);
+            _logger.LogError("CTRM tickets unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail} (after {DurationMs}ms)",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail, _provenance.TicketsMs);
 
             // Returning here would leave the contract task unobserved; a fault on it would then surface as
             // an unobserved TaskException on the finalizer thread rather than in this request's log.
@@ -176,9 +179,12 @@ public sealed class CtrmTicketRepository : ITicketRepository
             read.Origin == CtrmReadOrigin.TradeUnitCache ? "OkFromTradeUnitCache" : gated ? "OkStorageGated" : "Ok",
             tickets.Count);
 
+        // DurationMs appended, prefix unchanged — see the note on the equivalent line in
+        // CtrmContractRepository. This is the only queryable record of how long a successful CTRM
+        // ticket read took; Server-Timing carries it outside Production only.
         _logger.LogInformation(
-            "CTRM tickets: {Count} rows for producer {ScoularId} (live; {Open} open contract(s)).",
-            tickets.Count, code, openPurchaseContractIds.Count);
+            "CTRM tickets: {Count} rows for producer {ScoularId} (live; {Open} open contract(s)) in {DurationMs}ms.",
+            tickets.Count, code, openPurchaseContractIds.Count, _provenance.TicketsMs);
 
         return tickets;
     }
