@@ -8,6 +8,12 @@ export const environment = {
   // on THIS environment's SPA app registration; without it the channel lookup returns nothing, so
   // the flag stays off rather than showing an empty, apparently-broken picker section.
   teamsChannelMentionsEnabled: true,
+  // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
+  // convergence re-read. Both exist to hide CTRM GraphQL latency behind a warm trade-unit cache,
+  // and both cost an extra read per hovered row and per click. Worth it when the backend is
+  // reading CTRM; pure extra load when it is reading ODS, which answers fast and has no server-side
+  // trade-unit cache to converge on. ON here because this environment runs Ctrm:Source=ctrm.
+  ctrmReadAheadEnabled: true,
   calculatorEnabled: true,
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration; keep false until that consent is granted.

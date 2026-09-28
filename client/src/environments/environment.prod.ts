@@ -23,6 +23,19 @@ export const environment = {
   teamsChannelMentionsEnabled: true,
   // Originator Calculators: ON in PROD. Gates the floating calculator launcher on the
   // customer home page (Profitability / Check / Cancel-vs-Roll). Client-side only — no backend.
+  // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
+  // convergence re-read. Both exist to hide CTRM GraphQL latency, and both cost an extra read per
+  // hovered row and per click.
+  //
+  // OFF because PROD runs Ctrm:Source=ods. Against ODS they buy nothing (it answers fast and there
+  // is no server-side trade-unit cache to converge on) and would raise read load on a path that
+  // today does exactly one read per producer click. Turn ON as part of flipping PROD to CTRM.
+  //
+  // ⚠ Compiled in at build time (angular.json fileReplacements), so unlike Ctrm__Source this is NOT
+  // an App Service setting — enabling it needs a client redeploy, not a restart. Flip CTRM on first,
+  // verify, then redeploy with this true; the read-ahead is an optimisation, never a correctness
+  // requirement, so the two steps are safe to separate.
+  ctrmReadAheadEnabled: false,
   calculatorEnabled: true,
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration.
