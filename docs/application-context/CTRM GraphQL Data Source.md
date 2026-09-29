@@ -98,7 +98,7 @@ To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to t
 
 ## Turning CTRM on in Production (runbook)
 
-**Status 2026-09-28: Production ships ON.** `appsettings.Production.json` carries `Source: "ctrm"` and the PROD identity values, so the 2026-09-29 deploy turns CTRM on by itself; there is nothing to set in App Service. Rollback stays a setting (below). Originally written 2026-09-23 as a "wired but off" flip; the plan changed once the API team delivered the PROD environment on 2026-09-28.
+**Status 2026-09-29: the 2026-09-29 release ships with CTRM OFF; go-live is Thursday 2026-10-01.** `appsettings.Production.json` carries `Source: "ods"` with the PROD gateway values already in place, so PROD reads ODS exactly as before and nothing talks to CTRM. Branch `release_CtrmGoLive_2026-10-01` flips it: `Source: "ctrm"`, the client's `ctrmReadAheadEnabled` back to true, and a What's New entry for CTRM. Merging and deploying that branch on Thursday is the go-live; the pre-flight is `prod-batch-probe.ps1` (the app's 16-batch burst passed against PROD on 09-29: 15 of 16 ok, single reads 0.2–0.8 s right after). Rollback stays a setting (below). History: written 2026-09-23 as a "wired but off" flip, switched to "ships ON" on 09-28 when the API team delivered the PROD environment, and moved back to off on 09-29 when the go-live date moved.
 
 ### What had to exist first — all done 2026-09-28
 
