@@ -177,4 +177,37 @@ public class CustomerRepositoryOpenActivityTests
         Assert.True(memberships.Single(m => m.TradeUnit == "4056").HasOpenActivity);
         Assert.False(memberships.Single(m => m.TradeUnit == "2190").HasOpenActivity);
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task TheContractAndTicketReadsNeverOverlap()
+    {
+        // Regression for the 2026-09-29 PROD sync failure. On the ODS source the two repositories share
+        // one DbContext, and EF refuses a second operation while the first is in flight. The mocks
+        // reproduce that rule: the ticket read fails if it starts while the contract read is still
+        // running. The lookup must therefore await one before starting the other.
+        var (sut, contracts, tickets) = Build();
+        var contractReadInFlight = false;
+
+        contracts.Setup(r => r.GetByCustomerAsync(It.IsAny<long>(), Producer, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                contractReadInFlight = true;
+                await Task.Delay(50);
+                contractReadInFlight = false;
+                return new List<Contract> { OpenContract("4056") };
+            });
+        tickets.Setup(r => r.GetUnappliedByCustomerAsync(It.IsAny<long>(), Producer, It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                if (contractReadInFlight)
+                    throw new InvalidOperationException(
+                        "A second operation was started on this context instance before a previous operation completed.");
+                return Task.FromResult(new List<Ticket> { Unapplied("2190") });
+            });
+
+        var open = await sut.GetOpenActivityTradeUnitsAsync(Producer, CancellationToken.None);
+
+        Assert.Equal(new[] { "2190", "4056" }, open.OrderBy(x => x));
+    }
 }
