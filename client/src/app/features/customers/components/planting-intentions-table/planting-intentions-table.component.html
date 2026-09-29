@@ -67,16 +67,10 @@
                   <div class="text-sm text-gray-900 dark:text-white">{{ intention.plantingYear }}</div>
                 </div>
                 <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Created On</div>
-                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.createdAt | date:'M/d/yy' }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">Trade Unit</div>
+                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.tradeUnit || '—' }}</div>
                 </div>
               </div>
-
-              @if (intention.tradeUnit) {
-                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Trade Unit: {{ intention.tradeUnit }}</div>
-                </div>
-              }
             </div>
           }
         </div>
@@ -146,15 +140,16 @@
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('createdAt')" class="text-center">
+                <!-- Trade unit, not created-on: a producer's rows can sit on different trade units. -->
+                <app-table-head [sortable]="true" (click)="handleSort('tradeUnit')" class="text-center">
                   <div class="flex items-center justify-center gap-1.5">
-                    <span>Created On</span>
-                    <span [class]="getSortIconClass('createdAt')">
-                      @if (currentSortColumn === 'createdAt' && currentSortDirection === 'asc') {
+                    <span>Trade Unit</span>
+                    <span [class]="getSortIconClass('tradeUnit')">
+                      @if (currentSortColumn === 'tradeUnit' && currentSortDirection === 'asc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
                         </svg>
-                      } @else if (currentSortColumn === 'createdAt' && currentSortDirection === 'desc') {
+                      } @else if (currentSortColumn === 'tradeUnit' && currentSortDirection === 'desc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
@@ -203,7 +198,13 @@
                   <app-table-cell class="text-center">{{ rowCropLabel(intention) }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ intention.createdAt | date:'M/d/yy' }}</app-table-cell>
+                  <app-table-cell class="text-center">
+                    @if (intention.tradeUnit) {
+                      <span [title]="tradeUnitLabel(intention.tradeUnit)">{{ intention.tradeUnit }}</span>
+                    } @else {
+                      <span class="text-gray-400 dark:text-gray-500">—</span>
+                    }
+                  </app-table-cell>
                   <app-table-cell class="w-[22%]">
                     <div class="flex justify-center">
                       <button
@@ -232,15 +233,15 @@
         </app-dialog-header>
         <app-dialog-content>
           <div class="space-y-4">
-            @if (tradeUnits().length === 0) {
+            @if (tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits) {
               <div class="flex items-start gap-2 rounded-md border border-yellow-300 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-900/20 px-3 py-2.5 text-sm text-yellow-800 dark:text-yellow-300">
                 <svg class="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                 </svg>
-                <span>No trade unit selected. Use the trade unit selector at the top of the page to select a trade unit before adding intentions.</span>
+                <span>This producer has no trade unit assignment and none is selected at the top of the page. Select a trade unit before adding intentions.</span>
               </div>
             }
-            <div [class.pointer-events-none]="tradeUnits().length === 0" [class.opacity-40]="tradeUnits().length === 0" class="space-y-4">
+            <div [class.pointer-events-none]="tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits" [class.opacity-40]="tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits" class="space-y-4">
               <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Type <span class="text-gray-400 font-normal">(optional)</span></label>
                 <select
@@ -337,16 +338,30 @@
                 <app-input type="text" inputmode="numeric" [maxlength]="4" [(ngModel)]="addForm.plantingYear" placeholder="e.g., 2025"></app-input>
               </div>
 
-              @if (tradeUnits().length > 1) {
-                <div class="space-y-2">
-                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
-                  <app-select [(ngModel)]="addForm.tradeUnit">
-                    @for (tu of tradeUnits(); track tu) {
-                      <option [value]="tu">{{ tu }}</option>
+              <!-- Which trade unit these acres are for. One option → shown read-only; several →
+                   the originator picks (preselected when exactly one is selected in the header). -->
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
+                @if (isLoadingProducerTradeUnits && producerTradeUnits.length === 0) {
+                  <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center text-sm text-gray-400 dark:text-gray-500">Loading trade units...</div>
+                } @else if (tradeUnitOptions.length === 1) {
+                  <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center text-sm text-gray-900 dark:text-white">{{ tradeUnitLabel(tradeUnitOptions[0]) }}</div>
+                } @else if (tradeUnitOptions.length > 1) {
+                  <select
+                    [(ngModel)]="addForm.tradeUnit"
+                    class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                    [ngClass]="addForm.tradeUnit ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
+                  >
+                    <option value="" disabled class="text-gray-400 dark:text-gray-500">Select trade unit...</option>
+                    @for (tu of tradeUnitOptions; track tu) {
+                      <option [value]="tu" class="text-gray-900 dark:text-white">{{ tradeUnitLabel(tu) }}</option>
                     }
-                  </app-select>
-                </div>
-              }
+                  </select>
+                }
+                @if (usingFallbackTradeUnits && tradeUnitOptions.length > 0) {
+                  <p class="text-xs text-gray-500 dark:text-gray-400">This producer has no trade unit assignment yet; showing your trade units.</p>
+                }
+              </div>
             </div>
           </div>
         </app-dialog-content>
@@ -460,6 +475,31 @@
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop Year</label>
               <app-input type="text" inputmode="numeric" [maxlength]="4" [(ngModel)]="editForm.plantingYear" placeholder="e.g., 2025"></app-input>
             </div>
+
+            <!-- Move the row to another of the producer's trade units. A tag the producer no longer
+                 belongs to is listed as "(no longer assigned)" so it can be corrected here.
+                 Until the producer's own list arrives the options are the fallback (every in-scope
+                 trade unit), so show the loading state rather than a list that is about to shrink. -->
+            @if (isLoadingProducerTradeUnits && producerTradeUnits.length === 0) {
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
+                <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center text-sm text-gray-400 dark:text-gray-500">Loading trade units...</div>
+              </div>
+            } @else if (editTradeUnitOptions.length > 1) {
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
+                <select
+                  [(ngModel)]="editForm.tradeUnit"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                >
+                  @for (tu of editTradeUnitOptions; track tu) {
+                    <option [value]="tu" class="text-gray-900 dark:text-white">{{ tradeUnitLabel(tu) }}</option>
+                  }
+                </select>
+              </div>
+            } @else if (editForm.tradeUnit) {
+              <div class="text-xs text-gray-500 dark:text-gray-400">Trade Unit: {{ tradeUnitLabel(editForm.tradeUnit) }}</div>
+            }
           </div>
         </app-dialog-content>
         <app-dialog-footer>

@@ -752,14 +752,13 @@ export class NlqFilterService {
     if (filters.grainOnFarmBushelsOver != null || filters.hasGrainTarget || filters.noGrainTarget
         || filters.grainTargetOver != null || filters.grainTargetUnder != null || filters.hasGrade
         || filters.gradeOver != null || filters.gradeUnder != null) {
-      const cropSet = (filters.crops ?? []).map(c => c.trim().toLowerCase());
+      // Rows hold a commodity code, or a crop-group name on legacy rows. The shared matcher resolves
+      // both, so a "Corn" chip scopes to YC/YCNG rows and a "YC" chip to YC plus any legacy "Corn".
+      // (This used a bidirectional substring test, which could never match a code against a group.)
       const grainRowsFor = (c: Customer) => {
         const rows = c.grainOnFarm ?? [];
-        if (cropSet.length === 0) return rows;
-        return rows.filter(g => {
-          const v = (g.commodityGroup ?? '').trim().toLowerCase();
-          return cropSet.some(crop => v.includes(crop) || crop.includes(v));
-        });
+        if (cropSelection.isEmpty) return rows;
+        return rows.filter(g => matchesCropSelection(g.commodityCode, cropSelection, cropLookup, { groupOnlyValue: true }));
       };
       // Grade is free text — pull the first number out of it ("4.4%" -> 4.4, "TW 58" -> 58) for over/under.
       const gradeNum = (grade?: string): number | null => {
@@ -796,8 +795,8 @@ export class NlqFilterService {
     if (!cropSelection.isEmpty) {
       const matchesCrop = (value: string | null | undefined): boolean =>
         matchesCropSelection(value, cropSelection, cropLookup);
-      /** Grain-on-farm rows record a crop GROUP ("Corn"), never a code, so a precise code chip has
-       *  to fall back to its own group there — see matchesCropSelection's groupOnlyValue. */
+      /** Grain-on-farm rows hold a code, but legacy rows hold a crop GROUP ("Corn"); a precise code chip
+       *  matches those via its own group — see matchesCropSelection's groupOnlyValue. */
       const matchesCropGroupOnly = (value: string | null | undefined): boolean =>
         matchesCropSelection(value, cropSelection, cropLookup, { groupOnlyValue: true });
 
@@ -857,7 +856,7 @@ export class NlqFilterService {
         ));
       } else if (dim === 'Grain on Farm') {
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          matchesCropGroupOnly(g.commodityGroup) && (g.bushelsOnHand ?? 0) > 0
+          matchesCropGroupOnly(g.commodityCode) && (g.bushelsOnHand ?? 0) > 0
         ));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => matchesCrop(crop)));
@@ -1761,14 +1760,14 @@ export class NlqFilterService {
       && !/grade\s*(?:#?\s*)?(?:\d|one|two|three)/.test(lowerQuery);
     const isGrainOnFarmQuery = grainOnFarmContext || grainTargetContext || grainGradeContext;
     if (isGrainOnFarmQuery) {
-      // Scope only by an explicit, whole-word crop name (commodityGroup is a group name like
-      // "Corn"/"Soybeans"). detectCropInQuery's substring match would mis-fire on dynamic
+      // Scope only by an explicit, whole-word crop name (matched against each row's code, or group on
+      // a legacy row). detectCropInQuery's substring match would mis-fire on dynamic
       // commodity codes hiding inside words ("p(rod)ucers", "g(rai)n", "f(arm)"), wrongly
       // scoping the filter to a bogus crop and returning zero producers.
       const grainCrop = this.grainCrops.find(crop => new RegExp(`\\b${crop}\\b`).test(lowerQuery)) ?? null;
       const rowsFor = (c: Customer) => {
         const rows = c.grainOnFarm ?? [];
-        return grainCrop ? rows.filter(g => this.matchesCommodity(g.commodityGroup, grainCrop)) : rows;
+        return grainCrop ? rows.filter(g => this.matchesCommodity(g.commodityCode, grainCrop)) : rows;
       };
       const totalBu = (c: Customer) => rowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0);
       const maxTarget = (c: Customer) => rowsFor(c).reduce((m, g) => Math.max(m, g.targetBushels ?? 0), 0);

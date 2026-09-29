@@ -174,6 +174,19 @@ public class CustomerServiceTests
     }
 
     [Fact]
+    public async Task GetTradeUnitMembershipsAsync_UsesTheActivityFreeRead()
+    {
+        _repositoryMock
+            .Setup(r => r.GetTradeUnitMembershipsAsync(7L, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new CustomerTradeUnitMembership { TradeUnit = "2090", IsManual = false, IsActive = true }]);
+
+        var result = await _sut.GetTradeUnitMembershipsAsync(7L, CancellationToken.None);
+
+        Assert.Equal("2090", Assert.Single(result).TradeUnit);
+        _repositoryMock.Verify(r => r.GetTradeUnitsAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task TradeUnitWrites_StampTheCurrentUserAndReturnTheRepositoryVerdict()
     {
         var codes = new List<string> { "2090", "2291" };

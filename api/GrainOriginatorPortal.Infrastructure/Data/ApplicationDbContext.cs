@@ -541,7 +541,7 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.CommodityGroup).HasColumnName("CommodityGroup").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(100).IsRequired();
             entity.Property(e => e.BushelsOnHand).HasColumnName("BushelsOnHand").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.TargetBushels).HasColumnName("TargetBushels").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.Grade).HasColumnName("Grade").HasMaxLength(100).IsRequired(false);
@@ -552,10 +552,11 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.NoAction)
                   .HasConstraintName("FK_ProducerGrainOnFarm_Customer");
 
-            // One row per (customer, commodity group).
-            entity.HasIndex(e => new { e.CustomerId, e.CommodityGroup })
+            // One row per (customer, commodity code). 100 chars, not a code-sized width, because
+            // rows saved before 2026-09-23 still hold a crop-group name.
+            entity.HasIndex(e => new { e.CustomerId, e.CommodityCode })
                   .IsUnique()
-                  .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Group");
+                  .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Commodity");
         });
 
         modelBuilder.Entity<ProducerContact>(entity =>
@@ -600,6 +601,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false)
                   .HasConversion(v => v, v => v != null ? v.Trim() : v);
             entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.IndustryCode2).HasColumnName("IndustryCode2").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.NopIdNumber).HasColumnName("NopIdNumber").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
             entity.Property(e => e.IsManual).HasColumnName("IsManual").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);
@@ -631,6 +634,7 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.TotalAcres);
             entity.Ignore(e => e.ESignEnabled);
             entity.Ignore(e => e.AchEnabled);
+            entity.Ignore(e => e.ActiveTradeUnits);
             entity.Ignore(e => e.ScoularViewRecipients);
             entity.Ignore(e => e.Guild);
             entity.Ignore(e => e.Coordinates);

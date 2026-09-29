@@ -13,11 +13,11 @@ one note to whoever was **@mentioned** in it. The layout mirrors the daily-recap
    the note is not soft-deleted. Notes without mentions are ignored (no-op).
 3. **`Parse_Mentions`** — parses the `Mentions` JSON array (contract below).
 4. **`Get_Customer`** / **`Get_Author`** — look up the customer name ("Regarding") from
-   `[dbo].[Customer]` and the author's display name from `[dbo].[Users]` (Entitlements DB).
+   `[dbo].[Customer]` and the author's display name from `[dbo].[Users]` (TradeUnitPreferences DB).
 5. **`For_each_Mention` → `Switch_Member_Type`** — resolves each mention to email address(es):
    - `person` → **always `<local part of id>@scoular.com`** — the id's domain, if any, is discarded;
-   - `trade-unit` → members of `[dbo].[UserTradeUnitAssignments]` (Entitlements), each `<UserId>@scoular.com`;
-   - `trade-unit-group` → members of `[dbo].[UserGroupAssignments]` (Entitlements), each `<UserId>@scoular.com`;
+   - `trade-unit` → rows of `[dbo].[vw_UserTradeUnitPreferences]` (TradeUnitPreferences DB) where `TradeUnitCode` matches, each `<UserId>@scoular.com`. `TradeUnitCode` is text, so the filter value must be quoted (`TradeUnitCode eq '2190'`) — unquoted, it returns zero rows and the run still succeeds;
+   - `trade-unit-group` → rows of `[dbo].[vw_UserTradeUnitPreferences]` (TradeUnitPreferences DB) where `GroupId` matches, each `<UserId>@scoular.com`;
    - `teams-channel` → a **registered Teams channel** (`[dbo].[TeamsChannels]`), picked straight from
      the composer's "@" menu. `Get_Teams_Channel` reads the row by its integer id and appends its
      `ChannelEmail` to `channelRecipient`. Same address handling as below: the note carries only the

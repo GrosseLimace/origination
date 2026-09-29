@@ -49,11 +49,16 @@ public class Customer
     // ACH-enabled = base.Customer.PaymentMethod == 'H'. Transient (not a dbo.Customer column);
     // enriched at read time from ODS, like ESignEnabled.
     public bool AchEnabled { get; set; }
+    // The producer's active trade-unit codes, from dbo.CustomerTradeUnit. Transient; enriched on the
+    // list reads so the planting dialog can offer them without a request of its own.
+    public List<string> ActiveTradeUnits { get; set; } = new();
     public Coordinates? Coordinates { get; set; }
 
     // ODS metadata fields
     public string Farm { get; set; } = string.Empty;
     public string? IndustryCode1 { get; set; } // Used to filter producer customers (PR)
+    public string? IndustryCode2 { get; set; }  // 'OR' marks a certified-organic operation
+    public string? NopIdNumber { get; set; }    // National Organic Program operation id ('0' placeholders normalised to null)
     public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }

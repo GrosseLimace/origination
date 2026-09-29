@@ -13,14 +13,21 @@ public class CustomerRepository : ICustomerRepository
 {
     private readonly OriginationDbContext _context;
     private readonly ApplicationDbContext _appContext;
+    private readonly IContractRepository _contractRepository;
     private readonly ITicketRepository _ticketRepository;
     private readonly ILogger<CustomerRepository> _logger;
 
-    public CustomerRepository(OriginationDbContext context, ApplicationDbContext appContext, ITicketRepository ticketRepository, ILogger<CustomerRepository> logger)
+    public CustomerRepository(
+        OriginationDbContext context,
+        ApplicationDbContext appContext,
+        ITicketRepository ticketRepository,
+        IContractRepository contractRepository,
+        ILogger<CustomerRepository> logger)
     {
         _context = context;
         _appContext = appContext;
         _ticketRepository = ticketRepository;
+        _contractRepository = contractRepository;
         _logger = logger;
     }
 
@@ -66,6 +73,7 @@ public class CustomerRepository : ICustomerRepository
 
         await EnrichCustomersWithESignAsync(customers, cancellationToken);
         await EnrichCustomersWithAchAsync(customers, cancellationToken);
+        await EnrichCustomersWithTradeUnitsAsync(customers, cancellationToken);
         _logger.LogInformation("Returning {Count} customers from Customer{Filter}", customers.Count, filterMsg);
         return customers;
     }
@@ -162,6 +170,7 @@ public class CustomerRepository : ICustomerRepository
 
         await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
         await EnrichCustomersWithAchAsync(scoredCustomers, cancellationToken);
+        await EnrichCustomersWithTradeUnitsAsync(scoredCustomers, cancellationToken);
         // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
         _logger.LogInformation("Customer search returned {Count} customers from Customer", scoredCustomers.Count);
         return scoredCustomers;
@@ -203,7 +212,7 @@ public class CustomerRepository : ICustomerRepository
         // TOP 50 keeps the result set bounded — this is a type-ahead, not an export.
         var sql = $@"
             SELECT TOP 50
-                c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1, c.IndustryCode2, c.NopIdNumber,
                 c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
                 c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
                 c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
@@ -245,6 +254,8 @@ public class CustomerRepository : ICustomerRepository
         ScoularId = r.ScoularId?.Trim(),
         Name = r.CustomerName ?? string.Empty,
         IndustryCode1 = r.IndustryCode1,
+        IndustryCode2 = r.IndustryCode2,
+        NopIdNumber = OdsValues.NormaliseNopId(r.NopIdNumber),
         Location = r.MerchandisingCity,
         StateProvince = r.MerchandisingStateProvince,
         AddressLine1 = r.MerchandisingAddressLine1,
@@ -275,6 +286,8 @@ public class CustomerRepository : ICustomerRepository
         public string? ScoularId { get; set; }
         public string? CustomerName { get; set; }
         public string? IndustryCode1 { get; set; }
+        public string? IndustryCode2 { get; set; }
+        public string? NopIdNumber { get; set; }
         public string? MerchandisingCity { get; set; }
         public string? MerchandisingStateProvince { get; set; }
         public string? MerchandisingAddressLine1 { get; set; }
@@ -381,6 +394,40 @@ public class CustomerRepository : ICustomerRepository
         foreach (var customer in customers)
         {
             if (achIds.Contains(customer.Id)) customer.AchEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Attaches each customer's active trade-unit codes: one Origination query for the whole list.
+    /// </summary>
+    /// <remarks>
+    /// The planting-intention dialog needs exactly this, and used to fetch it on open. When CTRM is slow
+    /// the browser's handful of connections to the API are all held by slow contract and ticket reads,
+    /// so that small request queued behind them for 30 seconds or more. Carried on the list the page has
+    /// already loaded, the dialog opens with no request at all.
+    /// </remarks>
+    private async Task EnrichCustomersWithTradeUnitsAsync(List<Customer> customers, CancellationToken cancellationToken = default)
+    {
+        if (customers.Count == 0) return;
+
+        var ids = customers.Select(c => c.Id).Distinct().ToList();
+
+        var rows = await _appContext.CustomerTradeUnits
+            .AsNoTracking()
+            .Where(t => t.IsActive && ids.Contains(t.CustomerId))
+            .Select(t => new { t.CustomerId, t.TradeUnit })
+            .ToListAsync(cancellationToken);
+
+        var byCustomer = rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.TradeUnit))
+            .GroupBy(r => r.CustomerId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => r.TradeUnit.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(c => c, StringComparer.Ordinal).ToList());
+
+        foreach (var customer in customers)
+        {
+            if (byCustomer.TryGetValue(customer.Id, out var codes)) customer.ActiveTradeUnits = codes;
         }
     }
 
@@ -535,6 +582,7 @@ public class CustomerRepository : ICustomerRepository
 
         await EnrichCustomersWithESignAsync(customers, cancellationToken);
         await EnrichCustomersWithAchAsync(customers, cancellationToken);
+        await EnrichCustomersWithTradeUnitsAsync(customers, cancellationToken);
         return customers;
     }
 
@@ -671,18 +719,25 @@ public class CustomerRepository : ICustomerRepository
         return AssignTradeUnitsResult.Ok;
     }
 
-    public async Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken)
+    public Task<List<CustomerTradeUnitMembership>> GetTradeUnitMembershipsAsync(long customerId, CancellationToken cancellationToken)
     {
         // All memberships for this producer — active AND previously-removed (soft-deactivated). The
         // dialog shows active ones as chips; inactive ones are offered as re-addable suggestions so a
         // user can undo a removal even for a TU that isn't in the entitlements catalog. (There's at
         // most one row per (CustomerId, TradeUnit), so a code is either active or inactive, not both.)
-        var memberships = await _appContext.CustomerTradeUnits
+        // HasOpenActivity is left at its fail-safe default (true = locked): working it out costs a
+        // contract and a ticket read, which only the edit-customer dialog needs - see GetTradeUnitsAsync.
+        return _appContext.CustomerTradeUnits
             .AsNoTracking()
             .Where(t => t.CustomerId == customerId)
             .OrderBy(t => t.TradeUnit)
             .Select(t => new CustomerTradeUnitMembership { TradeUnit = t.TradeUnit, IsManual = t.IsManual, IsActive = t.IsActive })
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var memberships = await GetTradeUnitMembershipsAsync(customerId, cancellationToken);
 
         if (memberships.Count == 0) return memberships;
 
@@ -714,53 +769,53 @@ public class CustomerRepository : ICustomerRepository
 
         return memberships;
     }
-
+    /// <summary>
+    /// The trade units in which this producer still has open activity: an open purchase contract, or an
+    /// unapplied ticket (U/L/C) within the last three years that survives the storage gate.
+    /// </summary>
+    /// <remarks>
+    /// <para>Decides which trade-unit memberships are LOCKED - the edit dialog will not let a user remove
+    /// one with open activity, and the nightly sync brings a user-deactivated one back if activity
+    /// reappears. So this has to agree with what the producer screen shows.</para>
+    ///
+    /// <para>It therefore reads through the same switch-backed repositories the producer screen uses,
+    /// rather than querying the ODS views directly as it once did. With <c>Ctrm:Source</c> set to
+    /// <c>ctrm</c> that is CTRM; otherwise ODS - and either way it is the SAME rows the screen renders.
+    /// The previous inline ODS query could disagree with a CTRM-backed screen: a contract CTRM shows as
+    /// open would not lock its trade unit here, and the user could remove a membership the screen said
+    /// was active.</para>
+    ///
+    /// <para>Rules preserved exactly: contracts contribute their trade unit only while OPEN (the
+    /// repositories already normalise the Db2 min-date sentinel to null); tickets contribute their
+    /// organization code only when unapplied, and both repositories already apply the ticket-type,
+    /// consolidated, three-year and storage-gate rules to that set.</para>
+    /// </remarks>
     public async Task<HashSet<string>> GetOpenActivityTradeUnitsAsync(string scoularId, CancellationToken cancellationToken)
     {
         var openTus = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrEmpty(scoularId)) return openTus;
+        var code = scoularId?.Trim();
+        if (string.IsNullOrEmpty(code)) return openTus;
 
-        // (a) Open purchase contracts → TradeUnit is on the contract. Open = ClosedDate null or the
-        // 0001-01-01 sentinel (same test used elsewhere, e.g. GetTodaysTicketsAsync).
-        var contractTus = await _context.Contracts
-            .AsNoTracking()
-            .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                && c.CtrmCustomerId == scoularId
-                && c.TradeUnit != null
-                && (c.ClosedDate == null || c.ClosedDate <= OdsConstants.OpenClosedDateSentinel))
-            .Select(c => c.TradeUnit!)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        foreach (var tu in contractTus)
-            if (!string.IsNullOrWhiteSpace(tu)) openTus.Add(tu.Trim());
+        // customerId is not needed when the code is supplied; both repositories use the code directly.
+        //
+        // SEQUENTIAL, deliberately. With Ctrm:Source = ods both repositories are the ODS ones, and
+        // they share this scope's single OriginationDbContext. Running the two reads concurrently
+        // (Task.WhenAll) made EF throw "a second operation was started on this context instance"
+        // the moment the second query began. That took down the PROD customer sync on 2026-09-29
+        // (bring-back pass, first run on the new build) and the trade-unit assign / remove actions
+        // with it; QA never saw it because its CTRM repositories go over HTTP, which is thread-safe.
+        // One read after the other costs a few hundred milliseconds per producer and is correct on
+        // both sources.
+        var contracts = await _contractRepository.GetByCustomerAsync(0, code, cancellationToken);
+        var tickets = await _ticketRepository.GetUnappliedByCustomerAsync(0, code, cancellationToken);
 
-        // (b) Active unapplied tickets → OrganizationCode is the trade unit. Includes U/L AND
-        // C-prefix (customer-storage), then storage-gates the C tickets so priced-out orphan
-        // storage doesn't count. Same predicate + 3-year cutoff + 120s timeout + gate as the
-        // per-producer Unapplied Tickets tab, so this matches exactly what the user sees there.
-        _context.Database.SetCommandTimeout(120);
-        var cutoff = DateTime.UtcNow.AddYears(-3).ToString("yyyy-MM-dd");
-        var unappliedTickets = await _context.Tickets
-            .AsNoTracking()
-            .Where(t => (t.TicketType == "U" || t.TicketType == "P")
-                && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
-                && t.CustomerCode == scoularId
-                && t.CtrmContractNumber != null
-                && (t.CtrmContractNumber.StartsWith("U") || t.CtrmContractNumber.StartsWith("L") || t.CtrmContractNumber.StartsWith("C"))
-                && t.OrganizationCode != null
-                && t.Date != null && string.Compare(t.Date, cutoff) >= 0)
-            .ToListAsync(cancellationToken);
+        foreach (var c in contracts)
+            if (c.ClosedDate is null && !string.IsNullOrWhiteSpace(c.TradeUnit))
+                openTus.Add(c.TradeUnit.Trim());
 
-        // Gate C-prefix (storage) tickets against active storage (U/L pass through untouched).
-        // Only runs when there are C tickets, so producers with none cost nothing extra.
-        if (unappliedTickets.Exists(t => t.CtrmContractNumber is { Length: > 0 } cn && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase)))
-        {
-            var storageByCustomer = await _ticketRepository.GetActiveStorageCommoditiesAsync(new[] { scoularId }, cancellationToken);
-            unappliedTickets = _ticketRepository.GateCustomerStorageTickets(unappliedTickets, storageByCustomer);
-        }
-
-        foreach (var t in unappliedTickets)
-            if (!string.IsNullOrWhiteSpace(t.OrganizationCode)) openTus.Add(t.OrganizationCode!.Trim());
+        foreach (var t in tickets)
+            if (!string.IsNullOrWhiteSpace(t.OrganizationCode))
+                openTus.Add(t.OrganizationCode.Trim());
 
         return openTus;
     }
@@ -812,10 +867,23 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<string?> GetFirstActiveTradeUnitAsync(long customerId, CancellationToken cancellationToken)
     {
+        // OrderBy makes "first" deterministic; without it SQL Server returns storage order, which
+        // tagged multi-TU producers' records to whichever membership row happened to be inserted first.
         return await _appContext.CustomerTradeUnits
             .Where(ctu => ctu.CustomerId == customerId && ctu.IsActive)
+            .OrderBy(ctu => ctu.TradeUnit)
             .Select(ctu => ctu.TradeUnit)
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<List<string>> GetActiveTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken)
+    {
+        return await _appContext.CustomerTradeUnits
+            .AsNoTracking()
+            .Where(ctu => ctu.CustomerId == customerId && ctu.IsActive)
+            .OrderBy(ctu => ctu.TradeUnit)
+            .Select(ctu => ctu.TradeUnit)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<List<string>> GetAllActiveTradeUnitCodesAsync(CancellationToken cancellationToken)
@@ -835,7 +903,7 @@ public class CustomerRepository : ICustomerRepository
         var rows = await _context.Database
             .SqlQueryRaw<OdsCustomerRow>(@"
                 SELECT TOP 1
-                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1, c.IndustryCode2, c.NopIdNumber,
                     c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
                     c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
                     c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,

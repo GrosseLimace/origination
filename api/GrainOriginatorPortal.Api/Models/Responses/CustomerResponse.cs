@@ -34,11 +34,18 @@ public record CustomerResponse
 
     public bool ESignEnabled { get; init; }
     public bool AchEnabled { get; init; }
+    /// <summary>The producer's active trade-unit codes. Populated on list and search reads; empty on
+    /// single-customer reads, where callers fetch <c>/customers/{id}/trade-units</c> instead.</summary>
+    public List<string> ActiveTradeUnits { get; init; } = new();
     public string? ScoularViewRecipients { get; init; }
     public string? Guild { get; init; }
     public CoordinatesResponse? Coordinates { get; init; }
     public string Farm { get; init; } = string.Empty;
     public string? IndustryCode1 { get; init; }
+    public string? IndustryCode2 { get; init; }
+    /// <summary>Real 10-digit NOP operation id, or null. Normalised on ingest, so the client can
+    /// treat any non-null value as genuine — placeholders never reach the wire.</summary>
+    public string? NopId { get; init; }
     public bool IsActive { get; init; }
     public DateTime? EffectiveStartDate { get; init; }
     public DateTime? EffectiveEndDate { get; init; }

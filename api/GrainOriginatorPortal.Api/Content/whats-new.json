@@ -1,5 +1,48 @@
 [
   {
+    "version": "2026.09.2",
+    "releasedOn": "2026-09-29",
+    "title": "An organic badge, addresses in Google Maps, and planting by trade unit",
+    "summary": "Organic producers are easy to spot, addresses open in Google Maps, and planting acres count under the trade unit you choose.",
+    "items": [
+      {
+        "group": "Organic producers",
+        "kind": "added",
+        "text": "Organic producers now show an Organic Producer badge next to their name. Click it to see their NOP ID."
+      },
+      {
+        "group": "Producer page",
+        "kind": "added",
+        "text": "Click a producer's address to open it in Google Maps. The address now includes the ZIP code."
+      },
+      {
+        "group": "Trade units",
+        "kind": "fixed",
+        "text": "Trade unit names now come from Trade Unit Preferences, so they match the names set there instead of an older list that could be out of date."
+      },
+      {
+        "group": "Planting intentions",
+        "kind": "changed",
+        "text": "When you add a planting intention you now choose which of the producer's trade units it is for, and the dashboard counts those acres only there. A producer on two trade units no longer has their acres counted under both."
+      },
+      {
+        "group": "Planting intentions",
+        "kind": "changed",
+        "text": "The producer's planting table now has a Trade Unit column in place of Created On, and you can move a row to another trade unit when you edit it. Entries made before this release for producers on two trade units may be on the wrong one, so check those rows."
+      },
+      {
+        "group": "Planting intentions",
+        "kind": "added",
+        "text": "When you remove a producer from a trade unit that has planting intentions, you are asked where those acres should count instead."
+      },
+      {
+        "group": "Grain on farm",
+        "kind": "changed",
+        "text": "Grain on farm is now recorded by specific commodity, such as HRWW or SRWW, using the same list as planting intentions. Existing entries keep their crop group, such as Wheat, until you edit them and pick the commodity."
+      }
+    ]
+  },
+  {
     "version": "2026.09.1",
     "releasedOn": "2026-09-22",
     "title": "Follow-ups, Teams channels, and lists that follow your trade units",

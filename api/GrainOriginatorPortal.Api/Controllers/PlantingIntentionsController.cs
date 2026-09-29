@@ -53,8 +53,8 @@ public class PlantingIntentionsController : ControllerBase
     public async Task<ActionResult<PlantingIntentionResponse>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may create a planting intention
-        // for any customer. The service derives the authoritative customer name/code/trade-unit and
-        // throws a ValidationException (→ 400) when no trade unit can be determined.
+        // for any customer. The service derives the authoritative customer name/code, keeps the chosen
+        // trade unit when it is one of the producer's, and throws ValidationException (→ 400) otherwise.
         var intention = await _service.CreateAsync(
             request.CustomerId,
             request.CustomerName,
@@ -69,8 +69,8 @@ public class PlantingIntentionsController : ControllerBase
             cancellationToken
         );
         _logger.LogInformation(
-            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}, User={User}",
-            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop, _requestContext.GetCurrentUser());
+            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}, TradeUnit={TradeUnit}, User={User}",
+            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop, intention.TradeUnit, _requestContext.GetCurrentUser());
         return Ok(intention);
     }
 
@@ -84,7 +84,11 @@ public class PlantingIntentionsController : ControllerBase
     {
         // Trade units are a UX filter, not an access boundary — any rep may edit any planting intention.
         // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
-        _ = await _service.GetByIdAsync(id, cancellationToken)
+        // That includes moving the row to another trade unit via request.TradeUnit: the service limits
+        // the target to the producer's own trade units (data integrity), and a caller-entitlement check
+        // would restrict nobody (AR-01 update 2026-09-28). The row's previous trade unit goes in the
+        // audit line so a move can be traced and undone.
+        var existing = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("PlantingIntention", id);
         var updated = await _service.UpdateAsync(
             id,
@@ -94,12 +98,35 @@ public class PlantingIntentionsController : ControllerBase
             request.Description,
             request.Acres,
             request.PlantingYear,
+            request.TradeUnit,
             cancellationToken
         ) ?? throw new NotFoundException("PlantingIntention", id);
         _logger.LogInformation(
-            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, User={User}",
-            "AUDIT_UPDATE", "DataMutation", id, _requestContext.GetCurrentUser());
+            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, FromTradeUnit={FromTradeUnit}, TradeUnit={TradeUnit}, User={User}",
+            "AUDIT_UPDATE", "DataMutation", id, existing.TradeUnit, updated.TradeUnit, _requestContext.GetCurrentUser());
         return Ok(updated);
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>Moves all of a producer's planting intentions from one trade unit to another.
+    /// Called when a producer is unassigned from a trade unit and the originator chooses where the
+    /// acres should now count. Returns the number of rows moved.</summary>
+    [HttpPost("retag")]
+    [ProducesResponseType(typeof(RetagPlantingIntentionsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<RetagPlantingIntentionsResponse>> Retag([FromBody] RetagPlantingIntentionsRequest request, CancellationToken cancellationToken = default)
+    {
+        // Trade units are a UX filter, not an access boundary (AR-01/AR-02; this route is recorded in
+        // the AR-01 update of 2026-09-28). The service still refuses a target the producer doesn't
+        // trade with, which is a data-integrity rule. FromTradeUnit is deliberately NOT checked
+        // against the caller or the producer: this runs right after the producer is removed from it,
+        // and AR-03 lets any rep do that removal. Checking the caller's entitlements would block
+        // exactly that rep while restricting nobody, since originators self-assign trade units.
+        var moved = await _service.RetagAsync(request.CustomerId, request.FromTradeUnit, request.ToTradeUnit, cancellationToken);
+        _logger.LogInformation(
+            "Planting intentions retagged [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId}, From={From}, To={To}, Count={Count}, User={User}",
+            "AUDIT_UPDATE", "DataMutation", request.CustomerId, request.FromTradeUnit, request.ToTradeUnit, moved, _requestContext.GetCurrentUser());
+        return Ok(new RetagPlantingIntentionsResponse { Moved = moved });
     }
 
     // -------------------------------------------------------------------------

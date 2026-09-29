@@ -58,6 +58,16 @@ flowchart LR
     SVC --> ODS
 ```
 
+### Trade-unit attribution of planting acres
+
+Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was recorded **for**. A producer on two trade units (say Pratt and Tribune) plants different acres for each, so:
+
+- **Saving.** The Planting tab's Add/Edit dialogs offer the *producer's own* active trade units (`GET /api/customers/{id}/trade-units`), not the header filter. One option → filled in read-only; several → the originator picks, preselected when exactly one of them is selected in the header. The API (`PlantingIntentionService.ResolveTradeUnitAsync`) keeps the choice only if it is one of the producer's active `CustomerTradeUnit` rows (400 otherwise); with no choice it defaults to the producer's first trade unit by code. This is a data-integrity rule, not an access check (AR-01/AR-02). An existing row's trade unit can be changed in the Edit dialog.
+- **Counting here.** Every acre figure on this page (`filteredIntentionsForYear`, `acresTrend`, `availableCrops`, `producersWithoutIntentionsRows`, `_calculateYieldRows`) keeps the producer-membership check **and** requires the row's trade unit to be in scope (`shared/utils/planting-trade-unit-filter.ts`). Tribune therefore shows only Tribune acres; Pratt + Tribune together counts each row once. The Producers tab row shows the trade units of the rows it is summing.
+- **Not counting here.** The producer profile, Build-A-List / prompts, print report and growth-opportunity card still show the producer's whole farm; they use the same `GET /api/plantingintentions?tradeUnits=` endpoint, whose "customers in the trade unit → all their rows" semantics are unchanged.
+- **Losing a trade unit.** Removing a trade unit does not unplant the acres, so the producer-details dialog asks where they should count instead. When the removed trade unit has intentions against it, the dialog shows the count, acres and crop years and offers the producer's remaining trade units; choosing one calls `POST /api/plantingintentions/retag` on Save, which moves every row in one statement. Declining leaves them where they are. Only trade units that are *already* active memberships are offered as destinations, so a move can never race an assignment made in the same dialog. **This cannot cover every case**: the nightly `CustomerSyncService` deactivates a sync-sourced membership as soon as it leaves `originations.vw_CustomerTradeUnits`, with no user present to ask. We deliberately do **not** lock a trade unit that has planting intentions — membership reflects whether the producer trades there (a CTRM fact), our intentions are a forward-looking note, and historical rows would otherwise lock a trade unit permanently.
+- **Legacy and stranded rows.** Before this rule the API stamped whichever membership SQL returned first, so rows of multi-trade-unit producers may be tagged arbitrarily. A blank-tagged row still counts under membership (pre-fix behaviour). A row tagged to a trade unit the producer has since left counts on no single-territory view until re-tagged; it stays on the profile, and the Edit dialog lists that tag as "(no longer assigned)" so it can be corrected. Whether such rows should instead fall back to the producer's remaining trade unit is an open business question — the switch point is the one helper in `shared/utils/planting-trade-unit-filter.ts`. `scripts/planting-intentions-trade-unit-audit.sql` (read-only) lists ambiguous, orphaned and blank rows for the business to review.
+
 ## Files
 
 | Layer | Path |
@@ -147,6 +157,7 @@ The "system" username has historically been used for `Created/ModifiedBy` on das
 | Saved estimate disappears after refresh | Upsert hit a unique constraint and one row was overwritten. | Check `Created/ModifiedAt` columns; verify only one `(TradeUnitKey, Crop, PlantingYear)` row per crop |
 | "By Crop" tab shows different totals than "Producers" tab | Categorization mismatch (planting intentions use `category`, contracts use `commodityGroup` / `commodityDescription`). The `_toTitleCase` helper merges them, but only if both side's strings normalize to the same thing. | `availableCrops` computed; check both signal sources |
 | Dashboard slow on first open | `preloadedDashboardSummary` not populated yet (TU just changed) | `DataPreloadService` flow; the bundled `getDashboardSummary` fetch |
+| A producer's acres are missing or lower than their profile shows | Rows are tagged to another of the producer's trade units (or to one they have left). Only rows tagged to a trade unit in scope count here. | Profile → Planting tab: each row's "Trade Unit" line; move it via Edit. `scripts/planting-intentions-trade-unit-audit.sql` for the full list |
 
 ## References
 

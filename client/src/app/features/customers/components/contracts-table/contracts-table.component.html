@@ -5,6 +5,19 @@
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
           <p class="mt-3 text-sm">Loading contracts...</p>
         </div>
+      } @else if (loadError()) {
+        <!-- A failed read must never look like a producer with no contracts. -->
+        <div class="text-center py-8">
+          <svg class="mx-auto h-12 w-12 text-amber-500 mb-4 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+          </svg>
+          <p class="text-gray-700 dark:text-gray-300 font-medium">Contracts could not be loaded</p>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ loadError() }}</p>
+          <button type="button" (click)="retryLoad.emit()"
+                  class="mt-4 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
+            Retry
+          </button>
+        </div>
       } @else if (openContracts.length === 0) {
         <div class="text-center py-8 text-gray-500 dark:text-gray-400">
           <svg class="mx-auto h-12 w-12 text-gray-400 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -492,7 +505,7 @@
                       </div>
 
                       <!-- Pricing Lines Section -->
-                      @if (isLoadingPricingLines() || getPricingLinesForContract(contract).length > 0) {
+                      @if (isLoadingPricingLines() || pricingLoadError() || getPricingLinesForContract(contract).length > 0) {
                         <div class="mt-8 border-t border-gray-200 dark:border-gray-700">
                           <button
                             class="w-full flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors py-3 px-2 -mx-2 rounded-md cursor-pointer"
@@ -512,6 +525,9 @@
                             Pricing Lines
                             @if (isLoadingPricingLines()) {
                               <span class="text-gray-400 dark:text-gray-500 italic text-sm">(Loading…)</span>
+                            } @else if (pricingLoadError()) {
+                              <!-- Never "(0)" on a failed read: that reads as "this contract has no priced lines". -->
+                              <span class="text-amber-600 dark:text-amber-400 text-sm">(unavailable)</span>
                             } @else {
                               ({{ getPricingLinesForContract(contract).length }})
                             }
@@ -520,6 +536,10 @@
                           @if (expandedPricingSections.has(contract.id)) {
                             @if (isLoadingPricingLines() && getPricingLinesForContract(contract).length === 0) {
                               <p class="text-gray-400 dark:text-gray-500 text-sm italic px-2 pb-2">Loading pricing lines…</p>
+                            } @else if (pricingLoadError() && getPricingLinesForContract(contract).length === 0) {
+                              <p class="text-amber-700 dark:text-amber-300 text-sm px-2 pb-2">
+                                Pricing lines could not be loaded from CTRM, so the prices for this contract are not shown. {{ pricingLoadError() }}
+                              </p>
                             } @else {
                             <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                               <table class="w-full text-sm">
@@ -582,15 +602,17 @@
                             }
                           </span>
                           Applied Tickets
-                          @if (getAppliedTickets(contract).length > 0) {
-                            ({{ getAppliedTickets(contract).length }})
+                          @if (isLoadingTickets() && getAppliedTickets(contract).length === 0) {
+                            <span class="text-gray-400 dark:text-gray-500 italic text-sm">(Loading…)</span>
                           } @else {
-                            (0)
+                            ({{ getAppliedTickets(contract).length }})
                           }
                         </button>
 
                         @if (expandedTicketSections.has(contract.id)) {
-                          @if (getAppliedTickets(contract).length > 0) {
+                          @if (isLoadingTickets() && getAppliedTickets(contract).length === 0) {
+                            <p class="text-gray-400 dark:text-gray-500 text-sm italic px-2 pb-2">Loading applied tickets…</p>
+                          } @else if (getAppliedTickets(contract).length > 0) {
                             @for (ticket of getAppliedTickets(contract); track ticket.id) {
                               <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
                                 <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-2 @md/profile:grid-cols-4 @4xl/profile:grid-cols-8 gap-4' : 'grid grid-cols-2 @md/profile:grid-cols-4 @4xl/profile:grid-cols-7 gap-4'">

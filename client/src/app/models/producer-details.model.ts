@@ -27,9 +27,12 @@ export interface ProducerContactItem {
   sortOrder?: number;
 }
 
-/** Per-commodity-group grain-on-farm row: bushels on the farm + the target the farmer wants. */
+/** Per-commodity grain-on-farm row: bushels on the farm, a grade note, and the $/bu target. */
 export interface GrainOnFarmItem {
-  commodityGroup: string;   // e.g. "Corn", "Wheat", "Soybeans"
+  /** Commodity code ("YC", "HRWW"), or a crop-group name ("Corn") on rows saved before
+   *  2026-09-23 — see shared/utils/grain-on-farm.ts. Read it through the crop matcher, never
+   *  compare it to a group string directly. */
+  commodityCode: string;
   bushelsOnHand?: number;
   targetBushels?: number;
   grade?: string;           // free-text grade / quality note (e.g. "4.4%", "TW 58")
