@@ -15,13 +15,22 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// 22-25s on a quiet gateway - right at the limit - so under any concurrent load it tips over.</para>
 ///
 /// <para>So: on <c>HC0045</c> only, wait and re-send the identical page, a bounded number of times. Any
-/// other failure returns at once. This is the client-side half of a server-side problem that has been
-/// reported to the API owner; when the list filter is fixed this will simply stop being exercised.</para>
+/// other failure returns at once.</para>
 ///
-/// <para><b>Interactive reads get a much smaller budget.</b> The background default (4 retries, 8s apart)
-/// is right for a walk nobody is watching, but applying it to a producer click meant up to 32 seconds of
-/// <see cref="Task.Delay"/> inside that click - far worse than the failure it was papering over. An
-/// interactive caller retries once after 3s and then reports the failure, which the UI can show.</para>
+/// <para><b>The delay has to be long, because the server does not cancel the first copy.</b> A timed-out
+/// query runs to completion (70 s and more, measured by the API team), so a re-send a few seconds later
+/// competes with it on the same partition and both get slower - that is why both budgets were set to 0 on
+/// 2026-09-03. What makes one delayed retry worth having is what the API team documented on 2026-09-28:
+/// the slow phase is a fresh Db2 connection's one-time plan compile, ~25-31 s, right at the 30 s limit,
+/// after which the query finishes and its result is cached. Re-sent AFTER that window the page comes from
+/// cache (measured on the PROD gateway 2026-09-29: the app's batch cold = HC0045 at 31.5 s; the same
+/// batch re-sent later = 2.6 s). The background configuration is therefore one retry after 90 s - the
+/// shape the API owner himself suggested - and the delay clamp allows it. Both code defaults stay 0 so a
+/// missing key fails safe.</para>
+///
+/// <para><b>Interactive reads keep their own, smaller budget</b> (<c>Ctrm:InteractiveServerTimeoutRetries</c>,
+/// 0 in configuration). A producer click that has already waited 30 s should report the failure, which
+/// the UI shows with a retry, rather than sit in a <see cref="Task.Delay"/> for another minute and a half.</para>
 /// </remarks>
 public static class CtrmServerTimeoutRetry
 {
@@ -38,14 +47,15 @@ public static class CtrmServerTimeoutRetry
         bool interactive = false)
     {
         var retries = interactive
-            // Both default to 0. CTRM cannot cancel a query that overruns - it runs to completion
-            // whatever either side configures - so a re-send only ever adds a competing copy. A missing
-            // key must fail safe rather than silently restore the old 1/4 budgets.
+            // Both code defaults are 0: a missing key must fail safe rather than silently restore a budget.
+            // The configured background budget is 1 retry after 90 s - see the remarks above for why the
+            // delay must be that long.
             ? Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetries", 0), 0, 4)
             : Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:ServerTimeoutRetries", 0), 0, 10);
         var delay = interactive
             ? TimeSpan.FromSeconds(Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:InteractiveServerTimeoutRetryDelaySeconds", 3), 0, 30))
-            : TimeSpan.FromSeconds(Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:ServerTimeoutRetryDelaySeconds", 8), 0, 60));
+            // Clamp raised 60 -> 120 (2026-09-29) so the 90 s the API owner asked for is representable.
+            : TimeSpan.FromSeconds(Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:ServerTimeoutRetryDelaySeconds", 8), 0, 120));
 
         var result = await attempt();
         for (var i = 1; i <= retries && IsServerTimeout(result); i++)

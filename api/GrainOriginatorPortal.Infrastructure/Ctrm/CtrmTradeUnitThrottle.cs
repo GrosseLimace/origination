@@ -148,7 +148,7 @@ public static class CtrmTradeUnitThrottle
         lock (Init)
         {
             if (_batchSlots is not null) return _batchSlots;
-            var capacity = Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:TradeUnitContractBatchConcurrency", 16), 1, 32);
+            var capacity = Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:TradeUnitContractBatchConcurrency", 8), 1, 32);
             _batchSlots = new SemaphoreSlim(capacity, capacity);
             return _batchSlots;
         }
