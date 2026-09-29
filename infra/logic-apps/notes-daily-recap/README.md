@@ -12,7 +12,7 @@ Once a day it builds and sends a "daily recap" of CRM notes to each configured r
 2. **`Get_Recap_Groups`** — reads enabled rows from `[dbo].[DailyRecapGroups]` (Origination DB).
 3. **`For_each_Recap_Group`** — for each group:
    - resolves group members and CC emails (`DailyRecapGroupMembers`, `DailyRecapGroupCcEmails`,
-     plus `UserTradeUnitAssignments` / `UserGroupAssignments` in the Entitlements DB);
+     plus `[dbo].[vw_UserTradeUnitPreferences]` in the TradeUnitPreferences DB for trade-unit and trade-unit-group members — `TradeUnitCode` is text, so its filter value must be quoted, or the lookup silently returns zero rows);
    - pulls each member's notes from the last 24h (`[dbo].[Notes]` joined to `Customer`);
    - summarizes the notes with **Azure OpenAI** (`HTTP_AI_Foundry`) into a 5-point HTML summary;
    - sends the recap via **Microsoft Graph `sendMail`** as the shared mailbox, by **email** or to a
