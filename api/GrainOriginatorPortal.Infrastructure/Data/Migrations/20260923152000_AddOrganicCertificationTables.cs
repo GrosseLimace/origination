@@ -37,12 +37,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     AnniversaryDate = table.Column<DateTime>(type: "date", nullable: true),
-                    CertificateUrl = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     CertifierName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
                     ClientOperationId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     CustomerId = table.Column<long>(type: "bigint", nullable: true),
                     DeactivatedOn = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    HasCertificate = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
                     IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
                     LoadBatchId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     Nopid = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
@@ -77,17 +75,16 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    CategoryId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    CategoryId = table.Column<int>(type: "int", nullable: true),
                     CategoryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
                     CertificateNumber = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    ItemId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    ItemId = table.Column<int>(type: "int", nullable: true),
                     ItemName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
-                    ItemVarieties = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
-                    MadeWithOrganic = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
+                    Varieties = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     Organic = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
                     Organic100 = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
                     OrganicCertificationId = table.Column<int>(type: "int", nullable: false),
-                    OtherItems = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    OtherItems = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
                     Scope = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     StatusEffectiveDate = table.Column<DateTime>(type: "date", nullable: true),
@@ -169,12 +166,15 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                 column: "Nopid",
                 unique: true);
 
+            // Plain, not unique. ItemId is null on every free-text item and whole operations arrive
+            // that way, so a unique index here would reject them outright — SQL Server treats
+            // repeated NULLs in a unique index as duplicates. Uniqueness comes from the set being
+            // deleted and rebuilt on every ingest instead.
             migrationBuilder.CreateIndex(
-                name: "UQ_OrganicCertificationItem_Certification_Item",
+                name: "IX_OrganicCertificationItem_CertificationId",
                 schema: "dbo",
                 table: "OrganicCertificationItem",
-                columns: new[] { "OrganicCertificationId", "ItemId" },
-                unique: true);
+                column: "OrganicCertificationId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_OrganicCertificationLoad_ReceivedOn",

@@ -63,26 +63,28 @@ public class OrganicCertificationIngestServiceTests
         IReadOnlyList<OrganicItemDto>? items = null) => new()
         {
             ScoularId = scoularId,
-            Operation = new OrganicOperationDto
-            {
-                NopOperationId = nopid,
-                OperationName = "Prairie Ridge Farms",
-                CertifierName = "Example Certifiers LLC",
-                NopOperationStatus = status,
-                StatusEffectiveDate = new DateTime(2019, 3, 12, 8, 45, 0, DateTimeKind.Utc),
-                NopAnniversaryDate = anniversary,
-                HasCertificate = true,
-                TotalAcreage = 640.5m,
-            },
+            NopOperationId = nopid,
+            OperationName = "Prairie Ridge Farms",
+            CertifierName = "Example Certifiers LLC",
+            Status = status,
+            StatusEffectiveDate = new DateTime(2019, 3, 12, 8, 45, 0, DateTimeKind.Utc),
+            AnniversaryDate = anniversary,
+            TotalAcreage = 640.5m,
             Scopes = scopes,
             Items = items,
         };
 
     private static OrganicScopeDto Scope(string name, string status = "Certified") =>
-        new() { NopScope = name, ScopeStatus = status };
+        new() { Scope = name, Status = status };
 
-    private static OrganicItemDto Item(string id, string? name = "Corn") =>
-        new() { ItemId = id, ItemName = name, NopScope = "CROPS", Organic = true };
+    /// <summary>A catalogued item — numeric id from the USDA catalogue, with a name.</summary>
+    private static OrganicItemDto Item(int id, string? name = "Corn") =>
+        new() { ItemId = id, ItemName = name, Scope = "Crops", Organic = true };
+
+    /// <summary>A free-text item — no id, no name, everything in otherItems. Whole operations
+    /// arrive in this shape, so it is not an edge case.</summary>
+    private static OrganicItemDto FreeTextItem(string otherItems) =>
+        new() { Scope = "Crops", OtherItems = otherItems, Organic100 = true };
 
     [Fact]
     public async Task StoresTheOperationWithItsScopesAndItems()
@@ -90,8 +92,8 @@ public class OrganicCertificationIngestServiceTests
         using var db = NewContext();
 
         var result = await Service(db).IngestAsync(Request(
-            scopes: [Scope("CROPS"), Scope("HANDLING")],
-            items: [Item("I1"), Item("I2", "Soybeans")]));
+            scopes: [Scope("Crops"), Scope("Handling")],
+            items: [Item(1), Item(2, "Soybeans")]));
 
         Assert.True(result.Accepted);
         Assert.True(result.CustomerMatched);
@@ -116,8 +118,8 @@ public class OrganicCertificationIngestServiceTests
         using var db = NewContext();
         var service = Service(db);
 
-        await service.IngestAsync(Request(scopes: [Scope("CROPS")], items: [Item("I1")]));
-        await service.IngestAsync(Request(scopes: [Scope("CROPS")], items: [Item("I1")]));
+        await service.IngestAsync(Request(scopes: [Scope("Crops")], items: [Item(1)]));
+        await service.IngestAsync(Request(scopes: [Scope("Crops")], items: [Item(1)]));
 
         Assert.Equal(1, await db.OrganicCertifications.CountAsync());
         Assert.Equal(1, await db.OrganicCertificationScopes.CountAsync());
@@ -130,12 +132,12 @@ public class OrganicCertificationIngestServiceTests
         using var db = NewContext();
         var service = Service(db);
 
-        await service.IngestAsync(Request(items: [Item("I1"), Item("I2"), Item("I3")]));
-        var result = await service.IngestAsync(Request(items: [Item("I2")]));
+        await service.IngestAsync(Request(items: [Item(1), Item(2), Item(3)]));
+        var result = await service.IngestAsync(Request(items: [Item(2)]));
 
         Assert.Equal(1, result.ItemsStored);
         var remaining = await db.OrganicCertificationItems.Select(i => i.ItemId).ToListAsync();
-        Assert.Equal(["I2"], remaining);
+        Assert.Equal([2], remaining);
     }
 
     [Fact]
@@ -168,7 +170,7 @@ public class OrganicCertificationIngestServiceTests
 
         var result = await Service(db).IngestAsync(Request(
             status: "Surrendered",
-            scopes: [Scope("CROPS", "Surrendered")],
+            scopes: [Scope("Crops", "Surrendered")],
             items: []));
 
         Assert.True(result.Accepted);
@@ -186,11 +188,98 @@ public class OrganicCertificationIngestServiceTests
         using var db = NewContext();
 
         await Service(db).IngestAsync(Request(
-            scopes: [Scope("CROPS", "Certified"), Scope("HANDLING", "Surrendered")]));
+            scopes: [Scope("Crops", "Certified"), Scope("Handling", "Surrendered")]));
 
         var scopes = await db.OrganicCertificationScopes.ToListAsync();
-        Assert.Equal("Certified", scopes.Single(s => s.Scope == "CROPS").ScopeStatus);
-        Assert.Equal("Surrendered", scopes.Single(s => s.Scope == "HANDLING").ScopeStatus);
+        Assert.Equal("Certified", scopes.Single(s => s.Scope == "Crops").ScopeStatus);
+        Assert.Equal("Surrendered", scopes.Single(s => s.Scope == "Handling").ScopeStatus);
+    }
+
+    [Fact]
+    public async Task FreeTextItemsAreStoredEvenThoughTheyHaveNoIdOrName()
+    {
+        // The shape that broke the original design. A whole captured operation arrives like this:
+        // every item has no itemId, no itemName and no category, with the crops in otherItems. The
+        // first version required an itemId, so this producer would have stored a certified
+        // operation with ZERO crops against it — while the crop list sat in a field we ignored.
+        using var db = NewContext();
+
+        var result = await Service(db).IngestAsync(Request(
+            scopes: [Scope("Crops")],
+            items: [
+                FreeTextItem("Alfalfa, Corn, CRP, Oats/Alfalfa, Pasture, Rye/Sorghum, Soybeans, Wheat/Alfalfa"),
+                FreeTextItem("Carryover Crops of: 2024 Soybeans - 4000 bushels and 2024 Corn - 5000 bushels")]));
+
+        Assert.True(result.Accepted);
+        Assert.Equal(2, result.ItemsStored);
+        Assert.Empty(result.Rejections);
+
+        var stored = await db.OrganicCertificationItems.ToListAsync();
+        Assert.All(stored, i => Assert.Null(i.ItemId));
+        Assert.Contains(stored, i => i.OtherItems!.StartsWith("Alfalfa, Corn"));
+    }
+
+    [Fact]
+    public async Task AnItemDescribingNothingIsRejected()
+    {
+        // No id, no name, no free text — there is no crop here to store or render. This is the
+        // only item-level rejection left now that itemId is optional.
+        using var db = NewContext();
+
+        var result = await Service(db).IngestAsync(Request(
+            items: [new OrganicItemDto { Scope = "Crops" }, Item(1)]));
+
+        Assert.True(result.Accepted);
+        Assert.Equal(1, result.ItemsStored);
+        Assert.Single(result.Rejections, r => r.Code == "EMPTY_ITEM");
+    }
+
+    [Fact]
+    public async Task TheSameCropUnderTwoScopesIsNotADuplicate()
+    {
+        // A producer certified to grow soybeans AND to handle them holds two genuine
+        // certifications. Scope is part of the duplicate key precisely so this survives.
+        using var db = NewContext();
+
+        var result = await Service(db).IngestAsync(Request(
+            scopes: [Scope("Crops"), Scope("Handling")],
+            items: [
+                new OrganicItemDto { ItemId = 363, ItemName = "Soybeans", Scope = "Crops" },
+                new OrganicItemDto { ItemId = 363, ItemName = "Soybeans", Scope = "Handling" }]));
+
+        Assert.Equal(2, result.ItemsStored);
+        Assert.Empty(result.Rejections);
+    }
+
+    [Fact]
+    public async Task TheSameCatalogueIdTwiceUnderOneScopeIsADuplicateEvenWithDifferentNames()
+    {
+        // A catalogue id IS the identity where one exists, so the sender sending 377 twice under
+        // Crops is contradicting itself — even if the two rows disagree about the name.
+        using var db = NewContext();
+
+        var result = await Service(db).IngestAsync(Request(
+            scopes: [],
+            items: [
+                new OrganicItemDto { ItemId = 377, ItemName = "Sugercane", Scope = "Crops" },
+                new OrganicItemDto { ItemId = 377, ItemName = "Sugarcane", Scope = "Crops" }]));
+
+        Assert.Equal(1, result.ItemsStored);
+        Assert.Single(result.Rejections, r => r.Code == "DUPLICATE_ITEM");
+    }
+
+    [Fact]
+    public async Task TwoIdenticalFreeTextItemsAreADuplicate()
+    {
+        // Free-text items have no id to key on, so their text is the identity.
+        using var db = NewContext();
+
+        var result = await Service(db).IngestAsync(Request(
+            scopes: [],
+            items: [FreeTextItem("Alfalfa, Corn"), FreeTextItem("Alfalfa, Corn")]));
+
+        Assert.Equal(1, result.ItemsStored);
+        Assert.Single(result.Rejections, r => r.Code == "DUPLICATE_ITEM");
     }
 
     [Fact]
@@ -204,7 +293,7 @@ public class OrganicCertificationIngestServiceTests
         var service = Service(db);
 
         await service.IngestAsync(Request(
-            scopes: [Scope("CROPS")], items: [Item("I1"), Item("I2")]));
+            scopes: [Scope("Crops")], items: [Item(1), Item(2)]));
 
         // Same producer, but the sender's payload no longer carries either collection.
         var result = await service.IngestAsync(Request(scopes: null, items: null));
@@ -226,7 +315,7 @@ public class OrganicCertificationIngestServiceTests
         using var db = NewContext();
         var service = Service(db);
 
-        await service.IngestAsync(Request(scopes: [Scope("CROPS")], items: [Item("I1")]));
+        await service.IngestAsync(Request(scopes: [Scope("Crops")], items: [Item(1)]));
         var result = await service.IngestAsync(Request(scopes: [], items: []));
 
         Assert.Equal(0, result.ScopesStored);
@@ -352,11 +441,7 @@ public class OrganicCertificationIngestServiceTests
 
         var backdated = Request(status: "Surrendered") with
         {
-            Operation = Request().Operation with
-            {
-                NopOperationStatus = "Surrendered",
-                StatusEffectiveDate = new DateTime(2026, 2, 28, 0, 0, 0, DateTimeKind.Utc),
-            },
+            StatusEffectiveDate = new DateTime(2026, 2, 28, 0, 0, 0, DateTimeKind.Utc),
         };
         await service.IngestAsync(backdated);
 
@@ -397,13 +482,13 @@ public class OrganicCertificationIngestServiceTests
         // Scopes sent as an explicit empty array, not omitted — this test is about duplicate
         // handling and should not incidentally exercise the absent-collection path.
         var result = await Service(db).IngestAsync(Request(
-            scopes: [], items: [Item("I1"), Item("I1", "Duplicate"), Item("I2")]));
+            scopes: [], items: [Item(1), Item(1, "Duplicate"), Item(2)]));
 
         Assert.True(result.Accepted);
         Assert.Equal(2, result.ItemsStored);
 
-        var rejection = Assert.Single(result.Rejections, r => r.Code == "DUPLICATE_ITEM_ID");
-        Assert.Equal("I1", rejection.Identifier);
+        var rejection = Assert.Single(result.Rejections, r => r.Code == "DUPLICATE_ITEM");
+        Assert.Equal("Duplicate", rejection.Identifier);
     }
 
     [Fact]
@@ -412,7 +497,7 @@ public class OrganicCertificationIngestServiceTests
         using var db = NewContext();
 
         var result = await Service(db).IngestAsync(Request(
-            scopes: [Scope("CROPS"), Scope("crops"), Scope("HANDLING")], items: []));
+            scopes: [Scope("Crops"), Scope("crops"), Scope("Handling")], items: []));
 
         Assert.True(result.Accepted);
         Assert.Equal(2, result.ScopesStored);
@@ -455,8 +540,8 @@ public class OrganicCertificationIngestServiceTests
         using var db = NewContext();
 
         await Service(db).IngestAsync(Request(
-            scopes: [Scope("CROPS")],
-            items: [Item("I1", "Corn"), Item("I2", "Soybeans")]));
+            scopes: [Scope("Crops")],
+            items: [Item(1, "Corn"), Item(2, "Soybeans")]));
 
         var audit = await db.OrganicCertificationLoads.SingleAsync();
         Assert.Equal("Succeeded", audit.Status);

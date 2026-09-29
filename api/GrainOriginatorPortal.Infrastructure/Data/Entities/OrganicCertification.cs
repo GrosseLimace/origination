@@ -22,7 +22,12 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 ///
 /// Contact details (name, phone, email) are present in the source payload and are deliberately
 /// NOT stored: nothing displays them, and carrying contact PII here would oblige the read
-/// endpoint to be trade-unit scoped, as ProducerDetails is.
+/// endpoint to be trade-unit scoped, as ProducerDetails is. The same goes for the activities and
+/// addresses blocks — available, but nothing displays them.
+///
+/// HasCertificate and CertificateUrl were removed 2026-09-29: an earlier draft inferred them from
+/// the written description, and neither appears in the captured payloads. Certificates DO exist —
+/// a separate nightly job fetches the PDF from USDA into FileBound — but not by way of this feed.
 /// </summary>
 public class OrganicCertification
 {
@@ -88,10 +93,6 @@ public class OrganicCertification
     /// <summary>The certifier's own record-freshness stamp, not ours.</summary>
     public DateTime? SourceLastUpdateDate { get; set; }
 
-    public bool HasCertificate { get; set; }
-
-    /// <summary>Public USDA INTEGRITY link to the certificate.</summary>
-    public string? CertificateUrl { get; set; }
     public decimal? TotalAcreage { get; set; }
 
     /// <summary>False once the operation stops appearing in the feed or is explicitly withdrawn.

@@ -146,7 +146,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (421)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (418)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -399,12 +399,10 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- see MigrationSnapshotConsistencyTests.CertificationDoesNotStoreContactPii.
 ('dbo', 'OrganicCertification', 'Id',                   'int',            0),
 ('dbo', 'OrganicCertification', 'AnniversaryDate',      'date',           1),
-('dbo', 'OrganicCertification', 'CertificateUrl',       'nvarchar(500)',  1),
 ('dbo', 'OrganicCertification', 'CertifierName',        'nvarchar(255)',  1),
 ('dbo', 'OrganicCertification', 'ClientOperationId',    'nvarchar(100)',  1),
 ('dbo', 'OrganicCertification', 'CustomerId',           'bigint',         1),
 ('dbo', 'OrganicCertification', 'DeactivatedOn',        'datetime2',      1),
-('dbo', 'OrganicCertification', 'HasCertificate',       'bit',            0),
 ('dbo', 'OrganicCertification', 'IsActive',             'bit',            0),
 ('dbo', 'OrganicCertification', 'LoadBatchId',          'uniqueidentifier', 1),
 ('dbo', 'OrganicCertification', 'Nopid',                'nvarchar(50)',   0),
@@ -419,17 +417,16 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertification', 'TotalAcreage',         'decimal(18,2)',  1),
 ('dbo', 'OrganicCertification', 'UpdatedOn',            'datetime2',      0),
 ('dbo', 'OrganicCertificationItem', 'Id',                     'int',           0),
-('dbo', 'OrganicCertificationItem', 'CategoryId',             'nvarchar(50)',  1),
+('dbo', 'OrganicCertificationItem', 'CategoryId',             'int',           1),
 ('dbo', 'OrganicCertificationItem', 'CategoryName',           'nvarchar(255)', 1),
 ('dbo', 'OrganicCertificationItem', 'CertificateNumber',      'nvarchar(100)', 1),
-('dbo', 'OrganicCertificationItem', 'ItemId',                 'nvarchar(100)', 0),
+('dbo', 'OrganicCertificationItem', 'ItemId',                 'int',           1),
 ('dbo', 'OrganicCertificationItem', 'ItemName',               'nvarchar(255)', 1),
-('dbo', 'OrganicCertificationItem', 'ItemVarieties',          'nvarchar(1000)', 1),
-('dbo', 'OrganicCertificationItem', 'MadeWithOrganic',        'bit',           0),
+('dbo', 'OrganicCertificationItem', 'Varieties',              'nvarchar(1000)', 1),
 ('dbo', 'OrganicCertificationItem', 'Organic',                'bit',           0),
 ('dbo', 'OrganicCertificationItem', 'Organic100',             'bit',           0),
 ('dbo', 'OrganicCertificationItem', 'OrganicCertificationId', 'int',           0),
-('dbo', 'OrganicCertificationItem', 'OtherItems',             'nvarchar(1000)', 1),
+('dbo', 'OrganicCertificationItem', 'OtherItems',             'nvarchar(2000)', 1),
 ('dbo', 'OrganicCertificationItem', 'Scope',                  'nvarchar(50)',  1),
 ('dbo', 'OrganicCertificationItem', 'Status',                 'nvarchar(50)',  1),
 ('dbo', 'OrganicCertificationItem', 'StatusEffectiveDate',    'date',          1),
@@ -657,7 +654,6 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'TeamsChannels',               'UX_TeamsChannels_ChannelId'),
 ('dbo', 'UsageDashboardExcludedUsers', 'IX_UsageDashboardExcludedUsers_UserId'),
 ('dbo', 'OrganicCertification',        'UQ_OrganicCertification_Nopid'),
-('dbo', 'OrganicCertificationItem',    'UQ_OrganicCertificationItem_Certification_Item'),
 ('dbo', 'OrganicCertificationScope',   'UQ_OrganicCertificationScope_Certification_Scope'),
 ('dbo', 'UsageDashboardViewAllUsers',  'IX_UsageDashboardViewAllUsers_UserId'),
 ('dbo', 'UserActivityDaily',           'UQ_UserActivityDaily_UserId_Date'),

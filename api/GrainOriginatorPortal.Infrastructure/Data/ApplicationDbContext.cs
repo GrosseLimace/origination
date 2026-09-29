@@ -336,8 +336,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.StatusChangedOn).HasColumnName("StatusChangedOn").IsRequired(false);
             entity.Property(e => e.AnniversaryDate).HasColumnName("AnniversaryDate").HasColumnType("date").IsRequired(false);
             entity.Property(e => e.SourceLastUpdateDate).HasColumnName("SourceLastUpdateDate").HasColumnType("date").IsRequired(false);
-            entity.Property(e => e.HasCertificate).HasColumnName("HasCertificate").HasDefaultValue(false).IsRequired();
-            entity.Property(e => e.CertificateUrl).HasColumnName("CertificateUrl").HasMaxLength(500).IsRequired(false);
             entity.Property(e => e.TotalAcreage).HasColumnName("TotalAcreage").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
             entity.Property(e => e.DeactivatedOn).HasColumnName("DeactivatedOn").IsRequired(false);
@@ -390,19 +388,20 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.OrganicCertificationId).HasColumnName("OrganicCertificationId").IsRequired();
-            entity.Property(e => e.ItemId).HasColumnName("ItemId").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ItemId).HasColumnName("ItemId").IsRequired(false);
             entity.Property(e => e.Scope).HasColumnName("Scope").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.CertificateNumber).HasColumnName("CertificateNumber").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.StatusEffectiveDate).HasColumnName("StatusEffectiveDate").HasColumnType("date").IsRequired(false);
             entity.Property(e => e.ItemName).HasColumnName("ItemName").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.CategoryName).HasColumnName("CategoryName").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.CategoryId).HasColumnName("CategoryId").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.ItemVarieties).HasColumnName("ItemVarieties").HasMaxLength(1000).IsRequired(false);
-            entity.Property(e => e.OtherItems).HasColumnName("OtherItems").HasMaxLength(1000).IsRequired(false);
+            entity.Property(e => e.CategoryId).HasColumnName("CategoryId").IsRequired(false);
+            entity.Property(e => e.Varieties).HasColumnName("Varieties").HasMaxLength(1000).IsRequired(false);
+            // 2000, not 1000: this carries whole free-text crop lists, and one captured sample is a
+            // full sentence about carryover bushels rather than a short list.
+            entity.Property(e => e.OtherItems).HasColumnName("OtherItems").HasMaxLength(2000).IsRequired(false);
             entity.Property(e => e.Organic).HasColumnName("Organic").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.Organic100).HasColumnName("Organic100").HasDefaultValue(false).IsRequired();
-            entity.Property(e => e.MadeWithOrganic).HasColumnName("MadeWithOrganic").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
 
             entity.HasOne(e => e.OrganicCertification)
@@ -411,9 +410,14 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade)
                   .HasConstraintName("FK_OrganicCertificationItem_OrganicCertification");
 
-            entity.HasIndex(e => new { e.OrganicCertificationId, e.ItemId })
-                  .IsUnique()
-                  .HasDatabaseName("UQ_OrganicCertificationItem_Certification_Item");
+            // NO unique index. There is no natural key: ItemId is null on every free-text item, and
+            // entire operations arrive that way, so a unique index on (certification, item) would
+            // reject them — SQL Server treats repeated NULLs in a unique index as duplicates.
+            // Uniqueness is guaranteed structurally instead: the set is deleted and rebuilt on
+            // every ingest, so duplicates cannot accumulate across messages. Duplicates WITHIN one
+            // message are still detected and reported, on a fingerprint rather than an id.
+            entity.HasIndex(e => e.OrganicCertificationId)
+                  .HasDatabaseName("IX_OrganicCertificationItem_CertificationId");
         });
 
         modelBuilder.Entity<OrganicCertificationLoad>(entity =>

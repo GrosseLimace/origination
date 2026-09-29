@@ -98,43 +98,57 @@ This one check will save a great deal of back-and-forth.
 POST /api/organic-certifications/ingest
 ```
 
+Shape confirmed against the two messages you captured for us on 2026-09-29. Operation fields are
+**flat**, alongside `scoularId`.
+
 ```jsonc
 {
-  "scoularId": "ABCFARM",              // CTRM CustID
-  "operation": {
-    "nopOperationId": "1234567890",    // required — the key everything is stored under
-    "operationName": "Prairie Ridge Farms",
-    "operationOtherNames": "Prairie Ridge",
-    "clientOperationId": "PR-0042",
-    "certifierName": "Example Certifiers LLC",
-    "nopOperationStatus": "Certified",  // Certified | Surrendered | Suspended | Revoked
-    "statusEffectiveDate": "2019-03-12",
-    "nopAnniversaryDate": "2027-01-01",
-    "lastUpdateDate": "2026-09-18",
-    "hasCertificate": true,
-    "certificateUrl": "https://organic.ams.usda.gov/integrity/...",
-    "totalAcreage": 640.5
-  },
+  "scoularId": "PRAI412",                 // CTRM CustID
+  "nopOperationId": "8150000123",         // required — the key everything is stored under
+  "operationName": "Hofmeyer Farms / Dale Hofmeyer",
+  "operationOtherNames": null,
+  "clientOperationId": null,
+  "certifierName": "[MCIA] Minnesota Crop Improvement Association",
+  "status": "Certified",                  // Certified | Surrendered | Suspended | Revoked
+  "statusEffectiveDate": "2012-01-09",
+  "anniversaryDate": "2026-04-01",
+  "lastUpdatedDate": "2025-11-07",
+  "totalAcreage": 1503.95,
+
+  "contact":    { ... },                  // accepted and ignored — see below
+  "activities": { ... },                  // accepted and ignored
+  "addresses":  [ ... ],                  // accepted and ignored
+
   "scopes": [
-    { "nopScope": "CROPS",    "scopeStatus": "Certified",   "statusEffectiveDate": "2019-03-12" },
-    { "nopScope": "HANDLING", "scopeStatus": "Surrendered", "statusEffectiveDate": "2026-02-28" }
+    { "scope": "Crops",    "status": "Certified",   "statusEffectiveDate": "2012-01-09" },
+    { "scope": "Handling", "status": "Surrendered", "statusEffectiveDate": "2026-02-28" }
   ],
   "items": [
-    {
-      "itemId": "I-1", "nopScope": "CROPS", "certificateNumber": "C-99",
-      "status": "Certified", "statusEffectiveDate": "2019-03-12",
-      "itemName": "Corn", "categoryName": "Grains", "categoryId": "G",
-      "itemVarieties": null, "otherItems": null,
-      "organic": true, "organic100": false, "madeWithOrganic": false
-    }
+    // Catalogued — numeric ids from the USDA catalogue
+    { "scope": "Crops", "itemId": 377, "itemName": "Sugercane",
+      "categoryId": 2, "categoryName": "Field/Forageable",
+      "certificateNumber": "US11154/25", "status": "Certified",
+      "statusEffectiveDate": null, "varieties": null, "otherItems": null,
+      "organic100": true, "organic": null },
+
+    // Free text — no ids or names at all; the crops are in otherItems
+    { "scope": "Crops", "itemId": null, "itemName": null,
+      "categoryId": null, "categoryName": null,
+      "certificateNumber": null, "status": "Certified",
+      "statusEffectiveDate": "2012-01-09", "varieties": null,
+      "otherItems": "Alfalfa, Corn, CRP, Oats/Alfalfa, Pasture, Soybeans",
+      "organic100": true, "organic": null }
   ]
 }
 ```
 
-**Contact details are deliberately not accepted.** If `contactFirstName`, `contactLastName`, `phone`
-or `email` appear in the payload they are ignored rather than rejected — nothing in the application
-displays them, and storing contact PII we have no use for would put obligations on this data that
-it does not otherwise carry. Send them or don't; it makes no difference to us.
+**Both item shapes are fully supported.** `itemId` is optional and is not a key — we know whole
+operations arrive with every item in the free-text shape. An item is only rejected if it carries
+**none** of `itemId`, `itemName` or `otherItems`, because there is then no crop to store or show.
+
+**Contact, activities and addresses are accepted and ignored.** Nothing in the application displays
+them, and storing contact PII we have no use for would place obligations on this data it does not
+otherwise carry. Send them or don't; it makes no difference to us.
 
 ### Response
 
@@ -153,12 +167,12 @@ it does not otherwise carry. Send them or don't; it makes no difference to us.
 `rejections` names anything dropped, so a partial success is actionable rather than mysterious:
 
 ```jsonc
-{ "element": "item", "identifier": "I-1", "code": "DUPLICATE_ITEM_ID",
-  "message": "Item id 'I-1' appeared more than once in this message." }
+{ "element": "item", "identifier": "Sugercane", "code": "DUPLICATE_ITEM",
+  "message": "An identical item appeared more than once in this message." }
 ```
 
 Branch on `code`, not on `message`. Current codes: `MISSING_NOP_OPERATION_ID`, `MISSING_SCOPE`,
-`DUPLICATE_SCOPE`, `MISSING_ITEM_ID`, `DUPLICATE_ITEM_ID`.
+`DUPLICATE_SCOPE`, `EMPTY_ITEM`, `DUPLICATE_ITEM`, `SCOPES_ABSENT`, `ITEMS_ABSENT`.
 
 ## Three behaviours worth knowing
 
@@ -191,24 +205,15 @@ re-sending the same message converges rather than duplicating. A failed run can 
 
 ## What we need from you
 
-1. **One real message, captured verbatim — the highest-value thing on this list.**
+1. ✅ **A captured message — supplied 2026-09-29, thank you.** It was worth asking for: our first
+   version had been built from the written description and was wrong in **seven** places, including
+   an `operation` wrapper that does not exist. Only two of those would have failed loudly; the rest
+   would have bound as null, stored blank and returned `"accepted": true` with clean logs on both
+   sides.
 
-   The payload above was written from your description of the feed rather than from a captured
-   message, so every field name in it is our best reading rather than something we have verified.
-
-   That matters because of how the endpoint handles fields it does not recognise. Unknown fields
-   are ignored, deliberately, so you can extend the payload without waiting on us — but the same
-   rule means a field **we** have spelled wrong is also ignored. If `nopOperationStatus` turns out
-   to be `operationStatus`, nothing errors: we store the certification with a blank status and
-   return `"accepted": true`. Your logs show success, ours show success, and the gap only surfaces
-   when someone opens a producer profile and finds it empty.
-
-   Required fields do not have this problem — a mismatch there fails loudly with a 400 on your
-   first call. It is the optional ones that fail quietly, and they are most of the payload.
-
-   Send one message exactly as your pipeline would emit it, including any fields we have not listed.
-   Sanitised values are fine; it is the **field names** we need. We run it against the contract and
-   anything that does not line up shows up immediately.
+   Both samples are now pinned in our test suite, so if the payload changes we will find out
+   immediately rather than by someone noticing an empty profile. **If you do change it, send another
+   capture** — a description of the change is not enough to catch this class of problem.
 
 2. **Your managed identity's name and object id** — once the pipeline exists.
 3. **The subscription, resource group and VNet the pipeline will run in** — see the connectivity

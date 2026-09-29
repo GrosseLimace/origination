@@ -52,7 +52,7 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var rejections = new List<OrganicCertificationRejection>();
 
-        var nopid = request.Operation.NopOperationId?.Trim();
+        var nopid = request.NopOperationId?.Trim();
         if (string.IsNullOrEmpty(nopid))
         {
             // The only failure that loses the whole message: with no NOP id there is no key to
@@ -96,7 +96,7 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
             _db.OrganicCertifications.Add(certification);
         }
 
-        ApplyOperation(certification, request.Operation, scoularId, customerId, batchId, now);
+        ApplyOperation(certification, request, scoularId, customerId, batchId, now);
 
         var scopesStored = ApplyScopes(certification, request.Scopes, now, rejections);
         var itemsStored = ApplyItems(certification, request.Items, now, rejections);
@@ -177,14 +177,14 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
 
     private static void ApplyOperation(
         OrganicCertification target,
-        OrganicOperationDto source,
+        OrganicCertificationIngestRequest source,
         string? scoularId,
         long? customerId,
         Guid batchId,
         DateTime now)
     {
         // Before anything overwrites OperationStatus.
-        CaptureStatusTransition(target, source.NopOperationStatus, now);
+        CaptureStatusTransition(target, source.Status, now);
 
         target.ScoularId = scoularId;
         target.CustomerId = customerId;
@@ -192,12 +192,10 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         target.OperationOtherNames = source.OperationOtherNames;
         target.ClientOperationId = source.ClientOperationId;
         target.CertifierName = source.CertifierName;
-        target.OperationStatus = source.NopOperationStatus;
+        target.OperationStatus = source.Status;
         target.StatusEffectiveDate = source.StatusEffectiveDate?.Date;
-        target.AnniversaryDate = source.NopAnniversaryDate?.Date;
-        target.SourceLastUpdateDate = source.LastUpdateDate?.Date;
-        target.HasCertificate = source.HasCertificate ?? false;
-        target.CertificateUrl = source.CertificateUrl;
+        target.AnniversaryDate = source.AnniversaryDate?.Date;
+        target.SourceLastUpdateDate = source.LastUpdatedDate?.Date;
         target.TotalAcreage = source.TotalAcreage;
 
         // Presence in the feed is the active signal. Nothing here ever sets IsActive false: with
@@ -249,7 +247,7 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
 
         foreach (var scope in scopes)
         {
-            var name = scope.NopScope?.Trim();
+            var name = scope.Scope?.Trim();
             if (string.IsNullOrEmpty(name))
             {
                 rejections.Add(new OrganicCertificationRejection
@@ -276,7 +274,7 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
             certification.Scopes.Add(new OrganicCertificationScope
             {
                 Scope = name,
-                ScopeStatus = scope.ScopeStatus,
+                ScopeStatus = scope.Status,
                 StatusEffectiveDate = scope.StatusEffectiveDate?.Date,
                 UpdatedOn = now,
             });
@@ -317,47 +315,65 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
 
         foreach (var item in items)
         {
-            var id = item.ItemId?.Trim();
-            if (string.IsNullOrEmpty(id))
+            // An item must SAY something. Catalogued items carry an id and a name; free-text ones
+            // carry neither and put everything in otherItems. Either is fine — but an item with
+            // none of the three describes no crop at all and cannot be rendered.
+            var describesSomething =
+                item.ItemId is not null
+                || !string.IsNullOrWhiteSpace(item.ItemName)
+                || !string.IsNullOrWhiteSpace(item.OtherItems);
+
+            if (!describesSomething)
             {
                 rejections.Add(new OrganicCertificationRejection
                 {
                     Element = "item",
-                    Code = "MISSING_ITEM_ID",
-                    Message = "itemId is required and was empty.",
+                    Code = "EMPTY_ITEM",
+                    Message = "Item carried no itemId, itemName or otherItems, so there is nothing "
+                            + "to store or display.",
                 });
                 continue;
             }
 
-            if (!seen.Add(id))
+            // Duplicate detection has to work for both shapes, so the key depends on which one this
+            // is. A catalogue id, where present, IS the identity — the same id twice under one
+            // scope is the sender contradicting itself, even if the names differ. Free-text items
+            // have no id, so they fall back to their text.
+            //
+            // Scope is part of both keys deliberately: a producer certified for the same crop under
+            // Crops and under Handling holds two genuine certifications, not a duplicate.
+            var fingerprint = item.ItemId is not null
+                ? $"id\u001f{item.Scope?.Trim()}\u001f{item.ItemId}"
+                : $"text\u001f{item.Scope?.Trim()}\u001f{item.ItemName?.Trim()}\u001f{item.OtherItems?.Trim()}";
+
+            if (!seen.Add(fingerprint))
             {
                 rejections.Add(new OrganicCertificationRejection
                 {
                     Element = "item",
-                    Identifier = id,
-                    Code = "DUPLICATE_ITEM_ID",
-                    Message = $"Item id '{id}' appeared more than once in this message.",
+                    Identifier = item.ItemName ?? item.ItemId?.ToString(),
+                    Code = "DUPLICATE_ITEM",
+                    Message = "An identical item appeared more than once in this message.",
                 });
                 continue;
             }
 
             certification.Items.Add(new OrganicCertificationItem
             {
-                ItemId = id,
-                Scope = item.NopScope,
+                ItemId = item.ItemId,
+                Scope = item.Scope,
                 CertificateNumber = item.CertificateNumber,
                 Status = item.Status,
                 StatusEffectiveDate = item.StatusEffectiveDate?.Date,
-                // Stored verbatim. An item name that maps to no Scoular commodity is a vocabulary
-                // mismatch, not bad data, and is resolved softly at read time.
+                // Stored verbatim, both shapes. An item name that maps to no Scoular commodity is a
+                // vocabulary mismatch, not bad data, and is resolved softly at read time.
                 ItemName = item.ItemName,
                 CategoryName = item.CategoryName,
                 CategoryId = item.CategoryId,
-                ItemVarieties = item.ItemVarieties,
+                Varieties = item.Varieties,
                 OtherItems = item.OtherItems,
                 Organic = item.Organic ?? false,
                 Organic100 = item.Organic100 ?? false,
-                MadeWithOrganic = item.MadeWithOrganic ?? false,
                 UpdatedOn = now,
             });
         }

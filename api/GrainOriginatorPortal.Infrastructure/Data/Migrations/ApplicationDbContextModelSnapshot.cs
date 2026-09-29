@@ -1320,11 +1320,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("date")
                         .HasColumnName("AnniversaryDate");
 
-                    b.Property<string>("CertificateUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
-                        .HasColumnName("CertificateUrl");
-
                     b.Property<string>("CertifierName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
@@ -1342,12 +1337,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("DeactivatedOn")
                         .HasColumnType("datetime2")
                         .HasColumnName("DeactivatedOn");
-
-                    b.Property<bool>("HasCertificate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false)
-                        .HasColumnName("HasCertificate");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
@@ -1433,9 +1422,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("CategoryId")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
+                    b.Property<int?>("CategoryId")
+                        .HasColumnType("int")
                         .HasColumnName("CategoryId");
 
                     b.Property<string>("CategoryName")
@@ -1448,27 +1436,14 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("CertificateNumber");
 
-                    b.Property<string>("ItemId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                    b.Property<int?>("ItemId")
+                        .HasColumnType("int")
                         .HasColumnName("ItemId");
 
                     b.Property<string>("ItemName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("ItemName");
-
-                    b.Property<string>("ItemVarieties")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
-                        .HasColumnName("ItemVarieties");
-
-                    b.Property<bool>("MadeWithOrganic")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false)
-                        .HasColumnName("MadeWithOrganic");
 
                     b.Property<bool>("Organic")
                         .ValueGeneratedOnAdd()
@@ -1487,8 +1462,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnName("OrganicCertificationId");
 
                     b.Property<string>("OtherItems")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
                         .HasColumnName("OtherItems");
 
                     b.Property<string>("Scope")
@@ -1511,11 +1486,15 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasDefaultValueSql("GETUTCDATE()")
                         .HasColumnName("UpdatedOn");
 
+                    b.Property<string>("Varieties")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("Varieties");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganicCertificationId", "ItemId")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_OrganicCertificationItem_Certification_Item");
+                    b.HasIndex("OrganicCertificationId")
+                        .HasDatabaseName("IX_OrganicCertificationItem_CertificationId");
 
                     b.ToTable("OrganicCertificationItem", "dbo");
                 });
