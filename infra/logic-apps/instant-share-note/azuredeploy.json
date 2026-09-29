@@ -289,7 +289,7 @@
                                 "method": "get",
                                 "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[vw_UserTradeUnitPreferences]'))}/items",
                                 "queries": {
-                                  "$filter": "TradeUnitCode eq @{item()?['id']}"
+                                  "$filter": "TradeUnitCode eq '@{item()?['id']}'"
                                 }
                               },
                               "type": "ApiConnection"
