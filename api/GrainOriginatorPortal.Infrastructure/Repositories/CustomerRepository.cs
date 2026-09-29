@@ -797,15 +797,23 @@ public class CustomerRepository : ICustomerRepository
         if (string.IsNullOrEmpty(code)) return openTus;
 
         // customerId is not needed when the code is supplied; both repositories use the code directly.
-        var contractsTask = _contractRepository.GetByCustomerAsync(0, code, cancellationToken);
-        var ticketsTask = _ticketRepository.GetUnappliedByCustomerAsync(0, code, cancellationToken);
-        await Task.WhenAll(contractsTask, ticketsTask);
+        //
+        // SEQUENTIAL, deliberately. With Ctrm:Source = ods both repositories are the ODS ones, and
+        // they share this scope's single OriginationDbContext. Running the two reads concurrently
+        // (Task.WhenAll) made EF throw "a second operation was started on this context instance"
+        // the moment the second query began. That took down the PROD customer sync on 2026-09-29
+        // (bring-back pass, first run on the new build) and the trade-unit assign / remove actions
+        // with it; QA never saw it because its CTRM repositories go over HTTP, which is thread-safe.
+        // One read after the other costs a few hundred milliseconds per producer and is correct on
+        // both sources.
+        var contracts = await _contractRepository.GetByCustomerAsync(0, code, cancellationToken);
+        var tickets = await _ticketRepository.GetUnappliedByCustomerAsync(0, code, cancellationToken);
 
-        foreach (var c in await contractsTask)
+        foreach (var c in contracts)
             if (c.ClosedDate is null && !string.IsNullOrWhiteSpace(c.TradeUnit))
                 openTus.Add(c.TradeUnit.Trim());
 
-        foreach (var t in await ticketsTask)
+        foreach (var t in tickets)
             if (!string.IsNullOrWhiteSpace(t.OrganizationCode))
                 openTus.Add(t.OrganizationCode.Trim());
 
