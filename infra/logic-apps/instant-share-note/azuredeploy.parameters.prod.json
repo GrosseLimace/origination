@@ -7,6 +7,9 @@
     "environmentTag": { "value": "Prod" },
     "sqlServerName": { "value": "azrscosqlp01.database.windows.net" },
     "sharedMailbox": { "value": "OriginationsApp@scoular.com" },
-    "sqlConnectionName": { "value": "sqlshare" }
+    "sqlConnectionName": { "value": "sqlshare" },
+    // alertEmailAddresses: who gets an email when a run fails. Empty = no failure alert is created.
+    // Fill in before relying on alerts in this environment (a team distribution list is best).
+    "alertEmailAddresses": { "value": [] }
   }
 }
