@@ -6,8 +6,5 @@
         "url": "https://scoular.ghe.com/IT/scoular-marketplace.git"
       }
     }
-  },
-  "enabledPlugins": {
-    "scoular-skills@scoular": true
   }
 }
