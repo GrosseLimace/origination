@@ -38,6 +38,13 @@ public class SavedListsController : ControllerBase
     [ProducesResponseType(typeof(List<SavedListResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<SavedListResponse>>> GetTeam([FromQuery] string? tradeUnits, CancellationToken cancellationToken = default)
     {
+        // The tradeUnits CSV is NOT trusted, despite how this line reads. SavedListService
+        // .GetTeamListsAsync calls ScopeToAllowedTradeUnitsAsync, which intersects the request with
+        // IUserEntitlementService.GetAllowedTradeUnitCodesAsync for the caller and returns an empty
+        // list when nothing survives - exactly the "derive from identity and intersect" remedy a
+        // scanner asks for here. Flagged as Broken Access Control by the QA scan on 2026-09-30
+        // (CWE-285) because the review read this controller and stopped; the scoping is one layer
+        // down. Do not "fix" it twice. Disposition recorded in SECURITY-REVIEWS/ACCEPTED-RISKS.md.
         return Ok(await _service.GetTeamListsAsync(tradeUnits, cancellationToken));
     }
 
