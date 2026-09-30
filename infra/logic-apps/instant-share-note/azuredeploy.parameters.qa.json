@@ -8,8 +8,6 @@
     "sqlServerName": { "value": "azrscosqlq01.database.windows.net" },
     "sharedMailbox": { "value": "qa-OriginationsApp@scoular.com" },
     "sqlConnectionName": { "value": "sqlshare" },
-    // alertEmailAddresses: who gets an email when a run fails. Empty = no failure alert is created.
-    // Fill in before relying on alerts in this environment (a team distribution list is best).
-    "alertEmailAddresses": { "value": [] }
+    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com" ] }
   }
 }

@@ -283,7 +283,7 @@ Azure OpenAI dependency; unlike the recap app it does not summarize.)
 | `sqlServerName` | `azrscosqld01.database.windows.net` | `azrscosqlq01.database.windows.net` | `azrscosqlp01.database.windows.net` | Origination SQL server per env. |
 | `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | `OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. ⚠️ Confirm the prod mailbox UPN. |
 | `sqlConnectionName` | `sqlshare` | `sqlshare` | `sqlshare` | `Microsoft.Web/connections` (MSI) name, created by the template. Deliberately **not** `sql` (the recap app's connection) so the two templates don't fight over one connection resource. ⚠️ Confirm no name collision with an existing connection in each RG before first deploy. |
-| `alertEmailAddresses` | `["CEgr@scoular.com"]` | `[]` | `[]` | Who is emailed when a run fails. **Empty = the failure alert is not created**, so a deploy never fails for want of a recipient. Set QA/Prod (a team distribution list is best) before relying on alerts there. See [Failure alert](#failure-alert). |
+| `alertEmailAddresses` | `CEgr`, `HCollins` | `CEgr`, `HCollins` | `CEgr`, `HCollins` | Who is emailed when a run fails, as full `@scoular.com` addresses. **Empty = the failure alert is not created**, so a deploy never fails for want of a recipient. See [Failure alert](#failure-alert). |
 
 > **Resource groups:** Dev → `rg-origination-dev-eus`, QA → `rg-origination-qa-eus`, Prod →
 > `rg-origination-eus`. Dev/QA deploy on the **non-prod** subscription; Prod deploys on the **prod**
