@@ -233,11 +233,11 @@ Last Updated: 2026-09-30
 
 | Package | Version | License | Purpose |
 |---------|---------|---------|---------|
-| @angular/core | 21.2.23 | MIT | UI framework (security fixes: hydration DOM-clobbering / HttpTransferCache poisoning ≥21.2.17; HttpTransferCache cache-key ambiguity / cross-request response reuse ≥21.2.19; sanitization bypass via directive host bindings on concrete host elements, GHSA-hh8m-fm6v-7cvg, ≥21.2.20 — not exploitable here, no security-sensitive host bindings exist) |
-| @angular/common | 21.2.23 | MIT | Common directives, pipes and HttpClient (security fix: HttpTransferCache bypass leaking authenticated responses when a child client uses withRequestsMadeViaParent, GHSA-p297-fm68-3q8c, ≥21.2.20 — not applicable here, the app does no SSR/hydration) |
-| @angular/router | 21.2.23 | MIT | Client-side routing |
-| @angular/forms | 21.2.23 | MIT | Reactive forms |
-| @angular/animations | 21.2.23 | MIT | Animation support |
+| @angular/core | 21.2.25 | MIT | UI framework (security fixes: hydration DOM-clobbering / HttpTransferCache poisoning ≥21.2.17; HttpTransferCache cache-key ambiguity / cross-request response reuse ≥21.2.19; sanitization bypass via directive host bindings on concrete host elements, GHSA-hh8m-fm6v-7cvg, ≥21.2.20 — not exploitable here, no security-sensitive host bindings exist; moved to 21.2.25 in lockstep with @angular/router, 2026-09-30) |
+| @angular/common | 21.2.25 | MIT | Common directives, pipes and HttpClient (security fix: HttpTransferCache bypass leaking authenticated responses when a child client uses withRequestsMadeViaParent, GHSA-p297-fm68-3q8c, ≥21.2.20 — not applicable here, the app does no SSR/hydration) |
+| @angular/router | 21.2.25 | MIT | Client-side routing (security fix: SSR denial of service via numeric URL matrix parameters, CVE-2026-101896 — the 21.x fix is "avoid dense elements allocation for numeric URL keys" in 21.2.24, so the ≥22.2.0 the scanner quotes is not required; not exploitable here in any case, the app has no server-side rendering, so the allocation could only run in the requesting user's own browser) |
+| @angular/forms | 21.2.25 | MIT | Reactive forms |
+| @angular/animations | 21.2.25 | MIT | Animation support |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
@@ -268,7 +268,7 @@ Last Updated: 2026-09-30
 | undici | ≥7.29.1 <8 | MIT | HTTP/1.1 client — transitive (via @angular/build, @angular/cli dev tooling), pinned in `overrides` (security fixes ≥7.29.1: cross-user cache disclosure + parse-time crash, retry-interceptor response desync, Cache-Control whitespace disclosure, CRLF injection via blob body type, cookie attribute injection, WebSocket permessage-deflate unhandled inflate error process crash; dev-tooling-only, not used at runtime) |
 | ip-address | ≥10.5.1 | MIT | IP address parser — transitive (via @angular/cli dev tooling → dns/proxy libs), pinned in `overrides` (security fixes ≥10.5.1: leading-zero octet octal/decimal SSRF, CIDR-suffix special-use suppression, IPv4-mapped/NAT64 well-known misclassification, NAT64 local-use 64:ff9b:1::/48 unclassified, and isLinkLocal() matching fe80::/64 instead of fe80::/10 — all trust-boundary bypasses; dev-tooling-only) |
 | @hono/node-server | ≥2.0.5 | MIT | Node adapter for hono — transitive (via @angular/cli dev tooling), pinned in `overrides` (security fix: Windows serve-static path traversal via encoded backslash; dev-server-only, not used to serve this app) |
-| dompurify | ≥3.4.12 | (MIT OR Apache-2.0) | HTML sanitizer — transitive (via jspdf, PDF export), pinned in `overrides` (security fix: CUSTOM_ELEMENT_HANDLING bypasses afterSanitizeElements → second-order XSS gadget; not triggered by our usage) |
+| dompurify | ≥3.4.16 <4 | (MIT OR Apache-2.0) | HTML sanitizer — transitive (via jspdf, PDF export), pinned in `overrides` (security fixes: CUSTOM_ELEMENT_HANDLING bypasses afterSanitizeElements → second-order XSS gadget ≥3.4.12; IN_PLACE node-removing afterSanitize hook leaves detached-subtree event handlers armed → DOM XSS, GHSA-p98j-92pf-mc4p, ≥3.4.16 — the ≥3.4.12 floor itself sat inside that advisory range; neither hook is used here, jspdf only sanitises the HTML it renders to PDF) |
 
 ## CI/CD
 
