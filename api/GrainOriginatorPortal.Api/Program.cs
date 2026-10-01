@@ -393,8 +393,12 @@ builder.Services.AddCors(options =>
     {
         var origins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
             ?? new[] { "http://localhost:4200" };
+        // Every custom request header the SPA sends must be listed here, or the browser's preflight fails
+        // and EVERY request is blocked - only cross-origin, so only locally (4200 -> 5000); deployed, the SPA
+        // and API share an origin and CORS never applies. X-Data-Source-Preference is the ODS / CTRM tester
+        // toggle (DataSourcePreferenceInterceptor, 2026-10-01).
         policy.WithOrigins(origins)
-              .WithHeaders("Content-Type", "Authorization")
+              .WithHeaders("Content-Type", "Authorization", GrainOriginatorPortal.Infrastructure.Ctrm.CtrmSourceChoice.PreferenceHeader)
               .WithMethods("GET", "POST", "PUT", "DELETE");
     });
 });
