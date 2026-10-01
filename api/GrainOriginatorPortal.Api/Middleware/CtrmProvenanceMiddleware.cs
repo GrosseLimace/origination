@@ -14,27 +14,48 @@ namespace GrainOriginatorPortal.Api.Middleware;
 /// <para>Written in <c>OnStarting</c> so the values reflect what the repositories actually recorded
 /// while handling the request, not what was configured when it arrived.</para>
 ///
-/// <para>Non-production only. These headers describe internal data sources, and while they carry no
-/// customer data they are diagnostic detail that has no reason to reach a production response.</para>
+/// <para>In Production the headers are emitted only for users allowed to choose their data source
+/// (<c>Ctrm:SourceToggleUsers</c>): they are the ones comparing CTRM against ODS and need the proof, and
+/// their choice is what the header confirms. For everyone else a production response carries none of this
+/// diagnostic detail, which is how it was before the toggle existed. Non-production emits for all.</para>
 ///
 /// <para>Also emits <c>Server-Timing</c>, which the browser surfaces natively in the Network tab. That
 /// makes every click during testing a measurement rather than only the ones someone remembers to probe.</para>
 /// </remarks>
 public sealed class CtrmProvenanceMiddleware
 {
+    /// <summary>Whether the user's own preference decided the source: <c>user</c>, else <c>default</c>.</summary>
+    public const string ChoiceHeader = "X-Data-Source-Choice";
+
     private readonly RequestDelegate _next;
+    private readonly IHostEnvironment _env;
+    private readonly IConfiguration _configuration;
 
-    public CtrmProvenanceMiddleware(RequestDelegate next) => _next = next;
-
-    public async Task InvokeAsync(HttpContext context, CtrmProvenance provenance)
+    public CtrmProvenanceMiddleware(RequestDelegate next, IHostEnvironment env, IConfiguration configuration)
     {
+        _next = next;
+        _env = env;
+        _configuration = configuration;
+    }
+
+    public async Task InvokeAsync(HttpContext context, CtrmProvenance provenance, CtrmSourceChoice choice)
+    {
+        if (_env.IsProduction() && !choice.CanChoose(_configuration))
+        {
+            await _next(context);
+            return;
+        }
+
         context.Response.OnStarting(() =>
         {
             // Headers cannot be added once the response has begun; OnStarting is the last safe point.
             // No header at all when the request read neither contracts nor tickets — saying "ods" there
             // would imply a read happened.
             if (provenance.Source is { } source)
+            {
                 context.Response.Headers[CtrmProvenance.SourceHeader] = source;
+                context.Response.Headers[ChoiceHeader] = choice.UserChoiceApplied(_configuration) ? "user" : "default";
+            }
 
             if (provenance.Contracts is { } contracts)
                 context.Response.Headers[CtrmProvenance.ContractsHeader] = contracts;

@@ -737,6 +737,11 @@ app.UseAuthorization();
 // and UserId resolves to the actual user (not "anonymous").
 app.UseMiddleware<RequestContextMiddleware>();
 
+// Data-source choice — records the caller's identity and X-Data-Source-Preference header into the
+// request's CtrmSourceChoice. The contract/ticket switches honour the preference only for users in
+// Ctrm:SourceToggleUsers; everyone else gets Ctrm:Source. After UseAuthentication for the identity.
+app.UseMiddleware<CtrmSourceChoiceMiddleware>();
+
 // Security audit logging — logs 401 and 403 outcomes per security-guide.md §8.1.
 // Must run after UseAuthorization so the response status code is already finalized.
 app.UseMiddleware<SecurityAuditMiddleware>();
@@ -748,9 +753,10 @@ app.UseMiddleware<UsageTrackingMiddleware>();
 // Reports which source (ODS or CTRM) actually served each response's contract and ticket data, as
 // X-Data-Source* headers visible in the browser's Network tab. The two sources are mapped to look
 // identical in the response body, so without this there is no way to confirm from the client which
-// one you are looking at. Non-production only — diagnostic detail with no place in a prod response.
-if (!app.Environment.IsProduction())
-    app.UseMiddleware<CtrmProvenanceMiddleware>();
+// one you are looking at. Always registered; in Production the middleware itself emits the headers only
+// for users allowed to choose their source (Ctrm:SourceToggleUsers), who are exactly the people doing
+// that comparison - everyone else's production responses stay free of this diagnostic detail.
+app.UseMiddleware<CtrmProvenanceMiddleware>();
 
 // Map controller routes and require a valid Azure AD bearer token on every endpoint.
 // Health check and OpenAPI endpoints are mapped separately and are not covered here.

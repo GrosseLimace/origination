@@ -60,7 +60,8 @@ public sealed class CtrmKeepWarmService : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var cadenceMinutes = ReadInt("Ctrm:KeepWarmMinutes", 5);
-                if (!ShouldWarmNow(cadenceMinutes, _configuration["Ctrm:Source"], DateTime.UtcNow, lastRunUtc)) continue;
+                var anyToggleUsers = !string.IsNullOrWhiteSpace(_configuration[CtrmSourceChoice.ToggleUsersKey]);
+                if (!ShouldWarmNow(cadenceMinutes, _configuration["Ctrm:Source"], anyToggleUsers, DateTime.UtcNow, lastRunUtc)) continue;
 
                 lastRunUtc = DateTime.UtcNow;
                 await WarmActiveSetsAsync(stoppingToken);
@@ -84,15 +85,17 @@ public sealed class CtrmKeepWarmService : BackgroundService
     /// <list type="bullet">
     /// <item><c>Ctrm:KeepWarmMinutes</c> at or below zero disables warming outright.</item>
     /// <item>A cycle that has not yet reached that cadence since <paramref name="lastRunUtc"/> is skipped.</item>
-    /// <item>Warming runs only while <c>Ctrm:Source</c> is <c>ctrm</c>, so an environment reading ODS
-    /// never issues CTRM traffic.</item>
+    /// <item>Warming runs only while <c>Ctrm:Source</c> is <c>ctrm</c>, OR while at least one user is
+    /// named in <c>Ctrm:SourceToggleUsers</c>. An environment reading ODS with no testers never issues
+    /// CTRM traffic. With testers, the registry only ever holds producer sets that were read through the
+    /// CTRM path - which only a tester on CTRM can do - so warming stays confined to what they opened.</item>
     /// </list>
     /// All three must pass; any one of them failing skips the tick.
     /// </remarks>
-    internal static bool ShouldWarmNow(int cadenceMinutes, string? configuredSource, DateTime nowUtc, DateTime lastRunUtc) =>
+    internal static bool ShouldWarmNow(int cadenceMinutes, string? configuredSource, bool anyToggleUsers, DateTime nowUtc, DateTime lastRunUtc) =>
         cadenceMinutes > 0
         && nowUtc - lastRunUtc >= TimeSpan.FromMinutes(cadenceMinutes)
-        && string.Equals(configuredSource?.Trim(), "ctrm", StringComparison.OrdinalIgnoreCase);
+        && (string.Equals(configuredSource?.Trim(), "ctrm", StringComparison.OrdinalIgnoreCase) || anyToggleUsers);
 
     private async Task WarmActiveSetsAsync(CancellationToken stoppingToken)
     {

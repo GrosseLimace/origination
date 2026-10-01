@@ -4,6 +4,7 @@ using System.Security.Claims;
 // Microsoft namespaces
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 // Third-party namespaces
 using Moq;
 
@@ -24,12 +25,15 @@ namespace GrainOriginatorPortal.Api.Tests.Controllers;
 public class MeControllerTests
 {
     private static MeController CreateSut(ClaimsPrincipal user, params string[] viewAllList)
+        => CreateSut(user, new ConfigurationBuilder().Build(), viewAllList);
+
+    private static MeController CreateSut(ClaimsPrincipal user, IConfiguration configuration, params string[] viewAllList)
     {
         var viewAll = new Mock<IUsageDashboardViewAllProvider>();
         viewAll.Setup(v => v.GetAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<string>(viewAllList, StringComparer.OrdinalIgnoreCase));
 
-        return new MeController(viewAll.Object)
+        return new MeController(viewAll.Object, configuration)
         {
             ControllerContext = new ControllerContext
             {
@@ -55,6 +59,48 @@ public class MeControllerTests
 
     private static MeController.MeResponse Body(ActionResult<MeController.MeResponse> result) =>
         Assert.IsType<MeController.MeResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+
+    // -------------------------------------------------------------------------
+    // The data-source toggle flags (2026-10-01): presentational, derived from the same allow-list the
+    // switches enforce, so the SPA shows the control to exactly the people whose choice would take effect.
+    // -------------------------------------------------------------------------
+
+    private static IConfiguration CtrmConfig(string source, string toggleUsers) =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Ctrm:Source"] = source, ["Ctrm:SourceToggleUsers"] = toggleUsers,
+        }).Build();
+
+    [Fact]
+    public async Task AListedUser_IsToldTheyCanChoose_AndWhatTheDefaultIs()
+    {
+        var sut = CreateSut(Principal(upn: "CEgr@scoular.com"), CtrmConfig("ods", "a@scoular.com, cegr@scoular.com"));
+
+        var body = Body(await sut.Get(CancellationToken.None));
+
+        Assert.True(body.CanChooseDataSource);
+        Assert.Equal("ods", body.DefaultDataSource);
+    }
+
+    [Fact]
+    public async Task AnUnlistedUser_CannotChoose()
+    {
+        var sut = CreateSut(Principal(upn: "someone@scoular.com"), CtrmConfig("ctrm", "CEgr@scoular.com"));
+
+        var body = Body(await sut.Get(CancellationToken.None));
+
+        Assert.False(body.CanChooseDataSource);
+        Assert.Equal("ctrm", body.DefaultDataSource);
+    }
+
+    [Fact]
+    public async Task WithNoListConfigured_NobodyCanChoose_AndTheDefaultIsOds()
+    {
+        var body = Body(await CreateSut(Principal(upn: "CEgr@scoular.com")).Get(CancellationToken.None));
+
+        Assert.False(body.CanChooseDataSource);
+        Assert.Equal("ods", body.DefaultDataSource);
+    }
 
     // -------------------------------------------------------------------------
     // Role resolution across the three claim sources.
