@@ -47,7 +47,18 @@ describe('DataSourceService', () => {
 
     expect(sut.preference()).toBe('ctrm');
     expect(sut.effectiveSource()).toBe('ods');
-    expect(sut.readAheadEnabled()).toBe(true); // local environment flag is on; see the next test for the CTRM case
+    // Every environment flag is off, so read-ahead must stay off too: it is only for a user whose reads
+    // actually go to CTRM, and this user's do not.
+    expect(sut.readAheadEnabled()).toBe(false);
+  });
+
+  it('turns read-ahead on only once an allowed user is actually on CTRM', () => {
+    const sut = TestBed.inject(DataSourceService);
+    canChoose.set(true);
+    expect(sut.readAheadEnabled()).toBe(false);
+
+    sut.setPreference('ctrm');
+    expect(sut.readAheadEnabled()).toBe(true);
   });
 
   it('persists a chosen source and reloads, and setPreference is a no-op for a user who may not choose', () => {
