@@ -45,6 +45,16 @@ seen/unseen check keys on, so the deploy stays the entry and the feature becomes
 
 ## Updating it before a PROD deploy
 
+**Do this before dispatching `deploy-prod.yml`.** Nothing stamps the release notes automatically: the
+first entry in `api/GrainOriginatorPortal.Api/Content/whats-new.json` at the moment of the deploy is
+what every user is shown once afterwards. The build stamp (commit and run number, `GET /api/version`)
+*is* automatic, see [Version tracking](#version-tracking), so no workflow step is needed for that.
+
+> This page is the canonical home of the pre-PROD step. It used to be repeated as a "Before a PROD
+> Deploy" section in `developer-docs/GITHUB-ACTIONS-CICD.md`, but `developer-docs/` is synced from
+> `IT/infrastructure-as-code` and the 2026-10-01 sync (PR #677) removed it. Keep app-specific
+> process here, never in `developer-docs/`, or the next sync will delete it.
+
 1. **Did this release change something a user would notice?** If not, **change nothing**. The
    version does not move, so no dialog fires. That is how a dependency bump, a refactor, or a
    security fix deploys silently.
