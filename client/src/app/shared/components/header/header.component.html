@@ -282,12 +282,9 @@
              it on every read, so the control cannot grant anything. Choosing reloads the page. -->
         @if (dataSource.canChoose()) {
           <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700" data-testid="data-source-toggle">
-            <div class="flex items-center justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-sm text-gray-700 dark:text-gray-300">Contract &amp; ticket data</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Testing only. Switching reloads the page.</p>
-              </div>
-              <div class="inline-flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden text-xs font-medium flex-shrink-0" role="group" aria-label="Contract and ticket data source">
+            <p class="text-sm text-gray-700 dark:text-gray-300">Contract &amp; Ticket Data</p>
+            <div class="mt-2">
+              <div class="inline-flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden text-xs font-medium" role="group" aria-label="Contract and ticket data source">
                 <button type="button" (click)="chooseDataSource('ods')"
                         [attr.aria-pressed]="dataSource.effectiveSource() === 'ods'"
                         [class]="dataSource.effectiveSource() === 'ods'
