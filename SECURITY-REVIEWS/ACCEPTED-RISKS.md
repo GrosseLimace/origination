@@ -1432,3 +1432,54 @@ matches them to their remediation instead of re-doing the work.
 | **M-037** — Instant Share Note Logic App interpolates the user-authored note `Description` and the author display name into a `contentType: "HTML"` Graph `sendMail` body with no encoding, so a note author can deliver arbitrary markup (anchors with attacker-chosen hrefs, fake banners, hidden content) as trusted HTML from the privileged shared mailbox — internal content-spoofing / phishing rather than script execution, since Outlook strips scripts (CWE-79) | 2026-09-07 | **Fixed — duplicate of M-036 above.** The weekly baseline re-flagged the defect against `main` on 2026-09-07 while the fix was still unmerged on `fix_NoteMentionSecurity`; it lands on `main` with that branch, so no separate remediation exists or is needed. See the **M-036** row for the escaping detail, including why the subject stays raw and why the sibling `notes-daily-recap` workflow needs no change. **Deploy note:** merging the template does not change any environment — the `deploy-logic-app-instant-share-note-*` workflow must be dispatched per environment, together with the API half (H-056), because the two are halves of one attack: who can be targeted, and what can be delivered. |
 | **H-062 (DELETE half)** — `DELETE /api/producerdetails/customer/{customerId}` performed no trade-unit authorization at any layer: the sequential `customerId` path segment reached a bare repository delete that hand-cascades to the `ProducerContacts` and `ProducerGrainOnFarm` child rows, so any authenticated user could enumerate ids and destroy another trade unit's producer contact PII and grain-on-farm positions (CWE-639) | 2026-09-14 | **Fixed (2026-09-14).** `ProducerDetailsService.DeleteAsync` resolves the caller's entitled trade units, confirms membership via `GetActiveCustomerIdsInTradeUnitsAsync`, and returns 403 otherwise — with 503 fail-closed on an entitlements outage and a silent no-op when no details row exists, so the route is not an existence oracle. The repository now emits a structured `AUDIT_DELETE` including the cascade counts, and the controller logs misses. Covered by `ProducerDetailsDeleteTests` (5 tests, mutation-verified). ⚠ **The `GET` was also scoped on 2026-09-14 and REVERTED on 2026-09-21 — do not re-add it.** That change was wrong in principle: a trade-unit test is not an access control here, because originators self-assign trade units through the Trade Unit Preferences app. It also broke search-and-click, because ODS onboarding candidates carry a real `CustomerId` with no `CustomerTradeUnit` row and were refused, silently blanking the profile. See the banner at the top of AR-02. A regression test (`GetByCustomerAsync_ForAProducerOutsideTheCallersTradeUnits_StillReturns`) now pins the read as unscoped and is mutation-verified. **`PUT` remains accepted under AR-01** — it has six live callers, two writing to cross-trade-unit linked producers by design, plus an onboarding path that would race freshly-written membership. See AR-01's and AR-02's 2026-09-14 updates. |
 | **H-066 (elevators half)** — `GET /api/bidsheet/elevators` returned every elevator across every trade unit when `tradeUnitCode` was omitted, with no entitlement validation (CWE-284) | 2026-09-14 | **Fixed (2026-09-14).** `tradeUnitCode` is now required and validated, and blank is rejected explicitly *before* `ValidateTradeUnitsOrThrowAsync` — which filters blanks and returns early, so `?tradeUnitCode=` would otherwise have passed validation vacuously and fallen through unscoped. Nothing in the client called this route, so the fix costs no behaviour; the client signature was tightened to a required parameter so a future caller fails at compile time. Covered by `BidSheetElevatorScopeTests` (5 cases, mutation-verified). **Only the elevators half was fixed** — `GET /api/bidsheet/locations` remains accepted under AR-05 because the bid-sheet map genuinely needs the unscoped read. |
+
+---
+
+## QA SPECTER scan 2026-09-30 — dispositions
+
+Scanned `release_CtrmGoLive_2026-10-01` against origination-qa (report generated 18:04 UTC). Nine
+findings. The fixes landed on the same branch (commits `304eaa9c`, `5a46c55c`), so QA and, from the
+2026-10-01 go-live, PROD carry them. The three dispositions below are recorded so they stop re-firing.
+
+### HIGH `@angular/router` 21.2.23 / CVE-2026-101896 — FIXED by patch, and not exploitable here anyway
+
+The scanner says "fixed in 22.2.0 or later". The Angular CHANGELOG shows the 21.x backport in
+**21.2.24** ("avoid dense elements allocation for numeric URL keys", 2026-09-23), so the nine framework
+packages moved to 21.2.25 in lockstep — a patch, not the major the report implies. It was also never
+live here: the advisory is **Angular SSR**, and this application has no SSR (no `@angular/ssr`, no
+`platformServer`, no `server` or `prerender` target, no `server.ts`; the SPA is built to static files
+served from the API's `wwwroot`). Route parsing runs in the visitor's own browser, so before the patch
+the worst case was a user hanging their own tab. If SSR is ever introduced, re-check this class of
+advisory at that point rather than waiting for a rescan.
+
+### MEDIUM SavedLists team query "trusts client-supplied tradeUnits" — FALSE POSITIVE
+
+The review read `SavedListsController.GetTeam` and stopped at the controller. One layer down,
+`SavedListService.GetTeamListsAsync` calls `ScopeToAllowedTradeUnitsAsync`, which intersects the
+requested codes with `IUserEntitlementService.GetAllowedTradeUnitCodesAsync` for the caller and
+returns an empty list when nothing survives — precisely the "derive from identity and intersect"
+remedy the finding asks for. The controller now carries a comment pointing at the service so the
+next reader does not have to re-derive it.
+
+### LOW "Timestamp disclosure" on `/api/Customers` — FALSE POSITIVE
+
+The anonymous response is a bodiless 401. Authenticated, the body carries numeric customer ids,
+which is what the scanner's ten-digit regex matched. Nothing to act on.
+
+### Fixed on the branch
+
+| Finding | Fix |
+|---|---|
+| CSP has no `frame-ancestors` / `form-action` (no fallback to `default-src`) — reported twice, Medium + Low | Both added to the SPA policy, `frame-ancestors 'none'` to the API policy. `frame-ancestors` duplicates the existing `X-Frame-Options: DENY` rather than replacing it. MSAL returns the sign-in response in the URL fragment, so `form-action 'self'` does not touch the login flow. |
+| Log injection via URL-decoded `Request.Path` (RequestContextMiddleware scope, SecurityAuditMiddleware audit lines) | `LogSanitizer.Clean` turns control characters into spaces and caps at 256, applied to method, path and identity name. The finding's claim about the trace id was wrong: `CorrelationIdMiddleware.IsWellFormed` already allow-lists it to 64 ASCII letters, digits and `-_.:`. |
+| `dompurify` 3.4.13 DOM XSS (GHSA-p98j-92pf-mc4p) | Override floor `>=3.4.12` → `>=3.4.16 <4`. Our own floor was what held the vulnerable version. Transitive via `jspdf` (PDF export); the affected hooks are not used. |
+
+### Still open by choice
+
+`style-src 'unsafe-inline'` (Medium) is real and NOT fixed. Angular injects component styles as inline
+`<style>` elements at runtime; removing the keyword needs Angular's `ngCspNonce` plumbed from a
+per-request server value into the served `index.html`. That is a change to how the SPA is hosted, not
+a header edit, and it is deliberately out of scope for a scan response the day before a go-live.
+`script-src` is already `'self'` only, which is the directive that stops script injection; inline
+styles alone cannot execute code. Recorded in the middleware remarks and pinned by a test so a future
+edit cannot drop it by accident.

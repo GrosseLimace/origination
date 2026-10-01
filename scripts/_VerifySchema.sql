@@ -48,6 +48,9 @@
 --   Updated 2026-09-22 (organic badge): added migration 20260921193322_AddCustomer
 --   IndustryCode2AndNopId and the two dbo.Customer columns it creates
 --   (IndustryCode2, NopIdNumber), both nvarchar(100) NULL, so Columns grew to 371.
+--   Updated 2026-10-01: 20261001133422_AddCtrmSourceToggleUsers added dbo.CtrmSourceToggleUsers
+--   (7 columns, unique IX on UserId) - the TEMPORARY tester list for the per-user ODS/CTRM
+--   toggle; Tables +1, Columns +7, UniqueIndexes +1, Migrations +1.
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
@@ -138,6 +141,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'TeamsChannels'),
 ('dbo', 'UsageDashboardExcludedUsers'),
 ('dbo', 'UsageDashboardViewAllUsers'),
+('dbo', 'CtrmSourceToggleUsers'),
 ('dbo', 'UserActivity'),
 ('dbo', 'UserActivityDaily'),
 ('dbo', 'UserClickEvent'),
@@ -499,6 +503,14 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UsageDashboardExcludedUsers', 'CreatedBy', 'nvarchar(255)', 0),
 ('dbo', 'UsageDashboardExcludedUsers', 'Reason',    'nvarchar(500)', 1),
 ('dbo', 'UsageDashboardExcludedUsers', 'UserId',    'nvarchar(256)', 0),
+-- CtrmSourceToggleUsers (CtrmSourceToggleUser entity) - TEMPORARY tester list for the CTRM validation window (2026-10-01)
+('dbo', 'CtrmSourceToggleUsers', 'Id',          'int',           0),
+('dbo', 'CtrmSourceToggleUsers', 'CreatedAt',   'datetime2',     0),
+('dbo', 'CtrmSourceToggleUsers', 'CreatedBy',   'nvarchar(255)', 0),
+('dbo', 'CtrmSourceToggleUsers', 'DisplayName', 'nvarchar(200)', 1),
+('dbo', 'CtrmSourceToggleUsers', 'IsActive',    'bit',           0),
+('dbo', 'CtrmSourceToggleUsers', 'Notes',       'nvarchar(500)', 1),
+('dbo', 'CtrmSourceToggleUsers', 'UserId',      'nvarchar(256)', 0),
 -- UsageDashboardViewAllUsers (UsageDashboardViewAllUser entity)
 ('dbo', 'UsageDashboardViewAllUsers', 'Id',        'int',           0),
 ('dbo', 'UsageDashboardViewAllUsers', 'CreatedAt', 'datetime2',     0),
@@ -606,6 +618,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'TeamsChannels',               'UX_TeamsChannels_ChannelId'),
 ('dbo', 'UsageDashboardExcludedUsers', 'IX_UsageDashboardExcludedUsers_UserId'),
 ('dbo', 'UsageDashboardViewAllUsers',  'IX_UsageDashboardViewAllUsers_UserId'),
+('dbo', 'CtrmSourceToggleUsers',       'IX_CtrmSourceToggleUsers_UserId'),
 ('dbo', 'UserActivityDaily',           'UQ_UserActivityDaily_UserId_Date'),
 ('dbo', 'UserFeatureUsageDaily',       'UQ_UserFeatureUsageDaily'),
 ('dbo', 'UserPreferences',             'UQ_UserPreferences_UserId'),
@@ -669,7 +682,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260921193322_AddCustomerIndustryCode2AndNopId'),
 ('20260921202246_AddFlaxCommoditiesForTradeUnit3811'),
 ('20260921204500_SplitFlaxPlantingCategoryByColour'),
-('20260923124207_RenameGrainOnFarmGroupToCommodityCode');
+('20260923124207_RenameGrainOnFarmGroupToCommodityCode'),
+('20261001133422_AddCtrmSourceToggleUsers');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

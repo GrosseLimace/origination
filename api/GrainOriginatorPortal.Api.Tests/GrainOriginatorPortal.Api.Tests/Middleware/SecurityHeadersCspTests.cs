@@ -75,4 +75,32 @@ public class SecurityHeadersCspTests
         Assert.Contains("https://login.microsoftonline.com", connectSrc);
         Assert.Contains("https://graph.microsoft.com", connectSrc);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Csp_DeclaresTheDirectivesThatHaveNoFallback(bool isDevelopment)
+    {
+        // QA scan 2026-09-30: frame-ancestors and form-action do not inherit from default-src, so an
+        // absent directive is an open one. The app is never framed and posts no forms off-origin.
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(isDevelopment);
+
+        var directives = csp.Split(';').Select(d => d.Trim()).Where(d => d.Length > 0).ToList();
+        Assert.Contains("frame-ancestors 'none'", directives);
+        Assert.Contains("form-action 'self'", directives);
+    }
+
+    [Fact]
+    public void Csp_KeepsInlineStylesForAngularComponentStyles()
+    {
+        // Deliberate: Angular injects component styles as inline <style> elements at runtime. Dropping
+        // 'unsafe-inline' here needs the ngCspNonce plumbing in how index.html is served, not a header edit.
+        // Scripts stay 'self' only - that is the directive that blocks script injection.
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(isDevelopment: false);
+
+        var styleSrc = csp.Split(';').Single(d => d.TrimStart().StartsWith("style-src"));
+        var scriptSrc = csp.Split(';').Single(d => d.TrimStart().StartsWith("script-src"));
+        Assert.Contains("'unsafe-inline'", styleSrc);
+        Assert.DoesNotContain("'unsafe-inline'", scriptSrc);
+    }
 }

@@ -2,6 +2,7 @@ using System.Security.Claims;
 
 using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -18,10 +19,17 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class MeController : ControllerBase
 {
     private readonly IUsageDashboardViewAllProvider _viewAllProvider;
+    private readonly ICtrmSourceToggleUserProvider _toggleUsers;
+    private readonly IConfiguration _configuration;
 
-    public MeController(IUsageDashboardViewAllProvider viewAllProvider)
+    public MeController(
+        IUsageDashboardViewAllProvider viewAllProvider,
+        ICtrmSourceToggleUserProvider toggleUsers,
+        IConfiguration configuration)
     {
         _viewAllProvider = viewAllProvider;
+        _toggleUsers = toggleUsers;
+        _configuration = configuration;
     }
 
     [HttpGet]
@@ -56,12 +64,27 @@ public class MeController : ControllerBase
                      ?? User.FindFirst("upn")?.Value
                      ?? User.Identity?.Name
                      ?? string.Empty;
-        return Ok(new MeResponse { UserId = userId, Roles = roles });
+
+        // Presentational, like the synthetic role above: tells the SPA whether to show the ODS / CTRM
+        // toggle and which side is the environment default. The server re-checks the list on every
+        // request (CtrmSourceChoiceMiddleware), so a forged "true" here shows a control that does nothing.
+        var tableTesters = await _toggleUsers.GetAsync(cancellationToken);
+        return Ok(new MeResponse
+        {
+            UserId = userId,
+            Roles = roles,
+            CanChooseDataSource = CtrmSourceChoice.IsToggleUser(_configuration, userId, tableTesters),
+            DefaultDataSource = CtrmSourceChoice.DefaultSource(_configuration),
+        });
     }
 
     public class MeResponse
     {
         public string UserId { get; set; } = string.Empty;
         public string[] Roles { get; set; } = [];
+        /// <summary>Whether this user is on the tester list (dbo.CtrmSourceToggleUsers or Ctrm:SourceToggleUsers) and may flip between ODS and CTRM.</summary>
+        public bool CanChooseDataSource { get; set; }
+        /// <summary>The environment's default source for contracts and tickets: <c>ods</c> or <c>ctrm</c>.</summary>
+        public string DefaultDataSource { get; set; } = CtrmSourceChoice.Ods;
     }
 }

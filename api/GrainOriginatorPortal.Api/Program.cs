@@ -327,6 +327,10 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // Who may read the WHOLE org and pick any manager, from dbo.UsageDashboardViewAllUsers. Scoped
 // because it reads through IUsageRepository; the result is cached for a minute inside the provider.
 builder.Services.AddScoped<IUsageDashboardViewAllProvider, UsageDashboardViewAllProvider>();
+// Who may flip their own session between ODS and CTRM, from dbo.CtrmSourceToggleUsers (plus the
+// Ctrm:SourceToggleUsers setting, checked separately). Same shape: scoped, cached for a minute, fails
+// closed to "nobody". Consulted by CtrmSourceChoiceMiddleware on every authenticated request.
+builder.Services.AddScoped<ICtrmSourceToggleUserProvider, CtrmSourceToggleUserProvider>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();
@@ -492,8 +496,8 @@ builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraph
     // The OVERALL budget for one logical call, retries included. The per-attempt limit is the AddTimeout
     // strategy in the pipeline below. These used to be one 30-second number, which meant a slow-but-fine
     // attempt was retried inside a budget it had already spent - the retries could not succeed, and the
-    // producer screen saw "Timed out reaching the CTRM gateway" under load. 3 attempts x 35s + backoff.
-    client.Timeout = TimeSpan.FromSeconds(110);
+    // producer screen saw "Timed out reaching the CTRM gateway" under load. 3 attempts x 45s + backoff.
+    client.Timeout = TimeSpan.FromSeconds(150);
 })
 .AddHttpMessageHandler<CorrelationIdOutboundHandler>()
 .AddResilienceHandler("ctrm", pipeline =>
@@ -526,14 +530,20 @@ builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraph
     // There was none: the comment on client.Timeout above claimed one but nothing enforced it, so a single
     // hung attempt could hold a request for the whole 110-second client budget.
     //
-    // 35 seconds, not 30, on purpose: the server's own limit is 30s and it answers HC0045 as a GraphQL
-    // error we retry deliberately (CtrmServerTimeoutRetry - the server finishes and caches the query after
-    // erroring). Timing out at 30 would abort that answer in flight and turn a recoverable server-side
-    // timeout into an opaque client abort.
+    // 45 seconds, well clear of the server's own 30-second limit, on purpose. The server answers its
+    // timeout as a GraphQL error (HC0045, HTTP 400) that CtrmServerTimeoutRetry handles deliberately,
+    // and the circuit breaker above ignores a 400 by design. But that answer does not arrive AT 30
+    // seconds: measured 2026-09-29 it landed at 31.5 s on the PROD gateway and 36 s on the nonprod one.
+    // At the previous 35 s this timeout fired first on the slow days, which turned every server-side
+    // timeout into a TimeoutRejectedException - which the breaker DOES count. One trade-unit walk of
+    // sixteen batches on a cold gateway tripped it, and for the next 30 s every producer click got
+    // EgressBlocked although the gateway was answering single reads in under a second. 45 s lets the
+    // HC0045 through as the 400 it is, with its correlation id, and leaves the breaker for the real
+    // outage it exists for: connection failures, 5xx, and an attempt with no answer at all in 45 s.
     //
     // TimeoutRejectedException is deliberately NOT in the retry ShouldHandle above: a hung attempt should
     // fail fast to EgressBlocked, which names the remediation, rather than being retried twice more.
-    pipeline.AddTimeout(TimeSpan.FromSeconds(35));
+    pipeline.AddTimeout(TimeSpan.FromSeconds(45));
 });
 
 // A second Graph client for the ONE call that must never be re-sent: creating an Outlook calendar
@@ -731,6 +741,11 @@ app.UseAuthorization();
 // and UserId resolves to the actual user (not "anonymous").
 app.UseMiddleware<RequestContextMiddleware>();
 
+// Data-source choice — records the caller's identity and X-Data-Source-Preference header into the
+// request's CtrmSourceChoice. The contract/ticket switches honour the preference only for users in
+// Ctrm:SourceToggleUsers; everyone else gets Ctrm:Source. After UseAuthentication for the identity.
+app.UseMiddleware<CtrmSourceChoiceMiddleware>();
+
 // Security audit logging — logs 401 and 403 outcomes per security-guide.md §8.1.
 // Must run after UseAuthorization so the response status code is already finalized.
 app.UseMiddleware<SecurityAuditMiddleware>();
@@ -742,9 +757,10 @@ app.UseMiddleware<UsageTrackingMiddleware>();
 // Reports which source (ODS or CTRM) actually served each response's contract and ticket data, as
 // X-Data-Source* headers visible in the browser's Network tab. The two sources are mapped to look
 // identical in the response body, so without this there is no way to confirm from the client which
-// one you are looking at. Non-production only — diagnostic detail with no place in a prod response.
-if (!app.Environment.IsProduction())
-    app.UseMiddleware<CtrmProvenanceMiddleware>();
+// one you are looking at. Always registered; in Production the middleware itself emits the headers only
+// for users allowed to choose their source (Ctrm:SourceToggleUsers), who are exactly the people doing
+// that comparison - everyone else's production responses stay free of this diagnostic detail.
+app.UseMiddleware<CtrmProvenanceMiddleware>();
 
 // Map controller routes and require a valid Azure AD bearer token on every endpoint.
 // Health check and OpenAPI endpoints are mapped separately and are not covered here.

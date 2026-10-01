@@ -278,6 +278,30 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-auto text-gray-400 dark:text-gray-500" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
           <span class="sr-only">(opens in a new window)</span>
         </button>
+        <!-- Testers only: the server's Ctrm:SourceToggleUsers list decides who sees this, and re-checks
+             it on every read, so the control cannot grant anything. Choosing reloads the page. -->
+        @if (dataSource.canChoose()) {
+          <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700" data-testid="data-source-toggle">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-sm text-gray-700 dark:text-gray-300">Contract &amp; ticket data</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Testing only. Switching reloads the page.</p>
+              </div>
+              <div class="inline-flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden text-xs font-medium flex-shrink-0" role="group" aria-label="Contract and ticket data source">
+                <button type="button" (click)="chooseDataSource('ods')"
+                        [attr.aria-pressed]="dataSource.effectiveSource() === 'ods'"
+                        [class]="dataSource.effectiveSource() === 'ods'
+                          ? 'px-3 py-1.5 bg-scoular-green-accessible text-white'
+                          : 'px-3 py-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'">ODS</button>
+                <button type="button" (click)="chooseDataSource('ctrm')"
+                        [attr.aria-pressed]="dataSource.effectiveSource() === 'ctrm'"
+                        [class]="dataSource.effectiveSource() === 'ctrm'
+                          ? 'px-3 py-1.5 bg-scoular-green-accessible text-white border-l border-gray-300 dark:border-gray-600'
+                          : 'px-3 py-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border-l border-gray-300 dark:border-gray-600'">GraphQL</button>
+              </div>
+            </div>
+          </div>
+        }
       </div>
       @if (buildLine(); as line) {
         <!-- Quote this line in a bug report and we can tell exactly which build you were on. -->

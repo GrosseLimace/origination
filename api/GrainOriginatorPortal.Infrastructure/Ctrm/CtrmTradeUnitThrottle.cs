@@ -148,7 +148,7 @@ public static class CtrmTradeUnitThrottle
         lock (Init)
         {
             if (_batchSlots is not null) return _batchSlots;
-            var capacity = Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:TradeUnitContractBatchConcurrency", 16), 1, 32);
+            var capacity = Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:TradeUnitContractBatchConcurrency", 8), 1, 32);
             _batchSlots = new SemaphoreSlim(capacity, capacity);
             return _batchSlots;
         }
@@ -164,7 +164,18 @@ public static class CtrmTradeUnitThrottle
         {
             if (_released) return;
             _released = true;
-            Interlocked.Decrement(ref _interactive);
+            // Never below zero. The counter is process-wide, and ResetForTests writes 0 to it while other
+            // test classes may still hold a scope; that scope's Dispose then drove it to -1, after which a
+            // genuinely open scope read as "nothing in flight" and the background walk stopped yielding.
+            // Seen 2026-09-30 as an order-dependent failure in the ticket reader tests once the suite grew.
+            // In production nothing resets the counter, so this is a guard, not a behaviour change.
+            int current;
+            do
+            {
+                current = Volatile.Read(ref _interactive);
+                if (current <= 0) return;
+            }
+            while (Interlocked.CompareExchange(ref _interactive, current - 1, current) != current);
         }
     }
 }

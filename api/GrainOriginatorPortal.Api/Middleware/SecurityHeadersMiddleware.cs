@@ -42,9 +42,12 @@ public class SecurityHeadersMiddleware
             // Force HTTPS for 1 year
             headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
 
-            // CSP: restrictive for API responses, permissive for SPA
+            // CSP: restrictive for API responses, permissive for SPA. frame-ancestors is spelled out on
+            // both because it has NO fallback to default-src (CSP3 §6.4): without it a policy that says
+            // default-src 'none' still lets the response be framed, and modern browsers prefer this
+            // directive over the legacy X-Frame-Options header above (QA scan 2026-09-30).
             headers["Content-Security-Policy"] = context.Request.Path.StartsWithSegments("/api")
-                ? "default-src 'none'"
+                ? "default-src 'none'; frame-ancestors 'none'"
                 : BuildSpaContentSecurityPolicy(_env.IsDevelopment(), _spaConnectHosts);
 
             return Task.CompletedTask;
@@ -61,7 +64,16 @@ public class SecurityHeadersMiddleware
     /// <para><paramref name="connectHosts"/> are the specific per-environment API/App Service hosts
     /// allowed in <c>connect-src</c> (from config). This replaces the former
     /// <c>https://*.azurewebsites.net</c> wildcard, which let injected script exfiltrate to ANY
-    /// Azure-hosted site (CWE-942 / M-025). Each environment supplies only its own host.</para></summary>
+    /// Azure-hosted site (CWE-942 / M-025). Each environment supplies only its own host.</para>
+    /// <para><c>frame-ancestors 'none'</c> and <c>form-action 'self'</c> (added 2026-09-30) have no fallback
+    /// to <c>default-src</c>, so leaving them out is the same as allowing anything. The app renders no
+    /// HTML forms that post anywhere and is never legitimately framed; MSAL signs in by redirect with the
+    /// response in the URL fragment, not by a form post, so neither directive touches the login flow.</para>
+    /// <para><c>style-src 'unsafe-inline'</c> STAYS, knowingly. Angular injects every component's styles as
+    /// inline <c>&lt;style&gt;</c> elements at runtime; removing the keyword needs Angular's CSP nonce
+    /// (<c>ngCspNonce</c>) plumbed from a per-request server value into the served <c>index.html</c>, which
+    /// is a change to how the SPA is hosted, not a header tweak. Scripts are already <c>'self'</c> only, which
+    /// is the half of CSP that stops script injection; inline styles alone cannot run code.</para></summary>
     public static string BuildSpaContentSecurityPolicy(bool isDevelopment, IEnumerable<string>? connectHosts = null)
     {
         var devConnectSrc = isDevelopment ? " http://localhost:5000 https://localhost:*" : string.Empty;
@@ -78,6 +90,8 @@ public class SecurityHeadersMiddleware
             "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://server.arcgisonline.com; " +
             "connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com" + configuredHosts + devConnectSrc + "; " +
             "frame-src 'self' https://login.microsoftonline.com; " +
+            "frame-ancestors 'none'; " +
+            "form-action 'self'; " +
             "object-src 'none'; " +
             "base-uri 'self';";
     }

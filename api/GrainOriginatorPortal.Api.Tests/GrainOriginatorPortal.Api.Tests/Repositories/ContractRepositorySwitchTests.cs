@@ -97,4 +97,73 @@ public class ContractRepositorySwitchTests
 
         Assert.True(sut.UsingCtrm);
     }
+
+    // -------------------------------------------------------------------------
+    // Per-user choice (2026-10-01): the environment value is the default, and an allow-listed tester's
+    // request can override it in either direction. Nobody else can.
+    // -------------------------------------------------------------------------
+
+    private static ContractRepositorySwitch SutWithChoice(IConfiguration config, string? userId, string? header)
+    {
+        // The middleware decides list membership from the table and the setting; here the setting alone
+        // stands in for the list, so the per-call behaviour of the switch itself is what is under test.
+        var choice = new CtrmSourceChoice();
+        choice.Set(userId, header, CtrmSourceChoice.IsConfiguredToggleUser(config, userId));
+        var ods = new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
+            .UseInMemoryDatabase($"switch-ods-{Guid.NewGuid()}").Options);
+        var app = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"switch-app-{Guid.NewGuid()}").Options);
+        var odsRepo = new ContractRepository(ods, app, new Mock<ILogger<ContractRepository>>().Object);
+        var provenance = new CtrmProvenance();
+        var reader = new CtrmContractReader(new Mock<ICtrmGraphQlClient>().Object, config, new Mock<ILogger<CtrmContractReader>>().Object);
+        var ticketReader = new CtrmTicketReader(new Mock<ICtrmGraphQlClient>().Object, config, new Mock<ILogger<CtrmTicketReader>>().Object);
+        var ctrmRepo = new CtrmContractRepository(reader, ticketReader, app, odsRepo, provenance, new Mock<ILogger<CtrmContractRepository>>().Object);
+        return new ContractRepositorySwitch(odsRepo, ctrmRepo, config, provenance, choice);
+    }
+
+    private static IConfiguration ConfigWithTesters(string source, string testers) =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Ctrm:Source"] = source, ["Ctrm:SourceToggleUsers"] = testers,
+        }).Build();
+
+    [Fact]
+    public void AnAllowListedTester_AskingForCtrm_IsRoutedToCtrm_WhileTheDefaultIsOds()
+    {
+        Assert.True(SutWithChoice(ConfigWithTesters("ods", "CEgr@scoular.com"), "CEgr@scoular.com", "ctrm").UsingCtrm);
+    }
+
+    [Fact]
+    public void AnAllowListedTester_AskingForOds_IsRoutedToOds_WhileTheDefaultIsCtrm()
+    {
+        Assert.False(SutWithChoice(ConfigWithTesters("ctrm", "CEgr@scoular.com"), "CEgr@scoular.com", "ods").UsingCtrm);
+    }
+
+    [Fact]
+    public void AnyoneElse_SendingTheHeader_StaysOnTheDefault()
+    {
+        Assert.False(SutWithChoice(ConfigWithTesters("ods", "CEgr@scoular.com"), "someone@scoular.com", "ctrm").UsingCtrm);
+        Assert.True(SutWithChoice(ConfigWithTesters("ctrm", "CEgr@scoular.com"), "someone@scoular.com", "ods").UsingCtrm);
+    }
+
+    [Fact]
+    public void ATesterWithNoHeader_GetsTheDefault()
+    {
+        Assert.False(SutWithChoice(ConfigWithTesters("ods", "CEgr@scoular.com"), "CEgr@scoular.com", null).UsingCtrm);
+    }
+
+    [Fact]
+    public void MembershipIsDecidedOncePerRequest_ByTheMiddleware_NotReReadPerCall()
+    {
+        // Adding a tester takes effect on their NEXT request (the middleware re-reads the setting and the
+        // cached table then), not mid-request - so a single request never mixes the two sources.
+        var config = ConfigWithTesters("ods", "");
+        var sut = SutWithChoice(config, "CEgr@scoular.com", "ctrm");
+        Assert.False(sut.UsingCtrm);
+
+        config["Ctrm:SourceToggleUsers"] = "CEgr@scoular.com";
+        Assert.False(sut.UsingCtrm);   // this request was already decided
+
+        Assert.True(SutWithChoice(config, "CEgr@scoular.com", "ctrm").UsingCtrm);   // the next one picks it up
+    }
 }
