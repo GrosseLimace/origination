@@ -26,7 +26,6 @@ on:
     branches: [main]
     paths-ignore:
       - 'developer-docs/**'
-      - 'style-guides/**'
       - '*.md'
   workflow_dispatch:
     inputs:
