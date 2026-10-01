@@ -1,5 +1,6 @@
 // Microsoft namespaces
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Services;
@@ -38,7 +39,28 @@ public class OrganicCertificationServiceTests
         return db;
     }
 
-    private static OrganicCertificationService Service(ApplicationDbContext db) => new(db);
+    /// <summary>Frozen clock, so the compliance-window maths is assertable rather than drifting
+    /// with the calendar. Set deliberately close to the captured samples' dates.</summary>
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private static readonly DateTimeOffset Today = new(2026, 10, 1, 9, 0, 0, TimeSpan.Zero);
+
+    private static OrganicCertificationService Service(
+        ApplicationDbContext db, int? complianceWindowMonths = null)
+    {
+        var settings = new Dictionary<string, string?>();
+        if (complianceWindowMonths is not null)
+        {
+            settings["OrganicCertification:ComplianceWindowMonths"] =
+                complianceWindowMonths.Value.ToString();
+        }
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        return new OrganicCertificationService(db, config, new FixedTimeProvider(Today));
+    }
 
     private static OrganicCertification Certification(
         string? status = "Certified",
@@ -186,6 +208,113 @@ public class OrganicCertificationServiceTests
         var wild = result.Certification!.Scopes.Single(s => s.Scope == "Wild Crops");
         Assert.Contains("Maple Syrup", wild.Crops);
         Assert.False(wild.IsCertified);   // no declared scope, so no status to certify it
+    }
+
+    [Fact]
+    public async Task TheComplianceSignalMeasuresTheCertifiersUpdatedOnDate()
+    {
+        // The desk's rule is "documentation current within 18 months". No certificate issue date
+        // exists in queryable form, so Madeline Tatum chose the INTEGRITY profile's "updated on"
+        // date (2026-10-01). Hofmeyer's real value is 2025-11-07 — 10 whole months before today,
+        // so inside the window.
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.SourceLastUpdateDate = new DateTime(2025, 11, 7);
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.Equal(new DateTime(2025, 11, 7), result.SourceUpdatedOn);
+        Assert.Equal(10, result.MonthsSinceSourceUpdate);
+        Assert.False(result.OutsideComplianceWindow);
+    }
+
+    [Fact]
+    public async Task ARecordUntouchedForLongerThanTheWindowIsFlagged()
+    {
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.SourceLastUpdateDate = new DateTime(2025, 1, 15);   // 20 months before the frozen date
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.Equal(20, result.MonthsSinceSourceUpdate);
+        Assert.True(result.OutsideComplianceWindow);
+    }
+
+    [Fact]
+    public async Task ExactlyEighteenMonthsIsStillInsideTheWindow()
+    {
+        // The boundary, asserted explicitly because it is the easiest thing to get wrong and the
+        // one a compliance conversation will eventually turn on.
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.SourceLastUpdateDate = new DateTime(2025, 4, 1);    // exactly 18 months
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.Equal(18, result.MonthsSinceSourceUpdate);
+        Assert.False(result.OutsideComplianceWindow);
+    }
+
+    [Fact]
+    public async Task AMissingUpdatedOnDateCountsAsOutsideTheWindow()
+    {
+        // Fails safe. We cannot show a trader "current" on the strength of a date we do not have,
+        // and the panel should say unknown rather than imply zero months.
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.SourceLastUpdateDate = null;
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.Null(result.SourceUpdatedOn);
+        Assert.Null(result.MonthsSinceSourceUpdate);
+        Assert.True(result.OutsideComplianceWindow);
+    }
+
+    [Fact]
+    public async Task TheWindowIsConfigurable()
+    {
+        // It is a business rule from their certifier, not a technical constant — it should be
+        // movable without a deploy.
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.SourceLastUpdateDate = new DateTime(2025, 11, 7);   // 10 months
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var tightened = (await Service(db, complianceWindowMonths: 6)
+            .GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.True(tightened.OutsideComplianceWindow);
+    }
+
+    [Fact]
+    public async Task TheComplianceSignalAndTheAnniversaryDateCanDisagree()
+    {
+        // Worth pinning, because it is surprising and it is REAL: both captured samples sit inside
+        // the 18-month window on "updated on" while already PAST their next scheduled annual
+        // update. The chosen measure is the more permissive of the two, and anyone reading the
+        // panel should not assume a green compliance signal means the annual update is current.
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.SourceLastUpdateDate = new DateTime(2025, 11, 7);   // inside the window
+        cert.AnniversaryDate = new DateTime(2026, 4, 1);         // six months overdue
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.False(result.OutsideComplianceWindow);
+        Assert.True(result.AnniversaryDate < Today.UtcDateTime.Date);
     }
 
     [Fact]

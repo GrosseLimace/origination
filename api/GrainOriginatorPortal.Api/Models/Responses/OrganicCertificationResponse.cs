@@ -58,6 +58,33 @@ public record OrganicCertificationResponse
 
     public decimal? TotalAcreage { get; init; }
 
+    // ── Record currency ────────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// When the certifier last touched this operation's profile — the "updated on" date shown at
+    /// the top of the USDA Organic Integrity profile page.
+    ///
+    /// Named for what it IS, not what it is used for. It records that the PROFILE changed, which is
+    /// not the same as a certificate being issued — a profile is also updated for a name or address
+    /// change. The organics desk chose it (Madeline Tatum, 2026-10-01) because no certificate issue
+    /// date exists in any queryable form; it lives only on the printed PDF.
+    /// </summary>
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
+    public DateTime? SourceUpdatedOn { get; init; }
+
+    /// <summary>
+    /// True when <see cref="SourceUpdatedOn"/> is older than the compliance window (18 months by
+    /// default, configurable), or when there is no date at all.
+    ///
+    /// This is the desk's standing requirement — their certifier expects documentation current
+    /// within 18 months — expressed against the only date we can actually read. Absent counts as
+    /// outside the window: we cannot show a trader "current" on the strength of a missing date.
+    /// </summary>
+    public bool OutsideComplianceWindow { get; init; }
+
+    /// <summary>Whole months since the certifier last touched the profile. Null when unknown — the
+    /// panel should say "unknown" rather than imply zero.</summary>
+    public int? MonthsSinceSourceUpdate { get; init; }
+
     // ── Status change ──────────────────────────────────────────────────────────────────────────
     /// <summary>Whether a status change should still be flagged. Computed server-side from the
     /// shared rule so the profile and Actionable Insights cannot disagree: flagged from the moment

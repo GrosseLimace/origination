@@ -34,11 +34,26 @@ public interface IOrganicCertificationService
 public class OrganicCertificationService : IOrganicCertificationService
 {
     private readonly ApplicationDbContext _db;
+    private readonly IConfiguration _config;
+    private readonly TimeProvider _timeProvider;
 
-    public OrganicCertificationService(ApplicationDbContext db)
+    public OrganicCertificationService(
+        ApplicationDbContext db,
+        IConfiguration config,
+        TimeProvider? timeProvider = null)
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
+        _config = config ?? throw new ArgumentNullException(nameof(config));
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
+
+    /// <summary>
+    /// The desk's compliance window in months. Configurable so the threshold can move without a
+    /// deploy — it is a business rule from their certifier, not a technical constant.
+    /// </summary>
+    private int ComplianceWindowMonths =>
+        _config.GetValue<int?>("OrganicCertification:ComplianceWindowMonths")
+        ?? OrganicRecordCurrency.DefaultComplianceWindowMonths;
 
     public async Task<CustomerOrganicCertificationResponse> GetForCustomerAsync(
         long customerId, CancellationToken cancellationToken = default)
@@ -81,12 +96,15 @@ public class OrganicCertificationService : IOrganicCertificationService
             CustomerId = customerId,
             Nopid = nopid,
             NoCertificateOnFile = false,
-            Certification = Map(certification),
+            Certification = Map(certification, _timeProvider.GetUtcNow().UtcDateTime,
+                                ComplianceWindowMonths),
         };
     }
 
     private static OrganicCertificationResponse Map(
-        Infrastructure.Data.Entities.OrganicCertification source) => new()
+        Infrastructure.Data.Entities.OrganicCertification source,
+        DateTime asOf,
+        int complianceWindowMonths) => new()
     {
         Nopid = source.Nopid,
         OperationName = source.OperationName,
@@ -96,6 +114,15 @@ public class OrganicCertificationService : IOrganicCertificationService
         StatusEffectiveDate = source.StatusEffectiveDate,
         AnniversaryDate = source.AnniversaryDate,
         TotalAcreage = source.TotalAcreage,
+
+        // The desk's compliance signal, measured against the certifier's "updated on" date because
+        // no certificate issue date exists in queryable form. Computed here so the client renders a
+        // boolean rather than doing date arithmetic in a timezone we do not control.
+        SourceUpdatedOn = source.SourceLastUpdateDate,
+        MonthsSinceSourceUpdate = OrganicRecordCurrency.MonthsSinceUpdate(
+            source.SourceLastUpdateDate, asOf),
+        OutsideComplianceWindow = OrganicRecordCurrency.IsOutsideWindow(
+            source.SourceLastUpdateDate, asOf, complianceWindowMonths),
 
         // Shared rule, so the profile and Actionable Insights cannot drift apart.
         HasUnresolvedStatusChange = OrganicCertificationStatus.HasUnresolvedStatusChange(
