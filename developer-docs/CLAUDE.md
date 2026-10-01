@@ -813,7 +813,6 @@ on:
     branches: [main]
     paths-ignore:
       - 'developer-docs/**'
-      - 'style-guides/**'
       - '*.md'
 ```
 
@@ -867,4 +866,4 @@ Do NOT expose the App Service to the internet. External access goes through APIM
 
 ---
 
-*Document version: 1.12 | 2026-04-30*
+*Document version: 1.13 | 2026-10-01*
