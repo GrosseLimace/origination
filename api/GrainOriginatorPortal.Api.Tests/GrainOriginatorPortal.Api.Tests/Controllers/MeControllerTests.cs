@@ -25,15 +25,18 @@ namespace GrainOriginatorPortal.Api.Tests.Controllers;
 public class MeControllerTests
 {
     private static MeController CreateSut(ClaimsPrincipal user, params string[] viewAllList)
-        => CreateSut(user, new ConfigurationBuilder().Build(), viewAllList);
+        => CreateSut(user, new ConfigurationBuilder().Build(), [], viewAllList);
 
-    private static MeController CreateSut(ClaimsPrincipal user, IConfiguration configuration, params string[] viewAllList)
+    private static MeController CreateSut(ClaimsPrincipal user, IConfiguration configuration, string[] tableTesters, params string[] viewAllList)
     {
         var viewAll = new Mock<IUsageDashboardViewAllProvider>();
         viewAll.Setup(v => v.GetAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<string>(viewAllList, StringComparer.OrdinalIgnoreCase));
+        var testers = new Mock<ICtrmSourceToggleUserProvider>();
+        testers.Setup(t => t.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(tableTesters, StringComparer.OrdinalIgnoreCase));
 
-        return new MeController(viewAll.Object, configuration)
+        return new MeController(viewAll.Object, testers.Object, configuration)
         {
             ControllerContext = new ControllerContext
             {
@@ -72,9 +75,9 @@ public class MeControllerTests
         }).Build();
 
     [Fact]
-    public async Task AListedUser_IsToldTheyCanChoose_AndWhatTheDefaultIs()
+    public async Task AConfigListedUser_IsToldTheyCanChoose_AndWhatTheDefaultIs()
     {
-        var sut = CreateSut(Principal(upn: "CEgr@scoular.com"), CtrmConfig("ods", "a@scoular.com, cegr@scoular.com"));
+        var sut = CreateSut(Principal(upn: "CEgr@scoular.com"), CtrmConfig("ods", "a@scoular.com, cegr@scoular.com"), []);
 
         var body = Body(await sut.Get(CancellationToken.None));
 
@@ -83,9 +86,17 @@ public class MeControllerTests
     }
 
     [Fact]
+    public async Task ATableListedUser_IsToldTheyCanChoose()
+    {
+        var sut = CreateSut(Principal(upn: "CEgr@scoular.com"), CtrmConfig("ods", ""), ["cegr@scoular.com"]);
+
+        Assert.True(Body(await sut.Get(CancellationToken.None)).CanChooseDataSource);
+    }
+
+    [Fact]
     public async Task AnUnlistedUser_CannotChoose()
     {
-        var sut = CreateSut(Principal(upn: "someone@scoular.com"), CtrmConfig("ctrm", "CEgr@scoular.com"));
+        var sut = CreateSut(Principal(upn: "someone@scoular.com"), CtrmConfig("ctrm", "CEgr@scoular.com"), ["other@scoular.com"]);
 
         var body = Body(await sut.Get(CancellationToken.None));
 

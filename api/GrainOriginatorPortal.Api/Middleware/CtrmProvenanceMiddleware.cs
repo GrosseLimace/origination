@@ -40,7 +40,7 @@ public sealed class CtrmProvenanceMiddleware
 
     public async Task InvokeAsync(HttpContext context, CtrmProvenance provenance, CtrmSourceChoice choice)
     {
-        if (_env.IsProduction() && !choice.CanChoose(_configuration))
+        if (_env.IsProduction() && !choice.CanChoose)
         {
             await _next(context);
             return;
@@ -54,7 +54,7 @@ public sealed class CtrmProvenanceMiddleware
             if (provenance.Source is { } source)
             {
                 context.Response.Headers[CtrmProvenance.SourceHeader] = source;
-                context.Response.Headers[ChoiceHeader] = choice.UserChoiceApplied(_configuration) ? "user" : "default";
+                context.Response.Headers[ChoiceHeader] = choice.UserChoiceApplied ? "user" : "default";
             }
 
             if (provenance.Contracts is { } contracts)

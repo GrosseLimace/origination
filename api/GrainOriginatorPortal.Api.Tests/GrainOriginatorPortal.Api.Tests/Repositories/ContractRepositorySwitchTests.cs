@@ -105,8 +105,10 @@ public class ContractRepositorySwitchTests
 
     private static ContractRepositorySwitch SutWithChoice(IConfiguration config, string? userId, string? header)
     {
+        // The middleware decides list membership from the table and the setting; here the setting alone
+        // stands in for the list, so the per-call behaviour of the switch itself is what is under test.
         var choice = new CtrmSourceChoice();
-        choice.Set(userId, header);
+        choice.Set(userId, header, CtrmSourceChoice.IsConfiguredToggleUser(config, userId));
         var ods = new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
             .UseInMemoryDatabase($"switch-ods-{Guid.NewGuid()}").Options);
         var app = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -151,13 +153,17 @@ public class ContractRepositorySwitchTests
     }
 
     [Fact]
-    public void TheAllowListIsReadPerCall_SoATesterCanBeAddedWithoutARestart()
+    public void MembershipIsDecidedOncePerRequest_ByTheMiddleware_NotReReadPerCall()
     {
+        // Adding a tester takes effect on their NEXT request (the middleware re-reads the setting and the
+        // cached table then), not mid-request - so a single request never mixes the two sources.
         var config = ConfigWithTesters("ods", "");
         var sut = SutWithChoice(config, "CEgr@scoular.com", "ctrm");
         Assert.False(sut.UsingCtrm);
 
         config["Ctrm:SourceToggleUsers"] = "CEgr@scoular.com";
-        Assert.True(sut.UsingCtrm);
+        Assert.False(sut.UsingCtrm);   // this request was already decided
+
+        Assert.True(SutWithChoice(config, "CEgr@scoular.com", "ctrm").UsingCtrm);   // the next one picks it up
     }
 }

@@ -30,6 +30,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
     private readonly CtrmTicketReader _ticketReader;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmKeepWarmService> _logger;
+    private readonly IServiceScopeFactory _scopes;
     private readonly CtrmKeepWarmBackoff _backoff = new();
 
     public CtrmKeepWarmService(
@@ -37,13 +38,36 @@ public sealed class CtrmKeepWarmService : BackgroundService
         CtrmContractReader contractReader,
         CtrmTicketReader ticketReader,
         IConfiguration configuration,
-        ILogger<CtrmKeepWarmService> logger)
+        ILogger<CtrmKeepWarmService> logger,
+        IServiceScopeFactory scopes)
     {
         _registry = registry;
         _contractReader = contractReader;
         _ticketReader = ticketReader;
         _configuration = configuration;
         _logger = logger;
+        _scopes = scopes;
+    }
+
+    /// <summary>
+    /// Whether anyone may currently choose CTRM for themselves: the config list is non-empty, or the tester
+    /// table has an active row. Read through the scoped, cached provider because this is a singleton.
+    /// Fails to "no" if the table cannot be read, matching the provider's fail-closed behaviour.
+    /// </summary>
+    private async Task<bool> AnyToggleUsersAsync(CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(_configuration[CtrmSourceChoice.ToggleUsersKey])) return true;
+        try
+        {
+            using var scope = _scopes.CreateScope();
+            var provider = scope.ServiceProvider.GetRequiredService<ICtrmSourceToggleUserProvider>();
+            return (await provider.GetAsync(cancellationToken)).Count > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "CTRM keep-warm: could not read the tester list; treating it as empty this tick.");
+            return false;
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -60,7 +84,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var cadenceMinutes = ReadInt("Ctrm:KeepWarmMinutes", 5);
-                var anyToggleUsers = !string.IsNullOrWhiteSpace(_configuration[CtrmSourceChoice.ToggleUsersKey]);
+                var anyToggleUsers = await AnyToggleUsersAsync(stoppingToken);
                 if (!ShouldWarmNow(cadenceMinutes, _configuration["Ctrm:Source"], anyToggleUsers, DateTime.UtcNow, lastRunUtc)) continue;
 
                 lastRunUtc = DateTime.UtcNow;

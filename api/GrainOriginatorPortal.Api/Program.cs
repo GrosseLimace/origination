@@ -327,6 +327,10 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // Who may read the WHOLE org and pick any manager, from dbo.UsageDashboardViewAllUsers. Scoped
 // because it reads through IUsageRepository; the result is cached for a minute inside the provider.
 builder.Services.AddScoped<IUsageDashboardViewAllProvider, UsageDashboardViewAllProvider>();
+// Who may flip their own session between ODS and CTRM, from dbo.CtrmSourceToggleUsers (plus the
+// Ctrm:SourceToggleUsers setting, checked separately). Same shape: scoped, cached for a minute, fails
+// closed to "nobody". Consulted by CtrmSourceChoiceMiddleware on every authenticated request.
+builder.Services.AddScoped<ICtrmSourceToggleUserProvider, CtrmSourceToggleUserProvider>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();
