@@ -28,6 +28,8 @@ Two app registration types handle user authentication for Origination:
 
 A third registration, **Origination - GitHub Actions**, handles CI/CD pipeline identity and is documented in [GitHub Actions (Workload Identity)](#github-actions-workload-identity) below.
 
+Apps with a desktop, CLI, or Office-native tool get one **additional registration per such tool, per environment** — a native / public client, declared in `app-config.json`'s `nativeClients[]` and documented in the *Native / Public Clients* subsection of each environment below. Most apps have none.
+
 ## Authentication Architecture
 
 ```
@@ -115,11 +117,14 @@ No additional identifierUris or delegated OAuth2 scopes configured for this envi
 **API Permissions:**
 - **Origination API**: `Origination.Application.Dev` (Delegated)
 - **Microsoft Graph**: `User.Read` (Delegated)
-- **Microsoft Graph**: `Calendars.ReadWrite` (Delegated) — producer follow-up reminders write an event to the SIGNED-IN USER'S OWN calendar (`POST /me/events`) from the SPA. Needs tenant admin consent; the `remindersEnabled` flag in the matching `environment.*.ts` stays false until that consent is granted.
 
 **Access Groups:**
 - `Origination App Dev Users` - End users for Dev environment
 - `Azure - Origination App - Developer Admins` - Admins with infrastructure access
+
+### Native / Public Clients - Dev
+
+No native clients configured for this environment.
 
 ## QA Environment
 
@@ -176,11 +181,14 @@ No additional identifierUris or delegated OAuth2 scopes configured for this envi
 **API Permissions:**
 - **Origination API**: `Origination.Application.QA` (Delegated)
 - **Microsoft Graph**: `User.Read` (Delegated)
-- **Microsoft Graph**: `Calendars.ReadWrite` (Delegated) — producer follow-up reminders write an event to the SIGNED-IN USER'S OWN calendar (`POST /me/events`) from the SPA. Needs tenant admin consent; the `remindersEnabled` flag in the matching `environment.*.ts` stays false until that consent is granted.
 
 **Access Groups:**
 - `Origination App QA Users` - End users for QA environment
 - `Azure - Origination App - Developer Admins` - Admins with infrastructure access
+
+### Native / Public Clients - QA
+
+No native clients configured for this environment.
 
 ## Production Environment
 
@@ -237,11 +245,14 @@ No additional identifierUris or delegated OAuth2 scopes configured for this envi
 **API Permissions:**
 - **Origination API**: `Origination.Application.Prod` (Delegated)
 - **Microsoft Graph**: `User.Read` (Delegated)
-- **Microsoft Graph**: `Calendars.ReadWrite` (Delegated) — producer follow-up reminders write an event to the SIGNED-IN USER'S OWN calendar (`POST /me/events`) from the SPA. Needs tenant admin consent; the `remindersEnabled` flag in the matching `environment.*.ts` stays false until that consent is granted.
 
 **Access Groups:**
 - `Origination App Users` - End users for Production environment
 - `Azure - Origination App - Production Support` - Admins with infrastructure access
+
+### Native / Public Clients - Production
+
+No native clients configured for this environment.
 
 ### External SPA (if external app enabled)
 
@@ -530,4 +541,4 @@ If you get "Forbidden" when accessing the Key Vault secret, ensure you are a mem
 
 ---
 
-*Document version: 1.9 | 2026-08-10*
+*Document version: 1.10 | 2026-08-22*
