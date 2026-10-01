@@ -2738,6 +2738,11 @@ describe('BidSheetComponent — two locations that share a name stay apart', () 
   });
 
   it('lists both in the panel instead of collapsing them', () => {
+    // Pin the period to the fixtures' August 2026. The screen defaults to the CURRENT month and compares
+    // it with the previous one, so left on the default this test only passed while "the previous month"
+    // happened to be August, and started failing on 2026-10-01 with no code change.
+    component.selectedYear.set(2026);
+    component.selectedMonth.set(8);
     component.selectedCrop.set('YC');
     component.filterBids();
 
