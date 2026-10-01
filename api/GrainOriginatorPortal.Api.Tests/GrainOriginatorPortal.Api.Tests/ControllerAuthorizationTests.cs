@@ -34,6 +34,7 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(MeController) };
         yield return new object[] { typeof(NotesController) };
         yield return new object[] { typeof(OrganicCertificationIngestController) };
+        yield return new object[] { typeof(OrganicCertificationsController) };
         yield return new object[] { typeof(PlantingIntentionsController) };
         yield return new object[] { typeof(ProducerDetailsController) };
         yield return new object[] { typeof(QueryLibraryController) };

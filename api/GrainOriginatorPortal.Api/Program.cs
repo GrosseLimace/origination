@@ -313,6 +313,7 @@ builder.Services.AddScoped<IDpContractService, DpContractService>();
 builder.Services.AddScoped<ISavedListService, SavedListService>();
 builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
 builder.Services.AddScoped<IOrganicCertificationIngestService, OrganicCertificationIngestService>();
+builder.Services.AddScoped<IOrganicCertificationService, OrganicCertificationService>();
 builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
