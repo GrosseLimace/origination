@@ -77,7 +77,7 @@
     "browserslist": ">=4.28.7 <5",
     "pacote": ">=21.5.1 <22",
     "undici": ">=7.29.1 <8",
-    "piscina": ">=5.2.0 <6",
+    "piscina": ">=5.3.2 <6",
     "postcss": "$postcss"
   }
 }
