@@ -8,7 +8,8 @@ import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket } from '@models';
+import { Customer, Contract, Ticket, OrganicCertificationStatusChange } from '@models';
+import { ApiService } from '@core/services/api.service';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { ticketDisplayNumber } from '@shared/utils/ticket-display';
@@ -16,7 +17,7 @@ import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
-type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels';
+type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels' | 'OrganicStatusChanges';
 type InsightPriority = 'Urgent' | 'Warning' | 'Info';
 type InsightTagStyle = 'default' | 'commodity' | 'quantity' | 'warning' | 'alert';
 
@@ -76,6 +77,16 @@ const CATEGORY_META: Record<InsightCategory, {
     countClass: 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow',
     searchPlaceholder: 'Search by producer, code, or ticket #...',
   },
+  OrganicStatusChanges: {
+    title: 'Organic Certification Status Changes',
+    headerClass: 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800',
+    iconClass: 'text-amber-600 dark:text-amber-400',
+    titleClass: 'text-amber-900 dark:text-amber-100',
+    subtitleClass: 'text-amber-700 dark:text-amber-300',
+    badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    countClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    searchPlaceholder: 'Search by producer, NOP ID, or status...',
+  },
   UnshippedBushels: {
     title: 'Unshipped Bushels Past Delivery Date',
     headerClass: 'bg-scoular-red/5 dark:bg-scoular-red/20 border-b border-scoular-red/20 dark:border-scoular-red-accessible',
@@ -124,6 +135,10 @@ function computeSummary(items: Insight[], category: InsightCategory): string {
         ? `${formatInsightQty(total)} remaining`
         : `${count} contract${count !== 1 ? 's' : ''}`;
     }
+    case 'OrganicStatusChanges':
+      // Always one per producer — a producer holds one certification, so a count would read
+      // "1 change" on every row. The status it moved TO is the useful thing at a glance.
+      return items[0]?.tags?.find(t => t.style === 'alert')?.label ?? 'Status changed';
     default: return '';
   }
 }
@@ -147,6 +162,7 @@ export class InsightsComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly usageTracking = inject(UsageTrackingService);
+  private readonly apiService = inject(ApiService);
 
   // Read directly from appState — DataPreloadService populates these on TU change
   readonly customers = this.appState.customers;
@@ -161,6 +177,9 @@ export class InsightsComponent {
   //   - Unconfirmed Contracts + Unshipped Bushels are contract-derived → wait on contracts.
   // So when contracts land first, those two render while Spot Loads keeps spinning.
   isCategoryLoading(category: InsightCategory): boolean {
+    // Organic status changes need contracts too — the alert is contracted-producers-only — so it
+    // waits on the same signal as the other contract-derived categories. Its own fetch is small
+    // and lands well before contracts do.
     return category === 'SpotLoads'
       ? this.appState.todaysTicketsLoading()
       : this.appState.contractsLoading();
@@ -171,7 +190,17 @@ export class InsightsComponent {
 
   expandedCategories = signal(new Set<InsightCategory>());
   expandedCustomers = signal(new Set<string>());
-  categories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels'];
+  categories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels', 'OrganicStatusChanges'];
+
+  /**
+   * Producers whose organic certification status has changed and has not returned to Certified.
+   *
+   * Fetched as one small list rather than per customer: this page deliberately makes no
+   * per-customer calls, and the flagged set is tiny by construction — only certifications that
+   * actually moved. Empty on failure, so a certification outage cannot take down the other three
+   * categories.
+   */
+  readonly organicStatusChanges = signal<OrganicCertificationStatusChange[]>([]);
 
   // Expose static metadata to the template
   readonly categoryMeta = CATEGORY_META;
@@ -226,6 +255,15 @@ export class InsightsComponent {
       if (!c.ctrmCustomerId) continue;
       const arr = contractsByCustomer.get(c.ctrmCustomerId);
       if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
+    }
+
+    // Pre-index flagged certifications by customer code. Upper-cased because the codes come from
+    // two different sources — ODS for customers, the certification feed for these — and nothing
+    // guarantees they agree on casing.
+    const organicChangesByScoularId = new Map<string, OrganicCertificationStatusChange>();
+    for (const change of this.organicStatusChanges()) {
+      const key = (change.scoularId || '').trim().toUpperCase();
+      if (key) organicChangesByScoularId.set(key, change);
     }
 
     // Pre-index recent tickets (last 30 days) by customer for O(1) spot-load lookup
@@ -377,6 +415,39 @@ export class InsightsComponent {
           });
         }
       }
+
+      // --- 4. Organic certification status changes ---
+      // Contracted producers only, per the organics desk: a certification that moved matters when
+      // we are actually doing business with them. `customerContracts` is already filtered to open
+      // contracts in the selected trade unit(s), so a producer whose contracts have all closed
+      // drops out on their own — which is the second half of the desk's removal rule. The first
+      // half (status returns to Certified) is applied server-side, so a resolved change never
+      // reaches this list at all.
+      const statusChange = organicChangesByScoularId.get((customer.scoularId || '').trim().toUpperCase());
+      if (statusChange && customerContracts.some(c => {
+        const status = (c.status || '').trim().toLowerCase();
+        return status !== 'cancelled' && status !== 'fulfilled';
+      })) {
+        const from = statusChange.previousStatus?.trim();
+        const to = statusChange.status?.trim() || 'Unknown';
+        insights.push({
+          customer,
+          category: 'OrganicStatusChanges',
+          // Urgent, not Warning: a surrendered or revoked certification can stop us trading with
+          // them, which is a harder consequence than an unconfirmed contract.
+          priority: 'Urgent',
+          message: from
+            ? `Organic certification changed from ${from} to ${to}.`
+            : `Organic certification is now ${to}.`,
+          tags: [
+            { label: `NOP ${statusChange.nopid}`, style: 'default' },
+            ...(from ? [{ label: from, style: 'default' as const }] : []),
+            { label: to, style: 'alert' as const },
+          ],
+          sortDate: statusChange.statusEffectiveDate ?? undefined,
+          searchTerms: [statusChange.nopid, from, to, statusChange.operationName].filter(Boolean) as string[]
+        });
+      }
     }
 
     const priorityOrder: Record<InsightPriority, number> = { 'Urgent': 0, 'Warning': 1, 'Info': 2 };
@@ -401,6 +472,7 @@ export class InsightsComponent {
       UnconfirmedContracts: [],
       SpotLoads: [],
       UnshippedBushels: [],
+      OrganicStatusChanges: [],
     };
 
     // Group all insights by category and customer in a single pass
@@ -534,12 +606,37 @@ export class InsightsComponent {
         }
       });
     });
+
+    this.loadOrganicStatusChanges();
+  }
+
+  /**
+   * Flagged certifications, fetched once per page load and on refresh.
+   *
+   * Not trade-unit scoped on the way in: the list is small, and the filtering happens naturally
+   * where the insight is built, against contracts that are already scoped to the selected trade
+   * units. Scoping it here as well would be a second place to get it wrong.
+   *
+   * Failure is swallowed to an empty list rather than surfaced. This is one of four categories and
+   * the newest — a certification outage must not take down unconfirmed contracts or unshipped
+   * bushels, which traders rely on daily.
+   */
+  private loadOrganicStatusChanges(): void {
+    this.apiService.getOrganicStatusChanges()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: changes => this.organicStatusChanges.set(changes),
+        error: () => this.organicStatusChanges.set([])
+      });
   }
 
   refresh(): void {
     if (this.selectedTradeUnits.length === 0) return;
     this.isBackgroundRefreshing.set(true);
     this.dataPreloadService.forceReload();
+    // Certifications come from our own database rather than the preload, so forceReload does not
+    // cover them — refetch alongside it or Refresh would silently leave this category stale.
+    this.loadOrganicStatusChanges();
     // Clear spinner once dataLoading transitions true → false (core data arrived).
     // pairwise() ignores the pre-existing false value before the reload starts.
     this._dataLoading$.pipe(

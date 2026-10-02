@@ -15,6 +15,8 @@ import {
   SavedList,
   TeamMember,
   Commodity,
+  CustomerOrganicCertification,
+  OrganicCertificationStatusChange,
   ProducerDetails,
   DashboardPlantingEstimate,
   DashboardMarketShare,
@@ -721,6 +723,25 @@ export class ApiService {
   /** Fetches producer details for a specific customer */
   getProducerDetails(customerId: number): Observable<ProducerDetails> {
     return this.http.get<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Organic (NOP) certification for one producer. Always returns a record, never a 404 — a
+   *  producer with no NOP id and one with a NOP id but no certification are different states and
+   *  both have to render. No `_dedupe`: that helper is for expensive bulk ODS reads, and this is a
+   *  single small row. */
+  getOrganicCertification(customerId: number): Observable<CustomerOrganicCertification> {
+    return this.http
+      .get<CustomerOrganicCertification>(`${this.baseUrl}/organic-certifications/customer/${customerId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Producers whose certification status has changed and has not returned to Certified. One
+   *  bulk read for Actionable Insights, which makes no per-customer calls. The set is small by
+   *  construction — only certifications that actually moved. */
+  getOrganicStatusChanges(): Observable<OrganicCertificationStatusChange[]> {
+    return this.http
+      .get<OrganicCertificationStatusChange[]>(`${this.baseUrl}/organic-certifications/status-changes`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

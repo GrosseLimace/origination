@@ -22,6 +22,8 @@ import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { grainOnFarmColorKey, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
+import { OrganicCertificationPanelComponent } from '../organic-certification/organic-certification-panel.component';
+import { CustomerOrganicCertification } from '@models';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
@@ -42,7 +44,8 @@ import { buildProductionCoverage } from '@shared/utils/production-coverage';
     GrowthOpportunityComponent,
     ActivitySummaryComponent,
     EditCustomerDialogComponent,
-    CustomerPrintReportComponent
+    CustomerPrintReportComponent,
+    OrganicCertificationPanelComponent
   ],
   templateUrl: './customer-profile.component.html'
 })
@@ -179,6 +182,10 @@ export class CustomerProfileComponent {
   showProducerInsights = signal(false);
   showESignRecipients = signal(false);
   showOrganicDetail = signal(false);
+
+  /** Organic certification for the selected producer. Fetched here rather than inside the panel
+   *  because the BADGE carries a status-change dot — it has to know before the panel is opened. */
+  readonly organicCertification = signal<CustomerOrganicCertification | null>(null);
   showEditDialog = signal(false);
   showPrintReport = signal(false);
   showAddToListMenu = signal(false); // "Add to List" header dropdown open state
@@ -324,6 +331,38 @@ export class CustomerProfileComponent {
         this._yearUserSelected = false;
         this.selectedPlantingYear.set(0);
       }
+    });
+
+    // Organic certification, once per customer. Fetched unconditionally rather than only when the
+    // badge shows: the badge's own visibility comes from the customer record, and a producer can
+    // hold a certification whose status has changed without that changing whether they badge.
+    effect(() => {
+      const id = this.customer()?.id;
+
+      // Cleared as the fetch is kicked so one producer's certification can never be shown against
+      // another during the round trip.
+      this.organicCertification.set(null);
+
+      if (id == null) return;
+      this.apiService.getOrganicCertification(id)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: certification => {
+            // Guard against an out-of-order response. Clicking quickly between producers can land
+            // A's certification after B is already selected, and a certification shown against the
+            // wrong producer is a compliance signal pointing at the wrong farm — worse than the
+            // same race on pacing history, which is why this one is guarded and that one is not.
+            if (this.customer()?.id !== id) return;
+            this.organicCertification.set(certification);
+          },
+          // Left null on failure. The panel degrades to the NOP id from the customer record, which
+          // is the same thing it showed before certification data existed — better than an error
+          // on a producer's profile for a panel that is supplementary.
+          error: () => {
+            if (this.customer()?.id !== id) return;
+            this.organicCertification.set(null);
+          }
+        });
     });
 
     // Fetch historical closed contracts (base.Contract) once per customer.
@@ -529,6 +568,17 @@ export class CustomerProfileComponent {
   /** Whether the organic badge shows for this producer. Two producer-level conditions OR'd —
    *  the CTRM organic industry code, or a real NOP id on file. See @shared/utils/organic-visibility
    *  for why both are needed when they overlap almost completely. */
+  /** Dot on the organic badge when a certification status has changed and has not resolved back to
+   *  Certified. Deliberately on the badge rather than only inside the panel: a trader scanning a
+   *  profile should not have to open something to find out the certification moved. */
+  readonly organicStatusChanged = computed(() =>
+    this.organicCertification()?.certification?.hasUnresolvedStatusChange === true);
+
+  /** Dot for a NOP id we hold with no certification behind it — the other thing the desk wanted
+   *  visible without opening the panel. */
+  readonly organicNoCertificate = computed(() =>
+    this.organicCertification()?.noCertificateOnFile === true);
+
   readonly showOrganicBadge = computed(() => isOrganicSectionVisible({
     industryCode2: this.customer()?.industryCode2,
     nopId: this.customer()?.nopId,
