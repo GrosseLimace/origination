@@ -11,6 +11,7 @@ export * from './stored-grain.model';
 export * from './dp-contract.model';
 export * from './saved-list.model';
 export * from './commodity.model';
+export * from './organic-certification.model';
 export * from './producer-details.model';
 export * from './dashboard-planting-estimate.model';
 export * from './dashboard-market-share.model';
