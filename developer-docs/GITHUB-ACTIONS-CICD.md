@@ -4,7 +4,6 @@ This guide covers the GitHub Actions CI/CD pipeline for the Origination applicat
 
 ## Contents
 
-- [Before a PROD Deploy](#before-a-prod-deploy)
 - [Overview](#overview)
 - [Self-Hosted Runners](#self-hosted-runners)
 - [Workflow Configuration](#workflow-configuration)
@@ -17,27 +16,6 @@ This guide covers the GitHub Actions CI/CD pipeline for the Origination applicat
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
 - [External SPA Deployment](#external-spa-deployment)
-
-## Before a PROD Deploy
-
-**Prepend the What's New entry before dispatching `deploy-prod.yml`.** The in-app release notes
-live in `api/GrainOriginatorPortal.Api/Content/whats-new.json`, and the first entry in that file is
-what users are shown once after the deploy. Nothing stamps it automatically.
-
-- Did this release change anything a user would notice? If not, **change nothing** — the version
-  does not move and no notice fires. That is how a dependency bump or refactor deploys silently.
-- If it did, add **one** entry for the deploy, with a `group` per feature. One deploy is one entry;
-  splitting it hides all but the newest from anyone with no saved state.
-- Run `dotnet test` — the content is linted, so a typo fails the build rather than every user's
-  first request after deploy.
-
-Format, rules, and troubleshooting: [What's New](../docs/application-context/Whats%20New.md).
-
-The commit SHA and workflow run number are stamped automatically from `GITHUB_SHA` and
-`GITHUB_RUN_NUMBER` via `Directory.Build.props`, and surface at `GET /api/version`. No workflow
-step is needed for that.
-
----
 
 ## Overview
 
@@ -226,7 +204,6 @@ on:
     branches: [main]
     paths-ignore:
       - 'developer-docs/**'
-      - 'style-guides/**'
       - '*.md'
   workflow_dispatch:
     inputs:
@@ -557,7 +534,7 @@ The `registry-url` and `scope` parameters tell `setup-node` to create an `.npmrc
 
 > **Requirements**: (1) the job has `packages: read` (step 1 above); (2) both the consuming repo and the npm package source are in the **IT** organization on `scoular.ghe.com`; and (3) the `@it` package is **internal** or **public** visibility (the default for IT packages). When all three hold, the per-run `GITHUB_TOKEN` can install the package with **no per-repo access grant and no PAT** — this is validated in production (e.g. the SIMS repo). A per-repo grant via the package's *Manage Actions access* is only needed for **private**-visibility packages; cross-org consumers need a classic PAT stored as a repository secret.
 
-For full details on the GHE npm registry (publishing, consuming, troubleshooting), see the [npm Packages Guide](style-guides/npm-packages.md).
+For full details on the GHE npm registry (publishing, consuming, troubleshooting), see the [npm Packages Guide](https://scoular.ghe.com/IT/scoular-marketplace/blob/main/scoular-skills/style-guides/npm-packages.md) in the `scoular-skills` plugin.
 
 ---
 
@@ -661,4 +638,4 @@ If this application has an external SPA, it deploys to Azure Static Web App via 
 
 ---
 
-*Document version: 1.20 | 2026-08-13*
+*Document version: 1.21 | 2026-10-01*

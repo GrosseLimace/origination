@@ -40,7 +40,7 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 ### Data and Storage
 - **SQL Database** (Azure SQL, managed identity authentication)
   - Dev/QA: Serverless, 0.5-2 vCores, auto-pause 60 min
-  - Prod: Serverless, 0.5-2 vCores, auto-pause 60 min
+  - Prod: General Purpose Provisioned, 2 vCores (serverless with auto-pause only during initial build-out, until the app is commissioned)
 - **Key Vault** — Secure storage for secrets with RBAC-based access, private endpoint, and audit logging
 
 ### Networking

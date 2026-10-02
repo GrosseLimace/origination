@@ -13,8 +13,9 @@ export const environment = {
   // convergence re-read. Both exist to hide CTRM GraphQL latency behind a warm trade-unit cache,
   // and both cost an extra read per hovered row and per click. Worth it when the backend is
   // reading CTRM; pure extra load when it is reading ODS, which answers fast and has no server-side
-  // trade-unit cache to converge on. ON here because this environment runs Ctrm:Source=ctrm.
-  ctrmReadAheadEnabled: true,
+  // trade-unit cache to converge on. OFF since 2026-10-01: local defaults to ODS like every environment,
+  // and DataSourceService turns the read-ahead on for a tester whose effective source is CTRM.
+  ctrmReadAheadEnabled: false,
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration; keep false until that consent is granted.
   remindersEnabled: true,

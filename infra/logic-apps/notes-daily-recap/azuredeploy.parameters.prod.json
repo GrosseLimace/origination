@@ -11,6 +11,7 @@
     // aiFoundryEndpoint: Prod's own Azure AI Foundry resource (gpt-5.1). Prod drops the env token
     // (sco-aif-origination-eus), mirroring the logicAppName pattern. ⚠️ Confirm this resource +
     // deployment exist before the first prod deploy.
-    "aiFoundryEndpoint": { "value": "https://sco-aif-origination-eus.cognitiveservices.azure.com/openai/deployments/gpt-5.1/chat/completions?api-version=2025-01-01-preview" }
+    "aiFoundryEndpoint": { "value": "https://sco-aif-origination-eus.cognitiveservices.azure.com/openai/deployments/gpt-5.1/chat/completions?api-version=2025-01-01-preview" },
+    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com" ] }
   }
 }
