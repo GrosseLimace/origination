@@ -238,7 +238,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-09-30
+Last Updated: 2026-10-01
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -298,6 +298,7 @@ Last Updated: 2026-09-30
 | ip-address | ≥10.5.1 | MIT | IP address parser — transitive (via @angular/cli dev tooling → dns/proxy libs), pinned in `overrides` (security fixes ≥10.5.1: leading-zero octet octal/decimal SSRF, CIDR-suffix special-use suppression, IPv4-mapped/NAT64 well-known misclassification, NAT64 local-use 64:ff9b:1::/48 unclassified, and isLinkLocal() matching fe80::/64 instead of fe80::/10 — all trust-boundary bypasses; dev-tooling-only) |
 | @hono/node-server | ≥2.0.5 | MIT | Node adapter for hono — transitive (via @angular/cli dev tooling), pinned in `overrides` (security fix: Windows serve-static path traversal via encoded backslash; dev-server-only, not used to serve this app) |
 | dompurify | ≥3.4.16 <4 | (MIT OR Apache-2.0) | HTML sanitizer — transitive (via jspdf, PDF export), pinned in `overrides` (security fixes: CUSTOM_ELEMENT_HANDLING bypasses afterSanitizeElements → second-order XSS gadget ≥3.4.12; IN_PLACE node-removing afterSanitize hook leaves detached-subtree event handlers armed → DOM XSS, GHSA-p98j-92pf-mc4p, ≥3.4.16 — the ≥3.4.12 floor itself sat inside that advisory range; neither hook is used here, jspdf only sanitises the HTML it renders to PDF) |
+| piscina | ≥5.3.2 <6 | MIT | Worker-thread pool — transitive (via @angular/build), pinned in `overrides` (security fix ≥5.3.2: prototype-pollution gadget in ThreadPool.options → code execution via execArgv / loadBalancer / env, Dependabot #133 — the ≥5.2.0 floor itself sat inside that advisory range; build-tooling only, not in the app bundle) |
 
 ## CI/CD
 
