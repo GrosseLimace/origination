@@ -90,6 +90,67 @@ public class MigrationSnapshotConsistencyTests
         Assert.True(index!.IsUnique, "Nopid must be uniquely indexed — it is the upsert key.");
     }
 
+    /// <summary>
+    /// Locates a file under the repository by walking up from the test assembly. Needed because
+    /// the only way to check hand-written migration DDL is to read it.
+    /// </summary>
+    private static string ReadRepoFile(string relativePath)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, relativePath)))
+        {
+            dir = dir.Parent;
+        }
+
+        Assert.True(dir is not null, $"Could not find {relativePath} walking up from {AppContext.BaseDirectory}");
+        return File.ReadAllText(Path.Combine(dir!.FullName, relativePath));
+    }
+
+    [Fact]
+    public void TheCertificationMigrationPointsItsCustomerForeignKeyAtTheRightColumn()
+    {
+        // THIS IS THE GAP THAT BIT US. ThereAreNoUnmigratedModelChanges compares the MODEL to the
+        // SNAPSHOT — both generated from the same fluent config, so both agreed — while the
+        // migration DDL is hand-written here (dotnet-ef cannot be installed) and nothing checked
+        // it against either. The first Dev deploy failed with:
+        //
+        //   Foreign key 'FK_OrganicCertification_Customer' references invalid column 'Id' in
+        //   referenced table 'dbo.Customer'.
+        //
+        // Customer's property is named Id but maps to the CustomerId column, and the migration
+        // said "Id". Every other migration in the repo that points at Customer gets this right.
+        //
+        // The expected value is DERIVED FROM THE MODEL rather than hardcoded, so if that mapping
+        // ever changes this test follows it instead of enforcing a stale constant.
+        using var context = CreateContext();
+
+        var customerKeyColumn = context.Model
+            .GetEntityTypes()
+            .Single(e => e.GetTableName() == "Customer")
+            .FindPrimaryKey()!
+            .Properties
+            .Single()
+            .GetColumnName();
+
+        Assert.Equal("CustomerId", customerKeyColumn);   // the mapping this migration relies on
+
+        var migration = ReadRepoFile(Path.Combine(
+            "api", "GrainOriginatorPortal.Infrastructure", "Data", "Migrations",
+            "20260923152000_AddOrganicCertificationTables.cs"));
+
+        // Scoped to the Customer foreign key specifically. A blanket ban on principalColumn: "Id"
+        // would be wrong — the two child tables point at OrganicCertification, whose key column
+        // genuinely IS "Id". The mistake was only ever about which column Customer uses.
+        var customerFk = migration.IndexOf("principalTable: \"Customer\"", StringComparison.Ordinal);
+        Assert.True(customerFk >= 0, "The migration no longer has a foreign key to Customer.");
+
+        var columnLine = migration.IndexOf("principalColumn:", customerFk, StringComparison.Ordinal);
+        Assert.True(columnLine >= 0, "The Customer foreign key declares no principalColumn.");
+
+        var declared = migration.Substring(columnLine, Math.Min(60, migration.Length - columnLine));
+        Assert.Contains($"principalColumn: \"{customerKeyColumn}\"", declared);
+    }
+
     [Fact]
     public void CertificationDoesNotStoreContactPii()
     {

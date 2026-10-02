@@ -59,12 +59,18 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                 {
                     table.PrimaryKey("PK_OrganicCertification", x => x.Id);
                     // NoAction: removing a customer must never silently drop certification evidence.
+                    //
+                    // principalColumn is "CustomerId", NOT "Id". The entity property is
+                    // Customer.Id but it is mapped to the CustomerId column
+                    // (ApplicationDbContext: "Id is the ODS CustomerId"). Writing "Id" here fails
+                    // at deploy with "references invalid column 'Id'" — every other migration in
+                    // this repo that points at Customer uses CustomerId.
                     table.ForeignKey(
                         name: "FK_OrganicCertification_Customer",
                         column: x => x.CustomerId,
                         principalSchema: "dbo",
                         principalTable: "Customer",
-                        principalColumn: "Id",
+                        principalColumn: "CustomerId",
                         onDelete: ReferentialAction.NoAction);
                 });
 
