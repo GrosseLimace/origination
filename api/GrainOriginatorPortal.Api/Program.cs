@@ -112,6 +112,12 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireRole("Admin"));
 
+    // BarChart ingestion: the data pipeline's managed identity holding the pre-existing
+    // application-only app role, or an Admin so the feed can be exercised and re-run by hand.
+    // RequireRole is OR across the listed roles.
+    options.AddPolicy("BarchartIngest", policy =>
+        policy.RequireRole("Origination.Application", "Admin"));
+
     // Organic certification ingestion: the integration's managed identity holding the pre-existing
     // application-only app role, or an Admin so the feed can be exercised and re-run by hand.
     // RequireRole is OR across the listed roles. Callers here are machine identities with no user
@@ -324,6 +330,8 @@ builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
+builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
+builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();

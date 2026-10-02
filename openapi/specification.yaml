@@ -1,0 +1,441 @@
+openapi: 3.0.3
+
+info:
+  title: Origination — BarChart Ingestion API
+  version: "1.0.0"
+  description: |
+    Endpoints the Scoular integration pipeline (Azure Data Factory) calls to deliver BarChart grain-bid
+    data into the Origination application.
+
+    The pipeline fetches from BarChart and forwards each response here; **it needs no database access**,
+    which keeps the Origination application the only writer to its own database.
+
+    **Every endpoint is safe to retry.** Loads upsert rather than duplicate, and the daily price-history
+    row is replaced per business date, so a failed step or an entire failed run can simply be run again
+    with no cleanup and no idempotency key.
+
+    Full narrative contract, including the daily call sequence:
+    `docs/application-context/Barchart Ingestion API Contract.md`
+
+servers:
+  - url: https://app-origination-dev-eus.azurewebsites.net
+    description: |
+      Dev. Token audience `api://00078a10-3f3f-4d17-9350-fe90401125ae`.
+      Alternate accepted host: `origination-dev.scoular.com`.
+  - url: https://app-origination-qa-eus.azurewebsites.net
+    description: |
+      QA — also the target for the integration side's UAT.
+      Token audience `api://f3fcab2b-98c8-4622-86bd-c874d281b22a`.
+      Alternate accepted host: `origination-qa.scoular.com`.
+  - url: https://app-origination-eus.azurewebsites.net
+    description: |
+      Production. Token audience `api://e1458bcd-7212-4ea0-a836-7e08d03b5bbf`.
+      Alternate accepted host: `origination.scoular.com`.
+
+security:
+  - azureAd: []
+
+tags:
+  - name: BarChart Ingestion
+    description: Machine-to-machine delivery of vendor grain-bid data.
+
+paths:
+  /api/barchart-ingest/quote-batches:
+    get:
+      tags: [BarChart Ingestion]
+      summary: Get the symbols to request quotes for
+      description: |
+        Returns every active, non-test instrument symbol, already grouped into request-sized batches.
+        Call this first in a quote run — the pipeline never has to track which instruments exist, and
+        vendor test entries are excluded here rather than needing to be filtered downstream.
+      operationId: getQuoteBatches
+      parameters:
+        - name: batchSize
+          in: query
+          required: false
+          description: Symbols per batch. Values below 1 are treated as 100.
+          schema: { type: integer, default: 100, minimum: 1, maximum: 1000 }
+      responses:
+        "200":
+          description: Batches to request, in symbol order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/QuoteBatch" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/instruments:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Load a vendor instrument (catalog) payload
+      description: |
+        Files the locations and bids BarChart publishes. Send the vendor's `getGrainInstruments`
+        response **verbatim** — do not reshape, rename, or filter it.
+
+        New symbols are inserted and existing ones updated. Symbols absent from the payload are left
+        untouched, so a partial page or a failed run can never strip the catalog; retiring entries is
+        the separate, deliberate `deactivate-instruments` call.
+
+        Run this often enough to keep forward delivery months current — new months arrive as new
+        symbols, so a catalog that is never refreshed will slowly empty out as months roll off.
+      operationId: loadInstruments
+      requestBody:
+        required: true
+        description: The vendor response body, unmodified and uncompressed. 10 MB maximum.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorPayload" }
+      responses:
+        "200":
+          description: Payload filed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InstrumentLoadResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413":
+          description: Body exceeds the 10 MB limit. Send smaller pages.
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/quotes:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Load a vendor quote payload
+      description: |
+        Files current prices and the day's price history. Send the vendor's `getQuote` response
+        **verbatim**.
+
+        Quotes for symbols not present in the catalog are skipped and counted in
+        `unknownSymbolCount` — a value that stays non-zero means the catalog is behind the quote feed
+        and an `instruments` load is due.
+      operationId: loadQuotes
+      parameters:
+        - name: snapshotDate
+          in: query
+          required: false
+          description: |
+            Business date to record the day's history under. Omit to use today in US Central time.
+            Supply it explicitly when back-filling, or when a run could straddle midnight.
+          schema: { type: string, format: date, example: "2026-08-11" }
+      requestBody:
+        required: true
+        description: The vendor response body, unmodified and uncompressed. 10 MB maximum.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorPayload" }
+      responses:
+        "200":
+          description: Payload filed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuoteLoadResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413":
+          description: Body exceeds the 10 MB limit. Send smaller batches.
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/apply-bids:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Publish loaded prices onto the Bid Sheet
+      description: |
+        Copies current feed prices onto the Bid Sheet for every location an originator has linked to
+        the feed. Call this once after the quote batches for a run are loaded.
+
+        Manually entered bids are never modified, and the call is deterministic — running it twice
+        changes nothing.
+      operationId: applyBids
+      parameters:
+        - name: locationId
+          in: query
+          required: false
+          description: Limit to a single Bid Sheet location. Omit to process every linked location.
+          schema: { type: integer }
+        - name: instrumentType
+          in: query
+          required: false
+          description: Vendor price type to publish. Omit or pass an empty value to publish any type.
+          schema: { type: string, default: bidCash, enum: [bidCash, bidBasis] }
+      responses:
+        "200":
+          description: Publish complete.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplyBidsResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/deactivate-instruments:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Retire catalog entries the vendor has stopped publishing
+      description: |
+        Marks instruments not seen since `lastSeenBefore` as inactive. Rows are never deleted, so
+        history and any linked location survive.
+
+        **Call this only after a complete catalog cycle.** The sweep is sharded across 7 daily runs
+        (confirmed 2026-08-18), so "complete" means the whole 7-day rotation, not last night's run — on
+        any one day only part of the catalog is re-seen. A cutoff of yesterday would retire most of the
+        book and blank every linked Bid Sheet location. Pass a time older than one full cycle.
+
+        Skipping this entirely is harmless — the catalog simply keeps entries the vendor has dropped.
+
+        As a backstop, a call that would retire more than `maxSharePercent` of the active catalog is
+        refused with a 400 and changes nothing.
+      operationId: deactivateInstruments
+      parameters:
+        - name: lastSeenBefore
+          in: query
+          required: true
+          description: UTC timestamp older than one full catalog cycle.
+          schema: { type: string, format: date-time, example: "2026-08-01T05:00:00Z" }
+        - name: maxSharePercent
+          in: query
+          required: false
+          description: >
+            Safety limit on how much of the active catalog one call may retire. Raise it only when a
+            large retirement is genuinely intended.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+      responses:
+        "200":
+          description: Retirement complete.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeactivateResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/purge-history:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Trim the audit and price-history tables to their retention windows
+      description: |
+        Optional housekeeping. Removes call-audit rows and daily price-history rows older than the
+        given windows, deleting in batches so a long-deferred purge trims steadily instead of locking
+        the tables.
+
+        Safe to call at the end of a run or on any schedule; skipping it entirely only means the two
+        tables keep growing. Minimums are enforced (30 days audit, 90 days history) because the price
+        history cannot be rebuilt from the vendor API.
+      operationId: purgeHistory
+      parameters:
+        - name: auditRetentionDays
+          in: query
+          required: false
+          schema: { type: integer, default: 400, minimum: 30 }
+        - name: snapshotRetentionDays
+          in: query
+          required: false
+          schema: { type: integer, default: 730, minimum: 90 }
+      responses:
+        "200":
+          description: Purge complete.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurgeResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/budget:
+    get:
+      tags: [BarChart Ingestion]
+      summary: Month-to-date ingest usage against the vendor call cap
+      description: |
+        Counts the ingest calls we have received this calendar month. Because the vendor calls happen
+        in the pipeline, this is a close proxy for vendor usage and a cross-check against the
+        pipeline's own monitoring — the authoritative count is on the pipeline side.
+
+        The vendor cap is shared by every environment (one API key), so non-production testing
+        consumes production allowance.
+      operationId: getBudget
+      parameters:
+        - name: monthlyCap
+          in: query
+          required: false
+          description: Cap to measure against.
+          schema: { type: integer, default: 250000, minimum: 1 }
+      responses:
+        "200":
+          description: Current usage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BudgetResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+components:
+  securitySchemes:
+    azureAd:
+      type: oauth2
+      description: |
+        Microsoft Entra ID, application-only (client credentials). The caller's managed identity must
+        be assigned the **`Origination.Application`** app role on the Origination API app registration
+        for the target environment. Enterprise applications require assignment, so an unassigned
+        identity receives `401` even with a structurally valid token.
+
+        Request the token for the environment's audience with the `/.default` scope, and send it as
+        `Authorization: Bearer <token>`. No client secret is involved.
+      flows:
+        clientCredentials:
+          tokenUrl: https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1/oauth2/v2.0/token
+          scopes:
+            api://00078a10-3f3f-4d17-9350-fe90401125ae/.default: "Dev — application-only access"
+
+  schemas:
+    VendorPayload:
+      description: |
+        A BarChart response, forwarded exactly as received. Either the vendor envelope (an object with
+        a `results` array) or a bare array of result objects is accepted. Fields are selected on our
+        side, so unrecognised vendor fields are ignored rather than rejected — no transformation is
+        needed or wanted in the pipeline.
+      oneOf:
+        - type: object
+          additionalProperties: true
+          example:
+            status: { code: 200 }
+            results:
+              - symbol: "ZCPQ26-27300-6916.CM"
+                lastPrice: "4.41"
+                tradeTimestamp: "2026-07-22T12:13:57-05:00"
+        - type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    QuoteBatch:
+      type: object
+      required: [batchNumber, symbolCount, symbolsCsv]
+      properties:
+        batchNumber: { type: integer, description: 1-based batch number., example: 1 }
+        symbolCount: { type: integer, description: Symbols in this batch., example: 100 }
+        symbolsCsv:
+          type: string
+          description: Comma-separated symbols, ready to pass to the vendor's quote endpoint.
+          example: "ZCPQ26-27300-6916.CM,ZCPQ26F-82259-15194.CM"
+
+    InstrumentLoadResult:
+      type: object
+      required: [rowsLoaded]
+      properties:
+        rowsLoaded:
+          type: integer
+          description: Catalog rows inserted or updated. Zero across a whole run is worth alerting on.
+          example: 387
+
+    QuoteLoadResult:
+      type: object
+      required: [quotesUpserted, unknownSymbolCount, snapshotDate]
+      properties:
+        quotesUpserted:
+          type: integer
+          description: Current-price rows written.
+          example: 100
+        unknownSymbolCount:
+          type: integer
+          description: Quotes skipped because the symbol is absent from the catalog.
+          example: 0
+        snapshotDate:
+          type: string
+          format: date
+          description: Business date the day's history was recorded under.
+          example: "2026-08-11"
+
+    ApplyBidsResult:
+      type: object
+      required: [rowsAffected]
+      properties:
+        rowsAffected:
+          type: integer
+          description: Bid cells written or pruned. Zero is normal on a run where nothing changed.
+          example: 42
+
+    DeactivateResult:
+      type: object
+      required: [rowsDeactivated]
+      properties:
+        rowsDeactivated: { type: integer, example: 12 }
+
+    PurgeResult:
+      type: object
+      required: [rowsRemoved]
+      properties:
+        rowsRemoved:
+          type: integer
+          description: Rows removed across the audit and price-history tables.
+          example: 1500
+
+    BudgetResult:
+      type: object
+      required: [monthToDateCalls, remainingCalls, abortRecommended]
+      properties:
+        monthToDateCalls: { type: integer, example: 4820 }
+        remainingCalls:
+          type: integer
+          description: Negative once the cap has been passed.
+          example: 245180
+        abortRecommended:
+          type: boolean
+          description: True at 80% of the cap — a signal to stop non-essential loads.
+          example: false
+
+    ApiError:
+      type: object
+      description: Standard error envelope used across the Origination API.
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: VALIDATION_ERROR }
+            message: { type: string, example: "One or more validation errors occurred." }
+            traceId:
+              type: string
+              description: Quote this when reporting a problem — it ties directly to our logs.
+            timestamp: { type: string, format: date-time }
+            instance: { type: string, example: /api/barchart-ingest/quotes }
+
+  responses:
+    ValidationError:
+      description: |
+        The request was rejected — an empty body, a body that isn't JSON, or a parameter out of range.
+        **Do not retry**; it will fail identically.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    Unauthorized:
+      description: |
+        No token, an expired or malformed token, or the caller's identity has not been assigned the
+        `Origination.Application` app role. Do not retry until the cause is fixed.
+    Forbidden:
+      description: Authenticated, but the token lacks the role this endpoint requires. Do not retry.
+    RateLimited:
+      description: Too many requests. Honour the `Retry-After` header, then retry.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema: { type: integer }
+    ServerError:
+      description: Our side failed. Safe to retry with backoff — every endpoint is idempotent.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }

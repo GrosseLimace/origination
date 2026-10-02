@@ -35,3 +35,5 @@ client/coverage/
 # Local IDE / tooling config
 .vscode/
 .claude/
+
+.fake

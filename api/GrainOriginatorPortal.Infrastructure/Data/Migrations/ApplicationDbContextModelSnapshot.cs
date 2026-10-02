@@ -22,6 +22,451 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartApiCallAudit", b =>
+                {
+                    b.Property<long>("ApiCallId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("ApiCallId"));
+
+                    b.Property<DateTime>("CalledAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<int?>("DurationMs")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("QueryParams")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int?>("RowsAffected")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("bit");
+
+                    b.HasKey("ApiCallId");
+
+                    b.HasIndex("CalledAtUtc")
+                        .HasDatabaseName("IX_BarchartApiCallAudit_CalledAtUtc");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("CalledAtUtc"), new[] { "Endpoint", "Success" });
+
+                    b.ToTable("BarchartApiCallAudit", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartCommodityMap", b =>
+                {
+                    b.Property<string>("BarchartCommodity")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CommodityCategory")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("CommodityCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("CommodityName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.HasKey("BarchartCommodity");
+
+                    b.ToTable("BarchartCommodityMap", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartCurrentQuote", b =>
+                {
+                    b.Property<string>("Symbol")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal?>("ClosePrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<string>("DayCode")
+                        .HasMaxLength(5)
+                        .HasColumnType("nvarchar(5)");
+
+                    b.Property<decimal?>("HighPrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal?>("LastPrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal?>("LowPrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal?>("NetChange")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal?>("OpenPrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal?>("PercentChange")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<string>("QuoteFlag")
+                        .HasMaxLength(5)
+                        .HasColumnType("nvarchar(5)");
+
+                    b.Property<string>("QuoteMode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime?>("ServerTimestamp")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime?>("TradeTimestamp")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("UnitCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Symbol");
+
+                    b.HasIndex("TradeTimestamp")
+                        .IsDescending()
+                        .HasDatabaseName("IX_BarchartCurrentQuote_TradeTimestamp");
+
+                    b.ToTable("BarchartCurrentQuote", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartInstrument", b =>
+                {
+                    b.Property<string>("Symbol")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Commodity")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("County")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("CountyFips")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime?>("DeliveryEnd")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime?>("DeliveryStart")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("DeliveryWindowFlag")
+                        .HasColumnType("char(1)");
+
+                    b.Property<string>("Elevator")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("FacilityType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("FirstSeenUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("InstrumentType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsTest")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime>("LastSeenUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
+                    b.Property<string>("LocationKey")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("LocationName")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Root")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("State")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("StateFips")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("SymbolDescription")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("UnderlyingFuture")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Website")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("ZipCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Symbol");
+
+                    b.HasIndex("LocationKey")
+                        .HasDatabaseName("IX_BarchartInstrument_LocationKey");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("LocationKey"), new[] { "Commodity", "InstrumentType", "IsActive", "IsTest" });
+
+                    b.HasIndex("State", "City")
+                        .HasDatabaseName("IX_BarchartInstrument_State_City");
+
+                    b.ToTable("BarchartInstrument", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartLocationSummary", b =>
+                {
+                    b.Property<long>("ActiveInstrumentCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Address")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("City")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("CommodityCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("EarliestDeliveryStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Elevator")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FacilityType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("LastSeenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LatestDeliveryEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LatestQuoteTimestamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
+                    b.Property<string>("LocationKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LocationName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
+
+                    b.Property<string>("Phone")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("State")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Website")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ZipCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("vw_BarchartLocation", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartQuoteSnapshot", b =>
+                {
+                    b.Property<DateOnly>("SnapshotDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Symbol")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<decimal?>("LastPrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal?>("NetChange")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTime?>("TradeTimestamp")
+                        .HasColumnType("datetime2(3)");
+
+                    b.HasKey("SnapshotDate", "Symbol");
+
+                    b.HasIndex("Symbol", "SnapshotDate")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_BarchartQuoteSnapshot_Symbol_SnapshotDate");
+
+                    b.ToTable("BarchartQuoteSnapshot", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheet", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("CropOrder")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("HiddenCrops")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("SelectedMonths")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SelectedYears")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId")
+                        .HasDatabaseName("IX_BidSheets_OwnerUserId");
+
+                    b.HasIndex("OwnerUserId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_BidSheets_Owner_Name");
+
+                    b.ToTable("BidSheets", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocation", b =>
                 {
                     b.Property<int>("Id")
@@ -33,6 +478,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<string>("Address")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("BarchartLocationKey")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("City")
                         .HasMaxLength(100)
@@ -84,14 +533,15 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(10)");
 
                     b.Property<string>("TradeUnitCode")
-                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TradeUnitCode")
-                        .HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
+                    b.HasIndex("BarchartLocationKey")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_BidSheetLocations_BarchartKey")
+                        .HasFilter("[BarchartLocationKey] IS NOT NULL");
 
                     b.ToTable("BidSheetLocations", "dbo");
                 });
@@ -104,10 +554,31 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("BarchartSymbol")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("BasisBid")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("BasisChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("BasisQuoteAsOf")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("BasisSymbol")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Bid")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("CashChangedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("CommodityCategory")
                         .HasMaxLength(100)
@@ -121,6 +592,12 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<string>("CommodityName")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("CoveredByCropYear")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CoveredByMonth")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -150,6 +627,20 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+                    b.Property<DateTime?>("QuoteAsOf")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Manual");
+
+                    b.Property<string>("UnderlyingFuture")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("LocationId", "CommodityCode", "CropYear", "Month")
@@ -159,7 +650,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("BidSheetLocationBids", "dbo");
                 });
 
-            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocationOrder", b =>
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocationLink", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -167,37 +658,40 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("LocationOrder")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
-
-                    b.Property<DateTime>("ModifiedAt")
+                    b.Property<DateTime>("AddedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
-                    b.Property<string>("TradeUnitKey")
+                    b.Property<string>("AddedBy")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                    b.Property<int>("BidSheetId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("BidSheetLocationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId")
-                        .HasDatabaseName("IX_BidSheetLocationOrders_UserId");
+                    b.HasIndex("BidSheetLocationId");
 
-                    b.HasIndex("UserId", "TradeUnitKey")
+                    b.HasIndex("BidSheetId", "BidSheetLocationId")
                         .IsUnique()
-                        .HasDatabaseName("UQ_BidSheetLocationOrders_User_TradeUnitKey");
+                        .HasDatabaseName("UQ_BidSheetLocationLinks_Sheet_Location");
 
-                    b.ToTable("BidSheetLocationOrders", "dbo");
+                    b.ToTable("BidSheetLocationLinks", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetPreference", b =>
@@ -229,10 +723,24 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<int?>("Month")
                         .HasColumnType("int");
 
+                    b.Property<string>("PriceMode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
                     b.Property<string>("PrintLayout")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("SelectedBidSheetIds")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SelectedColumns")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("SelectedMonths")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SelectedYears")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("TradeUnitKey")
@@ -255,6 +763,53 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasDatabaseName("UQ_BidSheetPreferences_User_TradeUnitKey");
 
                     b.ToTable("BidSheetPreferences", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetShare", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BidSheetId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("MemberId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("MemberName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("MemberType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("SharedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("SharedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MemberType", "MemberId")
+                        .HasDatabaseName("IX_BidSheetShares_Member");
+
+                    b.HasIndex("BidSheetId", "MemberType", "MemberId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_BidSheetShares_Sheet_Member");
+
+                    b.ToTable("BidSheetShares", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.Commodity", b =>
@@ -2665,6 +3220,26 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("WeeklyLoginAggregate", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartCurrentQuote", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartInstrument", null)
+                        .WithOne()
+                        .HasForeignKey("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartCurrentQuote", "Symbol")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_BarchartCurrentQuote_BarchartInstrument");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartQuoteSnapshot", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartInstrument", null)
+                        .WithMany()
+                        .HasForeignKey("Symbol")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_BarchartQuoteSnapshot_BarchartInstrument");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocationBid", b =>
                 {
                     b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocation", "Location")
@@ -2674,6 +3249,36 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Location");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocationLink", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheet", "BidSheet")
+                        .WithMany("Locations")
+                        .HasForeignKey("BidSheetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocation", "Location")
+                        .WithMany()
+                        .HasForeignKey("BidSheetLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BidSheet");
+
+                    b.Navigation("Location");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetShare", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheet", "BidSheet")
+                        .WithMany("Shares")
+                        .HasForeignKey("BidSheetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BidSheet");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.CustomerCommodity", b =>
@@ -2856,6 +3461,13 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasConstraintName("FK_ProducerReminders_Customer_CustomerId");
 
                     b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheet", b =>
+                {
+                    b.Navigation("Locations");
+
+                    b.Navigation("Shares");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocation", b =>
