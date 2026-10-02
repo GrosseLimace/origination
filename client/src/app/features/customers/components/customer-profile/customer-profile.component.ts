@@ -347,11 +347,21 @@ export class CustomerProfileComponent {
       this.apiService.getOrganicCertification(id)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: certification => this.organicCertification.set(certification),
+          next: certification => {
+            // Guard against an out-of-order response. Clicking quickly between producers can land
+            // A's certification after B is already selected, and a certification shown against the
+            // wrong producer is a compliance signal pointing at the wrong farm — worse than the
+            // same race on pacing history, which is why this one is guarded and that one is not.
+            if (this.customer()?.id !== id) return;
+            this.organicCertification.set(certification);
+          },
           // Left null on failure. The panel degrades to the NOP id from the customer record, which
           // is the same thing it showed before certification data existed — better than an error
           // on a producer's profile for a panel that is supplementary.
-          error: () => this.organicCertification.set(null)
+          error: () => {
+            if (this.customer()?.id !== id) return;
+            this.organicCertification.set(null);
+          }
         });
     });
 

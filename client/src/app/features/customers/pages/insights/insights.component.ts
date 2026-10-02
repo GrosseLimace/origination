@@ -135,6 +135,10 @@ function computeSummary(items: Insight[], category: InsightCategory): string {
         ? `${formatInsightQty(total)} remaining`
         : `${count} contract${count !== 1 ? 's' : ''}`;
     }
+    case 'OrganicStatusChanges':
+      // Always one per producer — a producer holds one certification, so a count would read
+      // "1 change" on every row. The status it moved TO is the useful thing at a glance.
+      return items[0]?.tags?.find(t => t.style === 'alert')?.label ?? 'Status changed';
     default: return '';
   }
 }

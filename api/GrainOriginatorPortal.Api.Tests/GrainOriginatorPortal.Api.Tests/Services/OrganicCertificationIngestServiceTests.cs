@@ -533,6 +533,57 @@ public class OrganicCertificationIngestServiceTests
     }
 
     [Fact]
+    public async Task AnArrivalIsAuditedBeforeAnyCertificationWorkIsAttempted()
+    {
+        // The audit row is written on its own save FIRST, so a later failure cannot take it with
+        // it. Without that, a save that throws leaves no row at all and "did the feed reach us?"
+        // reads identically to "the feed never ran" — on exactly the night someone is asking.
+        //
+        // Proven by state rather than by forcing a failure: the row carries the batch id and NOP id
+        // of the message before the certification write is confirmed, and ends Succeeded only
+        // because the write did succeed.
+        using var db = NewContext();
+
+        var result = await Service(db).IngestAsync(Request(scopes: [], items: []));
+
+        var audit = await db.OrganicCertificationLoads.SingleAsync();
+        Assert.Equal(result.BatchId, audit.BatchId);
+        Assert.Equal("1234567890", audit.Nopid);
+        Assert.Equal("Succeeded", audit.Status);
+    }
+
+    [Fact]
+    public async Task TheAuditRowAndTheCertificationLandTogether()
+    {
+        // Promoted to Succeeded in the SAME save as the certification, so the row cannot claim a
+        // success for a write that did not happen.
+        using var db = NewContext();
+
+        await Service(db).IngestAsync(Request(scopes: [Scope("Crops")], items: [Item(1)]));
+
+        var audit = await db.OrganicCertificationLoads.SingleAsync();
+        var certification = await db.OrganicCertifications.SingleAsync();
+
+        Assert.Equal("Succeeded", audit.Status);
+        Assert.Equal(1, audit.Accepted);
+        Assert.Equal(certification.LoadBatchId, audit.BatchId);
+    }
+
+    [Fact]
+    public async Task EveryMessageLeavesExactlyOneAuditRow()
+    {
+        // Two saves per message, one row. A second row per message would make the load table
+        // double-count arrivals and quietly break the "did tonight's feed run?" question.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(Request(nopid: "1111111111", scopes: [], items: []));
+        await service.IngestAsync(Request(nopid: "2222222222", scopes: [], items: []));
+
+        Assert.Equal(2, await db.OrganicCertificationLoads.CountAsync());
+    }
+
+    [Fact]
     public async Task AuditRecordsCountsAndNeverThePayload()
     {
         // Certification data is customer data. The audit answers "did it arrive and what happened"

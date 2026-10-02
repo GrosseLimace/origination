@@ -82,6 +82,27 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         // These ids come from USDA INTEGRITY via the certifier, where we have no evidence every
         // operation id is ten digits — imposing that shape could silently discard legitimate
         // certifications. Length and presence are all that is enforced.
+        // The audit row goes in FIRST, on its own save, and is promoted to Succeeded later.
+        //
+        // Written before any certification work so that a later failure cannot take it with it: if
+        // the main save throws, this row survives as "Received", and "did the feed reach us?" —
+        // the one question this table exists to answer — stays answerable on exactly the night it
+        // matters. Auditing afterwards left no row at all in that case, which reads identically to
+        // the feed never having run (Caden Egr, review 2026-10-02).
+        //
+        // Costs one extra round trip per message. At roughly a thousand nightly that is nothing
+        // against losing the arrival record of the one that failed.
+        var auditRow = new OrganicCertificationLoad
+        {
+            BatchId = batchId,
+            Nopid = nopid,
+            ReceivedOn = now,
+            Status = "Received",
+            Message = "Arrived; write not yet confirmed.",
+        };
+        _db.OrganicCertificationLoads.Add(auditRow);
+        await _db.SaveChangesAsync(cancellationToken);
+
         var scoularId = request.ScoularId?.Trim();
         var customerId = await ResolveCustomerIdAsync(scoularId, cancellationToken);
 
@@ -101,11 +122,16 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         var scopesStored = ApplyScopes(certification, request.Scopes, now, rejections);
         var itemsStored = ApplyItems(certification, request.Items, now, rejections);
 
-        await _db.SaveChangesAsync(cancellationToken);
+        // Promote the audit row in the SAME save as the certification. Either both land or neither
+        // does, so the row can never claim success for a write that did not happen — and if this
+        // throws, the "Received" row stays, which is the signal.
+        auditRow.Status = "Succeeded";
+        auditRow.Accepted = 1;
+        auditRow.Rejected = rejections.Count;
+        auditRow.UnmatchedCustomer = customerId is null ? 1 : 0;
+        auditRow.Message = $"scopes={scopesStored};items={itemsStored}";
 
-        await AuditAsync(batchId, nopid, "Succeeded", accepted: 1, rejected: rejections.Count,
-            unmatchedCustomer: customerId is null ? 1 : 0,
-            $"scopes={scopesStored};items={itemsStored}", now, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
 
         // Counts and identifiers only — never the payload.
         _logger.LogInformation(
