@@ -12,6 +12,16 @@ public interface IOrganicCertificationService
     /// </summary>
     Task<CustomerOrganicCertificationResponse> GetForCustomerAsync(
         long customerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every producer whose certification status has changed and has not returned to Certified.
+    ///
+    /// Bulk by design: Actionable Insights computes client-side over preloaded data and makes no
+    /// per-customer calls, so it needs the whole flagged set in one read. The set is naturally
+    /// small — only certifications that actually moved.
+    /// </summary>
+    Task<IReadOnlyList<OrganicCertificationStatusChangeResponse>> GetUnresolvedStatusChangesAsync(
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -99,6 +109,67 @@ public class OrganicCertificationService : IOrganicCertificationService
             Certification = Map(certification, _timeProvider.GetUtcNow().UtcDateTime,
                                 ComplianceWindowMonths),
         };
+    }
+
+    public async Task<IReadOnlyList<OrganicCertificationStatusChangeResponse>>
+        GetUnresolvedStatusChangesAsync(CancellationToken cancellationToken = default)
+    {
+        // Narrow in the database before joining: PreviousStatus set is a cheap, highly selective
+        // filter, and only a handful of certifications ever carry one. The "not Certified" half is
+        // applied in memory against the shared rule rather than duplicated as SQL — one definition
+        // of "still flagged", used by the profile and this list alike.
+        var changed = await _db.OrganicCertifications
+            .AsNoTracking()
+            .Where(c => c.PreviousStatus != null && c.PreviousStatus != "" && c.Nopid != null)
+            .Select(c => new
+            {
+                c.Nopid,
+                c.OperationName,
+                c.OperationStatus,
+                c.PreviousStatus,
+                c.StatusEffectiveDate,
+                c.StatusChangedOn,
+            })
+            .ToListAsync(cancellationToken);
+
+        var unresolved = changed
+            .Where(c => OrganicCertificationStatus.HasUnresolvedStatusChange(
+                c.OperationStatus, c.PreviousStatus))
+            .ToList();
+
+        if (unresolved.Count == 0) return [];
+
+        // Fan out to every customer carrying one of those NOP ids. A single certification can
+        // cover several customer records, and each affected producer needs its own alert.
+        var nopids = unresolved.Select(c => c.Nopid).ToList();
+
+        var customers = await _db.Customers
+            .AsNoTracking()
+            .Where(c => c.NopIdNumber != null && nopids.Contains(c.NopIdNumber))
+            .Select(c => new { c.Id, c.ScoularId, c.NopIdNumber })
+            .ToListAsync(cancellationToken);
+
+        var byNopid = unresolved.ToDictionary(c => c.Nopid!, StringComparer.OrdinalIgnoreCase);
+
+        return customers
+            .Where(cust => byNopid.ContainsKey(cust.NopIdNumber!))
+            .Select(cust =>
+            {
+                var cert = byNopid[cust.NopIdNumber!];
+                return new OrganicCertificationStatusChangeResponse
+                {
+                    CustomerId = cust.Id,
+                    ScoularId = cust.ScoularId,
+                    Nopid = cert.Nopid!,
+                    OperationName = cert.OperationName,
+                    Status = cert.OperationStatus,
+                    PreviousStatus = cert.PreviousStatus,
+                    StatusEffectiveDate = cert.StatusEffectiveDate,
+                    StatusChangedOn = cert.StatusChangedOn,
+                };
+            })
+            .OrderBy(r => r.ScoularId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static OrganicCertificationResponse Map(

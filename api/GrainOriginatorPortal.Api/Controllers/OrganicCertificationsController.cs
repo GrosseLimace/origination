@@ -49,4 +49,26 @@ public class OrganicCertificationsController : ControllerBase
     public async Task<ActionResult<CustomerOrganicCertificationResponse>> GetForCustomer(
         long customerId, CancellationToken cancellationToken = default)
         => Ok(await _service.GetForCustomerAsync(customerId, cancellationToken));
+
+    /// <summary>
+    /// Producers whose certification status has changed and has not returned to Certified.
+    /// </summary>
+    /// <remarks>
+    /// Feeds the Actionable Insights alert, which computes client-side over preloaded data and
+    /// makes no per-customer calls — so it needs the whole flagged set in one read. The set is
+    /// small by construction: only certifications that have actually moved.
+    ///
+    /// One NOP id can cover several customer records, so one changed certification can appear as
+    /// several rows. That is intended; each affected producer needs its own alert.
+    ///
+    /// Not filtered by trade unit. Insights already scopes its own view by the selected trade
+    /// units through the contracts it matches against, so filtering here as well would be a second
+    /// place to get it wrong.
+    /// </remarks>
+    [HttpGet("status-changes")]
+    [ProducesResponseType(typeof(IReadOnlyList<OrganicCertificationStatusChangeResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<OrganicCertificationStatusChangeResponse>>> GetStatusChanges(
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.GetUnresolvedStatusChangesAsync(cancellationToken));
 }

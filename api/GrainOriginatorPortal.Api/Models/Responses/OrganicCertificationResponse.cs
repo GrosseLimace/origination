@@ -106,6 +106,43 @@ public record OrganicCertificationResponse
     public DateTime UpdatedOn { get; init; }
 }
 
+/// <summary>
+/// A producer whose certification status has changed and has not resolved back to Certified.
+///
+/// Deliberately a BULK read returning only the flagged producers, because Actionable Insights
+/// computes client-side over preloaded data and makes no per-customer calls. The set is small by
+/// construction — only producers whose certification actually moved — so this stays a cheap call
+/// rather than an enrichment over thousands of customer rows.
+///
+/// One NOP id can cover several customer records, so one changed certification can yield several
+/// rows here. That is correct: Insights is keyed by customer, and each affected producer needs its
+/// own alert.
+/// </summary>
+public record OrganicCertificationStatusChangeResponse
+{
+    public long CustomerId { get; init; }
+
+    /// <summary>The CTRM customer code. This is what the client matches on — Actionable Insights
+    /// indexes contracts by it.</summary>
+    public string? ScoularId { get; init; }
+
+    public string Nopid { get; init; } = string.Empty;
+    public string? OperationName { get; init; }
+
+    /// <summary>The status now.</summary>
+    public string? Status { get; init; }
+
+    /// <summary>What it changed FROM.</summary>
+    public string? PreviousStatus { get; init; }
+
+    /// <summary>When the certifier says the new status took effect — the date to display.</summary>
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
+    public DateTime? StatusEffectiveDate { get; init; }
+
+    /// <summary>When our feed observed the change. Drives "changed recently", not display.</summary>
+    public DateTime? StatusChangedOn { get; init; }
+}
+
 /// <summary>One certification scope and the crops certified under it.</summary>
 public record OrganicCertificationScopeResponse
 {

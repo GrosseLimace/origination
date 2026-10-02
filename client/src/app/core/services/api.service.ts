@@ -16,6 +16,7 @@ import {
   TeamMember,
   Commodity,
   CustomerOrganicCertification,
+  OrganicCertificationStatusChange,
   ProducerDetails,
   DashboardPlantingEstimate,
   DashboardMarketShare,
@@ -725,6 +726,15 @@ export class ApiService {
   getOrganicCertification(customerId: number): Observable<CustomerOrganicCertification> {
     return this.http
       .get<CustomerOrganicCertification>(`${this.baseUrl}/organic-certifications/customer/${customerId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Producers whose certification status has changed and has not returned to Certified. One
+   *  bulk read for Actionable Insights, which makes no per-customer calls. The set is small by
+   *  construction — only certifications that actually moved. */
+  getOrganicStatusChanges(): Observable<OrganicCertificationStatusChange[]> {
+    return this.http
+      .get<OrganicCertificationStatusChange[]>(`${this.baseUrl}/organic-certifications/status-changes`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

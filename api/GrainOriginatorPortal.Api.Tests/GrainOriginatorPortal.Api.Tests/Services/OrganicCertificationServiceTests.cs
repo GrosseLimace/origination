@@ -349,6 +349,89 @@ public class OrganicCertificationServiceTests
     }
 
     [Fact]
+    public async Task UnresolvedStatusChangesListsOnlyWhatIsStillFlagged()
+    {
+        // The feed for the Actionable Insights alert. Only certifications that moved AND have not
+        // returned to Certified appear — the same rule the profile badge uses, from one place.
+        using var db = NewContext();
+        db.Customers.Add(new Customer { Id = 600, ScoularId = "AAA111", NopIdNumber = "1111111111" });
+        db.Customers.Add(new Customer { Id = 601, ScoularId = "BBB222", NopIdNumber = "2222222222" });
+        db.Customers.Add(new Customer { Id = 602, ScoularId = "CCC333", NopIdNumber = "3333333333" });
+
+        db.OrganicCertifications.AddRange(
+            // Flagged: moved away from Certified and stayed there.
+            new OrganicCertification
+            {
+                Nopid = "1111111111", OperationName = "Surrendered Farm",
+                OperationStatus = "Surrendered", PreviousStatus = "Certified",
+                StatusEffectiveDate = new DateTime(2026, 8, 3),
+                StatusChangedOn = new DateTime(2026, 8, 5), UpdatedOn = new DateTime(2026, 9, 1),
+            },
+            // Not flagged: reinstated, so the change resolved itself.
+            new OrganicCertification
+            {
+                Nopid = "2222222222", OperationName = "Reinstated Farm",
+                OperationStatus = "Certified", PreviousStatus = "Suspended",
+                UpdatedOn = new DateTime(2026, 9, 1),
+            },
+            // Not flagged: never changed on our watch.
+            new OrganicCertification
+            {
+                Nopid = "3333333333", OperationName = "Steady Farm",
+                OperationStatus = "Certified", PreviousStatus = null,
+                UpdatedOn = new DateTime(2026, 9, 1),
+            });
+        await db.SaveChangesAsync();
+
+        var changes = await Service(db).GetUnresolvedStatusChangesAsync();
+
+        var change = Assert.Single(changes);
+        Assert.Equal(600, change.CustomerId);
+        Assert.Equal("AAA111", change.ScoularId);
+        Assert.Equal("Surrendered", change.Status);
+        Assert.Equal("Certified", change.PreviousStatus);
+        Assert.Equal(new DateTime(2026, 8, 3), change.StatusEffectiveDate);
+    }
+
+    [Fact]
+    public async Task OneChangedCertificationYieldsARowPerAffectedCustomer()
+    {
+        // A NOP id covering several customer records means several producers are affected, and
+        // Insights is keyed by customer — so each needs its own alert rather than one shared row.
+        using var db = NewContext();
+        db.Customers.Add(new Customer { Id = 700, ScoularId = "FAM001", NopIdNumber = "4444444444" });
+        db.Customers.Add(new Customer { Id = 701, ScoularId = "FAM002", NopIdNumber = "4444444444" });
+        db.OrganicCertifications.Add(new OrganicCertification
+        {
+            Nopid = "4444444444", OperationName = "Family Operation",
+            OperationStatus = "Revoked", PreviousStatus = "Certified",
+            UpdatedOn = new DateTime(2026, 9, 1),
+        });
+        await db.SaveChangesAsync();
+
+        var changes = await Service(db).GetUnresolvedStatusChangesAsync();
+
+        Assert.Equal(2, changes.Count);
+        Assert.Equal(["FAM001", "FAM002"], changes.Select(c => c.ScoularId));
+    }
+
+    [Fact]
+    public async Task ACertificationWithNoMatchingCustomerIsNotReported()
+    {
+        // A NOP id for a producer we have not onboarded is stored on purpose, but there is nobody
+        // to raise an alert against — it must not appear as a customerless row.
+        using var db = NewContext();
+        db.OrganicCertifications.Add(new OrganicCertification
+        {
+            Nopid = "9999999991", OperationStatus = "Surrendered", PreviousStatus = "Certified",
+            UpdatedOn = new DateTime(2026, 9, 1),
+        });
+        await db.SaveChangesAsync();
+
+        Assert.Empty(await Service(db).GetUnresolvedStatusChangesAsync());
+    }
+
+    [Fact]
     public async Task SeveralCustomersSharingANopIdAllSeeTheSameCertification()
     {
         // Family operations and person-plus-LLC pairs share one certificate. The join is on NOP id,

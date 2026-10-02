@@ -59,6 +59,25 @@ export interface OrganicCertification {
   updatedOn: string;
 }
 
+/** A producer whose certification status has changed and has not resolved back to Certified.
+ *  From `GET /api/organic-certifications/status-changes` — a bulk read, because Actionable
+ *  Insights computes client-side and makes no per-customer calls. */
+export interface OrganicCertificationStatusChange {
+  customerId: number;
+  /** The CTRM customer code — what Insights matches on, since it indexes contracts by it. */
+  scoularId?: string | null;
+  nopid: string;
+  operationName?: string | null;
+  /** The status now. */
+  status?: string | null;
+  /** What it changed FROM. */
+  previousStatus?: string | null;
+  /** When the certifier says the new status took effect — the date to display. */
+  statusEffectiveDate?: string | null;
+  /** When our feed observed it. Not for display. */
+  statusChangedOn?: string | null;
+}
+
 export interface OrganicCertificationScope {
   /** "Crops", "Livestock", "Handling", "Wild Crops". */
   scope: string;
