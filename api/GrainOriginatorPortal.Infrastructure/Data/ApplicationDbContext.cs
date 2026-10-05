@@ -61,7 +61,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
     public DbSet<UsageDashboardExcludedUser> UsageDashboardExcludedUsers => Set<UsageDashboardExcludedUser>();
     public DbSet<UsageDashboardViewAllUser> UsageDashboardViewAllUsers => Set<UsageDashboardViewAllUser>();
-    public DbSet<CtrmSourceToggleUser> CtrmSourceToggleUsers => Set<CtrmSourceToggleUser>();
     public DbSet<MbpLocationSynonym> MbpLocationSynonyms => Set<MbpLocationSynonym>();
 
     // BarChart bid feed — vendor-loaded landing tables. Written by the ingest API
@@ -1286,23 +1285,6 @@ public class ApplicationDbContext : DbContext
             // Unique so the same account can't be granted whole-org access twice; SQL Server's
             // default CI collation makes it case-insensitive, matching how the dashboard keys users.
             entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardViewAllUsers_UserId");
-        });
-
-        // Testers allowed to flip their own session between ODS and CTRM (2026-10-01). Same shape as the
-        // view-all list above: a small admin-maintained table, unique on the user id, read through a
-        // cached provider. Temporary - for the CTRM validation window only.
-        modelBuilder.Entity<CtrmSourceToggleUser>(entity =>
-        {
-            entity.ToTable("CtrmSourceToggleUsers", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.DisplayName).HasMaxLength(200).IsRequired(false);
-            entity.Property(e => e.Notes).HasMaxLength(500).IsRequired(false);
-            entity.Property(e => e.IsActive).HasDefaultValue(true).IsRequired();
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired().HasDefaultValue("system");
-            entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_CtrmSourceToggleUsers_UserId");
         });
 
         modelBuilder.Entity<MbpLocationSynonym>(entity =>
