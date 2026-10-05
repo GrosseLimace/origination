@@ -1413,6 +1413,63 @@ object-level authorization gap — raise it with AR-01/02/08 if Security would r
 
 ---
 
+## Dependabot #134 / #135 (2026-10-05) — accepted: NO FIX EXISTS
+
+Two alerts where the upstream answer is genuinely "none". Both are dev-only build tooling, neither
+is reachable with untrusted input, and **neither can be closed by a version bump** — which makes
+them different from every other npm alert this repo has handled, where raising an `overrides` floor
+was the whole fix.
+
+### #134 — `braces` <= 3.0.3, stack exhaustion via deeply nested patterns (GHSA-vfj7-8cjw-p6xm)
+
+**No fix exists.** `3.0.3` is the latest published version (2024-09-18) and the advisory range is
+`<= 3.0.3` with `patched: NONE`. There is nothing to upgrade to, and no `overrides` entry can help.
+
+Reaches us dev-only through `micromatch`, which the Angular/Vite build tooling uses for glob
+matching. The attack needs deeply nested brace patterns fed to the matcher; ours come from
+`angular.json` and `tsconfig`, never from a user. Nothing in `client/src`, `client/projects` or the
+API imports `braces` or `micromatch` directly.
+
+Same shape as the `brace-expansion` advisories (#127/#128/#129, 2026-09-30) — except those had a
+patched release and this does not. **Re-check when `braces` publishes above 3.0.3; until then there
+is no action, only a standing accept.**
+
+### #135 — `http-cache-semantics` <= 4.2.0, cross-user cache disclosure (GHSA-ch52-4w7c-c8xp)
+
+🔴 **4.3.0 exists and is NOT a fix for this. Do not bump it believing otherwise.**
+
+The advisory says `patched: NONE`, but `4.3.0` published 2026-10-04, after it was filed — so it
+looks like the answer. It is not. Diffing the published 4.2.0 and 4.3.0 tarballs, the flagged
+`max-stale` logic is **byte-identical**, only shifted down a line:
+
+```js
+const allowsStaleWithoutRevalidation = 'max-stale' in requestCC &&
+    (true === requestCC['max-stale'] || requestCC['max-stale'] > this.age() - this.maxAge());
+```
+
+What 4.3.0 actually changed is **Vary header matching** — `hasOwnProperty` guards on header lookups
+and a restructured `vary: '*'` check. Real hardening, unrelated issue.
+
+⚠ **Bumping to 4.3.0 would CLOSE this Dependabot alert** (4.3.0 falls outside the declared
+`<= 4.2.0` range) **while leaving the reported behaviour exactly as it is.** That is a worse state
+than an open alert: a clean dashboard asserting something untrue. Left at 4.2.0 deliberately so the
+alert stays honest. If 4.3.0 is ever taken for the Vary hardening on its own merits, this entry
+must be updated to say the max-stale issue is still open and merely no longer flagged.
+
+**Exposure is nil regardless.** `http-cache-semantics` arrives through npm's own internals —
+`npm-registry-fetch`, `node-gyp`, `@sigstore/sign`, `tuf-js` — i.e. npm's local package cache on a
+developer machine or CI runner. Single user, fetching the registry. The advisory's threat model is
+a *shared* HTTP cache handing one user's `Set-Cookie` to another; no such cache exists here, and
+nothing of ours calls the library.
+
+### Dismissal wording for Dependabot
+
+Both: **"Risk is tolerable to this project."** Neither has a patched release; both are build-time
+only, with the vulnerable paths unreachable from untrusted input. Do **not** dismiss #135 as
+"a fix has already been started" — nothing is in flight and no fix is available.
+
+---
+
 ## Resolved findings — already remediated (not accepted risks; do not re-open)
 
 Findings a scanner may re-surface that are **already fixed in code**. Listed here so triage
