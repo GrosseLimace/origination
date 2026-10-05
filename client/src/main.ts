@@ -24,7 +24,6 @@ import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { environment } from './environments/environment';
 import { GlobalErrorHandler } from './app/core/handlers/global-error.handler';
-import { DataSourcePreferenceInterceptor } from './app/core/interceptors/data-source-preference.interceptor';
 
 // Token storage decision — security-guide.md §4.2:
 // "Prefer HttpOnly secure cookies for browser apps where feasible.
@@ -111,9 +110,6 @@ bootstrapApplication(AppComponent, {
       },
     },
     { provide: HTTP_INTERCEPTORS, useClass: MsalInterceptor, multi: true },
-    // Tells the API which data source (ODS / CTRM) this user prefers for contracts and tickets; the
-    // server honours it only for allow-listed testers. See DataSourceService.
-    { provide: HTTP_INTERCEPTORS, useClass: DataSourcePreferenceInterceptor, multi: true },
     MsalService,
     MsalGuard,
     MsalBroadcastService,

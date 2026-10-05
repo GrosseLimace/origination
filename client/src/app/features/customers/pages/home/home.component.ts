@@ -11,7 +11,6 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { DataSourceService } from '@core/services/data-source.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, Reminder, ReminderDue, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
@@ -46,7 +45,6 @@ export class HomeComponent {
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly userRoles = inject(UserRolesService);
-  private readonly dataSource = inject(DataSourceService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** When a background load or save on this page fails, say so. These subscriptions used to
@@ -1584,7 +1582,7 @@ export class HomeComponent {
     // Gated with the hover prefetch: there is nothing to converge on unless the backend answered from
     // a warm trade-unit cache with a live read behind it, which only the CTRM path does. Against ODS
     // the first answer is already the live one, so this would just read everything a second time.
-    if (this.dataSource.readAheadEnabled()) {
+    if (environment.ctrmReadAheadEnabled) {
       timer(HomeComponent.CLICK_CONVERGENCE_MS)
         .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
         .subscribe(() => {
@@ -1670,9 +1668,8 @@ export class HomeComponent {
    *  prefetch can never repaint the screen for a producer the user is not looking at. */
   handlePrefetchCustomer(customer: Customer): void {
     // Only worth a round trip when the backend is reading CTRM. Against ODS this is one extra read
-    // per hovered row for no gain, on a page where scanning a list touches many rows. A tester who has
-    // switched to CTRM in an ODS environment gets the read-ahead too (DataSourceService.readAheadEnabled).
-    if (!this.dataSource.readAheadEnabled()) return;
+    // per hovered row for no gain, on a page where scanning a list touches many rows.
+    if (!environment.ctrmReadAheadEnabled) return;
 
     const id = customer.id;
     if (this.selectedCustomer()?.id === id) return;
