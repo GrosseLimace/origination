@@ -44,7 +44,7 @@ export class UserRolesService {
 
   /** Whether the server lists this user in Ctrm:SourceToggleUsers. Presentation only: it decides whether
    *  the ODS / CTRM control is shown. The server re-checks the list on every contract and ticket read, so
-   *  a forged true here shows a control that changes nothing. See DataSourceService. */
+   *  a forged true here changes nothing. The browser control was retired at the 2026-10-06 go-live. */
   readonly canChooseDataSource: Signal<boolean> = this._canChooseDataSource.asReadonly();
   /** The environment's default source for contracts and tickets, as the server reports it. */
   readonly defaultDataSource: Signal<DataSource> = this._defaultDataSource.asReadonly();
