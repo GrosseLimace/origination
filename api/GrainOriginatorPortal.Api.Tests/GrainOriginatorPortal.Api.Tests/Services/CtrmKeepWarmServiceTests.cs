@@ -40,13 +40,13 @@ public class CtrmKeepWarmServiceTests
     {
         // The documented off switch: an App Service override of 0 must stop the cycle without a
         // restart, and must win even when every other gate would pass.
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(cadenceMinutes, "ctrm", false, Now, DateTime.MinValue));
+        Assert.False(CtrmKeepWarmService.ShouldWarmNow(cadenceMinutes, "ctrm", Now, DateTime.MinValue));
     }
 
     [Fact]
     public void APositiveCadence_WithEverythingElseSatisfied_Warms()
     {
-        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, Now.AddMinutes(-5)));
+        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, Now.AddMinutes(-5)));
     }
 
     // -------------------------------------------------------------------------
@@ -58,26 +58,26 @@ public class CtrmKeepWarmServiceTests
     {
         // Boundary: >= not >. With > and a one-minute loop, a five-minute cadence would drift a
         // minute later on every cycle instead of holding to the clock.
-        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, Now.AddMinutes(-5)));
+        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, Now.AddMinutes(-5)));
     }
 
     [Fact]
     public void OneSecondShortOfTheCadence_IsFalse()
     {
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, Now.AddMinutes(-5).AddSeconds(1)));
+        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, Now.AddMinutes(-5).AddSeconds(1)));
     }
 
     [Fact]
     public void ATickImmediatelyAfterACycle_IsFalse()
     {
         // The common case: the minute timer fires four times between five-minute cycles.
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, Now));
+        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, Now));
     }
 
     [Fact]
     public void WellPastTheCadence_IsTrue()
     {
-        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, Now.AddHours(-3)));
+        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, Now.AddHours(-3)));
     }
 
     [Fact]
@@ -85,14 +85,14 @@ public class CtrmKeepWarmServiceTests
     {
         // lastRunUtc starts at DateTime.MinValue, so the first tick after startup must warm rather
         // than wait out a cadence the process has no history for.
-        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, DateTime.MinValue));
+        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, DateTime.MinValue));
     }
 
     [Fact]
     public void AClockThatWentBackwards_IsFalse()
     {
         // Negative elapsed time never satisfies the cadence; the next forward tick picks it up.
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, Now.AddMinutes(10)));
+        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, Now.AddMinutes(10)));
     }
 
     // -------------------------------------------------------------------------
@@ -111,7 +111,7 @@ public class CtrmKeepWarmServiceTests
     {
         // Asserting the comparison the code actually makes - Trim() plus OrdinalIgnoreCase - so a
         // hand-typed App Service value with stray whitespace or capitals still warms.
-        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, configuredSource, false, Now, DateTime.MinValue));
+        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, configuredSource, Now, DateTime.MinValue));
     }
 
     [Theory]
@@ -126,28 +126,7 @@ public class CtrmKeepWarmServiceTests
     [InlineData("ctrm,ods")]
     public void AnySourceOtherThanCtrm_SkipsTheCycle(string? configuredSource)
     {
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, configuredSource, false, Now, DateTime.MinValue));
-    }
-
-    // -------------------------------------------------------------------------
-    // The tester gate (2026-10-01) — an ODS environment with allow-listed testers DOES warm, because
-    // those testers read through the CTRM path and the registry only ever holds what they opened.
-    // -------------------------------------------------------------------------
-
-    [Theory]
-    [InlineData("ods")]
-    [InlineData("")]
-    [InlineData(null)]
-    public void AnOdsEnvironmentWithToggleUsers_Warms(string? configuredSource)
-    {
-        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, configuredSource, true, Now, DateTime.MinValue));
-    }
-
-    [Fact]
-    public void ToggleUsersDoNotOverrideTheCadenceOrElapsedGates()
-    {
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(0, "ods", true, Now, DateTime.MinValue));
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ods", true, Now, Now.AddMinutes(-1)));
+        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, configuredSource, Now, DateTime.MinValue));
     }
 
     // -------------------------------------------------------------------------
@@ -158,11 +137,11 @@ public class CtrmKeepWarmServiceTests
     public void EachGateBlocksOnItsOwn()
     {
         // The baseline every variant below mutates exactly one input away from.
-        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, Now.AddMinutes(-5)));
+        Assert.True(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, Now.AddMinutes(-5)));
 
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(0, "ctrm", false, Now, Now.AddMinutes(-5)));
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ods", false, Now, Now.AddMinutes(-5)));
-        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, Now, Now.AddMinutes(-1)));
+        Assert.False(CtrmKeepWarmService.ShouldWarmNow(0, "ctrm", Now, Now.AddMinutes(-5)));
+        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ods", Now, Now.AddMinutes(-5)));
+        Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", Now, Now.AddMinutes(-1)));
     }
 
     [Fact]
@@ -178,7 +157,7 @@ public class CtrmKeepWarmServiceTests
         for (var minute = 1; minute <= 12; minute++)
         {
             var tick = start.AddMinutes(minute);
-            if (!CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", false, tick, lastRunUtc)) continue;
+            if (!CtrmKeepWarmService.ShouldWarmNow(5, "ctrm", tick, lastRunUtc)) continue;
 
             lastRunUtc = tick;
             warmedAt.Add(minute);
@@ -193,7 +172,7 @@ public class CtrmKeepWarmServiceTests
         var start = Now;
 
         for (var minute = 1; minute <= 12; minute++)
-            Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ods", false, start.AddMinutes(minute), DateTime.MinValue),
+            Assert.False(CtrmKeepWarmService.ShouldWarmNow(5, "ods", start.AddMinutes(minute), DateTime.MinValue),
                 $"tick at +{minute}m warmed while Ctrm:Source was ods");
     }
 }
