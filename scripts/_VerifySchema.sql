@@ -55,6 +55,10 @@
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
+--   Updated 2026-10-06: 20261006150349_AddCustomerIdSequence creates the sequence dbo.CustomerIdSequence
+--   (ids for customers minted from CTRM, band [5e15, 6e15)); no table, column or index changed, so
+--   @Migrations grew by one and a 'Sequence.Missing' check sits next to the unique-index checks.
+--   The Migrations count comment read 52 but the list already held 55 ids; corrected to 56.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -616,7 +620,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (52)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (56)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -675,7 +679,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260921204500_SplitFlaxPlantingCategoryByColour'),
 ('20260923124207_RenameGrainOnFarmGroupToCommodityCode'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
-('20261005131626_DropCtrmSourceToggleUsers');
+('20261005131626_DropCtrmSourceToggleUsers'),
+('20261006150349_AddCustomerIdSequence');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
@@ -873,6 +878,18 @@ INSERT INTO @Findings (SortBucket, Category, Item, Expected, Actual, Status)
           SELECT 1 FROM @UniqueIndexes e
           WHERE e.SchemaName = s.name AND e.TableName = t.name AND e.IndexName = i.name
       )
+
+    UNION ALL
+
+    -- ---- Missing sequence (20261006150349_AddCustomerIdSequence) ----
+    SELECT 42, 'Sequence.Missing',
+           '[dbo].[CustomerIdSequence]',
+           'present', 'MISSING', 'FAIL'
+    WHERE NOT EXISTS (
+        SELECT 1 FROM sys.sequences s
+        INNER JOIN sys.schemas sc ON sc.schema_id = s.schema_id
+        WHERE sc.name = 'dbo' AND s.name = 'CustomerIdSequence'
+    )
 
     UNION ALL
 

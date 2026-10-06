@@ -22,6 +22,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence("CustomerIdSequence", "dbo")
+                .StartsAt(5000000000000000L);
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheetLocation", b =>
                 {
                     b.Property<int>("Id")
