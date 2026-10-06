@@ -57,3 +57,9 @@ The Origination Workbench still gets its customer (producer) data from the ODS, 
 - **Raised by:** mentor (fresh, hand-off 2)
 - **Blocks:** non-blocking
 - **Answer:** (open)
+
+### Q9
+- **Question:** Does the App Service's managed identity (app-origination-dev-eus / -qa-eus / -eus) have UPDATE permission on the new sequence dbo.CustomerIdSequence in the Origination database? db_datawriter does not cover sequences. Repo docs only list the deploy pipeline identity's roles (db_datareader, db_datawriter, db_ddladmin, EXECUTE). Check in SSMS per environment after the migration lands: list the app identity's roles with `sys.database_role_members`, or run `SELECT HAS_PERMS_BY_NAME('dbo.CustomerIdSequence','OBJECT','UPDATE')` as that identity. If missing: `GRANT UPDATE ON OBJECT::dbo.CustomerIdSequence TO [<app identity>];`
+- **Raised by:** reviewer (fresh, task-review of B3a)
+- **Blocks:** the first NON-dry CTRM sync that mints a new customer id in each environment (dry runs and the ODS path never touch the sequence)
+- **Answer:** (open)
