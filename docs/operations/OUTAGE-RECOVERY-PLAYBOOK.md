@@ -20,7 +20,7 @@ Tick in order. **Don't skip ahead:** step C must pass before anyone restarts the
 | ☐ | **A. During the outage** | Nobody restarts / redeploys the app. Outage start time written down. Nightly sync disabled if the outage runs toward 2 AM. | [§2](#2-during-the-outage--do-not) |
 | ☐ | **B. Reachability** | DNS resolves privately. `/health/live` and `/health/ready` are Healthy **from office, VPN and a remote site**. | [Step B](#step-b--can-people-reach-it) |
 | ☐ | **C. ODS data** | ODS team confirms the overnight load finished. Row counts and the stored-grain run date look normal. | [C1](#c1-ods-data-is-complete-and-current) |
-| ☐ | **C. Producers** | No mass deactivation by the customer sync (or reversed). | [C2](#c2-the-customer-sync-didnt-deactivate-producers) |
+| ☐ | **C. Producers** | `GET …/customer-sync/last-run` is not `stale` or `aborted`. No mass deactivation by the customer sync (or reversed). | [C2](#c2-the-customer-sync-didnt-deactivate-producers) |
 | ☐ | **D. Smoke test** | 12 screens/actions pass as a normal originator. | [Step D](#step-d--does-the-app-work-smoke-test) |
 | ☐ | **E. Jobs** | Customer sync's latest run succeeded. Usage rollups backfilled if the outage crossed midnight. | [E1](#e1-customer-sync-in-app-daily), [E2](#e2-usage-aggregation-in-app-hourly) |
 | ☐ | **E. Logic Apps** | Instant Share and Daily Recap runs are succeeding. Failed outage-window runs listed. | [E3](#e3-instant-share-note-logic-app), [E4](#e4-notes-daily-recap--daily-digest-logic-app) |
@@ -87,7 +87,7 @@ Origination runs **entirely in Azure**: App Service, Azure SQL (ODS, Origination
 Tell anyone who might touch the app.
 
 - ☐ **Don't restart, scale or redeploy the App Service** until [C1](#c1-ods-data-is-complete-and-current) passes.
-  - **Why:** every app start runs a full customer sync **60 seconds later**. The sync soft-deactivates every producer and trade-unit link missing from `vw_CustomerTradeUnits`, and it has **no guard against an empty or partial view**. Producers vanish from originators' lists until a good sync brings them back.
+  - **Why:** every app start runs a full customer sync **60 seconds later**. The sync soft-deactivates every producer and trade-unit link missing from its source (`vw_CustomerTradeUnits` on ODS, or the CTRM GraphQL API when `CustomerSync:Source=ctrm`). Since 2026-10 it refuses to run when the source is empty or would deactivate more than `CustomerSync:MaxDeactivationCount` (500) rows or `CustomerSync:MaxDeactivationPercent` (5 %) of the active customers or links (log code `CUSTOMER_SYNC_GUARD_TRIPPED` / `CUSTOMER_SYNC_SOURCE_EMPTY`, nothing written). The restart risk is now a *stale* list, not an empty one.
   - Azure can also restart the app on its own during recovery. That's why [C2](#c2-the-customer-sync-didnt-deactivate-producers) is **always** run.
 - ☐ **Don't run the customer sync by hand** until C1 passes. Same reason.
 - ☐ **Don't dispatch deploy workflows.** The runners may not reach Azure. A half-finished run can apply DB migrations without deploying the matching code.
@@ -144,7 +144,10 @@ Run B1–B3 from **each network path**: office LAN, Prisma VPN, and a remote sit
 ### C2. The customer sync didn't deactivate producers
 Run this **every time**, even if nobody restarted anything. The 07:00 UTC run or an Azure-initiated restart may have happened mid-outage.
 
-- **How:** run against the **Origination** DB:
+- **How:**
+  1. **First**, `GET /api/diagnostics/customer-sync/last-run` ([A1](#a1-call-an-admin-endpoint-in-prod); AdminOnly, works in PROD). It returns `{ processStartedUtc, nowUtc, lastSuccessfulRunUtc, stale, lastRun }`. `stale: true` (no successful run finished in the last 26 h) or `lastRun.outcome: "aborted"` is the signal; `lastRun.abortCode` and `lastRun.abortReason` say why. It is **in memory only**: a restart wipes it, so `lastRun: null` right after a deploy is normal (the startup sync runs 60 s after boot; compare `processStartedUtc` with `nowUtc`).
+  2. Then the history, in App Insights ([Appendix B](#appendix-b--app-insights-queries), "Customer sync aborts"). The abort codes are explained in [Customer sync abort codes](#customer-sync-abort-codes) below.
+  3. Then run against the **Origination** DB:
   ```sql
   -- Trade-unit links the sync deactivated recently (widen the window to cover the outage)
   SELECT CAST(ModifiedAt AS date) AS Day, COUNT(*) AS Deactivated
@@ -158,8 +161,24 @@ Run this **every time**, even if nobody restarted anything. The 07:00 UTC run or
   SELECT COUNT(*) AS ActiveCustomers      FROM dbo.Customer          WHERE IsActive = 1;
   SELECT COUNT(*) AS ActiveTradeUnitLinks FROM dbo.CustomerTradeUnit WHERE IsActive = 1;
   ```
-- **Pass:** no spike in deactivations on outage days (compare with the "typical" baseline); active counts match the baseline.
-- **If it fails:** make sure C1 passes, then run the sync again ([A1](#a1-call-an-admin-endpoint-in-prod), `customer-sync/run`). It reactivates everything that's back in the view. Re-run these queries to confirm.
+- **Pass:** `last-run` is not stale and not aborted; no spike in deactivations on outage days (compare with the "typical" baseline); active counts match the baseline.
+- **If it fails:** make sure C1 passes, then run the sync again ([A1](#a1-call-an-admin-endpoint-in-prod), `customer-sync/run`). It reactivates everything that's back in the source. Re-run these queries to confirm.
+- **If the sync aborted (guard tripped or source empty):** nothing was written, so the list is stale, not damaged. Dry-run first: `POST /api/diagnostics/customer-sync/run?dryRun=true` shows the counters and the `guard` verdict without writing. If the deactivation is a real change (the source is complete and C1 passed), run `POST …/run?force=true`. Otherwise fix the source and run it without `force`. The other way out is to raise `CustomerSync__MaxDeactivationPercent` / `CustomerSync__MaxDeactivationCount` in the App Service settings (this restarts the app, so only once C1 passes).
+
+#### Customer sync abort codes
+
+Every abort writes nothing. An abort is logged at **Error twice** (the service, then the background service for startup and scheduled runs). **Alert on one**: the service's line (`CustomerSync aborted …`), which carries the code in `customDimensions.ErrorCode`.
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `CUSTOMER_SYNC_GUARD_TRIPPED` | The run would deactivate more than the count or percent limit of active customers or trade-unit links (both sources). | Dry run, then `?force=true` if legitimate (above). |
+| `CUSTOMER_SYNC_SOURCE_EMPTY` | The source returned no rows while the app holds active customers or links. | Almost always an ODS load or CTRM outage. Fix the source first. Don't force. |
+| `CUSTOMER_SYNC_NO_PERMISSION` | CTRM source only: `Customers.Read.All` isn't granted to the GraphQL client. | Set `CustomerSync__Source=ods` until the grant is fixed. |
+| `CUSTOMER_SYNC_SCHEMA_MISMATCH` | CTRM source only: a field in the customer projection doesn't exist on the API (HTTP 400). | The API changed. Set `CustomerSync__Source=ods` and tell the developers. |
+| `CUSTOMER_SYNC_FILTER_MISMATCH` | CTRM source only: the API returned a row whose `sourceCode` isn't the one asked for, so the filter is no longer exact. | Set `CustomerSync__Source=ods` and tell the CTRM/API team. |
+| `CUSTOMER_SYNC_SOURCE_UNAVAILABLE` | CTRM source only: the gateway is down or slow, including HC0045 timeouts after the retries. | Check APIM reachability; re-run when it's back, or fall back to `ods`. |
+
+Warnings that **never abort**: `CUSTOMER_SYNC_DISCOVERY_FAILED` (trade-unit link discovery partial or failed; links are additive-only, so the run still completes), `CUSTOMER_SYNC_UNKNOWN_CODES`, `CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE`.
 
 ### C3. Schema is intact (only if a deploy was running when it hit)
 - **How:** run `scripts/_VerifySchema.sql` against the Origination DB.
@@ -206,8 +225,9 @@ Sign in as a **normal originator**, not an admin, if you can. Screenshot any err
 - **Runs:** 07:00 UTC daily **and** 60 s after every app start. Config `CustomerSync:RunAtTimeUtc`.
 - **Check:** the most recent run completed.
 - **How:** search the logs for `CustomerSync` ([A4](#a4-read-app-logs), or the first KQL query in [Appendix B](#appendix-b--app-insights-queries)).
-- **Pass:** `CustomerSync completed in {ms} ms. Customers: … inserted, … deactivated …`, with a small deactivated count.
-- **If it fails:** a failed run logs `CustomerSync {Reason} cycle failed — will retry at next scheduled run`. **There's no retry until tomorrow.** Once C1 passes, run it manually ([A1](#a1-call-an-admin-endpoint-in-prod)). No last-run table exists, so logs and `CustomerTradeUnit.ModifiedAt` are the only evidence.
+- **First:** `GET /api/diagnostics/customer-sync/last-run` ([A1](#a1-call-an-admin-endpoint-in-prod)). `lastRun.outcome` is `ok`, `aborted` or `failed`; `stale: true` means no success in the last 26 h.
+- **Pass:** `outcome: "ok"`, not stale; the log shows `CustomerSync completed in {ms} ms. Customers: … inserted, … deactivated …`, with a small deactivated count.
+- **If it fails:** a guard or source abort is `outcome: "aborted"` (see [C2](#c2-the-customer-sync-didnt-deactivate-producers) for the codes and recovery). A crash logs `CustomerSync {Reason} cycle failed — will retry at next scheduled run`. **There's no retry until tomorrow.** Once C1 passes, run it manually ([A1](#a1-call-an-admin-endpoint-in-prod)). The last-run record is in memory only (lost on restart) and holds no history, so after a restart the logs and `CustomerTradeUnit.ModifiedAt` are the only evidence.
 
 ### E2. Usage aggregation (in-app, hourly)
 - **Check:** the Usage Dashboard has no missing days.
@@ -297,13 +317,19 @@ There's **no button** for these, and Swagger is Dev-only. You need the **Admin**
    $token = Read-Host 'Paste token' -MaskInput
    $h = @{ Authorization = "Bearer $token" }
 
-   # Customer sync. ONLY after C1 passes.
+   # Customer sync: the first check, read-only. Works in PROD.
+   Invoke-RestMethod -Method Get -Headers $h -Uri 'https://origination.scoular.com/api/diagnostics/customer-sync/last-run'
+
+   # Customer sync. ONLY after C1 passes. Add ?dryRun=true to see the counters without writing.
    Invoke-RestMethod -Method Post -Headers $h -Uri 'https://origination.scoular.com/api/diagnostics/customer-sync/run'
+
+   # Only when the guard aborted and the deactivation is legitimate (confirm with a dry run first):
+   Invoke-RestMethod -Method Post -Headers $h -Uri 'https://origination.scoular.com/api/diagnostics/customer-sync/run?force=true'
 
    # Usage rollup backfill. Set days to cover the outage.
    Invoke-RestMethod -Method Post -Headers $h -Uri 'https://origination.scoular.com/api/diagnostics/usage-rollups/backfill?days=3'
    ```
-4. The sync returns inserted / updated / reactivated / deactivated counts. Sanity-check them.
+4. The sync returns inserted / updated / reactivated / deactivated counts. Sanity-check them. If it was aborted it answers **409** with the same body (`aborted: true`, `abortCode`, `abortReason`, `guard`) and wrote nothing. PowerShell throws on a 409, so read the body from the exception or check the log.
 
 **Notes:**
 - The token is a credential. **Never paste it into Teams, email or tickets.** It expires in about an hour.
@@ -337,6 +363,19 @@ traces
 | where timestamp > ago(3d)
 | where message startswith "CustomerSync"
 | project timestamp, severityLevel, message
+| order by timestamp desc
+
+// Customer sync aborts and warnings (aborts write nothing). Alert on ONE line: the service's.
+// The background service logs the same code a second time for startup/scheduled runs.
+traces
+| where timestamp > ago(7d)
+| where tostring(customDimensions.ErrorCode) in (
+    "CUSTOMER_SYNC_GUARD_TRIPPED", "CUSTOMER_SYNC_SOURCE_EMPTY",
+    "CUSTOMER_SYNC_NO_PERMISSION", "CUSTOMER_SYNC_SCHEMA_MISMATCH",
+    "CUSTOMER_SYNC_FILTER_MISMATCH", "CUSTOMER_SYNC_SOURCE_UNAVAILABLE",
+    "CUSTOMER_SYNC_DISCOVERY_FAILED", "CUSTOMER_SYNC_UNKNOWN_CODES",
+    "CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE")
+| project timestamp, severityLevel, code = tostring(customDimensions.ErrorCode), message
 | order by timestamp desc
 
 // Which dependency is failing?
@@ -378,6 +417,7 @@ These are on unmerged branches today. Each one adds a data-center dependency, so
 | Change | What to add |
 |---|---|
 | **CTRM GraphQL** (`Ctrm:Source=ctrm`; PROD move planned 2026-09-29) | Contract and ticket reads go **live** to CTRM (Db2 on-prem) through APIM `api.scoular.com`, so an ExpressRoute outage breaks those screens outright instead of just making them stale. Add: an APIM reachability check, a `CTRM keep-warm` log check, and the fallback "set `Ctrm:Source` back to `ods`". |
+| **Customers from CTRM** (`CustomerSync:Source=ctrm`; the default is `ods` everywhere until someone sets it) | The nightly customer sync reads the CTRM GraphQL API (`api.scoular.com`) instead of `vw_CustomerTradeUnits`, so an ExpressRoute outage aborts it with `CUSTOMER_SYNC_SOURCE_UNAVAILABLE` (nothing written, the list goes stale) instead of just reading stale ODS data. Add: the abort-code table in [C2](#c2-the-customer-sync-didnt-deactivate-producers) to the smoke checks, and the fallback "set `CustomerSync__Source=ods`" (App Service setting, read per run, no redeploy). Flipping back to `ods` is safe because the ODS sync adopts producers minted on the CTRM path by `ScoularId`; that adoption is a permanent convention. |
 | **BarChart cash-bid feed** | The integration team's Logic Apps (`logic-barchart-quotes`, `logic-origination-apply-bids`, …) POST to `/api/barchart-ingest/*`. Add: confirm the daily quote run succeeded and re-run it if not (safe to re-run). Check `BarchartApiCallAudit` for gaps. |
 | **Mobile PWA** | The service worker caches API data (up to a day for some groups), so phones may show stale data after recovery. Add "close and reopen the app" guidance for field users. |
 
@@ -385,11 +425,10 @@ These are on unmerged branches today. Each one adds a data-center dependency, so
 
 ## Known gaps (fix these to make the next outage easier)
 
-- **The customer sync has no empty-source guard.** This is the biggest outage risk ([§2](#2-during-the-outage--do-not)). A "refuse to deactivate more than X%" check would remove it.
 - **`/health/ready` doesn't check TradeUnitPreferences, Graph or Key Vault.** The app can say Healthy while every user gets a 503 on Home.
 - **No admin button** for the sync or backfill. The token copy/paste in A1 is clumsy under pressure.
 - **No app-specific alerts**, only Smart Detection. Nobody is paged when the sync fails or 5xx spikes.
-- **No persisted last-run record** for the customer sync.
+- **The customer sync's last-run record is in memory only** (lost on restart); there is no persisted history.
 - **The Daily Recap has no catch-up** for a missed day.
 - **Deploy workflows have no post-deploy smoke check.**
 
