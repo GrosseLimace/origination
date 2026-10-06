@@ -50,6 +50,17 @@ public class CustomerSyncRepository : ICustomerSyncRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<long>> ReserveCustomerIdsAsync(int count, CancellationToken cancellationToken)
+    {
+        if (count <= 0) return [];
+        var first = new SqlParameter("@first", System.Data.SqlDbType.Variant) { Direction = System.Data.ParameterDirection.Output };
+        await _appDb.Database.ExecuteSqlRawAsync(
+            "EXEC sys.sp_sequence_get_range @sequence_name = N'dbo.CustomerIdSequence', @range_size = @count, @range_first_value = @first OUTPUT",
+            [new SqlParameter("@count", count), first], cancellationToken);
+        var start = Convert.ToInt64(first.Value, System.Globalization.CultureInfo.InvariantCulture);
+        return Enumerable.Range(0, count).Select(i => start + i).ToList();
+    }
+
     public void AddCustomer(Customer customer) => _appDb.Customers.Add(customer);
 
     public void AddTradeUnit(CustomerTradeUnit tradeUnit) => _appDb.CustomerTradeUnits.Add(tradeUnit);
