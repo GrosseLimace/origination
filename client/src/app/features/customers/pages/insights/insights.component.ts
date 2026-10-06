@@ -190,7 +190,27 @@ export class InsightsComponent {
 
   expandedCategories = signal(new Set<InsightCategory>());
   expandedCustomers = signal(new Set<string>());
-  categories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels', 'OrganicStatusChanges'];
+  /** Every category, in display order. The grouping passes below must cover all of them whatever
+   *  is on screen — customerGroupsByCategory indexes its map by insight category, so a category
+   *  missing from this list throws the moment an insight carries it. */
+  readonly allCategories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels', 'OrganicStatusChanges'];
+
+  /**
+   * Trade unit whose desk owns organic certification. The certification category is theirs alone —
+   * every other desk trades conventional grain, where it is noise on a page checked daily.
+   * Shown when 2080 is AMONG the selected units, not only when it is the whole selection: someone
+   * viewing 2080 next to another unit is still looking at organic producers.
+   */
+  private static readonly ORGANIC_TRADE_UNIT = '2080';
+
+  /** What the page renders. */
+  readonly visibleCategories = computed(() => {
+    const onOrganicDesk = this.selectedTradeUnits
+      .some(t => t.trim() === InsightsComponent.ORGANIC_TRADE_UNIT);
+    return onOrganicDesk
+      ? this.allCategories
+      : this.allCategories.filter(c => c !== 'OrganicStatusChanges');
+  });
 
   /**
    * Producers whose organic certification status has changed and has not returned to Certified.
@@ -477,7 +497,7 @@ export class InsightsComponent {
 
     // Group all insights by category and customer in a single pass
     const grouped = new Map<string, Map<number, { customer: Customer; items: Insight[] }>>();
-    for (const category of this.categories) {
+    for (const category of this.allCategories) {
       grouped.set(category, new Map());
     }
     for (const insight of insights) {
@@ -488,7 +508,7 @@ export class InsightsComponent {
       catMap.get(insight.customer.id)!.items.push(insight);
     }
 
-    for (const category of this.categories) {
+    for (const category of this.allCategories) {
       // Build groups with pre-computed summaries
       let groups: CustomerGroup[] = Array.from(grouped.get(category)!.values()).map(g => ({
         customer: g.customer,

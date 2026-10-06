@@ -47,7 +47,7 @@
 
       <!-- Loading skeletons -->
       } @else if (isLoading()) {
-        @for (category of categories; track category) {
+        @for (category of visibleCategories(); track category) {
           @let skeletonCategory = skeletonCategories[category];
           <app-card class="overflow-hidden">
             <!-- Skeleton header -->
@@ -95,7 +95,7 @@
         </div>
 
         <!-- Category cards -->
-        @for (category of categories; track category) {
+        @for (category of visibleCategories(); track category) {
           @if (isCategoryLoading(category)) {
             @let sk = skeletonCategories[category];
             <app-card class="overflow-hidden">

@@ -177,8 +177,53 @@ describe('InsightsComponent — organic certification status changes', () => {
   it('has a loading skeleton for every category, organic included', () => {
     // The skeletons were once a positional array one entry short of the category list, so the
     // organic card threw "reading 'headerClass'" on every render until contracts arrived.
-    for (const category of component.categories) {
+    for (const category of component.allCategories) {
       expect(component.skeletonCategories[category]?.headerClass, category).toBeTruthy();
     }
+  });
+
+  /**
+   * The category belongs to the organics desk (trade unit 2080) and to nobody else. Every other
+   * desk trades conventional grain, where a certification alert is noise on a page they check
+   * daily.
+   */
+  describe('visibility by trade unit', () => {
+    it('shows the category on the organics desk', () => {
+      appState.selectedTradeUnits.set(['2080']);
+
+      expect(component.visibleCategories()).toContain('OrganicStatusChanges');
+    });
+
+    it('hides it on any other desk', () => {
+      appState.selectedTradeUnits.set(['2347']);
+
+      expect(component.visibleCategories()).not.toContain('OrganicStatusChanges');
+    });
+
+    it('shows it when the organics desk is selected alongside another', () => {
+      // "2080 is among the selection", not "2080 is the whole selection".
+      appState.selectedTradeUnits.set(['2347', '2080']);
+
+      expect(component.visibleCategories()).toContain('OrganicStatusChanges');
+    });
+
+    it('never hides the three categories traders use daily', () => {
+      appState.selectedTradeUnits.set(['2347']);
+
+      expect(component.visibleCategories())
+        .toEqual(['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels']);
+    });
+
+    it('still groups organic insights off-desk, so the page cannot throw on a stale selection', () => {
+      // customerGroupsByCategory indexes its map by insight category. If the gate were applied to
+      // the grouping pass rather than only to rendering, an organic insight arriving while another
+      // desk is selected would dereference an undefined map.
+      appState.selectedTradeUnits.set(['2347']);
+      appState.setCustomers([makeCustomer()]);
+      appState.setContracts([makeContract({ tradeUnit: '2347' })]);
+
+      expect(() => component.customerGroupsByCategory()).not.toThrow();
+      expect(component.customerGroupsByCategory().OrganicStatusChanges).toBeDefined();
+    });
   });
 });
