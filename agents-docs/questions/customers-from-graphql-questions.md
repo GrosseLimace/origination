@@ -75,3 +75,6 @@ The Origination Workbench still gets its customer (producer) data from the ODS, 
 - **Raised by:** planner (resumed, hand-off 3)
 - **Blocks:** the first `ctrm` run in each environment
 - **Answer:** (open)
+
+### Status note (2026-10-06, afternoon)
+- **Customers.Read.All is GRANTED on the nonprod client** (scoular-graphql-client-nonprod). Verified by the user through the local API's `ctrm-probe`: permission granted, totalCount 302596, projectionAccepted true, sampleFound true (SMITFAR), idKind String. PROD client not yet checked.
