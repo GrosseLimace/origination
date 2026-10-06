@@ -1,35 +1,44 @@
 using System.Diagnostics;
-using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Sync;
 
 namespace GrainOriginatorPortal.Api.Services;
 
 /// <summary>
-/// Syncs dbo.Customer and dbo.CustomerTradeUnit from
-/// originations.vw_CustomerTradeUnits in ODS.
+/// Syncs dbo.Customer and dbo.CustomerTradeUnit from the customer-sync source chosen per run by
+/// <c>CustomerSync:Source</c> (<see cref="CustomerSyncSources.Resolve"/>): the ODS feeder
+/// (<see cref="OdsCustomerSyncSource"/> — originations.vw_CustomerTradeUnits plus base.vw_CurrentCustomers;
+/// the default) or the CTRM GraphQL feeder (the literal <c>ctrm</c> opts in). Both feeders return rows
+/// shaped like the ODS view, so one set of passes runs whichever is configured.
 ///
 /// Upsert + soft-delete pattern (no full DELETE+INSERT):
-///   - Customers present in ODS are inserted or updated; IsActive reset to 1.
-///   - CustomerTradeUnit pairs present in ODS are inserted or refreshed.
-///   - Customers / pairs no longer in ODS have IsActive set to 0
+///   - Customers present in the source rows are inserted or updated; IsActive reset to 1.
+///   - CustomerTradeUnit pairs present in the source rows are inserted or refreshed.
+///   - Customers / pairs no longer in the source rows have IsActive set to 0
 ///     (soft-delete preserves FKs from Notes / ProducerDetails / etc.).
+///   - Manual producers outside the rows are refreshed from the source's customer-master lookup.
+///   - User-removed dormant trade units come back once the producer has open activity again.
+///
+/// A source that reports failure (<see cref="CustomerSyncSourceResult.Ok"/> false) aborts the run
+/// before any pass and before any write; read failures a source throws propagate unchanged.
 ///
 /// Designed to be callable from both the scheduled
-/// <see cref="CustomerSyncBackgroundService"/> and from the dev-only
-/// diagnostics manual-trigger endpoint.
+/// <see cref="CustomerSyncBackgroundService"/> and from the diagnostics manual-trigger endpoint.
 /// </summary>
 public class CustomerSyncService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<CustomerSyncService> _logger;
 
     // Audit author for every sync-driven CustomerTradeUnit write (manual app actions stamp a user UPN).
     private const string SyncActor = "system";
 
-    public CustomerSyncService(IServiceScopeFactory scopeFactory, ILogger<CustomerSyncService> logger)
+    public CustomerSyncService(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<CustomerSyncService> logger)
     {
         _scopeFactory = scopeFactory;
+        _configuration = configuration;
         _logger = logger;
     }
 
@@ -46,25 +55,15 @@ public class CustomerSyncService
         // Resolved in the same scope. Used by the bring-back pass to evaluate open activity with the
         // EXACT same rule the edit dialog uses.
         var customerRepository = scope.ServiceProvider.GetRequiredService<ICustomerRepository>();
+        // The feeder comes from this run's scope too: sources hold the scoped sync repository.
+        var source = scope.ServiceProvider.GetRequiredService<ICustomerSyncSourceFactory>()
+            .Create(CustomerSyncSources.Resolve(_configuration));
+        result.Source = source.Name;
 
-        _logger.LogInformation("CustomerSync starting");
-
-        // ── Load source rows from ODS ──
-        phase.Restart();
-        var odsRows = await repo.LoadOdsTradeUnitRowsAsync(cancellationToken);
-        _logger.LogInformation("CustomerSync loaded {Count} rows from ODS vw_CustomerTradeUnits ({Ms} ms)", odsRows.Count, phase.ElapsedMilliseconds);
-
-        // ── Distinct customers from the ODS rows ──
-        // The view has one row per (CustomerId, TradeUnit); customer attributes are
-        // identical across the rows for a given CustomerId, so we collapse to the
-        // first row per group for the customer-level upsert.
-        phase.Restart();
-        var odsCustomersByCustomerId = odsRows
-            .GroupBy(o => o.CustomerId)
-            .ToDictionary(g => g.Key, g => g.First());
-        _logger.LogInformation("CustomerSync grouped {Count} distinct customers from ODS ({Ms} ms)", odsCustomersByCustomerId.Count, phase.ElapsedMilliseconds);
+        _logger.LogInformation("CustomerSync starting (source {Source})", source.Name);
 
         // ── Load existing app-DB state (tracked, since we'll mutate) ──
+        // Loaded BEFORE the source, which receives these very list instances (read-only for it).
         phase.Restart();
         var appCustomers = await repo.LoadAppCustomersAsync(cancellationToken);
         var appCustomersById = appCustomers.ToDictionary(c => c.Id);
@@ -77,18 +76,45 @@ public class CustomerSyncService
             .ToDictionary(g => g.Key, g => g.First());
         _logger.LogInformation("CustomerSync loaded {Count} CustomerTradeUnit rows from app DB ({Ms} ms)", appTradeUnits.Count, phase.ElapsedMilliseconds);
 
+        // ── Load source rows ──
+        phase.Restart();
+        var load = await source.LoadAsync(
+            new CustomerSyncAppState { Customers = appCustomers, TradeUnits = appTradeUnits },
+            CustomerSyncLoadOptions.Default,
+            cancellationToken);
+        if (!load.Ok)
+        {
+            result.Aborted = true;
+            result.AbortCode = load.FailureCode;
+            result.AbortReason = load.FailureDetail;
+            _logger.LogError("[{ErrorCode}] [{ErrorCategory}] CustomerSync aborted before any write: {Detail}", load.FailureCode, "Integration", load.FailureDetail);
+            return result;
+        }
+        var sourceRows = load.Rows;
+        _logger.LogInformation("CustomerSync loaded {Count} rows from source {Source} ({Ms} ms)", sourceRows.Count, source.Name, phase.ElapsedMilliseconds);
+
+        // ── Distinct customers from the source rows ──
+        // One row per (CustomerId, TradeUnit); customer attributes are identical across the rows
+        // for a given CustomerId, so we collapse to the first row per group for the customer-level
+        // upsert (row order is preserved by the sources).
+        phase.Restart();
+        var sourceCustomersById = sourceRows
+            .GroupBy(o => o.CustomerId)
+            .ToDictionary(g => g.Key, g => g.First());
+        _logger.LogInformation("CustomerSync grouped {Count} distinct customers from the source ({Ms} ms)", sourceCustomersById.Count, phase.ElapsedMilliseconds);
+
         // ── Customer upserts ──
         phase.Restart();
-        foreach (var (customerId, odsRow) in odsCustomersByCustomerId)
+        foreach (var (customerId, sourceRow) in sourceCustomersById)
         {
             if (appCustomersById.TryGetValue(customerId, out var existing))
             {
-                ApplyAttributes(existing, odsRow);
-                // Graduation: a customer present in the ODS view is backed by a real
+                sourceRow.Attributes.ApplyTo(existing);
+                // Graduation: a customer present in the source rows is backed by a real
                 // contract/ticket, so they're no longer a user-added prospect. Clear the manual
                 // flag so IsManual cleanly means "added by a user, no activity yet". From here
                 // they follow the normal synced lifecycle (the main soft-delete deactivates them
-                // if they later drop out of the view).
+                // if they later drop out of the source rows).
                 if (existing.IsManual) existing.IsManual = false;
                 if (!existing.IsActive)
                 {
@@ -102,21 +128,20 @@ public class CustomerSyncService
             }
             else
             {
-                var inserted = odsRow.ToCustomer();
-                inserted.IsActive = true;
-                repo.AddCustomer(inserted);
+                // CreateNew sets Id, IsActive = true, IsManual = false, then applies every attribute.
+                repo.AddCustomer(sourceRow.Attributes.CreateNew(customerId));
                 result.CustomersInserted++;
             }
         }
 
-        // ── Customer soft-deletes (rows in app but no longer in ODS) ──
+        // ── Customer soft-deletes (rows in app but no longer in the source rows) ──
         // Skip IsManual rows: those were onboarded by a user (producers with no
-        // contract/ticket, so they never appear in the ODS view) and must survive
+        // contract/ticket, so they never appear in the source rows) and must survive
         // nightly runs. Everything the sync itself created is IsManual=false and
         // behaves exactly as before.
         foreach (var existing in appCustomers)
         {
-            if (!odsCustomersByCustomerId.ContainsKey(existing.Id) && existing.IsActive && !existing.IsManual)
+            if (!sourceCustomersById.ContainsKey(existing.Id) && existing.IsActive && !existing.IsManual)
             {
                 existing.IsActive = false;
                 result.CustomersDeactivated++;
@@ -129,24 +154,27 @@ public class CustomerSyncService
             phase.ElapsedMilliseconds);
 
         // ── CustomerTradeUnit upserts ──
+        // Keyed on the RAW trade-unit string; null and "" are customer-presence-only rows. Never
+        // trimmed here: the ODS feeder passes the view's value verbatim (as the sync always read it)
+        // and the CTRM feeder trims its own.
         phase.Restart();
-        var odsTradeUnitsByKey = odsRows
+        var sourceTradeUnitsByKey = sourceRows
             .Where(o => !string.IsNullOrEmpty(o.TradeUnit))
             .GroupBy(o => (o.CustomerId, TradeUnit: o.TradeUnit!))
             .ToDictionary(g => g.Key, g => g.First());
 
-        foreach (var ((customerId, tradeUnit), odsRow) in odsTradeUnitsByKey)
+        foreach (var (customerId, tradeUnit) in sourceTradeUnitsByKey.Keys)
         {
             if (appTradeUnitsByKey.TryGetValue((customerId, tradeUnit), out var existing))
             {
                 // Respect an explicit user removal of a dormant locked TU: leave UserDeactivated
                 // rows untouched here (do NOT reactivate or re-lock), even though the producer is
-                // still in the ODS view. The bring-back pass below restores them only once the
+                // still in the source rows. The bring-back pass below restores them only once the
                 // producer has open activity (contract/ticket) in that TU again.
                 if (existing.UserDeactivated) continue;
 
                 var changed = false;
-                // Presence in the ODS view IS the active signal — the view no longer carries an
+                // Presence in the source rows IS the active signal — the ODS view no longer carries an
                 // IsActive column (ODS dropped it from the underlying data 2026-08). Being here means
                 // the producer has a real contract/ticket in this TU, and the soft-delete pass below
                 // deactivates anything that drops out. This mirrors how Customer.IsActive is already
@@ -156,11 +184,11 @@ public class CustomerSyncService
                     existing.IsActive = true;
                     changed = true;
                 }
-                // A TU present in the ODS view is backed by a real contract/ticket, so it's a
+                // A TU present in the source rows is backed by a real contract/ticket, so it's a
                 // synced membership now — not a manual one. Clear the manual flag so it follows
                 // the normal sync lifecycle going forward (e.g. auto-deactivates if that activity
                 // later ages off). Purely-manual assignments never reach here (they're not in the
-                // view), so they keep IsManual=true and stay protected.
+                // source rows), so they keep IsManual=true and stay protected.
                 if (existing.IsManual)
                 {
                     existing.IsManual = false;
@@ -179,7 +207,7 @@ public class CustomerSyncService
                 {
                     CustomerId = customerId,
                     TradeUnit  = tradeUnit,
-                    IsActive   = true,   // in the view ⇒ active (see above)
+                    IsActive   = true,   // in the source rows ⇒ active (see above)
                     CreatedAt  = syncTime,
                     CreatedBy  = SyncActor
                 });
@@ -188,12 +216,12 @@ public class CustomerSyncService
         }
 
         // ── CustomerTradeUnit soft-deletes ──
-        // Skip IsManual rows — user-assigned trade units aren't in the ODS view, so
+        // Skip IsManual rows — user-assigned trade units aren't in the source rows, so
         // without this guard the nightly run would deactivate every manual assignment.
         foreach (var existing in appTradeUnits)
         {
             var key = (existing.CustomerId, existing.TradeUnit);
-            if (!odsTradeUnitsByKey.ContainsKey(key) && existing.IsActive && !existing.IsManual)
+            if (!sourceTradeUnitsByKey.ContainsKey(key) && existing.IsActive && !existing.IsManual)
             {
                 existing.IsActive = false;
                 existing.ModifiedAt = syncTime;
@@ -207,57 +235,52 @@ public class CustomerSyncService
             phase.ElapsedMilliseconds);
 
         // ── Manual-producer refresh pass ──
-        // Manually-onboarded producers (IsManual) that have no contract/ticket never appear
-        // in vw_CustomerTradeUnits, so the loops above can't refresh them. They DO live in the
-        // full customer master base.vw_CurrentCustomers (the same view onboarding reads), so
-        // refresh their attributes from there and soft-delete any that have dropped out of the
-        // master entirely. Producers already handled above (present in the TU view this run —
-        // e.g. a manual producer who has since "graduated" by getting activity) are excluded
-        // here, so each customer is touched by exactly one pass per run.
+        // Manually-onboarded producers (IsManual) that have no contract/ticket never appear in the
+        // source rows, so the loops above can't refresh them. The source looked them up in its
+        // customer master (on ODS: base.vw_CurrentCustomers, the same view onboarding reads) and
+        // returned what it found in ManualMaster. Refresh their attributes from there and soft-delete
+        // any that have dropped out of the master entirely — only when the source says its master
+        // answer is complete, and never for ids it could not look up at all (ManualUnverifiable).
+        // Producers already handled above (present in the source rows this run — e.g. a manual
+        // producer who has since "graduated" by getting activity) are excluded here, so each
+        // customer is touched by exactly one pass per run.
         phase.Restart();
-        var manualOutsideView = appCustomers
-            .Where(c => c.IsManual && !odsCustomersByCustomerId.ContainsKey(c.Id))
+        var manualOutsideRows = appCustomers
+            .Where(c => c.IsManual && !sourceCustomersById.ContainsKey(c.Id) && !load.ManualUnverifiable.Contains(c.Id))
             .ToList();
 
-        if (manualOutsideView.Count > 0)
+        foreach (var existing in manualOutsideRows)
         {
-            var masterRows = await repo.LoadCurrentCustomerMasterAsync(
-                manualOutsideView.Select(c => c.Id).ToList(), cancellationToken);
-            var masterById = masterRows.ToDictionary(r => r.CustomerId);
-
-            foreach (var existing in manualOutsideView)
+            if (load.ManualMaster.TryGetValue(existing.Id, out var attributes))
             {
-                if (masterById.TryGetValue(existing.Id, out var row))
+                attributes.ApplyTo(existing);
+                if (!existing.IsActive)
                 {
-                    ApplyAttributes(existing, row);
-                    if (!existing.IsActive)
-                    {
-                        existing.IsActive = true;
-                        result.ManualCustomersReactivated++;
-                    }
-                    else
-                    {
-                        result.ManualCustomersRefreshed++;
-                    }
+                    existing.IsActive = true;
+                    result.ManualCustomersReactivated++;
                 }
-                else if (existing.IsActive)
+                else
                 {
-                    // Gone from the current-customer master → genuinely removed in CTRM.
-                    // Soft-delete preserves FKs from Notes / ProducerDetails / etc.
-                    existing.IsActive = false;
-                    result.ManualCustomersDeactivated++;
+                    result.ManualCustomersRefreshed++;
                 }
+            }
+            else if (existing.IsActive && load.ManualMasterComplete)
+            {
+                // Gone from the current-customer master → genuinely removed in CTRM.
+                // Soft-delete preserves FKs from Notes / ProducerDetails / etc.
+                existing.IsActive = false;
+                result.ManualCustomersDeactivated++;
             }
         }
         _logger.LogInformation(
             "CustomerSync manual-producer refresh: {Checked} checked, {Refreshed} refreshed, {Reactivated} reactivated, {Deactivated} deactivated ({Ms} ms)",
-            manualOutsideView.Count, result.ManualCustomersRefreshed,
+            manualOutsideRows.Count, result.ManualCustomersRefreshed,
             result.ManualCustomersReactivated, result.ManualCustomersDeactivated,
             phase.ElapsedMilliseconds);
 
         // ── Bring-back pass for user-removed dormant TUs ──
         // A CustomerTradeUnit with UserDeactivated=true was explicitly removed by a user while the
-        // producer was dormant in that TU. The producer is usually STILL in the ODS view, so the
+        // producer was dormant in that TU. The producer is usually STILL in the source rows, so the
         // upsert pass above deliberately left these rows alone. Here we re-check ONLY those rows
         // (a small set): if the producer now has open activity in that TU, we clear the flag and
         // restore it to a normal locked (sync-sourced) membership.
@@ -333,38 +356,6 @@ public class CustomerSyncService
 
         return result;
     }
-
-    /// <summary>
-    /// Copies ODS-sourced attribute values onto an existing tracked Customer.
-    /// Customer.Id is not touched (it's the PK / FK target). Accepts either ODS source
-    /// (the trade-unit view or the current-customers view) via the shared interface.
-    /// </summary>
-    private static void ApplyAttributes(Customer target, ICustomerOdsAttributes source)
-    {
-        target.Name                  = source.CustomerName ?? string.Empty;
-        target.ScoularId             = source.ScoularId;
-        target.IndustryCode1         = source.IndustryCode1;
-        target.IndustryCode2         = source.IndustryCode2;
-        target.NopIdNumber           = OdsValues.NormaliseNopId(source.NopIdNumber);
-        target.EffectiveStartDate    = source.EffectiveStartDate;
-        target.EffectiveEndDate      = source.EffectiveEndDate;
-        target.Phone                 = source.MerchandisingPhone;
-        target.Email                 = source.MerchandisingEmail;
-        target.ExtendedPrimaryPhone  = source.ExtendedPrimaryPhone;
-        target.SupplementalEmail     = source.SupplementalEmail;
-        target.Location              = source.MerchandisingCity;
-        target.StateProvince         = source.MerchandisingStateProvince;
-        target.AddressLine1          = source.MerchandisingAddressLine1;
-        target.PostalCode            = source.MerchandisingPostalCode;
-        target.ExtendedAddressLine1  = source.ExtendedAddressLine1;
-        target.ExtendedAddressLine2  = source.ExtendedAddressLine2;
-        target.ExtendedAddressLine3  = source.ExtendedAddressLine3;
-        target.ExtendedAddressLine4  = source.ExtendedAddressLine4;
-        target.ExtendedCity          = source.ExtendedCity;
-        target.ExtendedPostalCode    = source.ExtendedPostalCode;
-        target.ExtendedStateProvince = source.ExtendedStateProvince;
-        target.ExtendedCountry       = source.ExtendedCountry;
-    }
 }
 
 /// <summary>Counts and timing for a single sync run.</summary>
@@ -383,4 +374,16 @@ public class CustomerSyncResult
     public int ManualCustomersDeactivated  { get; set; }
     public long ElapsedMs        { get; set; }
     public DateTime CompletedAtUtc { get; set; }
+
+    /// <summary>The feeder this run read: <see cref="CustomerSyncSources.Ods"/> or <see cref="CustomerSyncSources.Ctrm"/>.</summary>
+    public string Source { get; set; } = CustomerSyncSources.Ods;
+
+    /// <summary>True when the run stopped before writing anything; <see cref="AbortCode"/> says why.</summary>
+    public bool Aborted { get; set; }
+
+    /// <summary>A CUSTOMER_SYNC_* code; null unless <see cref="Aborted"/>.</summary>
+    public string? AbortCode { get; set; }
+
+    /// <summary>Human-readable detail for the abort — codes and counts only, never names, phones or addresses.</summary>
+    public string? AbortReason { get; set; }
 }

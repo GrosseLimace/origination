@@ -50,7 +50,7 @@ public class DiagnosticsControllerAppAccessTests
             new Mock<ILogger<DiagnosticsController>>().Object,
             env.Object,
             new Mock<IHttpClientFactory>().Object,
-            new CustomerSyncService(new Mock<IServiceScopeFactory>().Object, new Mock<ILogger<CustomerSyncService>>().Object),
+            new CustomerSyncService(new Mock<IServiceScopeFactory>().Object, new ConfigurationBuilder().Build(), new Mock<ILogger<CustomerSyncService>>().Object),
             _graphMock.Object,
             new Mock<ICtrmGraphQlClient>().Object,
             new Mock<IContractRepository>().Object,
