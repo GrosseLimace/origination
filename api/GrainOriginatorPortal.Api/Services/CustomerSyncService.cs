@@ -23,6 +23,15 @@ namespace GrainOriginatorPortal.Api.Services;
 /// A source that reports failure (<see cref="CustomerSyncSourceResult.Ok"/> false) aborts the run
 /// before any pass and before any write; read failures a source throws propagate unchanged.
 ///
+/// Mass-deactivation guard (both sources): after the passes are computed and before SaveChanges,
+/// <see cref="CustomerSyncGuard"/> refuses a run whose source came back empty while the app holds
+/// active rows, or that would deactivate more customers or links than
+/// <c>CustomerSync:MaxDeactivationCount</c> / <c>CustomerSync:MaxDeactivationPercent</c> allow. A tripped
+/// guard aborts with <c>CUSTOMER_SYNC_SOURCE_EMPTY</c> / <c>CUSTOMER_SYNC_GUARD_TRIPPED</c>, logged at Error,
+/// and nothing is written (the restart-during-an-ODS-outage failure in the outage recovery playbook).
+/// <see cref="CustomerSyncOptions.Force"/> bypasses the guard for a legitimate mass change;
+/// <see cref="CustomerSyncOptions.DryRun"/> computes everything and writes nothing.
+///
 /// Designed to be callable from both the scheduled
 /// <see cref="CustomerSyncBackgroundService"/> and from the diagnostics manual-trigger endpoint.
 /// </summary>
@@ -35,6 +44,9 @@ public class CustomerSyncService
     // Audit author for every sync-driven CustomerTradeUnit write (manual app actions stamp a user UPN).
     private const string SyncActor = "system";
 
+    private const string GuardTrippedCode = "CUSTOMER_SYNC_GUARD_TRIPPED";
+    private const string SourceEmptyCode = "CUSTOMER_SYNC_SOURCE_EMPTY";
+
     public CustomerSyncService(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<CustomerSyncService> logger)
     {
         _scopeFactory = scopeFactory;
@@ -42,11 +54,16 @@ public class CustomerSyncService
         _logger = logger;
     }
 
-    public async Task<CustomerSyncResult> SyncAsync(CancellationToken cancellationToken = default)
+    public Task<CustomerSyncResult> SyncAsync(CancellationToken cancellationToken = default) =>
+        SyncAsync(CustomerSyncOptions.Default, cancellationToken);
+
+    public async Task<CustomerSyncResult> SyncAsync(CustomerSyncOptions options, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         var sw = Stopwatch.StartNew();
         var phase = Stopwatch.StartNew();
-        var result = new CustomerSyncResult();
+        var result = new CustomerSyncResult { DryRun = options.DryRun };
         // One timestamp for every CustomerTradeUnit row this run touches, so a run's audit stamps are consistent.
         var syncTime = DateTime.UtcNow;
 
@@ -57,10 +74,12 @@ public class CustomerSyncService
         var customerRepository = scope.ServiceProvider.GetRequiredService<ICustomerRepository>();
         // The feeder comes from this run's scope too: sources hold the scoped sync repository.
         var source = scope.ServiceProvider.GetRequiredService<ICustomerSyncSourceFactory>()
-            .Create(CustomerSyncSources.Resolve(_configuration));
+            .Create(ResolveSourceName(options));
         result.Source = source.Name;
 
-        _logger.LogInformation("CustomerSync starting (source {Source})", source.Name);
+        _logger.LogInformation(
+            "CustomerSync starting (source {Source}, trigger {Trigger}, dryRun {DryRun}, force {Force})",
+            source.Name, options.Trigger, options.DryRun, options.Force);
 
         // ── Load existing app-DB state (tracked, since we'll mutate) ──
         // Loaded BEFORE the source, which receives these very list instances (read-only for it).
@@ -76,12 +95,20 @@ public class CustomerSyncService
             .ToDictionary(g => g.Key, g => g.First());
         _logger.LogInformation("CustomerSync loaded {Count} CustomerTradeUnit rows from app DB ({Ms} ms)", appTradeUnits.Count, phase.ElapsedMilliseconds);
 
+        // The guard judges deactivations against the active totals BEFORE any pass mutates them.
+        var activeCustomersBefore = appCustomers.Count(c => c.IsActive);
+        var activeLinksBefore = appTradeUnits.Count(t => t.IsActive);
+
         // ── Load source rows ──
         phase.Restart();
         var load = await source.LoadAsync(
             new CustomerSyncAppState { Customers = appCustomers, TradeUnits = appTradeUnits },
-            CustomerSyncLoadOptions.Default,
+            new CustomerSyncLoadOptions { DryRun = options.DryRun, DiscoveryFrom = options.DiscoveryFrom },
             cancellationToken);
+        // The source's own report travels with the result whether or not the source succeeded.
+        result.CustomersMinted = load.CustomersMinted;
+        result.Lookup = load.Lookup;
+        result.Discovery = load.Discovery;
         if (!load.Ok)
         {
             result.Aborted = true;
@@ -323,6 +350,43 @@ public class CustomerSyncService
             "CustomerSync bring-back pass: {Checked} user-removed rows checked, {BroughtBack} restored ({Ms} ms)",
             deactivatedRows.Count, result.TradeUnitsBroughtBack, phase.ElapsedMilliseconds);
 
+        // ── Mass-deactivation guard ──
+        // Every pass above only staged changes on tracked entities; nothing is written until
+        // SaveChanges below. Returning before it (abort or dry run) persists nothing: the scope and
+        // its DbContext are disposed with the staged changes.
+        var verdict = CustomerSyncGuard.Evaluate(
+            load.Rows.Count,
+            activeCustomersBefore, result.CustomersDeactivated + result.ManualCustomersDeactivated,
+            activeLinksBefore, result.TradeUnitsDeactivated,
+            CustomerSyncGuardLimits.FromConfiguration(_configuration));
+        result.Guard = verdict;
+        if (verdict.Tripped)
+        {
+            if (!options.Force)
+            {
+                result.Aborted = true;
+                result.AbortCode = verdict.SourceRows == 0 ? SourceEmptyCode : GuardTrippedCode;
+                result.AbortReason = verdict.Reason;
+                _logger.LogError(
+                    "[{ErrorCode}] [{ErrorCategory}] CustomerSync aborted by the mass-deactivation guard, nothing written (source {Source}, dryRun {DryRun}): {Reason}",
+                    result.AbortCode, "Integration", source.Name, options.DryRun, verdict.Reason);
+                return result;
+            }
+
+            _logger.LogWarning(
+                "[{ErrorCode}] [{ErrorCategory}] CustomerSync mass-deactivation guard bypassed by force (source {Source}): {Reason}",
+                GuardTrippedCode, "Integration", source.Name, verdict.Reason);
+        }
+
+        if (options.DryRun)
+        {
+            sw.Stop();
+            result.ElapsedMs = sw.ElapsedMilliseconds;
+            result.CompletedAtUtc = DateTime.UtcNow;
+            _logger.LogInformation("CustomerSync dry run — nothing persisted (source {Source}, {ElapsedMs} ms)", source.Name, result.ElapsedMs);
+            return result;
+        }
+
         // ── Persist ──
         // SaveChangesAsync wraps its writes in an implicit transaction, and the
         // ApplicationDbContext has EnableRetryOnFailure configured, so the
@@ -356,6 +420,45 @@ public class CustomerSyncService
 
         return result;
     }
+
+    /// <summary>
+    /// The configured source (<see cref="CustomerSyncSources.Resolve"/>), unless this is a dry run with a
+    /// <see cref="CustomerSyncOptions.SourceOverride"/>: an override is honoured ONLY on a dry run, so Dev can
+    /// exercise <c>ctrm</c> while the environment setting is still <c>ods</c> without ever writing from it.
+    /// The override follows the same rule as the setting: only <c>ctrm</c> opts in.
+    /// </summary>
+    private string ResolveSourceName(CustomerSyncOptions options)
+    {
+        if (options.DryRun && !string.IsNullOrWhiteSpace(options.SourceOverride))
+        {
+            return string.Equals(options.SourceOverride.Trim(), CustomerSyncSources.Ctrm, StringComparison.OrdinalIgnoreCase)
+                ? CustomerSyncSources.Ctrm
+                : CustomerSyncSources.Ods;
+        }
+
+        return CustomerSyncSources.Resolve(_configuration);
+    }
+}
+
+/// <summary>Per-run options for <see cref="CustomerSyncService.SyncAsync(CustomerSyncOptions, CancellationToken)"/>.</summary>
+public sealed class CustomerSyncOptions
+{
+    /// <summary>Compute every pass and the guard verdict, then return without SaveChanges.</summary>
+    public bool DryRun { get; init; }
+
+    /// <summary>Bypass the mass-deactivation guard (admin, for a legitimate mass change). Never bypasses a failed source.</summary>
+    public bool Force { get; init; }
+
+    /// <summary><c>ods</c> or <c>ctrm</c>; honoured only together with <see cref="DryRun"/>.</summary>
+    public string? SourceOverride { get; init; }
+
+    /// <summary>Start of the CTRM discovery window instead of the configured trailing window.</summary>
+    public DateTime? DiscoveryFrom { get; init; }
+
+    /// <summary><c>"manual"</c> | <c>"startup"</c> | <c>"scheduled"</c>; the background service sets it.</summary>
+    public string Trigger { get; init; } = "manual";
+
+    public static readonly CustomerSyncOptions Default = new();
 }
 
 /// <summary>Counts and timing for a single sync run.</summary>
@@ -386,4 +489,19 @@ public class CustomerSyncResult
 
     /// <summary>Human-readable detail for the abort — codes and counts only, never names, phones or addresses.</summary>
     public string? AbortReason { get; set; }
+
+    /// <summary>True when the run was a dry run: everything computed, nothing persisted.</summary>
+    public bool DryRun { get; set; }
+
+    /// <summary>The mass-deactivation guard's verdict; null when the run aborted before the passes.</summary>
+    public CustomerSyncGuardVerdict? Guard { get; set; }
+
+    /// <summary>Customers the source minted ids for this run (CTRM only).</summary>
+    public int CustomersMinted { get; set; }
+
+    /// <summary>The CTRM customer-master lookup report (CTRM only).</summary>
+    public CustomerSyncLookupInfo? Lookup { get; set; }
+
+    /// <summary>The CTRM link-discovery report (CTRM only).</summary>
+    public CustomerSyncDiscoveryInfo? Discovery { get; set; }
 }

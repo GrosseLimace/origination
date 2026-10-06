@@ -44,6 +44,7 @@ public class CustomerSyncServiceTests
     private readonly Dictionary<string, string?> _settings = new();
     private readonly List<string> _calls = [];
     private int _saves;
+    private readonly ListLogger<CustomerSyncService> _serviceLogger = new();
 
     // null → the real ODS feeder over _repo (characterization); set → a stub feeder.
     private StubSource? _stub;
@@ -51,6 +52,13 @@ public class CustomerSyncServiceTests
 
     public CustomerSyncServiceTests()
     {
+        // Most tests exercise the passes on a handful of rows, where any deactivation is a large
+        // percentage. The guard's limits are therefore lifted here; the guard tests set their own,
+        // and SyncAsync_DefaultLimits_TripAboveFivePercent removes these to check the real defaults.
+        // (An empty source on a populated app still trips: that rule has no limit.)
+        _settings[CustomerSyncGuardLimits.PercentKey] = "100";
+        _settings[CustomerSyncGuardLimits.CountKey] = int.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
         _repo.Setup(r => r.LoadAppCustomersAsync(It.IsAny<CancellationToken>()))
             .Callback(() => _calls.Add("LoadAppCustomers"))
             .ReturnsAsync(() => _appCustomers);
@@ -98,10 +106,12 @@ public class CustomerSyncServiceTests
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(_settings).Build();
-        return new CustomerSyncService(provider.GetRequiredService<IServiceScopeFactory>(), configuration, NullLogger<CustomerSyncService>.Instance);
+        return new CustomerSyncService(provider.GetRequiredService<IServiceScopeFactory>(), configuration, _serviceLogger);
     }
 
     private Task<CustomerSyncResult> RunAsync() => CreateService().SyncAsync(CancellationToken.None);
+
+    private Task<CustomerSyncResult> RunAsync(CustomerSyncOptions options) => CreateService().SyncAsync(options, CancellationToken.None);
 
     private StubSource UseStub(CustomerSyncSourceResult result, string name = CustomerSyncSources.Ods) =>
         _stub = new StubSource(name, result, _calls);
@@ -562,7 +572,273 @@ public class CustomerSyncServiceTests
         Assert.False(stub.SeenOptions!.DryRun);
     }
 
+    // ── Guard, force, dry run, source override ───────────────────────────────────────────────────
+
+    private void HundredActiveCustomers_SourceCovers(int covered)
+    {
+        for (var id = 1; id <= 100; id++) AppCustomer(id);
+        UseStub(new CustomerSyncSourceResult
+        {
+            Source = CustomerSyncSources.Ods,
+            Rows = Enumerable.Range(1, covered).Select(id => Row(id, "1085", $"C{id}")).ToList(),
+        });
+    }
+
+    [Fact]
+    public async Task SyncAsync_GuardTrips_AbortsWithoutSaving_AndReportsTheVerdict()
+    {
+        _settings["CustomerSync:MaxDeactivationCount"] = "10";
+        HundredActiveCustomers_SourceCovers(10);
+
+        var result = await RunAsync();
+
+        Assert.True(result.Aborted);
+        Assert.Equal("CUSTOMER_SYNC_GUARD_TRIPPED", result.AbortCode);
+        Assert.NotNull(result.Guard);
+        Assert.True(result.Guard!.Tripped);
+        Assert.Equal(10, result.Guard.SourceRows);
+        Assert.Equal(100, result.Guard.ActiveCustomersBefore);
+        Assert.Equal(90, result.Guard.CustomersToDeactivate);
+        Assert.Equal(result.Guard.Reason, result.AbortReason);
+        Assert.Equal(0, _saves);
+        _repo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(95, false)]   // 5 of 100 = 5 % → allowed
+    [InlineData(94, true)]    // 6 of 100 = 6 % → tripped
+    public async Task SyncAsync_DefaultLimits_TripAboveFivePercent(int covered, bool tripped)
+    {
+        _settings.Remove(CustomerSyncGuardLimits.PercentKey);
+        _settings.Remove(CustomerSyncGuardLimits.CountKey);
+        HundredActiveCustomers_SourceCovers(covered);
+
+        var result = await RunAsync();
+
+        Assert.Equal(tripped, result.Aborted);
+        Assert.Equal(tripped, result.Guard!.Tripped);
+        Assert.Equal(tripped ? 0 : 1, _saves);
+    }
+
+    [Fact]
+    public async Task SyncAsync_GuardTrips_LogsTheCodeAtError()
+    {
+        _settings["CustomerSync:MaxDeactivationCount"] = "10";
+        HundredActiveCustomers_SourceCovers(10);
+
+        await RunAsync();
+
+        Assert.Contains(_serviceLogger.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("CUSTOMER_SYNC_GUARD_TRIPPED"));
+    }
+
+    [Fact]
+    public async Task SyncAsync_GuardCountsLinksToDeactivate()
+    {
+        _settings["CustomerSync:MaxDeactivationCount"] = "10";
+        _settings["CustomerSync:MaxDeactivationPercent"] = "100";
+        AppCustomer(1);
+        for (var tu = 0; tu < 11; tu++) AppLink(1, $"TU{tu}");
+        UseStub(new CustomerSyncSourceResult { Source = CustomerSyncSources.Ods, Rows = [Row(1, null, "One")] });
+
+        var result = await RunAsync();
+
+        Assert.True(result.Aborted);
+        Assert.Equal("CUSTOMER_SYNC_GUARD_TRIPPED", result.AbortCode);
+        Assert.Equal(11, result.Guard!.ActiveLinksBefore);
+        Assert.Equal(11, result.Guard.LinksToDeactivate);
+        Assert.Equal(0, _saves);
+    }
+
+    [Fact]
+    public async Task SyncAsync_GuardCountsManualDeactivations()
+    {
+        _settings["CustomerSync:MaxDeactivationCount"] = "1";
+        _settings["CustomerSync:MaxDeactivationPercent"] = "100";
+        AppCustomer(1);
+        AppCustomer(900, isManual: true);
+        AppCustomer(901, isManual: true);
+        UseStub(new CustomerSyncSourceResult { Source = CustomerSyncSources.Ods, Rows = [Row(1, "1085", "One")] });
+
+        var result = await RunAsync();
+
+        Assert.True(result.Aborted);
+        Assert.Equal(2, result.Guard!.CustomersToDeactivate);
+        Assert.Equal(0, _saves);
+    }
+
+    [Fact]
+    public async Task SyncAsync_EmptyRowsOnPopulatedApp_AbortsAsSourceEmpty()
+    {
+        AppCustomer(1);
+        AppLink(1, "1085");
+        UseStub(new CustomerSyncSourceResult { Source = CustomerSyncSources.Ods, Rows = [] });
+
+        var result = await RunAsync();
+
+        Assert.True(result.Aborted);
+        Assert.Equal("CUSTOMER_SYNC_SOURCE_EMPTY", result.AbortCode);
+        Assert.True(result.Guard!.Tripped);
+        Assert.Equal(0, result.Guard.SourceRows);
+        Assert.Equal(0, _saves);
+        Assert.Contains(_serviceLogger.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("CUSTOMER_SYNC_SOURCE_EMPTY"));
+    }
+
+    [Fact]
+    public async Task SyncAsync_EmptyRowsOnEmptyApp_IsNotAnAbort()
+    {
+        UseStub(new CustomerSyncSourceResult { Source = CustomerSyncSources.Ods, Rows = [] });
+
+        var result = await RunAsync();
+
+        Assert.False(result.Aborted);
+        Assert.False(result.Guard!.Tripped);
+        Assert.Equal(1, _saves);
+    }
+
+    [Fact]
+    public async Task SyncAsync_Force_BypassesTheGuard_AndSaves()
+    {
+        _settings["CustomerSync:MaxDeactivationCount"] = "10";
+        HundredActiveCustomers_SourceCovers(10);
+
+        var result = await RunAsync(new CustomerSyncOptions { Force = true });
+
+        Assert.False(result.Aborted);
+        Assert.Null(result.AbortCode);
+        Assert.True(result.Guard!.Tripped);
+        Assert.Equal(90, result.CustomersDeactivated);
+        Assert.Equal(1, _saves);
+        Assert.Contains(_serviceLogger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("force"));
+    }
+
+    [Fact]
+    public async Task SyncAsync_Force_DoesNotBypassAFailedSource()
+    {
+        AppCustomer(1);
+        UseStub(CustomerSyncSourceResult.Failed(CustomerSyncSources.Ctrm, "CUSTOMER_SYNC_SOURCE_UNAVAILABLE", "gateway down"), CustomerSyncSources.Ctrm);
+
+        var result = await RunAsync(new CustomerSyncOptions { Force = true });
+
+        Assert.True(result.Aborted);
+        Assert.Equal("CUSTOMER_SYNC_SOURCE_UNAVAILABLE", result.AbortCode);
+        Assert.Null(result.Guard);
+        Assert.Equal(0, _saves);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_ComputesCounters_ButNeverSaves()
+    {
+        HundredActiveCustomers_SourceCovers(99);
+        _stub!.Result.Rows.Add(Row(500, "2200", "New"));
+
+        var result = await RunAsync(new CustomerSyncOptions { DryRun = true });
+
+        Assert.True(result.DryRun);
+        Assert.False(result.Aborted);
+        Assert.True(result.CustomersDeactivated > 0);
+        Assert.Equal(1, result.CustomersInserted);
+        Assert.Equal(100, result.TradeUnitsInserted);   // 99 covered customers + the new one, none linked yet
+        Assert.False(result.Guard!.Tripped);
+        Assert.Equal(0, _saves);
+        _repo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_ThatWouldTripTheGuard_ReportsTheAbort_AndNeverSaves()
+    {
+        _settings["CustomerSync:MaxDeactivationCount"] = "10";
+        HundredActiveCustomers_SourceCovers(10);
+
+        var result = await RunAsync(new CustomerSyncOptions { DryRun = true });
+
+        Assert.True(result.DryRun);
+        Assert.True(result.Aborted);
+        Assert.Equal("CUSTOMER_SYNC_GUARD_TRIPPED", result.AbortCode);
+        Assert.Equal(0, _saves);
+    }
+
+    [Fact]
+    public async Task SyncAsync_NonDryRun_ReportsDryRunFalse_AndSaves()
+    {
+        HundredActiveCustomers_SourceCovers(100);
+
+        var result = await RunAsync(new CustomerSyncOptions());
+
+        Assert.False(result.DryRun);
+        Assert.False(result.Aborted);
+        Assert.Equal(1, _saves);
+    }
+
+    [Fact]
+    public async Task SyncAsync_SourceOverride_IsHonouredOnlyWithDryRun()
+    {
+        HundredActiveCustomers_SourceCovers(100);
+
+        await RunAsync(new CustomerSyncOptions { SourceOverride = "ctrm", DryRun = false });
+        Assert.Equal([CustomerSyncSources.Ods], _stubFactory!.Requested);
+
+        await RunAsync(new CustomerSyncOptions { SourceOverride = "ctrm", DryRun = true });
+        Assert.Equal([CustomerSyncSources.Ctrm], _stubFactory!.Requested);
+
+        // The override wins over the environment setting in both directions, still only on a dry run.
+        _settings[CustomerSyncSources.ConfigKey] = "ctrm";
+        await RunAsync(new CustomerSyncOptions { SourceOverride = "ods", DryRun = true });
+        Assert.Equal([CustomerSyncSources.Ods], _stubFactory!.Requested);
+    }
+
+    [Fact]
+    public async Task SyncAsync_PassesDryRunAndDiscoveryFromToTheSource()
+    {
+        var stub = UseStub(new CustomerSyncSourceResult { Source = CustomerSyncSources.Ods, Rows = [] });
+        var from = new DateTime(2026, 1, 1);
+
+        await RunAsync(new CustomerSyncOptions { DryRun = true, DiscoveryFrom = from });
+
+        Assert.True(stub.SeenOptions!.DryRun);
+        Assert.Equal(from, stub.SeenOptions.DiscoveryFrom);
+    }
+
+    [Fact]
+    public async Task SyncAsync_CopiesTheSourceReportOntoTheResult_EvenWhenTheSourceFails()
+    {
+        var lookup = new CustomerSyncLookupInfo { Permission = "missing", Requested = 3 };
+        var discovery = new CustomerSyncDiscoveryInfo { NewCodes = 2 };
+        AppCustomer(1);
+        UseStub(new CustomerSyncSourceResult
+        {
+            Source = CustomerSyncSources.Ctrm, Rows = [Row(1, "1085", "One")], CustomersMinted = 2, Lookup = lookup, Discovery = discovery,
+        }, CustomerSyncSources.Ctrm);
+
+        var ok = await RunAsync();
+
+        Assert.Equal(2, ok.CustomersMinted);
+        Assert.Same(lookup, ok.Lookup);
+        Assert.Same(discovery, ok.Discovery);
+
+        UseStub(new CustomerSyncSourceResult
+        {
+            Source = CustomerSyncSources.Ctrm, Ok = false, FailureCode = "CUSTOMER_SYNC_NO_PERMISSION", FailureDetail = "x", Lookup = lookup,
+        }, CustomerSyncSources.Ctrm);
+
+        var failed = await RunAsync();
+
+        Assert.True(failed.Aborted);
+        Assert.Same(lookup, failed.Lookup);
+    }
+
     // ── Stub feeder ──────────────────────────────────────────────────────────────────────────────
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
+    }
 
     /// <summary>Attributes that set only Name, so a test can see which source row was applied.</summary>
     private sealed class NameAttributes : CustomerSyncAttributes
@@ -587,6 +863,7 @@ public class CustomerSyncServiceTests
         }
 
         public string Name { get; }
+        public CustomerSyncSourceResult Result => _result;
         public CustomerSyncAppState? SeenAppState { get; private set; }
         public CustomerSyncLoadOptions? SeenOptions { get; private set; }
 
