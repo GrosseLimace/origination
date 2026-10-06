@@ -25,7 +25,6 @@ import { AppStateService } from '@core/services/app-state.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
-import { DataSourceService } from '@core/services/data-source.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 
 // Shared components
@@ -54,8 +53,6 @@ export class HeaderComponent {
   private readonly userTradeUnits = inject(UserTradeUnitsService);
   /** Public: the template reads hasUnseen() and version() straight off it. */
   readonly whatsNew = inject(WhatsNewService);
-  /** Public: the template reads canChoose() and effectiveSource() for the ODS / CTRM control. */
-  readonly dataSource = inject(DataSourceService);
   private readonly usageTracking = inject(UsageTrackingService);
 
   readonly envName = environment.envName;
@@ -181,12 +178,6 @@ export class HeaderComponent {
    *  the user's groups when that window closes. */
   openTradeUnitPreferences(): void {
     this.userTradeUnits.openPreferences();
-  }
-
-  /** Testers only (server allow-list): choose where contracts and tickets are read from. The service
-   *  persists the choice and reloads the page so no screen mixes the two sources. */
-  chooseDataSource(source: 'ods' | 'ctrm'): void {
-    this.dataSource.setPreference(source);
   }
 
   signOut(): void {

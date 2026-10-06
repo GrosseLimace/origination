@@ -129,10 +129,6 @@ public static class DependencyInjection
         // Scoped: one per HTTP request, so the provenance middleware reports what THIS request's
         // repositories actually did rather than what was configured when it arrived.
         services.AddScoped<CtrmProvenance>();
-        // Scoped for the same reason: which source THIS request's caller asked for, and whether they may.
-        // Populated by CtrmSourceChoiceMiddleware; a scope with no request (sync, keep-warm) gets an empty
-        // instance that resolves to the environment default.
-        services.AddScoped<CtrmSourceChoice>();
 
         // ── Repositories (per-domain, added incrementally during the Phase 2 migration) ──
         services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
