@@ -82,4 +82,38 @@ public class CustomerSyncDiagnosticsController : ControllerBase
             cancellationToken);
         return result.Aborted ? StatusCode(StatusCodes.Status409Conflict, result) : Ok(result);
     }
+
+    /// <summary>
+    /// A run is stale when no non-dry run has succeeded for this long: one daily schedule plus slack. A constant,
+    /// not a config key — nothing else reads it.
+    /// </summary>
+    private static readonly TimeSpan StaleAfter = TimeSpan.FromHours(26);
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// The customer sync's last NON-dry run (startup, scheduled or manual), kept in memory by the singleton
+    /// <see cref="CustomerSyncService"/>, plus when the last successful one finished. No environment gate (same
+    /// posture as <c>POST run</c>): PROD is where a tripped mass-deactivation guard must be visible without KQL.
+    /// </summary>
+    /// <remarks>
+    /// A null <c>LastRun</c> right after a deploy is normal — the startup sync runs 60 s after boot
+    /// (<c>ProcessStartedUtc</c> says when the process started); <c>Stale: true</c> with a non-null aborted
+    /// <c>LastRun</c> is the signal the outage recovery playbook asks for. No PII is possible:
+    /// <see cref="CustomerSyncLastRun"/> holds codes, counters and an exception type name.
+    /// </remarks>
+    /// <returns>200 <c>{ ProcessStartedUtc, NowUtc, LastSuccessfulRunUtc, Stale, LastRun }</c>.</returns>
+    [HttpGet("last-run")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult LastRun()
+    {
+        var now = DateTime.UtcNow;
+        return Ok(new
+        {
+            ProcessStartedUtc = _sync.StartedUtc,
+            NowUtc = now,
+            _sync.LastSuccessfulRunUtc,
+            Stale = _sync.LastSuccessfulRunUtc is not { } ok || now - ok > StaleAfter,
+            _sync.LastRun
+        });
+    }
 }

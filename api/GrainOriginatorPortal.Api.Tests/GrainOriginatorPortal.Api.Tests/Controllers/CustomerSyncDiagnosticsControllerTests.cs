@@ -1,4 +1,5 @@
 // Microsoft namespaces
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -177,6 +178,68 @@ public class CustomerSyncDiagnosticsControllerTests
         Assert.True(body.Guard!.Tripped);
         Assert.Equal("manual", Sync().LastRun!.Trigger);
         Assert.Equal("ok", Sync().LastRun!.Outcome);
+    }
+
+    // ── GET last-run ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The anonymous last-run body, read back through its JSON shape (the route returns an anonymous object).</summary>
+    private static JsonElement LastRunBody(IActionResult result)
+    {
+        var ok = Assert.IsType<OkObjectResult>(result);
+        return JsonSerializer.SerializeToElement(ok.Value);
+    }
+
+    [Fact]
+    public void LastRun_BeforeAnyRun_Returns200_WithNullLastRun_AndTheProcessStart()
+    {
+        var sut = CreateSut();
+
+        var body = LastRunBody(sut.LastRun());
+
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("LastRun").ValueKind);
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("LastSuccessfulRunUtc").ValueKind);
+        Assert.Equal(Sync().StartedUtc, body.GetProperty("ProcessStartedUtc").GetDateTime());
+        Assert.True(body.GetProperty("Stale").GetBoolean());
+        Assert.True(body.GetProperty("NowUtc").GetDateTime() >= Sync().StartedUtc);
+    }
+
+    [Fact]
+    public async Task LastRun_AfterAnAbortedRun_ReportsTheAbortCode()
+    {
+        Source(CustomerSyncSources.Ods, NoPermission(CustomerSyncSources.Ods));
+        await Sync().SyncAsync(new CustomerSyncOptions { Trigger = "manual" }, CancellationToken.None);
+
+        var body = LastRunBody(CreateSut().LastRun());
+
+        var lastRun = body.GetProperty("LastRun");
+        Assert.Equal("aborted", lastRun.GetProperty("Outcome").GetString());
+        Assert.Equal("CUSTOMER_SYNC_NO_PERMISSION", lastRun.GetProperty("AbortCode").GetString());
+        Assert.Equal("manual", lastRun.GetProperty("Trigger").GetString());
+        Assert.True(body.GetProperty("Stale").GetBoolean());
+    }
+
+    [Fact]
+    public async Task LastRun_AfterASuccessfulRun_IsNotStale()
+    {
+        Source(CustomerSyncSources.Ods, OkRows(CustomerSyncSources.Ods, (1, "1085")));
+        await Sync().SyncAsync(new CustomerSyncOptions { Trigger = "scheduled" }, CancellationToken.None);
+
+        var body = LastRunBody(CreateSut().LastRun());
+
+        Assert.False(body.GetProperty("Stale").GetBoolean());
+        Assert.Equal(Sync().LastSuccessfulRunUtc, body.GetProperty("LastSuccessfulRunUtc").GetDateTime());
+        Assert.Equal("ok", body.GetProperty("LastRun").GetProperty("Outcome").GetString());
+        Assert.Equal("scheduled", body.GetProperty("LastRun").GetProperty("Trigger").GetString());
+    }
+
+    [Fact]
+    public void LastRun_HasNoEnvironmentGate()
+    {
+        _environmentName = "Production";
+
+        var result = CreateSut().LastRun();
+
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]
