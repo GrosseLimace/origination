@@ -36,13 +36,19 @@
                 "glob": "favicon.ico",
                 "input": "src",
                 "output": ""
+              },
+              {
+                "glob": "cws-auth.html",
+                "input": "src",
+                "output": ""
               }
             ],
             "styles": [
               "node_modules/leaflet/dist/leaflet.css",
               "node_modules/leaflet.markercluster/dist/MarkerCluster.css",
               "node_modules/leaflet.markercluster/dist/MarkerCluster.Default.css",
-              "src/styles.css"
+              "src/styles.css",
+              "src/cws.css"
             ],
             "scripts": [
               "node_modules/leaflet/dist/leaflet.js",

@@ -24,6 +24,7 @@ export const environment = {
   // Originator Calculators: ON in PROD. Gates the floating calculator launcher on the
   // customer home page (Profitability / Check / Cancel-vs-Roll). Client-side only — no backend.
   calculatorEnabled: true,
+  cwsSpikeEnabled: false,
   // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
   // convergence re-read. Both exist to hide CTRM GraphQL latency, and both cost an extra read per
   // hovered row and per click.

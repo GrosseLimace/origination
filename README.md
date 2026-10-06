@@ -212,7 +212,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-10-01
+Last Updated: 2026-10-06
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -239,8 +239,26 @@ Last Updated: 2026-10-01
 | @angular/forms | 21.2.25 | MIT | Reactive forms |
 | @angular/animations | 21.2.25 | MIT | Animation support |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
-| @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
+| @azure/msal-browser | 5.23.0 | MIT | MSAL browser runtime (raised from 5.4.0 because `@cws/core-auth` peers on ^5.23.0) |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
+| @cws/workspace | 0.2.0 | Internal | SPIKE: Contract Workspace shell, routes and provider bundle, mounted at `/cws` (local only, `cwsSpikeEnabled`). Vendored from `client/vendor/cws/`; the 16 `@cws/*` packages are released together at one version |
+| @cws/features-home | 0.2.0 | Internal | SPIKE: CWS contract grid |
+| @cws/features-approvals | 0.2.0 | Internal | SPIKE: CWS approval queues |
+| @cws/features-pricing | 0.2.0 | Internal | SPIKE: CWS pricing and pricing approvals |
+| @cws/features-admin | 0.2.0 | Internal | SPIKE: CWS admin screen |
+| @cws/features-contract-summary | 0.2.0 | Internal | SPIKE: CWS contract record |
+| @cws/features-contract-entry | 0.2.0 | Internal | SPIKE: CWS contract entry form |
+| @cws/domain-contracts | 0.2.0 | Internal | SPIKE: CWS data sources and models |
+| @cws/core-auth | 0.2.0 | Internal | SPIKE: CWS sign-in (its own MSAL instance; faked in the spike) |
+| @cws/core-host-context | 0.2.0 | Internal | SPIKE: CWS host contract (navigation, identity, theme) |
+| @cws/core-http | 0.2.0 | Internal | SPIKE: CWS HTTP error mapping |
+| @cws/core-state | 0.2.0 | Internal | SPIKE: CWS trade-unit and permission state |
+| @cws/core-telemetry | 0.2.0 | Internal | SPIKE: CWS telemetry (not configured in the spike) |
+| @cws/shared-ui | 0.2.0 | Internal | SPIKE: CWS UI components |
+| @cws/shared-form-engine | 0.2.0 | Internal | SPIKE: CWS form engine |
+| @cws/shared-utils | 0.2.0 | Internal | SPIKE: CWS utilities |
+| @microsoft/applicationinsights-web | 3.4.4 | MIT | Required peer of `@cws/core-telemetry` (CWS telemetry is not enabled in the spike) |
+| @microsoft/applicationinsights-angularplugin-js | 15.4.2 | MIT | Required peer of `@cws/core-telemetry` |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
 | rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |

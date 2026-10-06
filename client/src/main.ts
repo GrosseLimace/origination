@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { bootstrapApplication } from '@angular/platform-browser';
 
 // 2. Angular router/http
-import { provideRouter, Router } from '@angular/router';
+import { provideRouter, Router, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
 
 // 3. Third-party (MSAL)
@@ -58,7 +58,7 @@ bootstrapApplication(AppComponent, {
   providers: [
     provideZonelessChangeDetection(),
     { provide: ErrorHandler, useClass: GlobalErrorHandler },
-    provideRouter(routes),
+    provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(withInterceptorsFromDi()),
     {
       provide: MSAL_INSTANCE,

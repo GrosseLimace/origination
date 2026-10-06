@@ -9,6 +9,8 @@ export const environment = {
   // the flag stays off rather than showing an empty, apparently-broken picker section.
   teamsChannelMentionsEnabled: true,
   calculatorEnabled: true,
+  // SPIKE: Contract Workspace on sample data at /cws (fake admin sign-in). Local only.
+  cwsSpikeEnabled: true,
   // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
   // convergence re-read. Both exist to hide CTRM GraphQL latency behind a warm trade-unit cache,
   // and both cost an extra read per hovered row and per click. Worth it when the backend is
