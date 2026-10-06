@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -16,7 +17,8 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// are in flight at once, all behind <see cref="CtrmTradeUnitThrottle"/> so a nightly run stands aside for
 /// user clicks.</para>
 ///
-/// <para>Logs carry counts and timings only - never customer names, phones or addresses.</para>
+/// <para>Logs carry counts and timings - never customer names, phones or addresses. Producer codes
+/// appear only in the duplicate-source-code line, at most ten of them.</para>
 /// </remarks>
 public sealed class CtrmCustomerReader
 {
@@ -120,6 +122,7 @@ public sealed class CtrmCustomerReader
         if (Volatile.Read(ref firstFailure) is { } failed)
             return Fail(failed, chunks.Count, codes.Count, Volatile.Read(ref requests), stopwatch.ElapsedMilliseconds);
 
+        var duplicateCodes = new List<string>();
         foreach (var (code, items) in results.SelectMany(r => r!))
         {
             if (items.Count == 0)
@@ -127,10 +130,24 @@ public sealed class CtrmCustomerReader
                 lookup.Missing++;
                 continue;
             }
-            lookup.ByCode[code] = items[0];
+            if (items.Count > 1)
+            {
+                lookup.Duplicates++;
+                duplicateCodes.Add(code);
+            }
+            lookup.ByCode[code] = items.Count == 1 ? items[0] : PickCanonical(items)!;
         }
         lookup.Found = lookup.ByCode.Count;
         lookup.Requests = requests;
+
+        if (duplicateCodes.Count > 0)
+        {
+            // Codes only (at most 10) - never names.
+            _logger.LogWarning(
+                "CTRM customer lookup [{ErrorCode}] [{ErrorCategory}]: {Count} source code(s) returned more than one master row; kept the canonical row (active, then MDM master, then lowest id). First {Shown}: {Codes}",
+                "CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE", "Integration", duplicateCodes.Count, Math.Min(10, duplicateCodes.Count),
+                string.Join(", ", duplicateCodes.Take(10)));
+        }
 
         _logger.LogInformation(
             "CTRM customer lookup: {Requested} code(s), {Found} found, {Missing} missing, {Duplicates} with duplicate rows, via {Requests} request(s) of up to {AliasCount} alias(es) in {ElapsedMs}ms.",
@@ -138,6 +155,89 @@ public sealed class CtrmCustomerReader
 
         return new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.Ok, Value = lookup };
     }
+
+    /// <summary>
+    /// The one row to keep when a <c>sourceCode</c> has several MDM rows: active first, then the MDM master
+    /// record, then the lowest id text (ordinal) so the choice is stable night to night.
+    /// </summary>
+    public static CtrmCustomerDto? PickCanonical(IReadOnlyList<CtrmCustomerDto> candidates)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        return candidates
+            .OrderByDescending(c => c.ActiveYN?.Trim().Equals("Y", StringComparison.OrdinalIgnoreCase) == true)
+            .ThenByDescending(c => CtrmYesNo.IsYes(c.MdmMasterRecord))
+            .ThenBy(c => c.IdText, StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Diagnostic probe: is the <c>customers</c> field readable by this client, and - given a sample code -
+    /// does the full <see cref="CtrmCustomerQueries.CustomerProjection"/> come back?
+    /// </summary>
+    /// <remarks>
+    /// The first request is the cheapest possible <c>customers</c> read. Only when it shows the permission
+    /// granted is the sample looked up through <see cref="GetBySourceCodesAsync"/>, which exercises the
+    /// exact document the nightly sync sends. <see cref="CtrmReadResult{T}.Value"/> is always populated so
+    /// the caller can report the permission even when the read failed; <c>Status</c>/<c>Detail</c> carry the
+    /// first failure seen.
+    /// </remarks>
+    public async Task<CtrmReadResult<CtrmCustomerProbe>> ProbeAsync(string? sampleSourceCode, CancellationToken cancellationToken)
+    {
+        var probe = new CtrmCustomerProbe();
+        var read = await _client.QueryAsync<JsonElement>(CtrmCustomerQueries.CustomersProbe, null, cancellationToken);
+        probe.Permission = DescribePermission(read);
+        probe.TotalCount = TotalCountOf(read);
+
+        if (probe.Permission != "granted")
+        {
+            var (_, prefix) = Classify(read);
+            return new CtrmReadResult<CtrmCustomerProbe>
+            {
+                // A probe that came back with data plus an AUTH_ error must not read as Ok.
+                Status = read.Status == CtrmReadStatus.PartialSuccess ? CtrmReadStatus.QueryError : read.Status,
+                HttpStatus = read.HttpStatus, ErrorCode = read.ErrorCode, Detail = prefix + read.Detail, Value = probe
+            };
+        }
+
+        var sample = sampleSourceCode?.Trim();
+        if (string.IsNullOrEmpty(sample))
+            return new CtrmReadResult<CtrmCustomerProbe>
+            {
+                Status = read.Status, HttpStatus = read.HttpStatus, ErrorCode = read.ErrorCode, Detail = read.Detail, Value = probe
+            };
+
+        var lookup = await GetBySourceCodesAsync([sample], cancellationToken);
+        probe.ProjectionAccepted = lookup.Ok;
+        if (!lookup.Ok)
+        {
+            if (DescribePermission(lookup) == "missing") probe.Permission = "missing";
+            return new CtrmReadResult<CtrmCustomerProbe>
+            {
+                Status = lookup.Status, HttpStatus = lookup.HttpStatus, ErrorCode = lookup.ErrorCode, Detail = lookup.Detail, Value = probe
+            };
+        }
+
+        if (lookup.Value!.ByCode.TryGetValue(sample, out var row))
+        {
+            probe.SampleFound = true;
+            probe.IdKind = row.Id.ValueKind.ToString();
+        }
+
+        return new CtrmReadResult<CtrmCustomerProbe>
+        {
+            Status = read.Status, HttpStatus = read.HttpStatus, ErrorCode = read.ErrorCode, Detail = read.Detail, Value = probe
+        };
+    }
+
+    private static int? TotalCountOf(CtrmReadResult<JsonElement> read) =>
+        read.Ok
+        && read.Value.ValueKind == JsonValueKind.Object
+        && read.Value.TryGetProperty("customers", out var customers)
+        && customers.ValueKind == JsonValueKind.Object
+        && customers.TryGetProperty("totalCount", out var total)
+        && total.TryGetInt32(out var count)
+            ? count
+            : null;
 
     private sealed record ChunkFailure(int Index, CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> Read);
 
@@ -235,4 +335,23 @@ public sealed class CtrmCustomerLookup
 
     /// <summary>HTTP requests sent.</summary>
     public int Requests { get; set; }
+}
+
+/// <summary>What the customers permission/projection probe found. Never carries a customer value.</summary>
+public sealed class CtrmCustomerProbe
+{
+    /// <summary>"granted" | "missing" | "unknown" - see <see cref="CtrmCustomerReader.DescribePermission{T}"/>.</summary>
+    public string Permission { get; set; } = "unknown";
+    public int? TotalCount { get; set; }
+
+    /// <summary>True when the full <see cref="CtrmCustomerQueries.CustomerProjection"/> came back for the sample.</summary>
+    public bool ProjectionAccepted { get; set; }
+    public bool SampleFound { get; set; }
+
+    /// <summary>
+    /// JSON type of the sample row's <c>id</c> ("Number" | "String"; null when no sample was found). The
+    /// first Dev probe records what <c>customers.id</c> is, so nobody later swaps the minted-id band for it
+    /// without knowing why the band exists. Never the value itself.
+    /// </summary>
+    public string? IdKind { get; set; }
 }

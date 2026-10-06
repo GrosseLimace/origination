@@ -46,11 +46,22 @@ public class CtrmCustomerReaderTests
         public CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>>? FailWith { get; init; }
         /// <summary>Alias dropped from every response, to model a malformed answer.</summary>
         public string? DropAlias { get; init; }
+        /// <summary>Codes answered with these rows instead of the default single row (duplicates).</summary>
+        public Dictionary<string, List<CtrmCustomerDto>> RowsFor { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>The answer to <see cref="CtrmCustomerQueries.CustomersProbe"/>.</summary>
+        public CtrmReadResult<JsonElement> ProbeAnswer { get; init; } = new()
+        {
+            Status = CtrmReadStatus.Ok, HttpStatus = 200,
+            Value = JsonSerializer.SerializeToElement(new { customers = new { totalCount = 16700, items = new[] { new { sourceCode = "P000042", activeYN = "Y" } } } })
+        };
 
         public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
         {
             lock (Documents) Documents.Add(document);
             Assert.DoesNotContain('#', document);
+
+            if (document == CtrmCustomerQueries.CustomersProbe)
+                return Task.FromResult((CtrmReadResult<T>)(object)ProbeAnswer);
 
             var matches = Alias.Matches(document);
             Assert.NotEmpty(matches);
@@ -58,11 +69,8 @@ public class CtrmCustomerReaderTests
             foreach (System.Text.RegularExpressions.Match m in matches)
             {
                 var code = JsonSerializer.Deserialize<string>(m.Groups[2].Value)!;
-                pages[$"c{m.Groups[1].Value}"] = new CtrmPage<CtrmCustomerDto>
-                {
-                    TotalCount = 1,
-                    Items = [Row(code, id: 100 + int.Parse(m.Groups[1].Value))]
-                };
+                var items = RowsFor.TryGetValue(code, out var rows) ? rows : [Row(code, id: 100 + int.Parse(m.Groups[1].Value))];
+                pages[$"c{m.Groups[1].Value}"] = new CtrmPage<CtrmCustomerDto> { TotalCount = items.Count, Items = items };
             }
 
             if (DropAlias is not null) pages.Remove(DropAlias);
@@ -252,5 +260,112 @@ public class CtrmCustomerReaderTests
         Assert.Equal("granted", CtrmCustomerReader.DescribePermission(new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.PartialSuccess }));
         Assert.Equal("missing", CtrmCustomerReader.DescribePermission(new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.PartialSuccess, ErrorCode = "AUTH_NOT_AUTHENTICATED" }));
         Assert.Equal("unknown", CtrmCustomerReader.DescribePermission(new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.Throttled }));
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Duplicates: more than one master row per sourceCode keeps one canonical row.
+
+    [Fact]
+    public void PickCanonical_PrefersActive_ThenMasterRecord_ThenLowestId()
+    {
+        var candidates = new List<CtrmCustomerDto>
+        {
+            CustomerAliasClient.Row("DUPE1", id: 1, activeYN: "N", master: true),
+            CustomerAliasClient.Row("DUPE1", id: 9, activeYN: "Y", master: false),
+            CustomerAliasClient.Row("DUPE1", id: 5, activeYN: "Y", master: true),
+            CustomerAliasClient.Row("DUPE1", id: 3, activeYN: "Y", master: true),
+        };
+
+        var canonical = CtrmCustomerReader.PickCanonical(candidates);
+
+        Assert.Equal("3", canonical!.IdText);
+        Assert.Null(CtrmCustomerReader.PickCanonical([]));
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_CodeWithThreeRows_CountsOneDuplicate_AndKeepsTheCanonical()
+    {
+        var client = new CustomerAliasClient();
+        client.RowsFor["P000004"] =
+        [
+            CustomerAliasClient.Row("P000004", id: 1, activeYN: "N"),
+            CustomerAliasClient.Row("P000004", id: 9, activeYN: "Y", master: false),
+            CustomerAliasClient.Row("P000004", id: 7, activeYN: "Y", master: true),
+        ];
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+        var codes = Codes(25);
+
+        var read = await new CtrmCustomerReader(client, Config(), logger.Object).GetBySourceCodesAsync(codes, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, read.Status);
+        Assert.Equal(1, read.Value!.Duplicates);
+        Assert.Equal(codes.Count, read.Value.Found);
+        Assert.Equal(0, read.Value.Missing);
+        Assert.Equal("7", read.Value.ByCode["P000004"].IdText);
+        // Logged once, by code only - never a name.
+        logger.Verify(l => l.Log(
+            LogLevel.Warning, It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE")
+                && v.ToString()!.Contains("P000004") && !v.ToString()!.Contains("Farms")),
+            It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Probe: what Dev will see first is the missing permission, named as such.
+
+    [Fact]
+    public async Task ProbeAsync_Unauthorized_ReportsPermissionMissing_WithoutSecondRequest()
+    {
+        var client = new CustomerAliasClient
+        {
+            ProbeAnswer = new() { Status = CtrmReadStatus.Unauthorized, HttpStatus = 403, Detail = "stub 403" }
+        };
+
+        var read = await Sut(client).ProbeAsync("P000042", CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Unauthorized, read.Status);
+        Assert.Equal("missing", read.Value!.Permission);
+        Assert.False(read.Value.ProjectionAccepted);
+        Assert.Contains("Customers.Read.All", read.Detail);
+        Assert.Equal(1, client.Calls);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_OkWithSample_RunsTheFullProjection_AndReportsProjectionAccepted_AndIdKind()
+    {
+        var client = new CustomerAliasClient();
+
+        var read = await Sut(client).ProbeAsync(" P000042 ", CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        var probe = read.Value!;
+        Assert.Equal("granted", probe.Permission);
+        Assert.Equal(16700, probe.TotalCount);
+        Assert.True(probe.ProjectionAccepted);
+        Assert.True(probe.SampleFound);
+        Assert.Equal("Number", probe.IdKind);
+        Assert.Equal(2, client.Calls);
+        Assert.Equal(CtrmCustomerQueries.CustomersProbe, client.Documents[0]);
+        Assert.Contains(CtrmCustomerQueries.CustomerProjection, client.Documents[1]);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_SampleLookupHttp400_ReportsProjectionNotAccepted_WithTheSchemaDetail()
+    {
+        var client = new CustomerAliasClient
+        {
+            FailChunk = 0,
+            FailWith = Failure(CtrmReadStatus.QueryError, 400, "HC0020", "The field `merchandisingPhone` does not exist on the type `Customer`.")
+        };
+
+        var read = await Sut(client).ProbeAsync("P000001", CancellationToken.None);
+
+        var probe = read.Value!;
+        Assert.Equal("granted", probe.Permission);
+        Assert.False(probe.ProjectionAccepted);
+        Assert.False(probe.SampleFound);
+        Assert.Null(probe.IdKind);
+        Assert.Contains("CtrmCustomerQueries.CustomerProjection", read.Detail);
+        Assert.Equal(2, client.Calls);
     }
 }
