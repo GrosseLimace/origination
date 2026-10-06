@@ -45,6 +45,10 @@ public sealed class CtrmCustomerActivityReader
     public const string MaxPagesKey = "CustomerSync:DiscoveryMaxPagesPerWindow";
     public const int PageSize = 500;
 
+    /// <summary>The widest span <see cref="DiscoverAsync"/> accepts - the same ceiling as
+    /// <c>CustomerSync:DiscoveryWindowDays</c>.</summary>
+    private const int MaxSpanDays = 3660;
+
     private readonly ICtrmGraphQlClient _client;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmCustomerActivityReader> _logger;
@@ -75,6 +79,18 @@ public sealed class CtrmCustomerActivityReader
     /// </remarks>
     public async Task<CtrmReadResult<CtrmLinkDiscovery>> DiscoverAsync(DateTime from, DateTime to, CancellationToken cancellationToken)
     {
+        // An inverted window has nothing in it: an empty, complete discovery, not an error.
+        if (from.Date > to.Date)
+            return new CtrmReadResult<CtrmLinkDiscovery> { Status = CtrmReadStatus.Ok, Value = new CtrmLinkDiscovery() };
+
+        // An accidental "all time" span would be thousands of unfiltered pages on the shared gateway.
+        if ((to.Date - from.Date).TotalDays > MaxSpanDays)
+            return new CtrmReadResult<CtrmLinkDiscovery>
+            {
+                Status = CtrmReadStatus.Error,
+                Detail = $"discovery window exceeds {MaxSpanDays} days — set discoveryFrom deliberately"
+            };
+
         var stopwatch = Stopwatch.StartNew();
         var maxPages = Math.Max(1, CtrmConfig.ReadInt(_configuration, MaxPagesKey, 200));
         var discovery = new CtrmLinkDiscovery();

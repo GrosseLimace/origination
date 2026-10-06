@@ -285,6 +285,35 @@ public class CtrmCustomerActivityReaderTests
         Assert.Equal(from.AddDays(400).ToString("yyyy-MM-dd"), windows[^1].To);
     }
 
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_FromAfterTo_ReturnsOkWithNoLinks_AndNoRequest()
+    {
+        var client = new LinksClient();
+
+        var result = await Sut(client).DiscoverAsync(WeekTo, WeekFrom, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, result.Status);
+        var discovery = Assert.IsType<CtrmLinkDiscovery>(result.Value);
+        Assert.Empty(discovery.All);
+        Assert.Empty(client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_SpanOverTenYears_IsRejectedAsError()
+    {
+        // An accidental "all time" span would be thousands of pages on the shared PROD gateway.
+        var client = new LinksClient();
+
+        var result = await Sut(client).DiscoverAsync(new DateTime(2016, 1, 1), WeekTo, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Error, result.Status);
+        Assert.Equal("discovery window exceeds 3660 days — set discoveryFrom deliberately", result.Detail);
+        Assert.Null(result.Value);
+        Assert.Empty(client.Calls);
+    }
+
     private static CtrmTicketLinkDto Ticket(params (string? CustomerCode, string? OrganizationCode)[] details) => new()
     {
         Details = [.. details.Select(d => new CtrmTicketLinkDetailDto { CustomerCode = d.CustomerCode, OrganizationCode = d.OrganizationCode })]
