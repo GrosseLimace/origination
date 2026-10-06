@@ -34,6 +34,9 @@ namespace GrainOriginatorPortal.Api.Services;
 ///
 /// Designed to be callable from both the scheduled
 /// <see cref="CustomerSyncBackgroundService"/> and from the diagnostics manual-trigger endpoint.
+/// Registered as a singleton, it remembers its last non-dry run in memory (<see cref="LastRun"/>,
+/// <see cref="LastSuccessfulRunUtc"/>, <see cref="StartedUtc"/>) so an aborted or failed run is visible
+/// from the app without a table or an alert rule.
 /// </summary>
 public class CustomerSyncService
 {
@@ -54,13 +57,77 @@ public class CustomerSyncService
         _logger = logger;
     }
 
+    // Reference assignments only, so a reader never sees a torn value: this class is a singleton
+    // (Program.cs) and a manual run can overlap the background loop, in which case the later finish wins.
+    private volatile CustomerSyncLastRun? _lastRun;
+    private volatile CustomerSyncLastRun? _lastSuccessfulRun;
+
+    /// <summary>When this instance (= the process, the service being a singleton) was constructed, so a
+    /// null <see cref="LastRun"/> after a restart is explainable.</summary>
+    public DateTime StartedUtc { get; } = DateTime.UtcNow;
+
+    /// <summary>The last NON-dry run that completed, aborted or threw; null until one has. In memory only:
+    /// a restart forgets it (see <see cref="StartedUtc"/>).</summary>
+    public CustomerSyncLastRun? LastRun => _lastRun;
+
+    /// <summary><see cref="CustomerSyncLastRun.FinishedUtc"/> of the last non-dry run whose outcome was "ok".</summary>
+    public DateTime? LastSuccessfulRunUtc => _lastSuccessfulRun?.FinishedUtc;
+
     public Task<CustomerSyncResult> SyncAsync(CancellationToken cancellationToken = default) =>
         SyncAsync(CustomerSyncOptions.Default, cancellationToken);
 
+    /// <summary>
+    /// Runs one sync and, unless it is a dry run, records it as <see cref="LastRun"/>: every trigger (startup,
+    /// scheduled, manual <c>POST run</c>) passes through here, so an aborted guard is visible from the app.
+    /// A run that throws is recorded as "failed" with the exception TYPE only (the message can carry a
+    /// connection string or PII) and the exception propagates; cancellation (shutdown) is not a failed run.
+    /// </summary>
     public async Task<CustomerSyncResult> SyncAsync(CustomerSyncOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        var started = DateTime.UtcNow;
+        try
+        {
+            var result = await RunAsync(options, cancellationToken);
+            if (!options.DryRun) Record(started, options, result, exception: null);
+            return result;
+        }
+        catch (Exception ex) when (!options.DryRun && ex is not OperationCanceledException)
+        {
+            Record(started, options, result: null, ex);
+            throw;
+        }
+    }
+
+    private void Record(DateTime started, CustomerSyncOptions options, CustomerSyncResult? result, Exception? exception)
+    {
+        var finished = DateTime.UtcNow;
+        var outcome = exception is not null ? "failed" : result!.Aborted ? "aborted" : "ok";
+        var lastRun = new CustomerSyncLastRun
+        {
+            StartedUtc = started,
+            FinishedUtc = finished,
+            Trigger = options.Trigger,
+            Source = result?.Source ?? CustomerSyncSources.Resolve(_configuration),
+            Outcome = outcome,
+            AbortCode = result?.AbortCode,
+            AbortReason = result?.AbortReason,
+            ExceptionType = exception?.GetType().Name,
+            Result = result
+        };
+
+        _lastRun = lastRun;
+        if (outcome == "ok") _lastSuccessfulRun = lastRun;
+
+        _logger.LogInformation(
+            "CustomerSync last run recorded: outcome {Outcome}, trigger {Trigger}, source {Source}, abort code {AbortCode}, exception type {ExceptionType}, {ElapsedMs} ms",
+            lastRun.Outcome, lastRun.Trigger, lastRun.Source, lastRun.AbortCode, lastRun.ExceptionType,
+            (long)(finished - started).TotalMilliseconds);
+    }
+
+    private async Task<CustomerSyncResult> RunAsync(CustomerSyncOptions options, CancellationToken cancellationToken)
+    {
         var sw = Stopwatch.StartNew();
         var phase = Stopwatch.StartNew();
         var result = new CustomerSyncResult { DryRun = options.DryRun };
@@ -504,4 +571,33 @@ public class CustomerSyncResult
 
     /// <summary>The CTRM link-discovery report (CTRM only).</summary>
     public CustomerSyncDiscoveryInfo? Discovery { get; set; }
+}
+
+/// <summary>
+/// The last non-dry sync run, kept in memory by <see cref="CustomerSyncService"/> for
+/// <c>GET api/diagnostics/customer-sync/last-run</c>. Codes, counts and an exception type only: never an
+/// exception message (it can carry a connection string or PII), never a customer name.
+/// </summary>
+public sealed class CustomerSyncLastRun
+{
+    public required DateTime StartedUtc { get; init; }
+    public required DateTime FinishedUtc { get; init; }
+
+    /// <summary><c>"manual"</c> | <c>"startup"</c> | <c>"scheduled"</c> (<see cref="CustomerSyncOptions.Trigger"/>).</summary>
+    public required string Trigger { get; init; }
+
+    /// <summary>The feeder the run read (<see cref="CustomerSyncSources"/>); the configured one when the run threw.</summary>
+    public required string Source { get; init; }
+
+    /// <summary><c>"ok"</c> | <c>"aborted"</c> | <c>"failed"</c> (threw).</summary>
+    public required string Outcome { get; init; }
+
+    public string? AbortCode { get; init; }
+    public string? AbortReason { get; init; }
+
+    /// <summary><c>ex.GetType().Name</c> when <see cref="Outcome"/> is "failed"; never the message.</summary>
+    public string? ExceptionType { get; init; }
+
+    /// <summary>The run's result; null when <see cref="Outcome"/> is "failed".</summary>
+    public CustomerSyncResult? Result { get; init; }
 }

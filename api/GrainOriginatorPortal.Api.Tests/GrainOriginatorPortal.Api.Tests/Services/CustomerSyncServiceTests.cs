@@ -826,6 +826,145 @@ public class CustomerSyncServiceTests
         Assert.Same(lookup, failed.Lookup);
     }
 
+    // ── Last-run record (D14): the singleton remembers its last non-dry run ──────────────────────
+
+    [Fact]
+    public async Task SyncAsync_CompletedRun_RecordsLastRunOk_WithTriggerSourceAndCounters()
+    {
+        HundredActiveCustomers_SourceCovers(100);
+        var service = CreateService();
+
+        var result = await service.SyncAsync(new CustomerSyncOptions { Trigger = "scheduled" }, CancellationToken.None);
+
+        var lastRun = Assert.IsType<CustomerSyncLastRun>(service.LastRun);
+        Assert.Equal("ok", lastRun.Outcome);
+        Assert.Equal("scheduled", lastRun.Trigger);
+        Assert.Equal(CustomerSyncSources.Ods, lastRun.Source);
+        Assert.Same(result, lastRun.Result);
+        Assert.Equal(100, lastRun.Result!.CustomersUpdated);
+        Assert.Null(lastRun.AbortCode);
+        Assert.Null(lastRun.ExceptionType);
+        Assert.True(lastRun.FinishedUtc >= lastRun.StartedUtc);
+        Assert.True(lastRun.StartedUtc >= service.StartedUtc);
+        Assert.Equal(lastRun.FinishedUtc, service.LastSuccessfulRunUtc);
+        Assert.Contains(_serviceLogger.Entries, e => e.Level == LogLevel.Information && e.Message.Contains("last run recorded") && e.Message.Contains("ok"));
+    }
+
+    [Fact]
+    public async Task SyncAsync_AbortedRun_RecordsLastRunAborted_WithTheCode_AndLeavesLastSuccessfulUntouched()
+    {
+        _settings["CustomerSync:MaxDeactivationCount"] = "10";
+        HundredActiveCustomers_SourceCovers(100);
+        var service = CreateService();
+        await service.SyncAsync(new CustomerSyncOptions { Trigger = "startup" }, CancellationToken.None);
+        var lastSuccessful = service.LastSuccessfulRunUtc;
+        Assert.NotNull(lastSuccessful);
+
+        _stub!.Result.Rows.RemoveRange(10, 90);   // 90 of 100 would now be deactivated → the guard trips
+        var aborted = await service.SyncAsync(new CustomerSyncOptions { Trigger = "scheduled" }, CancellationToken.None);
+
+        var lastRun = service.LastRun!;
+        Assert.Equal("aborted", lastRun.Outcome);
+        Assert.Equal("scheduled", lastRun.Trigger);
+        Assert.Equal("CUSTOMER_SYNC_GUARD_TRIPPED", lastRun.AbortCode);
+        Assert.Equal(aborted.AbortReason, lastRun.AbortReason);
+        Assert.Same(aborted, lastRun.Result);
+        Assert.Equal(lastSuccessful, service.LastSuccessfulRunUtc);
+    }
+
+    [Fact]
+    public async Task SyncAsync_SourceFailure_RecordsLastRunAborted_WithTheSourceCode()
+    {
+        AppCustomer(1);
+        UseStub(CustomerSyncSourceResult.Failed(CustomerSyncSources.Ctrm, "CUSTOMER_SYNC_NO_PERMISSION", "Customers.Read.All missing"), CustomerSyncSources.Ctrm);
+        _settings[CustomerSyncSources.ConfigKey] = "ctrm";
+        var service = CreateService();
+
+        await service.SyncAsync(CancellationToken.None);
+
+        Assert.Equal("aborted", service.LastRun!.Outcome);
+        Assert.Equal("manual", service.LastRun.Trigger);
+        Assert.Equal(CustomerSyncSources.Ctrm, service.LastRun.Source);
+        Assert.Equal("CUSTOMER_SYNC_NO_PERMISSION", service.LastRun.AbortCode);
+        Assert.Null(service.LastSuccessfulRunUtc);
+    }
+
+    [Fact]
+    public async Task SyncAsync_RepositoryThrows_RecordsLastRunFailed_WithTheExceptionTypeOnly_AndRethrows()
+    {
+        _repo.Setup(r => r.LoadAppCustomersAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("secret"));
+        var service = CreateService();
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.SyncAsync(new CustomerSyncOptions { Trigger = "scheduled" }, CancellationToken.None));
+
+        Assert.Equal("secret", thrown.Message);
+        var lastRun = service.LastRun!;
+        Assert.Equal("failed", lastRun.Outcome);
+        Assert.Equal("scheduled", lastRun.Trigger);
+        Assert.Equal(CustomerSyncSources.Ods, lastRun.Source);
+        Assert.Equal("InvalidOperationException", lastRun.ExceptionType);
+        Assert.Null(lastRun.AbortReason);
+        Assert.Null(lastRun.Result);
+        Assert.DoesNotContain("secret", System.Text.Json.JsonSerializer.Serialize(lastRun));
+        Assert.Null(service.LastSuccessfulRunUtc);
+    }
+
+    [Fact]
+    public async Task SyncAsync_Cancelled_IsNotRecordedAsAFailedRun()
+    {
+        _repo.Setup(r => r.LoadAppCustomersAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new OperationCanceledException());
+        var service = CreateService();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => service.SyncAsync(CancellationToken.None));
+
+        Assert.Null(service.LastRun);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_NeverTouchesLastRun()
+    {
+        HundredActiveCustomers_SourceCovers(100);
+        var service = CreateService();
+
+        await service.SyncAsync(new CustomerSyncOptions { DryRun = true }, CancellationToken.None);
+
+        Assert.Null(service.LastRun);
+        Assert.Null(service.LastSuccessfulRunUtc);
+
+        await service.SyncAsync(CancellationToken.None);
+        var recorded = service.LastRun;
+        _stub!.Result.Rows.Clear();   // a dry run that aborts (empty source) is not recorded either
+        await service.SyncAsync(new CustomerSyncOptions { DryRun = true }, CancellationToken.None);
+
+        Assert.Same(recorded, service.LastRun);
+        Assert.Equal(recorded!.FinishedUtc, service.LastSuccessfulRunUtc);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRunThatThrows_IsNotRecorded()
+    {
+        _repo.Setup(r => r.LoadAppCustomersAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("secret"));
+        var service = CreateService();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SyncAsync(new CustomerSyncOptions { DryRun = true }, CancellationToken.None));
+
+        Assert.Null(service.LastRun);
+    }
+
+    [Fact]
+    public void StartedUtc_IsSetOnConstruction()
+    {
+        var before = DateTime.UtcNow;
+
+        var service = CreateService();
+
+        Assert.InRange(service.StartedUtc, before, DateTime.UtcNow);
+        Assert.Equal(DateTimeKind.Utc, service.StartedUtc.Kind);
+        Assert.Null(service.LastRun);
+        Assert.Null(service.LastSuccessfulRunUtc);
+    }
+
     // ── Stub feeder ──────────────────────────────────────────────────────────────────────────────
 
     private sealed class ListLogger<T> : ILogger<T>
