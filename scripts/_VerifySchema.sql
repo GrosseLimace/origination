@@ -42,6 +42,15 @@
 --   Last regenerated: 2026-09-21 against the snapshot as of migration
 --   20260921152258_AddUsageDashboardViewAllUsers (re-parsed the snapshot; every
 --   previously listed row was reproduced unchanged by the rules above).
+--   Updated 2026-09-22 (bid-sheet branch): merged with this branch's objects rather than
+--   regenerated. Main's baseline is kept for every table it owns -- it is AHEAD of this branch on
+--   Notes, SavedLists, CustomerTradeUnit and ProducerDetails, and it backfilled the gaps this
+--   file's old header apologised for. Transplanted from the branch: the five Barchart* tables,
+--   BidSheets / BidSheetShares / BidSheetLocationLinks, and the reshaped BidSheetLocationBids,
+--   BidSheetLocations and BidSheetPreferences (main's rows for those three predate the remodel).
+--   BidSheetLocationOrders is DROPPED -- retired by 20260914131223. Regenerate properly from the
+--   merged snapshot when this branch reaches main.
+--
 --   Updated 2026-09-22: appended the two flax migrations (20260921202246,
 --   20260921204500). Both are data-only raw SQL, so no table, column or index
 --   row changed; only @Migrations grew.
@@ -55,6 +64,14 @@
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
+--   Updated 2026-09-23 (bid-sheet branch): 20260923132920_AddSelectedColumnsToBidSheet
+--   Preference adds dbo.BidSheetPreferences.SelectedColumns, nvarchar(max) NULL. The four
+--   superseded columns beside it (CropOrder, HiddenCrops, SelectedMonths, SelectedYears) are
+--   deliberately NOT dropped -- they are read once to migrate a user forward, and they are the
+--   rollback. Merging release_2026-09-29 conflicted here: that branch re-listed ProducerContact,
+--   ProducerDetails and ProducerGrainOnFarm wholesale because one of their rows was renamed.
+--   Taking both sides would have duplicated 23 rows and kept the pre-rename CommodityGroup, so
+--   only the renamed row was taken.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -107,13 +124,20 @@ DECLARE @Findings TABLE (
 );
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (40)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (52)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Tables (SchemaName, TableName) VALUES
+('dbo', 'BarchartApiCallAudit'),
+('dbo', 'BarchartCommodityMap'),
+('dbo', 'BarchartCurrentQuote'),
+('dbo', 'BarchartInstrument'),
+('dbo', 'BarchartQuoteSnapshot'),
 ('dbo', 'BidSheetLocationBids'),
-('dbo', 'BidSheetLocationOrders'),
+('dbo', 'BidSheetLocationLinks'),
 ('dbo', 'BidSheetLocations'),
 ('dbo', 'BidSheetPreferences'),
+('dbo', 'BidSheetShares'),
+('dbo', 'BidSheets'),
 ('dbo', 'Commodities'),
 ('dbo', 'Customer'),
 ('dbo', 'CustomerCommodity'),
@@ -131,6 +155,10 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'HarvestWindows'),
 ('dbo', 'MbpLocationSynonym'),
 ('dbo', 'Notes'),
+('dbo', 'OrganicCertification'),
+('dbo', 'OrganicCertificationItem'),
+('dbo', 'OrganicCertificationLoad'),
+('dbo', 'OrganicCertificationScope'),
 ('dbo', 'ProducerContact'),
 ('dbo', 'ProducerDetails'),
 ('dbo', 'ProducerGrainOnFarm'),
@@ -151,8 +179,9 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'UserTradeUnitSnapshot'),
 ('dbo', 'WeeklyLoginAggregate');
 
+
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (371)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (530)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -165,8 +194,105 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 -- snapshot property order (key first, then alphabetical).
 -- -----------------------------------------------------------------------------
 INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VALUES
--- BidSheetLocations (BidSheetLocation entity)
+('dbo', 'BarchartApiCallAudit', 'ApiCallId',    'bigint',         0),
+('dbo', 'BarchartApiCallAudit', 'CalledAtUtc',  'datetime2(3)',   0),
+('dbo', 'BarchartApiCallAudit', 'Endpoint',     'nvarchar(100)',  0),
+('dbo', 'BarchartApiCallAudit', 'QueryParams',  'nvarchar(2000)', 1),
+('dbo', 'BarchartApiCallAudit', 'HttpStatus',   'int',            1),
+('dbo', 'BarchartApiCallAudit', 'Success',      'bit',            0),
+('dbo', 'BarchartApiCallAudit', 'RowsAffected', 'int',            1),
+('dbo', 'BarchartApiCallAudit', 'DurationMs',   'int',            1),
+('dbo', 'BarchartApiCallAudit', 'ErrorMessage', 'nvarchar(2000)', 1),
+('dbo', 'BarchartCommodityMap', 'BarchartCommodity', 'nvarchar(200)', 0),
+('dbo', 'BarchartCommodityMap', 'CommodityCode',     'nvarchar(50)',  0),
+('dbo', 'BarchartCommodityMap', 'CommodityName',     'nvarchar(200)', 1),
+('dbo', 'BarchartCommodityMap', 'CommodityCategory', 'nvarchar(100)', 1),
+('dbo', 'BarchartCommodityMap', 'IsActive',          'bit',           0),
+('dbo', 'BarchartCommodityMap', 'CreatedAt',         'datetime2(3)',  0),
+('dbo', 'BarchartCommodityMap', 'CreatedBy',         'nvarchar(255)', 0),
+('dbo', 'BarchartCommodityMap', 'ModifiedAt',        'datetime2(3)',  1),
+('dbo', 'BarchartCommodityMap', 'ModifiedBy',        'nvarchar(255)', 1),
+('dbo', 'BarchartCurrentQuote', 'Symbol',          'nvarchar(100)', 0),
+('dbo', 'BarchartCurrentQuote', 'LastPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'NetChange',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'PercentChange',   'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'OpenPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'HighPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'LowPrice',        'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'ClosePrice',      'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'UnitCode',        'nvarchar(10)',  1),
+('dbo', 'BarchartCurrentQuote', 'DayCode',         'nvarchar(5)',   1),
+('dbo', 'BarchartCurrentQuote', 'QuoteMode',       'nvarchar(10)',  1),
+('dbo', 'BarchartCurrentQuote', 'QuoteFlag',       'nvarchar(5)',   1),
+('dbo', 'BarchartCurrentQuote', 'TradeTimestamp',  'datetime2(3)',  1),
+('dbo', 'BarchartCurrentQuote', 'ServerTimestamp', 'datetime2(3)',  1),
+('dbo', 'BarchartCurrentQuote', 'UpdatedAtUtc',    'datetime2(3)',  0),
+('dbo', 'BarchartInstrument', 'Symbol',             'nvarchar(100)', 0),
+('dbo', 'BarchartInstrument', 'LocationKey',        'nvarchar(50)',  1),
+('dbo', 'BarchartInstrument', 'Root',               'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'InstrumentType',     'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryWindowFlag', 'char(1)',       1),
+('dbo', 'BarchartInstrument', 'SymbolDescription',  'nvarchar(500)', 1),
+('dbo', 'BarchartInstrument', 'Elevator',           'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'LocationName',       'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'FacilityType',       'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'Commodity',          'nvarchar(200)', 1),
+('dbo', 'BarchartInstrument', 'UnderlyingFuture',   'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryStart',      'datetime2(3)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryEnd',        'datetime2(3)',  1),
+('dbo', 'BarchartInstrument', 'Address',            'nvarchar(500)', 1),
+('dbo', 'BarchartInstrument', 'City',               'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'State',              'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'ZipCode',            'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'Latitude',           'float',         1),
+('dbo', 'BarchartInstrument', 'Longitude',          'float',         1),
+('dbo', 'BarchartInstrument', 'County',             'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'StateFips',          'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'CountyFips',         'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'Phone',              'nvarchar(50)',  1),
+('dbo', 'BarchartInstrument', 'Website',            'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'IsTest',             'bit',           0),
+('dbo', 'BarchartInstrument', 'IsActive',           'bit',           0),
+('dbo', 'BarchartInstrument', 'FirstSeenUtc',       'datetime2(3)',  0),
+('dbo', 'BarchartInstrument', 'LastSeenUtc',        'datetime2(3)',  0),
+('dbo', 'BarchartQuoteSnapshot', 'SnapshotDate',   'date',          0),
+('dbo', 'BarchartQuoteSnapshot', 'Symbol',         'nvarchar(100)', 0),
+('dbo', 'BarchartQuoteSnapshot', 'LastPrice',      'decimal(19,4)', 1),
+('dbo', 'BarchartQuoteSnapshot', 'NetChange',      'decimal(19,4)', 1),
+('dbo', 'BarchartQuoteSnapshot', 'TradeTimestamp', 'datetime2(3)',  1),
+('dbo', 'BarchartQuoteSnapshot', 'CreatedAtUtc',   'datetime2(3)',  0),
+('dbo', 'BidSheetLocationBids', 'Id',                'int',           0),
+('dbo', 'BidSheetLocationBids', 'Bid',               'nvarchar(50)',  0),
+('dbo', 'BidSheetLocationBids', 'CommodityCategory', 'nvarchar(100)', 1),
+('dbo', 'BidSheetLocationBids', 'CommodityCode',     'nvarchar(50)',  0),
+('dbo', 'BidSheetLocationBids', 'CommodityName',     'nvarchar(200)', 1),
+('dbo', 'BidSheetLocationBids', 'CreatedAt',         'datetime2',     0),
+('dbo', 'BidSheetLocationBids', 'CreatedBy',         'nvarchar(255)', 0),
+('dbo', 'BidSheetLocationBids', 'CropYear',          'int',           0),
+('dbo', 'BidSheetLocationBids', 'LocationId',        'int',           0),
+('dbo', 'BidSheetLocationBids', 'ModifiedAt',        'datetime2',     1),
+('dbo', 'BidSheetLocationBids', 'Source',            'nvarchar(20)',  0),
+('dbo', 'BidSheetLocationBids', 'BarchartSymbol',    'nvarchar(100)', 1),
+('dbo', 'BidSheetLocationBids', 'QuoteAsOf',         'datetime2',     1),
+('dbo', 'BidSheetLocationBids', 'ModifiedBy',        'nvarchar(255)', 1),
+('dbo', 'BidSheetLocationBids', 'Month',             'int',           0),
+('dbo', 'BidSheetLocationBids', 'BasisBid',          'nvarchar(50)',  1),
+('dbo', 'BidSheetLocationBids', 'BasisSymbol',       'nvarchar(100)', 1),
+('dbo', 'BidSheetLocationBids', 'BasisQuoteAsOf',    'datetime2',     1),
+('dbo', 'BidSheetLocationBids', 'UnderlyingFuture',  'nvarchar(20)',  1),
+('dbo', 'BidSheetLocationBids', 'CoveredByCropYear', 'int',           1),
+('dbo', 'BidSheetLocationBids', 'CoveredByMonth',    'int',           1),
+('dbo', 'BidSheetLocationBids', 'CashChangedAt',     'datetime2',     1),
+('dbo', 'BidSheetLocationBids', 'BasisChangedAt',    'datetime2',     1),
+('dbo', 'BidSheetLocationLinks', 'Id',                 'int',           0),
+('dbo', 'BidSheetLocationLinks', 'AddedAt',            'datetime2',     0),
+('dbo', 'BidSheetLocationLinks', 'AddedBy',            'nvarchar(255)', 0),
+('dbo', 'BidSheetLocationLinks', 'BidSheetId',         'int',           0),
+('dbo', 'BidSheetLocationLinks', 'BidSheetLocationId', 'int',           0),
+('dbo', 'BidSheetLocationLinks', 'DisplayName',        'nvarchar(200)', 1),
+('dbo', 'BidSheetLocationLinks', 'SortOrder',          'int',           0),
 ('dbo', 'BidSheetLocations', 'Id',                'int',           0),
+('dbo', 'BidSheetLocations', 'BarchartLocationKey', 'nvarchar(50)', 1),
 ('dbo', 'BidSheetLocations', 'Address',           'nvarchar(300)', 1),
 ('dbo', 'BidSheetLocations', 'City',              'nvarchar(100)', 1),
 ('dbo', 'BidSheetLocations', 'CreatedAt',         'datetime2',     0),
@@ -180,27 +306,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocations', 'ModifiedBy',        'nvarchar(255)', 1),
 ('dbo', 'BidSheetLocations', 'Name',              'nvarchar(200)', 0),
 ('dbo', 'BidSheetLocations', 'State',             'nvarchar(10)',  1),
-('dbo', 'BidSheetLocations', 'TradeUnitCode',     'nvarchar(100)', 0),
--- BidSheetLocationBids (BidSheetLocationBid entity)
-('dbo', 'BidSheetLocationBids', 'Id',                'int',           0),
-('dbo', 'BidSheetLocationBids', 'Bid',               'nvarchar(50)',  0),
-('dbo', 'BidSheetLocationBids', 'CommodityCategory', 'nvarchar(100)', 1),
-('dbo', 'BidSheetLocationBids', 'CommodityCode',     'nvarchar(50)',  0),
-('dbo', 'BidSheetLocationBids', 'CommodityName',     'nvarchar(200)', 1),
-('dbo', 'BidSheetLocationBids', 'CreatedAt',         'datetime2',     0),
-('dbo', 'BidSheetLocationBids', 'CreatedBy',         'nvarchar(255)', 0),
-('dbo', 'BidSheetLocationBids', 'CropYear',          'int',           0),
-('dbo', 'BidSheetLocationBids', 'LocationId',        'int',           0),
-('dbo', 'BidSheetLocationBids', 'ModifiedAt',        'datetime2',     1),
-('dbo', 'BidSheetLocationBids', 'ModifiedBy',        'nvarchar(255)', 1),
-('dbo', 'BidSheetLocationBids', 'Month',             'int',           0),
--- BidSheetLocationOrders (BidSheetLocationOrder entity)
-('dbo', 'BidSheetLocationOrders', 'Id',            'int',           0),
-('dbo', 'BidSheetLocationOrders', 'LocationOrder', 'nvarchar(max)', 0),
-('dbo', 'BidSheetLocationOrders', 'ModifiedAt',    'datetime2',     0),
-('dbo', 'BidSheetLocationOrders', 'TradeUnitKey',  'nvarchar(500)', 0),
-('dbo', 'BidSheetLocationOrders', 'UserId',        'nvarchar(256)', 0),
--- BidSheetPreferences (BidSheetPreference entity)
+('dbo', 'BidSheetLocations', 'TradeUnitCode',     'nvarchar(100)', 1),
 ('dbo', 'BidSheetPreferences', 'Id',             'int',           0),
 ('dbo', 'BidSheetPreferences', 'CropCode',       'nvarchar(50)',  1),
 ('dbo', 'BidSheetPreferences', 'CropOrder',      'nvarchar(max)', 1),
@@ -208,11 +314,32 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetPreferences', 'HiddenCrops',    'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'ModifiedAt',     'datetime2',     0),
 ('dbo', 'BidSheetPreferences', 'Month',          'int',           1),
+('dbo', 'BidSheetPreferences', 'PriceMode',      'nvarchar(10)',  1),
 ('dbo', 'BidSheetPreferences', 'PrintLayout',    'nvarchar(max)', 1),
-('dbo', 'BidSheetPreferences', 'SelectedMonths', 'nvarchar(max)', 1),
+('dbo', 'BidSheetPreferences', 'SelectedBidSheetIds', 'nvarchar(200)', 1),
+('dbo', 'BidSheetPreferences', 'SelectedColumns',    'nvarchar(max)', 1),
+('dbo', 'BidSheetPreferences', 'SelectedMonths',     'nvarchar(max)', 1),
+('dbo', 'BidSheetPreferences', 'SelectedYears',  'nvarchar(max)', 1),
 ('dbo', 'BidSheetPreferences', 'TradeUnitKey',   'nvarchar(500)', 0),
 ('dbo', 'BidSheetPreferences', 'UserId',         'nvarchar(256)', 0),
--- Commodities (Commodity entity)
+('dbo', 'BidSheetShares', 'Id',           'int',           0),
+('dbo', 'BidSheetShares', 'BidSheetId',   'int',           0),
+('dbo', 'BidSheetShares', 'MemberId',     'nvarchar(256)', 0),
+('dbo', 'BidSheetShares', 'MemberName',   'nvarchar(256)', 1),
+('dbo', 'BidSheetShares', 'MemberType',   'nvarchar(20)',  0),
+('dbo', 'BidSheetShares', 'SharedAt',     'datetime2',     0),
+('dbo', 'BidSheetShares', 'SharedBy',     'nvarchar(255)', 0),
+('dbo', 'BidSheets', 'Id',             'int',           0),
+('dbo', 'BidSheets', 'CreatedAt',      'datetime2',     0),
+('dbo', 'BidSheets', 'CreatedBy',      'nvarchar(255)', 0),
+('dbo', 'BidSheets', 'CropOrder',      'nvarchar(max)', 1),
+('dbo', 'BidSheets', 'HiddenCrops',    'nvarchar(max)', 1),
+('dbo', 'BidSheets', 'ModifiedAt',     'datetime2',     1),
+('dbo', 'BidSheets', 'ModifiedBy',     'nvarchar(255)', 1),
+('dbo', 'BidSheets', 'Name',           'nvarchar(200)', 0),
+('dbo', 'BidSheets', 'OwnerUserId',    'nvarchar(256)', 0),
+('dbo', 'BidSheets', 'SelectedMonths', 'nvarchar(max)', 1),
+('dbo', 'BidSheets', 'SelectedYears',  'nvarchar(max)', 1),
 ('dbo', 'Commodities', 'Id',                       'int',           0),
 ('dbo', 'Commodities', 'BaseUOM',                  'nvarchar(10)',  1),
 ('dbo', 'Commodities', 'Category',                 'nvarchar(100)', 1),
@@ -226,7 +353,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Commodities', 'Tier3',                    'nvarchar(100)', 1),
 ('dbo', 'Commodities', 'TradeGroupScope',          'nvarchar(100)', 1),
 ('dbo', 'Commodities', 'TradeUnitScope',           'nvarchar(200)', 1),
--- Customer (column names overridden via HasColumnName)
 ('dbo', 'Customer', 'CustomerId',                 'bigint',        0),
 ('dbo', 'Customer', 'MerchandisingAddressLine1',  'nvarchar(255)', 1),
 ('dbo', 'Customer', 'EffectiveEndDate',           'datetime2',     1),
@@ -253,15 +379,12 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Customer', 'ScoularId',                  'nvarchar(400)', 1),
 ('dbo', 'Customer', 'MerchandisingStateProvince', 'nvarchar(50)',  1),
 ('dbo', 'Customer', 'SupplementalEmail',          'nvarchar(255)', 1),
--- CustomerCommodity
 ('dbo', 'CustomerCommodity', 'Id',          'int',    0),
 ('dbo', 'CustomerCommodity', 'CommodityId', 'int',    0),
 ('dbo', 'CustomerCommodity', 'CustomerId',  'bigint', 0),
--- CustomerLink
 ('dbo', 'CustomerLink', 'Id',             'int',    0),
 ('dbo', 'CustomerLink', 'FromCustomerId', 'bigint', 0),
 ('dbo', 'CustomerLink', 'ToCustomerId',   'bigint', 0),
--- CustomerTradeUnit
 ('dbo', 'CustomerTradeUnit', 'Id',              'int',           0),
 ('dbo', 'CustomerTradeUnit', 'CreatedAt',       'datetime2',     0),
 ('dbo', 'CustomerTradeUnit', 'CreatedBy',       'nvarchar(255)', 0),
@@ -272,7 +395,15 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'CustomerTradeUnit', 'ModifiedBy',      'nvarchar(255)', 1),
 ('dbo', 'CustomerTradeUnit', 'TradeUnit',       'nvarchar(100)', 0),
 ('dbo', 'CustomerTradeUnit', 'UserDeactivated', 'bit',           0),
--- DailyRecapGroups (DailyRecapGroup entity)
+('dbo', 'DailyRecapGroupCcEmails', 'Id',           'int',           0),
+('dbo', 'DailyRecapGroupCcEmails', 'Email',        'nvarchar(256)', 0),
+('dbo', 'DailyRecapGroupCcEmails', 'RecapGroupId', 'int',           0),
+('dbo', 'DailyRecapGroupMembers', 'Id',           'int',           0),
+('dbo', 'DailyRecapGroupMembers', 'Email',        'nvarchar(256)', 1),
+('dbo', 'DailyRecapGroupMembers', 'MemberId',     'nvarchar(256)', 0),
+('dbo', 'DailyRecapGroupMembers', 'MemberName',   'nvarchar(256)', 0),
+('dbo', 'DailyRecapGroupMembers', 'MemberType',   'nvarchar(20)',  0),
+('dbo', 'DailyRecapGroupMembers', 'RecapGroupId', 'int',           0),
 ('dbo', 'DailyRecapGroups', 'Id',                'int',           0),
 ('dbo', 'DailyRecapGroups', 'CreatedAt',         'datetime2',     0),
 ('dbo', 'DailyRecapGroups', 'CreatedBy',         'nvarchar(255)', 0),
@@ -282,18 +413,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'DailyRecapGroups', 'ModifiedBy',        'nvarchar(255)', 1),
 ('dbo', 'DailyRecapGroups', 'Name',              'nvarchar(200)', 0),
 ('dbo', 'DailyRecapGroups', 'TeamsChannelEmail', 'nvarchar(256)', 1),
--- DailyRecapGroupCcEmails (DailyRecapGroupCcEmail entity)
-('dbo', 'DailyRecapGroupCcEmails', 'Id',           'int',           0),
-('dbo', 'DailyRecapGroupCcEmails', 'Email',        'nvarchar(256)', 0),
-('dbo', 'DailyRecapGroupCcEmails', 'RecapGroupId', 'int',           0),
--- DailyRecapGroupMembers (DailyRecapGroupMember entity)
-('dbo', 'DailyRecapGroupMembers', 'Id',           'int',           0),
-('dbo', 'DailyRecapGroupMembers', 'Email',        'nvarchar(256)', 1),
-('dbo', 'DailyRecapGroupMembers', 'MemberId',     'nvarchar(256)', 0),
-('dbo', 'DailyRecapGroupMembers', 'MemberName',   'nvarchar(256)', 0),
-('dbo', 'DailyRecapGroupMembers', 'MemberType',   'nvarchar(20)',  0),
-('dbo', 'DailyRecapGroupMembers', 'RecapGroupId', 'int',           0),
--- DashboardActualHarvests (DashboardActualHarvest entity)
 ('dbo', 'DashboardActualHarvests', 'Id',           'int',           0),
 ('dbo', 'DashboardActualHarvests', 'Bushels',      'int',           0),
 ('dbo', 'DashboardActualHarvests', 'CreatedAt',    'datetime2',     0),
@@ -303,7 +422,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'DashboardActualHarvests', 'ModifiedBy',   'nvarchar(255)', 1),
 ('dbo', 'DashboardActualHarvests', 'PlantingYear', 'int',           0),
 ('dbo', 'DashboardActualHarvests', 'TradeUnitKey', 'nvarchar(500)', 0),
--- DashboardMarketShares (DashboardMarketShare entity)
 ('dbo', 'DashboardMarketShares', 'Id',             'int',           0),
 ('dbo', 'DashboardMarketShares', 'CreatedAt',      'datetime2',     0),
 ('dbo', 'DashboardMarketShares', 'CreatedBy',      'nvarchar(255)', 0),
@@ -313,7 +431,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'DashboardMarketShares', 'ModifiedBy',     'nvarchar(255)', 1),
 ('dbo', 'DashboardMarketShares', 'PlantingYear',   'int',           0),
 ('dbo', 'DashboardMarketShares', 'TradeUnitKey',   'nvarchar(500)', 0),
--- DashboardPlantingEstimates (DashboardPlantingEstimate entity)
 ('dbo', 'DashboardPlantingEstimates', 'Id',            'int',           0),
 ('dbo', 'DashboardPlantingEstimates', 'CreatedAt',     'datetime2',     0),
 ('dbo', 'DashboardPlantingEstimates', 'CreatedBy',     'nvarchar(255)', 0),
@@ -323,7 +440,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'DashboardPlantingEstimates', 'PlantingYear',  'int',           0),
 ('dbo', 'DashboardPlantingEstimates', 'TradeUnitKey',  'nvarchar(500)', 0),
 ('dbo', 'DashboardPlantingEstimates', 'YieldEstimate', 'decimal(10,2)', 1),
--- ESignEnrollment (column names overridden via HasColumnName)
 ('dbo', 'ESignEnrollment', 'Id',                    'int',           0),
 ('dbo', 'ESignEnrollment', 'CustomerCode',          'nvarchar(50)',  0),
 ('dbo', 'ESignEnrollment', 'CustomerName',          'nvarchar(255)', 0),
@@ -331,7 +447,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ESignEnrollment', 'GUID',                  'nvarchar(255)', 1),
 ('dbo', 'ESignEnrollment', 'ScoularViewRecipients', 'nvarchar(max)', 1),
 ('dbo', 'ESignEnrollment', 'UpdatedOn',             'datetime2',     0),
--- ElevatorCache (PK is ElevatorCode, no identity)
 ('dbo', 'ElevatorCache', 'ElevatorCode',      'nvarchar(50)',  0),
 ('dbo', 'ElevatorCache', 'Address',           'nvarchar(300)', 1),
 ('dbo', 'ElevatorCache', 'City',              'nvarchar(100)', 1),
@@ -345,7 +460,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ElevatorCache', 'State',             'nvarchar(10)',  1),
 ('dbo', 'ElevatorCache', 'TradeUnitCode',     'nvarchar(50)',  1),
 ('dbo', 'ElevatorCache', 'ZipCode',           'nvarchar(20)',  1),
--- FeatureUsageDaily
 ('dbo', 'FeatureUsageDaily', 'Id',             'bigint',       0),
 ('dbo', 'FeatureUsageDaily', 'ActivityDate',   'date',         0),
 ('dbo', 'FeatureUsageDaily', 'ClickCount',     'int',          0),
@@ -354,7 +468,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'FeatureUsageDaily', 'SessionCount',   'int',          0),
 ('dbo', 'FeatureUsageDaily', 'SubFeatureCode', 'nvarchar(50)', 0),
 ('dbo', 'FeatureUsageDaily', 'UniqueUsers',    'int',          0),
--- HarvestWindows (HarvestWindow entity)
 ('dbo', 'HarvestWindows', 'Id',                 'int',          0),
 ('dbo', 'HarvestWindows', 'Commodity',          'nvarchar(50)', 0),
 ('dbo', 'HarvestWindows', 'DeliveryEndDay',     'int',          0),
@@ -362,7 +475,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'HarvestWindows', 'DeliveryStartDay',   'int',          0),
 ('dbo', 'HarvestWindows', 'DeliveryStartMonth', 'int',          0),
 ('dbo', 'HarvestWindows', 'IsActive',           'bit',          0),
--- MbpLocationSynonym (CashBidsHidden / PushNotificationsHidden are fixed-length nchar(1))
 ('dbo', 'MbpLocationSynonym', 'Id',                      'int',           0),
 ('dbo', 'MbpLocationSynonym', 'AddressLine1',            'nvarchar(200)', 1),
 ('dbo', 'MbpLocationSynonym', 'AddressLine2',            'nvarchar(200)', 1),
@@ -387,7 +499,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'MbpLocationSynonym', 'Status',                  'nvarchar(20)',  1),
 ('dbo', 'MbpLocationSynonym', 'Website',                 'nvarchar(256)', 1),
 ('dbo', 'MbpLocationSynonym', 'ZipCode',                 'nvarchar(20)',  1),
--- Notes (Note entity; the MentionsJson property is stored in column "Mentions")
 ('dbo', 'Notes', 'Id',          'int',           0),
 ('dbo', 'Notes', 'CreatedAt',   'datetime2',     0),
 ('dbo', 'Notes', 'CreatedBy',   'nvarchar(200)', 0),
@@ -402,6 +513,81 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Notes', 'ModifiedBy',  'nvarchar(200)', 1),
 ('dbo', 'Notes', 'Subject',     'nvarchar(500)', 1),
 ('dbo', 'Notes', 'TradeUnit',   'nvarchar(100)', 1),
+-- OrganicCertification — NOP certification feed landing tables.
+-- Contact name / phone / email are present in the source payload and deliberately NOT stored;
+-- see MigrationSnapshotConsistencyTests.CertificationDoesNotStoreContactPii.
+('dbo', 'OrganicCertification', 'Id',                   'int',            0),
+('dbo', 'OrganicCertification', 'AnniversaryDate',      'date',           1),
+('dbo', 'OrganicCertification', 'CertifierName',        'nvarchar(255)',  1),
+('dbo', 'OrganicCertification', 'ClientOperationId',    'nvarchar(100)',  1),
+('dbo', 'OrganicCertification', 'CustomerId',           'bigint',         1),
+('dbo', 'OrganicCertification', 'DeactivatedOn',        'datetime2',      1),
+('dbo', 'OrganicCertification', 'IsActive',             'bit',            0),
+('dbo', 'OrganicCertification', 'LoadBatchId',          'uniqueidentifier', 1),
+('dbo', 'OrganicCertification', 'Nopid',                'nvarchar(50)',   0),
+('dbo', 'OrganicCertification', 'OperationName',        'nvarchar(255)',  1),
+('dbo', 'OrganicCertification', 'OperationOtherNames',  'nvarchar(500)',  1),
+('dbo', 'OrganicCertification', 'OperationStatus',      'nvarchar(50)',   1),
+('dbo', 'OrganicCertification', 'PreviousStatus',       'nvarchar(50)',   1),
+('dbo', 'OrganicCertification', 'ScoularId',            'nvarchar(50)',   1),
+('dbo', 'OrganicCertification', 'SourceLastUpdateDate', 'date',           1),
+('dbo', 'OrganicCertification', 'StatusChangedOn',      'datetime2',      1),
+('dbo', 'OrganicCertification', 'StatusEffectiveDate',  'date',           1),
+('dbo', 'OrganicCertification', 'TotalAcreage',         'decimal(18,2)',  1),
+('dbo', 'OrganicCertification', 'UpdatedOn',            'datetime2',      0),
+('dbo', 'OrganicCertificationItem', 'Id',                     'int',           0),
+('dbo', 'OrganicCertificationItem', 'CategoryId',             'int',           1),
+('dbo', 'OrganicCertificationItem', 'CategoryName',           'nvarchar(255)', 1),
+('dbo', 'OrganicCertificationItem', 'CertificateNumber',      'nvarchar(100)', 1),
+('dbo', 'OrganicCertificationItem', 'ItemId',                 'int',           1),
+('dbo', 'OrganicCertificationItem', 'ItemName',               'nvarchar(255)', 1),
+('dbo', 'OrganicCertificationItem', 'Varieties',              'nvarchar(1000)', 1),
+('dbo', 'OrganicCertificationItem', 'Organic',                'bit',           0),
+('dbo', 'OrganicCertificationItem', 'Organic100',             'bit',           0),
+('dbo', 'OrganicCertificationItem', 'OrganicCertificationId', 'int',           0),
+('dbo', 'OrganicCertificationItem', 'OtherItems',             'nvarchar(2000)', 1),
+('dbo', 'OrganicCertificationItem', 'Scope',                  'nvarchar(50)',  1),
+('dbo', 'OrganicCertificationItem', 'Status',                 'nvarchar(50)',  1),
+('dbo', 'OrganicCertificationItem', 'StatusEffectiveDate',    'date',          1),
+('dbo', 'OrganicCertificationItem', 'UpdatedOn',              'datetime2',     0),
+('dbo', 'OrganicCertificationLoad', 'Id',                'int',            0),
+('dbo', 'OrganicCertificationLoad', 'Accepted',          'int',            0),
+('dbo', 'OrganicCertificationLoad', 'BatchId',           'uniqueidentifier', 0),
+('dbo', 'OrganicCertificationLoad', 'Message',           'nvarchar(1000)', 1),
+('dbo', 'OrganicCertificationLoad', 'Nopid',             'nvarchar(50)',   1),
+('dbo', 'OrganicCertificationLoad', 'ReceivedOn',        'datetime2',      0),
+('dbo', 'OrganicCertificationLoad', 'Rejected',          'int',            0),
+('dbo', 'OrganicCertificationLoad', 'Status',            'nvarchar(50)',   0),
+('dbo', 'OrganicCertificationLoad', 'UnmatchedCustomer', 'int',            0),
+('dbo', 'OrganicCertificationScope', 'Id',                     'int',          0),
+('dbo', 'OrganicCertificationScope', 'OrganicCertificationId', 'int',          0),
+('dbo', 'OrganicCertificationScope', 'Scope',                  'nvarchar(50)', 0),
+('dbo', 'OrganicCertificationScope', 'ScopeStatus',            'nvarchar(50)', 1),
+('dbo', 'OrganicCertificationScope', 'StatusEffectiveDate',    'date',         1),
+('dbo', 'OrganicCertificationScope', 'UpdatedOn',              'datetime2',    0),
+('dbo', 'ProducerContact', 'Id',         'int',           0),
+('dbo', 'ProducerContact', 'CustomerId', 'bigint',        0),
+('dbo', 'ProducerContact', 'Email',      'nvarchar(255)', 1),
+('dbo', 'ProducerContact', 'IsPrimary',  'bit',           0),
+('dbo', 'ProducerContact', 'Name',       'nvarchar(200)', 0),
+('dbo', 'ProducerContact', 'Phone',      'nvarchar(50)',  1),
+('dbo', 'ProducerContact', 'SortOrder',  'int',           0),
+('dbo', 'ProducerDetails', 'Id',             'int',           0),
+('dbo', 'ProducerDetails', 'BinCapacity',    'decimal(18,2)', 1),
+('dbo', 'ProducerDetails', 'CreatedAt',      'datetime2',     0),
+('dbo', 'ProducerDetails', 'CreatedBy',      'nvarchar(255)', 0),
+('dbo', 'ProducerDetails', 'CustomerId',     'bigint',        0),
+('dbo', 'ProducerDetails', 'ModifiedAt',     'datetime2',     1),
+('dbo', 'ProducerDetails', 'ModifiedBy',     'nvarchar(255)', 1),
+('dbo', 'ProducerDetails', 'PrimaryContact', 'nvarchar(255)', 1),
+('dbo', 'ProducerDetails', 'PrimaryPhone',   'nvarchar(50)',  1),
+('dbo', 'ProducerDetails', 'TotalAcres',     'decimal(18,2)', 1),
+('dbo', 'ProducerGrainOnFarm', 'Id',             'int',           0),
+('dbo', 'ProducerGrainOnFarm', 'BushelsOnHand',  'decimal(18,2)', 1),
+('dbo', 'ProducerGrainOnFarm', 'CommodityCode',  'nvarchar(100)', 0),
+('dbo', 'ProducerGrainOnFarm', 'CustomerId',     'bigint',        0),
+('dbo', 'ProducerGrainOnFarm', 'Grade',          'nvarchar(100)', 1),
+('dbo', 'ProducerGrainOnFarm', 'TargetBushels',  'decimal(18,2)', 1),
 -- ProducerPlantingIntentions (PlantingIntention entity)
 ('dbo', 'ProducerPlantingIntentions', 'Id',           'int',           0),
 ('dbo', 'ProducerPlantingIntentions', 'Acres',        'int',           0),
@@ -419,33 +605,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerPlantingIntentions', 'PlantingYear', 'int',           0),
 ('dbo', 'ProducerPlantingIntentions', 'TradeUnit',    'nvarchar(100)', 0),
 ('dbo', 'ProducerPlantingIntentions', 'Type',         'nvarchar(100)', 1),
--- ProducerContact
-('dbo', 'ProducerContact', 'Id',         'int',           0),
-('dbo', 'ProducerContact', 'CustomerId', 'bigint',        0),
-('dbo', 'ProducerContact', 'Email',      'nvarchar(255)', 1),
-('dbo', 'ProducerContact', 'IsPrimary',  'bit',           0),
-('dbo', 'ProducerContact', 'Name',       'nvarchar(200)', 0),
-('dbo', 'ProducerContact', 'Phone',      'nvarchar(50)',  1),
-('dbo', 'ProducerContact', 'SortOrder',  'int',           0),
--- ProducerDetails
-('dbo', 'ProducerDetails', 'Id',             'int',           0),
-('dbo', 'ProducerDetails', 'BinCapacity',    'decimal(18,2)', 1),
-('dbo', 'ProducerDetails', 'CreatedAt',      'datetime2',     0),
-('dbo', 'ProducerDetails', 'CreatedBy',      'nvarchar(255)', 0),
-('dbo', 'ProducerDetails', 'CustomerId',     'bigint',        0),
-('dbo', 'ProducerDetails', 'ModifiedAt',     'datetime2',     1),
-('dbo', 'ProducerDetails', 'ModifiedBy',     'nvarchar(255)', 1),
-('dbo', 'ProducerDetails', 'PrimaryContact', 'nvarchar(255)', 1),
-('dbo', 'ProducerDetails', 'PrimaryPhone',   'nvarchar(50)',  1),
-('dbo', 'ProducerDetails', 'TotalAcres',     'decimal(18,2)', 1),
--- ProducerGrainOnFarm
-('dbo', 'ProducerGrainOnFarm', 'Id',             'int',           0),
-('dbo', 'ProducerGrainOnFarm', 'BushelsOnHand',  'decimal(18,2)', 1),
-('dbo', 'ProducerGrainOnFarm', 'CommodityCode',  'nvarchar(100)', 0),
-('dbo', 'ProducerGrainOnFarm', 'CustomerId',     'bigint',        0),
-('dbo', 'ProducerGrainOnFarm', 'Grade',          'nvarchar(100)', 1),
-('dbo', 'ProducerGrainOnFarm', 'TargetBushels',  'decimal(18,2)', 1),
--- ProducerReminders (ProducerReminder entity)
 ('dbo', 'ProducerReminders', 'Id',             'int',            0),
 ('dbo', 'ProducerReminders', 'CompletedAt',    'datetime2',      1),
 ('dbo', 'ProducerReminders', 'CreatedAt',      'datetime2',      0),
@@ -457,7 +616,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerReminders', 'Notes',          'nvarchar(2000)', 1),
 ('dbo', 'ProducerReminders', 'OutlookEventId', 'nvarchar(256)',  1),
 ('dbo', 'ProducerReminders', 'Subject',        'nvarchar(200)',  0),
--- QueryLibrary (QueryLibraryItem entity)
 ('dbo', 'QueryLibrary', 'Id',          'int',           0),
 ('dbo', 'QueryLibrary', 'Category',    'nvarchar(100)', 0),
 ('dbo', 'QueryLibrary', 'CreatedAt',   'datetime2',     0),
@@ -468,13 +626,11 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'QueryLibrary', 'QueryText',   'nvarchar(500)', 0),
 ('dbo', 'QueryLibrary', 'SortOrder',   'int',           0),
 ('dbo', 'QueryLibrary', 'Tags',        'nvarchar(500)', 1),
--- QuerySearchLog
 ('dbo', 'QuerySearchLog', 'Id',             'bigint',        0),
 ('dbo', 'QuerySearchLog', 'MatchedQueryId', 'int',           1),
 ('dbo', 'QuerySearchLog', 'SearchText',     'nvarchar(500)', 0),
 ('dbo', 'QuerySearchLog', 'Timestamp',      'datetime2(3)',  0),
 ('dbo', 'QuerySearchLog', 'UserId',         'nvarchar(256)', 0),
--- SavedLists (SavedList entity)
 ('dbo', 'SavedLists', 'Id',                  'int',           0),
 ('dbo', 'SavedLists', 'AssignedTo',          'nvarchar(255)', 1),
 ('dbo', 'SavedLists', 'CreatedAt',           'datetime2',     0),
@@ -488,7 +644,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'SavedLists', 'Name',                'nvarchar(100)', 0),
 ('dbo', 'SavedLists', 'Query',               'nvarchar(500)', 0),
 ('dbo', 'SavedLists', 'TradeUnits',          'nvarchar(500)', 1),
--- TeamsChannels (TeamsChannel entity)
 ('dbo', 'TeamsChannels', 'Id',           'int',           0),
 ('dbo', 'TeamsChannels', 'ChannelEmail', 'nvarchar(256)', 0),
 ('dbo', 'TeamsChannels', 'ChannelId',    'nvarchar(200)', 0),
@@ -497,19 +652,16 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'TeamsChannels', 'DisplayName',  'nvarchar(256)', 0),
 ('dbo', 'TeamsChannels', 'TeamId',       'nvarchar(100)', 0),
 ('dbo', 'TeamsChannels', 'TeamName',     'nvarchar(256)', 0),
--- UsageDashboardExcludedUsers (UsageDashboardExcludedUser entity)
 ('dbo', 'UsageDashboardExcludedUsers', 'Id',        'int',           0),
 ('dbo', 'UsageDashboardExcludedUsers', 'CreatedAt', 'datetime2',     0),
 ('dbo', 'UsageDashboardExcludedUsers', 'CreatedBy', 'nvarchar(255)', 0),
 ('dbo', 'UsageDashboardExcludedUsers', 'Reason',    'nvarchar(500)', 1),
 ('dbo', 'UsageDashboardExcludedUsers', 'UserId',    'nvarchar(256)', 0),
--- UsageDashboardViewAllUsers (UsageDashboardViewAllUser entity)
 ('dbo', 'UsageDashboardViewAllUsers', 'Id',        'int',           0),
 ('dbo', 'UsageDashboardViewAllUsers', 'CreatedAt', 'datetime2',     0),
 ('dbo', 'UsageDashboardViewAllUsers', 'CreatedBy', 'nvarchar(255)', 0),
 ('dbo', 'UsageDashboardViewAllUsers', 'Reason',    'nvarchar(500)', 1),
 ('dbo', 'UsageDashboardViewAllUsers', 'UserId',    'nvarchar(256)', 0),
--- UserActivity
 ('dbo', 'UserActivity', 'Id',             'bigint',        0),
 ('dbo', 'UserActivity', 'DurationMs',     'int',           0),
 ('dbo', 'UserActivity', 'FeatureCode',    'nvarchar(50)',  0),
@@ -519,7 +671,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserActivity', 'SubFeatureCode', 'nvarchar(50)',  1),
 ('dbo', 'UserActivity', 'Timestamp',      'datetime2',     0),
 ('dbo', 'UserActivity', 'UserId',         'nvarchar(256)', 0),
--- UserActivityDaily
 ('dbo', 'UserActivityDaily', 'Id',                      'bigint',        0),
 ('dbo', 'UserActivityDaily', 'ActivityDate',            'date',          0),
 ('dbo', 'UserActivityDaily', 'CallClicks',              'int',           0),
@@ -534,7 +685,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserActivityDaily', 'SessionCount',            'int',           0),
 ('dbo', 'UserActivityDaily', 'TotalSessionMinutes',     'int',           0),
 ('dbo', 'UserActivityDaily', 'UserId',                  'nvarchar(256)', 0),
--- UserClickEvent
 ('dbo', 'UserClickEvent', 'Id',             'bigint',        0),
 ('dbo', 'UserClickEvent', 'EventType',      'nvarchar(50)',  0),
 ('dbo', 'UserClickEvent', 'FeatureCode',    'nvarchar(50)',  0),
@@ -542,8 +692,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserClickEvent', 'TargetId',       'nvarchar(200)', 1),
 ('dbo', 'UserClickEvent', 'Timestamp',      'datetime2',     0),
 ('dbo', 'UserClickEvent', 'UserId',         'nvarchar(256)', 0),
--- UserFeatureUsageDaily (per-user-per-feature daily rollup; backs the dashboard's
---   feature panels for closed days and is the only usage history past raw retention)
 ('dbo', 'UserFeatureUsageDaily', 'Id',               'bigint',        0),
 ('dbo', 'UserFeatureUsageDaily', 'ActivityDate',     'date',          0),
 ('dbo', 'UserFeatureUsageDaily', 'FeatureCode',      'nvarchar(50)',  0),
@@ -552,32 +700,28 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserFeatureUsageDaily', 'ScreenMinutes',    'float',         0),
 ('dbo', 'UserFeatureUsageDaily', 'SubFeatureCode',   'nvarchar(50)',  0),
 ('dbo', 'UserFeatureUsageDaily', 'UserId',           'nvarchar(256)', 0),
--- UserPreferences (UserPreference entity)
 ('dbo', 'UserPreferences', 'Id',                 'int',            0),
 ('dbo', 'UserPreferences', 'SelectedGroupNames', 'nvarchar(2000)', 0),
 ('dbo', 'UserPreferences', 'SelectedTradeUnits', 'nvarchar(2000)', 0),
 ('dbo', 'UserPreferences', 'UpdatedAt',          'datetime2',      0),
 ('dbo', 'UserPreferences', 'UserId',             'nvarchar(256)',  0),
--- UserSession (DurationMinutes is a PERSISTED computed column; SQL Server marks
---   computed columns as NULLABLE regardless of input nullability, so expect NULL)
 ('dbo', 'UserSession', 'Id',               'bigint',        0),
 ('dbo', 'UserSession', 'DurationMinutes',  'int',           1),
 ('dbo', 'UserSession', 'LastActivityTime', 'datetime2',     0),
 ('dbo', 'UserSession', 'LoginTime',        'datetime2',     0),
 ('dbo', 'UserSession', 'UserId',           'nvarchar(256)', 0),
--- UserTradeUnitSnapshot (composite PK: UserId + TradeUnitCode)
 ('dbo', 'UserTradeUnitSnapshot', 'UserId',        'nvarchar(256)', 0),
 ('dbo', 'UserTradeUnitSnapshot', 'TradeUnitCode', 'nvarchar(100)', 0),
 ('dbo', 'UserTradeUnitSnapshot', 'DisplayName',   'nvarchar(255)', 0),
 ('dbo', 'UserTradeUnitSnapshot', 'GroupName',     'nvarchar(100)', 1),
 ('dbo', 'UserTradeUnitSnapshot', 'SnapshotDate',  'date',          0),
--- WeeklyLoginAggregate
 ('dbo', 'WeeklyLoginAggregate', 'Id',              'bigint',        0),
 ('dbo', 'WeeklyLoginAggregate', 'LoginCount',      'int',           0),
 ('dbo', 'WeeklyLoginAggregate', 'SessionCount',    'int',           0),
 ('dbo', 'WeeklyLoginAggregate', 'TotalSessionMin', 'int',           0),
 ('dbo', 'WeeklyLoginAggregate', 'UserId',          'nvarchar(256)', 0),
 ('dbo', 'WeeklyLoginAggregate', 'WeekStartDate',   'date',          0);
+
 
 -- -----------------------------------------------------------------------------
 -- ### UPDATE WHEN SCHEMA CHANGES ### — CHECK constraints (0)
@@ -587,15 +731,18 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- (no rows)
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (21)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (27)
 -- EF Core auto-names single-property unique indexes as IX_<table>_<column>;
 -- this project uses explicit names (IX_*/UQ_*/UX_*) for most indexes.
 -- (NON-unique indexes such as IX_*_Timestamp are intentionally NOT listed.)
 -- -----------------------------------------------------------------------------
 INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'BidSheetLocationBids',        'UQ_BidSheetLocationBids_Location_Commodity_Year_Month'),
-('dbo', 'BidSheetLocationOrders',      'UQ_BidSheetLocationOrders_User_TradeUnitKey'),
+('dbo', 'BidSheetLocationLinks',       'UQ_BidSheetLocationLinks_Sheet_Location'),
+('dbo', 'BidSheetLocations',           'UQ_BidSheetLocations_BarchartKey'),
 ('dbo', 'BidSheetPreferences',         'UQ_BidSheetPreferences_User_TradeUnitKey'),
+('dbo', 'BidSheetShares',              'UQ_BidSheetShares_Sheet_Member'),
+('dbo', 'BidSheets',                   'UQ_BidSheets_Owner_Name'),
 ('dbo', 'Commodities',                 'IX_Commodities_Code'),
 ('dbo', 'CustomerCommodity',           'UQ_CustomerCommodity_Customer_Commodity'),
 ('dbo', 'CustomerLink',                'UQ_CustomerLink_From_To'),
@@ -609,14 +756,17 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'ProducerGrainOnFarm',         'UQ_ProducerGrainOnFarm_Customer_Commodity'),
 ('dbo', 'TeamsChannels',               'UX_TeamsChannels_ChannelId'),
 ('dbo', 'UsageDashboardExcludedUsers', 'IX_UsageDashboardExcludedUsers_UserId'),
+('dbo', 'OrganicCertification',        'UQ_OrganicCertification_Nopid'),
+('dbo', 'OrganicCertificationScope',   'UQ_OrganicCertificationScope_Certification_Scope'),
 ('dbo', 'UsageDashboardViewAllUsers',  'IX_UsageDashboardViewAllUsers_UserId'),
 ('dbo', 'UserActivityDaily',           'UQ_UserActivityDaily_UserId_Date'),
 ('dbo', 'UserFeatureUsageDaily',       'UQ_UserFeatureUsageDaily'),
 ('dbo', 'UserPreferences',             'UQ_UserPreferences_UserId'),
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
+
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (52)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (77)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -657,23 +807,46 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260805184524_AddDpContractQueryLibraryItems'),
 ('20260810141828_AddProducerContact'),
 ('20260810164128_AddNoContractsQueryLibraryItem'),
+('20260811142608_AddBarchartFeed'),
 ('20260812143729_AddCoverageQueryLibraryItems'),
+('20260821124557_AddBarchartPublishableBidView'),
+('20260824132811_AddBasisBidColumns'),
+('20260824133524_AddBasisToPublishableBidView'),
+('20260824134238_AddPriceModePreference'),
+('20260824140609_UsePriceModeForStaleQuotes'),
+('20260824151441_UseContractMonthForBidCells'),
+('20260827140248_UseQuoteAgeNotVendorMode'),
+('20260827151032_MoveManualBidsToBasisColumn'),
+('20260828173255_AddUnderlyingFutureToBidCells'),
+('20260901175652_AddUniqueBarchartPlacementIndex'),
 ('20260901190548_AddCommodityTradeGroupScope'),
 ('20260902152339_AddCommodityTradeUnitScope'),
+('20260902185607_AddSelectedYearsToBidSheetPreference'),
+('20260902194934_MakeBidSheetLocationsGlobal'),
+('20260903124434_AddBidSheets'),
+('20260903133208_AddSelectedBidSheetIdToPreference'),
 ('20260904130531_FixQueryLibraryCardWordingAndAddProducersCategory'),
 ('20260904134718_AddBlankStartQueryLibraryItem'),
+('20260909162456_AddBidSheetLocationLinkDisplayName'),
+('20260909191007_AddBidSheetShareMemberType'),
+('20260910143631_RetireYearlyPeriodAddCoverageAndChangeStamps'),
+('20260910145249_AlignPublishableBidViewWithCoverage'),
+('20260914131223_RetireBidSheetLocationOrders'),
 ('20260914173314_AddRecapGroupMentionsToChannel'),
 ('20260914173336_AddProducerReminders'),
 ('20260914192209_RemoveRecapGroupMentionsToChannel'),
 ('20260914194953_AddTeamsChannelRegistry'),
 ('20260915135233_AddFollowUpQueryLibraryItem'),
 ('20260915153811_AddCommodityPlantingCategory'),
+('20260916131452_SelectSeveralBidSheets'),
 ('20260921141144_AddPlantingIntentionSoftDelete'),
 ('20260921152258_AddUsageDashboardViewAllUsers'),
 ('20260921193322_AddCustomerIndustryCode2AndNopId'),
 ('20260921202246_AddFlaxCommoditiesForTradeUnit3811'),
 ('20260921204500_SplitFlaxPlantingCategoryByColour'),
 ('20260923124207_RenameGrainOnFarmGroupToCommodityCode'),
+('20260923132920_AddSelectedColumnsToBidSheetPreference'),
+('20260923152000_AddOrganicCertificationTables'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
 ('20261005131626_DropCtrmSourceToggleUsers');
 

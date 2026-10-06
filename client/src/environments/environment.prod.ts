@@ -4,6 +4,8 @@ export const environment = {
   // 'production', which rendered an odd lowercase pill next to the title-cased ones.
   envName: 'Production',
   bidSheetEnabled: true,
+  // "Add from BarChart" picker + fed-bid display. Off until the vendor feed is live in this environment.
+  barchartBidsEnabled: false,
   usageDashboardEnabled: true,
   // Daily Digest (recap groups): ON in PROD. Surfaces the /daily-digest route + the
   // "Daily Recap" nav link. NOTE: enabling the UI is only half of launch — the prod

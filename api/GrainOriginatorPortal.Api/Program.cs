@@ -112,6 +112,19 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireRole("Admin"));
 
+    // BarChart ingestion: the data pipeline's managed identity holding the pre-existing
+    // application-only app role, or an Admin so the feed can be exercised and re-run by hand.
+    // RequireRole is OR across the listed roles.
+    options.AddPolicy("BarchartIngest", policy =>
+        policy.RequireRole("Origination.Application", "Admin"));
+
+    // Organic certification ingestion: the integration's managed identity holding the pre-existing
+    // application-only app role, or an Admin so the feed can be exercised and re-run by hand.
+    // RequireRole is OR across the listed roles. Callers here are machine identities with no user
+    // context, which is why nothing downstream consults trade-unit entitlements.
+    options.AddPolicy(GrainOriginatorPortal.Api.Authorization.OrganicIngestAccess.PolicyName, policy =>
+        policy.RequireRole("Origination.Application", "Admin"));
+
     // Usage-dashboard read surface: Super Users group membership, surfaced as the Admin role.
     // Equivalent to AdminOnly today; kept as its own named policy so the read surface stays distinct
     // from exclusion administration (a convention test pins that split), and so how much of the org
@@ -305,6 +318,8 @@ builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
 builder.Services.AddScoped<IDpContractService, DpContractService>();
 builder.Services.AddScoped<ISavedListService, SavedListService>();
 builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
+builder.Services.AddScoped<IOrganicCertificationIngestService, OrganicCertificationIngestService>();
+builder.Services.AddScoped<IOrganicCertificationService, OrganicCertificationService>();
 builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
@@ -315,6 +330,8 @@ builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
+builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
+builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();

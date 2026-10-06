@@ -2,13 +2,17 @@ export const environment = {
   production: false,
   envName: 'QA',
   bidSheetEnabled: true,
+  // "Add from BarChart" picker + fed-bid display. On for QA testing. The catalog must be loaded before
+  // testers look: an empty catalog makes the picker return nothing, which reads as a broken feature
+  // rather than as missing data.
+  barchartBidsEnabled: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
-  // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
-  // on THIS environment's SPA app registration, plus a federated identity credential on the
-  // 'Origination API - QA' registration for the on-behalf-of exchange (see appsettings.QA.json).
-  // Both granted 2026-09-21 — enabled. Without them the channel lookup returns nothing, so this
-  // stays false rather than showing an empty, apparently-broken picker section.
+  // @-mention a Teams channel in a note. The channel lookup runs in the API on-behalf-of the caller,
+  // so it needs delegated Team.ReadBasic.All + Channel.ReadBasic.All with admin consent on the API
+  // app registration (NOT the SPA — that moved server-side on 2026-09-15) and a federated credential
+  // binding that registration to the App Service managed identity. Both granted in QA on 2026-09-18,
+  // so this is on. Without them the lookup returns nothing and the picker section looks broken.
   teamsChannelMentionsEnabled: true,
   calculatorEnabled: true,
   cwsSpikeEnabled: false,
@@ -19,8 +23,8 @@ export const environment = {
   // trade-unit cache to converge on.
   // ON since the 2026-10-06 CTRM go-live: every environment reads contracts and tickets from CTRM.
   ctrmReadAheadEnabled: true,
-  // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
-  // admin consent on this env SPA app registration. Granted 2026-09-21 — enabled.
+  // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite with
+  // admin consent on the API app registration, same credential as above. Granted in QA 2026-09-18.
   remindersEnabled: true,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.

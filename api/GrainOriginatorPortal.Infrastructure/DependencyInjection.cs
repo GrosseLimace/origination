@@ -158,6 +158,8 @@ public static class DependencyInjection
         services.AddScoped<CtrmContractRepository>();
         services.AddScoped<IContractRepository, ContractRepositorySwitch>();
         services.AddScoped<IBidSheetRepository, BidSheetRepository>();
+        services.AddScoped<IBarchartIngestRepository, BarchartIngestRepository>();
+        services.AddScoped<IBarchartCatalogRepository, BarchartCatalogRepository>();
         services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();

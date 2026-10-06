@@ -11,7 +11,14 @@ public record BidSheetLocationResponse
     public double? Latitude { get; init; }
     public double? Longitude { get; init; }
     public string? ElevatorCode { get; init; }
-    public string TradeUnitCode { get; init; } = string.Empty;
+
+    /// <summary>BarChart location this row is linked to; null on a normal manually managed location.</summary>
+    public string? BarchartLocationKey { get; init; }
+    /// <summary>
+    /// The desk that first added this location. Provenance only -- locations are company-wide and
+    /// nothing scopes on this. Null when a location was added with no trade unit in view.
+    /// </summary>
+    public string? TradeUnitCode { get; init; }
     public string? GroupName { get; init; }
     public bool IsScoularFacility { get; init; }
     public string CreatedBy { get; init; } = string.Empty;

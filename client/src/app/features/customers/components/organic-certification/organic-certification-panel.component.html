@@ -1,0 +1,172 @@
+<!-- NOP ID — always shown when the producer has one, certification or not. It is the identifier
+     the business actually works from, so it leads regardless of what else arrived. -->
+@if (nopId()) {
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+    <span class="inline-flex items-center gap-1.5">
+      <span class="text-gray-500 dark:text-gray-400 @4xl/profile:hidden">NOPID</span>
+      <span class="text-gray-500 dark:text-gray-400 hidden @4xl/profile:inline">NOP ID</span>
+      <span class="font-medium text-gray-900 dark:text-gray-100">{{ nopId() }}</span>
+    </span>
+
+    @if (cert()?.certifierName) {
+      <span class="inline-flex items-center gap-1.5">
+        <span class="text-gray-500 dark:text-gray-400">Certifier</span>
+        <span class="font-medium text-gray-900 dark:text-gray-100">{{ cert()!.certifierName }}</span>
+      </span>
+    }
+  </div>
+} @else {
+  <p class="text-sm text-gray-500 dark:text-gray-400 italic">No NOP ID on file for this producer.</p>
+}
+
+<!-- A NOP ID with nothing behind it. The desk asked for this explicitly: show the id as usual and
+     warn beside it. Means the producer holds no current certificate, or the feed has not reached
+     us for them yet — either is worth a trader knowing before they trade. -->
+@if (noCertificateOnFile()) {
+  <div class="mt-2 flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
+    <svg class="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400"
+         fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+    <div class="text-sm">
+      <p class="font-medium text-amber-800 dark:text-amber-200">No certificate on file</p>
+      <p class="text-amber-700 dark:text-amber-300">
+        This producer has a NOP ID but we have received no certification for it.
+      </p>
+    </div>
+  </div>
+}
+
+@if (cert(); as c) {
+  <!-- Status change — what it changed from, and when the certifier says it took effect.
+       Shown before the status itself: if something has changed, that is the first thing a trader
+       needs to see. Clears by itself when the status returns to Certified. -->
+  @if (c.hasUnresolvedStatusChange) {
+    <div class="mt-2 flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
+      <svg class="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400"
+           fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <div class="text-sm">
+        <p class="font-medium text-amber-800 dark:text-amber-200">Certification status changed</p>
+        <p class="text-amber-700 dark:text-amber-300">
+          @if (c.previousStatus) { {{ c.previousStatus }} &rarr; }{{ c.status }}
+          @if (c.statusEffectiveDate) {
+            <span class="whitespace-nowrap">on {{ c.statusEffectiveDate | date:'d MMM yyyy' }}</span>
+          }
+        </p>
+      </div>
+    </div>
+  }
+
+  <!-- Operation-level status and both dates. The two dates measure different things and routinely
+       disagree, so they are shown side by side rather than reconciled into one signal:
+       "updated on" is when the certifier last touched the record; the anniversary is when the next
+       annual update falls due. -->
+  <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+    @if (c.status) {
+      <span class="inline-flex items-center gap-1.5">
+        <span class="text-gray-500 dark:text-gray-400">Status</span>
+        <span class="font-medium"
+              [class.text-scoular-green-accessible]="c.isCertified"
+              [class.dark:text-scoular-green]="c.isCertified"
+              [class.text-amber-700]="!c.isCertified"
+              [class.dark:text-amber-300]="!c.isCertified">{{ c.status }}</span>
+      </span>
+    }
+
+    @if (c.statusEffectiveDate) {
+      <span class="inline-flex items-center gap-1.5">
+        <span class="text-gray-500 dark:text-gray-400">Since</span>
+        <span class="font-medium text-gray-900 dark:text-gray-100">{{ c.statusEffectiveDate | date:'d MMM yyyy' }}</span>
+      </span>
+    }
+
+    @if (c.totalAcreage) {
+      <span class="inline-flex items-center gap-1.5">
+        <span class="text-gray-500 dark:text-gray-400">Certified acres</span>
+        <span class="font-medium text-gray-900 dark:text-gray-100">{{ c.totalAcreage | number:'1.0-2' }}</span>
+      </span>
+    }
+  </div>
+
+  <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+    <!-- The compliance signal. Measures when the certifier last touched the USDA record — NOT
+         when a certificate was issued; no such date exists outside the printed PDF. -->
+    <span class="inline-flex items-center gap-1.5">
+      <span class="text-gray-500 dark:text-gray-400">Record updated</span>
+      <span class="font-medium"
+            [class.text-amber-700]="recordStale()"
+            [class.dark:text-amber-300]="recordStale()"
+            [class.text-gray-900]="!recordStale()"
+            [class.dark:text-gray-100]="!recordStale()">
+        @if (c.sourceUpdatedOn) { {{ c.sourceUpdatedOn | date:'d MMM yyyy' }} } @else { Unknown }
+        <span class="text-gray-500 dark:text-gray-400 font-normal">({{ updatedAgeLabel() }})</span>
+      </span>
+    </span>
+
+    @if (c.anniversaryDate) {
+      <span class="inline-flex items-center gap-1.5">
+        <span class="text-gray-500 dark:text-gray-400">Next annual update</span>
+        <span class="font-medium"
+              [class.text-amber-700]="anniversaryPastDue()"
+              [class.dark:text-amber-300]="anniversaryPastDue()"
+              [class.text-gray-900]="!anniversaryPastDue()"
+              [class.dark:text-gray-100]="!anniversaryPastDue()">
+          {{ c.anniversaryDate | date:'d MMM yyyy' }}
+          @if (anniversaryPastDue()) {
+            <span class="font-normal">(past due)</span>
+          }
+        </span>
+      </span>
+    }
+  </div>
+
+  @if (recordStale()) {
+    <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+      The certifier has not updated this record within the period our certifier requires for
+      documentation.
+    </p>
+  }
+
+  <!-- Per scope, because a producer can be Certified for Crops and Surrendered for Handling at
+       once. Certified scopes sort first — what a trader CAN move, before what they cannot. -->
+  @if (scopes().length) {
+    <div class="mt-3 space-y-2">
+      @for (scope of scopes(); track scope.scope) {
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-300">
+              {{ scope.scope }}
+            </span>
+            @if (scope.status) {
+              <span class="rounded-full px-2 py-0.5 text-xs font-medium"
+                    [class.bg-scoular-green/10]="scope.isCertified"
+                    [class.text-scoular-green-accessible]="scope.isCertified"
+                    [class.dark:text-scoular-green]="scope.isCertified"
+                    [class.bg-amber-50]="!scope.isCertified"
+                    [class.dark:bg-amber-900/20]="!scope.isCertified"
+                    [class.text-amber-700]="!scope.isCertified"
+                    [class.dark:text-amber-300]="!scope.isCertified">{{ scope.status }}</span>
+            }
+          </div>
+
+          @if (scope.crops.length) {
+            <div class="mt-1 flex flex-wrap gap-1">
+              @for (crop of scope.crops; track trackIndex($index)) {
+                <span class="rounded-full px-2.5 py-1 text-xs font-medium"
+                      [class]="chipClass(crop)">{{ crop }}</span>
+              }
+            </div>
+          } @else {
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 italic">
+              No certified items listed for this scope.
+            </p>
+          }
+        </div>
+      }
+    </div>
+  }
+}

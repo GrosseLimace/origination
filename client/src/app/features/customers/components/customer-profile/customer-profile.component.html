@@ -66,6 +66,18 @@
                     <!-- Short label in a narrow column so the badges stay on the name's row. -->
                     <span class="@4xl/profile:hidden">Organic</span>
                     <span class="hidden @4xl/profile:inline">Organic Producer</span>
+                    <!-- Amber dot when the certification needs attention — a status change that has
+                         not resolved back to Certified, or a NOP ID with no certificate behind it.
+                         On the badge rather than only inside the panel so a trader scanning the
+                         profile does not have to open anything to find out. Amber, not red: a
+                         surrendered certificate is a fact to act on, not an error. -->
+                    @if (organicStatusChanged() || organicNoCertificate()) {
+                      <span
+                        class="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400"
+                        [attr.aria-label]="organicStatusChanged() ? 'Certification status changed' : 'No certificate on file'"
+                        [title]="organicStatusChanged() ? 'Certification status changed' : 'No certificate on file'"
+                      ></span>
+                    }
                   </button>
                 }
                 </div>
@@ -91,19 +103,14 @@
               @if (showOrganicBadge() && showOrganicDetail()) {
                 <div id="organic-certification-panel" class="mt-2">
                   <p class="text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Organic</p>
-                  @if (customer().nopId) {
-                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                      <span class="inline-flex items-center gap-1.5">
-                        <span class="text-gray-500 dark:text-gray-400 @4xl/profile:hidden">NOPID</span>
-                        <span class="text-gray-500 dark:text-gray-400 hidden @4xl/profile:inline">NOP ID</span>
-                        <span class="font-medium text-gray-900 dark:text-gray-100">{{ customer().nopId }}</span>
-                      </span>
-                    </div>
-                  } @else {
-                    <p class="text-sm text-gray-500 dark:text-gray-400 italic">No NOP ID on file for this producer.</p>
-                  }
-                  <!-- Certification status, expiry date and certified commodities arrive with the
-                       NOP certification feed; until then this panel carries the id alone. -->
+                  <!-- The NOP id comes from the customer record so it renders immediately, without
+                       waiting on the certification fetch. The panel shows the id alone if that
+                       fetch has not landed or failed — the same thing it showed before
+                       certification data existed. -->
+                  <app-organic-certification-panel
+                    [nopId]="customer().nopId"
+                    [certification]="organicCertification()"
+                  />
                 </div>
               }
               @if (customer().farm) {
