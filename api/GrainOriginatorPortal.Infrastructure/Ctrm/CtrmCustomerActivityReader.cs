@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using Microsoft.Extensions.Configuration;
@@ -56,27 +57,47 @@ public sealed class CtrmCustomerActivityReader
     }
 
     /// <summary>
-    /// Reads every contract in <paramref name="from"/>..<paramref name="to"/> (inclusive) and returns the
-    /// customer-to-trade-unit links found.
+    /// Reads every contract and every ticket in <paramref name="from"/>..<paramref name="to"/> (inclusive)
+    /// and returns the customer-to-trade-unit links found.
     /// </summary>
     /// <remarks>
-    /// The span is sliced into windows of at most <see cref="CtrmQueries.MaxTicketRangeDays"/> and each
-    /// window is paged sequentially, capped at <see cref="MaxPagesKey"/> pages, through the shared
-    /// background throttle and the server-timeout retry - this is a nightly walk on the shared gateway.
-    /// A failed page stops that source for the rest of the run but keeps the links already collected.
+    /// <para>Contracts link <c>customerId</c> to <c>tradeUnit</c>; tickets link EVERY detail row's
+    /// <c>customerCode</c> to its <c>organizationCode</c>, so a split load links each customer on it.</para>
+    ///
+    /// <para>The span is sliced into windows of at most <see cref="CtrmQueries.MaxTicketRangeDays"/> (the
+    /// tickets query rejects anything wider) and each window is paged sequentially, capped at
+    /// <see cref="MaxPagesKey"/> pages, through the shared background throttle and the server-timeout
+    /// retry - this is a nightly walk on the shared gateway. A failed page stops that source for the rest
+    /// of the run but keeps the links it already collected.</para>
+    ///
+    /// <para>Combined status: both sources complete → Ok; one failed, or anything truncated or partial →
+    /// PartialSuccess with the links collected; both failed → the contracts failure, with no value.</para>
     /// </remarks>
     public async Task<CtrmReadResult<CtrmLinkDiscovery>> DiscoverAsync(DateTime from, DateTime to, CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
         var maxPages = Math.Max(1, CtrmConfig.ReadInt(_configuration, MaxPagesKey, 200));
         var discovery = new CtrmLinkDiscovery();
         var contracts = new SourceRead("contracts");
+        var tickets = new SourceRead("tickets");
+        var windows = Slice(from, to, CtrmQueries.MaxTicketRangeDays);
 
-        foreach (var window in Slice(from, to, CtrmQueries.MaxTicketRangeDays))
+        foreach (var window in windows)
         {
             if (!contracts.Failed)
                 await ReadWindowAsync(contracts, CtrmCustomerQueries.ContractLinksInWindow, window, maxPages,
                     (CtrmContractLinksResponse? response) => response?.Contracts,
                     row => AddLink(discovery.ContractLinks, row.CustomerId, row.TradeUnit),
+                    cancellationToken);
+
+            if (!tickets.Failed)
+                await ReadWindowAsync(tickets, CtrmCustomerQueries.TicketLinksInWindow, window, maxPages,
+                    (CtrmTicketLinksResponse? response) => response?.Tickets,
+                    ticket =>
+                    {
+                        foreach (var detail in ticket.Details)
+                            AddLink(discovery.TicketLinks, detail.CustomerCode, detail.OrganizationCode);
+                    },
                     cancellationToken);
         }
 
@@ -84,12 +105,40 @@ public sealed class CtrmCustomerActivityReader
         discovery.ContractRows = contracts.Rows;
         discovery.ContractPages = contracts.Pages;
         discovery.ContractsTruncated = contracts.Truncated;
+        discovery.TicketsStatus = tickets.Status;
+        discovery.TicketRows = tickets.Rows;
+        discovery.TicketPages = tickets.Pages;
+        discovery.TicketsTruncated = tickets.Truncated;
 
-        var complete = contracts.Status == CtrmReadStatus.Ok && !contracts.Truncated;
+        _logger.LogInformation(
+            "CTRM link discovery {From:yyyy-MM-dd}..{To:yyyy-MM-dd} in {Windows} window(s): contracts {ContractsStatus} " +
+            "{ContractRows} rows / {ContractPages} pages / {ContractLinks} links (truncated {ContractsTruncated}); tickets " +
+            "{TicketsStatus} {TicketRows} rows / {TicketPages} pages / {TicketLinks} links (truncated {TicketsTruncated}); {ElapsedMs} ms.",
+            from, to, windows.Count,
+            contracts.Status, contracts.Rows, contracts.Pages, discovery.ContractLinks.Count, contracts.Truncated,
+            tickets.Status, tickets.Rows, tickets.Pages, discovery.TicketLinks.Count, tickets.Truncated,
+            stopwatch.ElapsedMilliseconds);
+
+        return Combine(discovery, contracts, tickets);
+    }
+
+    private static CtrmReadResult<CtrmLinkDiscovery> Combine(CtrmLinkDiscovery discovery, SourceRead contracts, SourceRead tickets)
+    {
+        if (contracts.Failed && tickets.Failed)
+            return new CtrmReadResult<CtrmLinkDiscovery>
+            {
+                Status = contracts.Status,
+                HttpStatus = contracts.FailureHttpStatus,
+                ErrorCode = contracts.FailureErrorCode,
+                Detail = $"{contracts.Describe()} {tickets.Describe()}",
+                Value = null
+            };
+
+        var problems = new[] { contracts.Describe(), tickets.Describe() }.Where(d => d is not null).ToList();
         return new CtrmReadResult<CtrmLinkDiscovery>
         {
-            Status = complete ? CtrmReadStatus.Ok : CtrmReadStatus.PartialSuccess,
-            Detail = complete ? null : contracts.Describe(),
+            Status = problems.Count == 0 ? CtrmReadStatus.Ok : CtrmReadStatus.PartialSuccess,
+            Detail = problems.Count == 0 ? null : string.Join(" ", problems),
             Value = discovery
         };
     }

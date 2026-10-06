@@ -204,4 +204,96 @@ public class CtrmCustomerActivityReaderTests
         Assert.Single(client.ContractCalls);
         Assert.Equal([new CtrmCustomerLink("SMITH1", "2200")], discovery.ContractLinks);
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_TicketDetails_LinkEveryDetailCustomer_ToItsOrganizationCode()
+    {
+        // A split load: every detail customer is linked, not only the first; a detail without an organization is dropped.
+        var client = new LinksClient
+        {
+            Tickets = _ => TicketPage([Ticket(("SMITH1", "2200"), ("JONES2", "2200"), ("SMITH1", null))], hasNextPage: false)
+        };
+
+        var result = await Sut(client).DiscoverAsync(WeekFrom, WeekTo, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, result.Status);
+        var discovery = Assert.IsType<CtrmLinkDiscovery>(result.Value);
+        Assert.Equal(
+            new HashSet<CtrmCustomerLink> { new("SMITH1", "2200"), new("JONES2", "2200") },
+            discovery.TicketLinks);
+        Assert.Equal(1, discovery.TicketRows);
+        Assert.Equal(1, discovery.TicketPages);
+        Assert.Equal(CtrmReadStatus.Ok, discovery.TicketsStatus);
+        Assert.Equal(("2026-09-29", "2026-10-07"), (client.TicketCalls.Single().From, client.TicketCalls.Single().To));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_TicketsFail_ContractsOk_IsPartialSuccess_WithContractLinksKept()
+    {
+        var client = new LinksClient
+        {
+            Contracts = _ => ContractPage(ContractRows(1, "SMITH1", "2200"), hasNextPage: false),
+            Tickets = _ => Failed<CtrmTicketLinksResponse>(CtrmReadStatus.EgressBlocked, httpStatus: null)
+        };
+
+        var result = await Sut(client).DiscoverAsync(WeekFrom, WeekTo, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.PartialSuccess, result.Status);
+        var discovery = Assert.IsType<CtrmLinkDiscovery>(result.Value);
+        Assert.Equal(CtrmReadStatus.EgressBlocked, discovery.TicketsStatus);
+        Assert.Equal(CtrmReadStatus.Ok, discovery.ContractsStatus);
+        Assert.Equal([new CtrmCustomerLink("SMITH1", "2200")], discovery.ContractLinks);
+        Assert.Empty(discovery.TicketLinks);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_BothFail_ReturnsTheContractFailureStatus_WithNullValue()
+    {
+        var client = new LinksClient
+        {
+            Contracts = _ => Failed<CtrmContractLinksResponse>(CtrmReadStatus.Throttled, httpStatus: 429),
+            Tickets = _ => Failed<CtrmTicketLinksResponse>(CtrmReadStatus.EgressBlocked, httpStatus: null)
+        };
+
+        var result = await Sut(client).DiscoverAsync(WeekFrom, WeekTo, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Throttled, result.Status);
+        Assert.Equal(429, result.HttpStatus);
+        Assert.Null(result.Value);
+        Assert.False(result.Ok);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_WindowOver366Days_SlicesTicketsButSendsEachWindowSeparately()
+    {
+        // The tickets query rejects a range over 366 days, so a 400-day span must go as two requests.
+        var client = new LinksClient();
+        var from = new DateTime(2025, 9, 1);
+
+        var result = await Sut(client).DiscoverAsync(from, from.AddDays(400), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, result.Status);
+        var windows = client.TicketCalls.Select(c => (c.From, c.To)).Distinct().ToList();
+        Assert.Equal(2, windows.Count);
+        Assert.All(windows, w =>
+            Assert.True((DateTime.Parse(w.To) - DateTime.Parse(w.From)).TotalDays + 1 <= 366, $"{w.From}..{w.To} is wider than 366 days"));
+        Assert.Equal("2025-09-01", windows[0].From);
+        Assert.Equal(from.AddDays(400).ToString("yyyy-MM-dd"), windows[^1].To);
+    }
+
+    private static CtrmTicketLinkDto Ticket(params (string? CustomerCode, string? OrganizationCode)[] details) => new()
+    {
+        Details = [.. details.Select(d => new CtrmTicketLinkDetailDto { CustomerCode = d.CustomerCode, OrganizationCode = d.OrganizationCode })]
+    };
+
+    private static CtrmReadResult<T> Failed<T>(CtrmReadStatus status, int? httpStatus) => new()
+    {
+        Status = status,
+        HttpStatus = httpStatus,
+        Detail = $"simulated {status}"
+    };
 }
