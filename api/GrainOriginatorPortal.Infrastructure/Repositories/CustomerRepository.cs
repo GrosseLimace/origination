@@ -176,7 +176,58 @@ public class CustomerRepository : ICustomerRepository
         return scoredCustomers;
     }
 
+    /// <summary>Onboarding search: producers in base.vw_CurrentCustomers that are not already
+    /// onboarded. Already onboarded = same id OR same ScoularId (a CTRM-minted row carries an id
+    /// the ODS has never seen, so the id alone would offer that producer a second time). Codes
+    /// compare trimmed and case-insensitively; a blank code never matches anything.</summary>
     public async Task<List<Customer>> SearchOdsAsync(string searchTerm, CancellationToken cancellationToken)
+    {
+        var candidates = await QueryOnboardingCandidatesAsync(searchTerm, cancellationToken);
+        if (candidates.Count == 0) return [];
+
+        // Drop any that already live in dbo.Customer — by id or by ScoularId — those aren't "new"
+        // and would dupe. One query; the trimmed, case-insensitive comparison runs in memory below
+        // (SQL Server ignores trailing spaces and case here, the InMemory provider does neither).
+        var candidateIds = candidates.Select(c => c.Id).ToList();
+        var candidateCodes = candidates
+            .SelectMany(c => ScoularIdQueryVariants(c.ScoularId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var existing = await _appContext.Customers.AsNoTracking()
+            .Where(c => candidateIds.Contains(c.Id) || (c.ScoularId != null && candidateCodes.Contains(c.ScoularId)))
+            .Select(c => new { c.Id, c.ScoularId })
+            .ToListAsync(cancellationToken);
+        var existingIds = existing.Select(e => e.Id).ToHashSet();
+        var existingCodes = new HashSet<string>(
+            existing.Select(e => e.ScoularId?.Trim()).Where(code => !string.IsNullOrEmpty(code)).Select(code => code!),
+            StringComparer.OrdinalIgnoreCase);
+
+        var result = candidates
+            .Where(c => !existingIds.Contains(c.Id))
+            .Where(c => string.IsNullOrWhiteSpace(c.ScoularId) || !existingCodes.Contains(c.ScoularId.Trim()))
+            .ToList();
+
+        // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
+        _logger.LogInformation("ODS customer search returned {Count} onboardable producers", result.Count);
+        return result;
+    }
+
+    /// <summary>The values to send in a SQL <c>IN</c> list when matching dbo.Customer.ScoularId
+    /// against <paramref name="code"/>: the trimmed code plus its upper- and lower-case forms.
+    /// On SQL Server the case-insensitive collation makes the extra forms redundant; they let the
+    /// InMemory provider (ordinal comparison) find the same rows. Blank → none.</summary>
+    private static IEnumerable<string> ScoularIdQueryVariants(string? code)
+    {
+        var trimmed = code?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return [];
+        return new[] { trimmed, trimmed.ToUpperInvariant(), trimmed.ToLowerInvariant() }.Distinct(StringComparer.Ordinal);
+    }
+
+    /// <summary>Onboarding search candidates from base.vw_CurrentCustomers (TOP 50, the sync's
+    /// quality filters), mapped to Customer. No dedupe against dbo.Customer — the caller does
+    /// that. Returns an empty list for a blank term. A seam: the raw ODS SQL cannot run on the
+    /// InMemory provider, and E3 later re-routes the search to CTRM.</summary>
+    protected virtual async Task<List<Customer>> QueryOnboardingCandidatesAsync(string searchTerm, CancellationToken cancellationToken)
     {
         var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                                     .Select(w => w.Trim())
@@ -226,24 +277,7 @@ public class CustomerRepository : ICustomerRepository
             .SqlQueryRaw<OdsCustomerRow>(sql, parameters.ToArray())
             .ToListAsync(cancellationToken);
 
-        if (rows.Count == 0) return [];
-
-        // Drop any that already live in dbo.Customer — those aren't "new" and would dupe.
-        var candidateIds = rows.Select(r => r.CustomerId).ToList();
-        var existingIds = (await _appContext.Customers.AsNoTracking()
-                .Where(c => candidateIds.Contains(c.Id))
-                .Select(c => c.Id)
-                .ToListAsync(cancellationToken))
-            .ToHashSet();
-
-        var result = rows
-            .Where(r => !existingIds.Contains(r.CustomerId))
-            .Select(MapOdsRowToCustomer)
-            .ToList();
-
-        // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
-        _logger.LogInformation("ODS customer search returned {Count} onboardable producers", result.Count);
-        return result;
+        return rows.Select(MapOdsRowToCustomer).ToList();
     }
 
     /// <summary>Maps a base.vw_CurrentCustomers row onto the Customer DTO. IsManual stays
