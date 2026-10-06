@@ -17,10 +17,7 @@ import { makeMsalServiceMock } from '@testing/msal.mocks';
 // UserRolesService -> GET /api/me) are stubbed so the component renders in isolation.
 describe('HeaderComponent', () => {
   const themeStub = { isDarkMode: signal(false), toggleTheme: () => undefined };
-  const rolesStub = {
-    isAdmin: signal(false), roles: signal<string[]>([]), canViewUsageDashboard: signal(false),
-    canChooseDataSource: signal(false), defaultDataSource: signal<'ods' | 'ctrm'>('ods'),
-  };
+  const rolesStub = { isAdmin: signal(false), roles: signal<string[]>([]), canViewUsageDashboard: signal(false) };
   // The real service calls window.open — stub it so no popup is attempted under test.
   const tradeUnitsStub = { openPreferences: vi.fn() };
   // The header reads hasUnseen() for the unread dot and version() for the build line; the real

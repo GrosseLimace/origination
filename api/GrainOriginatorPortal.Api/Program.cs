@@ -327,10 +327,6 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // Who may read the WHOLE org and pick any manager, from dbo.UsageDashboardViewAllUsers. Scoped
 // because it reads through IUsageRepository; the result is cached for a minute inside the provider.
 builder.Services.AddScoped<IUsageDashboardViewAllProvider, UsageDashboardViewAllProvider>();
-// Who may flip their own session between ODS and CTRM, from dbo.CtrmSourceToggleUsers (plus the
-// Ctrm:SourceToggleUsers setting, checked separately). Same shape: scoped, cached for a minute, fails
-// closed to "nobody". Consulted by CtrmSourceChoiceMiddleware on every authenticated request.
-builder.Services.AddScoped<ICtrmSourceToggleUserProvider, CtrmSourceToggleUserProvider>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();
@@ -393,12 +389,8 @@ builder.Services.AddCors(options =>
     {
         var origins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
             ?? new[] { "http://localhost:4200" };
-        // Every custom request header the SPA sends must be listed here, or the browser's preflight fails
-        // and EVERY request is blocked - only cross-origin, so only locally (4200 -> 5000); deployed, the SPA
-        // and API share an origin and CORS never applies. X-Data-Source-Preference is the ODS / CTRM tester
-        // toggle (DataSourcePreferenceInterceptor, 2026-10-01).
         policy.WithOrigins(origins)
-              .WithHeaders("Content-Type", "Authorization", GrainOriginatorPortal.Infrastructure.Ctrm.CtrmSourceChoice.PreferenceHeader)
+              .WithHeaders("Content-Type", "Authorization")
               .WithMethods("GET", "POST", "PUT", "DELETE");
     });
 });
@@ -745,11 +737,6 @@ app.UseAuthorization();
 // and UserId resolves to the actual user (not "anonymous").
 app.UseMiddleware<RequestContextMiddleware>();
 
-// Data-source choice — records the caller's identity and X-Data-Source-Preference header into the
-// request's CtrmSourceChoice. The contract/ticket switches honour the preference only for users in
-// Ctrm:SourceToggleUsers; everyone else gets Ctrm:Source. After UseAuthentication for the identity.
-app.UseMiddleware<CtrmSourceChoiceMiddleware>();
-
 // Security audit logging — logs 401 and 403 outcomes per security-guide.md §8.1.
 // Must run after UseAuthorization so the response status code is already finalized.
 app.UseMiddleware<SecurityAuditMiddleware>();
@@ -761,10 +748,9 @@ app.UseMiddleware<UsageTrackingMiddleware>();
 // Reports which source (ODS or CTRM) actually served each response's contract and ticket data, as
 // X-Data-Source* headers visible in the browser's Network tab. The two sources are mapped to look
 // identical in the response body, so without this there is no way to confirm from the client which
-// one you are looking at. Always registered; in Production the middleware itself emits the headers only
-// for users allowed to choose their source (Ctrm:SourceToggleUsers), who are exactly the people doing
-// that comparison - everyone else's production responses stay free of this diagnostic detail.
-app.UseMiddleware<CtrmProvenanceMiddleware>();
+// one you are looking at. Non-production only — diagnostic detail with no place in a prod response.
+if (!app.Environment.IsProduction())
+    app.UseMiddleware<CtrmProvenanceMiddleware>();
 
 // Map controller routes and require a valid Azure AD bearer token on every endpoint.
 // Health check and OpenAPI endpoints are mapped separately and are not covered here.

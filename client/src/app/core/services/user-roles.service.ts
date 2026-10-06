@@ -10,13 +10,7 @@ import { environment } from '../../../environments/environment';
 interface MeResponse {
   userId: string;
   roles: string[];
-  /** Whether this user may flip contracts and tickets between ODS and CTRM (server allow-list). */
-  canChooseDataSource?: boolean;
-  /** The environment's default source for contracts and tickets. */
-  defaultDataSource?: 'ods' | 'ctrm';
 }
-
-export type DataSource = 'ods' | 'ctrm';
 
 /**
  * Holds the current user's app roles for the SPA. The SPA's own ID token does not
@@ -36,18 +30,9 @@ export class UserRolesService {
 
   private readonly _roles = signal<string[]>([]);
   private readonly _ready$ = new ReplaySubject<string[]>(1);
-  private readonly _canChooseDataSource = signal(false);
-  private readonly _defaultDataSource = signal<DataSource>('ods');
 
   readonly roles: Signal<string[]> = this._roles.asReadonly();
   readonly isAdmin = computed(() => this._roles().includes('Admin'));
-
-  /** Whether the server lists this user in Ctrm:SourceToggleUsers. Presentation only: it decides whether
-   *  the ODS / CTRM control is shown. The server re-checks the list on every contract and ticket read, so
-   *  a forged true here shows a control that changes nothing. See DataSourceService. */
-  readonly canChooseDataSource: Signal<boolean> = this._canChooseDataSource.asReadonly();
-  /** The environment's default source for contracts and tickets, as the server reports it. */
-  readonly defaultDataSource: Signal<DataSource> = this._defaultDataSource.asReadonly();
 
   /** Usage-dashboard access: the Admin app role, which is how the "Origination App {Env} Super
    *  Users" group grants it. How MUCH of the dashboard you then see is a separate question —
@@ -87,8 +72,6 @@ export class UserRolesService {
       tap(response => {
         const roles = response?.roles ?? [];
         this._roles.set(roles);
-        this._canChooseDataSource.set(response?.canChooseDataSource === true);
-        this._defaultDataSource.set(response?.defaultDataSource === 'ctrm' ? 'ctrm' : 'ods');
         this._ready$.next(roles);
       }),
       takeUntilDestroyed(this.destroyRef)
