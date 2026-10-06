@@ -44,6 +44,16 @@
 | 40 | 2026-10-06 ~12:35 CT | fix-1 (C4) | opus | resumed (C4 implementer) | planner Q1–Q3 decisions + review LOW test gaps | done cf4ae3e3; task-review PASS (2 paths, trailer, 5 red→green + 3 pin tests, 32/32 targeted, gate 1472/1472) | (usage n/a) |
 | 41 | 2026-10-06 ~13:05 CT | merge | — | — | cust_batchD merged --no-ff | 1d972814; merged gate 1510/1510 | |
 | 42 | 2026-10-06 ~13:05 CT | task-review (hard: D2, +D1/D1b/D3) | sonnet | fresh | reviewer in detached worktree Origination-custD-review @1d972814 | PASS (9/9; 1510/1510). LOW: compare logs exception object (→ orchestrator fix: type only). LOW: failed-side diffs read as zero (documented via Ok flags). INFO: partial discovery can inflate OnlyInOds (surface via Discovery statuses) | (usage n/a) |
-| 43 | 2026-10-06 ~13:05 CT | 5 (implement) | sonnet | fresh | D4 + D5 docs in Origination-customers with routes/codes/decisions pasted | (pending) | |
+| 43 | 2026-10-06 ~13:05 CT | 5 (implement) | sonnet | fresh | D4 + D5 docs in Origination-customers with routes/codes/decisions pasted | done 5ffb328d/e5a681cd; 3 files exact. My brief named the wrong alert line → fixed by orchestrator in 49ab8b7c | 117,745 tokens / 36 tool uses / 4.0 min |
+| 44 | 2026-10-06 ~13:30 CT | fix-1 (D) | orchestrator | — | D review LOW (exception object logged) + alert-line correction + plan C3 text | 49ab8b7c; gate 1510/1510 | |
+| 45 | 2026-10-06 ~13:35 CT | 4 (plan-vs-impl review) | fable | fresh | Stage 1 complete: evidence pack (API 1510, client 961, prod build ok, no pending model changes, isolation OK) | PASS WITH FINDINGS (all LOW/INFO). Tag audit PASS (recomputed: A 28 files, B 20 files, D vs concurrent commits — zero overlaps). Version-bump audit PASS. Fence hygiene balanced. F1 long-running compare/dry run docs; F2 plan §3.2 missing FILTER_MISMATCH; F3 comment; F4 pre-existing _VerifySchema DropCustomerSnapshot (not ours); F5 blank-ScoularId pre-flip count; F6 log timestamps | 244,464 tokens / 38 tool uses / 8.6 min |
+| 46 | 2026-10-06 ~13:55 CT | fix-1 (final review) | orchestrator | — | F1, F2, F3, F5 | committed below; F4 pre-existing → user; F6 cosmetic (usage-limit gap: rows 39–44 were written out of order) | |
 
 Hand-off type legend: `1`-`5` (per ORCHESTRATION.md's hand-off table), plus `triage`, `task-review`, `fix-1`-`fix-5`.
+
+## Phase 7 instrumentation (2026-10-06)
+
+- Triage events: 7 (genuine: 5) — A9 adoption reconcile (G); B2 window 3660/3661 (R); B1 HC0045 label (R); B1 sourceCode validation (G); C4 padded trade units, out-of-scope manual customers, re-entry (G ×3). Hand-off 3 (planner resumed): 3 sessions (one carried three questions).
+- Fable requests / tokens by role (final agent context sizes from the Agent tool, NOT billed tokens — no agent-telemetry skill in this repo): planner 293,362 (hand-off 1) then resumed for hand-off 3 at 310,614 / 324,619 / 351,522; reviser (2b) 214,977; mentor 110,788; final reviewer 244,464. One usage-limit cutoff at ~12:15 CT stopped the planner, a triage and the Batch D implementer mid-run; all resumed after the 12:20 reset with no lost work.
+- Fix rounds: fix-1 on A8/A9, B1, B2, B3 (orchestrator), C4, D (orchestrator), final review (orchestrator). No task needed fix-2 or Opus escalation.
+- Isolation tags: every safe-parallel batch held in practice (planned and actual mode OK; recomputed by the final reviewer).

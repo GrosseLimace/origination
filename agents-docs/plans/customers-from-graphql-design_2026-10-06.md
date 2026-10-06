@@ -83,7 +83,7 @@ Target = `originations.vw_CustomerTradeUnits` as in `API/Scripts/AddIndustryCode
 | `CustomerSync:CtrmSourceSystem` | `""` (no filter) | — | `CtrmCustomerQueries.CustomersBySourceCodesAliased` |
 
 ### 3.2 Error / log codes
-`CUSTOMER_SYNC_SOURCE_UNAVAILABLE`, `CUSTOMER_SYNC_NO_PERMISSION`, `CUSTOMER_SYNC_SCHEMA_MISMATCH`, `CUSTOMER_SYNC_SOURCE_EMPTY`, `CUSTOMER_SYNC_GUARD_TRIPPED` (Error); `CUSTOMER_SYNC_DISCOVERY_FAILED`, `CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE`, `CUSTOMER_SYNC_UNKNOWN_CODES` (Warning). Log shape `[{ErrorCode}] [{ErrorCategory}]` with category `Integration`. Never log names, phones, addresses; codes and counts only.
+`CUSTOMER_SYNC_SOURCE_UNAVAILABLE`, `CUSTOMER_SYNC_NO_PERMISSION`, `CUSTOMER_SYNC_SCHEMA_MISMATCH`, `CUSTOMER_SYNC_SOURCE_EMPTY`, `CUSTOMER_SYNC_GUARD_TRIPPED`, `CUSTOMER_SYNC_FILTER_MISMATCH` (added 2026-10-06, hand-off 3) (Error); `CUSTOMER_SYNC_DISCOVERY_FAILED`, `CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE`, `CUSTOMER_SYNC_UNKNOWN_CODES` (Warning). Log shape `[{ErrorCode}] [{ErrorCategory}]` with category `Integration`. Never log names, phones, addresses; codes and counts only.
 
 ### 3.3 Types — namespace `GrainOriginatorPortal.Infrastructure.Sync` (new folder `INF/Sync/`)
 
@@ -924,6 +924,7 @@ Stage 1 total: 32 tasks (v1 had 27; v2 added A8, A9, A10, C6, D1b); Stage 2: 8 b
 2. ODS: `SELECT COUNT(*) FROM base.vw_CurrentCustomers WHERE IsActive = 0;` — see §11 Q10.
 3. `POST …/run?dryRun=true&source=ctrm`: `ManualCustomersDeactivated` must be 0 and `ManualCustomersRefreshed + ManualCustomersReactivated` must equal the manual-customer count; any deactivation means a manual producer's code is absent from the CTRM master — list those codes before flipping.
 4. The app's managed identity has UPDATE on `dbo.CustomerIdSequence` (§11 Q11).
+5. `SELECT COUNT(*) FROM dbo.Customer WHERE IsActive = 1 AND IsManual = 0 AND NULLIF(LTRIM(RTRIM(ScoularId)), '') IS NULL;` — active sync customers with no code get no CTRM rows and would be deactivated (guarded); know the count (added 2026-10-06, final review F5).
 
 ## 11. Candidate questions for the user (non-blocking for Stage 1 unless marked)
 

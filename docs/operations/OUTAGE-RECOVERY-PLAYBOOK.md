@@ -310,6 +310,8 @@ Tick **all** before telling the business:
 ### A1. Call an admin endpoint in PROD
 There's **no button** for these, and Swagger is Dev-only. You need the **Admin** app role and the corporate network or VPN.
 
+`customer-sync/run` (and, in Dev/QA, `customer-sync/compare`) can run for **minutes** on the CTRM source. App Service drops the client at about 230 seconds while the run carries on; check `customer-sync/last-run` (non-dry runs) or the `CustomerSync …` log lines instead of re-running.
+
 1. Open `https://origination.scoular.com` and sign in.
 2. Open dev tools (F12) → **Network**. Click any request to `/api/…` → **Headers** → copy the **`Authorization`** value **after** `Bearer `.
 3. In PowerShell:

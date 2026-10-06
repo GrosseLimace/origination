@@ -11,7 +11,7 @@ public sealed class CustomerSyncSourceRow
 
     /// <summary>
     /// Trimmed on the CTRM feeder; null = customer-presence-only row. The ODS feeder passes the view's
-    /// value verbatim (as the sync has always read it), so blank values can occur there and are skipped
+    /// value verbatim (as the sync has always read it), so null or empty values can occur there and are skipped
     /// by the trade-unit passes exactly as before.
     /// </summary>
     public required string? TradeUnit { get; init; }
