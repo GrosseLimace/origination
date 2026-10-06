@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 // Third-party namespaces
@@ -50,7 +49,6 @@ public class DiagnosticsControllerAppAccessTests
             new Mock<ILogger<DiagnosticsController>>().Object,
             env.Object,
             new Mock<IHttpClientFactory>().Object,
-            new CustomerSyncService(new Mock<IServiceScopeFactory>().Object, new ConfigurationBuilder().Build(), new Mock<ILogger<CustomerSyncService>>().Object),
             _graphMock.Object,
             new Mock<ICtrmGraphQlClient>().Object,
             new Mock<IContractRepository>().Object,
