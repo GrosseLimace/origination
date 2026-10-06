@@ -62,3 +62,15 @@ implementer must honour. Each entry names its source.
   non-dry CTRM mint in each environment. D4/D5 docs should name this prerequisite.
 - **Profisee customer `id` is a GUID string in the API team's examples**, so PickCanonical's ordinal IdText
   tie-break is a stable order; revisit only if the first Dev probe reports IdKind "Number".
+
+## From the C1–C3 review (PASS)
+
+- Plan §7 C3 says "lowest id"; the implemented and correct rule is active-first-then-lowest-id (D13/A9).
+  Reconcile the plan text at wrap-up.
+- D1 must ship with C2: until `POST run?force=true` exists, the only recovery from a tripped guard is
+  raising `CustomerSync:MaxDeactivationPercent` / `MaxDeactivationCount` via App Service settings. The D4
+  playbook must document both.
+- Early abort returns leave `ElapsedMs` / `CompletedAtUtc` unset (cosmetic; diagnostics only).
+- An abort logs at Error twice (service + background service) by design; D4 alert guidance should key on one.
+- ODS-path log wording changed: "loaded N rows from source ods", "grouped N distinct customers from the
+  source"; "CustomerSync starting" now carries source/trigger/dryRun/force. No dependents found in the repo.
