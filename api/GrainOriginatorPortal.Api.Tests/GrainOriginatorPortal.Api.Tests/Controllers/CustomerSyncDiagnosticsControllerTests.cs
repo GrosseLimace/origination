@@ -242,6 +242,120 @@ public class CustomerSyncDiagnosticsControllerTests
         Assert.IsType<OkObjectResult>(result);
     }
 
+    // ── GET compare ──────────────────────────────────────────────────────────────────────────────
+
+    private void TwoCustomersInTheApp()
+    {
+        _appCustomers.Add(new Customer { Id = 1, Name = "Farm", IsActive = true, ScoularId = "A" });
+        _appCustomers.Add(new Customer { Id = 2, Name = "Farm", IsActive = true, ScoularId = "B" });
+    }
+
+    private static CustomerSyncComparison Comparison(IActionResult result) =>
+        Assert.IsType<CustomerSyncComparison>(Assert.IsType<OkObjectResult>(result).Value);
+
+    [Fact]
+    public async Task Compare_InProductionLikeEnvironment_Returns404()
+    {
+        _environmentName = "Production";
+        var ods = Source(CustomerSyncSources.Ods, OkRows(CustomerSyncSources.Ods, (1, "1085")));
+        var ctrm = Source(CustomerSyncSources.Ctrm, OkRows(CustomerSyncSources.Ctrm, (1, "1085")));
+
+        var result = await CreateSut().Compare();
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Null(ods.SeenOptions);
+        Assert.Null(ctrm.SeenOptions);
+        _repo.Verify(r => r.LoadAppCustomersAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Compare_RunsBothSourcesAsDryRun_AndReturnsTheComparison()
+    {
+        TwoCustomersInTheApp();
+        var ods = Source(CustomerSyncSources.Ods, OkRows(CustomerSyncSources.Ods, (1, "1085"), (2, "1085")));
+        var ctrm = Source(CustomerSyncSources.Ctrm, OkRows(CustomerSyncSources.Ctrm, (1, "1085"), (1, "2200")));
+        var from = new DateTime(2026, 9, 1);
+
+        var comparison = Comparison(await CreateSut().Compare(discoveryFrom: from));
+
+        Assert.True(ods.SeenOptions!.DryRun);
+        Assert.True(ctrm.SeenOptions!.DryRun);
+        Assert.Equal(from, ctrm.SeenOptions.DiscoveryFrom);
+        Assert.Same(ods.SeenAppState, ctrm.SeenAppState);
+        Assert.Same(_appCustomers, ods.SeenAppState!.Customers);
+        Assert.Equal(1, comparison.Customers.InBoth);
+        Assert.Equal(["B"], comparison.Customers.SampleOnlyInOds);
+        Assert.Equal(["A|2200"], comparison.Links.SampleOnlyInCtrm);
+        Assert.Equal(2, comparison.AppCustomers);
+        // Nothing here writes or reserves ids.
+        _repo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _repo.Verify(r => r.ReserveCustomerIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Compare_CtrmWithoutCustomerPermission_SaysMissing_AndKeepsTheOdsHalf()
+    {
+        TwoCustomersInTheApp();
+        Source(CustomerSyncSources.Ods, OkRows(CustomerSyncSources.Ods, (1, "1085"), (2, "1085")));
+        var noPermission = NoPermission(CustomerSyncSources.Ctrm);
+        var discovery = new CustomerSyncDiscoveryInfo { ContractsStatus = "Ok", TicketsStatus = "Ok", ContractLinks = 3 };
+        Source(CustomerSyncSources.Ctrm, new CustomerSyncSourceResult
+        {
+            Source = CustomerSyncSources.Ctrm, Ok = false, FailureCode = noPermission.FailureCode,
+            FailureDetail = noPermission.FailureDetail, Lookup = noPermission.Lookup, Discovery = discovery
+        });
+
+        var comparison = Comparison(await CreateSut().Compare());
+
+        Assert.False(comparison.Ctrm.Ok);
+        Assert.Equal("missing", comparison.Ctrm.CustomerPermission);
+        Assert.Equal("CUSTOMER_SYNC_NO_PERMISSION", comparison.Ctrm.FailureCode);
+        Assert.Equal(3, comparison.Ctrm.Discovery!.ContractLinks);
+        Assert.True(comparison.Ods.Ok);
+        Assert.Equal(2, comparison.Ods.Customers);
+        Assert.Equal(0, comparison.Customers.OnlyInOds);
+    }
+
+    [Fact]
+    public async Task Compare_ASourceThatThrows_IsReportedUnavailable_AndTheOtherHalfStillRuns()
+    {
+        TwoCustomersInTheApp();
+        var ods = Source(CustomerSyncSources.Ods, OkRows(CustomerSyncSources.Ods, (1, "1085")));
+        ods.Throws = new InvalidOperationException("Server=secret-host;Password=hunter2");
+        var ctrm = Source(CustomerSyncSources.Ctrm, OkRows(CustomerSyncSources.Ctrm, (1, "1085")));
+
+        var comparison = Comparison(await CreateSut().Compare());
+
+        Assert.False(comparison.Ods.Ok);
+        Assert.Equal("CUSTOMER_SYNC_SOURCE_UNAVAILABLE", comparison.Ods.FailureCode);
+        Assert.Equal(nameof(InvalidOperationException), comparison.Ods.FailureDetail);
+        Assert.NotNull(ctrm.SeenOptions);
+        Assert.True(comparison.Ctrm.Ok);
+        Assert.Equal(1, comparison.Ctrm.Customers);
+    }
+
+    [Fact]
+    public async Task Compare_LoadsTheSourcesOneAfterTheOther()
+    {
+        // Both feeders share the request's scoped OriginationDbContext, which is not safe for concurrent use
+        // (concurrent use of it broke PROD on 2026-09-29).
+        TwoCustomersInTheApp();
+        var ods = Source(CustomerSyncSources.Ods, OkRows(CustomerSyncSources.Ods, (1, "1085")));
+        ods.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ctrm = Source(CustomerSyncSources.Ctrm, OkRows(CustomerSyncSources.Ctrm, (1, "1085")));
+
+        var pending = CreateSut().Compare();
+        await Task.Delay(50);
+
+        Assert.NotNull(ods.SeenOptions);
+        Assert.Null(ctrm.SeenOptions);
+        Assert.False(pending.IsCompleted);
+
+        ods.Gate.SetResult();
+        Comparison(await pending);
+        Assert.NotNull(ctrm.SeenOptions);
+    }
+
     [Fact]
     public void Controller_IsAdminOnly()
     {
@@ -288,11 +402,19 @@ public class CustomerSyncDiagnosticsControllerTests
         public CustomerSyncAppState? SeenAppState { get; private set; }
         public CustomerSyncLoadOptions? SeenOptions { get; private set; }
 
-        public Task<CustomerSyncSourceResult> LoadAsync(CustomerSyncAppState appState, CustomerSyncLoadOptions options, CancellationToken cancellationToken)
+        /// <summary>When set, the load throws it.</summary>
+        public Exception? Throws { get; set; }
+
+        /// <summary>When set, the load does not finish until the test completes this.</summary>
+        public TaskCompletionSource? Gate { get; set; }
+
+        public async Task<CustomerSyncSourceResult> LoadAsync(CustomerSyncAppState appState, CustomerSyncLoadOptions options, CancellationToken cancellationToken)
         {
             SeenAppState = appState;
             SeenOptions = options;
-            return Task.FromResult(_result);
+            if (Gate is not null) await Gate.Task;
+            if (Throws is not null) throw Throws;
+            return _result;
         }
     }
 

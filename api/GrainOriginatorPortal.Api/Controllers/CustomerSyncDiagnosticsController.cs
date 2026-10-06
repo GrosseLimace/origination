@@ -116,4 +116,68 @@ public class CustomerSyncDiagnosticsController : ControllerBase
             _sync.LastRun
         });
     }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// ODS rows vs CTRM rows, side by side: both feeders run as dry runs over the same app state and
+    /// <see cref="CustomerSyncComparer"/> diffs them by producer code — customer and trade-unit-link counts, codes
+    /// only on one side (at most 25 samples each), and per-field difference counts. Dev/QA only (404 where
+    /// <see cref="DiagnosticsEnvironmentGate.IsProductionLike"/>). Writes nothing and reserves no customer ids: the
+    /// CTRM feeder on a dry run gives new producers negative placeholder ids, which is why the diff matches on code.
+    /// </summary>
+    /// <remarks>
+    /// When the customers permission is missing, the CTRM half reports <c>Ok: false</c>,
+    /// <c>CustomerPermission: "missing"</c> and its discovery report, the ODS half stays populated, and the set and
+    /// field diffs are empty — never "0 customers". A feeder that throws is reported as
+    /// <c>CUSTOMER_SYNC_SOURCE_UNAVAILABLE</c> with the exception type only, so an ODS outage still yields the CTRM half.
+    /// No PII: codes, counts and field names only.
+    /// </remarks>
+    /// <param name="discoveryFrom">Start of the CTRM link-discovery window instead of the configured trailing window.</param>
+    [HttpGet("compare")]
+    [ProducesResponseType(typeof(CustomerSyncComparison), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Compare([FromQuery] DateTime? discoveryFrom = null, CancellationToken cancellationToken = default)
+    {
+        if (DiagnosticsEnvironmentGate.IsProductionLike(_env)) return NotFound();
+
+        var app = new CustomerSyncAppState
+        {
+            Customers = await _repository.LoadAppCustomersAsync(cancellationToken),
+            TradeUnits = await _repository.LoadAppTradeUnitsAsync(cancellationToken)
+        };
+
+        // Sequential on purpose: both feeders read through this request's scoped OriginationDbContext, which is not
+        // safe for concurrent use — concurrent use of it broke PROD on 2026-09-29.
+        var ods = await DryRunAsync(CustomerSyncSources.Ods, app, new CustomerSyncLoadOptions { DryRun = true }, cancellationToken);
+        var ctrm = await DryRunAsync(CustomerSyncSources.Ctrm, app, new CustomerSyncLoadOptions { DryRun = true, DiscoveryFrom = discoveryFrom }, cancellationToken);
+
+        var comparison = CustomerSyncComparer.Compare(ods, ctrm, app, DateTime.UtcNow);
+        _logger.LogInformation(
+            "CustomerSync compare: ods ok {OdsOk} ({OdsCustomers} customers, {OdsLinks} links), ctrm ok {CtrmOk} ({CtrmCustomers} customers, {CtrmLinks} links, permission {Permission}); " +
+            "customers {CustomersInBoth} in both / {CustomersOnlyOds} only ods / {CustomersOnlyCtrm} only ctrm; links {LinksInBoth} in both / {LinksOnlyOds} only ods / {LinksOnlyCtrm} only ctrm",
+            comparison.Ods.Ok, comparison.Ods.Customers, comparison.Ods.Links,
+            comparison.Ctrm.Ok, comparison.Ctrm.Customers, comparison.Ctrm.Links, comparison.Ctrm.CustomerPermission,
+            comparison.Customers.InBoth, comparison.Customers.OnlyInOds, comparison.Customers.OnlyInCtrm,
+            comparison.Links.InBoth, comparison.Links.OnlyInOds, comparison.Links.OnlyInCtrm);
+        return Ok(comparison);
+    }
+
+    /// <summary>One feeder's dry run through the factory; a throw becomes a failed side carrying the exception type only.</summary>
+    private async Task<CustomerSyncSourceResult> DryRunAsync(
+        string sourceName, CustomerSyncAppState app, CustomerSyncLoadOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _sources.Create(sourceName).LoadAsync(app, options, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "[{ErrorCode}] [{ErrorCategory}] CustomerSync compare: the {Source} feeder threw {ExceptionType}; reporting that side as unavailable",
+                SourceUnavailableCode, "Integration", sourceName, ex.GetType().Name);
+            return CustomerSyncSourceResult.Failed(sourceName, SourceUnavailableCode, ex.GetType().Name);
+        }
+    }
+
+    private const string SourceUnavailableCode = "CUSTOMER_SYNC_SOURCE_UNAVAILABLE";
 }
