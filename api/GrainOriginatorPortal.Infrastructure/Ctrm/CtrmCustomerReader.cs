@@ -26,6 +26,12 @@ public sealed class CtrmCustomerReader
     public const string ConcurrencyKey = "CustomerSync:CtrmConcurrency";
     public const string SourceSystemKey = "CustomerSync:CtrmSourceSystem";
 
+    /// <summary>Carried in <see cref="CtrmReadResult{T}.ErrorCode"/> when an aliased answer contains a row whose
+    /// <c>sourceCode</c> is not the one that alias asked for. Not a GraphQL error code: the API answered
+    /// cleanly, but its <c>sourceCode</c> filter is no longer an exact match, so the whole read is refused —
+    /// trusting it would copy another producer's master data onto ours, and the guard would never notice.</summary>
+    public const string FilterMismatchCode = "CUSTOMER_SYNC_FILTER_MISMATCH";
+
     private readonly ICtrmGraphQlClient _client;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmCustomerReader> _logger;
@@ -44,7 +50,8 @@ public sealed class CtrmCustomerReader
     /// <para><b>Fails closed.</b> The nightly sync deactivates every customer this lookup does not return,
     /// so a shorter dictionary is never an acceptable answer. The first chunk that is not a clean
     /// <see cref="CtrmReadStatus.Ok"/> - including <see cref="CtrmReadStatus.PartialSuccess"/>, where an
-    /// errored alias is a customer we do not have, and an Ok answer missing an alias - fails the WHOLE read
+    /// errored alias is a customer we do not have, an Ok answer missing an alias, and an answer whose rows do
+    /// not carry the requested sourceCode (<see cref="FilterMismatchCode"/>) - fails the WHOLE read
     /// with <see cref="CtrmReadResult{T}.Value"/> null, and chunks not yet sent are cancelled.</para>
     ///
     /// <para>The failure detail names the cause an operator has to act on: the missing
@@ -72,14 +79,21 @@ public sealed class CtrmCustomerReader
         var requests = 0;
         ChunkFailure? firstFailure = null;
 
-        // Null = not sent, or abandoned, because another chunk had already failed the read.
+        void Record(int index, CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> failure)
+        {
+            Interlocked.CompareExchange(ref firstFailure, new ChunkFailure(index, failure), null);
+            stop.Cancel();
+        }
+
+        // Null = not sent, or abandoned, because another chunk had already failed the read (or this one
+        // failed and recorded itself).
         async Task<List<(string Code, List<CtrmCustomerDto> Items)>?> One(int index, IReadOnlyList<string> chunk)
         {
             try
             {
                 await slot.WaitAsync(stop.Token);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (stop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
                 return null;
             }
@@ -97,16 +111,26 @@ public sealed class CtrmCustomerReader
                         () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, null, stop.Token),
                         _configuration, _logger, $"customers chunk {index}"));
                 }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (stop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
+                    return null;    // our own stop, after another chunk failed - that failure is already recorded
+                }
+                catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Cancelled by something other than the caller or our own stop - typically an HTTP
+                    // timeout surfacing as TaskCanceledException. A failure, never a silently missing chunk.
+                    Record(index, new()
+                    {
+                        Status = CtrmReadStatus.Error,
+                        Detail = $"the customers request was cancelled without the caller cancelling it (likely an HTTP timeout): {ex.Message}"
+                    });
                     return null;
                 }
 
                 var (rows, failure) = MapChunk(read, chunk);
                 if (failure is not null)
                 {
-                    Interlocked.CompareExchange(ref firstFailure, new ChunkFailure(index, failure), null);
-                    stop.Cancel();
+                    Record(index, failure);
                     return null;
                 }
                 return rows;
@@ -239,6 +263,9 @@ public sealed class CtrmCustomerReader
             ? count
             : null;
 
+    /// <summary>Longest failure detail written into the log line; the result keeps the full text.</summary>
+    private const int MaxLoggedDetail = 500;
+
     private sealed record ChunkFailure(int Index, CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> Read);
 
     /// <summary>
@@ -251,7 +278,7 @@ public sealed class CtrmCustomerReader
         // Data plus errors is not "mostly fine" for a lookup whose gaps become deactivations. Reported as
         // QueryError so the result can never read as Ok while carrying no dictionary.
         if (read.Status == CtrmReadStatus.PartialSuccess)
-            return (null, read with { Status = CtrmReadStatus.QueryError, Value = null });
+            return (null, read with { Status = CtrmReadStatus.QueryError, Value = null, Detail = "partial answer (data plus errors): " + read.Detail });
         if (read.Status != CtrmReadStatus.Ok)
             return (null, read with { Value = null });
         if (read.Value is not { } pages)
@@ -266,7 +293,18 @@ public sealed class CtrmCustomerReader
                     Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus,
                     Detail = $"CTRM returned no customers object for alias c{i} of an aliased request for {chunk.Count} code(s)."
                 });
-            rows.Add((chunk[i], page.Items ?? []));
+
+            // Case and padding are tolerated (Db2 CHAR columns); nothing else is.
+            var items = page.Items ?? [];
+            var stray = items.Count(d => !string.Equals(d.SourceCode?.Trim(), chunk[i], StringComparison.OrdinalIgnoreCase));
+            if (stray > 0)
+                return (null, new()
+                {
+                    Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus, ErrorCode = FilterMismatchCode,
+                    Detail = $"alias c{i} asked for sourceCode {chunk[i]} but {stray} of {items.Count} returned row(s) carry a different or blank sourceCode; the sourceCode filter is no longer an exact match, so nothing from this read is trusted."
+                });
+
+            rows.Add((chunk[i], items));
         }
         return (rows, null);
     }
@@ -275,17 +313,19 @@ public sealed class CtrmCustomerReader
     {
         var chunk = failed.Read;
         var (logCode, prefix) = Classify(chunk);
+        var detail = prefix + chunk.Detail;
+        var logDetail = detail.Length > MaxLoggedDetail ? detail[..MaxLoggedDetail] + "…" : detail;
 
         _logger.LogWarning(
             "CTRM customer lookup failed [{ErrorCode}] [{ErrorCategory}]: chunk {Chunk} of {Chunks} ({Codes} code(s), {Requests} request(s) sent) answered {Status} (HTTP {HttpStatus}, GraphQL code {GraphQlCode}) after {ElapsedMs}ms; the whole read fails closed. {Detail}",
-            logCode, "Integration", failed.Index, chunkCount, codeCount, requests, chunk.Status, chunk.HttpStatus, chunk.ErrorCode, elapsedMs, prefix + chunk.Detail);
+            logCode, "Integration", failed.Index, chunkCount, codeCount, requests, chunk.Status, chunk.HttpStatus, chunk.ErrorCode, elapsedMs, logDetail);
 
         return new CtrmReadResult<CtrmCustomerLookup>
         {
             Status = chunk.Status,
             HttpStatus = chunk.HttpStatus,
             ErrorCode = chunk.ErrorCode,
-            Detail = prefix + chunk.Detail,
+            Detail = detail,
             Value = null
         };
     }
@@ -293,9 +333,15 @@ public sealed class CtrmCustomerReader
     /// <summary>The log code and the operator-facing detail prefix for a failed chunk.</summary>
     private static (string LogCode, string Prefix) Classify<T>(CtrmReadResult<T> chunk)
     {
+        if (chunk.Status == CtrmReadStatus.Error && chunk.ErrorCode == FilterMismatchCode)
+            return (FilterMismatchCode,
+                "filter mismatch — customers(sourceCode:) returned rows for a different sourceCode; see CtrmCustomerQueries.CustomersBySourceCodesAliased: ");
         if (IsPermissionMissing(chunk.Status, chunk.ErrorCode))
             return ("CUSTOMER_SYNC_NO_PERMISSION",
                 "customers permission missing — Customers.Read.All (or ReadCustomersBasic) is not granted to this client: ");
+        if (CtrmServerTimeoutRetry.IsServerTimeout(chunk))
+            return ("CUSTOMER_SYNC_SOURCE_UNAVAILABLE",
+                "CTRM server timeout (HC0045) persisted after the configured retries — the gateway is slow, not a schema problem: ");
         if (chunk.Status == CtrmReadStatus.QueryError && chunk.HttpStatus == 400)
             return ("CUSTOMER_SYNC_SCHEMA_MISMATCH",
                 "schema mismatch — a field or argument in CtrmCustomerQueries.CustomerProjection / CustomersBySourceCodesAliased does not exist on the API (HTTP 400): ");

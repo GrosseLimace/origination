@@ -20,6 +20,7 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// configurable number per request. The property that matters most is that it never hands back a
 /// shorter dictionary than it was asked for - a missing code makes the sync deactivate that customer.
 /// </summary>
+[Collection("CtrmThrottle")]
 public class CtrmCustomerReaderTests
 {
     public CtrmCustomerReaderTests()
@@ -46,6 +47,8 @@ public class CtrmCustomerReaderTests
         public CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>>? FailWith { get; init; }
         /// <summary>Alias dropped from every response, to model a malformed answer.</summary>
         public string? DropAlias { get; init; }
+        /// <summary>Chunk index (as for <see cref="FailChunk"/>) whose request throws a TaskCanceledException the caller did not ask for (an HTTP timeout).</summary>
+        public int? ThrowChunk { get; init; }
         /// <summary>Codes answered with these rows instead of the default single row (duplicates).</summary>
         public Dictionary<string, List<CtrmCustomerDto>> RowsFor { get; } = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>The answer to <see cref="CtrmCustomerQueries.CustomersProbe"/>.</summary>
@@ -74,6 +77,13 @@ public class CtrmCustomerReaderTests
             }
 
             if (DropAlias is not null) pages.Remove(DropAlias);
+
+            if (ThrowChunk is { } throwChunk)
+            {
+                var first = JsonSerializer.Deserialize<string>(matches[0].Groups[2].Value)!;
+                if (int.Parse(first[1..]) / ChunkSize == throwChunk)
+                    return Task.FromException<CtrmReadResult<T>>(new TaskCanceledException("stub: the request timed out"));
+            }
 
             if (FailChunk is { } failChunk && FailWith is { } failure)
             {
@@ -112,6 +122,12 @@ public class CtrmCustomerReaderTests
     private static CtrmCustomerReader Sut(ICtrmGraphQlClient client, IConfiguration? config = null) =>
         new(client, config ?? Config(), new Mock<ILogger<CtrmCustomerReader>>().Object);
 
+    private static void VerifyWarning(Mock<ILogger<CtrmCustomerReader>> logger, Func<string, bool> message, Times times) =>
+        logger.Verify(l => l.Log(
+            LogLevel.Warning, It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((v, _) => message(v.ToString()!)),
+            It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), times);
+
     private static List<string> Codes(int count) => [.. Enumerable.Range(0, count).Select(i => $"P{i:D6}")];
 
     // -------------------------------------------------------------------------------------------------
@@ -139,6 +155,11 @@ public class CtrmCustomerReaderTests
         Assert.Equal("smitfar", lookup.ByCode["SMITFAR"].SourceCode);
         Assert.True(lookup.ByCode.ContainsKey("P000000"));     // trailing space trimmed before it was sent
         Assert.True(lookup.ByCode.ContainsKey("ABC12"));
+
+        // Alias c{i} maps onto chunk[i] for every code: the fake's id is 100 + the alias index the code was sent under.
+        var sent = codes.Select(c => c.Trim()).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+        for (var position = 0; position < sent.Count; position++)
+            Assert.Equal((100 + position % 20).ToString(), lookup.ByCode[sent[position]].IdText);
     }
 
     [Fact]
@@ -226,6 +247,7 @@ public class CtrmCustomerReaderTests
         Assert.Null(read.Value);
         Assert.Equal(CtrmReadStatus.QueryError, read.Status);
         Assert.Equal("unknown", CtrmCustomerReader.DescribePermission(read));
+        Assert.Contains("partial answer (data plus errors): ", read.Detail);
     }
 
     [Fact]
@@ -238,6 +260,111 @@ public class CtrmCustomerReaderTests
         Assert.False(read.Ok);
         Assert.Null(read.Value);
         Assert.Equal(CtrmReadStatus.Error, read.Status);
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Filter mismatch: a row that does not carry the requested sourceCode means the filter is no longer
+    // an exact match, so nothing from the read is trusted.
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_RowCarryingAnotherSourceCode_FailsTheWholeRead_AsFilterMismatch()
+    {
+        var client = new CustomerAliasClient();
+        client.RowsFor["P000003"] = [CustomerAliasClient.Row("P000099", id: 1)];
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+
+        var read = await new CtrmCustomerReader(client, Config(), logger.Object).GetBySourceCodesAsync(Codes(45), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Error, read.Status);
+        Assert.Equal(CtrmCustomerReader.FilterMismatchCode, read.ErrorCode);
+        Assert.Null(read.Value);
+        Assert.Contains("no longer an exact match", read.Detail);
+        Assert.Equal("unknown", CtrmCustomerReader.DescribePermission(read));
+        VerifyWarning(logger, m => m.Contains("CUSTOMER_SYNC_FILTER_MISMATCH"), Times.Once());
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ExactRowPlusAStrayRow_FailsRatherThanCountingADuplicate()
+    {
+        var client = new CustomerAliasClient();
+        client.RowsFor["P000003"] = [CustomerAliasClient.Row("P000003", id: 1), CustomerAliasClient.Row("P0000031", id: 2)];
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(45), CancellationToken.None);
+
+        Assert.Equal(CtrmCustomerReader.FilterMismatchCode, read.ErrorCode);
+        Assert.Null(read.Value);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_RowWithBlankSourceCode_IsAFilterMismatch()
+    {
+        var client = new CustomerAliasClient();
+        client.RowsFor["P000003"] = [CustomerAliasClient.Row("  ", id: 1)];
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(45), CancellationToken.None);
+
+        Assert.Equal(CtrmCustomerReader.FilterMismatchCode, read.ErrorCode);
+        Assert.Null(read.Value);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_SourceCodeDifferingOnlyByCaseOrPadding_IsAccepted()
+    {
+        var client = new CustomerAliasClient();
+        client.RowsFor["P000003"] = [CustomerAliasClient.Row(" p000003 ", id: 1)];
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(45), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, read.Status);
+        Assert.True(read.Value!.ByCode.ContainsKey("P000003"));
+        Assert.Equal(45, read.Value.Found);
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Timeouts and cancellations fail clearly.
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ServerTimeoutAfterRetries_IsSourceUnavailable_NotSchemaMismatch()
+    {
+        var client = new CustomerAliasClient
+        {
+            FailChunk = 0,
+            FailWith = Failure(CtrmReadStatus.QueryError, 400, CtrmServerTimeoutRetry.ServerTimeoutCode, "The request exceeded the configured timeout of `00:00:30`.")
+        };
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+
+        var read = await new CtrmCustomerReader(client, Config(), logger.Object).GetBySourceCodesAsync(Codes(30), CancellationToken.None);
+
+        Assert.Null(read.Value);
+        Assert.DoesNotContain("CustomerProjection", read.Detail);
+        Assert.Contains("HC0045", read.Detail);
+        VerifyWarning(logger, m => m.Contains("CUSTOMER_SYNC_SOURCE_UNAVAILABLE"), Times.Once());
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ChunkCancelledWithoutTheCaller_FailsTheWholeRead_AsError()
+    {
+        var client = new CustomerAliasClient { ThrowChunk = 1 };
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(60), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Error, read.Status);
+        Assert.False(read.Ok);
+        Assert.Null(read.Value);
+        Assert.Contains("cancel", read.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_FailureWarning_CapsTheDetailAt500Characters()
+    {
+        var longDetail = new string('x', 2000);
+        var client = new CustomerAliasClient { FailChunk = 0, FailWith = Failure(CtrmReadStatus.Throttled, 429, detail: longDetail) };
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+
+        var read = await new CtrmCustomerReader(client, Config(), logger.Object).GetBySourceCodesAsync(Codes(30), CancellationToken.None);
+
+        Assert.Contains(longDetail, read.Detail);                // the result keeps the full detail
+        VerifyWarning(logger, m => m.Contains("CUSTOMER_SYNC_SOURCE_UNAVAILABLE") && m.Contains(new string('x', 400)) && !m.Contains(new string('x', 501)), Times.Once());
     }
 
     [Fact]
