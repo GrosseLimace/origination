@@ -45,9 +45,12 @@ public sealed class CtrmCustomerActivityReader
     public const string MaxPagesKey = "CustomerSync:DiscoveryMaxPagesPerWindow";
     public const int PageSize = 500;
 
-    /// <summary>The widest span <see cref="DiscoverAsync"/> accepts - the same ceiling as
-    /// <c>CustomerSync:DiscoveryWindowDays</c>.</summary>
-    private const int MaxSpanDays = 3660;
+    /// <summary>The ceiling of <c>CustomerSync:DiscoveryWindowDays</c>, named in the rejection message.</summary>
+    private const int MaxWindowDays = 3660;
+
+    /// <summary>The widest span <see cref="DiscoverAsync"/> accepts: the window ceiling plus the one day the
+    /// sync adds (<c>to = today + 1</c>) so all of today is covered.</summary>
+    private const int MaxSpanDays = MaxWindowDays + 1;
 
     private readonly ICtrmGraphQlClient _client;
     private readonly IConfiguration _configuration;
@@ -88,7 +91,7 @@ public sealed class CtrmCustomerActivityReader
             return new CtrmReadResult<CtrmLinkDiscovery>
             {
                 Status = CtrmReadStatus.Error,
-                Detail = $"discovery window exceeds {MaxSpanDays} days — set discoveryFrom deliberately"
+                Detail = $"discovery window exceeds {MaxWindowDays} days — set discoveryFrom deliberately"
             };
 
         var stopwatch = Stopwatch.StartNew();
@@ -100,6 +103,8 @@ public sealed class CtrmCustomerActivityReader
 
         foreach (var window in windows)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (!contracts.Failed)
                 await ReadWindowAsync(contracts, CtrmCustomerQueries.ContractLinksInWindow, window, maxPages,
                     (CtrmContractLinksResponse? response) => response?.Contracts,
@@ -206,6 +211,8 @@ public sealed class CtrmCustomerActivityReader
 
         while (more && pages < maxPages)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var skip = pages * PageSize;
             var result = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
                 () => _client.QueryAsync<TResponse>(

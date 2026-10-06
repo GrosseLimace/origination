@@ -314,6 +314,83 @@ public class CtrmCustomerActivityReaderTests
         Assert.Empty(client.Calls);
     }
 
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_SpanOfExactly3661Days_IsAccepted()
+    {
+        // The sync's widest window: DiscoveryWindowDays at its 3660 ceiling, plus the day it adds to cover today.
+        var client = new LinksClient();
+        var from = new DateTime(2016, 1, 1);
+
+        var result = await Sut(client).DiscoverAsync(from, from.AddDays(3661), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, result.Status);
+        Assert.NotEmpty(client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_CancelledToken_ThrowsWithoutSendingARequest()
+    {
+        // A shutdown must stop the walk rather than keep paging the shared gateway.
+        var client = new LinksClient();
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Sut(client).DiscoverAsync(WeekFrom, WeekTo, cancelled.Token));
+
+        Assert.Empty(client.Calls);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_PageWithDataAndErrors_KeepsRows_AndIsPartialSuccess()
+    {
+        var client = new LinksClient
+        {
+            Contracts = _ => ContractPage(ContractRows(3, "SMITH1", "2200"), hasNextPage: false) with
+            {
+                Status = CtrmReadStatus.PartialSuccess,
+                Detail = "simulated data plus errors"
+            }
+        };
+
+        var result = await Sut(client).DiscoverAsync(WeekFrom, WeekTo, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.PartialSuccess, result.Status);
+        var discovery = Assert.IsType<CtrmLinkDiscovery>(result.Value);
+        Assert.Equal(CtrmReadStatus.PartialSuccess, discovery.ContractsStatus);
+        Assert.Equal([new CtrmCustomerLink("SMITH1", "2200")], discovery.ContractLinks);
+        Assert.Equal(3, discovery.ContractRows);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task DiscoverAsync_OkPageWithNullPayload_IsAnErrorForThatSource()
+    {
+        // Two windows: the null payload in the first must stop contracts for the second too, while tickets carry on.
+        var client = new LinksClient
+        {
+            Contracts = _ => new CtrmReadResult<CtrmContractLinksResponse>
+            {
+                Status = CtrmReadStatus.Ok,
+                HttpStatus = 200,
+                Value = new CtrmContractLinksResponse { Contracts = null }
+            }
+        };
+        var from = new DateTime(2025, 9, 1);
+
+        var result = await Sut(client).DiscoverAsync(from, from.AddDays(400), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.PartialSuccess, result.Status);
+        var discovery = Assert.IsType<CtrmLinkDiscovery>(result.Value);
+        Assert.Equal(CtrmReadStatus.Error, discovery.ContractsStatus);
+        Assert.Equal(CtrmReadStatus.Ok, discovery.TicketsStatus);
+        Assert.Single(client.ContractCalls);
+        Assert.Equal(2, client.TicketCalls.Count);
+    }
+
     private static CtrmTicketLinkDto Ticket(params (string? CustomerCode, string? OrganizationCode)[] details) => new()
     {
         Details = [.. details.Select(d => new CtrmTicketLinkDetailDto { CustomerCode = d.CustomerCode, OrganizationCode = d.OrganizationCode })]
