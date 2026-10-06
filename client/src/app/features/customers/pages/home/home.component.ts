@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, Subject, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
+import { applyAdoptedCustomerId } from './adopt-assigned-customer';
 import { catchError, map, takeUntil } from 'rxjs/operators';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
@@ -1940,16 +1941,24 @@ export class HomeComponent {
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
     if (data.reconcileTradeUnits) {
       this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? []).subscribe({
-        next: () => {
-          // A brand-new onboarding: they're now in dbo.Customer — clear the candidate flag on
-          // the selected record so we stay on this producer and notes / details unlock.
+        next: (customer) => {
+          // The server may have adopted an existing row for the same producer (matched by ScoularId);
+          // everything below must use the id it actually wrote the trade units to.
+          const effective = applyAdoptedCustomerId(data, customer);
+          const adopted = effective.customerId !== data.customerId;
           const sel = this.selectedCustomer();
-          if (sel?.id === data.customerId && sel.isOnboardCandidate) {
+          if (adopted) {
+            // Select the returned record first so _saveProducerDetailsAndLinks can find it (the list may not hold it).
+            this.toastService.success('That producer was already in the Workbench — trade units were added to the existing record.');
+            this.selectedCustomer.set({ ...customer, isManual: true, isOnboardCandidate: false });
+          } else if (sel?.id === data.customerId && sel.isOnboardCandidate) {
+            // A brand-new onboarding: they're now in dbo.Customer — clear the candidate flag on
+            // the selected record so we stay on this producer and notes / details unlock.
             this.toastService.success('Producer added and trade units assigned. Select that trade unit or group to see them.');
             this.selectedCustomer.set({ ...sel, isManual: true, isOnboardCandidate: false });
           }
-          this._saveProducerDetailsAndLinks(data);
-          this._movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
+          this._saveProducerDetailsAndLinks(effective);
+          this._movePlantingIntentions(effective.customerId, effective.intentionMoves ?? []);
         },
         error: () => this.toastService.error('Failed to update trade units')
       });
