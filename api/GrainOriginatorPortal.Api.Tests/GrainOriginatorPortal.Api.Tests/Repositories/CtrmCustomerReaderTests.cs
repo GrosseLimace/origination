@@ -39,6 +39,14 @@ public class CtrmCustomerReaderTests
         public List<string> Documents { get; } = [];
         public int Calls { get { lock (Documents) return Documents.Count; } }
 
+        /// <summary>Chunk index (the first code's number divided by <see cref="ChunkSize"/>) answered with <see cref="FailWith"/>.</summary>
+        public int? FailChunk { get; init; }
+        public int ChunkSize { get; init; } = 20;
+        /// <summary>The failure for <see cref="FailChunk"/>. A PartialSuccess answer also carries the data, as data-plus-errors does.</summary>
+        public CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>>? FailWith { get; init; }
+        /// <summary>Alias dropped from every response, to model a malformed answer.</summary>
+        public string? DropAlias { get; init; }
+
         public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
         {
             lock (Documents) Documents.Add(document);
@@ -55,6 +63,18 @@ public class CtrmCustomerReaderTests
                     TotalCount = 1,
                     Items = [Row(code, id: 100 + int.Parse(m.Groups[1].Value))]
                 };
+            }
+
+            if (DropAlias is not null) pages.Remove(DropAlias);
+
+            if (FailChunk is { } failChunk && FailWith is { } failure)
+            {
+                var first = JsonSerializer.Deserialize<string>(matches[0].Groups[2].Value)!;
+                if (int.Parse(first[1..]) / ChunkSize == failChunk)
+                {
+                    var answer = failure.Status == CtrmReadStatus.PartialSuccess ? failure with { Value = pages } : failure;
+                    return Task.FromResult((CtrmReadResult<T>)(object)answer);
+                }
             }
 
             return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)(object)pages });
@@ -125,5 +145,112 @@ public class CtrmCustomerReaderTests
         Assert.Equal(0, read.Value.Requests);
         Assert.Empty(read.Value.ByCode);
         Assert.Equal(0, client.Calls);
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Fail closed: any chunk failure fails the whole read - a short dictionary would deactivate customers.
+
+    private static CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> Failure(
+        CtrmReadStatus status, int httpStatus, string? errorCode = null, string detail = "stub failure") =>
+        new() { Status = status, HttpStatus = httpStatus, ErrorCode = errorCode, Detail = detail };
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_OneChunkUnauthorized_FailsTheWholeRead_WithPermissionMissing()
+    {
+        var client = new CustomerAliasClient { FailChunk = 1, FailWith = Failure(CtrmReadStatus.Unauthorized, 403) };
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(60), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Unauthorized, read.Status);
+        Assert.False(read.Ok);
+        Assert.Null(read.Value);
+        Assert.Equal(403, read.HttpStatus);
+        Assert.Equal("missing", CtrmCustomerReader.DescribePermission(read));
+        Assert.Contains("Customers.Read.All", read.Detail);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_HotChocolateAuthError_IsReportedAsPermissionMissing()
+    {
+        var client = new CustomerAliasClient
+        {
+            FailChunk = 0,
+            FailWith = Failure(CtrmReadStatus.QueryError, 200, "AUTH_NOT_AUTHORIZED", "The current user is not authorized to access this resource.")
+        };
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(30), CancellationToken.None);
+
+        Assert.False(read.Ok);
+        Assert.Null(read.Value);
+        Assert.Equal("AUTH_NOT_AUTHORIZED", read.ErrorCode);
+        Assert.Equal("missing", CtrmCustomerReader.DescribePermission(read));
+        Assert.Contains("Customers.Read.All", read.Detail);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_Http400QueryError_IsReportedAsSchemaMismatch()
+    {
+        var client = new CustomerAliasClient
+        {
+            FailChunk = 0,
+            FailWith = Failure(CtrmReadStatus.QueryError, 400, "HC0020", "The field `merchandisingPhone` does not exist on the type `Customer`.")
+        };
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(30), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.QueryError, read.Status);
+        Assert.Null(read.Value);
+        Assert.Contains("CtrmCustomerQueries.CustomerProjection", read.Detail);
+        Assert.Contains("merchandisingPhone", read.Detail);      // the API's own message survives behind the prefix
+        Assert.Equal("unknown", CtrmCustomerReader.DescribePermission(read));
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_PartialSuccess_IsAFailure()
+    {
+        // Data plus errors on one chunk: an errored alias is a customer we do not have, and a short
+        // dictionary would make the sync deactivate it.
+        var client = new CustomerAliasClient { FailChunk = 2, FailWith = Failure(CtrmReadStatus.PartialSuccess, 200, "HC0018", "stub partial") };
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(60), CancellationToken.None);
+
+        Assert.False(read.Ok);                                   // never "Ok" with a null or short dictionary
+        Assert.Null(read.Value);
+        Assert.Equal(CtrmReadStatus.QueryError, read.Status);
+        Assert.Equal("unknown", CtrmCustomerReader.DescribePermission(read));
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_OkResponseMissingAnAlias_FailsTheWholeRead()
+    {
+        var client = new CustomerAliasClient { DropAlias = "c3" };
+
+        var read = await Sut(client).GetBySourceCodesAsync(Codes(10), CancellationToken.None);
+
+        Assert.False(read.Ok);
+        Assert.Null(read.Value);
+        Assert.Equal(CtrmReadStatus.Error, read.Status);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_FirstChunkFails_RemainingChunksAreNotSent()
+    {
+        var client = new CustomerAliasClient { FailChunk = 0, FailWith = Failure(CtrmReadStatus.EgressBlocked, 0) };
+
+        var read = await Sut(client, Config(aliasCount: 20, concurrency: 1)).GetBySourceCodesAsync(Codes(60), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.EgressBlocked, read.Status);
+        Assert.Null(read.Value);
+        Assert.Equal("unknown", CtrmCustomerReader.DescribePermission(read));
+        Assert.Equal(1, client.Calls);
+    }
+
+    [Fact]
+    public void DescribePermission_Ok_IsGranted()
+    {
+        Assert.Equal("granted", CtrmCustomerReader.DescribePermission(new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.Ok }));
+        Assert.Equal("granted", CtrmCustomerReader.DescribePermission(new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.PartialSuccess }));
+        Assert.Equal("missing", CtrmCustomerReader.DescribePermission(new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.PartialSuccess, ErrorCode = "AUTH_NOT_AUTHENTICATED" }));
+        Assert.Equal("unknown", CtrmCustomerReader.DescribePermission(new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.Throttled }));
     }
 }

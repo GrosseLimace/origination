@@ -38,6 +38,17 @@ public sealed class CtrmCustomerReader
     /// <summary>
     /// Looks up every code; the result is keyed by the requested (trimmed) code, case-insensitively.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Fails closed.</b> The nightly sync deactivates every customer this lookup does not return,
+    /// so a shorter dictionary is never an acceptable answer. The first chunk that is not a clean
+    /// <see cref="CtrmReadStatus.Ok"/> - including <see cref="CtrmReadStatus.PartialSuccess"/>, where an
+    /// errored alias is a customer we do not have, and an Ok answer missing an alias - fails the WHOLE read
+    /// with <see cref="CtrmReadResult{T}.Value"/> null, and chunks not yet sent are cancelled.</para>
+    ///
+    /// <para>The failure detail names the cause an operator has to act on: the missing
+    /// <c>Customers.Read.All</c> permission (not granted to our clients yet, so the first thing Dev sees),
+    /// or a projection field the API does not have (HTTP 400).</para>
+    /// </remarks>
     public async Task<CtrmReadResult<CtrmCustomerLookup>> GetBySourceCodesAsync(
         IReadOnlyCollection<string> sourceCodes, CancellationToken cancellationToken)
     {
@@ -54,22 +65,49 @@ public sealed class CtrmCustomerReader
 
         var chunks = codes.Chunk(aliasCount).Select(c => (IReadOnlyList<string>)c.ToList()).ToList();
         using var slot = new SemaphoreSlim(concurrency, concurrency);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var stopwatch = Stopwatch.StartNew();
         var requests = 0;
+        ChunkFailure? firstFailure = null;
 
-        async Task<List<(string Code, List<CtrmCustomerDto> Items)>> One(int index, IReadOnlyList<string> chunk)
+        // Null = not sent, or abandoned, because another chunk had already failed the read.
+        async Task<List<(string Code, List<CtrmCustomerDto> Items)>?> One(int index, IReadOnlyList<string> chunk)
         {
-            await slot.WaitAsync(cancellationToken);
             try
             {
+                await slot.WaitAsync(stop.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (stop.IsCancellationRequested) return null;
+
                 Interlocked.Increment(ref requests);
                 var document = CtrmCustomerQueries.CustomersBySourceCodesAliased(chunk, sourceSystem);
-                var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
-                    () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, null, cancellationToken),
-                    _configuration, _logger, $"customers chunk {index}"));
+                CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> read;
+                try
+                {
+                    read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
+                        () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, null, stop.Token),
+                        _configuration, _logger, $"customers chunk {index}"));
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    return null;
+                }
 
-                var pages = read.Value!;
-                return [.. chunk.Select((code, i) => (code, pages[$"c{i}"].Items))];
+                var (rows, failure) = MapChunk(read, chunk);
+                if (failure is not null)
+                {
+                    Interlocked.CompareExchange(ref firstFailure, new ChunkFailure(index, failure), null);
+                    stop.Cancel();
+                    return null;
+                }
+                return rows;
             }
             finally
             {
@@ -79,7 +117,10 @@ public sealed class CtrmCustomerReader
 
         var results = await Task.WhenAll(chunks.Select((chunk, index) => One(index, chunk)));
 
-        foreach (var (code, items) in results.SelectMany(r => r))
+        if (Volatile.Read(ref firstFailure) is { } failed)
+            return Fail(failed, chunks.Count, codes.Count, Volatile.Read(ref requests), stopwatch.ElapsedMilliseconds);
+
+        foreach (var (code, items) in results.SelectMany(r => r!))
         {
             if (items.Count == 0)
             {
@@ -97,6 +138,86 @@ public sealed class CtrmCustomerReader
 
         return new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.Ok, Value = lookup };
     }
+
+    private sealed record ChunkFailure(int Index, CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> Read);
+
+    /// <summary>
+    /// Maps one chunk's answer onto its codes (alias <c>c{i}</c> is <c>chunk[i]</c>), or returns the failure
+    /// that fails the whole read. Anything short of a clean, complete answer is a failure.
+    /// </summary>
+    private static (List<(string Code, List<CtrmCustomerDto> Items)>? Rows, CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>>? Failure) MapChunk(
+        CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> read, IReadOnlyList<string> chunk)
+    {
+        // Data plus errors is not "mostly fine" for a lookup whose gaps become deactivations. Reported as
+        // QueryError so the result can never read as Ok while carrying no dictionary.
+        if (read.Status == CtrmReadStatus.PartialSuccess)
+            return (null, read with { Status = CtrmReadStatus.QueryError, Value = null });
+        if (read.Status != CtrmReadStatus.Ok)
+            return (null, read with { Value = null });
+        if (read.Value is not { } pages)
+            return (null, new() { Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus, Detail = "CTRM returned no data for an aliased customers request." });
+
+        var rows = new List<(string Code, List<CtrmCustomerDto> Items)>(chunk.Count);
+        for (var i = 0; i < chunk.Count; i++)
+        {
+            if (!pages.TryGetValue($"c{i}", out var page) || page is null)
+                return (null, new()
+                {
+                    Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus,
+                    Detail = $"CTRM returned no customers object for alias c{i} of an aliased request for {chunk.Count} code(s)."
+                });
+            rows.Add((chunk[i], page.Items ?? []));
+        }
+        return (rows, null);
+    }
+
+    private CtrmReadResult<CtrmCustomerLookup> Fail(ChunkFailure failed, int chunkCount, int codeCount, int requests, long elapsedMs)
+    {
+        var chunk = failed.Read;
+        var (logCode, prefix) = Classify(chunk);
+
+        _logger.LogWarning(
+            "CTRM customer lookup failed [{ErrorCode}] [{ErrorCategory}]: chunk {Chunk} of {Chunks} ({Codes} code(s), {Requests} request(s) sent) answered {Status} (HTTP {HttpStatus}, GraphQL code {GraphQlCode}) after {ElapsedMs}ms; the whole read fails closed. {Detail}",
+            logCode, "Integration", failed.Index, chunkCount, codeCount, requests, chunk.Status, chunk.HttpStatus, chunk.ErrorCode, elapsedMs, prefix + chunk.Detail);
+
+        return new CtrmReadResult<CtrmCustomerLookup>
+        {
+            Status = chunk.Status,
+            HttpStatus = chunk.HttpStatus,
+            ErrorCode = chunk.ErrorCode,
+            Detail = prefix + chunk.Detail,
+            Value = null
+        };
+    }
+
+    /// <summary>The log code and the operator-facing detail prefix for a failed chunk.</summary>
+    private static (string LogCode, string Prefix) Classify<T>(CtrmReadResult<T> chunk)
+    {
+        if (IsPermissionMissing(chunk.Status, chunk.ErrorCode))
+            return ("CUSTOMER_SYNC_NO_PERMISSION",
+                "customers permission missing — Customers.Read.All (or ReadCustomersBasic) is not granted to this client: ");
+        if (chunk.Status == CtrmReadStatus.QueryError && chunk.HttpStatus == 400)
+            return ("CUSTOMER_SYNC_SCHEMA_MISMATCH",
+                "schema mismatch — a field or argument in CtrmCustomerQueries.CustomerProjection / CustomersBySourceCodesAliased does not exist on the API (HTTP 400): ");
+        return ("CUSTOMER_SYNC_SOURCE_UNAVAILABLE", "");
+    }
+
+    /// <summary>
+    /// Whether a read shows the <c>customers</c> permission (<c>Customers.Read.All</c>) as granted:
+    /// <c>"missing"</c> on an APIM 401/403 or a Hot Chocolate <c>AUTH_*</c> error, <c>"granted"</c> when the
+    /// read came back with data, otherwise <c>"unknown"</c> (the read failed for a reason that says nothing
+    /// about the permission).
+    /// </summary>
+    public static string DescribePermission<T>(CtrmReadResult<T> result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (IsPermissionMissing(result.Status, result.ErrorCode)) return "missing";
+        return result.Ok ? "granted" : "unknown";
+    }
+
+    private static bool IsPermissionMissing(CtrmReadStatus status, string? errorCode) =>
+        status == CtrmReadStatus.Unauthorized
+        || (errorCode?.StartsWith("AUTH_", StringComparison.OrdinalIgnoreCase) ?? false);
 }
 
 /// <summary>The result of a customer master lookup by producer code.</summary>
