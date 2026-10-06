@@ -35,7 +35,6 @@ public class DiagnosticsController : ControllerBase
     private readonly ILogger<DiagnosticsController> _logger;
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpFactory;
-    private readonly CustomerSyncService _customerSync;
     private readonly IGraphDirectoryClient _graphDirectory;
     private readonly ICtrmGraphQlClient _ctrm;
     private readonly IContractRepository _contracts;
@@ -53,7 +52,6 @@ public class DiagnosticsController : ControllerBase
         ILogger<DiagnosticsController> logger,
         IWebHostEnvironment env,
         IHttpClientFactory httpFactory,
-        CustomerSyncService customerSync,
         IGraphDirectoryClient graphDirectory,
         ICtrmGraphQlClient ctrm,
         IContractRepository contracts,
@@ -75,7 +73,6 @@ public class DiagnosticsController : ControllerBase
         _logger = logger;
         _env = env;
         _httpFactory = httpFactory;
-        _customerSync = customerSync;
         _graphDirectory = graphDirectory;
         _config = config;
     }
@@ -463,10 +460,10 @@ public class DiagnosticsController : ControllerBase
         Provenance = provenance
     };
 
+    // The ONE definition of "production-like" lives in DiagnosticsEnvironmentGate, shared with
+    // CustomerSyncDiagnosticsController so the two cannot drift.
     private IActionResult? DenyIfProduction()
-        => _env.IsDevelopment() || _env.IsEnvironment("Dev") || _env.IsEnvironment("QA")
-            ? null
-            : NotFound();
+        => DiagnosticsEnvironmentGate.IsProductionLike(_env) ? NotFound() : null;
 
     // -------------------------------------------------------------------------
     /// <summary>
@@ -545,27 +542,6 @@ public class DiagnosticsController : ControllerBase
         return Ok(new { TableName = tableName, ColumnCount = columns.Count, Columns = columns });
     }
 
-    /// <summary>
-    /// Manual on-demand trigger for the customer sync. Available in all
-    /// environments to admins (gated by the controller-level
-    /// <c>[Authorize(Policy = "AdminOnly")]</c>) — useful when prod needs an
-    /// out-of-cycle refresh ahead of the next scheduled
-    /// <see cref="CustomerSyncBackgroundService"/> run.
-    ///
-    /// Invokes the same upsert / soft-delete logic the scheduled service uses
-    /// (see Services/CustomerSyncService). Replaces the legacy
-    /// POST /api/diagnostics/customer-snapshot/populate endpoint that did a
-    /// destructive DELETE+INSERT — the new sync preserves FK references from
-    /// Notes / ProducerDetails / ProducerPlantingIntentions by soft-deleting.
-    /// </summary>
-    [HttpPost("customer-sync/run")]
-    [ProducesResponseType(typeof(CustomerSyncResult), StatusCodes.Status200OK)]
-    public async Task<IActionResult> RunCustomerSync(CancellationToken cancellationToken = default)
-    {
-        var result = await _customerSync.SyncAsync(cancellationToken);
-        return Ok(result);
-    }
-
     // -------------------------------------------------------------------------
     /// <summary>
     /// Rebuilds the usage-dashboard daily rollups for the last <paramref name="days"/> days from the
@@ -615,7 +591,7 @@ public class DiagnosticsController : ControllerBase
     /// verdict: Ok, or a categorized reason (EgressBlocked = NSG outbound rule needed,
     /// PermissionMissing = GroupMember.Read.All grant needed, TokenFailure, NotFound, NotConfigured).
     ///
-    /// Deliberately NOT gated by <see cref="DenyIfNotDevelopment"/> (like customer-sync/run):
+    /// Deliberately NOT gated by <see cref="DenyIfNotDevelopment"/> (like customer-sync/run in CustomerSyncDiagnosticsController):
     /// the deployed dev environment runs ASPNETCORE_ENVIRONMENT=Dev, which that gate would 404 —
     /// and deployed Dev is exactly where the managed identity's Graph access must be proven.
     /// Read-only; admin-gated by the controller-level policy.
