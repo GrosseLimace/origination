@@ -63,3 +63,15 @@ The Origination Workbench still gets its customer (producer) data from the ODS, 
 - **Raised by:** reviewer (fresh, task-review of B3a)
 - **Blocks:** the first NON-dry CTRM sync that mints a new customer id in each environment (dry runs and the ODS path never touch the sequence)
 - **Answer:** (open)
+
+### Q10
+- **Question:** Does the ODS view `base.vw_CurrentCustomers` contain any inactive customers? Run in SSMS against ODS: `SELECT COUNT(*) FROM base.vw_CurrentCustomers WHERE IsActive = 0;` If the answer is 0, the GraphQL sync must not keep inactive manual producers either (a one-line change before the flip); if it is more than 0, the current behaviour already matches the ODS.
+- **Raised by:** planner (resumed, hand-off 3, C4 parity gap Q2)
+- **Blocks:** the first `CustomerSync:Source=ctrm` run in each environment, not the build
+- **Answer:** (open)
+
+### Q11
+- **Question:** Before the first GraphQL sync in each environment, run the pre-flip checks in plan §10 ("Before the first `ctrm` run in each environment"): padded trade-unit count and the duplicate-spelling query (must return 0 rows), and a dry run with `source=ctrm` showing zero manual-customer deactivations.
+- **Raised by:** planner (resumed, hand-off 3)
+- **Blocks:** the first `ctrm` run in each environment
+- **Answer:** (open)
