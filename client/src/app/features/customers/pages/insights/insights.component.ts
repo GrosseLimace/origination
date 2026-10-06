@@ -554,29 +554,39 @@ export class InsightsComponent {
     return result;
   });
 
-  skeletonCategories = [
-    {
-      color: 'amber',
+  // Keyed by category, not by position: a positional array silently came up one short when
+  // OrganicStatusChanges was added, and the template threw on the missing entry.
+  readonly skeletonCategories: Record<InsightCategory, {
+    headerClass: string;
+    pulseClass: string;
+    pulseSubClass: string;
+    spinnerClass: string;
+  }> = {
+    UnconfirmedContracts: {
       headerClass: 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800',
       pulseClass: 'bg-amber-200 dark:bg-amber-800',
       pulseSubClass: 'bg-amber-100 dark:bg-amber-900',
       spinnerClass: 'border-amber-200 dark:border-amber-800 border-t-amber-500 dark:border-t-amber-400',
     },
-    {
-      color: 'orange',
+    SpotLoads: {
       headerClass: 'bg-scoular-yellow/5 dark:bg-scoular-yellow/20 border-b border-scoular-yellow/20 dark:border-scoular-yellow',
       pulseClass: 'bg-scoular-yellow/20 dark:bg-scoular-yellow',
       pulseSubClass: 'bg-scoular-yellow/10 dark:bg-orange-900',
       spinnerClass: 'border-orange-200 dark:border-scoular-yellow border-t-orange-500 dark:border-t-orange-400',
     },
-    {
-      color: 'red',
+    UnshippedBushels: {
       headerClass: 'bg-scoular-red/5 dark:bg-scoular-red/20 border-b border-scoular-red/20 dark:border-scoular-red-accessible',
       pulseClass: 'bg-scoular-red/20 dark:bg-red-800',
       pulseSubClass: 'bg-scoular-red/10 dark:bg-red-900',
       spinnerClass: 'border-red-200 dark:border-scoular-red-accessible border-t-red-500 dark:border-t-red-400',
     },
-  ];
+    OrganicStatusChanges: {
+      headerClass: 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800',
+      pulseClass: 'bg-amber-200 dark:bg-amber-800',
+      pulseSubClass: 'bg-amber-100 dark:bg-amber-900',
+      spinnerClass: 'border-amber-200 dark:border-amber-800 border-t-amber-500 dark:border-t-amber-400',
+    },
+  };
 
   get selectedTradeUnits(): string[] {
     return this.appState.selectedTradeUnits();

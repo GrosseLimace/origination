@@ -47,7 +47,8 @@
 
       <!-- Loading skeletons -->
       } @else if (isLoading()) {
-        @for (skeletonCategory of skeletonCategories; track skeletonCategory.color) {
+        @for (category of categories; track category) {
+          @let skeletonCategory = skeletonCategories[category];
           <app-card class="overflow-hidden">
             <!-- Skeleton header -->
             <div [class]="skeletonCategory.headerClass" class="p-4">
@@ -94,9 +95,9 @@
         </div>
 
         <!-- Category cards -->
-        @for (category of categories; track category; let i = $index) {
+        @for (category of categories; track category) {
           @if (isCategoryLoading(category)) {
-            @let sk = skeletonCategories[i];
+            @let sk = skeletonCategories[category];
             <app-card class="overflow-hidden">
               <div [class]="sk.headerClass" class="p-4">
                 <div class="flex items-center justify-between">
