@@ -167,7 +167,7 @@ Run this **every time**, even if nobody restarted anything. The 07:00 UTC run or
 
 #### Customer sync abort codes
 
-Every abort writes nothing. An abort is logged at **Error twice** (the service, then the background service for startup and scheduled runs). **Alert on one**: the service's line (`CustomerSync aborted …`), which carries the code in `customDimensions.ErrorCode`.
+Every abort writes nothing. An abort is logged at **Error twice** (the service, then the background service for startup and scheduled runs). **Alert on one**: the background service's line (`CustomerSync startup aborted: …` / `CustomerSync scheduled aborted: …`), which carries the code in `customDimensions.ErrorCode` and fires only for the nightly and startup runs. The service's own line also fires for manual runs and dry runs, so alerting on it would page on an admin's deliberate test.
 
 | Code | Meaning | What to do |
 |---|---|---|
@@ -365,8 +365,9 @@ traces
 | project timestamp, severityLevel, message
 | order by timestamp desc
 
-// Customer sync aborts and warnings (aborts write nothing). Alert on ONE line: the service's.
-// The background service logs the same code a second time for startup/scheduled runs.
+// Customer sync aborts and warnings (aborts write nothing). Alert on ONE line: the background service's
+// ("CustomerSync <startup|scheduled> aborted"), which fires only for unattended runs. The service logs the
+// same code too, including for manual runs and dry runs.
 traces
 | where timestamp > ago(7d)
 | where tostring(customDimensions.ErrorCode) in (

@@ -175,7 +175,9 @@ public class CustomerSyncDiagnosticsController : ControllerBase
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex,
+            // Type only, never the exception object: a SqlException or deserialisation message can carry
+            // connection or key detail, and this report is meant to hold codes and counts only.
+            _logger.LogWarning(
                 "[{ErrorCode}] [{ErrorCategory}] CustomerSync compare: the {Source} feeder threw {ExceptionType}; reporting that side as unavailable",
                 SourceUnavailableCode, "Integration", sourceName, ex.GetType().Name);
             return CustomerSyncSourceResult.Failed(sourceName, SourceUnavailableCode, ex.GetType().Name);
