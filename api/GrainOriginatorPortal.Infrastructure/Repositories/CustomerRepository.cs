@@ -621,7 +621,15 @@ public class CustomerRepository : ICustomerRepository
     }
 
 
-    public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
+    /// <summary>Reconciles a producer's manual trade units to <paramref name="tradeUnitCodes"/>,
+    /// onboarding the producer from the ODS when <paramref name="customerId"/> is not in
+    /// dbo.Customer. Before inserting, it adopts an existing row with the candidate's ScoularId
+    /// (trimmed, case-insensitive; minted or not) — preferring an active row, then the lowest id,
+    /// the tie-break the ODS sync shares when it adopts by ScoularId (C3) — and reactivates it as manual if inactive,
+    /// so one producer never ends up under two ids. The outcome's CustomerId is the id actually
+    /// written to (Adopted = true when that differs from the request). E4 later adds the ScoularId
+    /// to the request so the client never has to send an ODS id at all.</summary>
+    public async Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
     {
         // Normalize: trim, drop blanks, de-dupe (case-insensitive).
         var codes = tradeUnitCodes
@@ -640,20 +648,56 @@ public class CustomerRepository : ICustomerRepository
 
         // An empty set can't onboard a brand-new producer (nothing anchors the insert), but
         // for an existing producer it's a valid request to clear all manual assignments.
-        if (!customerExists && codes.Count == 0) return AssignTradeUnitsResult.NoCodes;
+        if (!customerExists && codes.Count == 0) return AssignTradeUnitsOutcome.NoCodes(customerId);
 
+        // True when the trade units land on an existing row found by ScoularId; from then on
+        // customerId is that row's id, and everything below (reconcile, audit) runs against it.
+        var adopted = false;
         if (!customerExists)
         {
-            var odsRow = await GetOdsCustomerRowAsync(customerId, cancellationToken);
-            if (odsRow is null)
+            var candidate = await LoadOnboardingCandidateAsync(customerId, cancellationToken);
+            if (candidate is null)
             {
                 _logger.LogWarning("AssignTradeUnits: customer {CustomerId} not found in base.vw_CurrentCustomers", customerId);
-                return AssignTradeUnitsResult.CustomerNotFound;
+                return AssignTradeUnitsOutcome.CustomerNotFound(customerId);
             }
-            var inserted = MapOdsRowToCustomer(odsRow);
-            inserted.IsManual = true;
-            inserted.IsActive = true;
-            _appContext.Customers.Add(inserted);
+
+            // The sync may already hold this producer under another id (a CTRM-minted 5e15+N row,
+            // or any row carrying the same ScoularId). Adopt that row rather than insert a second
+            // customer: a second row would split the producer's notes, contacts and saved lists.
+            // Tie-break shared with the ODS sync adoption (C3): active first, then lowest id. Trim() on the
+            // column for the InMemory provider (SQL Server ignores trailing spaces in '=' anyway);
+            // the case variants likewise only matter there (the SQL collation ignores case).
+            var codeVariants = ScoularIdQueryVariants(candidate.ScoularId).ToList();
+            var heldByCode = codeVariants.Count == 0
+                ? null
+                : await _appContext.Customers
+                    .Where(c => c.ScoularId != null && codeVariants.Contains(c.ScoularId.Trim()))
+                    .OrderByDescending(c => c.IsActive)
+                    .ThenBy(c => c.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+            if (heldByCode is not null)
+            {
+                var requestedId = customerId;
+                adopted = true;
+                customerId = heldByCode.Id;
+                if (!heldByCode.IsActive)
+                {
+                    heldByCode.IsActive = true;
+                    heldByCode.IsManual = true;
+                }
+                // Ids only — never the ScoularId or the name.
+                _logger.LogInformation(
+                    "AssignTradeUnits: requested id {RequestedId} adopted existing customer {CustomerId} by ScoularId (no second row inserted)",
+                    requestedId, customerId);
+            }
+            else
+            {
+                candidate.IsManual = true;
+                candidate.IsActive = true;
+                _appContext.Customers.Add(candidate);
+            }
         }
         else
         {
@@ -750,7 +794,7 @@ public class CustomerRepository : ICustomerRepository
             string.Join(", ", beforeCodes),
             string.Join(", ", codes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase)),
             string.Join(", ", deactivatedCodes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase)));
-        return AssignTradeUnitsResult.Ok;
+        return AssignTradeUnitsOutcome.Ok(customerId, adopted);
     }
 
     public Task<List<CustomerTradeUnitMembership>> GetTradeUnitMembershipsAsync(long customerId, CancellationToken cancellationToken)
@@ -929,6 +973,16 @@ public class CustomerRepository : ICustomerRepository
             .Distinct()
             .OrderBy(t => t)
             .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>The producer to onboard for an id not yet in dbo.Customer: a single
+    /// base.vw_CurrentCustomers row by CustomerId, mapped to Customer (null when absent). A seam:
+    /// the raw ODS SQL cannot run on the InMemory provider, and E4 later re-routes onboarding to
+    /// CTRM.</summary>
+    protected virtual async Task<Customer?> LoadOnboardingCandidateAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var row = await GetOdsCustomerRowAsync(customerId, cancellationToken);
+        return row is null ? null : MapOdsRowToCustomer(row);
     }
 
     /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>
