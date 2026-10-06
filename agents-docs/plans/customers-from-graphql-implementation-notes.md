@@ -74,3 +74,11 @@ implementer must honour. Each entry names its source.
 - An abort logs at Error twice (service + background service) by design; D4 alert guidance should key on one.
 - ODS-path log wording changed: "loaded N rows from source ods", "grouped N distinct customers from the
   source"; "CustomerSync starting" now carries source/trigger/dryRun/force. No dependents found in the repo.
+
+## E7 unblocked by measurement (2026-10-06 PM, ctrm-capabilities on the nonprod client)
+
+- `customers` arguments that exist: skip, take, sourceCode, sourceSystem, code, nameContains, sourceCodes, codes. NOT present: industryCode1, sourceCodeContains, any changed-since argument.
+- All 14 requested Customer fields now exist (E1 extended fields + nopidNo, E2 paymentMethod, duplicateYN) — 37 fields total.
+- Timings (single requests, apiqa): `sourceCodes` 20 codes 6.9 s, 100 codes 5.2 s, all matched; 500 codes rejected by VALIDATION: "The filter is too long for the Profisee endpoint (7987 encoded characters, limit 7000) … The limit is on the length of the rendered filter, not on the number of values". nameContains "FARM": 4.1 s, totalCount 35,272 (all customers, not producers only).
+- The aliased one-code-per-alias lookup measured ~27 s per 20 codes with HC0045 timeouts and a 500 at chunk 25 of 840 (first compare run) — unusable at 16.8k producers.
+- **Orchestrator decisions (deviation from plan E7, evidence above):** (1) `CustomerSync:CustomerLookupStrategy` defaults to `sourceCodes`, with `aliased` the fallback until the E7b sunset; (2) chunks are sized by an estimate of the rendered filter length, not by a fixed 500: estimated length = Σ(len(code) + 9) (the measured 500 seven-char codes ≈ 7,987 encoded chars ⇒ ~16 per code), budget `CustomerSync:SourceCodesMaxFilterChars` default 6000 (margin under 7,000) and at most `CustomerSync:SourceCodesMaxPerRequest` 400 codes; a VALIDATION "too long" answer still fails the read closed and names the knob to lower.
