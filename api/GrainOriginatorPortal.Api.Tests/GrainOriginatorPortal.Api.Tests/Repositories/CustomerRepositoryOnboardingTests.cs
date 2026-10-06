@@ -134,6 +134,62 @@ public class CustomerRepositoryOnboardingTests
 
     // -------------------------------------------------------------------------
     [Fact]
+    public async Task AssignTradeUnitsAsync_Adoption_AddsThePostedCodes_AndKeepsPreExistingManualTradeUnits()
+    {
+        // The client posted the codes for an ODS candidate it thought was new — not the adopted row's
+        // full manual list — so adoption must not reconcile away a manual trade unit it never saw.
+        var sut = Build(out var app);
+        app.Customers.Add(new Customer { Id = MintedId, ScoularId = "SMITFAR", Name = "Smith Farms", IsActive = true });
+        app.CustomerTradeUnits.Add(new CustomerTradeUnit
+        {
+            CustomerId = MintedId,
+            TradeUnit = "2190",
+            IsActive = true,
+            IsManual = true,
+            CreatedAt = DateTime.UtcNow.AddDays(-30),
+            CreatedBy = "other.rep@scoular.com",
+            ModifiedAt = null,
+        });
+        app.SaveChanges();
+        sut.Candidate = OdsCandidate(777, "SMITFAR");
+
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], "rep@scoular.com", CancellationToken.None);
+
+        Assert.Equal(AssignTradeUnitsResult.Ok, outcome.Result);
+        Assert.True(outcome.Adopted);
+        var rows = app.CustomerTradeUnits.Where(t => t.CustomerId == MintedId).OrderBy(t => t.TradeUnit).ToList();
+        Assert.Equal(["1085", "2190"], rows.Select(t => t.TradeUnit));
+        Assert.All(rows, t => Assert.True(t.IsActive));
+        Assert.All(rows, t => Assert.True(t.IsManual));
+        Assert.Null(rows.Single(t => t.TradeUnit == "2190").ModifiedAt);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AssignTradeUnitsAsync_KnownId_StillReconcilesToThePostedList()
+    {
+        var sut = Build(out var app);
+        app.Customers.Add(new Customer { Id = 900, ScoularId = "JONES1", Name = "Jones Farm", IsActive = true });
+        app.CustomerTradeUnits.Add(new CustomerTradeUnit
+        {
+            CustomerId = 900,
+            TradeUnit = "2190",
+            IsActive = true,
+            IsManual = true,
+            CreatedAt = DateTime.UtcNow.AddDays(-30),
+            CreatedBy = "other.rep@scoular.com",
+        });
+        app.SaveChanges();
+
+        var outcome = await sut.AssignTradeUnitsAsync(900, ["1085"], "rep@scoular.com", CancellationToken.None);
+
+        Assert.False(outcome.Adopted);
+        Assert.False(app.CustomerTradeUnits.Single(t => t.CustomerId == 900 && t.TradeUnit == "2190").IsActive);
+        Assert.True(app.CustomerTradeUnits.Single(t => t.CustomerId == 900 && t.TradeUnit == "1085").IsActive);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
     public async Task AssignTradeUnitsAsync_Adoption_PrefersTheActiveRow_ThenTheLowestId()
     {
         var sut = Build(out var app);

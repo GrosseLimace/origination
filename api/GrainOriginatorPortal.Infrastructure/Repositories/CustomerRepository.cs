@@ -194,7 +194,9 @@ public class CustomerRepository : ICustomerRepository
             .Distinct(StringComparer.Ordinal)
             .ToList();
         var existing = await _appContext.Customers.AsNoTracking()
-            .Where(c => candidateIds.Contains(c.Id) || (c.ScoularId != null && candidateCodes.Contains(c.ScoularId)))
+            // Trim() on the column, symmetric with AssignTradeUnitsAsync: SQL Server ignores only
+            // trailing spaces in '=', so a stored leading space would otherwise escape the dedupe.
+            .Where(c => candidateIds.Contains(c.Id) || (c.ScoularId != null && candidateCodes.Contains(c.ScoularId.Trim())))
             .Select(c => new { c.Id, c.ScoularId })
             .ToListAsync(cancellationToken);
         var existingIds = existing.Select(e => e.Id).ToHashSet();
@@ -628,7 +630,9 @@ public class CustomerRepository : ICustomerRepository
     /// the tie-break the ODS sync shares when it adopts by ScoularId (C3) — and reactivates it as manual if inactive,
     /// so one producer never ends up under two ids. The outcome's CustomerId is the id actually
     /// written to (Adopted = true when that differs from the request). E4 later adds the ScoularId
-    /// to the request so the client never has to send an ODS id at all.</summary>
+    /// to the request so the client never has to send an ODS id at all. An adoption is add-only:
+    /// pre-existing active manual trade units on the adopted row are kept, because an onboarding
+    /// request carries only the new codes.</summary>
     public async Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
     {
         // Normalize: trim, drop blanks, de-dupe (case-insensitive).
@@ -770,14 +774,21 @@ public class CustomerRepository : ICustomerRepository
         // desired set). The row is preserved so it can be re-added/reactivated later. Sync
         // assignments (IsManual=false) are never touched — they're locked in the UI.
         var deactivatedCodes = new List<string>();
-        foreach (var existing in existingTus)
+        // Skipped on an adoption: the client posted the codes for an ODS candidate it thought was
+        // NEW, not the adopted row's full manual list, so reconciling here would deactivate manual
+        // trade units the user never saw (e.g. a minted row's "2190" when "1085" was onboarded).
+        // Adoption is add-only; the next normal save of the dialog reconciles as usual.
+        if (!adopted)
         {
-            if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
+            foreach (var existing in existingTus)
             {
-                existing.IsActive = false;
-                existing.ModifiedAt = now;
-                existing.ModifiedBy = currentUser;
-                deactivatedCodes.Add(existing.TradeUnit);
+                if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
+                {
+                    existing.IsActive = false;
+                    existing.ModifiedAt = now;
+                    existing.ModifiedBy = currentUser;
+                    deactivatedCodes.Add(existing.TradeUnit);
+                }
             }
         }
 
@@ -788,11 +799,15 @@ public class CustomerRepository : ICustomerRepository
         // the row stamps were there but the log was not queryable as an audit event. Same gap
         // H-062 found under AR-01 on the producer-details delete: verify a stated compensating
         // control per route rather than trusting the register.
+        // On an adoption the resulting active set is the union, not the posted list.
+        var afterCodes = adopted
+            ? beforeCodes.Union(codes, StringComparer.OrdinalIgnoreCase).OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            : codes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase);
         _logger.LogInformation(
-            "Customer trade units reassigned [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} Before=[{Before}] After=[{After}] Deactivated=[{Deactivated}]",
-            "AUDIT_UPDATE", "DataMutation", customerId, currentUser,
+            "Customer trade units reassigned [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} Adopted={Adopted} Before=[{Before}] After=[{After}] Deactivated=[{Deactivated}]",
+            "AUDIT_UPDATE", "DataMutation", customerId, currentUser, adopted,
             string.Join(", ", beforeCodes),
-            string.Join(", ", codes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase)),
+            string.Join(", ", afterCodes),
             string.Join(", ", deactivatedCodes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase)));
         return AssignTradeUnitsOutcome.Ok(customerId, adopted);
     }
