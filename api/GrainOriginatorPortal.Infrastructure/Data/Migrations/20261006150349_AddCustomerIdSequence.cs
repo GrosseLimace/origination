@@ -16,8 +16,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
     ///
     /// <para><b>Why dynamic SQL instead of <c>CreateSequence</c>.</b> The start must come from the live table: PROD's
     /// <c>MAX(CustomerId)</c> is unknown at authoring time. The sequence starts at the larger of 5e15 and
-    /// <c>MAX(CustomerId) + 1</c>, and the migration THROWs rather than create it when the table already holds an id at
-    /// or above 6e15 (the band would already be occupied). <c>CREATE SEQUENCE ... START WITH</c> only takes a
+    /// <c>MAX(CustomerId) + 1</c>, and the migration THROWs rather than create it when <c>MAX(CustomerId) + 1</c> would
+    /// fall outside the band (no id left to hand out — at or above 5999999999999999). <c>CREATE SEQUENCE ... START WITH</c> only takes a
     /// constant, hence <c>sp_executesql</c>. The guard on <c>sys.sequences</c> makes a re-run a no-op. The model
     /// (<c>ApplicationDbContext.OnModelCreating</c>) still declares the sequence with <c>StartsAt(ReservedBase)</c> so
     /// the snapshot stays in step; that StartsAt is a model default only, never what a database receives.</para>
@@ -32,7 +32,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.sequences s JOIN sys.schemas sc ON sc.schema_id
 BEGIN
     DECLARE @band bigint = 5000000000000000;
     DECLARE @liveMax bigint = (SELECT ISNULL(MAX(CustomerId), 0) FROM dbo.Customer);
-    IF @liveMax >= 6000000000000000
+    IF @liveMax >= 5999999999999999
         THROW 51000, N'dbo.Customer already holds ids at or above the minted band [5e15,6e15); choose a new band in CustomerIdMinting before creating dbo.CustomerIdSequence.', 1;
     DECLARE @start bigint = CASE WHEN @liveMax >= @band THEN @liveMax + 1 ELSE @band END;
     DECLARE @sql nvarchar(500) = N'CREATE SEQUENCE dbo.CustomerIdSequence AS bigint START WITH ' + CAST(@start AS nvarchar(20))

@@ -11,7 +11,9 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// <c>ReserveCustomerIdsAsync</c> hands the CTRM customer sync a block of minted ids from
 /// <c>dbo.CustomerIdSequence</c> in one round trip. Only the no-op path is testable here: the reservation itself
 /// runs <c>sys.sp_sequence_get_range</c>, which the InMemory provider cannot execute (any raw SQL throws), so the
-/// SQL path is exercised by the Dev dry run of the customer-sync diagnostics (plan task D1) instead.
+/// SQL path is first exercised by the first NON-dry CTRM sync that mints an id (a dry run uses placeholder ids and
+/// never calls this method) — so verify the app identity can use the sequence (UPDATE on dbo.CustomerIdSequence)
+/// before that run.
 /// </summary>
 public class CustomerSyncRepositoryReserveIdsTests
 {
