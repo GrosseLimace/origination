@@ -10,9 +10,7 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// </summary>
 /// <remarks>
 /// Reads the flag on every call, matching <see cref="ContractRepositorySwitch"/>, so the source can be
-/// flipped without restarting the API. Anything other than the literal <c>ctrm</c> means ODS - unless the
-/// request belongs to an allow-listed tester who asked for the other source (see
-/// <see cref="CtrmSourceChoice"/>); contracts and tickets always resolve the same way within one request.
+/// flipped without restarting the API. Anything other than the literal <c>ctrm</c> means ODS.
 /// </remarks>
 public sealed class TicketRepositorySwitch : ITicketRepository
 {
@@ -20,24 +18,24 @@ public sealed class TicketRepositorySwitch : ITicketRepository
     private readonly CtrmTicketRepository _ctrm;
     private readonly IConfiguration _configuration;
     private readonly CtrmProvenance _provenance;
-    private readonly CtrmSourceChoice _choice;
 
     public TicketRepositorySwitch(
         TicketRepository ods,
         CtrmTicketRepository ctrm,
         IConfiguration configuration,
-        CtrmProvenance provenance,
-        CtrmSourceChoice? choice = null)
+        CtrmProvenance provenance)
     {
         _ods = ods;
         _ctrm = ctrm;
         _configuration = configuration;
         _provenance = provenance;
-        _choice = choice ?? new CtrmSourceChoice();
     }
 
-    /// <summary>True when ticket reads for THIS request are pointed at CTRM.</summary>
-    public bool UsingCtrm => _choice.UsesCtrm(_configuration);
+    /// <summary>True when ticket reads are currently pointed at CTRM.</summary>
+    public bool UsingCtrm => string.Equals(
+        _configuration["Ctrm:Source"]?.Trim(),
+        ContractRepositorySwitch.CtrmSourceValue,
+        StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The repository this call routes to, recording the choice for the provenance header.</summary>
     private ITicketRepository Active

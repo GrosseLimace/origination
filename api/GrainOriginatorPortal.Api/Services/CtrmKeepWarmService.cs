@@ -30,7 +30,6 @@ public sealed class CtrmKeepWarmService : BackgroundService
     private readonly CtrmTicketReader _ticketReader;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmKeepWarmService> _logger;
-    private readonly IServiceScopeFactory _scopes;
     private readonly CtrmKeepWarmBackoff _backoff = new();
 
     public CtrmKeepWarmService(
@@ -38,36 +37,13 @@ public sealed class CtrmKeepWarmService : BackgroundService
         CtrmContractReader contractReader,
         CtrmTicketReader ticketReader,
         IConfiguration configuration,
-        ILogger<CtrmKeepWarmService> logger,
-        IServiceScopeFactory scopes)
+        ILogger<CtrmKeepWarmService> logger)
     {
         _registry = registry;
         _contractReader = contractReader;
         _ticketReader = ticketReader;
         _configuration = configuration;
         _logger = logger;
-        _scopes = scopes;
-    }
-
-    /// <summary>
-    /// Whether anyone may currently choose CTRM for themselves: the config list is non-empty, or the tester
-    /// table has an active row. Read through the scoped, cached provider because this is a singleton.
-    /// Fails to "no" if the table cannot be read, matching the provider's fail-closed behaviour.
-    /// </summary>
-    private async Task<bool> AnyToggleUsersAsync(CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(_configuration[CtrmSourceChoice.ToggleUsersKey])) return true;
-        try
-        {
-            using var scope = _scopes.CreateScope();
-            var provider = scope.ServiceProvider.GetRequiredService<ICtrmSourceToggleUserProvider>();
-            return (await provider.GetAsync(cancellationToken)).Count > 0;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "CTRM keep-warm: could not read the tester list; treating it as empty this tick.");
-            return false;
-        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -84,8 +60,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var cadenceMinutes = ReadInt("Ctrm:KeepWarmMinutes", 5);
-                var anyToggleUsers = await AnyToggleUsersAsync(stoppingToken);
-                if (!ShouldWarmNow(cadenceMinutes, _configuration["Ctrm:Source"], anyToggleUsers, DateTime.UtcNow, lastRunUtc)) continue;
+                if (!ShouldWarmNow(cadenceMinutes, _configuration["Ctrm:Source"], DateTime.UtcNow, lastRunUtc)) continue;
 
                 lastRunUtc = DateTime.UtcNow;
                 await WarmActiveSetsAsync(stoppingToken);
@@ -109,17 +84,15 @@ public sealed class CtrmKeepWarmService : BackgroundService
     /// <list type="bullet">
     /// <item><c>Ctrm:KeepWarmMinutes</c> at or below zero disables warming outright.</item>
     /// <item>A cycle that has not yet reached that cadence since <paramref name="lastRunUtc"/> is skipped.</item>
-    /// <item>Warming runs only while <c>Ctrm:Source</c> is <c>ctrm</c>, OR while at least one user is
-    /// named in <c>Ctrm:SourceToggleUsers</c>. An environment reading ODS with no testers never issues
-    /// CTRM traffic. With testers, the registry only ever holds producer sets that were read through the
-    /// CTRM path - which only a tester on CTRM can do - so warming stays confined to what they opened.</item>
+    /// <item>Warming runs only while <c>Ctrm:Source</c> is <c>ctrm</c>, so an environment reading ODS
+    /// never issues CTRM traffic.</item>
     /// </list>
     /// All three must pass; any one of them failing skips the tick.
     /// </remarks>
-    internal static bool ShouldWarmNow(int cadenceMinutes, string? configuredSource, bool anyToggleUsers, DateTime nowUtc, DateTime lastRunUtc) =>
+    internal static bool ShouldWarmNow(int cadenceMinutes, string? configuredSource, DateTime nowUtc, DateTime lastRunUtc) =>
         cadenceMinutes > 0
         && nowUtc - lastRunUtc >= TimeSpan.FromMinutes(cadenceMinutes)
-        && (string.Equals(configuredSource?.Trim(), "ctrm", StringComparison.OrdinalIgnoreCase) || anyToggleUsers);
+        && string.Equals(configuredSource?.Trim(), "ctrm", StringComparison.OrdinalIgnoreCase);
 
     private async Task WarmActiveSetsAsync(CancellationToken stoppingToken)
     {

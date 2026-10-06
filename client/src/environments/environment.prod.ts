@@ -42,11 +42,8 @@ export const environment = {
   // redeploy. Harmless for a brief rollback (extra ODS reads, correct data), worth a redeploy if
   // the rollback is going to stand.
   //
-  // OFF for the 2026-09-29 release: PROD starts on ODS (Ctrm:Source=ods) and the CTRM go-live moved
-  // to Thursday 2026-10-01. Against ODS the read-ahead buys nothing and multiplies reads on the
-  // busiest page, so it is off until the same deploy that turns CTRM on (branch
-  // release_CtrmGoLive_2026-10-01 sets it back to true).
-  ctrmReadAheadEnabled: false,
+  // ON since the 2026-10-06 CTRM go-live: every environment reads contracts and tickets from CTRM.
+  ctrmReadAheadEnabled: true,
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration.
   //
