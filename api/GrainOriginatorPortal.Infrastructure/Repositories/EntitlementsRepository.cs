@@ -8,12 +8,12 @@ namespace GrainOriginatorPortal.Infrastructure.Repositories;
 public class EntitlementsRepository : IEntitlementsRepository
 {
     private readonly TradeUnitPreferencesDbContext _entitlementsContext;
-    private readonly OriginationDbContext _odsContext;
+    private readonly ApplicationDbContext _appContext;
 
-    public EntitlementsRepository(TradeUnitPreferencesDbContext entitlementsContext, OriginationDbContext odsContext)
+    public EntitlementsRepository(TradeUnitPreferencesDbContext entitlementsContext, ApplicationDbContext appContext)
     {
         _entitlementsContext = entitlementsContext;
-        _odsContext = odsContext;
+        _appContext = appContext;
     }
 
     public async Task<List<UserTradeUnitPreference>> GetByUserAsync(string userId, CancellationToken cancellationToken)
@@ -53,12 +53,10 @@ public class EntitlementsRepository : IEntitlementsRepository
 
     public async Task<List<string>> GetCustomerTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken)
     {
-        return (await _odsContext.CustomerTradeUnits
-            .Where(c => c.CustomerId == customerId)
-            .Select(c => c.TradeUnit)
-            .Where(tu => tu != null)
-            .Distinct()
-            .ToListAsync(cancellationToken))!;
+        var codes = await _appContext.CustomerTradeUnits.AsNoTracking()
+            .Where(t => t.CustomerId == customerId && t.IsActive)
+            .Select(t => t.TradeUnit).ToListAsync(cancellationToken);
+        return codes.Select(c => c.Trim()).Where(c => c.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public async Task<HashSet<string>> GetActiveUserIdsAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
