@@ -59,6 +59,13 @@
       "metadata": {
         "description": "Azure OpenAI chat-completions endpoint used to summarize notes. Authenticated via managed identity."
       }
+    },
+    "alertEmailAddresses": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Who gets an email when a run fails. Leave empty to deploy without the failure alert."
+      }
     }
   },
   "variables": {
@@ -880,7 +887,7 @@
                                 "method": "get",
                                 "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('TradeUnitPreferences'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[vw_UserTradeUnitPreferences]'))}/items",
                                 "queries": {
-                                  "$filter": "TradeUnitCode eq @{item()?['MemberId']}"
+                                  "$filter": "TradeUnitCode eq '@{item()?['MemberId']}'"
                                 }
                               },
                               "type": "ApiConnection"
@@ -1488,6 +1495,85 @@
             "value": "[parameters('sqlServerName')]"
           }
         }
+      }
+    },
+    {
+      "condition": "[not(empty(parameters('alertEmailAddresses')))]",
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[concat('ag-', parameters('logicAppName'))]",
+      "location": "Global",
+      "tags": {
+        "Application": "Origination",
+        "CreatedBy": "khague",
+        "CreationDate": "2026-01-02",
+        "Environment": "[parameters('environmentTag')]",
+        "IaC": "True",
+        "Team": "Full Stack Development"
+      },
+      "properties": {
+        "groupShortName": "OrigRecap",
+        "enabled": true,
+        "copy": [
+          {
+            "name": "emailReceivers",
+            "count": "[length(parameters('alertEmailAddresses'))]",
+            "input": {
+              "name": "[concat('email-', copyIndex('emailReceivers'))]",
+              "emailAddress": "[parameters('alertEmailAddresses')[copyIndex('emailReceivers')]]",
+              "useCommonAlertSchema": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[not(empty(parameters('alertEmailAddresses')))]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[concat('alert-', parameters('logicAppName'), '-runs-failed')]",
+      "location": "global",
+      "tags": {
+        "Application": "Origination",
+        "CreatedBy": "khague",
+        "CreationDate": "2026-01-02",
+        "Environment": "[parameters('environmentTag')]",
+        "IaC": "True",
+        "Team": "Full Stack Development"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]",
+        "[resourceId('Microsoft.Insights/actionGroups', concat('ag-', parameters('logicAppName')))]"
+      ],
+      "properties": {
+        "description": "A run of the Notes Daily Recap Logic App failed. Open the Logic App's Runs history to see which step failed and why.",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "RunsFailed",
+              "metricName": "RunsFailed",
+              "metricNamespace": "Microsoft.Logic/workflows",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "timeAggregation": "Total",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "autoMitigate": false,
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', concat('ag-', parameters('logicAppName')))]"
+          }
+        ]
       }
     }
   ],

@@ -12,7 +12,7 @@ Once a day it builds and sends a "daily recap" of CRM notes to each configured r
 2. **`Get_Recap_Groups`** — reads enabled rows from `[dbo].[DailyRecapGroups]` (Origination DB).
 3. **`For_each_Recap_Group`** — for each group:
    - resolves group members and CC emails (`DailyRecapGroupMembers`, `DailyRecapGroupCcEmails`,
-     plus `UserTradeUnitAssignments` / `UserGroupAssignments` in the Entitlements DB);
+     plus `[dbo].[vw_UserTradeUnitPreferences]` in the TradeUnitPreferences DB for trade-unit and trade-unit-group members — `TradeUnitCode` is text, so its filter value must be quoted, or the lookup silently returns zero rows);
    - pulls each member's notes from the last 24h (`[dbo].[Notes]` joined to `Customer`);
    - summarizes the notes with **Azure OpenAI** (`HTTP_AI_Foundry`) into a 5-point HTML summary;
    - sends the recap via **Microsoft Graph `sendMail`** as the shared mailbox, by **email** or to a
@@ -86,6 +86,21 @@ empty `else` — "nothing to send" and "sent successfully" are currently indisti
 Groups are processed **sequentially** (`concurrency.repetitions: 1`), so a failure part-way through
 means earlier groups already sent — partial delivery, which reads to users as "the recap didn't run."
 
+## Failure alert
+
+When `alertEmailAddresses` is non-empty, the template also creates two Azure Monitor resources next to the Notes Daily Recap Logic App:
+
+| Resource | Name | What it does |
+|----------|------|--------------|
+| Action group | `ag-<logicAppName>` | Emails every address in `alertEmailAddresses` (common alert schema). |
+| Metric alert | `alert-<logicAppName>-runs-failed` | Checks the `RunsFailed` metric every 5 minutes and fires when it is above 0. Severity 2. |
+
+- **One email per failing 5-minute window.** `autoMitigate` is off, so there is no follow-up "Resolved" email, and a second failure a few minutes later mails again.
+- **It only sees runs Azure marks Failed.** A run that reports Succeeded while doing nothing does not alert. The trade-unit filter bug fixed in PR #669 was that kind of silent success.
+- **The alert lives outside the workflow**, so it still fires when the workflow itself is broken.
+- **Permissions:** the deploy identity holds Monitoring Contributor on the Dev and QA resource groups (checked 2026-09-29), which covers action groups and metric alerts. ⚠️ Prod's role assignments were not visible to check. Run the Prod deploy in `what-if` mode first.
+- **Testing it:** in the portal, open the action group and use **Test action group** to confirm the email arrives. Receivers also get a one-time "you've been added to an action group" email on first deploy.
+
 ## Security model — no secrets
 
 Every external call authenticates with the workflow's **system-assigned managed identity**
@@ -120,6 +135,7 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 | `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | `OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. ⚠️ Confirm the prod mailbox UPN. |
 | `sqlConnectionName` | `sql` | `sqlrecap` | `sql` | `Microsoft.Web/connections` (MSI) name, created by the template. QA uses `sqlrecap` to avoid an orphaned V2 `sql` connection left by a failed deploy (no delete rights); revert to `sql` once that orphan is cleaned up. |
 | `aiFoundryEndpoint` | `sco-aif-origination-dev-eus` / `gpt-5.1` | `sco-aif-origination-qa-eus` / `gpt-5.1` | `sco-aif-origination-eus` / `gpt-5.1` | Per-env Azure AI Foundry resource (`sco-aif-origination-<env>-eus`, prod drops the env token), `gpt-5.1` chat-completions deployment, `api-version=2025-01-01-preview`. Body uses `max_completion_tokens` (required by gpt-5.1). ⚠️ Confirm the QA/Prod resources + deployments exist before those deploys. |
+| `alertEmailAddresses` | `CEgr`, `HCollins` | `CEgr`, `HCollins` | `CEgr`, `HCollins` | Who is emailed when a run fails, as full `@scoular.com` addresses. **Empty = the failure alert is not created**, so a deploy never fails for want of a recipient. See [Failure alert](#failure-alert). |
 
 > **Teams channel routing:** there is **no** `teamsChannelEmail` parameter. A `teams`-delivery group
 > routes to its **own** `TeamsChannelEmail` — entered in the app, stored on the recap group, and

@@ -34,12 +34,15 @@ public class RequestContextMiddleware
 
         // BeginScope on a shared-factory logger propagates to all loggers within
         // the same request (ASP.NET Core's scope provider is AsyncLocal-backed).
+        // Method and path are request-supplied and the path is already URL-decoded, so both go through
+        // LogSanitizer before they become a scope value every log record in the request will carry.
+        // TraceId does not: CorrelationIdMiddleware only accepts an allow-listed id, otherwise it mints one.
         using (_logger.BeginScope(new Dictionary<string, object?>
         {
             ["ServiceName"] = "GrainOriginatorPortal.Api",
-            ["Operation"]   = $"{context.Request.Method} {context.Request.Path}",
+            ["Operation"]   = LogSanitizer.Clean($"{context.Request.Method} {context.Request.Path}"),
             ["TraceId"]     = traceId,
-            ["UserId"]      = userId
+            ["UserId"]      = LogSanitizer.Clean(userId)
         }))
         {
             await _next(context);

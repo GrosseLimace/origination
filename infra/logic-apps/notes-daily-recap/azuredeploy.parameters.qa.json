@@ -12,6 +12,7 @@
     "sqlConnectionName": { "value": "sqlrecap" },
     // aiFoundryEndpoint: QA's own Azure AI Foundry resource (gpt-5.1). Mirrors the per-env naming
     // sco-aif-origination-<env>-eus. ⚠️ Confirm this resource + deployment exist before deploying QA.
-    "aiFoundryEndpoint": { "value": "https://sco-aif-origination-qa-eus.cognitiveservices.azure.com/openai/deployments/gpt-5.1/chat/completions?api-version=2025-01-01-preview" }
+    "aiFoundryEndpoint": { "value": "https://sco-aif-origination-qa-eus.cognitiveservices.azure.com/openai/deployments/gpt-5.1/chat/completions?api-version=2025-01-01-preview" },
+    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com" ] }
   }
 }

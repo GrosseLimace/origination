@@ -30,6 +30,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
     private readonly CtrmTicketReader _ticketReader;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmKeepWarmService> _logger;
+    private readonly CtrmKeepWarmBackoff _backoff = new();
 
     public CtrmKeepWarmService(
         CtrmWarmRegistry registry,
@@ -115,21 +116,42 @@ public sealed class CtrmKeepWarmService : BackgroundService
         // One set at a time, contracts then tickets - the same ordering the live path uses, because the
         // contract pages and the ticket walk starve each other when run together. Both reads go through
         // the background throttle and yield to interactive clicks, so this never competes with a user.
+        // A set whose read failed is left alone for this long before the cycle tries it again. While the
+        // gateway is slow, re-walking every five minutes only queues more queries behind the ones that just
+        // timed out (which the server runs to completion regardless) - see CtrmKeepWarmBackoff.
+        var backoff = TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:KeepWarmFailureBackoffMinutes", 15)));
+
         foreach (var codes in sets)
         {
             if (stoppingToken.IsCancellationRequested) return;
+
+            if (_backoff.IsBackedOff(codes, DateTime.UtcNow))
+            {
+                _logger.LogInformation("CTRM keep-warm: leaving {Producers} producer(s) alone - backed off after a failed cycle.", codes.Count);
+                continue;
+            }
 
             try
             {
                 var contracts = await _contractReader.GetForProducersAsync(codes, CancellationToken.None);
                 if (!contracts.Ok)
-                    _logger.LogWarning("CTRM keep-warm: contract read for {Producers} producer(s) did not complete: {Status}.",
-                        codes.Count, contracts.Status);
+                {
+                    _backoff.Record(codes, DateTime.UtcNow, backoff);
+                    _logger.LogWarning("CTRM keep-warm: contract read for {Producers} producer(s) did not complete: {Status}. Skipping its ticket and Spot Loads reads and backing the set off for {Minutes} min.",
+                        codes.Count, contracts.Status, backoff.TotalMinutes);
+                    continue;
+                }
 
                 var tickets = await _ticketReader.GetForProducersHistoryAsync(codes, CancellationToken.None);
                 if (!tickets.Ok)
-                    _logger.LogWarning("CTRM keep-warm: ticket read for {Producers} producer(s) did not complete: {Status}.",
-                        codes.Count, tickets.Status);
+                {
+                    _backoff.Record(codes, DateTime.UtcNow, backoff);
+                    _logger.LogWarning("CTRM keep-warm: ticket read for {Producers} producer(s) did not complete: {Status}. Skipping its Spot Loads read and backing the set off for {Minutes} min.",
+                        codes.Count, tickets.Status, backoff.TotalMinutes);
+                    continue;
+                }
+
+                _backoff.Clear(codes);
 
                 // Spot Loads, explicitly. Its window is -RecentTicketDays/+ForwardTicketDays, which can never
                 // coincide with the 366-day history slices above, so warming those left the one read a user

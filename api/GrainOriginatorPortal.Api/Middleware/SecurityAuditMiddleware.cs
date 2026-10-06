@@ -30,8 +30,10 @@ public class SecurityAuditMiddleware
         var traceId = context.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
             ?? context.TraceIdentifier;
 
-        var method = context.Request.Method;
-        var path   = context.Request.Path.Value;
+        // Both are request-supplied (the path arrives URL-decoded), and these two lines are the audit
+        // record Security reads for denials - so control characters are removed before they are logged.
+        var method = LogSanitizer.Clean(context.Request.Method);
+        var path   = LogSanitizer.Clean(context.Request.Path.Value);
 
         switch (context.Response.StatusCode)
         {
@@ -46,7 +48,7 @@ public class SecurityAuditMiddleware
 
             case StatusCodes.Status403Forbidden:
                 // Access denied — token was valid but the caller lacks required permission.
-                var userId = context.User.Identity?.Name ?? "anonymous";
+                var userId = LogSanitizer.Clean(context.User.Identity?.Name) ?? "anonymous";
                 _logger.LogWarning(
                     "Access denied [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {UserId} attempted {Method} {Path} → 403",
                     traceId, "ACCESS_DENIED", "Security", userId, method, path);

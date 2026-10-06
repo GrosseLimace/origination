@@ -7,6 +7,7 @@
     "environmentTag": { "value": "QA" },
     "sqlServerName": { "value": "azrscosqlq01.database.windows.net" },
     "sharedMailbox": { "value": "qa-OriginationsApp@scoular.com" },
-    "sqlConnectionName": { "value": "sqlshare" }
+    "sqlConnectionName": { "value": "sqlshare" },
+    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com" ] }
   }
 }

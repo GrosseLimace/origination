@@ -691,22 +691,54 @@ public sealed class CtrmContractReader
         var codesPerAlias = Math.Clamp(ReadInt("Ctrm:TradeUnitAliasCodesPerAlias", 2), 1, 2);
         // Batches have their OWN in-flight cap, not the per-producer one and not the shared background pool -
         // see CtrmTradeUnitThrottle.RunContractBatchAsync for the measurements behind that.
-        var concurrency = Math.Clamp(ReadInt("Ctrm:TradeUnitContractBatchConcurrency", 16), 1, 32);
+        var concurrency = Math.Clamp(ReadInt("Ctrm:TradeUnitContractBatchConcurrency", 8), 1, 32);
         var batches = codes.Chunk(aliasCount * codesPerAlias).Select(b => b.ToList()).ToList();
         using var slot = new SemaphoreSlim(concurrency, concurrency);
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var topUps = new int[1];
+
+        // Load-shedding under a slow gateway (2026-09-28). Once one batch has failed on BOTH attempts the
+        // read is going to fail whatever the other batches return, and every further request only adds to
+        // the pile: the server runs a timed-out query to completion regardless (70 s and more, measured by
+        // the API team), so a doomed walk was leaving up to twice its batch count queued on the database,
+        // and keep-warm was re-sending the lot five minutes later. Batches not yet started are not sent,
+        // and a batch in flight that then fails skips its own retry. A batch that fails paired but succeeds
+        // singular does NOT trip this - that is the list-plan regression the retry exists for.
+        //
+        // Two retries of different kinds, and they are not multiplied (2026-09-29). The paired attempt
+        // goes through CtrmServerTimeoutRetry, so a batch the server timed out on a cold connection is
+        // re-sent once after Ctrm:ServerTimeoutRetryDelaySeconds and served from the server's cache - that
+        // is the common go-live case, and it turns a failure into a slower success. The singular re-shape
+        // below exists for a different failure (the list plan), so it is sent WITHOUT that delayed retry:
+        // a batch that is going to fail then fails in 30 + delay + 30 + 2 + 30 s, not twice that, and the
+        // load-shedding above stops the rest of the walk at that point.
+        var doomed = 0;
+        CtrmReadResult<List<CtrmContractDto>>? firstFailure = null;
+        var notSent = 0;
 
         async Task<CtrmReadResult<List<CtrmContractDto>>> One(List<string> batch)
         {
             await slot.WaitAsync(CancellationToken.None);
             try
             {
+                if (Volatile.Read(ref doomed) == 1)
+                {
+                    Interlocked.Increment(ref notSent);
+                    return firstFailure!;
+                }
+
                 var read = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => FetchAliasBatchAsync(batch, codesPerAlias, topUps));
                 if (!read.Ok)
                 {
+                    if (Volatile.Read(ref doomed) == 1) return read;    // another batch already failed twice
                     await Task.Delay(TimeSpan.FromSeconds(2));
-                    read = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => FetchAliasBatchAsync(batch, 1, topUps));
+                    if (Volatile.Read(ref doomed) == 1) return read;
+                    read = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => FetchAliasBatchAsync(batch, 1, topUps, retryServerTimeout: false));
+                    if (!read.Ok)
+                    {
+                        Interlocked.CompareExchange(ref firstFailure, read, null);
+                        Volatile.Write(ref doomed, 1);
+                    }
                 }
                 return read;
             }
@@ -718,16 +750,21 @@ public sealed class CtrmContractReader
 
         var results = await Task.WhenAll(batches.Select(One));
 
-        var failure = results.FirstOrDefault(r => !r.Ok);
+        var failure = firstFailure ?? results.FirstOrDefault(r => !r.Ok);
         if (failure is not null)
+        {
+            var skipped = Volatile.Read(ref notSent);
             return new CtrmReadResult<List<CtrmContractDto>>
             {
                 Status = failure.Status,
                 HttpStatus = failure.HttpStatus,
                 ErrorCode = failure.ErrorCode,
-                Detail = $"Trade-unit contract read failed on one of {batches.Count} batched request(s) covering {codes.Count} producer(s), after a retry on singular aliases: {failure.Detail}",
+                Detail = $"Trade-unit contract read failed on one of {batches.Count} batched request(s) covering {codes.Count} producer(s), after a retry on singular aliases"
+                    + (skipped > 0 ? $"; {skipped} batch(es) not sent once the read was known to be failing" : "")
+                    + $": {failure.Detail}",
                 Value = []
             };
+        }
 
         var all = results.SelectMany(r => r.Value ?? []).ToList();
 
@@ -742,15 +779,24 @@ public sealed class CtrmContractReader
     /// One aliased request for one batch of producers. Returns a failure - never a partial list - if any
     /// alias is missing or errored; tops up any alias that has a second page via the paged read.
     /// </summary>
-    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchAliasBatchAsync(List<string> batch, int codesPerAlias, int[] topUps)
+    /// <param name="retryServerTimeout">True (the paired attempt) wraps the request in
+    /// <see cref="CtrmServerTimeoutRetry"/>, so a server-side timeout is re-sent once after the configured
+    /// delay and read from the server's cache. False (the singular re-shape) sends it once: that attempt
+    /// already follows a delayed retry, and a second one would double the time a doomed batch takes to
+    /// fail without changing the answer.</param>
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchAliasBatchAsync(List<string> batch, int codesPerAlias, int[] topUps, bool retryServerTimeout = true)
     {
         var groups = batch.Chunk(codesPerAlias).Select(g => (IReadOnlyList<string>)g.ToList()).ToList();
         var document = CtrmQueries.ContractsByCustomersAliased(groups, PageSize, CtrmMappings.PurchasePrefix);
 
-        var result = await CtrmServerTimeoutRetry.RunAsync(
-            () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmContractDto>>>(document, null, CancellationToken.None),
-            _configuration, _logger, $"aliased contracts batch of {batch.Count} producer(s)",
-            interactive: false);
+        Task<CtrmReadResult<Dictionary<string, CtrmPage<CtrmContractDto>>>> Send() =>
+            _client.QueryAsync<Dictionary<string, CtrmPage<CtrmContractDto>>>(document, null, CancellationToken.None);
+
+        var result = retryServerTimeout
+            ? await CtrmServerTimeoutRetry.RunAsync(
+                Send, _configuration, _logger, $"aliased contracts batch of {batch.Count} producer(s)",
+                interactive: false)
+            : await Send();
 
         // Partial is not "mostly fine" here. The client reports data-plus-errors as PartialSuccess so a
         // single-field query can still use what came back; for an aliased batch an errored alias is a
