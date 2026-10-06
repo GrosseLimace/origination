@@ -176,7 +176,60 @@ public class CustomerRepository : ICustomerRepository
         return scoredCustomers;
     }
 
+    /// <summary>Onboarding search: producers in base.vw_CurrentCustomers that are not already
+    /// onboarded. Already onboarded = same id OR same ScoularId (a CTRM-minted row carries an id
+    /// the ODS has never seen, so the id alone would offer that producer a second time). Codes
+    /// compare trimmed and case-insensitively; a blank code never matches anything.</summary>
     public async Task<List<Customer>> SearchOdsAsync(string searchTerm, CancellationToken cancellationToken)
+    {
+        var candidates = await QueryOnboardingCandidatesAsync(searchTerm, cancellationToken);
+        if (candidates.Count == 0) return [];
+
+        // Drop any that already live in dbo.Customer — by id or by ScoularId — those aren't "new"
+        // and would dupe. One query; the trimmed, case-insensitive comparison runs in memory below
+        // (SQL Server ignores trailing spaces and case here, the InMemory provider does neither).
+        var candidateIds = candidates.Select(c => c.Id).ToList();
+        var candidateCodes = candidates
+            .SelectMany(c => ScoularIdQueryVariants(c.ScoularId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var existing = await _appContext.Customers.AsNoTracking()
+            // Trim() on the column, symmetric with AssignTradeUnitsAsync: SQL Server ignores only
+            // trailing spaces in '=', so a stored leading space would otherwise escape the dedupe.
+            .Where(c => candidateIds.Contains(c.Id) || (c.ScoularId != null && candidateCodes.Contains(c.ScoularId.Trim())))
+            .Select(c => new { c.Id, c.ScoularId })
+            .ToListAsync(cancellationToken);
+        var existingIds = existing.Select(e => e.Id).ToHashSet();
+        var existingCodes = new HashSet<string>(
+            existing.Select(e => e.ScoularId?.Trim()).Where(code => !string.IsNullOrEmpty(code)).Select(code => code!),
+            StringComparer.OrdinalIgnoreCase);
+
+        var result = candidates
+            .Where(c => !existingIds.Contains(c.Id))
+            .Where(c => string.IsNullOrWhiteSpace(c.ScoularId) || !existingCodes.Contains(c.ScoularId.Trim()))
+            .ToList();
+
+        // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
+        _logger.LogInformation("ODS customer search returned {Count} onboardable producers", result.Count);
+        return result;
+    }
+
+    /// <summary>The values to send in a SQL <c>IN</c> list when matching dbo.Customer.ScoularId
+    /// against <paramref name="code"/>: the trimmed code plus its upper- and lower-case forms.
+    /// On SQL Server the case-insensitive collation makes the extra forms redundant; they let the
+    /// InMemory provider (ordinal comparison) find the same rows. Blank → none.</summary>
+    private static IEnumerable<string> ScoularIdQueryVariants(string? code)
+    {
+        var trimmed = code?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return [];
+        return new[] { trimmed, trimmed.ToUpperInvariant(), trimmed.ToLowerInvariant() }.Distinct(StringComparer.Ordinal);
+    }
+
+    /// <summary>Onboarding search candidates from base.vw_CurrentCustomers (TOP 50, the sync's
+    /// quality filters), mapped to Customer. No dedupe against dbo.Customer — the caller does
+    /// that. Returns an empty list for a blank term. A seam: the raw ODS SQL cannot run on the
+    /// InMemory provider, and E3 later re-routes the search to CTRM.</summary>
+    protected virtual async Task<List<Customer>> QueryOnboardingCandidatesAsync(string searchTerm, CancellationToken cancellationToken)
     {
         var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                                     .Select(w => w.Trim())
@@ -226,24 +279,7 @@ public class CustomerRepository : ICustomerRepository
             .SqlQueryRaw<OdsCustomerRow>(sql, parameters.ToArray())
             .ToListAsync(cancellationToken);
 
-        if (rows.Count == 0) return [];
-
-        // Drop any that already live in dbo.Customer — those aren't "new" and would dupe.
-        var candidateIds = rows.Select(r => r.CustomerId).ToList();
-        var existingIds = (await _appContext.Customers.AsNoTracking()
-                .Where(c => candidateIds.Contains(c.Id))
-                .Select(c => c.Id)
-                .ToListAsync(cancellationToken))
-            .ToHashSet();
-
-        var result = rows
-            .Where(r => !existingIds.Contains(r.CustomerId))
-            .Select(MapOdsRowToCustomer)
-            .ToList();
-
-        // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
-        _logger.LogInformation("ODS customer search returned {Count} onboardable producers", result.Count);
-        return result;
+        return rows.Select(MapOdsRowToCustomer).ToList();
     }
 
     /// <summary>Maps a base.vw_CurrentCustomers row onto the Customer DTO. IsManual stays
@@ -587,7 +623,17 @@ public class CustomerRepository : ICustomerRepository
     }
 
 
-    public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
+    /// <summary>Reconciles a producer's manual trade units to <paramref name="tradeUnitCodes"/>,
+    /// onboarding the producer from the ODS when <paramref name="customerId"/> is not in
+    /// dbo.Customer. Before inserting, it adopts an existing row with the candidate's ScoularId
+    /// (trimmed, case-insensitive; minted or not) — preferring an active row, then the lowest id,
+    /// the tie-break the ODS sync shares when it adopts by ScoularId (C3) — and reactivates it as manual if inactive,
+    /// so one producer never ends up under two ids. The outcome's CustomerId is the id actually
+    /// written to (Adopted = true when that differs from the request). E4 later adds the ScoularId
+    /// to the request so the client never has to send an ODS id at all. An adoption is add-only:
+    /// pre-existing active manual trade units on the adopted row are kept, because an onboarding
+    /// request carries only the new codes.</summary>
+    public async Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
     {
         // Normalize: trim, drop blanks, de-dupe (case-insensitive).
         var codes = tradeUnitCodes
@@ -606,20 +652,56 @@ public class CustomerRepository : ICustomerRepository
 
         // An empty set can't onboard a brand-new producer (nothing anchors the insert), but
         // for an existing producer it's a valid request to clear all manual assignments.
-        if (!customerExists && codes.Count == 0) return AssignTradeUnitsResult.NoCodes;
+        if (!customerExists && codes.Count == 0) return AssignTradeUnitsOutcome.NoCodes(customerId);
 
+        // True when the trade units land on an existing row found by ScoularId; from then on
+        // customerId is that row's id, and everything below (reconcile, audit) runs against it.
+        var adopted = false;
         if (!customerExists)
         {
-            var odsRow = await GetOdsCustomerRowAsync(customerId, cancellationToken);
-            if (odsRow is null)
+            var candidate = await LoadOnboardingCandidateAsync(customerId, cancellationToken);
+            if (candidate is null)
             {
                 _logger.LogWarning("AssignTradeUnits: customer {CustomerId} not found in base.vw_CurrentCustomers", customerId);
-                return AssignTradeUnitsResult.CustomerNotFound;
+                return AssignTradeUnitsOutcome.CustomerNotFound(customerId);
             }
-            var inserted = MapOdsRowToCustomer(odsRow);
-            inserted.IsManual = true;
-            inserted.IsActive = true;
-            _appContext.Customers.Add(inserted);
+
+            // The sync may already hold this producer under another id (a CTRM-minted 5e15+N row,
+            // or any row carrying the same ScoularId). Adopt that row rather than insert a second
+            // customer: a second row would split the producer's notes, contacts and saved lists.
+            // Tie-break shared with the ODS sync adoption (C3): active first, then lowest id. Trim() on the
+            // column for the InMemory provider (SQL Server ignores trailing spaces in '=' anyway);
+            // the case variants likewise only matter there (the SQL collation ignores case).
+            var codeVariants = ScoularIdQueryVariants(candidate.ScoularId).ToList();
+            var heldByCode = codeVariants.Count == 0
+                ? null
+                : await _appContext.Customers
+                    .Where(c => c.ScoularId != null && codeVariants.Contains(c.ScoularId.Trim()))
+                    .OrderByDescending(c => c.IsActive)
+                    .ThenBy(c => c.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+            if (heldByCode is not null)
+            {
+                var requestedId = customerId;
+                adopted = true;
+                customerId = heldByCode.Id;
+                if (!heldByCode.IsActive)
+                {
+                    heldByCode.IsActive = true;
+                    heldByCode.IsManual = true;
+                }
+                // Ids only — never the ScoularId or the name.
+                _logger.LogInformation(
+                    "AssignTradeUnits: requested id {RequestedId} adopted existing customer {CustomerId} by ScoularId (no second row inserted)",
+                    requestedId, customerId);
+            }
+            else
+            {
+                candidate.IsManual = true;
+                candidate.IsActive = true;
+                _appContext.Customers.Add(candidate);
+            }
         }
         else
         {
@@ -692,14 +774,21 @@ public class CustomerRepository : ICustomerRepository
         // desired set). The row is preserved so it can be re-added/reactivated later. Sync
         // assignments (IsManual=false) are never touched — they're locked in the UI.
         var deactivatedCodes = new List<string>();
-        foreach (var existing in existingTus)
+        // Skipped on an adoption: the client posted the codes for an ODS candidate it thought was
+        // NEW, not the adopted row's full manual list, so reconciling here would deactivate manual
+        // trade units the user never saw (e.g. a minted row's "2190" when "1085" was onboarded).
+        // Adoption is add-only; the next normal save of the dialog reconciles as usual.
+        if (!adopted)
         {
-            if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
+            foreach (var existing in existingTus)
             {
-                existing.IsActive = false;
-                existing.ModifiedAt = now;
-                existing.ModifiedBy = currentUser;
-                deactivatedCodes.Add(existing.TradeUnit);
+                if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
+                {
+                    existing.IsActive = false;
+                    existing.ModifiedAt = now;
+                    existing.ModifiedBy = currentUser;
+                    deactivatedCodes.Add(existing.TradeUnit);
+                }
             }
         }
 
@@ -710,13 +799,17 @@ public class CustomerRepository : ICustomerRepository
         // the row stamps were there but the log was not queryable as an audit event. Same gap
         // H-062 found under AR-01 on the producer-details delete: verify a stated compensating
         // control per route rather than trusting the register.
+        // On an adoption the resulting active set is the union, not the posted list.
+        var afterCodes = adopted
+            ? beforeCodes.Union(codes, StringComparer.OrdinalIgnoreCase).OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            : codes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase);
         _logger.LogInformation(
-            "Customer trade units reassigned [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} Before=[{Before}] After=[{After}] Deactivated=[{Deactivated}]",
-            "AUDIT_UPDATE", "DataMutation", customerId, currentUser,
+            "Customer trade units reassigned [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} Adopted={Adopted} Before=[{Before}] After=[{After}] Deactivated=[{Deactivated}]",
+            "AUDIT_UPDATE", "DataMutation", customerId, currentUser, adopted,
             string.Join(", ", beforeCodes),
-            string.Join(", ", codes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase)),
+            string.Join(", ", afterCodes),
             string.Join(", ", deactivatedCodes.OrderBy(c => c, StringComparer.OrdinalIgnoreCase)));
-        return AssignTradeUnitsResult.Ok;
+        return AssignTradeUnitsOutcome.Ok(customerId, adopted);
     }
 
     public Task<List<CustomerTradeUnitMembership>> GetTradeUnitMembershipsAsync(long customerId, CancellationToken cancellationToken)
@@ -895,6 +988,16 @@ public class CustomerRepository : ICustomerRepository
             .Distinct()
             .OrderBy(t => t)
             .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>The producer to onboard for an id not yet in dbo.Customer: a single
+    /// base.vw_CurrentCustomers row by CustomerId, mapped to Customer (null when absent). A seam:
+    /// the raw ODS SQL cannot run on the InMemory provider, and E4 later re-routes onboarding to
+    /// CTRM.</summary>
+    protected virtual async Task<Customer?> LoadOnboardingCandidateAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var row = await GetOdsCustomerRowAsync(customerId, cancellationToken);
+        return row is null ? null : MapOdsRowToCustomer(row);
     }
 
     /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>

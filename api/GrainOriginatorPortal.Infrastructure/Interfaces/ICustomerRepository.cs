@@ -18,7 +18,7 @@ public interface ICustomerRepository
     Task<Customer?> GetByIdAsync(long id, CancellationToken cancellationToken);
     Task<Customer?> GetByScoularIdAsync(string scoularId, CancellationToken cancellationToken);
     Task<List<Customer>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken);
-    Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken);
+    Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken);
     Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken);
     /// <summary>The memberships alone, without the open-activity check (HasOpenActivity stays true).</summary>
     Task<List<CustomerTradeUnitMembership>> GetTradeUnitMembershipsAsync(long customerId, CancellationToken cancellationToken);

@@ -152,6 +152,9 @@ public class CustomersController : ControllerBase
     /// from the ODS into dbo.Customer if they aren't there yet (manual add, protected from the
     /// nightly sync). Manual TUs not in the set are soft-deactivated; sync-sourced TUs are never
     /// touched. Used to surface producers who exist in CTRM but have no contract/ticket.
+    /// When dbo.Customer already holds the producer under another id (same ScoularId, e.g. a
+    /// CTRM-minted row), the trade units land on that row and the response is that customer —
+    /// its Id can differ from the one in the URL.
     /// </summary>
     [HttpPut("{id:long}/trade-units")]
     [ProducesResponseType(typeof(CustomerResponse), StatusCodes.Status200OK)]
@@ -162,16 +165,18 @@ public class CustomersController : ControllerBase
         // Rep-driven onboarding: assigning trade-unit membership is intentionally open to any rep and
         // not admin-gated / caller-entitlement-validated. Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-03).
         var codes = request.TradeUnitCodes ?? new List<string>();
-        var result = await _service.AssignTradeUnitsAsync(id, codes, cancellationToken);
+        var outcome = await _service.AssignTradeUnitsAsync(id, codes, cancellationToken);
 
-        switch (result)
+        switch (outcome.Result)
         {
             case AssignTradeUnitsResult.NoCodes:
                 return BadRequest(new { message = "At least one trade unit code is required." });
             case AssignTradeUnitsResult.CustomerNotFound:
                 throw new NotFoundException("Customer", id);
             default:
-                var customer = await _service.GetByIdAsync(id, cancellationToken);
+                // Not necessarily the requested id: onboarding adopts the row the sync already
+                // holds for that producer's ScoularId, so return the customer actually written to.
+                var customer = await _service.GetByIdAsync(outcome.CustomerId, cancellationToken);
                 return Ok(customer);
         }
     }

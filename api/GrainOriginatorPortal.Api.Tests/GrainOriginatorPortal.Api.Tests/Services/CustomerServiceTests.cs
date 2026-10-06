@@ -192,7 +192,7 @@ public class CustomerServiceTests
         var codes = new List<string> { "2090", "2291" };
         _repositoryMock
             .Setup(r => r.AssignTradeUnitsAsync(7L, codes, CurrentUser, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AssignTradeUnitsResult.Ok);
+            .ReturnsAsync(AssignTradeUnitsOutcome.Ok(7L));
         _repositoryMock
             .Setup(r => r.DeactivateDormantTradeUnitAsync(7L, "2090", CurrentUser, It.IsAny<CancellationToken>()))
             .ReturnsAsync(DeactivateTradeUnitResult.StillActive);
@@ -200,7 +200,7 @@ public class CustomerServiceTests
         var assigned = await _sut.AssignTradeUnitsAsync(7L, codes, CancellationToken.None);
         var deactivated = await _sut.DeactivateDormantTradeUnitAsync(7L, "2090", CancellationToken.None);
 
-        Assert.Equal(AssignTradeUnitsResult.Ok, assigned);
+        Assert.Equal(AssignTradeUnitsOutcome.Ok(7L), assigned);
         Assert.Equal(DeactivateTradeUnitResult.StillActive, deactivated);
         // The strict-argument setups above only match when the acting user is passed through; make
         // the negative explicit so a dropped stamp reads as "wrong user", not "no setup matched".

@@ -68,7 +68,7 @@ public class CustomerService : ICustomerService
     }
 
     /// <inheritdoc />
-    public Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken) =>
+    public Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken) =>
         _repository.AssignTradeUnitsAsync(customerId, tradeUnitCodes, _requestContext.GetCurrentUser(), cancellationToken);
 
     /// <inheritdoc />
