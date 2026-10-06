@@ -43,7 +43,7 @@ Files: `api/GrainOriginatorPortal.Infrastructure/Ctrm/` (repositories, readers, 
 | Trade-unit-wide tickets (every prompt mentioning tickets, deliveries, unapplied, unsettled) | CTRM | Same flow: trade units → producers → `tickets(customerIds:)` over the 3-year lookback in 366-day windows. Both applied and unapplied branches, same rule as the producer screen. Kicked off in the background by the home-page contract load. |
 | Farm lookups, contract by source id, per-contract pricing lines | **ODS** | no UI caller; CTRM has no farm concept / no contract-number argument |
 
-**ODS by design, on both sources.** These annotate or subtract from CTRM rows and never add one: customer master (`dbo.Customer`), the storage gate (`ctrm.vw_GNTA39D1` — CTRM has no storage entity), lb→bushel factors (`vw_GNP024`), elevator names (`MbpLocationSynonym`), producer↔trade-unit maps, DP contracts, stored grain.
+**ODS by design, on both sources.** These annotate or subtract from CTRM rows and never add one: customer master (`dbo.Customer`, filled nightly by the customer sync from ODS or CTRM per `CustomerSync:Source` — see *Customers from CTRM* below), the storage gate (`ctrm.vw_GNTA39D1` — CTRM has no storage entity), lb→bushel factors (`vw_GNP024`), elevator names (`MbpLocationSynonym`), producer↔trade-unit maps, DP contracts, stored grain.
 
 ## Rules preserved from ODS
 
@@ -236,6 +236,85 @@ on screen without it.
    **The floor this removes is the one we had reported since the first note:** a producer with no tickets used to cost seconds per window, and the app reads three windows per producer. Cold first touch still costs ~5.6 s on the first call after an idle period (connection establishment, unrelated to this fix).
 
    Correctness was verified independently here, not taken on trust, because this changed how the query is built: ticket totals across ten producers (0 to 821 tickets, 3,513 detail rows) are byte-for-byte identical to what we recorded 2026-09-02/03, with zero duplicated detail keys — including a ticket spanning two producer codes, the case the CTRM data owner had flagged as the likely breakage. The mandatory date range on `tickets(customerId:)` is still required; its waiver was sequenced behind this fix and is now unblocked on the API side.
+
+7. **Customer fields and filters (requested 2026-10-05).** The customer sync reads only what the API has today (see *Customers from CTRM*). Requested and not yet available: the fields `merchandisingEmail`, `extendedPrimaryPhone`, `supplementalEmail`, `extendedAddressLine1`-`4`, `extendedCity`, `extendedStateProvince`, `extendedPostalCode`, `extendedCountry`, `nopidNo`, `paymentMethod`, `duplicateYN`; an `industryCode1` filter; a last-changed-since filter; a customer-to-trade-unit pairs query (it restores exact link parity, see deviation D-1); and confirmation that `sourceCodes: [String!]` exists as a root argument. Until they ship, those columns stay as last synced from ODS.
+
+## Customers from CTRM (sync, 2026-10)
+
+The nightly customer sync (`CustomerSyncBackgroundService`, 07:00 UTC plus 60 s after every app start) can now fill `dbo.Customer` and `dbo.CustomerTradeUnit` from this API instead of the ODS views. Those two tables stay the app's customer source of truth and keep their ids; only *who fills them* changes. **Nothing changes until someone sets the switch: the default everywhere is ODS.**
+
+### The switch
+
+`CustomerSync:Source`: empty or anything else = ODS; only the literal `ctrm` opts in. It is read on every run, so flipping needs no redeploy. **Rollback = App Service setting `CustomerSync__Source=ods`.** A dry run can pick a source for one call (`source=` on the run route) without changing the setting.
+
+Both sources share one set of passes (customer upsert and soft-delete, trade-unit upsert and soft-delete, manual-producer refresh, bring-back). Each source is a feeder that produces rows shaped like `originations.vw_CustomerTradeUnits` (customer id, trade unit, attributes).
+
+### How the CTRM feeder builds its rows
+
+- **Master lookup.** For every producer the app already holds (and every code it discovers), the reader looks the customer up by `sourceCode` using GraphQL aliases, `CustomerSync:CustomerAliasCount` (20) per request, `CustomerSync:CtrmConcurrency` (2) requests in flight, under the same throttle and HC0045 retry as the contract reads. If the API returns more than one customer for a code, the canonical row is: active (`activeYN` = Y) first, then `mdmMasterRecord` truthy, then lowest id text (logged as `CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE`, codes only). A row whose `sourceCode` is not the one asked for fails the whole read (`CUSTOMER_SYNC_FILTER_MISMATCH`). The view's scope rules are applied to the master row: active, `industryCode1` = `PR`, name not containing `DUP` or `DO NOT USE`, not starting with `*` or `$`.
+- **Trade-unit links are append-only.** A customer's existing sync links are re-asserted **in their stored spelling**. New links are discovered from two unfiltered reads over a trailing window, `contracts(contractDateFrom/To)` and `tickets(blDateFrom/To)`, of `CustomerSync:DiscoveryWindowDays` days (default 7, max 3660; a window over 366 days logs a Warning). The window overlaps from night to night, so a missed night is harmless. Discovery also surfaces new producers (codes not yet in `dbo.Customer`). A link is deactivated only when its customer drops out of scope. A customer that re-enters scope gets back every sync link it held, except user-removed ones. Discovery trouble never aborts the run (`CUSTOMER_SYNC_DISCOVERY_FAILED`, a Warning), because discovery only adds.
+- **Manual producers** (onboarded by hand) are refreshed from the lookup regardless of scope, and deactivated only when their code is absent from the CTRM master.
+- **Stage 1 field mapping.** Only 9 customer fields come from GraphQL today: Name, ScoularId (`sourceCode`), Phone, Location, StateProvince, AddressLine1, PostalCode, IndustryCode1, IndustryCode2. Email, supplemental email, extended phone and address, and the NOP id stay as last synced from ODS until the API adds them (Stage 2).
+
+### Ids and the one-way door
+
+- Customers keep their existing ids, matched by `ScoularId` = GraphQL `sourceCode`.
+- **New producers get ids from `dbo.CustomerIdSequence`, in the band [5e15, 6e15)** (above any ODS surrogate, below the contract/ticket synthetic ids at 7e15, below 2^53). Dry runs use negative placeholders and never reserve an id. The App Service identity needs `UPDATE` on that sequence (`db_datawriter` does not cover sequences) before the first non-dry `ctrm` run in each environment.
+- **The ODS sync adopts a minted row by `ScoularId`** (active first, then lowest id) instead of inserting a second row with the ODS id. That adoption is what makes flipping back to `ods` safe.
+- **This is a one-way door.** Once a minted id carries notes, contacts or saved lists in PROD, flipping back is safe *only because of* that adoption, so the band and the `ScoularId` adoption become permanent conventions. Open question Q7 (is that wanted?) must be answered in writing **before the first PROD `ctrm` run**. Decision recorded here: _pending_.
+- `customers.id` is a <IdKind> — recorded <date> from the first Dev probe. _(Placeholder: fill in from `ctrm-probe` `idKind` once `Customers.Read.All` lands, and note whether it is stable across two probes a day apart. The API team's examples show a GUID string. This is the evidence for why the app does not use it as its key.)_
+- **Onboarding (add-a-customer) never makes a second row.** The search hides producers already held under another id by `ScoularId`. Assigning trade units to an ODS candidate whose `ScoularId` the app already holds **adopts** that row (add-only: it never removes the row's existing manual trade units), and the client follows the returned id for its follow-up writes.
+- The per-request customer access check now reads `dbo.CustomerTradeUnit` (active rows, manual included), not the live ODS view.
+
+### The mass-deactivation guard (both sources)
+
+Before anything is written, the run aborts (writes nothing) if it would deactivate more than `CustomerSync:MaxDeactivationPercent` (5) % **or** `CustomerSync:MaxDeactivationCount` (500) of the active customers or of the active trade-unit links, or if the source returned no rows while the app holds active customers or links. Codes: `CUSTOMER_SYNC_GUARD_TRIPPED`, `CUSTOMER_SYNC_SOURCE_EMPTY`. Recovery: confirm the change is legitimate, then `POST /api/diagnostics/customer-sync/run?force=true`, or raise the two limits through App Service settings. An abort logs at Error twice (the service and the background service); alert on one, the service's line, which carries the code. A legitimate mass change on the ODS source now aborts nightly until an admin forces it.
+
+### Failure codes on the CTRM source
+
+The sync aborts before any write on: `CUSTOMER_SYNC_NO_PERMISSION` (`Customers.Read.All` not granted), `CUSTOMER_SYNC_SCHEMA_MISMATCH` (a field in the projection does not exist, HTTP 400), `CUSTOMER_SYNC_FILTER_MISMATCH` (the API returned a row for a different `sourceCode`, so the filter is no longer exact), `CUSTOMER_SYNC_SOURCE_UNAVAILABLE` (gateway down or slow, including HC0045 timeouts after the retries). Warnings that never abort: `CUSTOMER_SYNC_DISCOVERY_FAILED`, `CUSTOMER_SYNC_UNKNOWN_CODES`, `CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE`. Logs carry codes and counts only, never names, phones or addresses.
+
+### Diagnostics routes
+
+All `AdminOnly`, JSON camelCase, under `api/diagnostics/customer-sync/`.
+
+| Route | Environments | What it does |
+|---|---|---|
+| `POST run?dryRun=&force=&source=&discoveryFrom=` | all, including PROD | Runs the sync (trigger `manual`). `source` is honoured only with `dryRun=true` (otherwise 400). 200 returns the result (counters plus `source`, `dryRun`, `aborted`, `abortCode`, `abortReason`, `guard`, `customersMinted`, `lookup`, `discovery`); **409 with the same body when aborted** (nothing written). |
+| `GET last-run` | all, including PROD | `{ processStartedUtc, nowUtc, lastSuccessfulRunUtc, stale, lastRun }`; `lastRun` is null or `{ startedUtc, finishedUtc, trigger, source, outcome (ok / aborted / failed), abortCode, abortReason, exceptionType, result }`. `stale` = no successful run finished in the last 26 h. **In memory only**, lost on restart, so `lastRun: null` after a deploy is normal. The first check in any incident. |
+| `GET compare?discoveryFrom=` | Dev and QA only (404 elsewhere) | Dry-runs both sources, one after the other, and diffs them: `{ generatedAtUtc, ods, ctrm, customers, links, fields, appCustomers, appActiveCustomers, appLinks, appActiveLinks }`. Each side is `{ ok, failureCode, failureDetail, rows, customers, links, minted, customerPermission, lookup, discovery }`; `customers` and `links` are `{ inBoth, onlyInOds, onlyInCtrm, sampleOnlyInOds[], sampleOnlyInCtrm[] }` (codes, or CODE\|TU, at most 25); `fields` is `[{ field, compared, differs }]`. Producers are matched by `ScoularId` (`sourceCode`), never by id. While `Customers.Read.All` is missing the CTRM side reads `ok: false, customerPermission: "missing"` and the diffs are empty: that means "no permission", not "no customers". No names, phones or addresses. |
+| `GET ctrm-probe?sourceCode=` | Dev and QA only | `{ configured, source, status, httpStatus, errorCode, detail, permission (granted / missing / unknown), totalCount, projectionAccepted, sampleFound, idKind, note }`. `idKind` is the JSON type of `customers.id` on the sample row (never the value). |
+
+### Before the first `ctrm` run in each environment
+
+1. `Customers.Read.All` is granted to that environment's GraphQL client (`ctrm-probe` says `permission: "granted"`, `projectionAccepted: true`, `sampleFound: true` for a code taken from `dbo.Customer.ScoularId`; this also confirms `ScoularId` = `sourceCode`).
+2. The App Service identity has `UPDATE` on `dbo.CustomerIdSequence`.
+3. Padded trade units and duplicate spellings: `SELECT COUNT(*) FROM dbo.CustomerTradeUnit WHERE DATALENGTH(TradeUnit) <> DATALENGTH(LTRIM(RTRIM(TradeUnit)));` (record the count) and `SELECT CustomerId, LTRIM(RTRIM(TradeUnit)) AS Unit, COUNT(*) FROM dbo.CustomerTradeUnit GROUP BY CustomerId, LTRIM(RTRIM(TradeUnit)) HAVING COUNT(*) > 1;` (must return 0 rows).
+4. A dry run, `POST …/run?dryRun=true&source=ctrm`, shows `ManualCustomersDeactivated = 0` (and `ManualCustomersRefreshed + ManualCustomersReactivated` equal to the manual-customer count). Any deactivation means a manual producer's code is absent from the CTRM master: list those codes before flipping.
+5. Also open (Q10): whether `base.vw_CurrentCustomers` ever holds `IsActive = 0` rows decides whether a found-but-inactive manual producer should be kept on the CTRM path.
+
+Before the first **PROD** `ctrm` run, additionally: Q7 answered in writing (above); `compare` run weekly in Dev/QA for at least four weeks with `links.onlyInCtrm` recorded each time (a growing count is the empirical answer to deviation D-1 and the trigger to ask for the pairs query); the `ScoularId` = `sourceCode` assumption confirmed; the producer count re-counted per environment; `last-run` checked in QA after at least one scheduled `ctrm` night.
+
+### Intentional differences from the ODS view
+
+Target = `originations.vw_CustomerTradeUnits`.
+
+| View semantics | CTRM implementation | Deviation? |
+|---|---|---|
+| `c.IsActive = 1` | `activeYN == "Y"` | none |
+| `c.IndustryCode1 = 'PR'` | `industryCode1 == "PR"` (trimmed, case-insensitive) | none |
+| `CustomerName NOT LIKE '%DUP%'`, `NOT LIKE '%DO NOT USE%'`, `LEFT(name,1) NOT IN ('*','$')`; NULL name excluded | Same rules on `name`, ordinal ignore-case | none |
+| no `IsDuplicate` filter | none | none (`duplicateYN` is Stage 2, for the search only) |
+| contract branch: `con.IsActive = 1 AND TradeUnit IS NOT NULL`, all prefixes, no date/closed filter | existing links re-asserted + contract discovery in the trailing window, all prefixes, blank `tradeUnit` skipped | **D-1**: a link is never dropped when a contract's ODS `IsActive` later flips to 0 (customer-level drops still apply); and on a customer's re-entry every sync link it ever held (except user-removed ones) is restored, a superset of ODS, which restores only links still backed by an active contract or non-deleted ticket |
+| ticket branch: header `t.CustomerId = c.CustomerId`, `ETL_Delete_Datetime IS NULL`, `OrganizationCode IS NOT NULL` | ticket discovery in the trailing window, every **detail** row's `customerCode` to `organizationCode` | **D-2**: split loads link every detail customer, not only the header customer (a superset, consistent with the unapplied-ticket read) |
+| no cancel / consolidated / type filter on tickets | none | none |
+| trade-unit value verbatim | `Trim()` on CTRM-sourced values only (codes, discovered units); a unit the table already holds is re-emitted in its stored spelling | **D-3**: trade-unit keys stay byte-identical to what the ODS sync wrote (a trimmed re-emission of a padded row would collide with `UQ_CustomerTradeUnit_CustomerId_TradeUnit`, which ignores trailing spaces) |
+| manual producers outside the view: refreshed from `base.vw_CurrentCustomers` by id, no scope filter; deactivated only when absent | refreshed from the `sourceCode` lookup, no scope filter; deactivated only when the code is absent from the master | none |
+| attributes: 23 columns | 9 columns; the rest untouched | **D-4** until Stage 2 |
+| `EffectiveStartDate/EndDate` | no GraphQL equivalent; untouched | **D-5** (permanent unless the API adds them) |
+| new customer id = ODS `CustomerId` | minted from `dbo.CustomerIdSequence` | **D-6** by decision |
+
+Files: `api/GrainOriginatorPortal.Infrastructure/Sync/*`, `api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmCustomerReader.cs`, `CtrmCustomerActivityReader.cs`, `CtrmCustomerQueries.cs`, `api/GrainOriginatorPortal.Api/Controllers/CustomerSyncDiagnosticsController.cs`, `DiagnosticsEnvironmentGate.cs`.
 
 ## Testing notes
 
