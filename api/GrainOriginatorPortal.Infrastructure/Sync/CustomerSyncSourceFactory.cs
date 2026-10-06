@@ -6,13 +6,14 @@ namespace GrainOriginatorPortal.Infrastructure.Sync;
 /// <summary>Creates the feeder named by <see cref="CustomerSyncSources.Resolve"/> (or a dry-run override).</summary>
 public interface ICustomerSyncSourceFactory
 {
-    /// <summary><c>"ctrm"</c> → <c>CtrmCustomerSyncSource</c>, else <see cref="OdsCustomerSyncSource"/>.</summary>
+    /// <summary><c>"ctrm"</c> → <see cref="CtrmCustomerSyncSource"/>, else <see cref="OdsCustomerSyncSource"/>.</summary>
     ICustomerSyncSource Create(string sourceName);
 }
 
 /// <summary>
 /// Resolves the feeder from the caller's scope (sources are scoped: they hold the scoped sync
-/// repository).
+/// repository). Only the literal <c>ctrm</c> (trimmed, case-insensitive) selects the CTRM feeder, the
+/// same opt-in rule as <see cref="CustomerSyncSources.Resolve"/>.
 /// </summary>
 public sealed class CustomerSyncSourceFactory : ICustomerSyncSourceFactory
 {
@@ -23,9 +24,8 @@ public sealed class CustomerSyncSourceFactory : ICustomerSyncSourceFactory
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
     }
 
-    public ICustomerSyncSource Create(string sourceName)
-    {
-        // C4a wires "ctrm": until CtrmCustomerSyncSource exists, both names resolve to the ODS feeder.
-        return _serviceProvider.GetRequiredService<OdsCustomerSyncSource>();
-    }
+    public ICustomerSyncSource Create(string sourceName) =>
+        string.Equals(sourceName?.Trim(), CustomerSyncSources.Ctrm, StringComparison.OrdinalIgnoreCase)
+            ? _serviceProvider.GetRequiredService<CtrmCustomerSyncSource>()
+            : _serviceProvider.GetRequiredService<OdsCustomerSyncSource>();
 }
