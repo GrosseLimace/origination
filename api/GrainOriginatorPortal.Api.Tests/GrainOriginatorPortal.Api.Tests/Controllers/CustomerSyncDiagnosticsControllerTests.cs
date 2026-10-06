@@ -16,6 +16,7 @@ using Moq;
 using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Sync;
@@ -26,13 +27,15 @@ namespace GrainOriginatorPortal.Api.Tests.Controllers;
 /// <c>api/diagnostics/customer-sync/*</c>. <see cref="CustomerSyncService"/> is concrete and resolves its
 /// repositories and source factory from a scope, so it is built exactly as <c>CustomerSyncServiceTests</c>
 /// builds it: a real service over a <see cref="ServiceCollection"/> holding mocked repositories and a stub
-/// source factory. The controller receives that same service and that same factory.
+/// source factory. The controller receives that same service and that same factory. The probe drives a real
+/// <see cref="CtrmCustomerReader"/> over a fake GraphQL client, hence the throttle collection.
 /// </summary>
+[Collection("CtrmThrottle")]
 public class CustomerSyncDiagnosticsControllerTests
 {
     private readonly Mock<ICustomerSyncRepository> _repo = new();
     private readonly Mock<ICustomerRepository> _customerRepo = new();
-    private readonly Mock<ICtrmGraphQlClient> _ctrmClient = new();
+    private readonly FakeCtrmClient _ctrmClient = new();
     private readonly List<Customer> _appCustomers = [];
     private readonly List<CustomerTradeUnit> _appTradeUnits = [];
     private readonly Dictionary<string, string?> _settings = new();
@@ -42,6 +45,7 @@ public class CustomerSyncDiagnosticsControllerTests
 
     public CustomerSyncDiagnosticsControllerTests()
     {
+        CtrmTradeUnitThrottle.ResetForTests();
         _repo.Setup(r => r.LoadAppCustomersAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => _appCustomers);
         _repo.Setup(r => r.LoadAppTradeUnitsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => _appTradeUnits);
         _repo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -77,7 +81,8 @@ public class CustomerSyncDiagnosticsControllerTests
             Sync(),
             _repo.Object,
             _factory,
-            new CtrmCustomerReader(_ctrmClient.Object, configuration, NullLogger<CtrmCustomerReader>.Instance),
+            new CtrmCustomerReader(_ctrmClient, configuration, NullLogger<CtrmCustomerReader>.Instance),
+            _ctrmClient,
             env.Object,
             configuration,
             NullLogger<CustomerSyncDiagnosticsController>.Instance);
@@ -182,8 +187,8 @@ public class CustomerSyncDiagnosticsControllerTests
 
     // ── GET last-run ─────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The anonymous last-run body, read back through its JSON shape (the route returns an anonymous object).</summary>
-    private static JsonElement LastRunBody(IActionResult result)
+    /// <summary>An anonymous response body (last-run, ctrm-probe), read back through its JSON shape.</summary>
+    private static JsonElement JsonBody(IActionResult result)
     {
         var ok = Assert.IsType<OkObjectResult>(result);
         return JsonSerializer.SerializeToElement(ok.Value);
@@ -194,7 +199,7 @@ public class CustomerSyncDiagnosticsControllerTests
     {
         var sut = CreateSut();
 
-        var body = LastRunBody(sut.LastRun());
+        var body = JsonBody(sut.LastRun());
 
         Assert.Equal(JsonValueKind.Null, body.GetProperty("LastRun").ValueKind);
         Assert.Equal(JsonValueKind.Null, body.GetProperty("LastSuccessfulRunUtc").ValueKind);
@@ -209,7 +214,7 @@ public class CustomerSyncDiagnosticsControllerTests
         Source(CustomerSyncSources.Ods, NoPermission(CustomerSyncSources.Ods));
         await Sync().SyncAsync(new CustomerSyncOptions { Trigger = "manual" }, CancellationToken.None);
 
-        var body = LastRunBody(CreateSut().LastRun());
+        var body = JsonBody(CreateSut().LastRun());
 
         var lastRun = body.GetProperty("LastRun");
         Assert.Equal("aborted", lastRun.GetProperty("Outcome").GetString());
@@ -224,7 +229,7 @@ public class CustomerSyncDiagnosticsControllerTests
         Source(CustomerSyncSources.Ods, OkRows(CustomerSyncSources.Ods, (1, "1085")));
         await Sync().SyncAsync(new CustomerSyncOptions { Trigger = "scheduled" }, CancellationToken.None);
 
-        var body = LastRunBody(CreateSut().LastRun());
+        var body = JsonBody(CreateSut().LastRun());
 
         Assert.False(body.GetProperty("Stale").GetBoolean());
         Assert.Equal(Sync().LastSuccessfulRunUtc, body.GetProperty("LastSuccessfulRunUtc").GetDateTime());
@@ -356,6 +361,71 @@ public class CustomerSyncDiagnosticsControllerTests
         Assert.NotNull(ctrm.SeenOptions);
     }
 
+    // ── GET ctrm-probe ───────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Probe_InProductionLikeEnvironment_Returns404()
+    {
+        _environmentName = "Production";
+
+        var result = await CreateSut().Probe("P000042");
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Empty(_ctrmClient.Documents);
+    }
+
+    [Fact]
+    public async Task Probe_ReturnsPermissionStatusAndConfiguredFlags()
+    {
+        _settings[CustomerSyncSources.ConfigKey] = "ctrm";
+        _ctrmClient.IsConfigured = true;
+        _ctrmClient.ProbeAnswer = new() { Status = CtrmReadStatus.Unauthorized, HttpStatus = 403, Detail = "stub 403" };
+
+        var body = JsonBody(await CreateSut().Probe("P000042"));
+
+        Assert.Equal("missing", body.GetProperty("Permission").GetString());
+        Assert.True(body.GetProperty("Configured").GetBoolean());
+        Assert.Equal(CustomerSyncSources.Resolve(Configuration()), body.GetProperty("Source").GetString());
+        Assert.Equal(CustomerSyncSources.Ctrm, body.GetProperty("Source").GetString());
+        Assert.Equal("Unauthorized", body.GetProperty("Status").GetString());
+        Assert.Equal(403, body.GetProperty("HttpStatus").GetInt32());
+        Assert.False(body.GetProperty("ProjectionAccepted").GetBoolean());
+        Assert.Contains("Customers.Read.All", body.GetProperty("Note").GetString());
+        Assert.Single(_ctrmClient.Documents);
+    }
+
+    [Fact]
+    public async Task Probe_NotConfigured_ReportsIt_AndTheDefaultSource()
+    {
+        _ctrmClient.IsConfigured = false;
+        _ctrmClient.ProbeAnswer = new() { Status = CtrmReadStatus.NotConfigured, Detail = "stub not configured" };
+
+        var body = JsonBody(await CreateSut().Probe());
+
+        Assert.False(body.GetProperty("Configured").GetBoolean());
+        Assert.Equal(CustomerSyncSources.Ods, body.GetProperty("Source").GetString());
+        Assert.Equal("NotConfigured", body.GetProperty("Status").GetString());
+        Assert.Equal("unknown", body.GetProperty("Permission").GetString());
+    }
+
+    [Fact]
+    public async Task Probe_GrantedWithASample_ReportsProjectionSampleAndIdKind_NeverTheIdValue()
+    {
+        _ctrmClient.IsConfigured = true;
+
+        var result = await CreateSut().Probe(" P000042 ");
+
+        var body = JsonBody(result);
+        Assert.Equal("granted", body.GetProperty("Permission").GetString());
+        Assert.Equal(16700, body.GetProperty("TotalCount").GetInt32());
+        Assert.True(body.GetProperty("ProjectionAccepted").GetBoolean());
+        Assert.True(body.GetProperty("SampleFound").GetBoolean());
+        Assert.Equal("String", body.GetProperty("IdKind").GetString());
+        Assert.DoesNotContain(FakeCtrmClient.SampleIdValue, body.GetRawText());
+        Assert.DoesNotContain(FakeCtrmClient.SampleName, body.GetRawText());
+        Assert.Equal(2, _ctrmClient.Documents.Count);
+    }
+
     [Fact]
     public void Controller_IsAdminOnly()
     {
@@ -431,6 +501,47 @@ public class CustomerSyncDiagnosticsControllerTests
                 : CustomerSyncSources.Ods;
             Requested.Add(name);
             return Sources[name];
+        }
+    }
+
+    /// <summary>
+    /// Answers <see cref="CtrmCustomerQueries.CustomersProbe"/> with <see cref="ProbeAnswer"/> and any aliased customers
+    /// request with one row for P000042 whose id is a string (as the API team's examples show) and whose name is a
+    /// marker, so a test can prove neither reaches the response.
+    /// </summary>
+    private sealed class FakeCtrmClient : ICtrmGraphQlClient
+    {
+        public const string SampleIdValue = "7f3c-guid-value-0042";
+        public const string SampleName = "Marker Name Farms";
+
+        public bool IsConfigured { get; set; } = true;
+        public List<string> Documents { get; } = [];
+
+        public CtrmReadResult<JsonElement> ProbeAnswer { get; set; } = new()
+        {
+            Status = CtrmReadStatus.Ok, HttpStatus = 200,
+            Value = JsonSerializer.SerializeToElement(new { customers = new { totalCount = 16700, items = new[] { new { sourceCode = "P000042", activeYN = "Y" } } } })
+        };
+
+        public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
+        {
+            Documents.Add(document);
+            if (document == CtrmCustomerQueries.CustomersProbe)
+                return Task.FromResult((CtrmReadResult<T>)(object)ProbeAnswer);
+
+            var row = new CtrmCustomerDto
+            {
+                Id = JsonSerializer.SerializeToElement(SampleIdValue),
+                SourceCode = "P000042",
+                Name = SampleName,
+                ActiveYN = "Y",
+                IndustryCode1 = "PR"
+            };
+            var pages = new Dictionary<string, CtrmPage<CtrmCustomerDto>>
+            {
+                ["c0"] = new CtrmPage<CtrmCustomerDto> { TotalCount = 1, Items = [row] }
+            };
+            return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)(object)pages });
         }
     }
 }

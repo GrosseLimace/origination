@@ -25,6 +25,7 @@ public class CustomerSyncDiagnosticsController : ControllerBase
     private readonly ICustomerSyncRepository _repository;
     private readonly ICustomerSyncSourceFactory _sources;
     private readonly CtrmCustomerReader _customerReader;
+    private readonly ICtrmGraphQlClient _ctrm;
     private readonly IWebHostEnvironment _env;
     private readonly IConfiguration _config;
     private readonly ILogger<CustomerSyncDiagnosticsController> _logger;
@@ -34,6 +35,7 @@ public class CustomerSyncDiagnosticsController : ControllerBase
         ICustomerSyncRepository repository,
         ICustomerSyncSourceFactory sources,
         CtrmCustomerReader customerReader,
+        ICtrmGraphQlClient ctrm,
         IWebHostEnvironment env,
         IConfiguration config,
         ILogger<CustomerSyncDiagnosticsController> logger)
@@ -42,6 +44,7 @@ public class CustomerSyncDiagnosticsController : ControllerBase
         _repository = repository;
         _sources = sources;
         _customerReader = customerReader;
+        _ctrm = ctrm;
         _env = env;
         _config = config;
         _logger = logger;
@@ -180,4 +183,37 @@ public class CustomerSyncDiagnosticsController : ControllerBase
     }
 
     private const string SourceUnavailableCode = "CUSTOMER_SYNC_SOURCE_UNAVAILABLE";
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Whether this environment's CTRM client can read the customer master: the customers permission, whether the
+    /// nightly projection is accepted, and — given a <paramref name="sourceCode"/> — whether that producer is found
+    /// and what JSON type <c>customers.id</c> has (<c>IdKind</c>; never the id value). Dev/QA only (404 where
+    /// <see cref="DiagnosticsEnvironmentGate.IsProductionLike"/>). Read-only; at most two GraphQL requests.
+    /// </summary>
+    /// <param name="sourceCode">A known producer code (<c>ScoularId</c>) to look up with the sync's own document.</param>
+    [HttpGet("ctrm-probe")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Probe([FromQuery] string? sourceCode = null, CancellationToken cancellationToken = default)
+    {
+        if (DiagnosticsEnvironmentGate.IsProductionLike(_env)) return NotFound();
+
+        var r = await _customerReader.ProbeAsync(sourceCode?.Trim(), cancellationToken);
+        return Ok(new
+        {
+            Configured = _ctrm.IsConfigured,
+            Source = CustomerSyncSources.Resolve(_config),
+            Status = r.Status.ToString(),
+            r.HttpStatus,
+            r.ErrorCode,
+            r.Detail,
+            Permission = r.Value?.Permission ?? CtrmCustomerReader.DescribePermission(r),
+            r.Value?.TotalCount,
+            r.Value?.ProjectionAccepted,
+            r.Value?.SampleFound,
+            r.Value?.IdKind,
+            Note = "Permission 'missing' means Customers.Read.All (or ReadCustomersBasic) is not granted to this client id; the nightly sync on Source=ctrm aborts with CUSTOMER_SYNC_NO_PERMISSION until it is. IdKind is the JSON type of customers.id on the sample row — record it in the app-context doc on the first successful probe (see the plan's §10)."
+        });
+    }
 }
