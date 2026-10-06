@@ -358,7 +358,8 @@ builder.Services.AddSingleton<IAppAccessService, AppAccessService>();
 // against its own app registration, so this is the one place in the app using a
 // ClientSecretCredential. The secret comes from Key Vault as 'Ctrm--ClientSecret' (Key Vault
 // maps '--' to ':'); when any piece is missing the credential stays null and the client reports
-// NotConfigured so callers fall back to ODS rather than failing.
+// NotConfigured. That is a FAILED read, not a fallback: with Ctrm:Source=ctrm the contract and ticket
+// screens show a load error. Rolling back to ODS is the setting Ctrm__Source=ods.
 // Longer term the cleaner shape is an app-role grant to the App Service managed identity, which
 // would remove the secret entirely and match how Graph is done above.
 builder.Services.AddSingleton<GrainOriginatorPortal.Infrastructure.Ctrm.ICtrmGraphQlClient>(sp =>
@@ -491,8 +492,8 @@ builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraph
     // The OVERALL budget for one logical call, retries included. The per-attempt limit is the AddTimeout
     // strategy in the pipeline below. These used to be one 30-second number, which meant a slow-but-fine
     // attempt was retried inside a budget it had already spent - the retries could not succeed, and the
-    // producer screen saw "Timed out reaching the CTRM gateway" under load. 3 attempts x 35s + backoff.
-    client.Timeout = TimeSpan.FromSeconds(110);
+    // producer screen saw "Timed out reaching the CTRM gateway" under load. 3 attempts x 45s + backoff.
+    client.Timeout = TimeSpan.FromSeconds(150);
 })
 .AddHttpMessageHandler<CorrelationIdOutboundHandler>()
 .AddResilienceHandler("ctrm", pipeline =>
@@ -525,14 +526,20 @@ builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraph
     // There was none: the comment on client.Timeout above claimed one but nothing enforced it, so a single
     // hung attempt could hold a request for the whole 110-second client budget.
     //
-    // 35 seconds, not 30, on purpose: the server's own limit is 30s and it answers HC0045 as a GraphQL
-    // error we retry deliberately (CtrmServerTimeoutRetry - the server finishes and caches the query after
-    // erroring). Timing out at 30 would abort that answer in flight and turn a recoverable server-side
-    // timeout into an opaque client abort.
+    // 45 seconds, well clear of the server's own 30-second limit, on purpose. The server answers its
+    // timeout as a GraphQL error (HC0045, HTTP 400) that CtrmServerTimeoutRetry handles deliberately,
+    // and the circuit breaker above ignores a 400 by design. But that answer does not arrive AT 30
+    // seconds: measured 2026-09-29 it landed at 31.5 s on the PROD gateway and 36 s on the nonprod one.
+    // At the previous 35 s this timeout fired first on the slow days, which turned every server-side
+    // timeout into a TimeoutRejectedException - which the breaker DOES count. One trade-unit walk of
+    // sixteen batches on a cold gateway tripped it, and for the next 30 s every producer click got
+    // EgressBlocked although the gateway was answering single reads in under a second. 45 s lets the
+    // HC0045 through as the 400 it is, with its correlation id, and leaves the breaker for the real
+    // outage it exists for: connection failures, 5xx, and an attempt with no answer at all in 45 s.
     //
     // TimeoutRejectedException is deliberately NOT in the retry ShouldHandle above: a hung attempt should
     // fail fast to EgressBlocked, which names the remediation, rather than being retried twice more.
-    pipeline.AddTimeout(TimeSpan.FromSeconds(35));
+    pipeline.AddTimeout(TimeSpan.FromSeconds(45));
 });
 
 // A second Graph client for the ONE call that must never be re-sent: creating an Outlook calendar

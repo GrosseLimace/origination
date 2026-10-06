@@ -46,6 +46,12 @@ public class CtrmContractReaderAliasedTests
         public HashSet<string> PartialAlways { get; } = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>Codes given more contracts than one page holds, so their alias reports hasNextPage.</summary>
         public Dictionary<string, int> Oversized { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Codes whose batch answers the server timeout (HC0045) on its FIRST aliased attempt only -
+        /// the cold plan compile - and succeeds on any later attempt, as the server's cache does.</summary>
+        public HashSet<string> TimeoutOnce { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Codes whose batch answers HC0045 on every aliased attempt.</summary>
+        public HashSet<string> TimeoutAlways { get; } = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _timedOut = new(StringComparer.OrdinalIgnoreCase);
 
         public static int ContractsFor(string code) =>
             (int.Parse(code[1..]) % 7) + 1;
@@ -89,6 +95,14 @@ public class CtrmContractReaderAliasedTests
 
             if (batchCodes.Any(FailAlways.Contains) || (paired && batchCodes.Any(FailWhilePaired.Contains)))
                 return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Throttled, HttpStatus = 429, Detail = "stub 429" });
+            var coldCode = batchCodes.FirstOrDefault(c => TimeoutOnce.Contains(c) && !_timedOut.Contains(c));
+            if (coldCode is not null) lock (_timedOut) _timedOut.Add(coldCode);
+            if (coldCode is not null || batchCodes.Any(TimeoutAlways.Contains))
+                return Task.FromResult(new CtrmReadResult<T>
+                {
+                    Status = CtrmReadStatus.QueryError, HttpStatus = 400, ErrorCode = CtrmServerTimeoutRetry.ServerTimeoutCode,
+                    Detail = "stub: The request exceeded the configured timeout of `00:00:30`."
+                });
             if (batchCodes.Any(PartialAlways.Contains))
                 return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.PartialSuccess, HttpStatus = 200, Detail = "stub partial", Value = (T)(object)pages });
             return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)(object)pages });
@@ -114,16 +128,16 @@ public class CtrmContractReaderAliasedTests
         }
     }
 
-    private static IConfiguration Config(string strategy = "aliased", int aliasCount = 10, int codesPerAlias = 2) =>
+    private static IConfiguration Config(string strategy = "aliased", int aliasCount = 10, int codesPerAlias = 2, int concurrency = 16, int serverTimeoutRetries = 0) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Ctrm:TradeUnitContractStrategy"] = strategy,
             ["Ctrm:TradeUnitAliasCount"] = aliasCount.ToString(),
             ["Ctrm:TradeUnitAliasCodesPerAlias"] = codesPerAlias.ToString(),
-            ["Ctrm:TradeUnitContractBatchConcurrency"] = "16",
+            ["Ctrm:TradeUnitContractBatchConcurrency"] = concurrency.ToString(),
             ["Ctrm:TradeUnitPerProducerConcurrency"] = "6",
             ["Ctrm:LiveCacheSeconds"] = "60",
-            ["Ctrm:ServerTimeoutRetries"] = "0",
+            ["Ctrm:ServerTimeoutRetries"] = serverTimeoutRetries.ToString(),
             ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0"
         }).Build();
 
@@ -197,6 +211,84 @@ public class CtrmContractReaderAliasedTests
         Assert.Empty(read.Value ?? []);                              // never the 20 producers that did succeed
         Assert.Contains("batched request", read.Detail);
         Assert.Equal(3, client.AliasedCalls);                        // the good batch once, the bad one twice
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Load-shedding (2026-09-28): once a batch has failed twice the read is doomed, so stop sending.
+
+    [Fact]
+    public async Task OnceABatchHasFailedTwice_TheRemainingBatchesAreNotSent()
+    {
+        // The read is going to fail whatever the other batches return, and every further request only
+        // queues another query the server will run to completion after timing out. Concurrency 1 so the
+        // batches run in order and the request count is exact.
+        var client = new AliasClient();
+        client.FailAlways.Add("P000001");                            // in the first batch
+        var codes = Codes(100);                                      // five batches of 20
+
+        var read = await Sut(client, Config(concurrency: 1)).GetForProducersAsync(codes, CancellationToken.None);
+
+        Assert.False(read.Ok);
+        Assert.Equal(CtrmReadStatus.Throttled, read.Status);
+        Assert.Equal(2, client.AliasedCalls);                        // the doomed batch paired, then singular - nothing else
+        Assert.Contains("4 batch(es) not sent", read.Detail);
+        Assert.Empty(read.Value ?? []);
+    }
+
+    [Fact]
+    public async Task ABatchThatRecoversOnSingularAliases_DoesNotStopTheOthers()
+    {
+        // The list-plan regression the singular retry exists for must not be mistaken for a doomed read.
+        var client = new AliasClient();
+        client.FailWhilePaired.Add("P000001");
+        var codes = Codes(100);
+
+        var read = await Sut(client, Config(concurrency: 1)).GetForProducersAsync(codes, CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.Equal(6, client.AliasedCalls);                        // five batches + one singular retry
+        Assert.Equal(ExpectedIds(codes), read.Value!.Select(c => c.ContractId).ToHashSet());
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Server timeout (2026-09-29): a cold batch is re-sent once after the delay and read from the server's
+    // cache; the singular re-shape does not spend a second delayed retry.
+
+    [Fact]
+    public async Task ABatchTheServerTimedOutOnce_IsReSentAndCompletesTheWalk_WithoutTheSingularReshape()
+    {
+        // The go-live case: a fresh connection pays the plan compile, the gateway answers HC0045 at ~31 s,
+        // finishes the query anyway and caches it. One delayed re-send of the SAME paired batch gets the
+        // cached answer. No singular retry, no failure, every contract present.
+        var client = new AliasClient();
+        client.TimeoutOnce.Add("P000021");                           // in the second batch of two
+        var codes = Codes(40);
+
+        var read = await Sut(client, Config(serverTimeoutRetries: 1)).GetForProducersAsync(codes, CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.Equal(3, client.AliasedCalls);                        // 2 batches + the one delayed re-send
+        Assert.All(client.Documents.Where(d => d.StartsWith("query {")), d => Assert.Contains("customerIds:", d)); // all paired - never stepped down
+        Assert.Equal(ExpectedIds(codes), read.Value!.Select(c => c.ContractId).ToHashSet());
+    }
+
+    [Fact]
+    public async Task ABatchThatKeepsTimingOut_SpendsOneDelayedRetry_NotOnePerShape()
+    {
+        // Paired attempt -> delayed re-send -> singular re-shape sent ONCE -> read fails and the walk stops.
+        // Three requests for the doomed batch, not four: the singular shape exists for the list-plan
+        // failure, and giving it its own delayed retry would double the time a doomed read takes to fail.
+        var client = new AliasClient();
+        client.TimeoutAlways.Add("P000001");                         // in the first batch
+        var codes = Codes(100);                                      // five batches of 20
+
+        var read = await Sut(client, Config(concurrency: 1, serverTimeoutRetries: 1)).GetForProducersAsync(codes, CancellationToken.None);
+
+        Assert.False(read.Ok);
+        Assert.Equal(CtrmServerTimeoutRetry.ServerTimeoutCode, read.ErrorCode);
+        Assert.Equal(3, client.AliasedCalls);                        // paired, paired again, singular once
+        Assert.Contains("4 batch(es) not sent", read.Detail);
+        Assert.Empty(read.Value ?? []);
     }
 
     [Fact]

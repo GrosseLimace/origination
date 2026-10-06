@@ -28,6 +28,26 @@ public class CtrmTradeUnitThrottleTests
 
     // -------------------------------------------------------------------------
     [Fact]
+    public void AScopeDisposedAfterAReset_CannotLeaveTheCounterNegative()
+    {
+        // The counter is process-wide. ResetForTests zeroes it while another test class may still hold a
+        // scope; before the guard, that scope's Dispose took it to -1 and a later, genuinely open scope
+        // read as "nothing in flight" - the order-dependent failure seen in CtrmTicketReaderTests on
+        // 2026-09-30. Disposing past zero must be a no-op, so the next scope is visible again.
+        var stale = CtrmTradeUnitThrottle.Interactive();
+        CtrmTradeUnitThrottle.ResetForTests();
+        stale.Dispose();
+
+        Assert.False(CtrmTradeUnitThrottle.InteractiveInFlight);
+        using (CtrmTradeUnitThrottle.Interactive())
+        {
+            Assert.True(CtrmTradeUnitThrottle.InteractiveInFlight);
+        }
+        Assert.False(CtrmTradeUnitThrottle.InteractiveInFlight);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
     public async Task ContractBatchesHaveTheirOwnCap_AndDoNotQueueBehindTheSharedPool()
     {
         // Why this matters: live on 2026-09-24 a contract walk took 150 s instead of ~48 s because it shared

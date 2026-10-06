@@ -20,6 +20,11 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// wrong scope because their cache keys collided, and a failed read being cached long enough to look
 /// like a producer with no tickets.
 /// </remarks>
+// Asserts on CtrmTradeUnitThrottle.InteractiveInFlight, which is process-wide static state, so this class
+// runs in the same serialised collection as the throttle tests. Without it, a larger suite (the bid-sheet
+// merge added ~170 tests) can have another test's interactive scope open at the moment
+// TheTradeUnitWalkStaysBackgroundWork asserts none is - seen once on 2026-09-30, green in isolation.
+[Collection("CtrmThrottle")]
 public class CtrmTicketReaderTests
 {
     private const string Producer = "TESTPRD";
