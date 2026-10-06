@@ -375,6 +375,55 @@ public class CustomerSyncDiagnosticsControllerTests
     }
 
     [Fact]
+    public async Task Capabilities_InProductionLikeEnvironment_Returns404_WithoutCallingCtrm()
+    {
+        _environmentName = "Production";
+
+        var result = await CreateSut().Capabilities("FARM");
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Empty(_ctrmClient.Documents);
+    }
+
+    [Fact]
+    public async Task Capabilities_ReportsWhichArgumentsAndFieldsExist_AndSkipsTimingsForMissingFilters()
+    {
+        _ctrmClient.Intercept = doc => doc.Contains("__type")
+            ? new CtrmReadResult<JsonElement>
+            {
+                Status = CtrmReadStatus.Ok, HttpStatus = 200,
+                Value = JsonSerializer.SerializeToElement(new
+                {
+                    q = new { fields = new object[]
+                    {
+                        new { name = "contracts", args = new[] { new { name = "customerIds" } } },
+                        new { name = "customers", args = new[] { new { name = "skip" }, new { name = "take" }, new { name = "sourceCode" }, new { name = "nameContains" }, new { name = "lastChangedFrom" } } }
+                    } },
+                    c = new { fields = new[] { new { name = "sourceCode" }, new { name = "merchandisingEmail" } } }
+                })
+            }
+            : doc.Contains("nameContains")
+                ? new CtrmReadResult<JsonElement> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = JsonSerializer.SerializeToElement(new { customers = new { totalCount = 7, items = new[] { new { sourceCode = "P1" } } } }) }
+                : null;
+
+        var result = await CreateSut().Capabilities("FARM");
+
+        var json = JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(result).Value);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.False(root.GetProperty("WantedArguments").GetProperty("sourceCodes").GetBoolean());
+        Assert.True(root.GetProperty("WantedArguments").GetProperty("nameContains").GetBoolean());
+        Assert.True(root.GetProperty("WantedFields").GetProperty("merchandisingEmail").GetBoolean());
+        Assert.False(root.GetProperty("WantedFields").GetProperty("nopidNo").GetBoolean());
+        Assert.Equal("lastChangedFrom", root.GetProperty("ChangedSinceLikeArguments")[0].GetString());
+        var tests = root.GetProperty("Tests");
+        Assert.Equal(1, tests.GetArrayLength());   // only nameContains exists; no sourceCodes / industryCode1 timing sent
+        Assert.Equal(7, tests[0].GetProperty("TotalCount").GetInt32());
+        Assert.Equal(2, _ctrmClient.Documents.Count);
+        Assert.DoesNotContain("FARM", json);       // the search term is never echoed
+    }
+
+    [Fact]
     public async Task Probe_ReturnsPermissionStatusAndConfiguredFlags()
     {
         _settings[CustomerSyncSources.ConfigKey] = "ctrm";
@@ -523,9 +572,14 @@ public class CustomerSyncDiagnosticsControllerTests
             Value = JsonSerializer.SerializeToElement(new { customers = new { totalCount = 16700, items = new[] { new { sourceCode = "P000042", activeYN = "Y" } } } })
         };
 
+        /// <summary>When set and it returns non-null for a document, that answer is used (capability tests).</summary>
+        public Func<string, CtrmReadResult<JsonElement>?>? Intercept { get; set; }
+
         public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
         {
             Documents.Add(document);
+            if (Intercept?.Invoke(document) is { } intercepted)
+                return Task.FromResult((CtrmReadResult<T>)(object)intercepted);
             if (document == CtrmCustomerQueries.CustomersProbe)
                 return Task.FromResult((CtrmReadResult<T>)(object)ProbeAnswer);
 

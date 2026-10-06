@@ -1,4 +1,5 @@
 // Microsoft namespaces
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -218,4 +219,141 @@ public class CustomerSyncDiagnosticsController : ControllerBase
             Note = "Permission 'missing' means Customers.Read.All (or ReadCustomersBasic) is not granted to this client id; the nightly sync on Source=ctrm aborts with CUSTOMER_SYNC_NO_PERMISSION until it is. IdKind is the JSON type of customers.id on the sample row — record it in the app-context doc on the first successful probe (see the plan's §10)."
         });
     }
+
+    // -------------------------------------------------------------------------
+    /// <summary>The <c>customers</c> arguments the Stage 2 plan (Batch E) depends on, by name.</summary>
+    internal static readonly string[] WantedCustomerArgs = ["sourceCodes", "codes", "industryCode1", "nameContains", "sourceCodeContains"];
+
+    /// <summary>The Customer fields requested from the API team on 2026-10-05 (plan Batch E1/E2/E3).</summary>
+    internal static readonly string[] WantedCustomerFields =
+    [
+        "merchandisingEmail", "extendedPrimaryPhone", "supplementalEmail",
+        "extendedAddressLine1", "extendedAddressLine2", "extendedAddressLine3", "extendedAddressLine4",
+        "extendedCity", "extendedStateProvince", "extendedPostalCode", "extendedCountry",
+        "nopidNo", "paymentMethod", "duplicateYN"
+    ];
+
+    private const string CapabilityIntrospection =
+        "query { q: __type(name: \"Query\") { fields { name args { name } } } c: __type(name: \"Customer\") { fields { name } } }";
+
+    /// <summary>
+    /// What the customers API can do today, measured rather than asked: which <c>customers</c> arguments and Customer
+    /// fields exist (schema introspection), and — when a bulk <c>sourceCodes</c> list filter exists — how long it takes
+    /// for 20, 100 and 500 real producer codes, plus a producers-only page and a name search when those filters exist.
+    /// Dev/QA only (404 where production-like). Read-only; at most six GraphQL requests, sent one at a time. Returns
+    /// argument names, field names, counts and timings only — never a customer value.
+    /// </summary>
+    /// <param name="nameTerm">Text to time a <c>nameContains</c> search with (not echoed back).</param>
+    [HttpGet("ctrm-capabilities")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Capabilities([FromQuery] string? nameTerm = "FARM", CancellationToken cancellationToken = default)
+    {
+        if (DiagnosticsEnvironmentGate.IsProductionLike(_env)) return NotFound();
+
+        var schema = await TimedAsync(CapabilityIntrospection, null, cancellationToken);
+        var customerArgs = new List<string>();
+        var customerFields = new List<string>();
+        if (schema.Result.Ok && schema.Result.Value.ValueKind == JsonValueKind.Object)
+        {
+            customerArgs = ReadCustomerArgs(schema.Result.Value);
+            customerFields = ReadNames(schema.Result.Value, "c", "fields");
+        }
+
+        var tests = new List<object>();
+        if (customerArgs.Contains("sourceCodes"))
+        {
+            var codes = (await _repository.LoadAppCustomersAsync(cancellationToken))
+                .Where(c => c.IsActive && !string.IsNullOrWhiteSpace(c.ScoularId))
+                .Select(c => c.ScoularId!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(500)
+                .ToList();
+            foreach (var size in new[] { 20, 100, 500 }.Where(s => s <= codes.Count))
+            {
+                var batch = codes.Take(size).ToList();
+                var t = await TimedAsync(
+                    "query ($codes: [String!], $take: Int) { customers(sourceCodes: $codes, skip: 0, take: $take) { totalCount items { sourceCode } } }",
+                    new { codes = batch, take = 500 }, cancellationToken);
+                var returned = CountItems(t.Result);
+                var matched = MatchedCodes(t.Result, batch);
+                tests.Add(new { Test = $"sourceCodes list, {size} codes", t.Ms, Status = t.Result.Status.ToString(), t.Result.HttpStatus, t.Result.ErrorCode, Returned = returned, MatchedRequestedCodes = matched, Detail = Short(t.Result.Detail) });
+            }
+        }
+
+        if (customerArgs.Contains("industryCode1"))
+        {
+            var t = await TimedAsync("query { customers(industryCode1: \"PR\", skip: 0, take: 500) { totalCount items { sourceCode } } }", null, cancellationToken);
+            tests.Add(new { Test = "industryCode1 = PR, first page of 500", t.Ms, Status = t.Result.Status.ToString(), t.Result.HttpStatus, t.Result.ErrorCode, TotalCount = TotalCount(t.Result), Returned = CountItems(t.Result), Detail = Short(t.Result.Detail) });
+        }
+
+        if (customerArgs.Contains("nameContains") && !string.IsNullOrWhiteSpace(nameTerm))
+        {
+            var t = await TimedAsync(
+                "query ($n: String!) { customers(nameContains: $n, skip: 0, take: 50) { totalCount items { sourceCode } } }",
+                new { n = nameTerm.Trim() }, cancellationToken);
+            tests.Add(new { Test = "nameContains search, first 50", t.Ms, Status = t.Result.Status.ToString(), t.Result.HttpStatus, t.Result.ErrorCode, TotalCount = TotalCount(t.Result), Returned = CountItems(t.Result), Detail = Short(t.Result.Detail) });
+        }
+
+        _logger.LogInformation("CustomerSync capabilities: introspection {Status} in {Ms}ms; {Args} customers argument(s), {Fields} Customer field(s); {Tests} timing test(s)",
+            schema.Result.Status, schema.Ms, customerArgs.Count, customerFields.Count, tests.Count);
+
+        return Ok(new
+        {
+            Introspection = new { Status = schema.Result.Status.ToString(), schema.Result.HttpStatus, schema.Result.ErrorCode, schema.Ms, Detail = Short(schema.Result.Detail) },
+            CustomersArguments = customerArgs,
+            WantedArguments = WantedCustomerArgs.ToDictionary(a => a, a => customerArgs.Contains(a)),
+            ChangedSinceLikeArguments = customerArgs.Where(a => a.Contains("chang", StringComparison.OrdinalIgnoreCase) || a.Contains("modif", StringComparison.OrdinalIgnoreCase) || a.Contains("since", StringComparison.OrdinalIgnoreCase) || a.Contains("updated", StringComparison.OrdinalIgnoreCase)).ToList(),
+            WantedFields = WantedCustomerFields.ToDictionary(f => f, f => customerFields.Contains(f)),
+            Tests = tests,
+            Note = "Introspection lists what exists; a Status other than Ok for introspection means it is disabled on this gateway, and the Wanted* maps then read false without proving absence. Timings are single requests on a shared nonprod gateway — repeat before drawing conclusions."
+        });
+    }
+
+    private async Task<(CtrmReadResult<JsonElement> Result, long Ms)> TimedAsync(string document, object? variables, CancellationToken cancellationToken)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await _ctrm.QueryAsync<JsonElement>(document, variables, cancellationToken);
+        return (result, watch.ElapsedMilliseconds);
+    }
+
+    internal static List<string> ReadCustomerArgs(JsonElement root)
+    {
+        if (!root.TryGetProperty("q", out var q) || q.ValueKind != JsonValueKind.Object
+            || !q.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Array) return [];
+        foreach (var f in fields.EnumerateArray())
+            if (f.TryGetProperty("name", out var n) && n.GetString() == "customers"
+                && f.TryGetProperty("args", out var args) && args.ValueKind == JsonValueKind.Array)
+                return args.EnumerateArray().Select(a => a.GetProperty("name").GetString() ?? "").Where(s => s.Length > 0).ToList();
+        return [];
+    }
+
+    internal static List<string> ReadNames(JsonElement root, string alias, string listProperty)
+    {
+        if (!root.TryGetProperty(alias, out var t) || t.ValueKind != JsonValueKind.Object
+            || !t.TryGetProperty(listProperty, out var list) || list.ValueKind != JsonValueKind.Array) return [];
+        return list.EnumerateArray().Select(f => f.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "").Where(s => s.Length > 0).ToList();
+    }
+
+    private static JsonElement? Customers(CtrmReadResult<JsonElement> r) =>
+        r.Value.ValueKind == JsonValueKind.Object && r.Value.TryGetProperty("customers", out var c) && c.ValueKind == JsonValueKind.Object ? c : null;
+
+    private static int? TotalCount(CtrmReadResult<JsonElement> r) =>
+        Customers(r) is { } c && c.TryGetProperty("totalCount", out var t) && t.ValueKind == JsonValueKind.Number ? t.GetInt32() : null;
+
+    private static int? CountItems(CtrmReadResult<JsonElement> r) =>
+        Customers(r) is { } c && c.TryGetProperty("items", out var i) && i.ValueKind == JsonValueKind.Array ? i.GetArrayLength() : null;
+
+    private static int? MatchedCodes(CtrmReadResult<JsonElement> r, IReadOnlyCollection<string> requested)
+    {
+        if (Customers(r) is not { } c || !c.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return null;
+        var wanted = new HashSet<string>(requested, StringComparer.OrdinalIgnoreCase);
+        return items.EnumerateArray()
+            .Select(i => i.TryGetProperty("sourceCode", out var s) ? s.GetString()?.Trim() : null)
+            .Where(s => s is not null && wanted.Contains(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+    }
+
+    private static string? Short(string? s) => s is null ? null : s.Length <= 300 ? s : s[..300] + "…";
 }
