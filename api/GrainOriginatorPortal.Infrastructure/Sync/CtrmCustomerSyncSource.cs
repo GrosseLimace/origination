@@ -21,8 +21,11 @@ namespace GrainOriginatorPortal.Infrastructure.Sync;
 ///
 /// <para><b>Links.</b> The view derives a customer's trade units from its contracts and tickets over all time, and
 /// those never go away, so a link once earned is permanent (plan D2). The app's own sync-sourced links
-/// (<c>!IsManual &amp;&amp; IsActive</c>) therefore ARE the backfill and are re-asserted, trimmed, for every in-scope
-/// customer. A customer whose only sync evidence is a user-removed (<c>UserDeactivated</c>) link gets one
+/// (<c>!IsManual &amp;&amp; IsActive</c>) therefore ARE the backfill and are re-asserted for every in-scope customer,
+/// in the table's own spelling (the service keys links on the raw string, so a padded stored unit is re-emitted
+/// padded and a discovered unit that matches a held row by trimmed, case-insensitive value takes that row's
+/// spelling). A customer the sync had deactivated that is back in scope gets all its non-manual, non-user-removed
+/// links back, as the full-history view would restore them. A customer whose only sync evidence is a user-removed (<c>UserDeactivated</c>) link gets one
 /// presence-only row (<c>TradeUnit</c> null): it is still in the view on ODS, and the user's removal is left alone.
 /// Rows are generated per <c>dbo.Customer</c> row, so two app rows sharing a code each keep their own links.</para>
 ///
@@ -34,7 +37,8 @@ namespace GrainOriginatorPortal.Infrastructure.Sync;
 /// <c>-1, -2, ...</c> placeholders on a dry run, which never reserves); otherwise it is counted as unknown.</para>
 ///
 /// <para><b>Manual producers.</b> An in-scope manual customer with no sync evidence lands in
-/// <see cref="CustomerSyncSourceResult.ManualMaster"/> (refreshed, not graduated); one the master no longer holds is
+/// <see cref="CustomerSyncSourceResult.ManualMaster"/> (refreshed, not graduated), and so does a manual customer the
+/// master returns but the filters reject (ODS parity: the ODS manual refresh has no scope filter); one the master no longer holds is
 /// left out with the master marked complete, so the service deactivates it as on ODS. A manual customer with no
 /// code cannot be looked up at all and is <see cref="CustomerSyncSourceResult.ManualUnverifiable"/>.</para>
 ///
@@ -126,6 +130,7 @@ public sealed class CtrmCustomerSyncSource : ICustomerSyncSource
         var outOfScope = new Dictionary<string, int>(StringComparer.Ordinal);
         var presenceOnly = 0;
         var discoveredRows = 0;
+        var manualOutOfScope = 0;
 
         foreach (var customer in appState.Customers)
         {
@@ -140,19 +145,50 @@ public sealed class CtrmCustomerSyncSource : ICustomerSyncSource
             if (!CtrmCustomerFilters.IsInScope(dto, out var reason))
             {
                 outOfScope[reason] = outOfScope.GetValueOrDefault(reason) + 1;
+                if (customer.IsManual)
+                {
+                    // ODS parity: the manual-producer refresh reads base.vw_CurrentCustomers by id with
+                    // NO scope filter, so a manual producer the master still knows is refreshed and kept
+                    // whatever its activeYN / industry / name says; only absence from the master
+                    // deactivates one. Its sync links (if any) still drop with the customer's rows.
+                    manualMaster[customer.Id] = new CtrmCustomerSyncAttributes(dto);
+                    manualOutOfScope++;
+                }
                 continue;
             }
 
             var attributes = new CtrmCustomerSyncAttributes(dto);
             var links = linksByCustomer[customer.Id].ToList();
+
+            // The table's own spelling of every unit this customer holds (active, inactive, manual or
+            // user-removed), keyed by the trimmed, case-insensitive unit. The service keys trade-unit
+            // rows on the RAW string (ODS parity) and UQ_CustomerTradeUnit_CustomerId_TradeUnit ignores
+            // trailing spaces, so a stored " 1085 " must be re-emitted as " 1085 " and a discovered
+            // "1085" must map onto it - a trimmed duplicate would deactivate the held row and then
+            // collide on insert. Leading-space variants are collapsed onto whichever row came first.
+            var storedSpelling = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var l in links)
+            {
+                var key = l.TradeUnit.Trim();
+                if (key.Length > 0) storedSpelling.TryAdd(key, l.TradeUnit);
+            }
+
+            // Re-entry: a customer the sync deactivated comes back with every sync link it held,
+            // as the full-history ODS view would restore them. User-removed links stay with the
+            // bring-back pass; manual links stay manual.
+            var reentering = !customer.IsActive;
             var reasserted = links
-                .Where(l => !l.IsManual && l.IsActive)
-                .Select(l => l.TradeUnit.Trim())
-                .Where(t => t.Length > 0)
+                .Where(l => !l.IsManual && !l.UserDeactivated && (l.IsActive || reentering) && l.TradeUnit.Trim().Length > 0)
+                .Select(l => l.TradeUnit)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
+            var reassertedKeys = reasserted.Select(t => t.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var discoveredOnly = discoveredByCode.TryGetValue(code, out var discoveredTradeUnits)
-                ? discoveredTradeUnits.Except(reasserted, StringComparer.Ordinal).ToList()
+                ? discoveredTradeUnits
+                    .Where(t => !reassertedKeys.Contains(t))
+                    .Select(t => storedSpelling.TryGetValue(t, out var stored) ? stored : t)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList()
                 : [];
             discoveredRows += discoveredOnly.Count;
 
@@ -194,12 +230,12 @@ public sealed class CtrmCustomerSyncSource : ICustomerSyncSource
         _logger.LogInformation(
             "CustomerSync CTRM feeder: {Customers} app customer(s), {Codes} code(s) looked up ({Found} found, {Missing} missing); " +
             "{Rows} row(s) for {RowCustomers} customer(s) ({PresenceOnly} presence-only, {DiscoveredRows} from discovered links); " +
-            "{NewCodes} new code(s): {Minted} minted (dry run {DryRun}), {Unknown} unknown; {ManualMaster} manual customer(s) refreshed from the master, " +
+            "{NewCodes} new code(s): {Minted} minted (dry run {DryRun}), {Unknown} unknown; {ManualMaster} manual customer(s) refreshed from the master, {ManualOutOfScope} of them out of scope, " +
             "{Unverifiable} manual customer(s) without a code; out of scope by reason: {OutOfScope}",
             appState.Customers.Count, lookupInfo.Requested, lookupInfo.Found, lookupInfo.Missing,
             rows.Count, rows.Select(r => r.CustomerId).Distinct().Count(), presenceOnly, discoveredRows,
             newCodes.Count, toMint.Count, options.DryRun, unknownCodes,
-            manualMaster.Count, unverifiable.Count, Describe(outOfScope));
+            manualMaster.Count, manualOutOfScope, unverifiable.Count, Describe(outOfScope));
 
         return new CustomerSyncSourceResult
         {

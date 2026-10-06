@@ -135,15 +135,15 @@ public class CtrmCustomerSyncSourceTests
     private Task<CustomerSyncSourceResult> LoadAsync(CustomerSyncAppState appState, CustomerSyncLoadOptions? options = null) =>
         Sut().LoadAsync(appState, options ?? CustomerSyncLoadOptions.Default, CancellationToken.None);
 
-    /// <summary>An in-scope master row for <paramref name="code"/>: active producer with a clean name.</summary>
-    private void InMaster(string code, string activeYN = "Y", string? sourceCode = null) =>
+    /// <summary>A master row for <paramref name="code"/>: by default an active producer named "{code} Farms".</summary>
+    private void InMaster(string code, string activeYN = "Y", string? sourceCode = null, string? name = null) =>
         _client.Master[code] =
         [
             new CtrmCustomerDto
             {
                 Id = JsonSerializer.SerializeToElement(Guid.NewGuid().ToString()),
                 SourceCode = sourceCode ?? code,
-                Name = code + " Farms",
+                Name = name ?? code + " Farms",
                 ActiveYN = activeYN,
                 IndustryCode1 = "PR",
                 MdmMasterRecord = JsonSerializer.SerializeToElement(true)
@@ -206,14 +206,85 @@ public class CtrmCustomerSyncSourceTests
     }
 
     [Fact]
-    public async Task LoadAsync_ReassertedLink_IsTrimmed()
+    public async Task LoadAsync_ReassertedLink_KeepsTheStoredSpelling()
     {
+        // The service keys trade-unit rows on the raw string: a trimmed "1085" would deactivate the
+        // held " 1085 " row and then collide with it on UQ_CustomerTradeUnit_CustomerId_TradeUnit.
         InMaster("SMITFAR");
         var app = App([Cust(1, "SMITFAR")], [Link(1, " 1085 ")]);
 
         var result = await LoadAsync(app);
 
+        Assert.Equal(new HashSet<(long, string?)> { (1, " 1085 ") }, RowKeys(result));
+    }
+
+    [Fact]
+    public async Task LoadAsync_DiscoveredLink_MatchingAHeldRowByTrimmedUnit_UsesTheStoredSpelling()
+    {
+        InMaster("SMITFAR");
+        _client.ContractLinks.Add(new CtrmContractLinkDto { CustomerId = "SMITFAR", TradeUnit = "1085" });
+        var app = App([Cust(1, "SMITFAR")], [Link(1, " 1085 ", isActive: false)]);
+
+        var result = await LoadAsync(app);
+
+        Assert.Equal(new HashSet<(long, string?)> { (1, " 1085 ") }, RowKeys(result));
+        Assert.DoesNotContain(result.Rows, r => r.TradeUnit == "1085");
+    }
+
+    [Fact]
+    public async Task LoadAsync_DiscoveredLink_MatchingAnActiveHeldRowCaseInsensitively_IsNotDuplicated()
+    {
+        InMaster("SMITFAR");
+        _client.ContractLinks.Add(new CtrmContractLinkDto { CustomerId = "SMITFAR", TradeUnit = "AB12" });
+        var app = App([Cust(1, "SMITFAR")], [Link(1, "ab12")]);
+
+        var result = await LoadAsync(app);
+
+        Assert.Equal(new HashSet<(long, string?)> { (1, "ab12") }, RowKeys(result));
+        Assert.Single(result.Rows);
+    }
+
+    [Fact]
+    public async Task LoadAsync_InactiveCustomerBackInScope_ReassertsItsInactiveSyncLinks_ButNotUserRemovedOrManualOnes()
+    {
+        InMaster("SMITFAR");
+        var app = App(
+            [Cust(1, "SMITFAR", isActive: false)],
+            [Link(1, "1085", isActive: false), Link(1, "2200", isActive: false, userDeactivated: true), Link(1, "3300", isActive: false, isManual: true)]);
+
+        var result = await LoadAsync(app);
+
         Assert.Equal(new HashSet<(long, string?)> { (1, "1085") }, RowKeys(result));
+    }
+
+    [Fact]
+    public async Task LoadAsync_ManualCustomerFoundButOutOfScope_IsRefreshedFromManualMaster_NotDeactivated()
+    {
+        InMaster("MANUAL1", activeYN: "N", name: "Manual One");
+        var app = App([Cust(900, "MANUAL1", isManual: true)], [Link(900, "1085", isManual: true)]);
+
+        var result = await LoadAsync(app);
+
+        Assert.True(result.Ok);
+        Assert.Empty(result.Rows);
+        Assert.True(result.ManualMasterComplete);
+        Assert.Equal("Manual One", Applied(result.ManualMaster[900]).Name);
+        Assert.DoesNotContain(900L, result.ManualUnverifiable);
+    }
+
+    [Fact]
+    public async Task LoadAsync_LookupAuthErrorCode_IsNoPermission()
+    {
+        InMaster("SMITFAR");
+        _client.LookupFailure = new() { Status = CtrmReadStatus.QueryError, HttpStatus = 200, ErrorCode = "AUTH_NOT_AUTHORIZED", Detail = "stub auth" };
+        var app = App([Cust(1, "SMITFAR")], [Link(1, "1085")]);
+
+        var result = await LoadAsync(app);
+
+        Assert.False(result.Ok);
+        Assert.Equal("CUSTOMER_SYNC_NO_PERMISSION", result.FailureCode);
+        Assert.Empty(result.Rows);
+        Assert.Equal("missing", result.Lookup!.Permission);
     }
 
     [Fact]
@@ -469,6 +540,30 @@ public class CtrmCustomerSyncSourceTests
         _repo.Verify(r => r.ReserveCustomerIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
         VerifyWarning("CUSTOMER_SYNC_UNKNOWN_CODES", Times.Once());
         VerifyWarning("GHOST99", Times.Never());
+        // Codes and counts only: no log line at any level carries a customer name ("<code> Farms").
+        _logger.Verify(l => l.Log(
+            It.IsAny<LogLevel>(), It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("Farms")),
+            It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoadAsync_TwoNewCodes_AreMintedInOrdinalCodeOrder()
+    {
+        InMaster("ZED0001");
+        InMaster("ABE0001");
+        _client.ContractLinks.Add(new CtrmContractLinkDto { CustomerId = "ZED0001", TradeUnit = "5500" });
+        _client.ContractLinks.Add(new CtrmContractLinkDto { CustomerId = "ABE0001", TradeUnit = "1085" });
+        _repo.Setup(r => r.ReserveCustomerIdsAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync([5_000_000_000_000_010, 5_000_000_000_000_011]);
+        var app = App([Cust(1, "SMITFAR", isActive: false)]);
+
+        var result = await LoadAsync(app);
+
+        Assert.Equal(
+            new HashSet<(long, string?)> { (5_000_000_000_000_010, "1085"), (5_000_000_000_000_011, "5500") },
+            RowKeys(result));
+        Assert.Equal("ABE0001", Applied(result.Rows.Single(r => r.CustomerId == 5_000_000_000_000_010).Attributes).ScoularId);
+        Assert.Equal(2, result.CustomersMinted);
     }
 
     [Fact]
