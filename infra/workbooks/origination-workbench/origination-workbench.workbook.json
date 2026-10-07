@@ -341,7 +341,6 @@
           "size": "small"
         }
       },
-      "customWidth": "50",
       "name": "kql - 3",
       "conditionalVisibility": {
         "parameterName": "Tab",
@@ -378,8 +377,92 @@
           ]
         }
       },
-      "customWidth": "50",
       "name": "kql - 4",
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp {TimeRange} and success == false\n| summarize Failures = count(), Last = max(timestamp) by Endpoint = name, Code = tostring(resultCode)\n| top 8 by Failures desc",
+        "size": 4,
+        "title": "Top failing endpoints",
+        "noDataMessage": "No failed requests in this range.",
+        "showRefreshButton": true,
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Endpoint",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "50%"
+              }
+            },
+            {
+              "columnMatch": "Code",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "12%"
+              }
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "kql - 5",
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp {TimeRange}\n| summarize Calls = count(), P95ms = round(percentile(duration, 95)) by Endpoint = name\n| where Calls >= 5\n| top 8 by P95ms desc",
+        "size": 4,
+        "title": "Slowest endpoints (p95, at least 5 calls)",
+        "noDataMessage": "No request telemetry in this range.",
+        "showRefreshButton": true,
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Endpoint",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "60%"
+              }
+            }
+          ],
+          "labelSettings": [
+            {
+              "columnId": "P95ms",
+              "label": "p95 ms"
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "kql - 6",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -480,92 +563,7 @@
           ]
         }
       },
-      "name": "arg - 5",
-      "conditionalVisibility": {
-        "parameterName": "Tab",
-        "comparison": "isEqualTo",
-        "value": "overview"
-      }
-    },
-    {
-      "type": 3,
-      "content": {
-        "version": "KqlItem/1.0",
-        "query": "requests\n| where timestamp {TimeRange} and success == false\n| summarize Failures = count(), Last = max(timestamp) by Endpoint = name, Code = tostring(resultCode)\n| top 8 by Failures desc",
-        "size": 4,
-        "title": "Top failing endpoints",
-        "noDataMessage": "No failed requests in this range.",
-        "showRefreshButton": true,
-        "timeContextFromParameter": "TimeRange",
-        "queryType": 0,
-        "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "{AppInsights}"
-        ],
-        "visualization": "table",
-        "gridSettings": {
-          "formatters": [
-            {
-              "columnMatch": "Endpoint",
-              "formatter": 0,
-              "formatOptions": {
-                "customColumnWidthSetting": "50%"
-              }
-            },
-            {
-              "columnMatch": "Code",
-              "formatter": 0,
-              "formatOptions": {
-                "customColumnWidthSetting": "12%"
-              }
-            }
-          ]
-        }
-      },
-      "customWidth": "50",
-      "name": "kql - 6",
-      "conditionalVisibility": {
-        "parameterName": "Tab",
-        "comparison": "isEqualTo",
-        "value": "overview"
-      }
-    },
-    {
-      "type": 3,
-      "content": {
-        "version": "KqlItem/1.0",
-        "query": "requests\n| where timestamp {TimeRange}\n| summarize Calls = count(), P95ms = round(percentile(duration, 95)) by Endpoint = name\n| where Calls >= 5\n| top 8 by P95ms desc",
-        "size": 4,
-        "title": "Slowest endpoints (p95, at least 5 calls)",
-        "noDataMessage": "No request telemetry in this range.",
-        "showRefreshButton": true,
-        "timeContextFromParameter": "TimeRange",
-        "queryType": 0,
-        "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "{AppInsights}"
-        ],
-        "visualization": "table",
-        "gridSettings": {
-          "formatters": [
-            {
-              "columnMatch": "Endpoint",
-              "formatter": 0,
-              "formatOptions": {
-                "customColumnWidthSetting": "60%"
-              }
-            }
-          ],
-          "labelSettings": [
-            {
-              "columnId": "P95ms",
-              "label": "p95 ms"
-            }
-          ]
-        }
-      },
-      "customWidth": "50",
-      "name": "kql - 7",
+      "name": "arg - 7",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",

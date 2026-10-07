@@ -542,7 +542,6 @@ const items = [
   // ===== Overview =====
   kqlItem('At a glance — {TimeRange:label}', headlineTilesQuery, {
     tab: 'overview',
-    customWidth: '50',
     visualization: 'tiles',
     tileSettings: headlineTileSettings,
     noDataMessage: 'No request telemetry in this range.',
@@ -551,7 +550,6 @@ const items = [
     tab: 'overview',
     visualization: 'timechart',
     size: 1,
-    customWidth: '50',
     chartSettings: {
       seriesLabelSettings: [
         { seriesName: 'Requests', color: 'blue' },
@@ -559,6 +557,18 @@ const items = [
       ],
     },
     noDataMessage: 'No request telemetry in this range.',
+  }),
+  kqlItem('Top failing endpoints', failingEndpointsQuery, {
+    tab: 'overview',
+    customWidth: '50',
+    noDataMessage: 'No failed requests in this range.',
+    gridSettings: { formatters: [width('Endpoint', '50%'), width('Code', '12%')] },
+  }),
+  kqlItem('Slowest endpoints (p95, at least 5 calls)', slowestEndpointsQuery, {
+    tab: 'overview',
+    customWidth: '50',
+    noDataMessage: 'No request telemetry in this range.',
+    gridSettings: { formatters: [width('Endpoint', '60%')], labelSettings: labels({ P95ms: 'p95 ms' }) },
   }),
   argItem(
     'Alerts, last 30 days',
@@ -591,18 +601,6 @@ const items = [
       },
     },
   ),
-  kqlItem('Top failing endpoints', failingEndpointsQuery, {
-    tab: 'overview',
-    customWidth: '50',
-    noDataMessage: 'No failed requests in this range.',
-    gridSettings: { formatters: [width('Endpoint', '50%'), width('Code', '12%')] },
-  }),
-  kqlItem('Slowest endpoints (p95, at least 5 calls)', slowestEndpointsQuery, {
-    tab: 'overview',
-    customWidth: '50',
-    noDataMessage: 'No request telemetry in this range.',
-    gridSettings: { formatters: [width('Endpoint', '60%')], labelSettings: labels({ P95ms: 'p95 ms' }) },
-  }),
   argItem(
     'Web app',
     [
