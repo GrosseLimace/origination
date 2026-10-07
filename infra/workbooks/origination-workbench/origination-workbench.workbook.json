@@ -1,0 +1,798 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## Origination Workbench — Operations\n\nOne place for the things App Insights and the app do not show on their own: what is deployed where, whether the scheduled jobs and Logic Apps ran, which alerts are open, and how the integrations are behaving. \nStandard telemetry (failures, performance, live metrics, logs) and adoption numbers (the in-app Usage Dashboard) are **linked**, not copied."
+      },
+      "name": "text - 1"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "crossComponentResources": [
+          "value::all"
+        ],
+        "parameters": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "version": "KqlParameterItem/1.0",
+            "name": "Subscriptions",
+            "label": "Subscriptions",
+            "type": 6,
+            "isRequired": true,
+            "multiSelect": true,
+            "quote": "'",
+            "delimiter": ",",
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::all"
+              ],
+              "includeAll": true,
+              "showDefault": false
+            },
+            "defaultValue": "value::all",
+            "isHiddenWhenLocked": true
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "version": "KqlParameterItem/1.0",
+            "name": "Environment",
+            "label": "Environment",
+            "type": 2,
+            "isRequired": true,
+            "query": "resources\n| where type =~ 'microsoft.web/sites' and name startswith 'app-origination' and name endswith '-eus'\n| extend label = case(name endswith '-dev-eus', 'Dev', name endswith '-qa-eus', 'QA', 'Production')\n| extend sortKey = case(label == 'Production', 0, label == 'QA', 1, 2)\n| project value = id, label, sortKey\n| order by sortKey asc",
+            "crossComponentResources": [
+              "{Subscriptions}"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources"
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ],
+              "allowCustom": true
+            }
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "version": "KqlParameterItem/1.0",
+            "name": "ResourceGroup",
+            "label": "ResourceGroup",
+            "type": 2,
+            "isRequired": true,
+            "query": "resources | where id =~ '{Environment}' | project value = resourceGroup, label = resourceGroup, selected = true",
+            "crossComponentResources": [
+              "{Subscriptions}"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources",
+            "isHiddenWhenLocked": true
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "version": "KqlParameterItem/1.0",
+            "name": "AppUrl",
+            "label": "AppUrl",
+            "type": 2,
+            "isRequired": true,
+            "query": "resources | where id =~ '{Environment}' | project value = case(name endswith '-dev-eus', 'https://origination-dev.scoular.com', name endswith '-qa-eus', 'https://origination-qa.scoular.com', 'https://origination.scoular.com'), label = name, selected = true",
+            "crossComponentResources": [
+              "{Subscriptions}"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources",
+            "isHiddenWhenLocked": true
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000006",
+            "version": "KqlParameterItem/1.0",
+            "name": "AppInsights",
+            "label": "AppInsights",
+            "type": 2,
+            "isRequired": true,
+            "query": "resources | where type =~ 'microsoft.insights/components' and resourceGroup =~ '{ResourceGroup}' | project value = id, label = name, selected = true",
+            "crossComponentResources": [
+              "{Subscriptions}"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources",
+            "isHiddenWhenLocked": true
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000007",
+            "version": "KqlParameterItem/1.0",
+            "name": "DailyRecap",
+            "label": "DailyRecap",
+            "type": 2,
+            "isRequired": true,
+            "query": "resources | where type =~ 'microsoft.logic/workflows' and resourceGroup =~ '{ResourceGroup}' and name contains 'notes-daily-recap' | project value = id, label = name, selected = true",
+            "crossComponentResources": [
+              "{Subscriptions}"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources",
+            "isHiddenWhenLocked": true
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000008",
+            "version": "KqlParameterItem/1.0",
+            "name": "InstantShare",
+            "label": "InstantShare",
+            "type": 2,
+            "isRequired": true,
+            "query": "resources | where type =~ 'microsoft.logic/workflows' and resourceGroup =~ '{ResourceGroup}' and name contains 'instant-share-note' | project value = id, label = name, selected = true",
+            "crossComponentResources": [
+              "{Subscriptions}"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources",
+            "isHiddenWhenLocked": true
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000009",
+            "version": "KqlParameterItem/1.0",
+            "name": "KeyVault",
+            "label": "KeyVault",
+            "type": 2,
+            "isRequired": true,
+            "query": "resources | where type =~ 'microsoft.keyvault/vaults' and resourceGroup =~ '{ResourceGroup}' | project value = id, label = name, selected = true",
+            "crossComponentResources": [
+              "{Subscriptions}"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources",
+            "isHiddenWhenLocked": true
+          }
+        ],
+        "style": "pills",
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources"
+      },
+      "name": "parameters - 0"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "{\"version\":\"ARMEndpoint/1.0\",\"data\":null,\"headers\":[],\"method\":\"GET\",\"path\":\"{Environment}\",\"urlParams\":[{\"key\":\"api-version\",\"value\":\"2023-12-01\"}],\"batchDisabled\":false,\"transformers\":[{\"type\":\"jsonpath\",\"settings\":{\"tablePath\":\"$\",\"columns\":[{\"path\":\"$.name\",\"columnid\":\"Web app\"},{\"path\":\"$.properties.state\",\"columnid\":\"State\"},{\"path\":\"$.properties.siteConfig.linuxFxVersion\",\"columnid\":\"Runtime\"},{\"path\":\"$.properties.lastModifiedTimeUtc\",\"columnid\":\"Config last modified (UTC)\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.httpsOnly\",\"columnid\":\"HTTPS only\"},{\"path\":\"$.properties.defaultHostName\",\"columnid\":\"Default host\"}]}}]}",
+        "size": 0,
+        "title": "Environment",
+        "queryType": 12,
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "State",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Running",
+                    "representation": "success",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "failed",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "arm - 2"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "alertsmanagementresources\n| where type =~ 'microsoft.alertsmanagement/alerts'\n| where resourceGroup =~ '{ResourceGroup}'\n| extend Fired = todatetime(properties.essentials.startDateTime),\n         Severity = tostring(properties.essentials.severity),\n         Condition = tostring(properties.essentials.monitorCondition),\n         State = tostring(properties.essentials.alertState),\n         Target = tostring(properties.essentials.targetResourceName),\n         Signal = tostring(properties.essentials.signalType)\n| project Fired, Alert = name, Severity, Condition, State, Target, Signal\n| order by Fired desc",
+        "size": 0,
+        "title": "Alerts (this environment, last 30 days)",
+        "noDataMessage": "No alerts fired in the last 30 days.",
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources",
+        "crossComponentResources": [
+          "{Subscriptions}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Severity",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Sev0",
+                    "representation": "critical",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Sev1",
+                    "representation": "failed",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Sev2",
+                    "representation": "warning",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "info",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "Condition",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Fired",
+                    "representation": "failed",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Resolved",
+                    "representation": "success",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "unknown",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "arg - 3"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "{\"version\":\"ARMEndpoint/1.0\",\"data\":null,\"headers\":[],\"method\":\"GET\",\"path\":\"{Environment}/deployments\",\"urlParams\":[{\"key\":\"api-version\",\"value\":\"2023-12-01\"}],\"batchDisabled\":false,\"transformers\":[{\"type\":\"jsonpath\",\"settings\":{\"tablePath\":\"$.value\",\"columns\":[{\"path\":\"$.properties.start_time\",\"columnid\":\"Started (UTC)\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.end_time\",\"columnid\":\"Finished (UTC)\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.status\",\"columnid\":\"Status\"},{\"path\":\"$.properties.active\",\"columnid\":\"Active\"},{\"path\":\"$.properties.deployer\",\"columnid\":\"Deployer\"},{\"path\":\"$.properties.message\",\"columnid\":\"Message\"},{\"path\":\"$.properties.log_url\",\"columnid\":\"Log\"}]}}]}",
+        "size": 0,
+        "title": "App deployments (newest first)",
+        "noDataMessage": "No deployments recorded for this web app.",
+        "queryType": 12,
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Status",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "4",
+                    "representation": "success",
+                    "text": "Succeeded"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "3",
+                    "representation": "failed",
+                    "text": "Failed"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "0",
+                    "representation": "pending",
+                    "text": "Pending"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "pending",
+                    "text": "In progress ({0})"
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "Active",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "true",
+                    "representation": "success",
+                    "text": "Live"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "Blank",
+                    "text": ""
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "Log",
+              "formatter": 7,
+              "formatOptions": {
+                "linkTarget": "Url",
+                "linkIsContextBlade": false
+              }
+            }
+          ],
+          "sortBy": [
+            {
+              "itemKey": "Started (UTC)",
+              "sortOrder": 2
+            }
+          ]
+        }
+      },
+      "name": "arm - 4"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "Deployments come from the GitHub Actions deploy workflows ([Dev](https://scoular.ghe.com/IT/origination/actions/workflows/deploy-dev.yml) · [QA](https://scoular.ghe.com/IT/origination/actions/workflows/deploy-qa.yml) · [PROD](https://scoular.ghe.com/IT/origination/actions/workflows/deploy-prod.yml)). The commit and build number running right now are shown in the app under the profile menu, which reads `/api/version`."
+      },
+      "name": "text - 5"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "{\"version\":\"ARMEndpoint/1.0\",\"data\":null,\"headers\":[],\"method\":\"GET\",\"path\":\"{DailyRecap}/runs\",\"urlParams\":[{\"key\":\"api-version\",\"value\":\"2016-06-01\"},{\"key\":\"$top\",\"value\":\"20\"}],\"batchDisabled\":false,\"transformers\":[{\"type\":\"jsonpath\",\"settings\":{\"tablePath\":\"$.value\",\"columns\":[{\"path\":\"$.properties.startTime\",\"columnid\":\"Started (UTC)\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.endTime\",\"columnid\":\"Finished (UTC)\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.status\",\"columnid\":\"Status\"},{\"path\":\"$.properties.trigger.name\",\"columnid\":\"Trigger\"},{\"path\":\"$.properties.error.message\",\"columnid\":\"Error\"},{\"path\":\"$.name\",\"columnid\":\"Run\"}]}}]}",
+        "size": 0,
+        "title": "Daily Digest Logic App — recent runs",
+        "noDataMessage": "No runs found. If this environment has no Daily Digest Logic App the query has nothing to read.",
+        "queryType": 12,
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Status",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Succeeded",
+                    "representation": "success",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Failed",
+                    "representation": "failed",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Cancelled",
+                    "representation": "cancelled",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Running",
+                    "representation": "pending",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "unknown",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "arm - 6"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "{\"version\":\"ARMEndpoint/1.0\",\"data\":null,\"headers\":[],\"method\":\"GET\",\"path\":\"{InstantShare}/runs\",\"urlParams\":[{\"key\":\"api-version\",\"value\":\"2016-06-01\"},{\"key\":\"$top\",\"value\":\"20\"}],\"batchDisabled\":false,\"transformers\":[{\"type\":\"jsonpath\",\"settings\":{\"tablePath\":\"$.value\",\"columns\":[{\"path\":\"$.properties.startTime\",\"columnid\":\"Started (UTC)\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.endTime\",\"columnid\":\"Finished (UTC)\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.status\",\"columnid\":\"Status\"},{\"path\":\"$.properties.trigger.name\",\"columnid\":\"Trigger\"},{\"path\":\"$.properties.error.message\",\"columnid\":\"Error\"},{\"path\":\"$.name\",\"columnid\":\"Run\"}]}}]}",
+        "size": 0,
+        "title": "Instant Share Logic App — recent runs",
+        "noDataMessage": "No runs found. If this environment has no Instant Share Logic App the query has nothing to read.",
+        "queryType": 12,
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Status",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Succeeded",
+                    "representation": "success",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Failed",
+                    "representation": "failed",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Cancelled",
+                    "representation": "cancelled",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Running",
+                    "representation": "pending",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "unknown",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "arm - 7"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "Open run history in the portal: [Daily Digest](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{DailyRecap}/overview) · [Instant Share](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{InstantShare}/overview). Before resubmitting a Daily Digest run, read section E4 of the [outage recovery playbook](https://scoular.ghe.com/IT/origination/blob/main/docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md)."
+      },
+      "name": "text - 8"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp {TimeRange}\n| where message startswith \"CustomerSync completed\" or (message has \"CustomerSync\" and severityLevel >= 3)\n| parse message with \"CustomerSync completed in \" ElapsedMs:long \" ms. Customers: \" CustInserted:long \" inserted, \" CustUpdated:long \" updated, \" CustReactivated:long \" reactivated, \" CustDeactivated:long \" deactivated. TradeUnits: \" TuInserted:long \" inserted, \" TuUpdated:long \" updated, \" TuDeactivated:long \" deactivated. \" *\n| project timestamp,\n          Outcome = iff(severityLevel >= 3, \"Failed\", \"Completed\"),\n          ElapsedS = round(ElapsedMs / 1000.0, 1),\n          CustInserted, CustUpdated, CustReactivated, CustDeactivated,\n          TuInserted, TuUpdated, TuDeactivated,\n          Detail = iff(severityLevel >= 3, message, \"\")\n| order by timestamp desc",
+        "size": 0,
+        "title": "CustomerSync runs (the mass-deactivation guard)",
+        "noDataMessage": "No CustomerSync completions in this range. The job runs once at startup and once a day (CustomerSync:RunAtTimeUtc). If it ran and still shows nothing, Information-level traces are not reaching App Insights — see the outage playbook, A4.",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Outcome",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Completed",
+                    "representation": "success",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Failed",
+                    "representation": "failed",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "warning",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "CustDeactivated",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": ">",
+                    "thresholdValue": "100",
+                    "representation": "critical",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": ">",
+                    "thresholdValue": "20",
+                    "representation": "warning",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "Blank",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "TuDeactivated",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": ">",
+                    "thresholdValue": "200",
+                    "representation": "critical",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": ">",
+                    "thresholdValue": "50",
+                    "representation": "warning",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "Blank",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "name": "kql - 9"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp {TimeRange}\n| where message startswith \"Aggregation cycle completed\"\n     or message startswith \"Aggregated weekly logins\"\n     or message startswith \"Refreshed trade unit snapshot\"\n     or message startswith \"Failed to refresh trade unit snapshot\"\n     or message startswith \"Retention cleanup\"\n     or message startswith \"Error during aggregation cycle\"\n     or message startswith \"CTRM keep-warm: maintained\"\n     or (message startswith \"CTRM keep-warm\" and severityLevel >= 2)\n| extend Job = case(message startswith \"CTRM keep-warm\", \"CTRM keep-warm\",\n                    message startswith \"Retention cleanup\", \"Retention cleanup\",\n                    \"Usage rollups\")\n| extend Outcome = case(severityLevel >= 3, \"Failed\", severityLevel == 2, \"Warning\", \"Completed\")\n| project timestamp, Job, Outcome, Message = message\n| order by timestamp desc\n| take 100",
+        "size": 0,
+        "title": "Other background jobs (usage rollups, retention, CTRM keep-warm)",
+        "noDataMessage": "No job completions in this range. Usage rollups run hourly; CTRM keep-warm runs continuously while CTRM is enabled.",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Outcome",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Completed",
+                    "representation": "success",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Failed",
+                    "representation": "failed",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "warning",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "Message",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "60%"
+              }
+            }
+          ]
+        }
+      },
+      "name": "kql - 10"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "dependencies\n| where timestamp {TimeRange}\n| extend Integration = case(\n    type == \"SQL\" and target has \"ODS\", \"ODS (SQL, read-only views)\",\n    type == \"SQL\" and target has \"Origination\", \"Origination DB (SQL)\",\n    type == \"SQL\" and target has \"TradeUnitPreferences\", \"Trade Unit Preferences (SQL)\",\n    type == \"SQL\", strcat(\"SQL: \", target),\n    name has \"graphql\" or target has \"api.scoular.com\" or target has \"apiqa.scoular.com\", \"CTRM GraphQL (Scoular API gateway)\",\n    target has \"graph.microsoft.com\", \"Microsoft Graph\",\n    target has \"vault.azure.net\", \"Key Vault\",\n    target has \"login.microsoftonline.com\", \"Entra ID\",\n    target has \"cognitiveservices.azure.com\" or target has \"openai.azure.com\", \"Azure OpenAI\",\n    strcat(type, \": \", target))\n| summarize Calls = count(), Failed = countif(success == false),\n            P50ms = round(percentile(duration, 50)), P95ms = round(percentile(duration, 95)), MaxMs = round(max(duration)),\n            Last = max(timestamp) by Integration\n| extend FailPct = round(100.0 * Failed / Calls, 2)\n| project Integration, Calls, Failed, FailPct, P50ms, P95ms, MaxMs, Last\n| order by Calls desc",
+        "size": 0,
+        "title": "Integrations — calls, failure rate and latency in the selected range",
+        "noDataMessage": "No dependency telemetry in this range.",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "FailPct",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": ">",
+                    "thresholdValue": "5",
+                    "representation": "failed",
+                    "text": "{0}%"
+                  },
+                  {
+                    "operator": ">",
+                    "thresholdValue": "1",
+                    "representation": "warning",
+                    "text": "{0}%"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "success",
+                    "text": "{0}%"
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "P95ms",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": ">",
+                    "thresholdValue": "10000",
+                    "representation": "failed",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": ">",
+                    "thresholdValue": "2000",
+                    "representation": "warning",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "Blank",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "name": "kql - 11"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "### Go deeper\n\n| App Insights (this environment) | App Service | Elsewhere |\n|---|---|---|\n| [Failures](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/failures) · [Performance](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/performance) · [Live Metrics](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/quickPulse) · [Logs](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/logs) | [Overview](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{Environment}/appServices) · [Log stream](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{Environment}/logStream) · [Key Vault](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{KeyVault}/overview) | [Open the app]({AppUrl}) · [Usage Dashboard (adoption)]({AppUrl}/usage-dashboard) · [GitHub Actions](https://scoular.ghe.com/IT/origination/actions) · [Project board](https://scoular.ghe.com/IT/origination/projects) · [Outage playbook](https://scoular.ghe.com/IT/origination/blob/main/docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md) |\n\nReadiness probes: [/health/ready]({AppUrl}/health/ready) · [/health/live]({AppUrl}/health/live)"
+      },
+      "name": "text - 12"
+    }
+  ],
+  "isLocked": false,
+  "fallbackResourceIds": [
+    "Azure Monitor"
+  ]
+}
