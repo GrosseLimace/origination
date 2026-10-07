@@ -134,6 +134,7 @@ const kqlItem = (title, query, opts = {}) => ({
     crossComponentResources: ['{AppInsights}'],
     visualization: opts.visualization ?? 'table',
     tileSettings: opts.tileSettings,
+    chartSettings: opts.chartSettings,
     gridSettings: opts.gridSettings,
   },
   customWidth: opts.customWidth,
@@ -478,15 +479,97 @@ const integrationsGrid = {
   labelSettings: labels({ FailPct: 'Fail %', P50ms: 'p50 ms', P95ms: 'p95 ms', MaxMs: 'max ms', Last: 'Last call' }),
 };
 
+// ---------- Overview quick-glance ----------
+// One row per tile. Every Value is cast to real: union splits same-named columns of different types
+// (see jobEvents above), and count() is long while percentile() and round() are real.
+const headlineTilesQuery = [
+  'let hint = "{TimeRange:label}";',
+  'union',
+  '  (requests | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = "Requests", Order = 1),',
+  '  (requests | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = "Failed requests", Order = 2),',
+  '  (requests | where timestamp {TimeRange} | summarize Value = round(100.0 * countif(success == false) / max_of(count(), 1), 2) | extend Metric = "Failure %", Order = 3),',
+  '  (requests | where timestamp {TimeRange} | summarize Value = toreal(round(percentile(duration, 95))) | extend Metric = "p95 response ms", Order = 4),',
+  '  (exceptions | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = "Exceptions", Order = 5),',
+  '  (dependencies | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = "Failed integration calls", Order = 6)',
+  '| extend Hint = hint',
+  '| order by Order asc',
+  '| project Metric, Value, Hint',
+].join('\n');
+
+const headlineTileSettings = {
+  titleContent: { columnMatch: 'Metric', formatter: 1 },
+  subtitleContent: { columnMatch: 'Hint', formatter: 1 },
+  leftContent: {
+    columnMatch: 'Value',
+    formatter: 12,
+    formatOptions: { palette: 'auto' },
+    numberFormat: { unit: 17, options: { style: 'decimal', maximumFractionDigits: 2 } },
+  },
+  showBorder: true,
+  size: 'auto',
+};
+
+const trafficChartQuery = [
+  'requests',
+  '| where timestamp {TimeRange}',
+  '| summarize Requests = count(), Failed = countif(success == false) by bin(timestamp, {TimeRange:grain})',
+  '| order by timestamp asc',
+].join('\n');
+
+const failingEndpointsQuery = [
+  'requests',
+  '| where timestamp {TimeRange} and success == false',
+  '| summarize Failures = count(), Last = max(timestamp) by Endpoint = name, Code = tostring(resultCode)',
+  '| top 8 by Failures desc',
+].join('\n');
+
+const slowestEndpointsQuery = [
+  'requests',
+  '| where timestamp {TimeRange}',
+  '| summarize Calls = count(), P95ms = round(percentile(duration, 95)) by Endpoint = name',
+  '| where Calls >= 5',
+  '| top 8 by P95ms desc',
+].join('\n');
+
 // ---------- items ----------
 const items = [
   markdown(
-    'Cross-environment view of what App Insights and the app do not show on their own. Standard telemetry (failures, performance, live metrics, logs) and adoption (the in-app Usage Dashboard) are linked at the bottom, not copied here.',
+    'Cross-environment view for the Origination Workbench. Overview is the quick read; the other tabs hold history. Deeper App Insights views and the in-app Usage Dashboard (adoption) are linked at the bottom.',
   ),
   parameters,
   tabStrip,
 
   // ===== Overview =====
+  kqlItem('At a glance', headlineTilesQuery, {
+    tab: 'overview',
+    visualization: 'tiles',
+    tileSettings: headlineTileSettings,
+    noDataMessage: 'No request telemetry in this range.',
+  }),
+  kqlItem('Requests and failures over time', trafficChartQuery, {
+    tab: 'overview',
+    visualization: 'timechart',
+    size: 1,
+    chartSettings: {
+      seriesLabelSettings: [
+        { seriesName: 'Requests', color: 'blue' },
+        { seriesName: 'Failed', color: 'redBright' },
+      ],
+    },
+    noDataMessage: 'No request telemetry in this range.',
+  }),
+  kqlItem('Top failing endpoints', failingEndpointsQuery, {
+    tab: 'overview',
+    customWidth: '50',
+    noDataMessage: 'No failed requests in this range.',
+    gridSettings: { formatters: [width('Endpoint', '50%'), width('Code', '12%')] },
+  }),
+  kqlItem('Slowest endpoints (p95, at least 5 calls)', slowestEndpointsQuery, {
+    tab: 'overview',
+    customWidth: '50',
+    noDataMessage: 'No request telemetry in this range.',
+    gridSettings: { formatters: [width('Endpoint', '60%')], labelSettings: labels({ P95ms: 'p95 ms' }) },
+  }),
   argItem(
     'Web app',
     [

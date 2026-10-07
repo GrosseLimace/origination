@@ -4,7 +4,7 @@
     {
       "type": 1,
       "content": {
-        "json": "Cross-environment view of what App Insights and the app do not show on their own. Standard telemetry (failures, performance, live metrics, logs) and adoption (the in-app Usage Dashboard) are linked at the bottom, not copied here."
+        "json": "Cross-environment view for the Origination Workbench. Overview is the quick read; the other tabs hold history. Deeper App Insights views and the in-app Usage Dashboard (adoption) are linked at the bottom."
       },
       "name": "text - 2"
     },
@@ -306,6 +306,177 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
+        "query": "let hint = \"{TimeRange:label}\";\nunion\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = \"Requests\", Order = 1),\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = \"Failed requests\", Order = 2),\n  (requests | where timestamp {TimeRange} | summarize Value = round(100.0 * countif(success == false) / max_of(count(), 1), 2) | extend Metric = \"Failure %\", Order = 3),\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(round(percentile(duration, 95))) | extend Metric = \"p95 response ms\", Order = 4),\n  (exceptions | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = \"Exceptions\", Order = 5),\n  (dependencies | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = \"Failed integration calls\", Order = 6)\n| extend Hint = hint\n| order by Order asc\n| project Metric, Value, Hint",
+        "size": 0,
+        "title": "At a glance",
+        "noDataMessage": "No request telemetry in this range.",
+        "showRefreshButton": true,
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "tiles",
+        "tileSettings": {
+          "titleContent": {
+            "columnMatch": "Metric",
+            "formatter": 1
+          },
+          "subtitleContent": {
+            "columnMatch": "Hint",
+            "formatter": 1
+          },
+          "leftContent": {
+            "columnMatch": "Value",
+            "formatter": 12,
+            "formatOptions": {
+              "palette": "auto"
+            },
+            "numberFormat": {
+              "unit": 17,
+              "options": {
+                "style": "decimal",
+                "maximumFractionDigits": 2
+              }
+            }
+          },
+          "showBorder": true,
+          "size": "auto"
+        }
+      },
+      "name": "kql - 3",
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp {TimeRange}\n| summarize Requests = count(), Failed = countif(success == false) by bin(timestamp, {TimeRange:grain})\n| order by timestamp asc",
+        "size": 1,
+        "title": "Requests and failures over time",
+        "noDataMessage": "No request telemetry in this range.",
+        "showRefreshButton": true,
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "timechart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            {
+              "seriesName": "Requests",
+              "color": "blue"
+            },
+            {
+              "seriesName": "Failed",
+              "color": "redBright"
+            }
+          ]
+        }
+      },
+      "name": "kql - 4",
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp {TimeRange} and success == false\n| summarize Failures = count(), Last = max(timestamp) by Endpoint = name, Code = tostring(resultCode)\n| top 8 by Failures desc",
+        "size": 0,
+        "title": "Top failing endpoints",
+        "noDataMessage": "No failed requests in this range.",
+        "showRefreshButton": true,
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Endpoint",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "50%"
+              }
+            },
+            {
+              "columnMatch": "Code",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "12%"
+              }
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "kql - 5",
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp {TimeRange}\n| summarize Calls = count(), P95ms = round(percentile(duration, 95)) by Endpoint = name\n| where Calls >= 5\n| top 8 by P95ms desc",
+        "size": 0,
+        "title": "Slowest endpoints (p95, at least 5 calls)",
+        "noDataMessage": "No request telemetry in this range.",
+        "showRefreshButton": true,
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Endpoint",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "60%"
+              }
+            }
+          ],
+          "labelSettings": [
+            {
+              "columnId": "P95ms",
+              "label": "p95 ms"
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "kql - 6",
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
         "query": "resources\n| where id =~ '{Environment}'\n| project Name = name, State = tostring(properties.state), Runtime = tostring(properties.siteConfig.linuxFxVersion),\n          ConfigChanged = todatetime(properties.lastModifiedTimeUtc)",
         "size": 0,
         "title": "Web app",
@@ -349,7 +520,7 @@
         }
       },
       "customWidth": "50",
-      "name": "arg - 3",
+      "name": "arg - 7",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -410,7 +581,7 @@
         }
       },
       "customWidth": "50",
-      "name": "arg - 4",
+      "name": "arg - 8",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -511,7 +682,7 @@
           ]
         }
       },
-      "name": "arg - 5",
+      "name": "arg - 9",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -625,7 +796,7 @@
         }
       },
       "customWidth": "50",
-      "name": "arm - 6",
+      "name": "arm - 10",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -779,7 +950,7 @@
         }
       },
       "customWidth": "50",
-      "name": "kql - 7",
+      "name": "kql - 11",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -870,7 +1041,7 @@
         }
       },
       "customWidth": "50",
-      "name": "arm - 8",
+      "name": "arm - 12",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -961,7 +1132,7 @@
         }
       },
       "customWidth": "50",
-      "name": "arm - 9",
+      "name": "arm - 13",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1073,7 +1244,7 @@
           ]
         }
       },
-      "name": "arm - 10",
+      "name": "arm - 14",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1085,7 +1256,7 @@
       "content": {
         "json": "Deployments come from the GitHub Actions deploy workflows ([Dev](https://scoular.ghe.com/IT/origination/actions/workflows/deploy-dev.yml) · [QA](https://scoular.ghe.com/IT/origination/actions/workflows/deploy-qa.yml) · [PROD](https://scoular.ghe.com/IT/origination/actions/workflows/deploy-prod.yml)). The deploy action records only the slot and outcome. The commit and build number running right now are shown in the app under the profile menu, which reads `/api/version`."
       },
-      "name": "text - 11",
+      "name": "text - 15",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1176,7 +1347,7 @@
         }
       },
       "customWidth": "50",
-      "name": "arm - 12",
+      "name": "arm - 16",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1267,7 +1438,7 @@
         }
       },
       "customWidth": "50",
-      "name": "arm - 13",
+      "name": "arm - 17",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1279,7 +1450,7 @@
       "content": {
         "json": "Full run history and resubmit: [Daily Digest](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{DailyRecap}/overview) · [Instant Share](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{InstantShare}/overview). Before resubmitting a Daily Digest run, read section E4 of the [outage recovery playbook](https://scoular.ghe.com/IT/origination/blob/main/docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md): a resubmit sends the digest again."
       },
-      "name": "text - 14",
+      "name": "text - 18",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1432,7 +1603,7 @@
           ]
         }
       },
-      "name": "kql - 15",
+      "name": "kql - 19",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1467,7 +1638,7 @@
           ]
         }
       },
-      "name": "kql - 16",
+      "name": "kql - 20",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1543,7 +1714,7 @@
           ]
         }
       },
-      "name": "kql - 17",
+      "name": "kql - 21",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1654,7 +1825,7 @@
           ]
         }
       },
-      "name": "kql - 18",
+      "name": "kql - 22",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1666,7 +1837,7 @@
       "content": {
         "json": "Grouped by target so a slow or failing integration stands out. For individual calls, open Performance or Failures in App Insights (links below) and filter by the dependency name."
       },
-      "name": "text - 19",
+      "name": "text - 23",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1757,7 +1928,7 @@
           ]
         }
       },
-      "name": "arm - 20",
+      "name": "arm - 24",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1769,7 +1940,7 @@
       "content": {
         "json": "Each operation usually appears twice (Started, then Succeeded or Failed). \"Who\" is the signed-in user or the deploy identity."
       },
-      "name": "text - 21",
+      "name": "text - 25",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1781,14 +1952,14 @@
       "content": {
         "json": "#### Go deeper"
       },
-      "name": "text - 22"
+      "name": "text - 26"
     },
     {
       "type": 1,
       "content": {
         "json": "**App Insights — this environment**\n\n- [Failures](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/failures)\n- [Performance](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/performance)\n- [Live Metrics](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/quickPulse)\n- [Logs (KQL)](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/logs)"
       },
-      "name": "text - 23",
+      "name": "text - 27",
       "customWidth": "33"
     },
     {
@@ -1796,7 +1967,7 @@
       "content": {
         "json": "**Azure — this environment**\n\n- [Web app overview](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{Environment}/appServices)\n- [Log stream](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{Environment}/logStream)\n- [Key Vault](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{KeyVault}/overview)\n- [Daily Digest Logic App](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{DailyRecap}/overview)\n- [Instant Share Logic App](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{InstantShare}/overview)"
       },
-      "name": "text - 24",
+      "name": "text - 28",
       "customWidth": "33"
     },
     {
@@ -1804,7 +1975,7 @@
       "content": {
         "json": "**App and repo**\n\n- [Open the app]({AppUrl})\n- [Usage Dashboard (adoption)]({AppUrl}/usage-dashboard)\n- [Readiness probe]({AppUrl}/health/ready)\n- [GitHub Actions](https://scoular.ghe.com/IT/origination/actions)\n- [Project board](https://scoular.ghe.com/IT/origination/projects)\n- [Outage recovery playbook](https://scoular.ghe.com/IT/origination/blob/main/docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md)"
       },
-      "name": "text - 25",
+      "name": "text - 29",
       "customWidth": "33"
     }
   ],
