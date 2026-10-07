@@ -35,3 +35,6 @@ client/coverage/
 # Local IDE / tooling config
 .vscode/
 .claude/
+
+# Built by .github/workflows/deploy-workbook.yml (and local what-if runs); never committed.
+infra/workbooks/**/azuredeploy.parameters.generated.json
