@@ -824,6 +824,16 @@
                         <input type="checkbox" [ngModel]="pendingRefinements().noBinCapacity" (ngModelChange)="updateRefinement(r => ({...r, noBinCapacity: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         No bin capacity
                       </label>
+                      @if (!hg.has('hasBinSites')) {
+                        <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasBinSites" (ngModelChange)="updateRefinement(r => ({...r, hasBinSites: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          Has bin sites
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().noBinSites" (ngModelChange)="updateRefinement(r => ({...r, noBinSites: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                          No bin sites
+                        </label>
+                      }
                       @if (!hg.has('downHarvestPace')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                           <input type="checkbox" [ngModel]="pendingRefinements().downHarvestPace" (ngModelChange)="updateRefinement(r => ({...r, downHarvestPace: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">

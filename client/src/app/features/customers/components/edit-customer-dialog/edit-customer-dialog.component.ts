@@ -6,6 +6,7 @@ import { Customer, Contract, Ticket, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
+import { BIN_SITE_NAME_MAX_LENGTH, COORDINATE_EXAMPLE, MAX_BIN_SITES, formatCoordinatePairFull, parseCoordinatePair } from '@shared/utils/coordinates';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, grainOnFarmTitle } from '@shared/utils/grain-on-farm';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
@@ -50,6 +51,8 @@ export class EditCustomerDialogComponent {
     primaryContact: string;
     primaryPhone: string;
     contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
+    // Parsed at full precision (never rounded); array order is the display order.
+    binSites: { name?: string; latitude: number; longitude: number }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
@@ -252,6 +255,59 @@ export class EditCustomerDialogComponent {
     return [];
   }
 
+  // ── Bin sites (optional name + "lat, lng" paste field; as many as needed) ───
+  readonly maxBinSites = MAX_BIN_SITES;
+  readonly binSiteNameMaxLength = BIN_SITE_NAME_MAX_LENGTH;
+  readonly coordinateExample = COORDINATE_EXAMPLE;
+  editBinSites = signal<{ name: string; coords: string }[]>([]);
+
+  /** Per-row validation message, or null. Fully-blank rows are fine (dropped on save); a named
+   *  row without coordinates is not, and any coordinates must pass the North American rules. */
+  readonly binSiteErrors = computed(() =>
+    this.editBinSites().map(r => {
+      if (!r.coords.trim()) return r.name.trim() ? 'Enter the coordinates for this site.' : null;
+      const parsed = parseCoordinatePair(r.coords);
+      return parsed.ok ? null : parsed.error;
+    }));
+
+  readonly binSitesInvalid = computed(() => this.binSiteErrors().some(e => e !== null));
+
+  addBinSiteRow(): void {
+    this.editBinSites.update(rows => rows.length >= MAX_BIN_SITES ? rows : [...rows, { name: '', coords: '' }]);
+  }
+
+  removeBinSiteRow(index: number): void {
+    this.editBinSites.update(rows => rows.filter((_, i) => i !== index));
+  }
+
+  updateBinSiteField(index: number, field: 'name' | 'coords', value: string): void {
+    this.editBinSites.update(rows => rows.map((r, i) => i === index ? { ...r, [field]: value } : r));
+  }
+
+  /** The inline × in each input. */
+  clearBinSiteField(index: number, field: 'name' | 'coords'): void {
+    this.updateBinSiteField(index, field, '');
+  }
+
+  /** On blur, rewrite a valid free-hand entry ("41.39 N, 95.01 W", degrees-minutes-seconds, …) as
+   *  the standard "lat, lng" so the user sees exactly how it was read. Invalid text is left as typed
+   *  so it can be fixed rather than lost. */
+  normalizeBinSiteCoords(index: number): void {
+    const row = this.editBinSites()[index];
+    if (!row) return;
+    const parsed = parseCoordinatePair(row.coords);
+    if (!parsed.ok) return;
+    const canonical = formatCoordinatePairFull(parsed.lat, parsed.lng);
+    if (canonical !== row.coords) this.updateBinSiteField(index, 'coords', canonical);
+  }
+
+  private _binSitesFromCustomer(customer: Customer): { name: string; coords: string }[] {
+    return (customer.binSites ?? []).map(b => ({
+      name: b.name ?? '',
+      coords: formatCoordinatePairFull(b.latitude, b.longitude)
+    }));
+  }
+
   // Commodity lookup
   allCommodities = signal<Commodity[]>([]);
 
@@ -395,6 +451,7 @@ export class EditCustomerDialogComponent {
   private _originalLinkedProducerIds: string[] = [];
   private _originalESignEnabled = false;
   private _originalContacts = '[]'; // serialized snapshot for change detection
+  private _originalBinSites = '[]'; // serialized snapshot for change detection
 
   private _initialized = false;
   isLoadingCommodities = signal(false);
@@ -450,6 +507,7 @@ export class EditCustomerDialogComponent {
         this.removedIncomingIds.set([]);
         this.editESignEnabled.set(customer.eSignEnabled);
         this.editContacts.set(this._contactsFromCustomer(customer));
+        this.editBinSites.set(this._binSitesFromCustomer(customer));
         this.editGrainOnFarm.set((customer.grainOnFarm || []).map(g => ({
           commodityCode: g.commodityCode,
           bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
@@ -468,6 +526,7 @@ export class EditCustomerDialogComponent {
         this._originalLinkedProducerIds = [...(customer.linkedProducerIds || [])];
         this._originalESignEnabled = customer.eSignEnabled;
         this._originalContacts = this._serializeContacts();
+        this._originalBinSites = this._serializeBinSites();
 
         // If no trade units and the cache still isn't loaded (edge case: first open before effect
         // on selectedTradeUnits fired), kick off the load now.
@@ -535,6 +594,7 @@ export class EditCustomerDialogComponent {
     this.grainPickerOpen.set(false);
     this.grainPickerActive.set(-1);
     this.editContacts.set([]);
+    this.editBinSites.set([]);
     this.editLinkedProducerIds.set([]);
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(false);
@@ -734,6 +794,7 @@ export class EditCustomerDialogComponent {
       || this._serializeGrain() !== this._originalGrainOnFarm
       || this.editESignEnabled() !== this._originalESignEnabled
       || this._serializeContacts() !== this._originalContacts
+      || this._serializeBinSites() !== this._originalBinSites
       || linkedProducerIdsChanged
       || this.removedIncomingIds().length > 0;
   }
@@ -755,6 +816,15 @@ export class EditCustomerDialogComponent {
       this.editContacts()
         .filter(r => r.name.trim() || r.phone.trim() || r.email.trim())
         .map(r => ({ n: r.name.trim(), p: r.phone.trim(), e: r.email.trim(), pr: r.isPrimary }))
+    );
+  }
+
+  /** Same rules as the contacts serialization: order-dependent, fully-blank rows skipped. */
+  private _serializeBinSites(): string {
+    return JSON.stringify(
+      this.editBinSites()
+        .filter(r => r.name.trim() || r.coords.trim())
+        .map(r => ({ n: r.name.trim(), c: r.coords.trim() }))
     );
   }
 
@@ -974,6 +1044,7 @@ export class EditCustomerDialogComponent {
     this.tuRemovalTarget.set('');
     const customer = this.customer();
     this.editContacts.set(customer ? this._contactsFromCustomer(customer) : []);
+    this.editBinSites.set(customer ? this._binSitesFromCustomer(customer) : []);
     this.newCommodity.set('');
     this.filteredCommodities.set([]);
     this.showSuggestions.set(false);
@@ -1013,6 +1084,14 @@ export class EditCustomerDialogComponent {
       if (contactRows.length > 0 && !contactRows.some(r => r.isPrimary)) contactRows[0].isPrimary = true;
       const primaryRow = contactRows.find(r => r.isPrimary);
 
+      // Bin sites: drop fully-blank rows; every other row parsed cleanly or Save was disabled
+      // (binSitesInvalid), so the parse here only re-reads the values.
+      const binSites = this.editBinSites().flatMap(r => {
+        const parsed = parseCoordinatePair(r.coords);
+        if (!parsed.ok) return [];
+        return [{ name: r.name.trim().slice(0, BIN_SITE_NAME_MAX_LENGTH) || undefined, latitude: parsed.lat, longitude: parsed.lng }];
+      });
+
       // Only save user-added commodities to ProducerDetails — ticket-derived ones are
       // always re-derived fresh from current tickets, so they should never be persisted.
       this.save.emit({
@@ -1023,6 +1102,7 @@ export class EditCustomerDialogComponent {
         primaryContact: primaryRow?.name ?? '',
         primaryPhone: primaryRow?.phone ?? '',
         contacts: contactRows,
+        binSites,
         linkedProducerIds: this.editLinkedProducerIds(),
         removedIncomingIds: this.removedIncomingIds(),
         eSignEnabled: this.editESignEnabled(),

@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener } from '@angular/core';
+import { Component, input, output, inject, effect, computed, linkedSignal, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
@@ -25,7 +25,8 @@ import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { OrganicCertificationPanelComponent } from '../organic-certification/organic-certification-panel.component';
 import { CustomerOrganicCertification } from '@models';
 import { formatPhoneDisplay } from '@shared/utils/phone';
-import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
+import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
+import { formatBinSiteLabel, formatBinSiteTitle } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
@@ -151,7 +152,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name?: string; latitude: number; longitude: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -175,6 +176,28 @@ export class CustomerProfileComponent {
 
   trackMapClick(): void {
     this.usageTracking.trackMapClick(this.customer().id.toString());
+  }
+
+  trackBinSiteMapClick(): void {
+    this.usageTracking.trackBinSiteMapClick(this.customer().id.toString());
+  }
+
+  /** Bin sites under the address, each a Google Maps link to its exact (full-precision) point, in
+   *  saved order. The label is shortened to six places; the title carries the full value. */
+  readonly binSiteLinks = computed(() =>
+    (this.customer().binSites ?? []).map(site => ({
+      label: formatBinSiteLabel(site),
+      title: formatBinSiteTitle(site),
+      url: googleMapsCoordinatesUrl(site.latitude, site.longitude),
+    })));
+
+  /** Two or more sites collapse behind an "N Bin Sites" toggle so they don't crowd the contact
+   *  column; a single site is shown inline. Closed again whenever a different producer is shown. */
+  readonly binSitesCollapsible = computed(() => this.binSiteLinks().length > 1);
+  readonly binSitesExpanded = linkedSignal({ source: () => this.customer().id, computation: () => false });
+
+  toggleBinSites(): void {
+    this.binSitesExpanded.update(open => !open);
   }
 
   // Local state - signals
@@ -521,7 +544,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name?: string; latitude: number; longitude: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();

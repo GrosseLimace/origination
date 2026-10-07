@@ -364,7 +364,7 @@ export class BuildListComponent {
       r.contactedOnlyOnce, r.contactedMoreThan5,
       r.contactedByMeOnly, r.contactedBySomeoneElse,
       r.hasPinnedNotes, r.noteKeyword?.trim(),
-      r.acresOver != null && r.acresOver > 0, r.hasBinCapacity, r.noBinCapacity,
+      r.acresOver != null && r.acresOver > 0, r.hasBinCapacity, r.noBinCapacity, r.hasBinSites, r.noBinSites,
       r.hasPrimaryContact, r.noPrimaryContact, r.hasEmail, r.hasPhone, r.hasLinkedProducers, r.notEsignEnrolled,
       r.hasActiveContracts, r.hasDeliveriesThisYear, r.hasPlantingIntentions, r.hasGrainInStorage,
       r.ticketQuantityOver != null && r.ticketQuantityOver > 0,
@@ -641,6 +641,12 @@ export class BuildListComponent {
     }
     if (r.noBinCapacity) {
       list = list.filter(c => !c.binCapacity || c.binCapacity === 0);
+    }
+    if (r.hasBinSites) {
+      list = list.filter(c => (c.binSites?.length ?? 0) > 0);
+    }
+    if (r.noBinSites) {
+      list = list.filter(c => (c.binSites?.length ?? 0) === 0);
     }
 
     // Grain on farm (bushels on hand + $/bu target). Crop-scoped when crops are selected, so
@@ -1886,6 +1892,7 @@ export class BuildListComponent {
     if (q.includes('notes mentioning'))     { hidden.add('noteKeyword'); hidden.add('neverContacted'); }
     // General
     if (q.includes('linked producer'))      hidden.add('hasLinkedProducers');
+    if (/bin\s*(?:sites?|locations?|coordinates|gps)/.test(q)) { hidden.add('hasBinSites'); hidden.add('noBinSites'); }
     if (q.includes('no primary contact'))   { hidden.add('noPrimaryContact'); hidden.add('hasPrimaryContact'); }
     if (q.includes('without esign') || q.includes('not esign')) hidden.add('notEsignEnrolled');
     if (q.includes('largest') || q.includes('by acres')) hidden.add('acresOver');
@@ -2316,6 +2323,8 @@ export class BuildListComponent {
           // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
           // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.
           grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
+          // Bin sites (lat/long) — carried over so "producers with bin sites" filters client-side.
+          binSites: pd.binSites ?? customer.binSites,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
       }
@@ -3635,6 +3644,7 @@ export class BuildListComponent {
       filters.noteKeyword?.trim() ||
       (filters.acresOver != null && filters.acresOver > 0) ||
       filters.hasBinCapacity || filters.noBinCapacity ||
+      filters.hasBinSites || filters.noBinSites ||
       filters.hasPrimaryContact || filters.noPrimaryContact ||
       filters.hasEmail || filters.hasPhone || filters.hasLinkedProducers || filters.notEsignEnrolled ||
       filters.hasActiveContracts || filters.hasDeliveriesThisYear ||
