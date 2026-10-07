@@ -52,6 +52,13 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var rejections = new List<OrganicCertificationRejection>();
 
+        // The sender's run id, shared across every message in one nightly run. Read here so that
+        // even a message rejected for having no NOP id still records which run it came from —
+        // "run X sent 1,000 messages and 3 were unusable" is only answerable if the unusable ones
+        // carry the id too. Null is normal and must never be a rejection reason.
+        var feedRunId = request.FeedRunId?.Trim();
+        if (string.IsNullOrEmpty(feedRunId)) feedRunId = null;
+
         var nopid = request.NopOperationId?.Trim();
         if (string.IsNullOrEmpty(nopid))
         {
@@ -64,7 +71,7 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
                 Message = "nopOperationID is required and was empty.",
             });
 
-            await AuditAsync(batchId, null, "Rejected", accepted: 0, rejected: 1,
+            await AuditAsync(batchId, feedRunId, null, "Rejected", accepted: 0, rejected: 1,
                 unmatchedCustomer: 0, "Message carried no NOP operation id.", now, cancellationToken);
 
             return new OrganicCertificationIngestResponse
@@ -95,6 +102,7 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         var auditRow = new OrganicCertificationLoad
         {
             BatchId = batchId,
+            FeedRunId = feedRunId,
             Nopid = nopid,
             ReceivedOn = now,
             Status = "Received",
@@ -224,15 +232,24 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         target.SourceLastUpdateDate = source.LastUpdatedDate?.Date;
         target.TotalAcreage = source.TotalAcreage;
 
-        // Presence in the feed is the active signal. Nothing here ever sets IsActive false: with
-        // one message per producer there is no batch boundary, so absence is undetectable — we
-        // cannot tell "not sent tonight" from "unchanged". Deactivation therefore has to come from
-        // an explicit terminal status, or from a run id the sender does not currently supply.
+        // Presence in the feed is the active signal. Nothing here ever sets IsActive false.
+        //
+        // The sender began supplying a run id on 2026-10-07 and it is now recorded below, but that
+        // is NOT on its own enough to deactivate on absence, and the gap is easy to miss: knowing
+        // which producers a run touched says nothing about whether the run FINISHED. A pipeline
+        // that sends 400 of 1,000 and dies would make 600 healthy producers look absent. Until
+        // there is an end-of-run signal, deactivation stays driven by an explicit terminal status.
         target.IsActive = true;
         target.DeactivatedOn = null;
 
         target.UpdatedOn = now;
         target.LoadBatchId = batchId;
+
+        // Last writer wins, deliberately: this says which run most recently touched the row, which
+        // is exactly what "not seen since run X" will need. Null when the sender omits it — never
+        // overwrite a real id with null, or a single legacy message would erase the history.
+        var feedRunId = source.FeedRunId?.Trim();
+        if (!string.IsNullOrEmpty(feedRunId)) target.LastFeedRunId = feedRunId;
     }
 
     /// <summary>
@@ -414,6 +431,7 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
     /// </summary>
     private async Task AuditAsync(
         Guid batchId,
+        string? feedRunId,
         string? nopid,
         string status,
         int accepted,
@@ -426,6 +444,7 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         _db.OrganicCertificationLoads.Add(new OrganicCertificationLoad
         {
             BatchId = batchId,
+            FeedRunId = feedRunId,
             Nopid = nopid,
             ReceivedOn = now,
             Status = status,

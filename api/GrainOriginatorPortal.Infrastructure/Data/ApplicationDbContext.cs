@@ -354,6 +354,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.DeactivatedOn).HasColumnName("DeactivatedOn").IsRequired(false);
             entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.LoadBatchId).HasColumnName("LoadBatchId").IsRequired(false);
+            entity.Property(e => e.LastFeedRunId).HasColumnName("LastFeedRunId").HasMaxLength(100).IsRequired(false);
 
             // NoAction, not Cascade: removing a customer must never silently drop certification
             // evidence. Nullable because a NOP id can legitimately arrive for a producer we have
@@ -450,10 +451,18 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Rejected).HasColumnName("Rejected").HasDefaultValue(0).IsRequired();
             entity.Property(e => e.UnmatchedCustomer).HasColumnName("UnmatchedCustomer").HasDefaultValue(0).IsRequired();
             entity.Property(e => e.Message).HasColumnName("Message").HasMaxLength(1000).IsRequired(false);
+            entity.Property(e => e.FeedRunId).HasColumnName("FeedRunId").HasMaxLength(100).IsRequired(false);
 
             // Did the feed arrive last night? — the question this table exists to answer, so the
             // index is on arrival time rather than on the batch id.
             entity.HasIndex(e => e.ReceivedOn).HasDatabaseName("IX_OrganicCertificationLoad_ReceivedOn");
+
+            // "Show me everything from run X" — the point of storing the sender's run id at all.
+            // Filtered: every row predating 2026-10-07 has a null here and none of them can ever
+            // be the subject of that question, so they are kept out of the index entirely.
+            entity.HasIndex(e => e.FeedRunId)
+                  .HasDatabaseName("IX_OrganicCertificationLoad_FeedRunId")
+                  .HasFilter("[FeedRunId] IS NOT NULL");
         });
 
         modelBuilder.Entity<ProducerDetails>(entity =>
