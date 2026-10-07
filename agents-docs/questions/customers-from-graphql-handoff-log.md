@@ -51,6 +51,13 @@
 
 Hand-off type legend: `1`-`5` (per ORCHESTRATION.md's hand-off table), plus `triage`, `task-review`, `fix-1`-`fix-5`.
 
+| 47 | 2026-10-06 PM | probe (user-run) | — | — | ctrm-probe on the nonprod client | permission granted, totalCount 302596, idKind String | |
+| 48 | 2026-10-06 PM | compare (user-run) | — | — | first compare, aliased lookup | CTRM side failed closed at chunk 25/840 (HTTP 500 after ~12 min) — per-code lookup ~27 s/20 codes | |
+| 49 | 2026-10-06 PM | orchestrator build | — | — | ctrm-capabilities endpoint 929cd7b9 | measured: sourceCodes exists (100 codes ~5 s; 500 rejected >7000-char filter), all 14 fields present, no industryCode1 / changed-since / partial-code filters | |
+| 50 | 2026-10-06/07 | 5 (implement) | opus | fresh, resumed after stop | E7 bulk sourceCodes lookup | b875a944; review PASS WITH FINDINGS (encoded length; totalCount shortfall) → fix-1 615b69d6 | |
+| 51 | 2026-10-07 | compare + dry run (user-run) | — | — | sourceCodes lookup | compare: 16,755/16,762 producers, 19,073/19,083 links; dry run: 7 deactivated, guard pass, 108 s | |
+| 52 | 2026-10-07 | 5 (implement) | opus | fresh | E1 extended fields + E2 ACH | 3124e2c5, d65f1846; review PASS WITH FINDINGS → checklist items 7–10 | |
+
 ## Phase 7 instrumentation (2026-10-06)
 
 - Triage events: 7 (genuine: 5) — A9 adoption reconcile (G); B2 window 3660/3661 (R); B1 HC0045 label (R); B1 sourceCode validation (G); C4 padded trade units, out-of-scope manual customers, re-entry (G ×3). Hand-off 3 (planner resumed): 3 sessions (one carried three questions).
