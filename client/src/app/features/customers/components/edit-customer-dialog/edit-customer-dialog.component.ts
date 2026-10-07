@@ -284,6 +284,23 @@ export class EditCustomerDialogComponent {
     this.editBinSites.update(rows => rows.map((r, i) => i === index ? { ...r, [field]: value } : r));
   }
 
+  /** The inline × in each input. */
+  clearBinSiteField(index: number, field: 'name' | 'coords'): void {
+    this.updateBinSiteField(index, field, '');
+  }
+
+  /** On blur, rewrite a valid free-hand entry ("41.39 N, 95.01 W", degrees-minutes-seconds, …) as
+   *  the standard "lat, lng" so the user sees exactly how it was read. Invalid text is left as typed
+   *  so it can be fixed rather than lost. */
+  normalizeBinSiteCoords(index: number): void {
+    const row = this.editBinSites()[index];
+    if (!row) return;
+    const parsed = parseCoordinatePair(row.coords);
+    if (!parsed.ok) return;
+    const canonical = formatCoordinatePairFull(parsed.lat, parsed.lng);
+    if (canonical !== row.coords) this.updateBinSiteField(index, 'coords', canonical);
+  }
+
   private _binSitesFromCustomer(customer: Customer): { name: string; coords: string }[] {
     return (customer.binSites ?? []).map(b => ({
       name: b.name ?? '',

@@ -345,4 +345,48 @@ describe('EditCustomerDialogComponent — bin sites', () => {
 
     expect(saved.at(-1)?.binSites).toEqual([]);
   });
+
+  it('clears one input with its × and leaves the other alone', () => {
+    open(makeCustomer({ binSites: [{ name: 'North Bins', latitude: 41.39, longitude: -95.01 }] }));
+
+    component.clearBinSiteField(0, 'coords');
+    expect(component.editBinSites()[0]).toEqual({ name: 'North Bins', coords: '' });
+
+    component.clearBinSiteField(0, 'name');
+    expect(component.editBinSites()[0]).toEqual({ name: '', coords: '' });
+  });
+
+  it('rewrites a valid free-hand entry as "lat, lng" when the field loses focus', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'coords', '41.39 N 95.01 W');
+
+    component.normalizeBinSiteCoords(0);
+
+    expect(component.editBinSites()[0].coords).toBe('41.39, -95.01');
+  });
+
+  it('leaves an invalid entry as typed so the user can fix it', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'coords', '39.9042, 116.4074'); // Beijing
+
+    component.normalizeBinSiteCoords(0);
+
+    expect(component.editBinSites()[0].coords).toBe('39.9042, 116.4074');
+    expect(component.binSiteErrors()[0]).toContain('outside North America');
+    expect(component.binSitesInvalid()).toBe(true);
+  });
+
+  it('saves a free-hand entry as the same decimal degrees the blur shows', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'coords', `41°23'25.2"N 95°00'27.1"W`);
+
+    component.onSave();
+
+    const [site] = saved.at(-1)!.binSites;
+    expect(site.latitude).toBeCloseTo(41.390333333, 8);
+    expect(site.longitude).toBeCloseTo(-95.007527778, 8);
+  });
 });
