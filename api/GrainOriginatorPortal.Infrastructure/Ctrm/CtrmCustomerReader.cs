@@ -52,15 +52,25 @@ public sealed class CtrmCustomerReader
     public const int SourceCodesMaxPagesPerChunk = 20;
 
     /// <summary>
-    /// Estimated rendered-filter characters a code costs beyond its own length. Measured: 500 seven-character
-    /// codes rendered to 7,987 encoded characters ≈ 16 per code = 7 + 9.
+    /// Encoded characters each code costs in the rendered filter beyond its own encoded value: its two
+    /// quotes and the separating comma, each URL-encoded to three characters (<c>%27 %27 %2C</c>). Matches
+    /// the measurement: 500 seven-character codes rendered to 7,987 encoded characters ≈ 16 per code.
     /// </summary>
     public const int SourceCodeFilterOverhead = 9;
 
     /// <summary>
+    /// Estimated URL-encoded filter characters one code costs: the code as it appears inside the quoted
+    /// filter literal (an apostrophe is doubled), URL-encoded - a space is <c>%20</c>, an apostrophe
+    /// <c>%27%27</c> - plus <see cref="SourceCodeFilterOverhead"/>. For an alphanumeric code this is just its
+    /// length + 9; the API's 7,000 limit is on the ENCODED filter, so other characters must cost more.
+    /// </summary>
+    private static int EstimatedFilterCost(string code) =>
+        Uri.EscapeDataString(code.Replace("'", "''", StringComparison.Ordinal)).Length + SourceCodeFilterOverhead;
+
+    /// <summary>
     /// Splits <paramref name="codes"/> into sourceCodes chunks, greedily and in order: a chunk closes when the
-    /// next code would push its estimated filter length (Σ code length + <see cref="SourceCodeFilterOverhead"/>)
-    /// past <paramref name="maxFilterChars"/>, or when it already holds <paramref name="maxPerRequest"/> codes.
+    /// next code would push its estimated encoded filter length (Σ <see cref="EstimatedFilterCost"/>) past
+    /// <paramref name="maxFilterChars"/>, or when it already holds <paramref name="maxPerRequest"/> codes.
     /// A single code longer than the budget still forms its own chunk - the API, not this estimate, has the
     /// final word, and a "too long" answer fails the read closed.
     /// </summary>
@@ -76,7 +86,7 @@ public sealed class CtrmCustomerReader
         var length = 0;
         foreach (var code in codes)
         {
-            var cost = code.Length + SourceCodeFilterOverhead;
+            var cost = EstimatedFilterCost(code);
             if (current.Count > 0 && (length + cost > maxFilterChars || current.Count >= maxPerRequest))
             {
                 chunks.Add(current);
@@ -306,6 +316,7 @@ public sealed class CtrmCustomerReader
         // (Db2 CHAR columns); a row for any code this chunk did not ask for is not.
         var byCode = new Dictionary<string, List<CtrmCustomerDto>>(chunk.Count, StringComparer.OrdinalIgnoreCase);
         foreach (var code in chunk) byCode[code] = [];
+        var received = 0;
 
         for (var page = 0; ; page++)
         {
@@ -356,9 +367,21 @@ public sealed class CtrmCustomerReader
                 });
 
             foreach (var item in items) byCode[item.SourceCode!.Trim()].Add(item);
+            received += items.Count;
 
             if (!customers.PageInfo.HasNextPage)
+            {
+                // skip/take carries no explicit order, so an unstable server order can skip a row between pages
+                // without any page looking wrong. The last page's totalCount is the only check: fewer rows than
+                // it is a hole, which would deactivate a customer. More than it is harmless (counted as seen).
+                if (received < customers.TotalCount)
+                    return new ChunkOutcome(null, new()
+                    {
+                        Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus,
+                        Detail = $"sourceCodes chunk returned {received} row(s) but the API reported totalCount {customers.TotalCount} — paging was incomplete"
+                    });
                 return new ChunkOutcome([.. chunk.Select(code => (code, byCode[code]))], null);
+            }
         }
     }
 

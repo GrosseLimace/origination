@@ -527,6 +527,8 @@ public class CtrmCustomerReaderTests
         public Func<IReadOnlyList<string>, bool>? ThrowWhen { get; init; }
         /// <summary>Every page claims another page follows (a server that never stops paging).</summary>
         public bool AlwaysHasNextPage { get; init; }
+        /// <summary>Added to the reported totalCount (paging still follows the real rows) - models an unstable server order that skipped rows.</summary>
+        public int ReportedTotalExtra { get; init; }
         public CtrmReadResult<JsonElement> ProbeAnswer { get; init; } = new()
         {
             Status = CtrmReadStatus.Ok, HttpStatus = 200,
@@ -561,7 +563,7 @@ public class CtrmCustomerReaderTests
 
             var page = new CtrmPage<CtrmCustomerDto>
             {
-                TotalCount = all.Count,
+                TotalCount = all.Count + ReportedTotalExtra,
                 PageInfo = new CtrmPageInfo { Skip = skip, Take = take, HasNextPage = AlwaysHasNextPage || skip + take < all.Count },
                 Items = [.. all.Skip(skip).Take(take)]
             };
@@ -634,6 +636,24 @@ public class CtrmCustomerReaderTests
         Assert.Equal(["A1", "B2"], chunks[0]);
         Assert.Equal([longCode], chunks[1]);
         Assert.Equal(["C3"], chunks[2]);
+    }
+
+    [Fact]
+    public void ChunkBySourceCodeFilterLength_ApostrophesAndSpacesCostTheirEncodedLength_SoChunksAreSmaller_AndStayInBudget()
+    {
+        // The 7,000 limit is on the URL-ENCODED filter: a space is %20 (3), an apostrophe is doubled inside
+        // the OData-style literal and then encoded (%27%27 = 6). Same 7-character length as P000000.
+        static int Estimate(string code) =>
+            Uri.EscapeDataString(code.Replace("'", "''")).Length + CtrmCustomerReader.SourceCodeFilterOverhead;
+        var awkward = Enumerable.Range(0, 500).Select(i => i % 2 == 0 ? $"O'H{i:D4}" : $"A B{i:D4}").ToList();
+        Assert.All(awkward, c => Assert.Equal(7, c.Length));
+
+        var plain = CtrmCustomerReader.ChunkBySourceCodeFilterLength(Codes(500), 6000, 400);
+        var chunks = CtrmCustomerReader.ChunkBySourceCodeFilterLength(awkward, 6000, 400);
+
+        Assert.True(chunks[0].Count < plain[0].Count, $"expected fewer than {plain[0].Count} awkward codes per chunk, got {chunks[0].Count}");
+        Assert.All(chunks, c => Assert.True(c.Sum(Estimate) <= 6000, $"chunk estimate {c.Sum(Estimate)} exceeds the 6000 budget"));
+        Assert.Equal(awkward, chunks.SelectMany(c => c));
     }
 
     [Fact]
@@ -765,6 +785,23 @@ public class CtrmCustomerReaderTests
         Assert.Equal(3, read.Value.Found);
         Assert.Equal(3, read.Value.Duplicates);
         Assert.Equal("2199", read.Value.ByCode["P000003"].IdText);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_PagesReturningFewerRowsThanTotalCount_FailTheWholeRead()
+    {
+        // 602 real rows over two pages, but the API reports 603: an unstable order skipped a row between pages.
+        var client = new CustomerListClient { ReportedTotalExtra = 1 };
+        client.RowsFor["P000001"] = [.. Enumerable.Range(0, 600).Select(i => CustomerAliasClient.Row("P000001", id: i))];
+
+        var read = await Sut(client, ListConfig()).GetBySourceCodesAsync(Codes(3), CancellationToken.None);
+
+        Assert.Equal(2, client.Calls);
+        Assert.False(read.Ok);
+        Assert.Equal(CtrmReadStatus.Error, read.Status);
+        Assert.Null(read.Value);
+        Assert.Contains("returned 602 row(s) but the API reported totalCount 603", read.Detail);
+        Assert.Contains("paging was incomplete", read.Detail);
     }
 
     [Fact]
