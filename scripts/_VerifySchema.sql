@@ -523,7 +523,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertification', 'CustomerId',           'bigint',         1),
 ('dbo', 'OrganicCertification', 'DeactivatedOn',        'datetime2',      1),
 ('dbo', 'OrganicCertification', 'IsActive',             'bit',            0),
-('dbo', 'OrganicCertification', 'LastFeedRunId',        'nvarchar(100)',  1),
 ('dbo', 'OrganicCertification', 'LoadBatchId',          'uniqueidentifier', 1),
 ('dbo', 'OrganicCertification', 'Nopid',                'nvarchar(50)',   0),
 ('dbo', 'OrganicCertification', 'OperationName',        'nvarchar(255)',  1),
@@ -554,7 +553,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertificationLoad', 'Id',                'int',            0),
 ('dbo', 'OrganicCertificationLoad', 'Accepted',          'int',            0),
 ('dbo', 'OrganicCertificationLoad', 'BatchId',           'uniqueidentifier', 0),
-('dbo', 'OrganicCertificationLoad', 'FeedRunId',         'nvarchar(100)',  1),
 ('dbo', 'OrganicCertificationLoad', 'Message',           'nvarchar(1000)', 1),
 ('dbo', 'OrganicCertificationLoad', 'Nopid',             'nvarchar(50)',   1),
 ('dbo', 'OrganicCertificationLoad', 'ReceivedOn',        'datetime2',      0),
@@ -769,7 +767,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (80)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (79)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -852,8 +850,7 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260923152000_AddOrganicCertificationTables'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
 ('20261005131626_DropCtrmSourceToggleUsers'),
-('20261007120000_WidenOrganicCertificationItemText'),
-('20261007180000_AddOrganicCertificationFeedRunId');
+('20261007120000_WidenOrganicCertificationItemText');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

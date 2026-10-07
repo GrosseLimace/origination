@@ -104,20 +104,8 @@ public class OrganicCertification
     /// <summary>Our watermark — when this application last wrote the row (UTC).</summary>
     public DateTime UpdatedOn { get; set; }
 
-    /// <summary>Correlates the row with the OrganicCertificationLoad audit entry that wrote it.
-    /// Ours, one per POST.</summary>
+    /// <summary>Correlates the row with the OrganicCertificationLoad audit entry that wrote it.</summary>
     public Guid? LoadBatchId { get; set; }
-
-    /// <summary>
-    /// The sender's run id from the message that last wrote this row. Null for rows written before
-    /// the pipeline began sending one (2026-10-07).
-    ///
-    /// Kept here, and not only on the audit table, because this is the column that answers the
-    /// question the audit table cannot: "which producers did run X NOT touch". That is the whole
-    /// basis of absence detection — see the warning on OrganicCertificationLoad before building
-    /// anything on it.
-    /// </summary>
-    public string? LastFeedRunId { get; set; }
 
     [JsonIgnore]
     public Customer? Customer { get; set; }

@@ -157,24 +157,12 @@ public class OrganicCertificationPayloadContractTests
     }
 
     [Fact]
-    public void TheRunIdBindsFromTheRealPayload()
+    public void ThePipelinesOwnNewFieldsAreDroppedRatherThanRejected()
     {
-        // feedRunId is modelled as of 2026-10-07 — it is the feed's only batch boundary and the one
-        // field that cannot be recovered after the fact. Pinned against the captured message rather
-        // than the email describing it, which is the whole point of this file.
-        var request = Parse(PipelineDarkRunOperation);
-
-        Assert.Equal("replay-20261007T162718Z-d3dbb1f3", request.FeedRunId);
-    }
-
-    [Fact]
-    public void FieldsWeDoNotModelAreDroppedRatherThanRejected()
-    {
-        // sourceEventTimeUtc arrived unannounced with the pipeline's first message, alongside
-        // feedRunId. Under the API-wide JsonUnmappedMemberHandling.Disallow an unmodelled field
-        // would have made every nightly message a 400 until we shipped a matching DTO; the Skip
-        // opt-out on these records is what makes a sender-side addition a non-event. That is the
-        // guarantee being pinned — the message still binds completely around the unknown field.
+        // feedRunId and sourceEventTimeUtc appeared without warning when the pipeline went live in
+        // Dev. Under the API-wide JsonUnmappedMemberHandling.Disallow they would have made every
+        // nightly message a 400 until we shipped a DTO; the Skip opt-out on these records is what
+        // makes a sender-side addition a non-event. This is that guarantee, pinned.
         var request = Parse(PipelineDarkRunOperation);
 
         Assert.Equal("2230000031", request.NopOperationId);
