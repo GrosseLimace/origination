@@ -138,8 +138,9 @@ public record OrganicItemDto
     [StringLength(50)]
     public string? Scope { get; init; }
 
-    /// <summary>Repeats across every item on the same certificate; null on some operations.</summary>
-    [StringLength(100)]
+    /// <summary>Repeats across every item on the same certificate; null on some operations.
+    /// 255, not 100: the integration team measured 194 across the full USDA data (2026-10-07).</summary>
+    [StringLength(255)]
     public string? CertificateNumber { get; init; }
 
     [StringLength(50)]
@@ -158,13 +159,20 @@ public record OrganicItemDto
     /// <summary>USDA catalogue category id. Numeric, and null on free-text items.</summary>
     public int? CategoryId { get; init; }
 
-    [StringLength(1000)]
+    /// <summary>4,000 — see the note on <see cref="OtherItems"/>.</summary>
+    [StringLength(4000)]
     public string? Varieties { get; init; }
 
     /// <summary>Free-text contents where the certifier did not use the catalogue. Not always a
     /// list — one captured sample reads "Carryover Crops of: 2024 Soybeans - 4000 bushels and 2024
-    /// Corn - 5000 bushels", so do not assume it splits on commas.</summary>
-    [StringLength(2000)]
+    /// Corn - 5000 bushels", so do not assume it splits on commas.
+    ///
+    /// 4,000, widened from 2,000 on 2026-10-07. The integration team measured the full USDA data
+    /// rather than the samples we had: otherItems reaches 3,996 (272 items over 2,000) and
+    /// varieties 3,998 (385 items over 1,000). ~4,000 appears to be USDA's own cap. The width
+    /// matters more than it looks — validation runs over the whole message, so ONE long item
+    /// rejects the producer's entire certification, not just that row.</summary>
+    [StringLength(4000)]
     public string? OtherItems { get; init; }
 
     /// <summary>Tri-state in the source: true, or null meaning "not this tier". The two tiers are

@@ -1,4 +1,5 @@
 // System namespaces
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 
 // Project namespaces
@@ -91,19 +92,122 @@ public class OrganicCertificationPayloadContractTests
     }
     """;
 
+    /// <summary>
+    /// Captured sample 3 — the first message from the REAL pipeline, dark-run in Dev 2026-10-07
+    /// (origination-payload_2230000031_dark-run_2026-10-07.json). The two above were hand-built by
+    /// the integration team; this one is what their Logic App actually emits.
+    ///
+    /// It carries two fields the earlier samples did not: <c>feedRunId</c>, the correlation id
+    /// shared by every message in one nightly run (also sent as the X-Correlation-Id header), and
+    /// <c>sourceEventTimeUtc</c>. Neither is modelled yet — they bind to nothing and are dropped by
+    /// JsonUnmappedMemberHandling.Skip, which is exactly the behaviour that attribute exists for and
+    /// is what this sample pins. feedRunId is the answer to our open "where is the batch boundary"
+    /// question; modelling it is a separate, additive decision.
+    /// </summary>
+    private const string PipelineDarkRunOperation = """
+    {
+      "scoularId":"CEDA118",
+      "sourceEventTimeUtc":"2026-10-07T16:27:21.9910000Z",
+      "feedRunId":"replay-20261007T162718Z-d3dbb1f3",
+      "nopOperationId":"2230000031",
+      "operationName":"Goiasa Goiatuba Alcool Ltda",
+      "operationOtherNames":null,
+      "clientOperationId":"GO001",
+      "certifierName":"[IBD] IBD Certifications",
+      "status":"Certified",
+      "statusEffectiveDate":"2008-08-01",
+      "anniversaryDate":"2025-08-30",
+      "lastUpdatedDate":"2025-01-29",
+      "contact":{"firstName":"Juliana","lastName":"de Fátima Domingos Abdalla","phone":"64 3608-8738","email":"jfdabdalla@goiasa.com.br","websiteUrl":null},
+      "totalAcreage":41345.89,
+      "activities":{"broker":false,"distributor":false,"growerGroup":false,"marketerTrader":false,"privateLabeler":false,"dairy":false},
+      "scopes":[
+        {"scope":"Crops","status":"Certified","statusEffectiveDate":"2008-08-01"},
+        {"scope":"Handling","status":"Certified","statusEffectiveDate":"2008-08-01"}],
+      "items":[
+        {"scope":"Handling","certificateNumber":"US9287/24","status":"Certified","statusEffectiveDate":null,"categoryId":26,"categoryName":"Condiments and Sweeteners","itemId":null,"itemName":null,"otherItems":"Organic Cane Sugar (or Brazilian Organic Sugar or Organic Sugar or Cane Sugar Organic)","varieties":null,"organic100":null,"organic":true},
+        {"scope":"Handling","certificateNumber":"US9287/24","status":"Certified","statusEffectiveDate":null,"categoryId":19,"categoryName":"Alcohol","itemId":null,"itemName":null,"otherItems":"Neutral Hydrated Ethanol (or Organic Sugar Cane Alcohol or Organic Alcohol or Neutral Organic Alcohol or Neutral Sugar Cane Alcohol or Organic Neutral Alcohol)","varieties":null,"organic100":null,"organic":true},
+        {"scope":"Handling","certificateNumber":"US9287/24","status":"Certified","statusEffectiveDate":null,"categoryId":19,"categoryName":"Alcohol","itemId":null,"itemName":null,"otherItems":"Organic Hydrated Ethanol (or Organic Alcohol or Organic Ethyl Hydrated Alcohol or Organic Hydrated Alcohol)","varieties":null,"organic100":null,"organic":true},
+        {"scope":"Crops","certificateNumber":"US9287/24","status":"Certified","statusEffectiveDate":null,"categoryId":2,"categoryName":"Field/Forageable","itemId":377,"itemName":"Sugercane","otherItems":null,"varieties":null,"organic100":true,"organic":null}],
+      "addresses":[
+        {"addressType":"Physical","line1":"Rodovia GO 040 - Km 194, Acesso 7 Km a direita, s/n - Zona Rural.","line2":null,"city":"Goiatuba","stateOrProvince":"Goias","postalCode":"75600-000","country":"Brazil","county":null,"countyCode":null}]
+    }
+    """;
+
     private static OrganicCertificationIngestRequest Parse(string json) =>
         JsonSerializer.Deserialize<OrganicCertificationIngestRequest>(json, WebOptions)!;
+
+    private static string Sample(string which) => which switch
+    {
+        nameof(FreeTextOperation) => FreeTextOperation,
+        nameof(MixedCatalogueOperation) => MixedCatalogueOperation,
+        nameof(PipelineDarkRunOperation) => PipelineDarkRunOperation,
+        _ => throw new ArgumentOutOfRangeException(nameof(which), which, "Unknown sample."),
+    };
 
     [Theory]
     [InlineData(nameof(FreeTextOperation))]
     [InlineData(nameof(MixedCatalogueOperation))]
-    public void BothCapturedMessagesDeserialise(string which)
+    [InlineData(nameof(PipelineDarkRunOperation))]
+    public void EveryCapturedMessageDeserialises(string which)
     {
-        var json = which == nameof(FreeTextOperation) ? FreeTextOperation : MixedCatalogueOperation;
-
-        var ex = Record.Exception(() => Parse(json));
+        var ex = Record.Exception(() => Parse(Sample(which)));
 
         Assert.True(ex is null, $"{which} failed to deserialise: {ex?.Message}");
+    }
+
+    [Fact]
+    public void ThePipelinesOwnNewFieldsAreDroppedRatherThanRejected()
+    {
+        // feedRunId and sourceEventTimeUtc appeared without warning when the pipeline went live in
+        // Dev. Under the API-wide JsonUnmappedMemberHandling.Disallow they would have made every
+        // nightly message a 400 until we shipped a DTO; the Skip opt-out on these records is what
+        // makes a sender-side addition a non-event. This is that guarantee, pinned.
+        var request = Parse(PipelineDarkRunOperation);
+
+        Assert.Equal("2230000031", request.NopOperationId);
+        Assert.Equal("Goiasa Goiatuba Alcool Ltda", request.OperationName);
+        Assert.Equal(4, request.Items!.Count);
+    }
+
+    [Fact]
+    public void TheRealPipelineMessageBindsItsOperationFields()
+    {
+        var request = Parse(PipelineDarkRunOperation);
+
+        Assert.Equal("CEDA118", request.ScoularId);
+        Assert.Equal("GO001", request.ClientOperationId);
+        Assert.Equal("[IBD] IBD Certifications", request.CertifierName);
+        Assert.Equal("Certified", request.Status);
+        Assert.Equal(new DateTime(2008, 8, 1), request.StatusEffectiveDate);
+        Assert.Equal(new DateTime(2025, 8, 30), request.AnniversaryDate);
+        Assert.Equal(new DateTime(2025, 1, 29), request.LastUpdatedDate);
+        Assert.Equal(41345.89m, request.TotalAcreage);
+
+        // An operation whose every Handling item is free text, with a single catalogued Crops item
+        // alongside — both shapes in one message.
+        Assert.Equal(3, request.Items!.Count(i => i.ItemId is null && i.OtherItems is not null));
+        Assert.Single(request.Items!.Where(i => i.ItemId == 377 && i.ItemName == "Sugercane"));
+    }
+
+    [Fact]
+    public void TheWidenedTextFieldsAcceptWhatUsdaActuallyHolds()
+    {
+        // Measured by the integration team across the full USDA set on 2026-10-07: otherItems to
+        // 3,996 and varieties to 3,998, against our original 2,000 and 1,000. Validation runs over
+        // the whole message, so ONE over-length item rejected that producer's entire certification —
+        // every scope and every crop. These are the widths that stop that.
+        var item = new OrganicItemDto
+        {
+            OtherItems = new string('x', 4000),
+            Varieties = new string('y', 4000),
+            CertificateNumber = new string('z', 255),
+        };
+
+        var results = new List<ValidationResult>();
+        var valid = Validator.TryValidateObject(item, new ValidationContext(item), results, validateAllProperties: true);
+
+        Assert.True(valid, "Widened item rejected: " + string.Join("; ", results.Select(r => r.ErrorMessage)));
     }
 
     [Fact]

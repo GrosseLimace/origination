@@ -538,14 +538,14 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertificationItem', 'Id',                     'int',           0),
 ('dbo', 'OrganicCertificationItem', 'CategoryId',             'int',           1),
 ('dbo', 'OrganicCertificationItem', 'CategoryName',           'nvarchar(255)', 1),
-('dbo', 'OrganicCertificationItem', 'CertificateNumber',      'nvarchar(100)', 1),
+('dbo', 'OrganicCertificationItem', 'CertificateNumber',      'nvarchar(255)', 1),
 ('dbo', 'OrganicCertificationItem', 'ItemId',                 'int',           1),
 ('dbo', 'OrganicCertificationItem', 'ItemName',               'nvarchar(255)', 1),
-('dbo', 'OrganicCertificationItem', 'Varieties',              'nvarchar(1000)', 1),
+('dbo', 'OrganicCertificationItem', 'Varieties',              'nvarchar(4000)', 1),
 ('dbo', 'OrganicCertificationItem', 'Organic',                'bit',           0),
 ('dbo', 'OrganicCertificationItem', 'Organic100',             'bit',           0),
 ('dbo', 'OrganicCertificationItem', 'OrganicCertificationId', 'int',           0),
-('dbo', 'OrganicCertificationItem', 'OtherItems',             'nvarchar(2000)', 1),
+('dbo', 'OrganicCertificationItem', 'OtherItems',             'nvarchar(4000)', 1),
 ('dbo', 'OrganicCertificationItem', 'Scope',                  'nvarchar(50)',  1),
 ('dbo', 'OrganicCertificationItem', 'Status',                 'nvarchar(50)',  1),
 ('dbo', 'OrganicCertificationItem', 'StatusEffectiveDate',    'date',          1),
@@ -767,7 +767,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (78)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (79)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -849,7 +849,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260923132920_AddSelectedColumnsToBidSheetPreference'),
 ('20260923152000_AddOrganicCertificationTables'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
-('20261005131626_DropCtrmSourceToggleUsers');
+('20261005131626_DropCtrmSourceToggleUsers'),
+('20261007120000_WidenOrganicCertificationItemText');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

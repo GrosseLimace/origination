@@ -403,16 +403,20 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.OrganicCertificationId).HasColumnName("OrganicCertificationId").IsRequired();
             entity.Property(e => e.ItemId).HasColumnName("ItemId").IsRequired(false);
             entity.Property(e => e.Scope).HasColumnName("Scope").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.CertificateNumber).HasColumnName("CertificateNumber").HasMaxLength(100).IsRequired(false);
+            // 255/4000/4000 rather than 100/1000/2000: measured by the integration team across the
+            // whole USDA data set on 2026-10-07 (certificateNumber 194, varieties 3,998,
+            // otherItems 3,996), not across the two samples we happened to hold. ~4,000 is USDA's
+            // own ceiling. Widened by 20261007_WidenOrganicCertificationItemText.
+            entity.Property(e => e.CertificateNumber).HasColumnName("CertificateNumber").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.StatusEffectiveDate).HasColumnName("StatusEffectiveDate").HasColumnType("date").IsRequired(false);
             entity.Property(e => e.ItemName).HasColumnName("ItemName").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.CategoryName).HasColumnName("CategoryName").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.CategoryId).HasColumnName("CategoryId").IsRequired(false);
-            entity.Property(e => e.Varieties).HasColumnName("Varieties").HasMaxLength(1000).IsRequired(false);
+            entity.Property(e => e.Varieties).HasColumnName("Varieties").HasMaxLength(4000).IsRequired(false);
             // 2000, not 1000: this carries whole free-text crop lists, and one captured sample is a
             // full sentence about carryover bushels rather than a short list.
-            entity.Property(e => e.OtherItems).HasColumnName("OtherItems").HasMaxLength(2000).IsRequired(false);
+            entity.Property(e => e.OtherItems).HasColumnName("OtherItems").HasMaxLength(4000).IsRequired(false);
             entity.Property(e => e.Organic).HasColumnName("Organic").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.Organic100).HasColumnName("Organic100").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();

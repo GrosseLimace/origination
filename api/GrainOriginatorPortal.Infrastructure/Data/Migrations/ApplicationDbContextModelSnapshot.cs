@@ -1997,8 +1997,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnName("CategoryName");
 
                     b.Property<string>("CertificateNumber")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
                         .HasColumnName("CertificateNumber");
 
                     b.Property<int?>("ItemId")
@@ -2027,8 +2027,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnName("OrganicCertificationId");
 
                     b.Property<string>("OtherItems")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
                         .HasColumnName("OtherItems");
 
                     b.Property<string>("Scope")
@@ -2052,8 +2052,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnName("UpdatedOn");
 
                     b.Property<string>("Varieties")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
                         .HasColumnName("Varieties");
 
                     b.HasKey("Id");
