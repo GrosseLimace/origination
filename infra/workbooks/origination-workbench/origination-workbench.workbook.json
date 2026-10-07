@@ -306,11 +306,15 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "{\"version\":\"ARMEndpoint/1.0\",\"data\":null,\"headers\":[],\"method\":\"GET\",\"path\":\"{Environment}\",\"urlParams\":[{\"key\":\"api-version\",\"value\":\"2023-12-01\"}],\"batchDisabled\":false,\"transformers\":[{\"type\":\"jsonpath\",\"settings\":{\"tablePath\":\"$\",\"columns\":[{\"path\":\"$.name\",\"columnid\":\"Name\"},{\"path\":\"$.properties.state\",\"columnid\":\"State\"},{\"path\":\"$.properties.siteConfig.linuxFxVersion\",\"columnid\":\"Runtime\"},{\"path\":\"$.properties.lastModifiedTimeUtc\",\"columnid\":\"Config changed\",\"columnType\":\"datetime\"}]}}]}",
+        "query": "resources\n| where id =~ '{Environment}'\n| project Name = name, State = tostring(properties.state), Runtime = tostring(properties.siteConfig.linuxFxVersion),\n          ConfigChanged = todatetime(properties.lastModifiedTimeUtc)",
         "size": 0,
         "title": "Web app",
         "showRefreshButton": true,
-        "queryType": 12,
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources",
+        "crossComponentResources": [
+          "{Subscriptions}"
+        ],
         "visualization": "table",
         "gridSettings": {
           "formatters": [
@@ -335,11 +339,17 @@
                 ]
               }
             }
+          ],
+          "labelSettings": [
+            {
+              "columnId": "ConfigChanged",
+              "label": "Config changed"
+            }
           ]
         }
       },
       "customWidth": "50",
-      "name": "arm - 3",
+      "name": "arg - 3",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -1774,145 +1784,28 @@
       "name": "text - 22"
     },
     {
-      "type": 11,
+      "type": 1,
       "content": {
-        "version": "LinkItem/1.0",
-        "style": "bullets",
-        "links": [
-          {
-            "id": "00000000-0000-4000-8000-000000000018",
-            "linkTarget": "Url",
-            "linkLabel": "Failures",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/failures",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000019",
-            "linkTarget": "Url",
-            "linkLabel": "Performance",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/performance",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000020",
-            "linkTarget": "Url",
-            "linkLabel": "Live Metrics",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/quickPulse",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000021",
-            "linkTarget": "Url",
-            "linkLabel": "Logs (KQL)",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/logs",
-            "style": "link"
-          }
-        ]
+        "json": "**App Insights — this environment**\n\n- [Failures](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/failures)\n- [Performance](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/performance)\n- [Live Metrics](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/quickPulse)\n- [Logs (KQL)](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{AppInsights}/logs)"
       },
-      "customWidth": "33",
-      "name": "links - 23",
-      "title": "App Insights — this environment"
+      "name": "text - 23",
+      "customWidth": "33"
     },
     {
-      "type": 11,
+      "type": 1,
       "content": {
-        "version": "LinkItem/1.0",
-        "style": "bullets",
-        "links": [
-          {
-            "id": "00000000-0000-4000-8000-000000000022",
-            "linkTarget": "Url",
-            "linkLabel": "Web app overview",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{Environment}/appServices",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000023",
-            "linkTarget": "Url",
-            "linkLabel": "Log stream",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{Environment}/logStream",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000024",
-            "linkTarget": "Url",
-            "linkLabel": "Key Vault",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{KeyVault}/overview",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000025",
-            "linkTarget": "Url",
-            "linkLabel": "Daily Digest Logic App",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{DailyRecap}/overview",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000026",
-            "linkTarget": "Url",
-            "linkLabel": "Instant Share Logic App",
-            "url": "https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{InstantShare}/overview",
-            "style": "link"
-          }
-        ]
+        "json": "**Azure — this environment**\n\n- [Web app overview](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{Environment}/appServices)\n- [Log stream](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{Environment}/logStream)\n- [Key Vault](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{KeyVault}/overview)\n- [Daily Digest Logic App](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{DailyRecap}/overview)\n- [Instant Share Logic App](https://portal.azure.com/#@1521f999-f722-4a4f-9747-166f93e9b0d1/resource{InstantShare}/overview)"
       },
-      "customWidth": "33",
-      "name": "links - 24",
-      "title": "Azure — this environment"
+      "name": "text - 24",
+      "customWidth": "33"
     },
     {
-      "type": 11,
+      "type": 1,
       "content": {
-        "version": "LinkItem/1.0",
-        "style": "bullets",
-        "links": [
-          {
-            "id": "00000000-0000-4000-8000-000000000027",
-            "linkTarget": "Url",
-            "linkLabel": "Open the app",
-            "url": "{AppUrl}",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000028",
-            "linkTarget": "Url",
-            "linkLabel": "Usage Dashboard (adoption)",
-            "url": "{AppUrl}/usage-dashboard",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000029",
-            "linkTarget": "Url",
-            "linkLabel": "Readiness probe",
-            "url": "{AppUrl}/health/ready",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000030",
-            "linkTarget": "Url",
-            "linkLabel": "GitHub Actions",
-            "url": "https://scoular.ghe.com/IT/origination/actions",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000031",
-            "linkTarget": "Url",
-            "linkLabel": "Project board",
-            "url": "https://scoular.ghe.com/IT/origination/projects",
-            "style": "link"
-          },
-          {
-            "id": "00000000-0000-4000-8000-000000000032",
-            "linkTarget": "Url",
-            "linkLabel": "Outage recovery playbook",
-            "url": "https://scoular.ghe.com/IT/origination/blob/main/docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md",
-            "style": "link"
-          }
-        ]
+        "json": "**App and repo**\n\n- [Open the app]({AppUrl})\n- [Usage Dashboard (adoption)]({AppUrl}/usage-dashboard)\n- [Readiness probe]({AppUrl}/health/ready)\n- [GitHub Actions](https://scoular.ghe.com/IT/origination/actions)\n- [Project board](https://scoular.ghe.com/IT/origination/projects)\n- [Outage recovery playbook](https://scoular.ghe.com/IT/origination/blob/main/docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md)"
       },
-      "customWidth": "33",
-      "name": "links - 25",
-      "title": "App and repo"
+      "name": "text - 25",
+      "customWidth": "33"
     }
   ],
   "isLocked": false,
