@@ -307,7 +307,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "query": "union\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = \"Requests\", Order = 1),\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = \"Failed requests\", Order = 2),\n  (requests | where timestamp {TimeRange} | summarize Value = round(100.0 * countif(success == false) / max_of(count(), 1), 2) | extend Metric = \"Failure %\", Order = 3),\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(round(percentile(duration, 95))) | extend Metric = \"p95 response ms\", Order = 4),\n  (exceptions | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = \"Exceptions\", Order = 5),\n  (dependencies | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = \"Failed integration calls\", Order = 6)\n| order by Order asc\n| project Metric, Value",
-        "size": 0,
+        "size": 4,
         "title": "At a glance — {TimeRange:label}",
         "noDataMessage": "No request telemetry in this range.",
         "showRefreshButton": true,
@@ -341,6 +341,7 @@
           "size": "small"
         }
       },
+      "customWidth": "50",
       "name": "kql - 3",
       "conditionalVisibility": {
         "parameterName": "Tab",
@@ -389,93 +390,8 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "requests\n| where timestamp {TimeRange} and success == false\n| summarize Failures = count(), Last = max(timestamp) by Endpoint = name, Code = tostring(resultCode)\n| top 8 by Failures desc",
-        "size": 0,
-        "title": "Top failing endpoints",
-        "noDataMessage": "No failed requests in this range.",
-        "showRefreshButton": true,
-        "timeContextFromParameter": "TimeRange",
-        "queryType": 0,
-        "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "{AppInsights}"
-        ],
-        "visualization": "table",
-        "gridSettings": {
-          "formatters": [
-            {
-              "columnMatch": "Endpoint",
-              "formatter": 0,
-              "formatOptions": {
-                "customColumnWidthSetting": "50%"
-              }
-            },
-            {
-              "columnMatch": "Code",
-              "formatter": 0,
-              "formatOptions": {
-                "customColumnWidthSetting": "12%"
-              }
-            }
-          ]
-        }
-      },
-      "customWidth": "50",
-      "name": "kql - 5",
-      "conditionalVisibility": {
-        "parameterName": "Tab",
-        "comparison": "isEqualTo",
-        "value": "overview"
-      }
-    },
-    {
-      "type": 3,
-      "content": {
-        "version": "KqlItem/1.0",
-        "query": "requests\n| where timestamp {TimeRange}\n| summarize Calls = count(), P95ms = round(percentile(duration, 95)) by Endpoint = name\n| where Calls >= 5\n| top 8 by P95ms desc",
-        "size": 0,
-        "title": "Slowest endpoints (p95, at least 5 calls)",
-        "noDataMessage": "No request telemetry in this range.",
-        "showRefreshButton": true,
-        "timeContextFromParameter": "TimeRange",
-        "queryType": 0,
-        "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "{AppInsights}"
-        ],
-        "visualization": "table",
-        "gridSettings": {
-          "formatters": [
-            {
-              "columnMatch": "Endpoint",
-              "formatter": 0,
-              "formatOptions": {
-                "customColumnWidthSetting": "60%"
-              }
-            }
-          ],
-          "labelSettings": [
-            {
-              "columnId": "P95ms",
-              "label": "p95 ms"
-            }
-          ]
-        }
-      },
-      "customWidth": "50",
-      "name": "kql - 6",
-      "conditionalVisibility": {
-        "parameterName": "Tab",
-        "comparison": "isEqualTo",
-        "value": "overview"
-      }
-    },
-    {
-      "type": 3,
-      "content": {
-        "version": "KqlItem/1.0",
-        "query": "alertsmanagementresources\n| where type =~ 'microsoft.alertsmanagement/alerts'\n| where resourceGroup =~ '{ResourceGroup}'\n| extend Fired = todatetime(properties.essentials.startDateTime),\n         Severity = tostring(properties.essentials.severity),\n         Condition = tostring(properties.essentials.monitorCondition),\n         State = tostring(properties.essentials.alertState),\n         Target = tostring(properties.essentials.targetResourceName)\n| project Fired, Alert = name, Severity, Condition, Target\n| order by Fired desc",
-        "size": 0,
+        "query": "alertsmanagementresources\n| where type =~ 'microsoft.alertsmanagement/alerts'\n| where resourceGroup =~ '{ResourceGroup}'\n| extend Fired = todatetime(properties.essentials.startDateTime),\n         Severity = tostring(properties.essentials.severity),\n         Condition = tostring(properties.essentials.monitorCondition),\n         State = tostring(properties.essentials.alertState),\n         Target = tostring(properties.essentials.targetResourceName)\n| project Fired, Alert = name, Severity, Condition, State, Target\n| order by Fired desc",
+        "size": 4,
         "title": "Alerts, last 30 days",
         "noDataMessage": "No alerts fired in the last 30 days.",
         "showRefreshButton": true,
@@ -564,8 +480,92 @@
           ]
         }
       },
+      "name": "arg - 5",
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp {TimeRange} and success == false\n| summarize Failures = count(), Last = max(timestamp) by Endpoint = name, Code = tostring(resultCode)\n| top 8 by Failures desc",
+        "size": 4,
+        "title": "Top failing endpoints",
+        "noDataMessage": "No failed requests in this range.",
+        "showRefreshButton": true,
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Endpoint",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "50%"
+              }
+            },
+            {
+              "columnMatch": "Code",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "12%"
+              }
+            }
+          ]
+        }
+      },
       "customWidth": "50",
-      "name": "arg - 7",
+      "name": "kql - 6",
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp {TimeRange}\n| summarize Calls = count(), P95ms = round(percentile(duration, 95)) by Endpoint = name\n| where Calls >= 5\n| top 8 by P95ms desc",
+        "size": 4,
+        "title": "Slowest endpoints (p95, at least 5 calls)",
+        "noDataMessage": "No request telemetry in this range.",
+        "showRefreshButton": true,
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "{AppInsights}"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "Endpoint",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "60%"
+              }
+            }
+          ],
+          "labelSettings": [
+            {
+              "columnId": "P95ms",
+              "label": "p95 ms"
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "kql - 7",
       "conditionalVisibility": {
         "parameterName": "Tab",
         "comparison": "isEqualTo",
@@ -577,7 +577,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "query": "resources\n| where id =~ '{Environment}'\n| project Name = name, State = tostring(properties.state), Runtime = tostring(properties.siteConfig.linuxFxVersion),\n          ConfigChanged = todatetime(properties.lastModifiedTimeUtc)",
-        "size": 0,
+        "size": 4,
         "title": "Web app",
         "showRefreshButton": true,
         "queryType": 1,
@@ -631,7 +631,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "query": "resources\n| where type =~ 'microsoft.web/certificates' and resourceGroup =~ '{ResourceGroup}'\n| extend Expires = todatetime(properties.expirationDate)\n| extend DaysLeft = datetime_diff('day', Expires, now())\n| project Hosts = strcat_array(properties.hostNames, \", \"), Issuer = tostring(properties.issuer), Expires, DaysLeft\n| order by Expires asc",
-        "size": 0,
+        "size": 4,
         "title": "TLS certificate",
         "noDataMessage": "No App Service certificate in this resource group.",
         "showRefreshButton": true,
@@ -692,7 +692,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "query": "{\"version\":\"ARMEndpoint/1.0\",\"data\":null,\"headers\":[],\"method\":\"GET\",\"path\":\"{Environment}/deployments\",\"urlParams\":[{\"key\":\"api-version\",\"value\":\"2023-12-01\"}],\"batchDisabled\":false,\"transformers\":[{\"type\":\"jsonpath\",\"settings\":{\"tablePath\":\"$.value\",\"columns\":[{\"path\":\"$.properties.start_time\",\"columnid\":\"Started\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.end_time\",\"columnid\":\"Finished\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.status\",\"columnid\":\"Status\"},{\"path\":\"$.properties.active\",\"columnid\":\"Active\"},{\"path\":\"$.properties.log_url\",\"columnid\":\"Log\"}]}}]}",
-        "size": 0,
+        "size": 4,
         "title": "Latest deployment",
         "noDataMessage": "No deployments recorded for this web app.",
         "showRefreshButton": true,
@@ -806,7 +806,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "query": "union\n  (traces | project timestamp, severityLevel, message),\n  (exceptions | project timestamp, severityLevel = toint(3), message = coalesce(tostring(customDimensions.FormattedMessage), outerMessage))\n| where timestamp {TimeRange}\n| where message startswith \"CustomerSync completed\" or (message has \"CustomerSync\" and severityLevel >= 3)\n| parse message with \"CustomerSync completed in \" ElapsedMs:long \" ms. Customers: \" CustInserted:long \" inserted, \" CustUpdated:long \" updated, \" CustReactivated:long \" reactivated, \" CustDeactivated:long \" deactivated. TradeUnits: \" TuInserted:long \" inserted, \" TuUpdated:long \" updated, \" TuDeactivated:long \" deactivated. \" *\n| project Ran = timestamp,\n          Outcome = iff(severityLevel >= 3, \"Failed\", \"Completed\"),\n          Seconds = round(ElapsedMs / 1000.0, 1),\n          CustDeactivated, TuDeactivated,\n          Detail = iff(severityLevel >= 3, message, \"\")\n| order by Ran desc\n| take 1",
-        "size": 0,
+        "size": 4,
         "title": "Latest CustomerSync run",
         "noDataMessage": "No CustomerSync completions in this range. The job runs once at startup and once a day (CustomerSync:RunAtTimeUtc). If it ran and still shows nothing, Information-level traces are not reaching App Insights — see the outage playbook, A4.",
         "showRefreshButton": true,
@@ -960,7 +960,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "query": "{\"version\":\"ARMEndpoint/1.0\",\"data\":null,\"headers\":[],\"method\":\"GET\",\"path\":\"{DailyRecap}/runs\",\"urlParams\":[{\"key\":\"api-version\",\"value\":\"2016-06-01\"},{\"key\":\"$top\",\"value\":\"3\"}],\"batchDisabled\":false,\"transformers\":[{\"type\":\"jsonpath\",\"settings\":{\"tablePath\":\"$.value\",\"columns\":[{\"path\":\"$.properties.startTime\",\"columnid\":\"Started\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.status\",\"columnid\":\"Status\"},{\"path\":\"$.properties.error.message\",\"columnid\":\"Error\"}]}}]}",
-        "size": 0,
+        "size": 4,
         "title": "Daily Digest — last 3 runs",
         "noDataMessage": "No runs found. If this environment has no such Logic App there is nothing to read.",
         "showRefreshButton": true,
@@ -1051,7 +1051,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "query": "{\"version\":\"ARMEndpoint/1.0\",\"data\":null,\"headers\":[],\"method\":\"GET\",\"path\":\"{InstantShare}/runs\",\"urlParams\":[{\"key\":\"api-version\",\"value\":\"2016-06-01\"},{\"key\":\"$top\",\"value\":\"3\"}],\"batchDisabled\":false,\"transformers\":[{\"type\":\"jsonpath\",\"settings\":{\"tablePath\":\"$.value\",\"columns\":[{\"path\":\"$.properties.startTime\",\"columnid\":\"Started\",\"columnType\":\"datetime\"},{\"path\":\"$.properties.status\",\"columnid\":\"Status\"},{\"path\":\"$.properties.error.message\",\"columnid\":\"Error\"}]}}]}",
-        "size": 0,
+        "size": 4,
         "title": "Instant Share — last 3 runs",
         "noDataMessage": "No runs found. If this environment has no such Logic App there is nothing to read.",
         "showRefreshButton": true,
