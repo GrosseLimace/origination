@@ -688,7 +688,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261001133422_AddCtrmSourceToggleUsers'),
 ('20261005131626_DropCtrmSourceToggleUsers'),
 ('20261007145119_AddProducerBinSite'),
-('20261007152343_WidenProducerBinSiteCoordinatePrecision');
+('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
+('20261007162014_AddBinSiteQueryLibraryItems');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
