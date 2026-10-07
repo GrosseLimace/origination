@@ -27,6 +27,9 @@ export interface RefinementFilters {
   acresOver?: number | null;
   hasBinCapacity?: boolean;
   noBinCapacity?: boolean;
+  // Bin sites (lat/long locations under the address) — not to be confused with bin capacity above
+  hasBinSites?: boolean;
+  noBinSites?: boolean;
   // Customer info
   hasPrimaryContact?: boolean;
   noPrimaryContact?: boolean;
