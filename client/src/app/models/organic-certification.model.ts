@@ -27,6 +27,12 @@ export interface OrganicCertification {
   status?: string | null;
   isCertified: boolean;
 
+  /** Server-computed: the operation status, or the Crops or Handling scope, is Surrendered. Turns
+   *  the producer badge RED. Livestock is the only scope that does not count — Scoular buys grain.
+   *  Handling counts because some family operations trade under a handling certificate rather than
+   *  a crops one (Kate Hoegermeyer, 2026-10-07). */
+  isSurrendered: boolean;
+
   /** When the current status began, per the certifier. The date to DISPLAY. */
   statusEffectiveDate?: string | null;
   /** The NEXT scheduled annual update — forward-looking, often absent. NOT an expiry date;
@@ -59,9 +65,13 @@ export interface OrganicCertification {
   updatedOn: string;
 }
 
-/** A producer whose certification status has changed and has not resolved back to Certified.
- *  From `GET /api/organic-certifications/status-changes` — a bulk read, because Actionable
- *  Insights computes client-side and makes no per-customer calls. */
+/** A producer whose certification is not Certified. From
+ *  `GET /api/organic-certifications/status-changes` — a bulk read, because Actionable Insights
+ *  computes client-side and makes no per-customer calls.
+ *
+ *  Includes producers we never watched change: one whose first message already said Surrendered is
+ *  listed too, with `previousStatus` null. Insights splits this one list into its contracted and
+ *  uncontracted categories. */
 export interface OrganicCertificationStatusChange {
   customerId: number;
   /** The CTRM customer code — what Insights matches on, since it indexes contracts by it. */
@@ -70,12 +80,29 @@ export interface OrganicCertificationStatusChange {
   operationName?: string | null;
   /** The status now. */
   status?: string | null;
-  /** What it changed FROM. */
+  /** What it changed FROM. Null when it was already in this state when we first saw it — render
+   *  the status alone in that case, never "null → Surrendered". */
   previousStatus?: string | null;
   /** When the certifier says the new status took effect — the date to display. */
   statusEffectiveDate?: string | null;
   /** When our feed observed it. Not for display. */
   statusChangedOn?: string | null;
+}
+
+/** A producer holding a NOP id that no certification has ever arrived for. From
+ *  `GET /api/organic-certifications/missing-certificates`.
+ *
+ *  The two halves come from different pipelines — the NOP id from Profisee via the nightly customer
+ *  sync, the certification from the integration team's feed — so this means "master data says
+ *  organic, the feed has never confirmed it".
+ *
+ *  Only meaningful once that feed is running. Until then every organic producer qualifies, which is
+ *  why the category it backs is behind an environment flag. */
+export interface OrganicMissingCertificate {
+  customerId: number;
+  scoularId?: string | null;
+  nopid: string;
+  customerName?: string | null;
 }
 
 export interface OrganicCertificationScope {

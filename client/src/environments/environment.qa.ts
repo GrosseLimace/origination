@@ -7,6 +7,11 @@ export const environment = {
   // rather than as missing data.
   barchartBidsEnabled: true,
   usageDashboardEnabled: true,
+  // 'NOP ID on file, no certificate' Actionable Insights category (trade unit 2080 only).
+  // Compares two independent pipelines: the NOP id from Profisee via the nightly customer sync,
+  // and the certification from the integration team's feed. Until that feed is live EVERY organic
+  // producer qualifies - ~580 - so this stays OFF in Production until the first run has landed.
+  organicMissingCertificatesEnabled: true,
   dailyDigestEnabled: true,
   // @-mention a Teams channel in a note. The channel lookup runs in the API on-behalf-of the caller,
   // so it needs delegated Team.ReadBasic.All + Channel.ReadBasic.All with admin consent on the API

@@ -14,13 +14,24 @@ public interface IOrganicCertificationService
         long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Every producer whose certification status has changed and has not returned to Certified.
+    /// Every producer whose certification is not Certified, whether or not we watched it change.
     ///
     /// Bulk by design: Actionable Insights computes client-side over preloaded data and makes no
-    /// per-customer calls, so it needs the whole flagged set in one read. The set is naturally
-    /// small — only certifications that actually moved.
+    /// per-customer calls, so it needs the whole flagged set in one read. The caller splits the
+    /// result into the contracted and uncontracted categories — only it knows the contract
+    /// position.
     /// </summary>
     Task<IReadOnlyList<OrganicCertificationStatusChangeResponse>> GetUnresolvedStatusChangesAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Producers who hold a NOP id with no certification behind it.
+    ///
+    /// ⚠️ Reads as "nothing has reached us for them", which is only interesting once the feed is
+    /// actually running. Until it is, EVERY organic producer qualifies — roughly 580 — so the
+    /// surface showing this must not be switched on before the feed is live.
+    /// </summary>
+    Task<IReadOnlyList<OrganicMissingCertificateResponse>> GetMissingCertificatesAsync(
         CancellationToken cancellationToken = default);
 }
 
@@ -114,13 +125,23 @@ public class OrganicCertificationService : IOrganicCertificationService
     public async Task<IReadOnlyList<OrganicCertificationStatusChangeResponse>>
         GetUnresolvedStatusChangesAsync(CancellationToken cancellationToken = default)
     {
-        // Narrow in the database before joining: PreviousStatus set is a cheap, highly selective
-        // filter, and only a handful of certifications ever carry one. The "not Certified" half is
-        // applied in memory against the shared rule rather than duplicated as SQL — one definition
-        // of "still flagged", used by the profile and this list alike.
-        var changed = await _db.OrganicCertifications
+        // Flags on CURRENT status alone — it no longer requires PreviousStatus to be set.
+        //
+        // It used to, and that quietly lost people: a producer whose very first message already
+        // said Surrendered had never "changed" in our view, so they appeared on no list anywhere.
+        // The desk asked for them (2026-10-07) — "any producer with a non-certified certificate
+        // should show up in one of the two categories" — and meeting someone already surrendered
+        // is not a reason to stay quiet about it.
+        //
+        // PreviousStatus is still selected and still returned: when we did watch the change, the
+        // desk wants to see what it moved from. It is now display detail rather than a filter.
+        //
+        // Narrowed in the database to rows that HAVE a status, then the Certified test is applied
+        // in memory against the shared rule rather than duplicated as SQL — one definition of
+        // "needs attention", used by the profile and both insight categories alike.
+        var withStatus = await _db.OrganicCertifications
             .AsNoTracking()
-            .Where(c => c.PreviousStatus != null && c.PreviousStatus != "" && c.Nopid != null)
+            .Where(c => c.Nopid != null && c.OperationStatus != null && c.OperationStatus != "")
             .Select(c => new
             {
                 c.Nopid,
@@ -132,9 +153,8 @@ public class OrganicCertificationService : IOrganicCertificationService
             })
             .ToListAsync(cancellationToken);
 
-        var unresolved = changed
-            .Where(c => OrganicCertificationStatus.HasUnresolvedStatusChange(
-                c.OperationStatus, c.PreviousStatus))
+        var unresolved = withStatus
+            .Where(c => OrganicCertificationStatus.NeedsAttention(c.OperationStatus))
             .ToList();
 
         if (unresolved.Count == 0) return [];
@@ -172,6 +192,45 @@ public class OrganicCertificationService : IOrganicCertificationService
             .ToList();
     }
 
+    public async Task<IReadOnlyList<OrganicMissingCertificateResponse>> GetMissingCertificatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // The two halves come from different pipelines, which is the whole point of the check:
+        // the NOP id arrives from Profisee through the nightly customer sync, the certification
+        // from the integration team's feed. A producer here is one where the first says they are
+        // certified organic and the second has never confirmed it.
+        //
+        // Anti-join rather than a NOT EXISTS correlated per row: the certification table is small
+        // (one row per NOP id, ~1,000 at most) so pulling its id set and filtering in memory costs
+        // one cheap read, and keeps the comparison on the SAME trimmed, case-insensitive terms the
+        // rest of this file joins on. A SQL-side join would silently use the database collation.
+        var certifiedNopids = await _db.OrganicCertifications
+            .AsNoTracking()
+            .Where(c => c.Nopid != null)
+            .Select(c => c.Nopid!)
+            .ToListAsync(cancellationToken);
+
+        var known = new HashSet<string>(certifiedNopids, StringComparer.OrdinalIgnoreCase);
+
+        var withNopId = await _db.Customers
+            .AsNoTracking()
+            .Where(c => c.IsActive && c.NopIdNumber != null && c.NopIdNumber != "")
+            .Select(c => new { c.Id, c.ScoularId, c.Name, c.NopIdNumber })
+            .ToListAsync(cancellationToken);
+
+        return withNopId
+            .Where(c => !known.Contains(c.NopIdNumber!.Trim()))
+            .Select(c => new OrganicMissingCertificateResponse
+            {
+                CustomerId = c.Id,
+                ScoularId = c.ScoularId,
+                Nopid = c.NopIdNumber!.Trim(),
+                CustomerName = c.Name,
+            })
+            .OrderBy(r => r.ScoularId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private static OrganicCertificationResponse Map(
         Infrastructure.Data.Entities.OrganicCertification source,
         DateTime asOf,
@@ -182,6 +241,13 @@ public class OrganicCertificationService : IOrganicCertificationService
         CertifierName = source.CertifierName,
         Status = source.OperationStatus,
         IsCertified = OrganicCertificationStatus.IsCertified(source.OperationStatus),
+
+        // Operation status, or a surrendered Crops or Handling scope. Livestock is the only scope
+        // that does not count — see OrganicCertificationStatus.IsSurrendered.
+        IsSurrendered = OrganicCertificationStatus.IsSurrendered(
+            source.OperationStatus,
+            source.Scopes.Select(s => (s.Scope, s.ScopeStatus))),
+
         StatusEffectiveDate = source.StatusEffectiveDate,
         AnniversaryDate = source.AnniversaryDate,
         TotalAcreage = source.TotalAcreage,

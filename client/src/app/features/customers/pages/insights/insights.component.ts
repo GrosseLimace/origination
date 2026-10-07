@@ -8,7 +8,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, OrganicCertificationStatusChange } from '@models';
+import { Customer, Contract, Ticket, OrganicCertificationStatusChange, OrganicMissingCertificate } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
@@ -16,8 +16,10 @@ import { ticketDisplayNumber } from '@shared/utils/ticket-display';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { environment } from '../../../../../environments/environment';
 
-type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels' | 'OrganicStatusChanges';
+type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels'
+  | 'OrganicStatusChanges' | 'OrganicUncontracted' | 'OrganicMissingCertificate';
 type InsightPriority = 'Urgent' | 'Warning' | 'Info';
 type InsightTagStyle = 'default' | 'commodity' | 'quantity' | 'warning' | 'alert';
 
@@ -78,7 +80,7 @@ const CATEGORY_META: Record<InsightCategory, {
     searchPlaceholder: 'Search by producer, code, or ticket #...',
   },
   OrganicStatusChanges: {
-    title: 'Organic Certification Status Changes',
+    title: 'Organic Certification — Contracted Producers',
     headerClass: 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800',
     iconClass: 'text-amber-600 dark:text-amber-400',
     titleClass: 'text-amber-900 dark:text-amber-100',
@@ -86,6 +88,29 @@ const CATEGORY_META: Record<InsightCategory, {
     badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
     countClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
     searchPlaceholder: 'Search by producer, NOP ID, or status...',
+  },
+  // Greyed rather than amber, deliberately. Same facts as the category above, but nothing is at
+  // risk today — we hold no open contract. Giving it amber would put two equally loud cards on the
+  // page and teach the desk to skim past both.
+  OrganicUncontracted: {
+    title: 'Organic Certification — No Open Contracts',
+    headerClass: 'bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700',
+    iconClass: 'text-gray-500 dark:text-gray-400',
+    titleClass: 'text-gray-900 dark:text-gray-100',
+    subtitleClass: 'text-gray-600 dark:text-gray-400',
+    badgeClass: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+    countClass: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+    searchPlaceholder: 'Search by producer, NOP ID, or status...',
+  },
+  OrganicMissingCertificate: {
+    title: 'Organic — NOP ID on File, No Certificate',
+    headerClass: 'bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700',
+    iconClass: 'text-gray-500 dark:text-gray-400',
+    titleClass: 'text-gray-900 dark:text-gray-100',
+    subtitleClass: 'text-gray-600 dark:text-gray-400',
+    badgeClass: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+    countClass: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+    searchPlaceholder: 'Search by producer or NOP ID...',
   },
   UnshippedBushels: {
     title: 'Unshipped Bushels Past Delivery Date',
@@ -136,9 +161,12 @@ function computeSummary(items: Insight[], category: InsightCategory): string {
         : `${count} contract${count !== 1 ? 's' : ''}`;
     }
     case 'OrganicStatusChanges':
+    case 'OrganicUncontracted':
       // Always one per producer — a producer holds one certification, so a count would read
-      // "1 change" on every row. The status it moved TO is the useful thing at a glance.
-      return items[0]?.tags?.find(t => t.style === 'alert')?.label ?? 'Status changed';
+      // "1 change" on every row. The status itself is the useful thing at a glance.
+      return items[0]?.tags?.find(t => t.style === 'alert')?.label ?? 'Not certified';
+    case 'OrganicMissingCertificate':
+      return 'No certificate';
     default: return '';
   }
 }
@@ -193,7 +221,10 @@ export class InsightsComponent {
   /** Every category, in display order. The grouping passes below must cover all of them whatever
    *  is on screen — customerGroupsByCategory indexes its map by insight category, so a category
    *  missing from this list throws the moment an insight carries it. */
-  readonly allCategories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels', 'OrganicStatusChanges'];
+  readonly allCategories: InsightCategory[] = [
+    'UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels',
+    'OrganicStatusChanges', 'OrganicUncontracted', 'OrganicMissingCertificate',
+  ];
 
   /**
    * Trade unit whose desk owns organic certification. The certification category is theirs alone —
@@ -203,13 +234,24 @@ export class InsightsComponent {
    */
   private static readonly ORGANIC_TRADE_UNIT = '2080';
 
+  /** Categories that belong to the organics desk alone. */
+  private static readonly ORGANIC_CATEGORIES: readonly InsightCategory[] =
+    ['OrganicStatusChanges', 'OrganicUncontracted', 'OrganicMissingCertificate'];
+
   /** What the page renders. */
   readonly visibleCategories = computed(() => {
     const onOrganicDesk = this.selectedTradeUnits
       .some(t => t.trim() === InsightsComponent.ORGANIC_TRADE_UNIT);
-    return onOrganicDesk
-      ? this.allCategories
-      : this.allCategories.filter(c => c !== 'OrganicStatusChanges');
+
+    return this.allCategories.filter(c => {
+      if (!InsightsComponent.ORGANIC_CATEGORIES.includes(c)) return true;
+      if (!onOrganicDesk) return false;
+      // "NOP ID, no certificate" compares master data against the certification feed. Until that
+      // feed runs, every organic producer qualifies — ~580 rows of noise — so it stays flagged off
+      // in Production until the first run has landed.
+      if (c === 'OrganicMissingCertificate') return environment.organicMissingCertificatesEnabled;
+      return true;
+    });
   });
 
   /**
@@ -221,6 +263,11 @@ export class InsightsComponent {
    * categories.
    */
   readonly organicStatusChanges = signal<OrganicCertificationStatusChange[]>([]);
+
+  /** Producers with a NOP id and no certification behind it. Fetched only when the category can
+   *  actually render — the list is every organic producer until the feed runs, so there is no
+   *  point paying for it in an environment where it is flagged off. */
+  readonly organicMissingCertificates = signal<OrganicMissingCertificate[]>([]);
 
   // Expose static metadata to the template
   readonly categoryMeta = CATEGORY_META;
@@ -284,6 +331,12 @@ export class InsightsComponent {
     for (const change of this.organicStatusChanges()) {
       const key = (change.scoularId || '').trim().toUpperCase();
       if (key) organicChangesByScoularId.set(key, change);
+    }
+
+    const organicMissingByScoularId = new Map<string, OrganicMissingCertificate>();
+    for (const missing of this.organicMissingCertificates()) {
+      const key = (missing.scoularId || '').trim().toUpperCase();
+      if (key) organicMissingByScoularId.set(key, missing);
     }
 
     // Pre-index recent tickets (last 30 days) by customer for O(1) spot-load lookup
@@ -436,29 +489,39 @@ export class InsightsComponent {
         }
       }
 
-      // --- 4. Organic certification status changes ---
-      // Contracted producers only, per the organics desk: a certification that moved matters when
-      // we are actually doing business with them. `customerContracts` is already filtered to open
-      // contracts in the selected trade unit(s), so a producer whose contracts have all closed
-      // drops out on their own — which is the second half of the desk's removal rule. The first
-      // half (status returns to Certified) is applied server-side, so a resolved change never
-      // reaches this list at all.
+      // --- 4. Organic certification: not Certified ---
+      //
+      // ONE server list, split HERE into two categories by contract position, because only this
+      // layer knows it. The desk's framing (2026-10-07): every producer whose certification is not
+      // Certified should appear in exactly one of the two, so nobody falls through.
+      //
+      //   contracted   — we are doing business with them now. Urgent.
+      //   uncontracted — we are not, but we may want to. Worth knowing, not worth interrupting for.
+      //
+      // `customerContracts` is already scoped to the selected trade unit(s), so "contracted" means
+      // contracted ON THIS DESK — a producer contracted elsewhere reads as uncontracted here, which
+      // is right: this is the organics desk asking about its own book.
       const statusChange = organicChangesByScoularId.get((customer.scoularId || '').trim().toUpperCase());
-      if (statusChange && customerContracts.some(c => {
-        const status = (c.status || '').trim().toLowerCase();
-        return status !== 'cancelled' && status !== 'fulfilled';
-      })) {
+      if (statusChange) {
+        const isContracted = customerContracts.some(c => {
+          const status = (c.status || '').trim().toLowerCase();
+          return status !== 'cancelled' && status !== 'fulfilled';
+        });
         const from = statusChange.previousStatus?.trim();
         const to = statusChange.status?.trim() || 'Unknown';
         insights.push({
           customer,
-          category: 'OrganicStatusChanges',
-          // Urgent, not Warning: a surrendered or revoked certification can stop us trading with
-          // them, which is a harder consequence than an unconfirmed contract.
-          priority: 'Urgent',
+          category: isContracted ? 'OrganicStatusChanges' : 'OrganicUncontracted',
+          // Urgent only when contracted: a certification that moved can stop us trading with
+          // someone we have open business with. Uncontracted is Info — real, but nothing is at
+          // risk today, and marking it Urgent would train the desk to ignore the colour.
+          priority: isContracted ? 'Urgent' : 'Info',
+          // `from` is absent when the certification was already in this state the first time we
+          // saw it. Those producers are listed now (they were not before), so the message has to
+          // read sensibly without a prior value — never "changed from null".
           message: from
             ? `Organic certification changed from ${from} to ${to}.`
-            : `Organic certification is now ${to}.`,
+            : `Organic certification is ${to}.`,
           tags: [
             { label: `NOP ${statusChange.nopid}`, style: 'default' },
             ...(from ? [{ label: from, style: 'default' as const }] : []),
@@ -466,6 +529,24 @@ export class InsightsComponent {
           ],
           sortDate: statusChange.statusEffectiveDate ?? undefined,
           searchTerms: [statusChange.nopid, from, to, statusChange.operationName].filter(Boolean) as string[]
+        });
+      }
+
+      // --- 5. NOP id on file, no certificate ---
+      // Not contract-scoped: this says the master data calls them organic and the feed has never
+      // confirmed it, which is true whether or not we are trading them.
+      const missing = organicMissingByScoularId.get((customer.scoularId || '').trim().toUpperCase());
+      if (missing) {
+        insights.push({
+          customer,
+          category: 'OrganicMissingCertificate',
+          priority: 'Info',
+          message: `NOP ID ${missing.nopid} is on file, but no organic certificate has been received.`,
+          tags: [
+            { label: `NOP ${missing.nopid}`, style: 'default' },
+            { label: 'No certificate', style: 'warning' },
+          ],
+          searchTerms: [missing.nopid, missing.customerName].filter(Boolean) as string[]
         });
       }
     }
@@ -493,6 +574,8 @@ export class InsightsComponent {
       SpotLoads: [],
       UnshippedBushels: [],
       OrganicStatusChanges: [],
+      OrganicUncontracted: [],
+      OrganicMissingCertificate: [],
     };
 
     // Group all insights by category and customer in a single pass
@@ -606,6 +689,18 @@ export class InsightsComponent {
       pulseSubClass: 'bg-amber-100 dark:bg-amber-900',
       spinnerClass: 'border-amber-200 dark:border-amber-800 border-t-amber-500 dark:border-t-amber-400',
     },
+    OrganicUncontracted: {
+      headerClass: 'bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700',
+      pulseClass: 'bg-gray-200 dark:bg-gray-700',
+      pulseSubClass: 'bg-gray-100 dark:bg-gray-800',
+      spinnerClass: 'border-gray-200 dark:border-gray-700 border-t-gray-500 dark:border-t-gray-400',
+    },
+    OrganicMissingCertificate: {
+      headerClass: 'bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700',
+      pulseClass: 'bg-gray-200 dark:bg-gray-700',
+      pulseSubClass: 'bg-gray-100 dark:bg-gray-800',
+      spinnerClass: 'border-gray-200 dark:border-gray-700 border-t-gray-500 dark:border-t-gray-400',
+    },
   };
 
   get selectedTradeUnits(): string[] {
@@ -658,6 +753,17 @@ export class InsightsComponent {
         next: changes => this.organicStatusChanges.set(changes),
         error: () => this.organicStatusChanges.set([])
       });
+
+    // Same swallow-to-empty contract as above: this is the newest and least critical of the six
+    // categories and must never be able to take down the three traders use daily.
+    if (environment.organicMissingCertificatesEnabled) {
+      this.apiService.getOrganicMissingCertificates()
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: missing => this.organicMissingCertificates.set(missing),
+          error: () => this.organicMissingCertificates.set([])
+        });
+    }
   }
 
   refresh(): void {

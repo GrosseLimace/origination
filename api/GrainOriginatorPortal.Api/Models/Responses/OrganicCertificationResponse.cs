@@ -47,6 +47,18 @@ public record OrganicCertificationResponse
 
     public bool IsCertified { get; init; }
 
+    /// <summary>
+    /// True when the badge should render RED rather than green: the operation-level status is
+    /// Surrendered, or the Crops or Handling scope is. Livestock is the only scope that does not
+    /// count — Scoular buys grain.
+    ///
+    /// Computed on the server rather than derived in the component, because the rule reads the
+    /// operation status AND a specific subset of scopes — a client-side version would have to
+    /// re-implement which scopes count, and that is exactly the drift OrganicCertificationStatus
+    /// exists to prevent.
+    /// </summary>
+    public bool IsSurrendered { get; init; }
+
     /// <summary>When the current status began, per the certifier. This is the date to DISPLAY.</summary>
     [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? StatusEffectiveDate { get; init; }
@@ -132,7 +144,9 @@ public record OrganicCertificationStatusChangeResponse
     /// <summary>The status now.</summary>
     public string? Status { get; init; }
 
-    /// <summary>What it changed FROM.</summary>
+    /// <summary>What it changed FROM. Null when the certification was already in this state the
+    /// first time we saw it — those producers are listed too, they simply have no prior value to
+    /// show. The client must render the status alone in that case, not "null → Surrendered".</summary>
     public string? PreviousStatus { get; init; }
 
     /// <summary>When the certifier says the new status took effect — the date to display.</summary>
@@ -141,6 +155,28 @@ public record OrganicCertificationStatusChangeResponse
 
     /// <summary>When our feed observed the change. Drives "changed recently", not display.</summary>
     public DateTime? StatusChangedOn { get; init; }
+}
+
+/// <summary>
+/// A producer carrying a NOP id that no certification has ever arrived for.
+///
+/// Deliberately a separate shape from <see cref="OrganicCertificationStatusChangeResponse"/>: there
+/// is no status, no previous status and no effective date to carry, because there is no
+/// certification. Reusing that record would mean a list of rows with every status field null, which
+/// reads as missing data rather than as the state it actually is.
+/// </summary>
+public record OrganicMissingCertificateResponse
+{
+    public long CustomerId { get; init; }
+
+    /// <summary>The CTRM customer code — what Actionable Insights matches contracts on.</summary>
+    public string? ScoularId { get; init; }
+
+    /// <summary>The NOP id we hold from Profisee, via the nightly customer sync. Always present:
+    /// it is the whole reason the producer is on this list.</summary>
+    public string Nopid { get; init; } = string.Empty;
+
+    public string? CustomerName { get; init; }
 }
 
 /// <summary>One certification scope and the crops certified under it.</summary>

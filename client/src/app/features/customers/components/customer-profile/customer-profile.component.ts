@@ -579,6 +579,13 @@ export class CustomerProfileComponent {
   readonly organicNoCertificate = computed(() =>
     this.organicCertification()?.noCertificateOnFile === true);
 
+  /** Red badge: the operation status, or the Crops or Handling scope, is Surrendered (Kate
+   *  Hoegermeyer, 2026-10-07 — Handling counts because some family operations trade under a
+   *  handling certificate). Server-computed; Livestock is the only scope excluded. Red says "we may
+   *  not be able to trade", the amber dot says "look into this". Clears itself on any other status. */
+  readonly organicSurrendered = computed(() =>
+    this.organicCertification()?.certification?.isSurrendered === true);
+
   readonly showOrganicBadge = computed(() => isOrganicSectionVisible({
     industryCode2: this.customer()?.industryCode2,
     nopId: this.customer()?.nopId,

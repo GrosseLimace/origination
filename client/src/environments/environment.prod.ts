@@ -7,6 +7,11 @@ export const environment = {
   // "Add from BarChart" picker + fed-bid display. Off until the vendor feed is live in this environment.
   barchartBidsEnabled: false,
   usageDashboardEnabled: true,
+  // 'NOP ID on file, no certificate' Actionable Insights category (trade unit 2080 only).
+  // Compares two independent pipelines: the NOP id from Profisee via the nightly customer sync,
+  // and the certification from the integration team's feed. Until that feed is live EVERY organic
+  // producer qualifies - ~580 - so this stays OFF in Production until the first run has landed.
+  organicMissingCertificatesEnabled: false,
   // Daily Digest (recap groups): ON in PROD. Surfaces the /daily-digest route + the
   // "Daily Recap" nav link. NOTE: enabling the UI is only half of launch — the prod
   // Notes Daily Recap Logic App must also be deployed (it's what actually sends the

@@ -71,4 +71,27 @@ public class OrganicCertificationsController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<OrganicCertificationStatusChangeResponse>>> GetStatusChanges(
         CancellationToken cancellationToken = default)
         => Ok(await _service.GetUnresolvedStatusChangesAsync(cancellationToken));
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Producers holding a NOP id that no certification has ever arrived for.
+    /// </summary>
+    /// <remarks>
+    /// The two halves come from different pipelines: the NOP id from Profisee via the nightly
+    /// customer sync, the certification from the integration team's feed. A producer listed here is
+    /// one the master data calls organic and the feed has never confirmed.
+    ///
+    /// ⚠️ Only meaningful once that feed is running. Until it is, every organic producer qualifies
+    /// — roughly 580 — so the Insights category this backs is gated behind an environment flag
+    /// rather than shipped on.
+    ///
+    /// Not trade-unit filtered, for the same reason as status-changes: Insights scopes its own view
+    /// through the customers it iterates, and filtering twice is a second place to get it wrong.
+    /// </remarks>
+    [HttpGet("missing-certificates")]
+    [ProducesResponseType(typeof(IReadOnlyList<OrganicMissingCertificateResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<OrganicMissingCertificateResponse>>> GetMissingCertificates(
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.GetMissingCertificatesAsync(cancellationToken));
 }

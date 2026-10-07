@@ -5,6 +5,11 @@ export const environment = {
   // "Add from BarChart" picker + fed-bid display. Off until the vendor feed is live in this environment.
   barchartBidsEnabled: true,
   usageDashboardEnabled: true,
+  // 'NOP ID on file, no certificate' Actionable Insights category (trade unit 2080 only).
+  // Compares two independent pipelines: the NOP id from Profisee via the nightly customer sync,
+  // and the certification from the integration team's feed. Until that feed is live EVERY organic
+  // producer qualifies - ~580 - so this stays OFF in Production until the first run has landed.
+  organicMissingCertificatesEnabled: true,
   dailyDigestEnabled: true,
   // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
   // on THIS environment's SPA app registration; without it the channel lookup returns nothing, so

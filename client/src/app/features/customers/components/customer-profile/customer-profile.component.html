@@ -57,8 +57,11 @@
                     (click)="showOrganicDetail.update(v => !v)"
                     [attr.aria-expanded]="showOrganicDetail()"
                     aria-controls="organic-certification-panel"
-                    title="Organic producer"
-                    class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green border border-green-200 dark:border-green-800 hover:bg-scoular-green/20 dark:hover:bg-scoular-green/20 transition-colors cursor-pointer"
+                    [title]="organicSurrendered() ? 'Organic certification surrendered' : 'Organic producer'"
+                    class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer"
+                    [class]="organicSurrendered()
+                      ? 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red border-red-200 dark:border-red-800 hover:bg-scoular-red/20 dark:hover:bg-scoular-red/20'
+                      : 'bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green border-green-200 dark:border-green-800 hover:bg-scoular-green/20 dark:hover:bg-scoular-green/20'"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
@@ -69,9 +72,14 @@
                     <!-- Amber dot when the certification needs attention — a status change that has
                          not resolved back to Certified, or a NOP ID with no certificate behind it.
                          On the badge rather than only inside the panel so a trader scanning the
-                         profile does not have to open anything to find out. Amber, not red: a
-                         surrendered certificate is a fact to act on, not an error. -->
-                    @if (organicStatusChanged() || organicNoCertificate()) {
+                         profile does not have to open anything to find out.
+
+                         Suppressed on a surrendered badge. The whole badge is already red there,
+                         which says more than the dot does, and the only thing the dot could still
+                         mean on it is "status changed" — which is exactly what the red announces.
+                         ("No certificate on file" cannot co-occur: no certificate means no status
+                         to be surrendered.) -->
+                    @if (!organicSurrendered() && (organicStatusChanged() || organicNoCertificate())) {
                       <span
                         class="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400"
                         [attr.aria-label]="organicStatusChanged() ? 'Certification status changed' : 'No certificate on file'"

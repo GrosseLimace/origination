@@ -52,4 +52,86 @@ public static class OrganicCertificationStatus
     /// </summary>
     public static bool HasUnresolvedStatusChange(string? currentStatus, string? previousStatus) =>
         !string.IsNullOrWhiteSpace(previousStatus) && !IsCertified(currentStatus);
+
+    /// <summary>
+    /// Whether the desk should be looking at this certification at all, change or no change.
+    ///
+    /// Broader than <see cref="HasUnresolvedStatusChange"/> on purpose, and the difference is the
+    /// whole point: that rule requires a change to have been OBSERVED, so a producer whose very
+    /// first message already said Surrendered appeared on no list anywhere. The organics desk
+    /// confirmed (2026-10-07) that they want those producers too — "any producer with a
+    /// non-certified certificate should show up in one of the two categories". Having met someone
+    /// already surrendered is not a reason to stay quiet about it.
+    ///
+    /// Anything that is not Certified counts, not Surrendered alone: Suspended and Revoked are at
+    /// least as serious, and an unfamiliar status USDA invents tomorrow should flag rather than
+    /// slip through.
+    ///
+    /// Says nothing about contracts. Which of the two Actionable Insight categories a producer
+    /// lands in — contracted or uncontracted — is decided by the caller, because only the caller
+    /// knows the contract position.
+    /// </summary>
+    public static bool NeedsAttention(string? currentStatus) =>
+        !string.IsNullOrWhiteSpace(currentStatus) && !IsCertified(currentStatus);
+
+    /// <summary>The status that turns the producer's badge red.</summary>
+    public const string Surrendered = "Surrendered";
+
+    /// <summary>
+    /// The scopes whose surrender turns the badge red.
+    ///
+    /// Crops is the obvious one. Handling was added on Kate Hoegermeyer's instruction (2026-10-07)
+    /// after the first version excluded it: <b>some family operations trade under a handling
+    /// certificate rather than a crops one</b>, so treating Handling as irrelevant would have left
+    /// exactly those producers looking fine when they are not.
+    ///
+    /// Livestock is the only scope that does not count. Scoular buys grain — a producer giving up
+    /// a livestock certificate does not affect what we can buy from them.
+    /// </summary>
+    private static readonly string[] BadgeScopes = ["Crops", "Handling"];
+
+    /// <summary>
+    /// Whether the badge on the producer profile should render RED rather than green.
+    ///
+    /// True when the OPERATION-level status is Surrendered, or when any of <see cref="BadgeScopes"/>
+    /// is. Red specifically for Surrendered — the existing amber dot covers "changed and not yet
+    /// resolved". Amber says look into this; red says we may not be able to trade.
+    ///
+    /// It clears itself: this reads current status only, so the badge returns to green the moment a
+    /// message arrives saying anything else. No separate dismissal, no time window.
+    /// </summary>
+    /// <param name="operationStatus">The operation-level status.</param>
+    /// <param name="scopes">Every scope on the certification, as (name, status) pairs.</param>
+    public static bool IsSurrendered(
+        string? operationStatus,
+        IEnumerable<(string? Scope, string? Status)> scopes)
+    {
+        if (IsSurrenderedValue(operationStatus)) return true;
+        if (scopes is null) return false;
+
+        foreach (var (scope, status) in scopes)
+        {
+            if (IsSurrenderedValue(status) && CountsTowardBadge(scope)) return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsSurrenderedValue(string? status) =>
+        string.Equals(status?.Trim(), Surrendered, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether a surrender of this scope should redden the badge. Trimmed and
+    /// case-insensitive — the source sends title case but is not reliably consistent.</summary>
+    public static bool CountsTowardBadge(string? scope)
+    {
+        var trimmed = scope?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return false;
+
+        foreach (var candidate in BadgeScopes)
+        {
+            if (string.Equals(trimmed, candidate, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
 }

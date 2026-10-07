@@ -78,4 +78,93 @@ public class OrganicCertificationStatusTests
         // with nothing to display next to it.
         Assert.False(OrganicCertificationStatus.HasUnresolvedStatusChange("Surrendered", previous));
     }
+
+    // ── NeedsAttention ───────────────────────────────────────────────────────────────────────
+    // Broader than HasUnresolvedStatusChange: no observed change required. Added 2026-10-07 when
+    // the desk asked for producers who were already surrendered the first time we saw them, who
+    // until then appeared on no list at all.
+
+    [Theory]
+    [InlineData("Certified", false)]
+    [InlineData("certified", false)]
+    [InlineData("Surrendered", true)]
+    [InlineData("Suspended", true)]
+    [InlineData("Revoked", true)]
+    [InlineData("Something USDA Invented", true)]  // unknown must flag, never slip through
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    public void NeedsAttentionFlagsAnythingNotCertified(string? status, bool expected)
+        => Assert.Equal(expected, OrganicCertificationStatus.NeedsAttention(status));
+
+    [Fact]
+    public void NeedsAttentionDoesNotRequireAnObservedChange()
+    {
+        // The whole point of it existing alongside HasUnresolvedStatusChange.
+        Assert.True(OrganicCertificationStatus.NeedsAttention("Surrendered"));
+        Assert.False(OrganicCertificationStatus.HasUnresolvedStatusChange("Surrendered", previousStatus: null));
+    }
+
+    // ── IsSurrendered — the red badge ────────────────────────────────────────────────────────
+
+    private static (string?, string?)[] Scopes(params (string?, string?)[] scopes) => scopes;
+
+    [Fact]
+    public void OperationLevelSurrenderRedddensTheBadge()
+        => Assert.True(OrganicCertificationStatus.IsSurrendered("Surrendered", Scopes()));
+
+    [Fact]
+    public void ASurrenderedCropsScopeReddensTheBadge()
+        => Assert.True(OrganicCertificationStatus.IsSurrendered(
+            "Certified", Scopes(("Crops", "Surrendered"))));
+
+    [Fact]
+    public void ASurrenderedHandlingScopeReddensTheBadge()
+    {
+        // Kate Hoegermeyer, 2026-10-07, correcting the first version of this rule: SOME FAMILY
+        // OPERATIONS TRADE UNDER A HANDLING CERTIFICATE rather than a crops one. Excluding
+        // Handling left exactly those producers looking fine when they are not.
+        Assert.True(OrganicCertificationStatus.IsSurrendered(
+            "Certified", Scopes(("Handling", "Surrendered"))));
+    }
+
+    [Fact]
+    public void ASurrenderedLivestockScopeDoesNotReddenTheBadge()
+    {
+        // The only scope that does not count. Scoular buys grain — giving up a livestock
+        // certificate does not change what we can buy from them.
+        Assert.False(OrganicCertificationStatus.IsSurrendered(
+            "Certified", Scopes(("Livestock", "Surrendered"))));
+    }
+
+    [Fact]
+    public void AFullyCertifiedOperationIsNotSurrendered()
+        => Assert.False(OrganicCertificationStatus.IsSurrendered(
+            "Certified", Scopes(("Crops", "Certified"), ("Handling", "Certified"))));
+
+    [Fact]
+    public void SuspendedIsNotSurrendered()
+    {
+        // Red is reserved for Surrendered specifically. Suspended still flags in Actionable
+        // Insights and still carries the amber dot — it is just not the red state.
+        Assert.False(OrganicCertificationStatus.IsSurrendered(
+            "Suspended", Scopes(("Crops", "Suspended"))));
+    }
+
+    [Theory]
+    [InlineData("crops")]
+    [InlineData("  Handling  ")]
+    [InlineData("HANDLING")]
+    public void ScopeMatchingIsTrimmedAndCaseInsensitive(string scope)
+        => Assert.True(OrganicCertificationStatus.IsSurrendered(
+            "Certified", Scopes((scope, "surrendered"))));
+
+    [Fact]
+    public void NoScopesAtAllIsNotSurrendered()
+    {
+        // A surrendered operation arrives with an empty items list and can arrive with no scopes;
+        // that must not throw and must not redden on its own.
+        Assert.False(OrganicCertificationStatus.IsSurrendered("Certified", Scopes()));
+        Assert.False(OrganicCertificationStatus.IsSurrendered(null, Scopes()));
+    }
 }

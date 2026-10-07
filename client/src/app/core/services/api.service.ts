@@ -17,6 +17,7 @@ import {
   Commodity,
   CustomerOrganicCertification,
   OrganicCertificationStatusChange,
+  OrganicMissingCertificate,
   ProducerDetails,
   DashboardPlantingEstimate,
   DashboardMarketShare,
@@ -742,6 +743,15 @@ export class ApiService {
   getOrganicStatusChanges(): Observable<OrganicCertificationStatusChange[]> {
     return this.http
       .get<OrganicCertificationStatusChange[]>(`${this.baseUrl}/organic-certifications/status-changes`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Producers holding a NOP id that no certification has ever arrived for. Only meaningful once
+   *  the certification feed is running — until then every organic producer qualifies, which is why
+   *  the Insights category it backs is behind `environment.organicMissingCertificatesEnabled`. */
+  getOrganicMissingCertificates(): Observable<OrganicMissingCertificate[]> {
+    return this.http
+      .get<OrganicMissingCertificate[]>(`${this.baseUrl}/organic-certifications/missing-certificates`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
