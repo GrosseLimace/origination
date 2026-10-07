@@ -41,6 +41,15 @@ public sealed class CtrmCustomerReader
     public const string SourceCodesMaxFilterCharsKey = "CustomerSync:SourceCodesMaxFilterChars";
     public const string SourceCodesMaxPerRequestKey = "CustomerSync:SourceCodesMaxPerRequest";
 
+    /// <summary>
+    /// Bool, default false (plan E1): send <see cref="CtrmCustomerQueries.ExtendedCustomerProjection"/> instead of the
+    /// base projection, in both strategies. Read once per lookup; the lookup reports what it fetched in
+    /// <see cref="CtrmCustomerLookup.ExtendedFields"/>. An environment whose API lacks one of the fields fails the
+    /// whole read closed (HTTP 400, <c>CUSTOMER_SYNC_SCHEMA_MISMATCH</c>), so turn it on only after
+    /// <c>GET /api/diagnostics/customer-sync/ctrm-capabilities</c> lists every field there.
+    /// </summary>
+    public const string ExtendedFieldsKey = "CustomerSync:CtrmExtendedFields";
+
     /// <summary>Rows per page of a <c>customers(sourceCodes:)</c> request (the API's take ceiling).</summary>
     public const int SourceCodesPageSize = 500;
 
@@ -139,7 +148,8 @@ public sealed class CtrmCustomerReader
     {
         // The 7-character limit is a customerIds defect, not a sourceCode one - keep every code.
         var codes = CtrmCustomerCodes.NormalizeKeepingAll(sourceCodes);
-        var lookup = new CtrmCustomerLookup { Requested = codes.Count };
+        var extended = CtrmConfig.ReadBool(_configuration, ExtendedFieldsKey, false);
+        var lookup = new CtrmCustomerLookup { Requested = codes.Count, ExtendedFields = extended };
         if (codes.Count == 0)
             return new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.Ok, Value = lookup };
 
@@ -155,7 +165,7 @@ public sealed class CtrmCustomerReader
             var aliasCount = Math.Clamp(CtrmConfig.ReadInt(_configuration, AliasCountKey, 20), 1, 50);
             chunks = [.. codes.Chunk(aliasCount).Select(c => (IReadOnlyList<string>)c.ToList())];
             shape = $"aliased, up to {aliasCount} alias(es) per request";
-            readChunk = (index, chunk, countRequest, token) => ReadAliasedChunkAsync(index, chunk, sourceSystem, countRequest, token);
+            readChunk = (index, chunk, countRequest, token) => ReadAliasedChunkAsync(index, chunk, sourceSystem, extended, countRequest, token);
         }
         else
         {
@@ -163,8 +173,9 @@ public sealed class CtrmCustomerReader
             var maxPerRequest = Math.Clamp(CtrmConfig.ReadInt(_configuration, SourceCodesMaxPerRequestKey, 400), 1, 1000);
             chunks = ChunkBySourceCodeFilterLength(codes, maxFilterChars, maxPerRequest);
             shape = $"sourceCodes, filter budget {maxFilterChars} chars and at most {maxPerRequest} code(s) per chunk";
-            readChunk = (index, chunk, countRequest, token) => ReadSourceCodesChunkAsync(index, chunk, sourceSystem, countRequest, token);
+            readChunk = (index, chunk, countRequest, token) => ReadSourceCodesChunkAsync(index, chunk, sourceSystem, extended, countRequest, token);
         }
+        if (extended) shape += "; extended fields";
 
         var stopwatch = Stopwatch.StartNew();
         var (results, failed, requests) = await ReadChunksAsync(chunks, concurrency, readChunk, cancellationToken);
@@ -294,10 +305,10 @@ public sealed class CtrmCustomerReader
 
     /// <summary>The aliased fallback: one request per chunk, alias <c>c{i}</c> = <c>chunk[i]</c>. Deleted in plan E7b.</summary>
     private async Task<ChunkOutcome> ReadAliasedChunkAsync(
-        int index, IReadOnlyList<string> chunk, string? sourceSystem, Action countRequest, CancellationToken token)
+        int index, IReadOnlyList<string> chunk, string? sourceSystem, bool extended, Action countRequest, CancellationToken token)
     {
         countRequest();
-        var document = CtrmCustomerQueries.CustomersBySourceCodesAliased(chunk, sourceSystem);
+        var document = CtrmCustomerQueries.CustomersBySourceCodesAliased(chunk, sourceSystem, extended);
         var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
             () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, null, token),
             _configuration, _logger, $"customers chunk {index}"));
@@ -310,8 +321,10 @@ public sealed class CtrmCustomerReader
     /// <c>hasNextPage</c> is false. Every page - and every HC0045 re-send - is counted as a request.
     /// </summary>
     private async Task<ChunkOutcome> ReadSourceCodesChunkAsync(
-        int index, IReadOnlyList<string> chunk, string? sourceSystem, Action countRequest, CancellationToken token)
+        int index, IReadOnlyList<string> chunk, string? sourceSystem, bool extended, Action countRequest, CancellationToken token)
     {
+        var document = CtrmCustomerQueries.CustomersBySourceCodesDocument(extended);
+
         // Requested code (as sent) → its rows. Case and padding on the returned sourceCode are tolerated
         // (Db2 CHAR columns); a row for any code this chunk did not ask for is not.
         var byCode = new Dictionary<string, List<CtrmCustomerDto>>(chunk.Count, StringComparer.OrdinalIgnoreCase);
@@ -336,7 +349,7 @@ public sealed class CtrmCustomerReader
                 () =>
                 {
                     countRequest();
-                    return _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(CtrmCustomerQueries.CustomersBySourceCodes, variables, token);
+                    return _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, variables, token);
                 },
                 _configuration, _logger, $"customers sourceCodes chunk {index} page {page}"));
 
@@ -401,7 +414,9 @@ public sealed class CtrmCustomerReader
 
     /// <summary>
     /// Diagnostic probe: is the <c>customers</c> field readable by this client, and - given a sample code -
-    /// does the full <see cref="CtrmCustomerQueries.CustomerProjection"/> come back?
+    /// does the full <see cref="CtrmCustomerQueries.CustomerProjection"/> come back? With
+    /// <see cref="ExtendedFieldsKey"/> on, the sample is read with the extended projection, so
+    /// <see cref="CtrmCustomerProbe.ProjectionAccepted"/> then covers the extended fields too.
     /// </summary>
     /// <remarks>
     /// The first request is the cheapest possible <c>customers</c> read. Only when it shows the permission
@@ -552,7 +567,7 @@ public sealed class CtrmCustomerReader
                 "sourceCodes filter too long for the API — lower CustomerSync:SourceCodesMaxFilterChars: ");
         if (chunk.Status == CtrmReadStatus.QueryError && chunk.HttpStatus == 400)
             return ("CUSTOMER_SYNC_SCHEMA_MISMATCH",
-                "schema mismatch — a field or argument in CtrmCustomerQueries.CustomerProjection / CustomersBySourceCodes / CustomersBySourceCodesAliased does not exist on the API (HTTP 400): ");
+                "schema mismatch — a field or argument in CtrmCustomerQueries.CustomerProjection (or ExtendedFieldsProjection when CustomerSync:CtrmExtendedFields is on) / CustomersBySourceCodes / CustomersBySourceCodesAliased does not exist on the API (HTTP 400): ");
         return ("CUSTOMER_SYNC_SOURCE_UNAVAILABLE", "");
     }
 
@@ -599,6 +614,12 @@ public sealed class CtrmCustomerLookup
 
     /// <summary>HTTP requests sent.</summary>
     public int Requests { get; set; }
+
+    /// <summary>
+    /// True when this lookup sent the extended projection (<see cref="CtrmCustomerReader.ExtendedFieldsKey"/>), so
+    /// the rows in <see cref="ByCode"/> carry the extended fields. The sync applies the extended columns only then.
+    /// </summary>
+    public bool ExtendedFields { get; set; }
 }
 
 /// <summary>What the customers permission/projection probe found. Never carries a customer value.</summary>

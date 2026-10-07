@@ -64,11 +64,19 @@ public sealed class OdsCustomerSyncAttributes : CustomerSyncAttributes
 }
 
 /// <summary>
-/// CTRM attributes: only the nine columns GraphQL carries today (Stage 1). Every column in
-/// <see cref="UntouchedColumns"/> keeps its last ODS value until the API exposes the field.
+/// CTRM attributes. Stage 1 (plan D10): only the nine columns the base projection carries; every column in
+/// <see cref="UntouchedColumns"/> keeps its last ODS value. Extended mode (plan E1, when the lookup read the
+/// extended projection under <c>CustomerSync:CtrmExtendedFields</c>): also email, supplemental email, extended
+/// primary phone, the extended address and the NOP id (normalised exactly as on ODS), leaving only the effective
+/// dates untouched - see <see cref="UntouchedColumnsFor"/>.
 /// </summary>
+/// <remarks>
+/// <c>extended</c> must say what the lookup FETCHED (<c>CtrmCustomerLookup.ExtendedFields</c>), never what the
+/// setting says now: applying the extended columns from a base-projection read would null every one of them.
+/// </remarks>
 public sealed class CtrmCustomerSyncAttributes : CustomerSyncAttributes
 {
+    /// <summary>Columns the ODS applier sets that the Stage 1 (base projection) CTRM applier leaves alone.</summary>
     public static readonly string[] UntouchedColumns =
     [
         "Email", "SupplementalEmail", "ExtendedPrimaryPhone",
@@ -77,11 +85,19 @@ public sealed class CtrmCustomerSyncAttributes : CustomerSyncAttributes
         "NopIdNumber", "EffectiveStartDate", "EffectiveEndDate",
     ];
 
-    private readonly CtrmCustomerDto _source;
+    /// <summary>Columns the ODS applier sets that the extended CTRM applier leaves alone: no GraphQL field carries them.</summary>
+    public static readonly string[] ExtendedUntouchedColumns = ["EffectiveStartDate", "EffectiveEndDate"];
 
-    public CtrmCustomerSyncAttributes(CtrmCustomerDto source)
+    /// <summary>The untouched columns for the mode.</summary>
+    public static IReadOnlyList<string> UntouchedColumnsFor(bool extended) => extended ? ExtendedUntouchedColumns : UntouchedColumns;
+
+    private readonly CtrmCustomerDto _source;
+    private readonly bool _extended;
+
+    public CtrmCustomerSyncAttributes(CtrmCustomerDto source, bool extended = false)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
+        _extended = extended;
     }
 
     public override void ApplyTo(Customer target)
@@ -95,6 +111,21 @@ public sealed class CtrmCustomerSyncAttributes : CustomerSyncAttributes
         target.PostalCode    = Clean(_source.MerchandisingPostalCode);
         target.IndustryCode1 = Clean(_source.IndustryCode1);
         target.IndustryCode2 = Clean(_source.IndustryCode2);
+
+        if (!_extended) return;
+
+        target.Email                 = Clean(_source.MerchandisingEmail);
+        target.SupplementalEmail     = Clean(_source.SupplementalEmail);
+        target.ExtendedPrimaryPhone  = Clean(_source.ExtendedPrimaryPhone);
+        target.ExtendedAddressLine1  = Clean(_source.ExtendedAddressLine1);
+        target.ExtendedAddressLine2  = Clean(_source.ExtendedAddressLine2);
+        target.ExtendedAddressLine3  = Clean(_source.ExtendedAddressLine3);
+        target.ExtendedAddressLine4  = Clean(_source.ExtendedAddressLine4);
+        target.ExtendedCity          = Clean(_source.ExtendedCity);
+        target.ExtendedStateProvince = Clean(_source.ExtendedStateProvince);
+        target.ExtendedPostalCode    = Clean(_source.ExtendedPostalCode);
+        target.ExtendedCountry       = Clean(_source.ExtendedCountry);
+        target.NopIdNumber           = OdsValues.NormaliseNopId(_source.NopidNoText);
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

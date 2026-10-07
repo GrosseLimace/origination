@@ -102,7 +102,7 @@ public class CtrmCustomerSyncSourceTests
             }
 
             // The default lookup (E7): one customers(sourceCodes:) list per chunk; one page is enough here.
-            if (document == CtrmCustomerQueries.CustomersBySourceCodes)
+            if (document == CtrmCustomerQueries.CustomersBySourceCodes || document == CtrmCustomerQueries.CustomersBySourceCodesExtended)
             {
                 var map = variables!.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(variables));
                 var requested = ((IEnumerable<string>)map["codes"]!).ToList();
@@ -221,6 +221,50 @@ public class CtrmCustomerSyncSourceTests
         Assert.Equal("SMITFAR Farms", Applied(row.Attributes).Name);
         Assert.Equal(CustomerSyncSources.Ctrm, result.Source);
         Assert.Equal(0, result.Discovery!.ContractLinks + result.Discovery.TicketLinks);
+    }
+
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    [InlineData(null, false)]
+    public async Task LoadAsync_AppliesTheExtendedColumns_OnlyWhenTheLookupReadThem(string? flag, bool extended)
+    {
+        // E1: the attributes follow what the lookup actually fetched (CtrmCustomerLookup.ExtendedFields), so
+        // a base-projection read can never null out Email, the extended address or the NOP id.
+        _settings[CtrmCustomerReader.ExtendedFieldsKey] = flag;
+        InMaster("SMITFAR");
+        _client.Master["SMITFAR"][0].MerchandisingEmail = "a@b.com";
+        _client.Master["SMITFAR"][0].ExtendedCity = "Ashland";
+        _client.Master["SMITFAR"][0].NopidNo = JsonSerializer.SerializeToElement("1234567890");
+        var app = App([Cust(1, "SMITFAR")], [Link(1, "1085")]);
+
+        var result = await LoadAsync(app);
+
+        Assert.True(result.Ok);
+        var target = new Customer { Email = "keep", ExtendedCity = "keep", NopIdNumber = "keep" };
+        Assert.Single(result.Rows).Attributes.ApplyTo(target);
+        Assert.Equal(extended ? "a@b.com" : "keep", target.Email);
+        Assert.Equal(extended ? "Ashland" : "keep", target.ExtendedCity);
+        Assert.Equal(extended ? "1234567890" : "keep", target.NopIdNumber);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ExtendedFieldsOn_MintedAndManualProducersGetTheExtendedColumnsToo()
+    {
+        _settings[CtrmCustomerReader.ExtendedFieldsKey] = "true";
+        InMaster("MANUAL1");
+        InMaster("NEWBIE1");
+        _client.Master["MANUAL1"][0].MerchandisingEmail = "m@b.com";
+        _client.Master["NEWBIE1"][0].MerchandisingEmail = "n@b.com";
+        _client.ContractLinks.Add(new CtrmContractLinkDto { CustomerId = "NEWBIE1", TradeUnit = "2200" });
+        _repo.Setup(r => r.ReserveCustomerIdsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync([5_000_000_000_000_001]);
+        var app = App([Cust(7, "MANUAL1", isManual: true)]);
+
+        var result = await LoadAsync(app);
+
+        Assert.True(result.Ok);
+        Assert.Equal("m@b.com", Applied(result.ManualMaster[7]).Email);
+        Assert.Equal("n@b.com", Applied(Assert.Single(result.Rows).Attributes).Email);
     }
 
     [Fact]

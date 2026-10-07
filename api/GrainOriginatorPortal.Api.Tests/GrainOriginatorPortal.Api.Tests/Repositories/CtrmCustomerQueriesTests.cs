@@ -51,6 +51,7 @@ public class CtrmCustomerQueriesTests
     [InlineData(nameof(CtrmCustomerQueries.TicketLinksInWindow))]
     [InlineData(nameof(CtrmCustomerQueries.CustomersProbe))]
     [InlineData(nameof(CtrmCustomerQueries.CustomersBySourceCodes))]
+    [InlineData(nameof(CtrmCustomerQueries.CustomersBySourceCodesExtended))]
     public void Documents_ContainNoHashCommentLines(string constName)
     {
         var field = typeof(CtrmCustomerQueries).GetField(constName, BindingFlags.Public | BindingFlags.Static)!;
@@ -90,6 +91,99 @@ public class CtrmCustomerQueriesTests
         Assert.Equal(
             "id code name sourceCode sourceSystem activeYN merchandisingName merchandisingAddressLine1 merchandisingAddressLine2 merchandisingCity merchandisingStateProvince merchandisingPostalCode merchandisingCountry merchandisingPhone industryCode1 industryCode2 industryCode3 mdmMasterRecord lastChangedUtc",
             CtrmCustomerQueries.CustomerProjection);
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // E1: the extended projection behind CustomerSync:CtrmExtendedFields
+
+    [Fact]
+    public void ExtendedCustomerProjection_IsTheBaseProjectionPlusTheThirteenFieldsSeenOn2026_10_06()
+    {
+        // Deliberate tripwire, as for the base projection: these thirteen names were listed by
+        // GET /api/diagnostics/customer-sync/ctrm-capabilities on nonprod on 2026-10-06. duplicateYN
+        // exists too but is search-only (E3), so it is NOT here.
+        Assert.Equal(
+            "merchandisingEmail extendedPrimaryPhone supplementalEmail extendedAddressLine1 extendedAddressLine2 extendedAddressLine3 extendedAddressLine4 extendedCity extendedStateProvince extendedPostalCode extendedCountry nopidNo paymentMethod",
+            CtrmCustomerQueries.ExtendedFieldsProjection);
+        Assert.Equal(
+            "id code name sourceCode sourceSystem activeYN merchandisingName merchandisingAddressLine1 merchandisingAddressLine2 merchandisingCity merchandisingStateProvince merchandisingPostalCode merchandisingCountry merchandisingPhone industryCode1 industryCode2 industryCode3 mdmMasterRecord lastChangedUtc merchandisingEmail extendedPrimaryPhone supplementalEmail extendedAddressLine1 extendedAddressLine2 extendedAddressLine3 extendedAddressLine4 extendedCity extendedStateProvince extendedPostalCode extendedCountry nopidNo paymentMethod",
+            CtrmCustomerQueries.ExtendedCustomerProjection);
+        Assert.DoesNotContain("duplicateYN", CtrmCustomerQueries.ExtendedCustomerProjection);
+    }
+
+    [Fact]
+    public void Projection_PicksTheBaseOrTheExtendedProjection()
+    {
+        Assert.Equal(CtrmCustomerQueries.CustomerProjection, CtrmCustomerQueries.Projection(extended: false));
+        Assert.Equal(CtrmCustomerQueries.ExtendedCustomerProjection, CtrmCustomerQueries.Projection(extended: true));
+    }
+
+    [Fact]
+    public void CustomersBySourceCodesAliased_Extended_CarriesTheExtendedProjectionOnEveryAlias()
+    {
+        var extended = CtrmCustomerQueries.CustomersBySourceCodesAliased(["A", "B"], null, extended: true);
+        var standard = CtrmCustomerQueries.CustomersBySourceCodesAliased(["A", "B"], null);
+
+        Assert.Equal(2, CountOf("items { " + CtrmCustomerQueries.ExtendedCustomerProjection + " }", extended));
+        Assert.Equal(2, CountOf("items { " + CtrmCustomerQueries.CustomerProjection + " }", standard));
+        Assert.DoesNotContain("merchandisingEmail", standard);
+        Assert.Equal(standard, CtrmCustomerQueries.CustomersBySourceCodesAliased(["A", "B"], null, extended: false));
+    }
+
+    [Fact]
+    public void CustomersBySourceCodesExtended_IsTheListDocumentWithTheExtendedProjection()
+    {
+        Assert.Equal(
+            CtrmCustomerQueries.CustomersBySourceCodes.Replace(
+                "items { " + CtrmCustomerQueries.CustomerProjection + " }",
+                "items { " + CtrmCustomerQueries.ExtendedCustomerProjection + " }",
+                StringComparison.Ordinal),
+            CtrmCustomerQueries.CustomersBySourceCodesExtended);
+        Assert.DoesNotContain("merchandisingEmail", CtrmCustomerQueries.CustomersBySourceCodes);
+        Assert.Equal(CtrmCustomerQueries.CustomersBySourceCodes, CtrmCustomerQueries.CustomersBySourceCodesDocument(extended: false));
+        Assert.Equal(CtrmCustomerQueries.CustomersBySourceCodesExtended, CtrmCustomerQueries.CustomersBySourceCodesDocument(extended: true));
+    }
+
+    [Theory]
+    [InlineData("\"0123456789\"", "0123456789")]
+    [InlineData("1234567890", "1234567890")]
+    [InlineData("null", null)]
+    public void CtrmCustomerDto_ReadsTheExtendedFields_AndNopidNoAsStringOrNumber(string nopidJson, string? expectedNopText)
+    {
+        var json = "{\"merchandisingEmail\":\"a@b.com\",\"extendedPrimaryPhone\":\"402\",\"supplementalEmail\":\"c@d.com\"," +
+                   "\"extendedAddressLine1\":\"x1\",\"extendedAddressLine2\":\"x2\",\"extendedAddressLine3\":\"x3\",\"extendedAddressLine4\":\"x4\"," +
+                   "\"extendedCity\":\"xc\",\"extendedStateProvince\":\"xs\",\"extendedPostalCode\":\"xp\",\"extendedCountry\":\"US\"," +
+                   "\"nopidNo\":" + nopidJson + ",\"paymentMethod\":\"ACH\"}";
+
+        var dto = JsonSerializer.Deserialize<CtrmCustomerDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+        Assert.Equal("a@b.com", dto.MerchandisingEmail);
+        Assert.Equal("402", dto.ExtendedPrimaryPhone);
+        Assert.Equal("c@d.com", dto.SupplementalEmail);
+        Assert.Equal(["x1", "x2", "x3", "x4"], new[] { dto.ExtendedAddressLine1, dto.ExtendedAddressLine2, dto.ExtendedAddressLine3, dto.ExtendedAddressLine4 });
+        Assert.Equal("xc", dto.ExtendedCity);
+        Assert.Equal("xs", dto.ExtendedStateProvince);
+        Assert.Equal("xp", dto.ExtendedPostalCode);
+        Assert.Equal("US", dto.ExtendedCountry);
+        Assert.Equal("ACH", dto.PaymentMethod);
+        Assert.Equal(expectedNopText, dto.NopidNoText);
+    }
+
+    [Fact]
+    public void CtrmCustomerDto_WithoutTheExtendedFields_HasNoNopText()
+    {
+        var dto = JsonSerializer.Deserialize<CtrmCustomerDto>("{\"sourceCode\":\"S\"}", new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+        Assert.Null(dto.NopidNoText);
+        Assert.Null(dto.MerchandisingEmail);
+    }
+
+    private static int CountOf(string needle, string haystack)
+    {
+        var count = 0;
+        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0; i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+            count++;
+        return count;
     }
 
     [Theory]

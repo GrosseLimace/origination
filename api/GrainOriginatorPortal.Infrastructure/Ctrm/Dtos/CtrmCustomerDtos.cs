@@ -3,13 +3,15 @@ using System.Text.Json;
 namespace GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 
 /// <summary>
-/// A CTRM customer master record, limited to the fields the API team confirmed on 2026-10-05.
+/// A CTRM customer master record, limited to the fields the API team confirmed on 2026-10-05, plus the
+/// extended fields of plan E1 (filled only when <c>CustomerSync:CtrmExtendedFields</c> sends them).
 /// </summary>
 /// <remarks>
 /// <see cref="Id"/> is a <see cref="JsonElement"/> because its GraphQL type (number or string) is not
 /// yet known and must never be assumed; use <see cref="IdText"/>. <see cref="MdmMasterRecord"/> is a
 /// <see cref="JsonElement"/> for the same reason (bool or "Y"/"N") — read it through
-/// <see cref="CtrmYesNo.IsYes"/>.
+/// <see cref="CtrmYesNo.IsYes"/>. <see cref="NopidNo"/> likewise (the capability check lists field names,
+/// not types, and a number would otherwise fail the whole read) — read it through <see cref="NopidNoText"/>.
 /// </remarks>
 public sealed class CtrmCustomerDto
 {
@@ -35,11 +37,34 @@ public sealed class CtrmCustomerDto
     /// <summary>Kept as text on purpose — the format is unverified.</summary>
     public string? LastChangedUtc { get; set; }
 
+    // Extended fields (plan E1/E2) — null unless the extended projection was sent.
+    public string? MerchandisingEmail { get; set; }
+    public string? ExtendedPrimaryPhone { get; set; }
+    public string? SupplementalEmail { get; set; }
+    public string? ExtendedAddressLine1 { get; set; }
+    public string? ExtendedAddressLine2 { get; set; }
+    public string? ExtendedAddressLine3 { get; set; }
+    public string? ExtendedAddressLine4 { get; set; }
+    public string? ExtendedCity { get; set; }
+    public string? ExtendedStateProvince { get; set; }
+    public string? ExtendedPostalCode { get; set; }
+    public string? ExtendedCountry { get; set; }
+    public JsonElement NopidNo { get; set; }
+    public string? PaymentMethod { get; set; }
+
     public string IdText => Id.ValueKind switch
     {
         JsonValueKind.String => Id.GetString() ?? "",
         JsonValueKind.Number => Id.GetRawText(),
         _ => "",
+    };
+
+    /// <summary><see cref="NopidNo"/> as text (string or number); null when absent or null. Not normalised.</summary>
+    public string? NopidNoText => NopidNo.ValueKind switch
+    {
+        JsonValueKind.String => NopidNo.GetString(),
+        JsonValueKind.Number => NopidNo.GetRawText(),
+        _ => null,
     };
 }
 

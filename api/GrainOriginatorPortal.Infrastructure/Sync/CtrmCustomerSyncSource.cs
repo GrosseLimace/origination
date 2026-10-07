@@ -17,7 +17,8 @@ namespace GrainOriginatorPortal.Infrastructure.Sync;
 /// not) is looked up in the CTRM customer master by <c>sourceCode</c> (<see cref="CtrmCustomerReader"/>). A customer
 /// whose master row is found and passes the view's customer-level filters (<see cref="CtrmCustomerFilters"/>) is in;
 /// one that is missing or filtered out gets no rows, so the service deactivates it, guarded, exactly as when it
-/// drops out of the view.</para>
+/// drops out of the view. The attributes copy the extended columns (email, extended address, NOP id - plan E1) only
+/// when the lookup itself read them (<see cref="CtrmCustomerLookup.ExtendedFields"/>).</para>
 ///
 /// <para><b>Links.</b> The view derives a customer's trade units from its contracts and tickets over all time, and
 /// those never go away, so a link once earned is permanent (plan D2). The app's own sync-sourced links
@@ -151,13 +152,13 @@ public sealed class CtrmCustomerSyncSource : ICustomerSyncSource
                     // NO scope filter, so a manual producer the master still knows is refreshed and kept
                     // whatever its activeYN / industry / name says; only absence from the master
                     // deactivates one. Its sync links (if any) still drop with the customer's rows.
-                    manualMaster[customer.Id] = new CtrmCustomerSyncAttributes(dto);
+                    manualMaster[customer.Id] = new CtrmCustomerSyncAttributes(dto, master.ExtendedFields);
                     manualOutOfScope++;
                 }
                 continue;
             }
 
-            var attributes = new CtrmCustomerSyncAttributes(dto);
+            var attributes = new CtrmCustomerSyncAttributes(dto, master.ExtendedFields);
             var links = linksByCustomer[customer.Id].ToList();
 
             // The table's own spelling of every unit this customer holds (active, inactive, manual or
@@ -223,7 +224,7 @@ public sealed class CtrmCustomerSyncSource : ICustomerSyncSource
         var ids = await IdsForNewProducersAsync(toMint.Count, options.DryRun, cancellationToken);
         for (var i = 0; i < toMint.Count; i++)
         {
-            var attributes = new CtrmCustomerSyncAttributes(master.ByCode[toMint[i]]);
+            var attributes = new CtrmCustomerSyncAttributes(master.ByCode[toMint[i]], master.ExtendedFields);
             rows.AddRange(discoveredByCode[toMint[i]].Select(t => new CustomerSyncSourceRow { CustomerId = ids[i], TradeUnit = t, Attributes = attributes }));
         }
 

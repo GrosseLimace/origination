@@ -177,4 +177,124 @@ public class CustomerSyncAttributesTests
         Assert.Equal("N", created.Name);
         Assert.Equal("S", created.ScoularId);
     }
+
+    // -------------------------------------------------------------------------------------------------
+    // E1: extended mode (CustomerSync:CtrmExtendedFields) — the GraphQL fields that arrived on 2026-10-06
+
+    private static CtrmCustomerDto ExtendedDto(string nopidJson = "\" 1234567890 \"") => new()
+    {
+        Name = "N", SourceCode = "S", MerchandisingPhone = "P", MerchandisingCity = "C", MerchandisingStateProvince = "ST",
+        MerchandisingAddressLine1 = "A", MerchandisingPostalCode = "Z", IndustryCode1 = "PR", IndustryCode2 = "OR",
+        MerchandisingEmail = " a@b.com ",
+        SupplementalEmail = " c@d.com ",
+        ExtendedPrimaryPhone = " 402-555-0101 ",
+        ExtendedAddressLine1 = " x1 ",
+        ExtendedAddressLine2 = " x2 ",
+        ExtendedAddressLine3 = " x3 ",
+        ExtendedAddressLine4 = " x4 ",
+        ExtendedCity = " xc ",
+        ExtendedStateProvince = " xs ",
+        ExtendedPostalCode = " xp ",
+        ExtendedCountry = " US ",
+        NopidNo = System.Text.Json.JsonDocument.Parse(nopidJson).RootElement.Clone(),
+    };
+
+    [Fact]
+    public void Ctrm_Extended_ApplyTo_SetsEmailPhonesExtendedAddressAndNopId_Trimmed()
+    {
+        var target = new Customer();
+
+        new CtrmCustomerSyncAttributes(ExtendedDto(), extended: true).ApplyTo(target);
+
+        Assert.Equal("a@b.com", target.Email);
+        Assert.Equal("c@d.com", target.SupplementalEmail);
+        Assert.Equal("402-555-0101", target.ExtendedPrimaryPhone);
+        Assert.Equal("x1", target.ExtendedAddressLine1);
+        Assert.Equal("x2", target.ExtendedAddressLine2);
+        Assert.Equal("x3", target.ExtendedAddressLine3);
+        Assert.Equal("x4", target.ExtendedAddressLine4);
+        Assert.Equal("xc", target.ExtendedCity);
+        Assert.Equal("xs", target.ExtendedStateProvince);
+        Assert.Equal("xp", target.ExtendedPostalCode);
+        Assert.Equal("US", target.ExtendedCountry);
+        Assert.Equal("1234567890", target.NopIdNumber);
+        // ...and still the nine Stage 1 columns.
+        Assert.Equal("N", target.Name);
+        Assert.Equal("S", target.ScoularId);
+    }
+
+    [Theory]
+    [InlineData("\"0\"")]
+    [InlineData("\"9999999999\"")]
+    [InlineData("0")]
+    [InlineData("null")]
+    public void Ctrm_Extended_ApplyTo_NormalisesAPlaceholderNopIdToNull_LikeTheOdsApplier(string nopidJson)
+    {
+        var target = new Customer { NopIdNumber = "1234567890" };
+
+        new CtrmCustomerSyncAttributes(ExtendedDto(nopidJson), extended: true).ApplyTo(target);
+
+        Assert.Null(target.NopIdNumber);
+    }
+
+    [Fact]
+    public void Ctrm_Extended_ApplyTo_BlankExtendedValuesBecomeNull()
+    {
+        var target = new Customer { Email = "old", ExtendedCity = "old" };
+        var dto = ExtendedDto();
+        dto.MerchandisingEmail = "  ";
+        dto.ExtendedCity = null;
+
+        new CtrmCustomerSyncAttributes(dto, extended: true).ApplyTo(target);
+
+        Assert.Null(target.Email);
+        Assert.Null(target.ExtendedCity);
+    }
+
+    [Fact]
+    public void Ctrm_NotExtended_IgnoresExtendedValuesEvenWhenTheDtoCarriesThem()
+    {
+        var target = new Customer { Email = "keep", ExtendedCity = "keep", NopIdNumber = "keep" };
+
+        new CtrmCustomerSyncAttributes(ExtendedDto(), extended: false).ApplyTo(target);
+
+        Assert.Equal("keep", target.Email);
+        Assert.Equal("keep", target.ExtendedCity);
+        Assert.Equal("keep", target.NopIdNumber);
+    }
+
+    [Fact]
+    public void Ctrm_UntouchedColumnsFor_IsTheStage1ListOff_AndOnlyTheEffectiveDatesOn()
+    {
+        Assert.Equal(CtrmCustomerSyncAttributes.UntouchedColumns, CtrmCustomerSyncAttributes.UntouchedColumnsFor(extended: false));
+        Assert.Equal(["EffectiveStartDate", "EffectiveEndDate"], CtrmCustomerSyncAttributes.UntouchedColumnsFor(extended: true));
+    }
+
+    [Fact]
+    public void Ctrm_Extended_LeavesOnlyTheEffectiveDatesUntouched_OfEveryColumnTheOdsApplierSets()
+    {
+        // Every column the ODS applier sets, minus the ones extended CTRM sets, is exactly the untouched list.
+        var view = FullView();
+        view.NopIdNumber = "1234567890";
+        var odsApplied = new Customer();
+        new OdsCustomerSyncAttributes(view).ApplyTo(odsApplied);
+        var blank = new Customer();
+        var ctrmApplied = new Customer();
+        new CtrmCustomerSyncAttributes(ExtendedDto(), extended: true).ApplyTo(ctrmApplied);
+
+        var odsSets = typeof(Customer).GetProperties().Where(IsSimple)
+            .Where(p => !Equals(p.GetValue(blank), p.GetValue(odsApplied))).Select(p => p.Name).ToHashSet();
+        var ctrmSets = typeof(Customer).GetProperties().Where(IsSimple)
+            .Where(p => !Equals(p.GetValue(blank), p.GetValue(ctrmApplied))).Select(p => p.Name).ToHashSet();
+
+        Assert.True(
+            odsSets.Except(ctrmSets).ToHashSet().SetEquals(CtrmCustomerSyncAttributes.UntouchedColumnsFor(extended: true)),
+            "ODS-set columns extended CTRM does not set: " + string.Join(", ", odsSets.Except(ctrmSets)));
+
+        // And the effective dates really are left alone.
+        var target = new Customer { EffectiveStartDate = new DateTime(2020, 1, 1), EffectiveEndDate = new DateTime(2021, 1, 1) };
+        new CtrmCustomerSyncAttributes(ExtendedDto(), extended: true).ApplyTo(target);
+        Assert.Equal(new DateTime(2020, 1, 1), target.EffectiveStartDate);
+        Assert.Equal(new DateTime(2021, 1, 1), target.EffectiveEndDate);
+    }
 }

@@ -515,6 +515,8 @@ public class CtrmCustomerReaderTests
         public bool IsConfigured => true;
         public List<string> Documents { get; } = [];
         public List<Request> Requests { get; } = [];
+        /// <summary>The only customers document this fake answers (the extended one when CtrmExtendedFields is on).</summary>
+        public string ExpectedDocument { get; init; } = CtrmCustomerQueries.CustomersBySourceCodes;
         public int Calls { get { lock (Documents) return Documents.Count; } }
 
         /// <summary>Codes answered with these rows instead of the default single row.</summary>
@@ -543,7 +545,7 @@ public class CtrmCustomerReaderTests
             if (document == CtrmCustomerQueries.CustomersProbe)
                 return Task.FromResult((CtrmReadResult<T>)(object)ProbeAnswer);
 
-            Assert.Equal(CtrmCustomerQueries.CustomersBySourceCodes, document);
+            Assert.Equal(ExpectedDocument, document);
             var map = variables!.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(variables));
             var codes = ((IEnumerable<string>)map["codes"]!).ToList();
             var skip = Convert.ToInt32(map["skip"]);
@@ -694,6 +696,67 @@ public class CtrmCustomerReaderTests
         Assert.Equal(10, read.Value!.Found);
         Assert.Single(client.Documents);
         Assert.StartsWith("query {\n  c0: customers(skip: 0, take: 5, sourceCode: ", client.Documents[0]);
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // E1: CustomerSync:CtrmExtendedFields picks the projection for both strategies, and the lookup says which
+
+    private static IConfiguration WithExtendedFields(IConfiguration config, string? value) =>
+        new ConfigurationBuilder()
+            .AddConfiguration(config)
+            .AddInMemoryCollection(new Dictionary<string, string?> { [CtrmCustomerReader.ExtendedFieldsKey] = value })
+            .Build();
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("false")]
+    [InlineData("not-a-bool")]
+    public async Task GetBySourceCodesAsync_ExtendedFieldsOffOrUnset_SendsTheBaseListDocument_AndSaysSo(string? value)
+    {
+        var client = new CustomerListClient();
+
+        var read = await Sut(client, WithExtendedFields(ListConfig(), value)).GetBySourceCodesAsync(Codes(3), CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.Equal([CtrmCustomerQueries.CustomersBySourceCodes], client.Documents);
+        Assert.False(read.Value!.ExtendedFields);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ExtendedFieldsOn_SendsTheExtendedListDocument_AndSaysSo()
+    {
+        var client = new CustomerListClient { ExpectedDocument = CtrmCustomerQueries.CustomersBySourceCodesExtended };
+
+        var read = await Sut(client, WithExtendedFields(ListConfig(), "true")).GetBySourceCodesAsync(Codes(3), CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.Equal([CtrmCustomerQueries.CustomersBySourceCodesExtended], client.Documents);
+        Assert.True(read.Value!.ExtendedFields);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ExtendedFieldsOn_AliasedStrategy_CarriesTheExtendedProjectionOnEveryAlias()
+    {
+        var client = new CustomerAliasClient();
+
+        var read = await Sut(client, WithExtendedFields(Config(), "true")).GetBySourceCodesAsync(Codes(3), CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.True(read.Value!.ExtendedFields);
+        var document = Assert.Single(client.Documents);
+        Assert.Equal(CtrmCustomerQueries.CustomersBySourceCodesAliased(Codes(3), null, extended: true), document);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ExtendedFieldsOff_AliasedStrategy_SendsTheBaseProjection()
+    {
+        var client = new CustomerAliasClient();
+
+        var read = await Sut(client, Config()).GetBySourceCodesAsync(Codes(3), CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.False(read.Value!.ExtendedFields);
+        Assert.Equal(CtrmCustomerQueries.CustomersBySourceCodesAliased(Codes(3), null), Assert.Single(client.Documents));
     }
 
     // -------------------------------------------------------------------------------------------------
