@@ -11,6 +11,7 @@ export interface ProducerDetails {
   linkedProducerIds?: string; // Comma-separated customer IDs
   grainOnFarm?: GrainOnFarmItem[]; // Per-commodity bushels on hand + target
   contacts?: ProducerContactItem[]; // User-entered contacts, primary first
+  binSites?: ProducerBinSiteItem[]; // User-entered bin sites, display order
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;
@@ -24,6 +25,15 @@ export interface ProducerContactItem {
   phone?: string;   // stored formatted "(XXX) XXX-XXXX"
   email?: string;
   isPrimary?: boolean;
+  sortOrder?: number;
+}
+
+/** A user-entered on-farm bin site: an optional name and a North American lat/long pair, stored
+ *  at full precision (shown to six places). See shared/utils/coordinates.ts for the rules. */
+export interface ProducerBinSiteItem {
+  name?: string | null;
+  latitude: number;
+  longitude: number;
   sortOrder?: number;
 }
 

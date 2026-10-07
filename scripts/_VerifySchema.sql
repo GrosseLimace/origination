@@ -72,6 +72,9 @@
 --   ProducerDetails and ProducerGrainOnFarm wholesale because one of their rows was renamed.
 --   Taking both sides would have duplicated 23 rows and kept the pre-rename CommodityGroup, so
 --   only the renamed row was taken.
+--   Updated 2026-10-07: 20261007145119_AddProducerBinSite created dbo.ProducerBinSite (6 columns,
+--   Latitude/Longitude decimal(9,6)); its only index is non-unique, so @UniqueIndexes is unchanged.
+--   20261007152343_WidenProducerBinSiteCoordinatePrecision then widened both to decimal(18,15).
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -159,6 +162,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'OrganicCertificationItem'),
 ('dbo', 'OrganicCertificationLoad'),
 ('dbo', 'OrganicCertificationScope'),
+('dbo', 'ProducerBinSite'),
 ('dbo', 'ProducerContact'),
 ('dbo', 'ProducerDetails'),
 ('dbo', 'ProducerGrainOnFarm'),
@@ -605,6 +609,13 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerPlantingIntentions', 'PlantingYear', 'int',           0),
 ('dbo', 'ProducerPlantingIntentions', 'TradeUnit',    'nvarchar(100)', 0),
 ('dbo', 'ProducerPlantingIntentions', 'Type',         'nvarchar(100)', 1),
+-- ProducerBinSite
+('dbo', 'ProducerBinSite', 'Id',         'int',           0),
+('dbo', 'ProducerBinSite', 'CustomerId', 'bigint',        0),
+('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 0),
+('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 0),
+('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
+('dbo', 'ProducerBinSite', 'SortOrder',  'int',           0),
 ('dbo', 'ProducerReminders', 'Id',             'int',            0),
 ('dbo', 'ProducerReminders', 'CompletedAt',    'datetime2',      1),
 ('dbo', 'ProducerReminders', 'CreatedAt',      'datetime2',      0),
@@ -850,7 +861,10 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260923152000_AddOrganicCertificationTables'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
 ('20261005131626_DropCtrmSourceToggleUsers'),
-('20261007120000_WidenOrganicCertificationItemText');
+('20261007120000_WidenOrganicCertificationItemText'),
+('20261007145119_AddProducerBinSite'),
+('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
+('20261007162014_AddBinSiteQueryLibraryItems');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

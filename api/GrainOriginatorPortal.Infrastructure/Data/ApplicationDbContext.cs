@@ -36,6 +36,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CustomerCommodity> CustomerCommodities => Set<CustomerCommodity>();
     public DbSet<ProducerGrainOnFarm> ProducerGrainOnFarm => Set<ProducerGrainOnFarm>();
     public DbSet<ProducerContact> ProducerContacts => Set<ProducerContact>();
+    public DbSet<ProducerBinSite> ProducerBinSites => Set<ProducerBinSite>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
@@ -481,6 +482,8 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.GrainOnFarm);
             // Contacts is composed server-side from dbo.ProducerContact on read / rebuilt on upsert.
             entity.Ignore(e => e.Contacts);
+            // BinSites is composed server-side from dbo.ProducerBinSite on read / rebuilt on upsert.
+            entity.Ignore(e => e.BinSites);
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
@@ -597,6 +600,28 @@ public class ApplicationDbContext : DbContext
             // Plain (non-unique) index — a producer can have many contacts, and names/labels can
             // legitimately repeat (Dad's cell + Dad's shop), unlike the grain table's UQ.
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerContact_CustomerId");
+        });
+
+        modelBuilder.Entity<ProducerBinSite>(entity =>
+        {
+            entity.ToTable("ProducerBinSite", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(BinSiteRules.NameMaxLength).IsRequired(false);
+            // decimal(18,15): three integer digits (±180) and fifteen places, so a full Google Maps
+            // paste is stored exactly as entered. Display shortens it; storage never does.
+            entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(18,15)").IsRequired();
+            entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(18,15)").IsRequired();
+            entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
+
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerBinSite_Customer");
+
+            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerBinSite_CustomerId");
         });
 
         // -------------------------------------------------------------------------

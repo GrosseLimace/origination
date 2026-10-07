@@ -28,6 +28,10 @@ public class ProducerDetails
     // composed from dbo.ProducerContact on read, rebuilt on upsert (EF .Ignore()s it). The primary
     // row is dual-written into PrimaryContact/PrimaryPhone above for search/lookup compatibility.
     public List<ProducerContactEntry> Contacts { get; set; } = new();
+
+    // User-entered bin sites (optional name + lat/long). NOT a stored column — composed from
+    // dbo.ProducerBinSite on read, rebuilt on upsert (EF .Ignore()s it).
+    public List<ProducerBinSiteEntry> BinSites { get; set; } = new();
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }

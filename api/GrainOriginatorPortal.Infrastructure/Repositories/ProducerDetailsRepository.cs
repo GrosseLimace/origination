@@ -38,6 +38,8 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         pd.GrainOnFarm = await GetGrainOnFarmAsync(customerId, cancellationToken);
         // User-entered contacts composed from dbo.ProducerContact (primary first).
         pd.Contacts = await GetContactsAsync(customerId, cancellationToken);
+        // User-entered bin sites composed from dbo.ProducerBinSite.
+        pd.BinSites = await GetBinSitesAsync(customerId, cancellationToken);
         return pd;
     }
 
@@ -106,6 +108,21 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 SortOrder = x.SortOrder
             }).ToList());
 
+        // Same batching pattern for ProducerBinSite → bin-site rows in display order.
+        var binSiteRows = await _appContext.ProducerBinSites.AsNoTracking()
+            .Where(b => customerIds.Contains(b.CustomerId))
+            .OrderBy(b => b.SortOrder).ThenBy(b => b.Id)
+            .ToListAsync(cancellationToken);
+        var binSitesByCustomer = binSiteRows
+            .GroupBy(x => x.CustomerId)
+            .ToDictionary(g => g.Key, g => g.Select(x => new ProducerBinSiteEntry
+            {
+                Name = x.Name,
+                Latitude = x.Latitude,
+                Longitude = x.Longitude,
+                SortOrder = x.SortOrder
+            }).ToList());
+
         foreach (var p in all)
         {
             p.CustomerName = p.Customer?.Name ?? string.Empty;
@@ -118,6 +135,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 : null;
             p.GrainOnFarm = grainByCustomer.TryGetValue(p.CustomerId, out var grain) ? grain : new();
             p.Contacts = contactsByCustomer.TryGetValue(p.CustomerId, out var contacts) ? contacts : new();
+            p.BinSites = binSitesByCustomer.TryGetValue(p.CustomerId, out var binSites) ? binSites : new();
         }
         return all;
     }
@@ -137,6 +155,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         var primaryRow = contactItems?.FirstOrDefault(c => c.IsPrimary);
         var primaryContact = contactItems == null ? args.PrimaryContact : primaryRow?.Name;
         var primaryPhone = contactItems == null ? args.PrimaryPhone : primaryRow?.Phone;
+        var binSiteItems = args.BinSites == null ? null : NormalizeBinSites(args.BinSites);
 
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
 
@@ -291,6 +310,29 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             }
         }
 
+        // Same rebuild for dbo.ProducerBinSite, with the same null-means-preserve contract.
+        if (binSiteItems != null)
+        {
+            var oldBinSites = await _appContext.ProducerBinSites
+                .Where(b => b.CustomerId == customerId)
+                .ToListAsync(cancellationToken);
+            if (oldBinSites.Count > 0)
+            {
+                _appContext.ProducerBinSites.RemoveRange(oldBinSites);
+            }
+            foreach (var item in binSiteItems)
+            {
+                _appContext.ProducerBinSites.Add(new ProducerBinSite
+                {
+                    CustomerId = customerId,
+                    Name = item.Name,
+                    Latitude = item.Latitude,
+                    Longitude = item.Longitude,
+                    SortOrder = item.SortOrder
+                });
+            }
+        }
+
         await _appContext.SaveChangesAsync(cancellationToken);
         // Reflect the persisted child sets back on the returned entity so the upsert response
         // carries them.
@@ -307,14 +349,16 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         // reproduced in memory rather than assumed.
         saved.GrainOnFarm = await GetGrainOnFarmAsync(customerId, cancellationToken);
         saved.Contacts = await GetContactsAsync(customerId, cancellationToken);
+        // Bin sites follow the contacts reasoning: null preserves, so the DB is the source.
+        saved.BinSites = await GetBinSitesAsync(customerId, cancellationToken);
         // Structured AUDIT_UPDATE, matching the delete below. M-045 (2026-09-21) found this path
         // emitting only a plain LogInformation with no audit code and no actor -- the same gap
         // H-062 closed on the delete. The row does carry ModifiedBy, so the write was attributable,
         // but not from the log alone. Contact counts are included because this path overwrites
         // ProducerContact PII (names, phones, emails).
         _logger.LogInformation(
-            "Producer details upserted [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} Contacts={Contacts} GrainRows={GrainRows}",
-            "AUDIT_UPDATE", "DataMutation", customerId, currentUser, saved.Contacts.Count, saved.GrainOnFarm.Count);
+            "Producer details upserted [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} Contacts={Contacts} GrainRows={GrainRows} BinSites={BinSites}",
+            "AUDIT_UPDATE", "DataMutation", customerId, currentUser, saved.Contacts.Count, saved.GrainOnFarm.Count, saved.BinSites.Count);
         return saved;
     }
 
@@ -357,6 +401,37 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         return cleaned;
     }
 
+    /// <summary>
+    /// Cleans incoming bin-site rows: trims the name (blank becomes null) and caps its length,
+    /// keeps the coordinates as pasted (only rounding past the column's 15 places, so a value can
+    /// never fail to fit), and collapses rows on the identical point. Range checks are the request
+    /// model's job; this only normalizes. SortOrder is the post-filter position.
+    /// </summary>
+    private static List<ProducerBinSiteEntry> NormalizeBinSites(IReadOnlyList<ProducerBinSiteEntry> binSites)
+    {
+        var cleaned = binSites
+            .Select(b =>
+            {
+                var name = b.Name?.Trim();
+                if (name?.Length > BinSiteRules.NameMaxLength) name = name[..BinSiteRules.NameMaxLength];
+                return new ProducerBinSiteEntry
+                {
+                    Name = string.IsNullOrEmpty(name) ? null : name,
+                    Latitude = Math.Round(b.Latitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero),
+                    Longitude = Math.Round(b.Longitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero)
+                };
+            })
+            .GroupBy(b => (b.Latitude, b.Longitude))
+            .Select(g => g.First())
+            .ToList();
+
+        for (var i = 0; i < cleaned.Count; i++)
+        {
+            cleaned[i].SortOrder = i;
+        }
+        return cleaned;
+    }
+
     public async Task<bool> DeleteAsync(long customerId, string currentUser, CancellationToken cancellationToken)
     {
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
@@ -368,6 +443,10 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             .Where(c => c.CustomerId == customerId)
             .ToListAsync(cancellationToken);
         if (contacts.Count > 0) _appContext.ProducerContacts.RemoveRange(contacts);
+        var binSites = await _appContext.ProducerBinSites
+            .Where(b => b.CustomerId == customerId)
+            .ToListAsync(cancellationToken);
+        if (binSites.Count > 0) _appContext.ProducerBinSites.RemoveRange(binSites);
         var grain = await _appContext.ProducerGrainOnFarm
             .Where(g => g.CustomerId == customerId)
             .ToListAsync(cancellationToken);
@@ -386,8 +465,8 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         // RemoveRange() on contacts and grain. Nothing survives to carry a DeletedBy, so this line
         // is the only record of who destroyed a producer's contact PII. Do not drop User from it.
         _logger.LogInformation(
-            "Producer details deleted [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} ContactsRemoved={ContactsRemoved} GrainRowsRemoved={GrainRowsRemoved}",
-            "AUDIT_DELETE", "DataMutation", customerId, currentUser, contacts.Count, grain.Count);
+            "Producer details deleted [{ErrorCode}] [{ErrorCategory}]: CustomerId={CustomerId} User={User} ContactsRemoved={ContactsRemoved} GrainRowsRemoved={GrainRowsRemoved} BinSitesRemoved={BinSitesRemoved}",
+            "AUDIT_DELETE", "DataMutation", customerId, currentUser, contacts.Count, grain.Count, binSites.Count);
         return true;
     }
 
@@ -441,6 +520,22 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 Email = c.Email,
                 IsPrimary = c.IsPrimary,
                 SortOrder = c.SortOrder
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Composes the bin-site rows for a customer from dbo.ProducerBinSite, in display order.</summary>
+    private async Task<List<ProducerBinSiteEntry>> GetBinSitesAsync(long customerId, CancellationToken cancellationToken)
+    {
+        return await _appContext.ProducerBinSites.AsNoTracking()
+            .Where(b => b.CustomerId == customerId)
+            .OrderBy(b => b.SortOrder).ThenBy(b => b.Id)
+            .Select(b => new ProducerBinSiteEntry
+            {
+                Name = b.Name,
+                Latitude = b.Latitude,
+                Longitude = b.Longitude,
+                SortOrder = b.SortOrder
             })
             .ToListAsync(cancellationToken);
     }
