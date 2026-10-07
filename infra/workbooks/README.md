@@ -6,16 +6,20 @@ One shared workbook, hosted in `rg-origination-dev-eus`, that reads **every envi
 Reader on** through an Environment picker (Production is the default when visible). It exists for the
 things App Insights and the app do not show on their own:
 
-| Panel | Source | Why it is here |
-|---|---|---|
-| Environment (state, runtime, config last modified) | ARM `GET sites/{app}` | One-glance "is it up, what stack" |
-| Alerts, last 30 days | Azure Resource Graph `alertsmanagementresources` | Fired / resolved alerts for this RG in one list |
-| App deployments | ARM `GET sites/{app}/deployments` | Who deployed what, when, and whether it is the live slot |
-| Daily Digest / Instant Share runs | ARM `GET workflows/{name}/runs` | Logic App run history without opening each one |
-| CustomerSync runs | App Insights `traces`, parsed | The mass-deactivation guard from the outage playbook, as numbers |
-| Other background jobs | App Insights `traces` | Usage rollups, retention, CTRM keep-warm outcomes |
-| Integrations | App Insights `dependencies`, grouped | ODS / Origination DB / CTRM / Graph failure rate and p95 per integration |
-| Go deeper | Markdown links | Failures, Performance, Live Metrics, Logs, Log stream, Usage Dashboard, Actions |
+| Tab | Panel | Source | Why it is here |
+|---|---|---|---|
+| Overview | Web app (state, runtime, config changed) | ARM `GET sites/{app}` | One-glance "is it up, what stack" |
+| Overview | TLS certificate (hosts, issuer, days left) | Resource Graph `microsoft.web/certificates` | The Let's Encrypt renewal is automated; nobody watches it |
+| Overview | Alerts, last 30 days | Resource Graph `alertsmanagementresources` | Fired / resolved alerts for this RG in one list |
+| Overview | Latest deployment · latest CustomerSync run · last 3 Logic App runs | as below, row-limited | The "is everything normal" strip |
+| Deployments | App deployments, newest first | ARM `GET sites/{app}/deployments` | When it was deployed and whether it is the live slot |
+| Logic Apps | Daily Digest / Instant Share runs | ARM `GET workflows/{name}/runs` | Run history without opening each one |
+| Background jobs | CustomerSync runs, parsed | App Insights `traces` + `exceptions` | The mass-deactivation guard from the outage playbook, as numbers |
+| Background jobs | CustomerSync schedule | App Insights `traces` | The next scheduled run, from the service's own log line |
+| Background jobs | Other background jobs | App Insights `traces` + `exceptions` | Usage rollups, retention, CTRM keep-warm outcomes |
+| Integrations | Integrations, grouped by target | App Insights `dependencies` | ODS / Origination DB / CTRM / Graph failure rate and p95 per integration |
+| Activity | Azure activity in this resource group | ARM activity log `eventtypes/management/values` | Who restarted, reconfigured, deployed or edited what |
+| (always) | Go deeper | Link lists | Failures, Performance, Live Metrics, Logs, Log stream, Usage Dashboard, Actions |
 
 Standard App Insights blades and the in-app Usage Dashboard (adoption) are **linked, not re-implemented**.
 
