@@ -3,10 +3,10 @@ using System.Text.Json.Serialization;
 namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 /// <summary>
-/// A user-entered on-farm bin site for a producer: an optional name ("Anderson Site") and a
-/// latitude/longitude pair, shown under the address as a Google Maps link. At most
-/// <see cref="BinSiteRules.MaxPerCustomer"/> per producer. Replaced as a set on upsert (mirrors
-/// the ProducerContact child-table pattern).
+/// A user-entered on-farm bin site for a producer: an optional name and a latitude/longitude
+/// pair, shown under the address as a Google Maps link. A producer can have as many as they need
+/// (only a sanity ceiling, <see cref="BinSiteRules.MaxPerCustomer"/>). Replaced as a set on upsert
+/// (mirrors the ProducerContact child-table pattern).
 /// </summary>
 public class ProducerBinSite
 {
@@ -43,7 +43,9 @@ public class ProducerBinSiteEntry
 /// </summary>
 public static class BinSiteRules
 {
-    public const int MaxPerCustomer = 3;
+    /// <summary>Not a product limit — users add as many as they need. A sanity ceiling so one
+    /// request can't write an unbounded number of rows.</summary>
+    public const int MaxPerCustomer = 100;
     public const int NameMaxLength = 100;
     /// <summary>Scale of the decimal(18,15) columns. Users never round by hand; anything finer than
     /// this (beyond double precision anyway) is rounded on save so it fits the column.</summary>

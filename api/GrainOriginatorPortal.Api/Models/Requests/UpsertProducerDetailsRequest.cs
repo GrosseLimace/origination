@@ -42,10 +42,10 @@ public record UpsertProducerDetailsRequest
     /// provided, the legacy fields are ignored and derived from the primary row instead.</summary>
     public IReadOnlyList<ContactItemRequest>? Contacts { get; init; }
 
-    /// <summary>User-entered bin sites, at most <see cref="BinSiteRules.MaxPerCustomer"/>. Same
+    /// <summary>User-entered bin sites, as many as needed (sanity ceiling <see cref="BinSiteRules.MaxPerCustomer"/>). Same
     /// contract as <see cref="Contacts"/>: replaces the existing set on save, array order is the
     /// display order, and NULL (property absent) preserves the existing rows.</summary>
-    [MaxLength(BinSiteRules.MaxPerCustomer, ErrorMessage = "A producer can have at most 3 bin sites.")]
+    [MaxLength(BinSiteRules.MaxPerCustomer, ErrorMessage = "A producer can have at most 100 bin sites.")]
     public IReadOnlyList<BinSiteItemRequest>? BinSites { get; init; }
 }
 

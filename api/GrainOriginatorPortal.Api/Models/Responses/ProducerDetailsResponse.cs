@@ -26,7 +26,7 @@ public record ProducerDetailsResponse
     /// derived from the primary row (kept for backward compatibility).</summary>
     public IReadOnlyList<ContactItemResponse> Contacts { get; init; } = [];
 
-    /// <summary>User-entered bin sites in display order (at most three).</summary>
+    /// <summary>User-entered bin sites in display order.</summary>
     public IReadOnlyList<BinSiteItemResponse> BinSites { get; init; } = [];
 }
 

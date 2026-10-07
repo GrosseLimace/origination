@@ -15,7 +15,9 @@ import type { ProducerBinSiteItem } from '@models';
  * Mirrored server-side by BinSiteRules (api/.../Data/Entities/ProducerBinSite.cs) — keep in step.
  */
 export const BIN_SITE_BOUNDS = { minLat: 7, maxLat: 84, minLng: -180, maxLng: -52 } as const;
-export const MAX_BIN_SITES = 3;
+/** Not a product limit — users add as many as they need. Mirrors the server's sanity ceiling
+ *  (BinSiteRules.MaxPerCustomer) so the dialog can never build a request the API would reject. */
+export const MAX_BIN_SITES = 100;
 export const BIN_SITE_NAME_MAX_LENGTH = 100;
 /** Places shown on the profile. Display only — storage keeps the full value. */
 export const DISPLAY_DECIMALS = 6;

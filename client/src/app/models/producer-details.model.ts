@@ -11,7 +11,7 @@ export interface ProducerDetails {
   linkedProducerIds?: string; // Comma-separated customer IDs
   grainOnFarm?: GrainOnFarmItem[]; // Per-commodity bushels on hand + target
   contacts?: ProducerContactItem[]; // User-entered contacts, primary first
-  binSites?: ProducerBinSiteItem[]; // User-entered bin sites (max 3), display order
+  binSites?: ProducerBinSiteItem[]; // User-entered bin sites, display order
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;

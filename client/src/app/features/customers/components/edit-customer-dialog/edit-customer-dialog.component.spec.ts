@@ -7,6 +7,7 @@ import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { Customer, PlantingIntention } from '@models';
+import { MAX_BIN_SITES } from '@shared/utils/coordinates';
 
 // Removing a trade unit doesn't unplant the acres. When the producer has planting intentions
 // recorded against the trade unit being removed, the dialog asks where those acres should count
@@ -211,7 +212,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
   });
 });
 
-// Bin sites: an optional name plus one "lat, lng" paste field per row, at most three, enforced
+// Bin sites: an optional name plus one "lat, lng" paste field per row, as many as needed, enforced
 // against the North American rules before Save is allowed. The rules themselves are unit-tested in
 // @shared/utils/coordinates.spec.ts — these cover the dialog's row handling and the emitted payload.
 describe('EditCustomerDialogComponent — bin sites', () => {
@@ -268,12 +269,20 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(component.hasChanges()).toBe(false);
   });
 
-  it('caps the rows at three', () => {
+  it('lets the user add more than three sites', () => {
     open(makeCustomer());
 
-    for (let i = 0; i < 5; i++) component.addBinSiteRow();
+    for (let i = 0; i < 8; i++) component.addBinSiteRow();
 
-    expect(component.editBinSites()).toHaveLength(3);
+    expect(component.editBinSites()).toHaveLength(8);
+  });
+
+  it('stops only at the server sanity ceiling, so it never builds a request the API rejects', () => {
+    open(makeCustomer());
+
+    for (let i = 0; i < MAX_BIN_SITES + 5; i++) component.addBinSiteRow();
+
+    expect(component.editBinSites()).toHaveLength(MAX_BIN_SITES);
   });
 
   it('flags a row whose coordinates break the rules and blocks Save', () => {

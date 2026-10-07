@@ -255,7 +255,7 @@ export class EditCustomerDialogComponent {
     return [];
   }
 
-  // ── Bin sites (optional name + "lat, lng" paste field; at most three) ───
+  // ── Bin sites (optional name + "lat, lng" paste field; as many as needed) ───
   readonly maxBinSites = MAX_BIN_SITES;
   readonly binSiteNameMaxLength = BIN_SITE_NAME_MAX_LENGTH;
   readonly coordinateExample = COORDINATE_EXAMPLE;

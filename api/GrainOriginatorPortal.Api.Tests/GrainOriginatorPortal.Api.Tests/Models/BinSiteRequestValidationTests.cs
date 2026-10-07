@@ -6,8 +6,8 @@ namespace GrainOriginatorPortal.Api.Tests.Models;
 
 /// <summary>
 /// Data-annotation rules for bin sites on <see cref="UpsertProducerDetailsRequest"/>: the North
-/// American box (latitude 7..84 north, longitude -180..-52 west), a 100-character name, and at most
-/// three sites per producer. [ApiController] turns any of these into an automatic 400.
+/// American box (latitude 7..84 north, longitude -180..-52 west), a 100-character name, and a
+/// 100-site sanity ceiling (not a product limit). [ApiController] turns any of these into an automatic 400.
 /// </summary>
 public class BinSiteRequestValidationTests
 {
@@ -93,19 +93,22 @@ public class BinSiteRequestValidationTests
     private static UpsertProducerDetailsRequest WithSites(int count) => new()
     {
         CustomerName = "Smith Farm",
-        BinSites = Enumerable.Range(0, count).Select(i => Site(39m + i, -95m)).ToList(),
+        BinSites = Enumerable.Range(0, count).Select(i => Site(39m + i * 0.01m, -95m)).ToList(),
     };
 
-    [Fact]
-    public void ThreeSites_AreAccepted()
+    [Theory]
+    [InlineData(4)]   // the old three-site product limit is gone
+    [InlineData(25)]
+    [InlineData(100)] // the sanity ceiling itself
+    public void ManySites_AreAccepted(int count)
     {
-        Assert.Empty(Validate(WithSites(3)));
+        Assert.Empty(Validate(WithSites(count)));
     }
 
     [Fact]
-    public void FourthSite_IsRejected()
+    public void PastTheSanityCeiling_IsRejected()
     {
-        var errors = Validate(WithSites(4));
+        var errors = Validate(WithSites(101));
 
         Assert.Contains(errors, e => e.MemberNames.Contains(nameof(UpsertProducerDetailsRequest.BinSites)));
     }

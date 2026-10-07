@@ -50,7 +50,7 @@ export interface Customer {
   primaryContact?: string;    // Derived from the primary contact row (kept for compat/search)
   primaryPhone?: string;      // Derived from the primary contact row (kept for compat/search)
   contacts?: ProducerContactItem[]; // User-entered contacts, primary first
-  binSites?: ProducerBinSiteItem[]; // User-entered bin sites (max 3), display order
+  binSites?: ProducerBinSiteItem[]; // User-entered bin sites, display order
 
   // Onboarding: true when a user manually added this producer (assigned trade units)
   // rather than the nightly sync. Used to distinguish ODS search candidates and to
