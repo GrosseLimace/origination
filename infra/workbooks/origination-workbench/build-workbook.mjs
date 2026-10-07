@@ -432,10 +432,14 @@ const otherJobsQuery = [
   '     or message startswith "Failed to refresh trade unit snapshot"',
   '     or message startswith "Retention cleanup"',
   '     or message startswith "Error during aggregation cycle"',
+  '     or message startswith "Backfilled usage rollups"',
+  '     or message startswith "Error processing usage tracking batch"',
+  '     or message startswith "Error flushing final usage tracking batch"',
   '     or message startswith "CTRM keep-warm: maintained"',
   '     or (message startswith "CTRM keep-warm" and severityLevel >= 2)',
   '| extend Job = case(message startswith "CTRM keep-warm", "CTRM keep-warm",',
   '                    message startswith "Retention cleanup", "Retention cleanup",',
+  '                    message has "usage tracking batch", "Usage tracking (click capture)",',
   '                    "Usage rollups")',
   '| extend Outcome = case(severityLevel >= 3, "Failed", severityLevel == 2, "Warning", "Completed")',
   '| project Ran = timestamp, Job, Outcome, Message = message',
@@ -706,7 +710,7 @@ const items = [
       gridSettings: { formatters: [width('Logged', '20%')] },
     },
   ),
-  kqlItem('Other background jobs — usage rollups, retention, CTRM keep-warm', otherJobsQuery, {
+  kqlItem('Other background jobs — usage rollups, usage tracking, retention, CTRM keep-warm', otherJobsQuery, {
     tab: 'jobs',
     noDataMessage: 'No job completions in this range. Usage rollups run hourly; CTRM keep-warm runs continuously while CTRM is enabled.',
     gridSettings: { formatters: [width('Ran', '16%'), width('Job', '14%'), outcomeStatus, width('Message', '58%')] },
