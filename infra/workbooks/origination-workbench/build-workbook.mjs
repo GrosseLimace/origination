@@ -161,23 +161,10 @@ const argItem = (title, query, opts = {}) => ({
   ...(opts.tab ? onTab(opts.tab) : {}),
 });
 
-const linkList = (title, links, opts = {}) => ({
-  type: 11,
-  content: {
-    version: 'LinkItem/1.0',
-    style: 'bullets',
-    links: links.map(([linkLabel, url]) => ({
-      id: stableId(),
-      linkTarget: 'Url',
-      linkLabel,
-      url,
-      style: 'link',
-    })),
-  },
-  customWidth: opts.customWidth,
-  name: name('links'),
-  ...(title ? { title } : {}),
-});
+// A titled column of links. Markdown is used rather than a LinkItem because markdown items have no
+// per-item title and the parameter tokens ({AppInsights} etc.) are substituted inside markdown too.
+const linkColumn = (title, links) =>
+  markdown([`**${title}**`, '', ...links.map(([label, url]) => `- [${label}](${url})`)].join('\n'), { customWidth: '33' });
 
 // ---------- parameters ----------
 const parameters = {
@@ -498,19 +485,16 @@ const items = [
   tabStrip,
 
   // ===== Overview =====
-  armItem(
+  argItem(
     'Web app',
-    '{Environment}',
-    '2023-12-01',
     [
-      ['$.name', 'Name'],
-      ['$.properties.state', 'State'],
-      ['$.properties.siteConfig.linuxFxVersion', 'Runtime'],
-      ['$.properties.lastModifiedTimeUtc', 'Config changed', 'datetime'],
-    ],
+      'resources',
+      "| where id =~ '{Environment}'",
+      '| project Name = name, State = tostring(properties.state), Runtime = tostring(properties.siteConfig.linuxFxVersion),',
+      '          ConfigChanged = todatetime(properties.lastModifiedTimeUtc)',
+    ].join('\n'),
     {
       tab: 'overview',
-      tablePath: '$',
       customWidth: '50',
       gridSettings: {
         formatters: [
@@ -519,6 +503,7 @@ const items = [
             { operator: 'Default', thresholdValue: null, representation: 'failed', text: '{0}{1}' },
           ]),
         ],
+        labelSettings: labels({ ConfigChanged: 'Config changed' }),
       },
     },
   ),
@@ -696,27 +681,27 @@ const items = [
 
   // ===== Links (always visible) =====
   markdown('#### Go deeper'),
-  linkList('App Insights — this environment', [
+  linkColumn('App Insights — this environment', [
     ['Failures', `${PORTAL}{AppInsights}/failures`],
     ['Performance', `${PORTAL}{AppInsights}/performance`],
     ['Live Metrics', `${PORTAL}{AppInsights}/quickPulse`],
     ['Logs (KQL)', `${PORTAL}{AppInsights}/logs`],
-  ], { customWidth: '33' }),
-  linkList('Azure — this environment', [
+  ]),
+  linkColumn('Azure — this environment', [
     ['Web app overview', `${PORTAL}{Environment}/appServices`],
     ['Log stream', `${PORTAL}{Environment}/logStream`],
     ['Key Vault', `${PORTAL}{KeyVault}/overview`],
     ['Daily Digest Logic App', `${PORTAL}{DailyRecap}/overview`],
     ['Instant Share Logic App', `${PORTAL}{InstantShare}/overview`],
-  ], { customWidth: '33' }),
-  linkList('App and repo', [
+  ]),
+  linkColumn('App and repo', [
     ['Open the app', '{AppUrl}'],
     ['Usage Dashboard (adoption)', '{AppUrl}/usage-dashboard'],
     ['Readiness probe', '{AppUrl}/health/ready'],
     ['GitHub Actions', `${REPO}/actions`],
     ['Project board', `${REPO}/projects`],
     ['Outage recovery playbook', `${REPO}/blob/main/docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md`],
-  ], { customWidth: '33' }),
+  ]),
 ];
 
 const workbook = {
