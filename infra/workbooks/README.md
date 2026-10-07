@@ -8,6 +8,7 @@ things App Insights and the app do not show on their own:
 
 | Tab | Panel | Source | Why it is here |
 |---|---|---|---|
+| Overview | At a glance (6 tiles) · requests/failures chart · top failing endpoints · slowest endpoints | App Insights `requests`, `exceptions`, `dependencies` | The quick read for the selected time range |
 | Overview | Web app (state, runtime, config changed) | ARM `GET sites/{app}` | One-glance "is it up, what stack" |
 | Overview | TLS certificate (hosts, issuer, days left) | Resource Graph `microsoft.web/certificates` | The Let's Encrypt renewal is automated; nobody watches it |
 | Overview | Alerts, last 30 days | Resource Graph `alertsmanagementresources` | Fired / resolved alerts for this RG in one list |
@@ -21,7 +22,7 @@ things App Insights and the app do not show on their own:
 | Activity | Azure activity in this resource group | ARM activity log `eventtypes/management/values` | Who restarted, reconfigured, deployed or edited what |
 | (always) | Go deeper | Link lists | Failures, Performance, Live Metrics, Logs, Log stream, Usage Dashboard, Actions |
 
-Standard App Insights blades and the in-app Usage Dashboard (adoption) are **linked, not re-implemented**.
+The Overview summarises request health in a few numbers; the full App Insights blades and the in-app Usage Dashboard (adoption) are **linked, not re-implemented**.
 
 ### Files
 
