@@ -363,8 +363,10 @@ const logicRunGrid = {
   formatters: [width('Started', '28%'), width('Finished', '28%'), runStatus, width('Trigger', '14%'), width('Error', '30%')],
 };
 
+const logicRunColumnsCompact = logicRunColumns.filter(([, id]) => id !== 'Finished' && id !== 'Trigger');
+
 const logicRuns = (title, idParam, top, opts) =>
-  armItem(title, `{${idParam}}/runs`, '2016-06-01', logicRunColumns, {
+  armItem(title, `{${idParam}}/runs`, '2016-06-01', opts.compact ? logicRunColumnsCompact : logicRunColumns, {
     urlParams: [{ key: '$top', value: String(top) }],
     customWidth: '50',
     noDataMessage: 'No runs found. If this environment has no such Logic App there is nothing to read.',
@@ -384,7 +386,7 @@ const jobEvents = [
   '| where timestamp {TimeRange}',
 ].join('\n');
 
-const customerSyncQuery = (take) =>
+const customerSyncQuery = (take, compact = false) =>
   [
     jobEvents,
     '| where message startswith "CustomerSync completed" or (message has "CustomerSync" and severityLevel >= 3)',
@@ -392,8 +394,9 @@ const customerSyncQuery = (take) =>
     '| project Ran = timestamp,',
     '          Outcome = iff(severityLevel >= 3, "Failed", "Completed"),',
     '          Seconds = round(ElapsedMs / 1000.0, 1),',
-    '          CustInserted, CustUpdated, CustReactivated, CustDeactivated,',
-    '          TuInserted, TuUpdated, TuDeactivated,',
+    ...(compact
+      ? ['          CustDeactivated, TuDeactivated,']
+      : ['          CustInserted, CustUpdated, CustReactivated, CustDeactivated,', '          TuInserted, TuUpdated, TuDeactivated,']),
     '          Detail = iff(severityLevel >= 3, message, "")',
     '| order by Ran desc',
     ...(take ? [`| take ${take}`] : []),
@@ -483,7 +486,6 @@ const integrationsGrid = {
 // One row per tile. Every Value is cast to real: union splits same-named columns of different types
 // (see jobEvents above), and count() is long while percentile() and round() are real.
 const headlineTilesQuery = [
-  'let hint = "{TimeRange:label}";',
   'union',
   '  (requests | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = "Requests", Order = 1),',
   '  (requests | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = "Failed requests", Order = 2),',
@@ -491,14 +493,12 @@ const headlineTilesQuery = [
   '  (requests | where timestamp {TimeRange} | summarize Value = toreal(round(percentile(duration, 95))) | extend Metric = "p95 response ms", Order = 4),',
   '  (exceptions | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = "Exceptions", Order = 5),',
   '  (dependencies | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = "Failed integration calls", Order = 6)',
-  '| extend Hint = hint',
   '| order by Order asc',
-  '| project Metric, Value, Hint',
+  '| project Metric, Value',
 ].join('\n');
 
 const headlineTileSettings = {
   titleContent: { columnMatch: 'Metric', formatter: 1 },
-  subtitleContent: { columnMatch: 'Hint', formatter: 1 },
   leftContent: {
     columnMatch: 'Value',
     formatter: 12,
@@ -506,7 +506,7 @@ const headlineTileSettings = {
     numberFormat: { unit: 17, options: { style: 'decimal', maximumFractionDigits: 2 } },
   },
   showBorder: true,
-  size: 'auto',
+  size: 'small',
 };
 
 const trafficChartQuery = [
@@ -540,7 +540,7 @@ const items = [
   tabStrip,
 
   // ===== Overview =====
-  kqlItem('At a glance', headlineTilesQuery, {
+  kqlItem('At a glance — {TimeRange:label}', headlineTilesQuery, {
     tab: 'overview',
     visualization: 'tiles',
     tileSettings: headlineTileSettings,
@@ -550,6 +550,7 @@ const items = [
     tab: 'overview',
     visualization: 'timechart',
     size: 1,
+    customWidth: '50',
     chartSettings: {
       seriesLabelSettings: [
         { seriesName: 'Requests', color: 'blue' },
@@ -570,6 +571,38 @@ const items = [
     noDataMessage: 'No request telemetry in this range.',
     gridSettings: { formatters: [width('Endpoint', '60%')], labelSettings: labels({ P95ms: 'p95 ms' }) },
   }),
+  argItem(
+    'Alerts, last 30 days',
+    [
+      'alertsmanagementresources',
+      "| where type =~ 'microsoft.alertsmanagement/alerts'",
+      "| where resourceGroup =~ '{ResourceGroup}'",
+      '| extend Fired = todatetime(properties.essentials.startDateTime),',
+      '         Severity = tostring(properties.essentials.severity),',
+      '         Condition = tostring(properties.essentials.monitorCondition),',
+      '         State = tostring(properties.essentials.alertState),',
+      '         Target = tostring(properties.essentials.targetResourceName)',
+      '| project Fired, Alert = name, Severity, Condition, Target',
+      '| order by Fired desc',
+    ].join('\n'),
+    {
+      tab: 'overview',
+      customWidth: '50',
+      noDataMessage: 'No alerts fired in the last 30 days.',
+      gridSettings: {
+        formatters: [
+          width('Fired', '22%'),
+          width('Alert', '36%'),
+          severityStatus,
+          thresholds('Condition', [
+            { operator: '==', thresholdValue: 'Fired', representation: 'failed', text: '{0}{1}' },
+            { operator: '==', thresholdValue: 'Resolved', representation: 'success', text: '{0}{1}' },
+            { operator: 'Default', thresholdValue: null, representation: 'unknown', text: '{0}{1}' },
+          ]),
+        ],
+      },
+    },
+  ),
   argItem(
     'Web app',
     [
@@ -618,51 +651,20 @@ const items = [
       },
     },
   ),
-  argItem(
-    'Alerts, last 30 days',
-    [
-      'alertsmanagementresources',
-      "| where type =~ 'microsoft.alertsmanagement/alerts'",
-      "| where resourceGroup =~ '{ResourceGroup}'",
-      '| extend Fired = todatetime(properties.essentials.startDateTime),',
-      '         Severity = tostring(properties.essentials.severity),',
-      '         Condition = tostring(properties.essentials.monitorCondition),',
-      '         State = tostring(properties.essentials.alertState),',
-      '         Target = tostring(properties.essentials.targetResourceName)',
-      '| project Fired, Alert = name, Severity, Condition, State, Target',
-      '| order by Fired desc',
-    ].join('\n'),
-    {
-      tab: 'overview',
-      noDataMessage: 'No alerts fired in the last 30 days.',
-      gridSettings: {
-        formatters: [
-          width('Fired', '18%'),
-          width('Alert', '34%'),
-          severityStatus,
-          thresholds('Condition', [
-            { operator: '==', thresholdValue: 'Fired', representation: 'failed', text: '{0}{1}' },
-            { operator: '==', thresholdValue: 'Resolved', representation: 'success', text: '{0}{1}' },
-            { operator: 'Default', thresholdValue: null, representation: 'unknown', text: '{0}{1}' },
-          ]),
-        ],
-      },
-    },
-  ),
   armItem('Latest deployment', '{Environment}/deployments', '2023-12-01', deploymentColumns, {
     tab: 'overview',
     customWidth: '50',
     noDataMessage: 'No deployments recorded for this web app.',
     gridSettings: deploymentGrid(1),
   }),
-  kqlItem('Latest CustomerSync run', customerSyncQuery(1), {
+  kqlItem('Latest CustomerSync run', customerSyncQuery(1, true), {
     tab: 'overview',
     customWidth: '50',
     noDataMessage: customerSyncNoData,
     gridSettings: customerSyncGrid,
   }),
-  logicRuns('Daily Digest — last 3 runs', 'DailyRecap', 3, { tab: 'overview' }),
-  logicRuns('Instant Share — last 3 runs', 'InstantShare', 3, { tab: 'overview' }),
+  logicRuns('Daily Digest — last 3 runs', 'DailyRecap', 3, { tab: 'overview', compact: true }),
+  logicRuns('Instant Share — last 3 runs', 'InstantShare', 3, { tab: 'overview', compact: true }),
 
   // ===== Deployments =====
   armItem('App deployments, newest first', '{Environment}/deployments', '2023-12-01', deploymentColumns, {
