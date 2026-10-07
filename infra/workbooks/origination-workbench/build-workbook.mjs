@@ -486,7 +486,6 @@ const integrationsGrid = {
 // One row per tile. Every Value is cast to real: union splits same-named columns of different types
 // (see jobEvents above), and count() is long while percentile() and round() are real.
 const headlineTilesQuery = [
-  'let hint = "{TimeRange:label}";',
   'union',
   '  (requests | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = "Requests", Order = 1),',
   '  (requests | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = "Failed requests", Order = 2),',
@@ -494,14 +493,12 @@ const headlineTilesQuery = [
   '  (requests | where timestamp {TimeRange} | summarize Value = toreal(round(percentile(duration, 95))) | extend Metric = "p95 response ms", Order = 4),',
   '  (exceptions | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = "Exceptions", Order = 5),',
   '  (dependencies | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = "Failed integration calls", Order = 6)',
-  '| extend Hint = hint',
   '| order by Order asc',
-  '| project Metric, Value, Hint',
+  '| project Metric, Value',
 ].join('\n');
 
 const headlineTileSettings = {
   titleContent: { columnMatch: 'Metric', formatter: 1 },
-  subtitleContent: { columnMatch: 'Hint', formatter: 1 },
   leftContent: {
     columnMatch: 'Value',
     formatter: 12,
@@ -509,7 +506,7 @@ const headlineTileSettings = {
     numberFormat: { unit: 17, options: { style: 'decimal', maximumFractionDigits: 2 } },
   },
   showBorder: true,
-  size: 'full',
+  size: 'small',
 };
 
 const trafficChartQuery = [
@@ -543,7 +540,7 @@ const items = [
   tabStrip,
 
   // ===== Overview =====
-  kqlItem('At a glance', headlineTilesQuery, {
+  kqlItem('At a glance — {TimeRange:label}', headlineTilesQuery, {
     tab: 'overview',
     visualization: 'tiles',
     tileSettings: headlineTileSettings,

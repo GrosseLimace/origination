@@ -306,9 +306,9 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let hint = \"{TimeRange:label}\";\nunion\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = \"Requests\", Order = 1),\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = \"Failed requests\", Order = 2),\n  (requests | where timestamp {TimeRange} | summarize Value = round(100.0 * countif(success == false) / max_of(count(), 1), 2) | extend Metric = \"Failure %\", Order = 3),\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(round(percentile(duration, 95))) | extend Metric = \"p95 response ms\", Order = 4),\n  (exceptions | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = \"Exceptions\", Order = 5),\n  (dependencies | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = \"Failed integration calls\", Order = 6)\n| extend Hint = hint\n| order by Order asc\n| project Metric, Value, Hint",
+        "query": "union\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = \"Requests\", Order = 1),\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = \"Failed requests\", Order = 2),\n  (requests | where timestamp {TimeRange} | summarize Value = round(100.0 * countif(success == false) / max_of(count(), 1), 2) | extend Metric = \"Failure %\", Order = 3),\n  (requests | where timestamp {TimeRange} | summarize Value = toreal(round(percentile(duration, 95))) | extend Metric = \"p95 response ms\", Order = 4),\n  (exceptions | where timestamp {TimeRange} | summarize Value = toreal(count()) | extend Metric = \"Exceptions\", Order = 5),\n  (dependencies | where timestamp {TimeRange} | summarize Value = toreal(countif(success == false)) | extend Metric = \"Failed integration calls\", Order = 6)\n| order by Order asc\n| project Metric, Value",
         "size": 0,
-        "title": "At a glance",
+        "title": "At a glance — {TimeRange:label}",
         "noDataMessage": "No request telemetry in this range.",
         "showRefreshButton": true,
         "timeContextFromParameter": "TimeRange",
@@ -321,10 +321,6 @@
         "tileSettings": {
           "titleContent": {
             "columnMatch": "Metric",
-            "formatter": 1
-          },
-          "subtitleContent": {
-            "columnMatch": "Hint",
             "formatter": 1
           },
           "leftContent": {
@@ -342,7 +338,7 @@
             }
           },
           "showBorder": true,
-          "size": "full"
+          "size": "small"
         }
       },
       "name": "kql - 3",
