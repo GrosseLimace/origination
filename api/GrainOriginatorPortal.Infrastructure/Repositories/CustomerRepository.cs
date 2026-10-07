@@ -2,8 +2,10 @@ using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Sync;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using static GrainOriginatorPortal.Infrastructure.Data.SqlSanitization;
 
@@ -16,19 +18,22 @@ public class CustomerRepository : ICustomerRepository
     private readonly IContractRepository _contractRepository;
     private readonly ITicketRepository _ticketRepository;
     private readonly ILogger<CustomerRepository> _logger;
+    private readonly IConfiguration _configuration;
 
     public CustomerRepository(
         OriginationDbContext context,
         ApplicationDbContext appContext,
         ITicketRepository ticketRepository,
         IContractRepository contractRepository,
-        ILogger<CustomerRepository> logger)
+        ILogger<CustomerRepository> logger,
+        IConfiguration configuration)
     {
         _context = context;
         _appContext = appContext;
         _ticketRepository = ticketRepository;
         _contractRepository = contractRepository;
         _logger = logger;
+        _configuration = configuration;
     }
 
     /// <summary>Strips a leading non-alphanumeric prefix from a name for sorting (so an onboarded
@@ -400,20 +405,39 @@ public class CustomerRepository : ICustomerRepository
         }
     }
 
-    /// <summary>
-    /// Enriches customers with ACH status read straight from base.Customer (PaymentMethod == 'H').
-    /// PaymentMethod is not surfaced by the curated customer views, so we read the base table directly
-    /// (current rows only), matched on CustomerId (== Customer.Id). One batched IN-query, like eSign.
-    /// </summary>
-    /// <summary>ACH-enabled when the ODS base.Customer PaymentMethod code is 'H' (case/whitespace-insensitive).</summary>
+    /// <summary>ACH-enabled when the PaymentMethod code is 'H' (case/whitespace-insensitive).</summary>
     public static bool IsAchPaymentMethod(string? paymentMethod) =>
         string.Equals(paymentMethod?.Trim(), "H", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Enriches customers with ACH status (PaymentMethod == 'H', <see cref="IsAchPaymentMethod"/>). The store follows
+    /// <c>CustomerSync:Source</c>, read per call (plan E2):
+    /// <list type="bullet">
+    /// <item><c>ods</c> (default): straight from ODS base.Customer, as before. PaymentMethod is not surfaced by the
+    /// curated customer views, so the base table is read directly (current rows only), matched on CustomerId
+    /// (== Customer.Id). One batched IN-query, like eSign.</item>
+    /// <item><c>ctrm</c>: from dbo.Customer.PaymentMethod, which the ctrm customer sync fills from GraphQL
+    /// <c>paymentMethod</c> - but only while <c>CustomerSync:CtrmExtendedFields</c> is on. With it off the column
+    /// stays null, so on ctrm the badge simply shows for nobody. The ODS is never read on this path (a minted
+    /// customer has no ODS row anyway).</item>
+    /// </list>
+    /// </summary>
     private async Task EnrichCustomersWithAchAsync(List<Customer> customers, CancellationToken cancellationToken = default)
     {
         if (customers.Count == 0) return;
 
         var ids = customers.Select(c => c.Id).Distinct().ToList();
+
+        if (CustomerSyncSources.Resolve(_configuration) == CustomerSyncSources.Ctrm)
+        {
+            var codes = await _appContext.Customers
+                .AsNoTracking()
+                .Where(c => ids.Contains(c.Id) && c.PaymentMethod != null)
+                .Select(c => new { c.Id, c.PaymentMethod })
+                .ToListAsync(cancellationToken);
+            MarkAch(customers, codes.Where(c => IsAchPaymentMethod(c.PaymentMethod)).Select(c => c.Id).ToHashSet());
+            return;
+        }
 
         var rows = await _context.CustomerPaymentInfos
             .AsNoTracking()
@@ -427,6 +451,11 @@ public class CustomerRepository : ICustomerRepository
             .Select(p => p.CustomerId)
             .ToHashSet();
 
+        MarkAch(customers, achIds);
+    }
+
+    private static void MarkAch(List<Customer> customers, HashSet<long> achIds)
+    {
         foreach (var customer in customers)
         {
             if (achIds.Contains(customer.Id)) customer.AchEnabled = true;

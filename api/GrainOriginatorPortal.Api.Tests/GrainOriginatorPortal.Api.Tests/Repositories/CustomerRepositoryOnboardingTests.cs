@@ -1,5 +1,6 @@
 // Microsoft namespaces
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 // Third-party namespaces
@@ -30,7 +31,7 @@ public class CustomerRepositoryOnboardingTests
             : base(ods, app,
                 new Mock<ITicketRepository>(MockBehavior.Strict).Object,
                 new Mock<IContractRepository>(MockBehavior.Strict).Object,
-                new Mock<ILogger<CustomerRepository>>().Object)
+                new Mock<ILogger<CustomerRepository>>().Object, new ConfigurationBuilder().Build())
         {
         }
 

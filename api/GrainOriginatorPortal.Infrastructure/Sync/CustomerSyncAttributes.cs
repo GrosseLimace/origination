@@ -68,7 +68,8 @@ public sealed class OdsCustomerSyncAttributes : CustomerSyncAttributes
 /// <see cref="UntouchedColumns"/> keeps its last ODS value. Extended mode (plan E1, when the lookup read the
 /// extended projection under <c>CustomerSync:CtrmExtendedFields</c>): also email, supplemental email, extended
 /// primary phone, the extended address and the NOP id (normalised exactly as on ODS), leaving only the effective
-/// dates untouched - see <see cref="UntouchedColumnsFor"/>.
+/// dates untouched - see <see cref="UntouchedColumnsFor"/> - plus the ctrm-only <c>PaymentMethod</c> column that
+/// drives the ACH badge on the ctrm source (plan E2).
 /// </summary>
 /// <remarks>
 /// <c>extended</c> must say what the lookup FETCHED (<c>CtrmCustomerLookup.ExtendedFields</c>), never what the
@@ -126,7 +127,15 @@ public sealed class CtrmCustomerSyncAttributes : CustomerSyncAttributes
         target.ExtendedPostalCode    = Clean(_source.ExtendedPostalCode);
         target.ExtendedCountry       = Clean(_source.ExtendedCountry);
         target.NopIdNumber           = OdsValues.NormaliseNopId(_source.NopidNoText);
+        target.PaymentMethod         = PaymentMethodCode(_source.PaymentMethod);
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    /// <summary>
+    /// The trimmed code when it fits dbo.Customer.PaymentMethod, else null. A longer value can never be the ACH
+    /// code 'H', and writing it would fail the whole sync's SaveChanges with a truncation error.
+    /// </summary>
+    private static string? PaymentMethodCode(string? s) =>
+        Clean(s) is { Length: <= Customer.PaymentMethodMaxLength } code ? code : null;
 }

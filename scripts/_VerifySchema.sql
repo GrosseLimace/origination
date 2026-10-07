@@ -59,6 +59,9 @@
 --   (ids for customers minted from CTRM, band [5e15, 6e15)); no table, column or index changed, so
 --   @Migrations grew by one and a 'Sequence.Missing' check sits next to the unique-index checks.
 --   The Migrations count comment read 52 but the list already held 55 ids; corrected to 56.
+--   Updated 2026-10-07: 20261007133856_AddCustomerPaymentMethod adds dbo.Customer.PaymentMethod
+--   nvarchar(10) NULL (the CTRM payment method code behind the ACH badge on the ctrm customer-sync
+--   source), so Columns grew to 372 and Migrations to 57.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -156,7 +159,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (371)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (372)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -252,6 +255,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Customer', 'IsManual',                   'bit',           0),
 ('dbo', 'Customer', 'MerchandisingCity',          'nvarchar(255)', 1),
 ('dbo', 'Customer', 'CustomerName',               'nvarchar(500)', 0),
+('dbo', 'Customer', 'PaymentMethod',              'nvarchar(10)',  1),
 ('dbo', 'Customer', 'MerchandisingPhone',         'nvarchar(100)', 1),
 ('dbo', 'Customer', 'MerchandisingPostalCode',    'nvarchar(20)',  1),
 ('dbo', 'Customer', 'ScoularId',                  'nvarchar(400)', 1),
@@ -620,7 +624,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (56)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (57)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -680,7 +684,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260923124207_RenameGrainOnFarmGroupToCommodityCode'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
 ('20261005131626_DropCtrmSourceToggleUsers'),
-('20261006150349_AddCustomerIdSequence');
+('20261006150349_AddCustomerIdSequence'),
+('20261007133856_AddCustomerPaymentMethod');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

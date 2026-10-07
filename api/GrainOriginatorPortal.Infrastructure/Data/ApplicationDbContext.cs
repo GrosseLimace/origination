@@ -503,6 +503,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ExtendedStateProvince).HasColumnName("ExtendedStateProvince").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.ExtendedCountry).HasColumnName("ExtendedCountry").HasMaxLength(255).IsRequired(false);
 
+            // CTRM payment method code ('H' = ACH) — filled by the ctrm customer sync (plan E2); null on ods.
+            entity.Property(e => e.PaymentMethod).HasColumnName("PaymentMethod").HasMaxLength(Customer.PaymentMethodMaxLength).IsRequired(false);
+
             // DTO-only fields — populated by service layer enrichment, not stored on the table.
             entity.Ignore(e => e.CustomerCode);
             entity.Ignore(e => e.Farm);

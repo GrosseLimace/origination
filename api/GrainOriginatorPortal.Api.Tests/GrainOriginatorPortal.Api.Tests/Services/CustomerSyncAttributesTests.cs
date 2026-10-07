@@ -197,7 +197,57 @@ public class CustomerSyncAttributesTests
         ExtendedPostalCode = " xp ",
         ExtendedCountry = " US ",
         NopidNo = System.Text.Json.JsonDocument.Parse(nopidJson).RootElement.Clone(),
+        PaymentMethod = " H ",
     };
+
+    // E2: the payment method rides on the extended projection and feeds the ACH badge on the ctrm source.
+
+    [Fact]
+    public void Ctrm_Extended_ApplyTo_SetsPaymentMethod_Trimmed()
+    {
+        var target = new Customer();
+
+        new CtrmCustomerSyncAttributes(ExtendedDto(), extended: true).ApplyTo(target);
+
+        Assert.Equal("H", target.PaymentMethod);
+    }
+
+    [Theory]
+    [InlineData("  ", null)]
+    [InlineData(null, null)]
+    [InlineData("0123456789", "0123456789")]
+    [InlineData("01234567890", null)]   // longer than nvarchar(10): never 'H', and must not fail the sync's SaveChanges
+    public void Ctrm_Extended_ApplyTo_PaymentMethod_BlankOrTooLongIsNull(string? value, string? expected)
+    {
+        var target = new Customer { PaymentMethod = "old" };
+        var dto = ExtendedDto();
+        dto.PaymentMethod = value;
+
+        new CtrmCustomerSyncAttributes(dto, extended: true).ApplyTo(target);
+
+        Assert.Equal(expected, target.PaymentMethod);
+    }
+
+    [Fact]
+    public void Ctrm_NotExtended_LeavesPaymentMethodUntouched()
+    {
+        var target = new Customer { PaymentMethod = "keep" };
+
+        new CtrmCustomerSyncAttributes(ExtendedDto(), extended: false).ApplyTo(target);
+
+        Assert.Equal("keep", target.PaymentMethod);
+    }
+
+    [Fact]
+    public void Ods_ApplyTo_NeverWritesPaymentMethod()
+    {
+        // The ods source reads ACH live from base.Customer; dbo.Customer.PaymentMethod is a ctrm-only column.
+        var target = new Customer { PaymentMethod = "keep" };
+
+        new OdsCustomerSyncAttributes(FullView()).ApplyTo(target);
+
+        Assert.Equal("keep", target.PaymentMethod);
+    }
 
     [Fact]
     public void Ctrm_Extended_ApplyTo_SetsEmailPhonesExtendedAddressAndNopId_Trimmed()

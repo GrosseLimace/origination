@@ -449,6 +449,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("NopIdNumber");
 
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("PaymentMethod");
+
                     b.Property<string>("Phone")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
