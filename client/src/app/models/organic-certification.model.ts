@@ -38,6 +38,9 @@ export interface OrganicCertification {
   /** The NEXT scheduled annual update — forward-looking, often absent. NOT an expiry date;
    *  NOP certification has none. */
   anniversaryDate?: string | null;
+  /** Server-computed: that update is already past. False when there is no date — absence is not
+   *  lateness, unlike `outsideComplianceWindow` where a missing date deliberately does count. */
+  anniversaryPastDue: boolean;
   totalAcreage?: number | null;
 
   /** When the certifier last touched the profile on the USDA site. Distinct from

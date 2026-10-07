@@ -568,23 +568,54 @@ export class CustomerProfileComponent {
   /** Whether the organic badge shows for this producer. Two producer-level conditions OR'd —
    *  the CTRM organic industry code, or a real NOP id on file. See @shared/utils/organic-visibility
    *  for why both are needed when they overlap almost completely. */
-  /** Dot on the organic badge when a certification status has changed and has not resolved back to
-   *  Certified. Deliberately on the badge rather than only inside the panel: a trader scanning a
-   *  profile should not have to open something to find out the certification moved. */
-  readonly organicStatusChanged = computed(() =>
-    this.organicCertification()?.certification?.hasUnresolvedStatusChange === true);
-
-  /** Dot for a NOP id we hold with no certification behind it — the other thing the desk wanted
-   *  visible without opening the panel. */
+  /** A NOP id we hold with no certification behind it. Also drives the panel's own warning, which
+   *  is why it stays a named signal rather than folding into organicAmberReasons. */
   readonly organicNoCertificate = computed(() =>
     this.organicCertification()?.noCertificateOnFile === true);
 
   /** Red badge: the operation status, or the Crops or Handling scope, is Surrendered (Kate
    *  Hoegermeyer, 2026-10-07 — Handling counts because some family operations trade under a
    *  handling certificate). Server-computed; Livestock is the only scope excluded. Red says "we may
-   *  not be able to trade", the amber dot says "look into this". Clears itself on any other status. */
+   *  not be able to trade", amber says "look into this". Clears itself on any other status. */
   readonly organicSurrendered = computed(() =>
     this.organicCertification()?.certification?.isSurrendered === true);
+
+  /**
+   * Every reason the badge should be AMBER, in the order they are worth reading.
+   *
+   * Replaced a 6px dot on 2026-10-07 at the organics desk's request: the dot was easy to miss, and
+   * two of these four conditions were not on the badge at all — a stale record and a past-due
+   * anniversary could only be found by opening the panel. Colouring the whole badge puts all four
+   * on the producer list without a click, which is the point.
+   *
+   * No dismissal, deliberately. A reason clears when the underlying fact changes and not before;
+   * Colton Uhring's note (2026-10-07) is that where the desk wants to park something they set a
+   * follow-up reminder in the section built for it, rather than silencing a compliance signal.
+   */
+  readonly organicAmberReasons = computed<string[]>(() => {
+    const cert = this.organicCertification()?.certification;
+    const reasons: string[] = [];
+
+    if (this.organicNoCertificate()) reasons.push('No certificate on file');
+    if (cert?.hasUnresolvedStatusChange) reasons.push('Certification status changed');
+    if (cert?.outsideComplianceWindow) reasons.push('Certifier record out of date');
+    if (cert?.anniversaryPastDue) reasons.push('Annual update past due');
+
+    return reasons;
+  });
+
+  /** Amber unless it is already red — a surrendered certification is the more serious fact and
+   *  must not be downgraded by a date problem arriving alongside it. */
+  readonly organicNeedsAttention = computed(() =>
+    !this.organicSurrendered() && this.organicAmberReasons().length > 0);
+
+  /** The hover text. Every applicable reason, not just the first: a producer can easily be both
+   *  out of date and past due, and showing one would imply the other had been checked. */
+  readonly organicBadgeTitle = computed(() => {
+    if (this.organicSurrendered()) return 'Organic certification surrendered';
+    const reasons = this.organicAmberReasons();
+    return reasons.length > 0 ? reasons.join(' · ') : 'Organic producer';
+  });
 
   readonly showOrganicBadge = computed(() => isOrganicSectionVisible({
     industryCode2: this.customer()?.industryCode2,

@@ -283,4 +283,116 @@ describe('CustomerProfileComponent — organic producer badge', () => {
     component.showESignRecipients.set(true);
     expect(component.anyHeaderPanelOpen()).toBe(false);
   });
+
+  // ── Badge colour ──────────────────────────────────────────────────────────────────────────
+  //
+  // Green / amber / red, replacing a 6px amber dot on 2026-10-07. The dot was easy to miss, and
+  // two of the four amber conditions never reached the badge at all — they could only be found by
+  // opening the panel, which is what the organics desk asked to change.
+
+  /** Minimal certification payload; override only what a test is about. */
+  function cert(over: Partial<Record<string, unknown>> = {}) {
+    return {
+      customerId: 1,
+      nopid: '1234567890',
+      noCertificateOnFile: false,
+      certification: {
+        nopid: '1234567890',
+        status: 'Certified',
+        isCertified: true,
+        isSurrendered: false,
+        outsideComplianceWindow: false,
+        anniversaryPastDue: false,
+        hasUnresolvedStatusChange: false,
+        scopes: [],
+        updatedOn: '2026-10-01T00:00:00Z',
+        ...over,
+      },
+    } as never;
+  }
+
+  it('is green for a producer in good standing', () => {
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    component.organicCertification.set(cert());
+
+    expect(component.organicSurrendered()).toBe(false);
+    expect(component.organicNeedsAttention()).toBe(false);
+    expect(component.organicBadgeTitle()).toBe('Organic producer');
+  });
+
+  it('turns amber when the certifier record is out of date', () => {
+    // Previously invisible on the badge — panel only.
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    component.organicCertification.set(cert({ outsideComplianceWindow: true }));
+
+    expect(component.organicNeedsAttention()).toBe(true);
+    expect(component.organicBadgeTitle()).toBe('Certifier record out of date');
+  });
+
+  it('turns amber when the annual update is past due', () => {
+    // Also previously panel-only.
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    component.organicCertification.set(cert({ anniversaryPastDue: true }));
+
+    expect(component.organicNeedsAttention()).toBe(true);
+    expect(component.organicBadgeTitle()).toBe('Annual update past due');
+  });
+
+  it('turns amber on an unresolved status change', () => {
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    component.organicCertification.set(cert({ hasUnresolvedStatusChange: true, status: 'Suspended' }));
+
+    expect(component.organicNeedsAttention()).toBe(true);
+    expect(component.organicBadgeTitle()).toBe('Certification status changed');
+  });
+
+  it('lists every applicable reason in the hover text, not just the first', () => {
+    // A producer is easily both out of date and past due. Showing one would imply the other had
+    // been checked and was fine.
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    component.organicCertification.set(cert({
+      outsideComplianceWindow: true,
+      anniversaryPastDue: true,
+      hasUnresolvedStatusChange: true,
+    }));
+
+    expect(component.organicBadgeTitle())
+      .toBe('Certification status changed · Certifier record out of date · Annual update past due');
+  });
+
+  it('turns amber for a NOP id with no certificate behind it', () => {
+    ref.setInput('customer', makeCustomer({ nopId: '1234567890' }));
+    component.organicCertification.set({
+      customerId: 1, nopid: '1234567890', noCertificateOnFile: true, certification: null,
+    } as never);
+
+    expect(component.organicNeedsAttention()).toBe(true);
+    expect(component.organicBadgeTitle()).toBe('No certificate on file');
+  });
+
+  it('is red, not amber, when surrendered', () => {
+    // Red outranks amber: a surrendered certification is the more serious fact and must not be
+    // downgraded because a date problem arrived alongside it.
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    component.organicCertification.set(cert({
+      isSurrendered: true,
+      status: 'Surrendered',
+      outsideComplianceWindow: true,
+      hasUnresolvedStatusChange: true,
+    }));
+
+    expect(component.organicSurrendered()).toBe(true);
+    expect(component.organicNeedsAttention()).toBe(false);
+    expect(component.organicBadgeTitle()).toBe('Organic certification surrendered');
+  });
+
+  it('stays green while the certification is still loading', () => {
+    // Null until the fetch lands. A badge that flashes amber on every profile open would be worse
+    // than one that is briefly uninformative.
+    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
+    component.organicCertification.set(null);
+
+    expect(component.organicNeedsAttention()).toBe(false);
+    expect(component.organicSurrendered()).toBe(false);
+  });
 });

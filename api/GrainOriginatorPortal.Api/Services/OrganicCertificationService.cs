@@ -261,6 +261,15 @@ public class OrganicCertificationService : IOrganicCertificationService
         OutsideComplianceWindow = OrganicRecordCurrency.IsOutsideWindow(
             source.SourceLastUpdateDate, asOf, complianceWindowMonths),
 
+        // Moved here from the panel component on 2026-10-07, when this became a badge signal as
+        // well as a panel one. Two surfaces doing the same date comparison in the browser's
+        // timezone is exactly how a badge ends up amber while the panel behind it says the date is
+        // fine. A missing anniversary is NOT past due — ~15% of real records have none, and absence
+        // is not evidence of lateness (unlike the compliance window, where absence fails safe
+        // because the desk's requirement is positive proof of currency).
+        AnniversaryPastDue = source.AnniversaryDate is { } anniversary
+                             && anniversary.Date < asOf.Date,
+
         // Shared rule, so the profile and Actionable Insights cannot drift apart.
         HasUnresolvedStatusChange = OrganicCertificationStatus.HasUnresolvedStatusChange(
             source.OperationStatus, source.PreviousStatus),

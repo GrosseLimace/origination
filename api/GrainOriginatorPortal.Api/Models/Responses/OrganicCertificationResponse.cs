@@ -68,6 +68,17 @@ public record OrganicCertificationResponse
     [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? AnniversaryDate { get; init; }
 
+    /// <summary>
+    /// Whether that scheduled update has already passed. Server-computed so the badge and the panel
+    /// cannot disagree, and so no date comparison happens in the browser's timezone.
+    ///
+    /// False when there is no anniversary date at all. Absence is not lateness here — roughly 15%
+    /// of real records carry none. That is the opposite of <see cref="OutsideComplianceWindow"/>,
+    /// where a missing date DOES count, because the desk's rule there demands positive proof of
+    /// currency and we have none.
+    /// </summary>
+    public bool AnniversaryPastDue { get; init; }
+
     public decimal? TotalAcreage { get; init; }
 
     // ── Record currency ────────────────────────────────────────────────────────────────────────

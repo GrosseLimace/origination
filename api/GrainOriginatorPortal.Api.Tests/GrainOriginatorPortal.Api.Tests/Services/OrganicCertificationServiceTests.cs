@@ -314,7 +314,73 @@ public class OrganicCertificationServiceTests
         var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
 
         Assert.False(result.OutsideComplianceWindow);
-        Assert.True(result.AnniversaryDate < Today.UtcDateTime.Date);
+        Assert.True(result.AnniversaryPastDue);
+    }
+
+    // ── AnniversaryPastDue ───────────────────────────────────────────────────────────────────
+    // Moved here from the panel component on 2026-10-07, when it became a badge signal as well.
+    // Two surfaces comparing the same date in the browser's timezone is how a badge ends up amber
+    // while the panel behind it says the date is fine.
+
+    [Fact]
+    public async Task AnAnniversaryInThePastIsPastDue()
+    {
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.AnniversaryDate = Today.UtcDateTime.Date.AddDays(-1);
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.True(result.AnniversaryPastDue);
+    }
+
+    [Fact]
+    public async Task AnAnniversaryInTheFutureIsNotPastDue()
+    {
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.AnniversaryDate = Today.UtcDateTime.Date.AddDays(1);
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.False(result.AnniversaryPastDue);
+    }
+
+    [Fact]
+    public async Task TodayIsNotYetPastDue()
+    {
+        // The boundary. An update due today has not been missed, and a producer should not go amber
+        // on the morning of the day it falls due.
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.AnniversaryDate = Today.UtcDateTime.Date;
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.False(result.AnniversaryPastDue);
+    }
+
+    [Fact]
+    public async Task AMissingAnniversaryIsNotPastDue()
+    {
+        // ~15% of real records carry none. Absence is NOT lateness here — deliberately the opposite
+        // of OutsideComplianceWindow, where a missing date does count, because that rule demands
+        // positive proof of currency and we have none.
+        using var db = NewContext();
+        var cert = Certification(scopes: [Scope("Crops")]);
+        cert.AnniversaryDate = null;
+        db.OrganicCertifications.Add(cert);
+        await db.SaveChangesAsync();
+
+        var result = (await Service(db).GetForCustomerAsync(CustomerId)).Certification!;
+
+        Assert.False(result.AnniversaryPastDue);
     }
 
     [Fact]

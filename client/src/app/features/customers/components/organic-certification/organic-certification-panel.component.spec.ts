@@ -145,10 +145,15 @@ describe('OrganicCertificationPanelComponent', () => {
     });
   });
 
+  // Past-due is SERVER-computed as of 2026-10-07, when it became a badge signal as well as a panel
+  // one. The comparison itself now lives in OrganicCertificationService and is covered there; what
+  // these assert is that the panel reads the flag and does not second-guess it from the date — two
+  // surfaces doing the same date maths in the browser's timezone is how a badge ends up amber while
+  // the panel behind it says the date is fine.
   describe('the past-due annual update', () => {
-    it('marks an anniversary date that has already passed', () => {
+    it('marks an anniversary the server reports as past due', () => {
       ref.setInput('certification', payload({
-        certification: certification({ anniversaryDate: '2020-01-01' }),
+        certification: certification({ anniversaryDate: '2020-01-01', anniversaryPastDue: true }),
       }));
       fixture.detectChanges();
 
@@ -157,23 +162,29 @@ describe('OrganicCertificationPanelComponent', () => {
 
     it('does not mark a future one', () => {
       ref.setInput('certification', payload({
-        certification: certification({ anniversaryDate: '2099-01-01' }),
+        certification: certification({ anniversaryDate: '2099-01-01', anniversaryPastDue: false }),
       }));
       fixture.detectChanges();
 
       expect(component.anniversaryPastDue()).toBe(false);
     });
 
-    it('is false rather than throwing when the date is absent or unparseable', () => {
-      // Roughly 15% of real records carry no anniversary date, so this is the normal path.
+    it('trusts the server flag over the date it is shown beside', () => {
+      // The flag is the contract. If the panel re-derived past-due from the rendered date it could
+      // disagree with the badge, which reads the same flag — exactly the drift this moved to fix.
       ref.setInput('certification', payload({
-        certification: certification({ anniversaryDate: null }),
+        certification: certification({ anniversaryDate: '2020-01-01', anniversaryPastDue: false }),
       }));
       fixture.detectChanges();
-      expect(component.anniversaryPastDue()).toBe(false);
 
+      expect(component.anniversaryPastDue()).toBe(false);
+    });
+
+    it('is false rather than throwing when the date is absent', () => {
+      // Roughly 15% of real records carry no anniversary date, so this is the normal path. Absence
+      // is not lateness — unlike the compliance window, where a missing date deliberately counts.
       ref.setInput('certification', payload({
-        certification: certification({ anniversaryDate: 'not a date' }),
+        certification: certification({ anniversaryDate: null, anniversaryPastDue: false }),
       }));
       fixture.detectChanges();
       expect(component.anniversaryPastDue()).toBe(false);
@@ -187,6 +198,7 @@ describe('OrganicCertificationPanelComponent', () => {
           sourceUpdatedOn: '2025-11-07',
           outsideComplianceWindow: false,
           anniversaryDate: '2026-04-01',
+          anniversaryPastDue: true,
         }),
       }));
       fixture.detectChanges();

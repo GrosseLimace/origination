@@ -67,15 +67,12 @@ export class OrganicCertificationPanelComponent {
 
   /** Whether the next scheduled annual update has already passed. Shown alongside the compliance
    *  signal rather than folded into it: the two measure different things and routinely disagree,
-   *  so collapsing them would hide a real distinction from the desk. */
-  readonly anniversaryPastDue = computed(() => {
-    const anniversary = this.cert()?.anniversaryDate;
-    if (!anniversary) return false;
-    const due = new Date(anniversary);
-    if (Number.isNaN(due.getTime())) return false;
-    const today = new Date();
-    return due.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0);
-  });
+   *  so collapsing them would hide a real distinction from the desk.
+   *
+   *  Server-computed since 2026-10-07, when this became a badge signal too. It used to parse the
+   *  date here, which contradicted this component's own rule that no date arithmetic happens in
+   *  the browser — and would have let the badge and the panel disagree about the same date. */
+  readonly anniversaryPastDue = computed(() => this.cert()?.anniversaryPastDue === true);
 
   /** Chip colours reuse the app-wide commodity palette, keyed on the crop name. Unmapped crops
    *  fall back to the neutral chip rather than vanishing — a certifier's wording is not a reason
