@@ -197,6 +197,56 @@
                 }
               </div>
 
+              <!-- Bin sites: optional name + one "lat, lng" field (Google Maps' copy format). Up to
+                   three; shown under the address on the profile as map links. -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    Bin Sites
+                  </label>
+                  @if (editBinSites().length < maxBinSites) {
+                    <button type="button" (click)="addBinSiteRow()"
+                      class="flex items-center gap-1 text-sm font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                      Add bin site
+                    </button>
+                  }
+                </div>
+
+                @if (editBinSites().length > 0) {
+                  <div class="grid grid-cols-[1fr_1.4fr_1.25rem] gap-2 items-center px-1">
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name (optional)</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Latitude, Longitude</span>
+                    <span></span>
+                  </div>
+                  @for (row of editBinSites(); track $index) {
+                    <div class="grid grid-cols-[1fr_1.4fr_1.25rem] gap-2 items-center">
+                      <input type="text" [ngModel]="row.name" (ngModelChange)="updateBinSiteField($index, 'name', $event)"
+                        placeholder="Anderson Site" [attr.maxlength]="binSiteNameMaxLength" aria-label="Bin site name"
+                        class="w-full h-9 px-2.5 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                      <input type="text" inputmode="decimal" [ngModel]="row.coords" (ngModelChange)="updateBinSiteField($index, 'coords', $event)"
+                        [placeholder]="coordinateExample" aria-label="Bin site latitude and longitude"
+                        [attr.aria-invalid]="binSiteErrors()[$index] ? true : null"
+                        class="w-full h-9 px-2.5 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                        [class]="binSiteErrors()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
+                      <button type="button" (click)="removeBinSiteRow($index)" title="Remove bin site"
+                        class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors justify-self-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                    @if (binSiteErrors()[$index]; as error) {
+                      <p class="text-xs text-red-500 dark:text-red-400">{{ error }}</p>
+                    }
+                  }
+                  <p class="text-xs text-gray-400 dark:text-gray-500">Paste from Google Maps (right-click the pin, click the coordinates). Rounded to six decimal places; longitude is negative in North America.</p>
+                } @else {
+                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No bin sites added — use "Add bin site" to record up to three by latitude and longitude.</p>
+                }
+              </div>
+
               <div class="grid grid-cols-2 gap-4">
                 <div class="space-y-2">
                   <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -548,7 +598,7 @@
           <button
             type="button"
             class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-scoular-green-accessible text-white hover:bg-scoular-green-accessible h-10 px-4 py-2"
-            [disabled]="!hasChanges() || !canSave() || contactsInvalid()"
+            [disabled]="!hasChanges() || !canSave() || contactsInvalid() || binSitesInvalid()"
             (click)="onSave()"
           >
             Save Changes

@@ -55,6 +55,8 @@
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
+--   Updated 2026-10-07: 20261007145119_AddProducerBinSite created dbo.ProducerBinSite (6 columns,
+--   Latitude/Longitude decimal(9,6)); its only index is non-unique, so @UniqueIndexes is unchanged.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -131,6 +133,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'HarvestWindows'),
 ('dbo', 'MbpLocationSynonym'),
 ('dbo', 'Notes'),
+('dbo', 'ProducerBinSite'),
 ('dbo', 'ProducerContact'),
 ('dbo', 'ProducerDetails'),
 ('dbo', 'ProducerGrainOnFarm'),
@@ -419,6 +422,13 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerPlantingIntentions', 'PlantingYear', 'int',           0),
 ('dbo', 'ProducerPlantingIntentions', 'TradeUnit',    'nvarchar(100)', 0),
 ('dbo', 'ProducerPlantingIntentions', 'Type',         'nvarchar(100)', 1),
+-- ProducerBinSite
+('dbo', 'ProducerBinSite', 'Id',         'int',           0),
+('dbo', 'ProducerBinSite', 'CustomerId', 'bigint',        0),
+('dbo', 'ProducerBinSite', 'Latitude',   'decimal(9,6)',  0),
+('dbo', 'ProducerBinSite', 'Longitude',  'decimal(9,6)',  0),
+('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
+('dbo', 'ProducerBinSite', 'SortOrder',  'int',           0),
 -- ProducerContact
 ('dbo', 'ProducerContact', 'Id',         'int',           0),
 ('dbo', 'ProducerContact', 'CustomerId', 'bigint',        0),
@@ -675,7 +685,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260921204500_SplitFlaxPlantingCategoryByColour'),
 ('20260923124207_RenameGrainOnFarmGroupToCommodityCode'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
-('20261005131626_DropCtrmSourceToggleUsers');
+('20261005131626_DropCtrmSourceToggleUsers'),
+('20261007145119_AddProducerBinSite');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

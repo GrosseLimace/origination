@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
@@ -40,6 +41,28 @@ public record UpsertProducerDetailsRequest
     /// preserved and the legacy PrimaryContact/PrimaryPhone fields above are used as-sent. When
     /// provided, the legacy fields are ignored and derived from the primary row instead.</summary>
     public IReadOnlyList<ContactItemRequest>? Contacts { get; init; }
+
+    /// <summary>User-entered bin sites, at most <see cref="BinSiteRules.MaxPerCustomer"/>. Same
+    /// contract as <see cref="Contacts"/>: replaces the existing set on save, array order is the
+    /// display order, and NULL (property absent) preserves the existing rows.</summary>
+    [MaxLength(BinSiteRules.MaxPerCustomer, ErrorMessage = "A producer can have at most 3 bin sites.")]
+    public IReadOnlyList<BinSiteItemRequest>? BinSites { get; init; }
+}
+
+/// <summary>One bin site. The ranges are the North American rules in <see cref="BinSiteRules"/>;
+/// the server rounds both coordinates to six decimal places on save.</summary>
+public record BinSiteItemRequest
+{
+    [StringLength(BinSiteRules.NameMaxLength)]
+    public string? Name { get; init; }
+
+    [Range(BinSiteRules.MinLatitude, BinSiteRules.MaxLatitude,
+        ErrorMessage = "Latitude must be between 7 and 84 (north of the equator, in North America).")]
+    public required decimal Latitude { get; init; }
+
+    [Range(BinSiteRules.MinLongitude, BinSiteRules.MaxLongitude,
+        ErrorMessage = "Longitude must be negative (west), between -180 and -52, for North America.")]
+    public required decimal Longitude { get; init; }
 }
 
 public record ContactItemRequest

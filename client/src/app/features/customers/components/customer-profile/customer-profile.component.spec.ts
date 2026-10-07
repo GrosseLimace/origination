@@ -215,6 +215,68 @@ describe('CustomerProfileComponent — address map link', () => {
   });
 });
 
+// Covers the bin-site links under the address: label text (named and unnamed), the exact-point map
+// link, and that opening one is recorded separately from the address link.
+describe('CustomerProfileComponent — bin site links', () => {
+  let component: CustomerProfileComponent;
+  let ref: ComponentRef<CustomerProfileComponent>;
+  let tracking: { trackBinSiteMapClick: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    tracking = { trackBinSiteMapClick: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: {} },
+        { provide: ThemeService, useValue: {} },
+        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {}, ...tracking } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerProfileComponent, {
+      set: { template: '', templateUrl: undefined, imports: [] },
+    });
+    const fixture = TestBed.createComponent(CustomerProfileComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+  });
+
+  it('labels each site with its name and six-place coordinates, in saved order', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [
+        { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955, sortOrder: 0 },
+        { name: null, latitude: 40.5, longitude: -96, sortOrder: 1 },
+      ],
+    }));
+
+    expect(component.binSiteLinks().map(l => l.label)).toEqual([
+      'Anderson Site: 39.115876, -95.143955',
+      '40.500000, -96.000000',
+    ]);
+  });
+
+  it('links each site to its exact point in Google Maps', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 }],
+    }));
+
+    expect(component.binSiteLinks()[0].url)
+      .toBe('https://www.google.com/maps/search/?api=1&query=39.115876%2C-95.143955');
+  });
+
+  it('shows nothing when the producer has no bin sites', () => {
+    ref.setInput('customer', makeCustomer());
+
+    expect(component.binSiteLinks()).toEqual([]);
+  });
+
+  it('tracks the click under its own subfeature', () => {
+    ref.setInput('customer', makeCustomer({ id: 42 }));
+
+    component.trackBinSiteMapClick();
+
+    expect(tracking.trackBinSiteMapClick).toHaveBeenCalledWith('42');
+  });
+});
+
 // Covers the organic producer badge: which producers get it, and the header-panel spacing computed
 // it introduced. The gate itself is unit-tested in @shared/utils/organic-visibility.spec.ts — these
 // assert the component wires the producer's own fields into it and nothing else.

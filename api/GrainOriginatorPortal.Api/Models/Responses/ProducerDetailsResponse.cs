@@ -25,6 +25,17 @@ public record ProducerDetailsResponse
     /// <summary>User-entered contacts, primary first. PrimaryContact/PrimaryPhone above are
     /// derived from the primary row (kept for backward compatibility).</summary>
     public IReadOnlyList<ContactItemResponse> Contacts { get; init; } = [];
+
+    /// <summary>User-entered bin sites in display order (at most three).</summary>
+    public IReadOnlyList<BinSiteItemResponse> BinSites { get; init; } = [];
+}
+
+public record BinSiteItemResponse
+{
+    public string? Name { get; init; }
+    public decimal Latitude { get; init; }
+    public decimal Longitude { get; init; }
+    public int SortOrder { get; init; }
 }
 
 public record ContactItemResponse

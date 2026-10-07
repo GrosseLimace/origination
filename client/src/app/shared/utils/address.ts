@@ -58,3 +58,12 @@ export function googleMapsSearchUrl(parts: AddressParts): string | null {
   if (!query) return null;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
+
+/**
+ * The same Maps URLs search link for a latitude/longitude pair (a bin site) — Maps drops a pin on
+ * the exact point rather than geocoding text. Six places, matching what is stored and displayed.
+ */
+export function googleMapsCoordinatesUrl(lat: number, lng: number): string {
+  const query = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}

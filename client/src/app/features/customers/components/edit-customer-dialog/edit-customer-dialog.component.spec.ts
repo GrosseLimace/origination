@@ -210,3 +210,123 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
     expect(component.selectedTuCodes()).toEqual(['2190']);
   });
 });
+
+// Bin sites: an optional name plus one "lat, lng" paste field per row, at most three, enforced
+// against the North American rules before Save is allowed. The rules themselves are unit-tested in
+// @shared/utils/coordinates.spec.ts — these cover the dialog's row handling and the emitted payload.
+describe('EditCustomerDialogComponent — bin sites', () => {
+  let component: EditCustomerDialogComponent;
+  let ref: ComponentRef<EditCustomerDialogComponent>;
+  let saved: { binSites: { name?: string; latitude: number; longitude: number }[] }[];
+
+  beforeEach(() => {
+    saved = [];
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            getAllTradeUnits: () => of([]),
+            getCommodities: () => of([]),
+            getPlantingCommodities: () => of([]),
+            getCustomerTradeUnits: () => of([]),
+            // Non-empty on purpose: the producer-search preload effect re-fetches while its cache
+            // is empty, so a synchronous empty result would loop TestBed.tick() forever.
+            getCustomers: () => of([makeCustomer({ id: 7, name: 'Other Farm' })]),
+          },
+        },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
+        {
+          provide: AppStateService,
+          useValue: {
+            inScopeGroupNames: signal<readonly string[]>([]),
+            inScopeTradeUnitCodes: signal<readonly string[]>([]),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(EditCustomerDialogComponent, {
+      set: { template: '', templateUrl: undefined, imports: [] },
+    });
+    const fixture = TestBed.createComponent(EditCustomerDialogComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+    component.save.subscribe(payload => saved.push(payload));
+  });
+
+  /** Opens the dialog on a producer so the open effect hydrates the rows and change snapshot. */
+  function open(customer: Customer): void {
+    ref.setInput('customer', customer);
+    ref.setInput('isOpen', true);
+    TestBed.tick();
+  }
+
+  it('hydrates saved sites as six-place coordinate text, unchanged until edited', () => {
+    open(makeCustomer({ binSites: [{ name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 }] }));
+
+    expect(component.editBinSites()).toEqual([{ name: 'Anderson Site', coords: '39.115876, -95.143955' }]);
+    expect(component.hasChanges()).toBe(false);
+  });
+
+  it('caps the rows at three', () => {
+    open(makeCustomer());
+
+    for (let i = 0; i < 5; i++) component.addBinSiteRow();
+
+    expect(component.editBinSites()).toHaveLength(3);
+  });
+
+  it('flags a row whose coordinates break the rules and blocks Save', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'coords', '39.115876, 95.143955');
+
+    expect(component.binSiteErrors()[0]).toContain('minus sign');
+    expect(component.binSitesInvalid()).toBe(true);
+  });
+
+  it('flags a named row with no coordinates', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'North Bins');
+
+    expect(component.binSiteErrors()[0]).toContain('coordinates');
+    expect(component.binSitesInvalid()).toBe(true);
+  });
+
+  it('does not count an added-then-left-blank row as a change or an error', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+
+    expect(component.binSitesInvalid()).toBe(false);
+    expect(component.hasChanges()).toBe(false);
+  });
+
+  it('emits parsed, rounded sites in row order and drops blank rows', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.addBinSiteRow();
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', '  Anderson Site ');
+    component.updateBinSiteField(0, 'coords', '39.11587612345678, -95.14395512345678');
+    component.updateBinSiteField(2, 'coords', '40.5,-96');
+    expect(component.hasChanges()).toBe(true);
+
+    component.onSave();
+
+    expect(saved.at(-1)?.binSites).toEqual([
+      { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 },
+      { name: undefined, latitude: 40.5, longitude: -96 },
+    ]);
+  });
+
+  it('emits an empty list when every site is removed, so the server clears them', () => {
+    open(makeCustomer({ binSites: [{ name: 'Old', latitude: 39.1, longitude: -95.1 }] }));
+
+    component.removeBinSiteRow(0);
+    expect(component.hasChanges()).toBe(true);
+    component.onSave();
+
+    expect(saved.at(-1)?.binSites).toEqual([]);
+  });
+});

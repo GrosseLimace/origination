@@ -23,7 +23,8 @@ import { grainOnFarmColorKey, grainOnFarmTitle, indexCommoditiesByCode } from '@
 import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
-import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
+import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
+import { formatBinSiteLabel } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
@@ -148,7 +149,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name?: string; latitude: number; longitude: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -173,6 +174,17 @@ export class CustomerProfileComponent {
   trackMapClick(): void {
     this.usageTracking.trackMapClick(this.customer().id.toString());
   }
+
+  trackBinSiteMapClick(): void {
+    this.usageTracking.trackBinSiteMapClick(this.customer().id.toString());
+  }
+
+  /** Bin sites under the address, each a Google Maps link to its exact point, in saved order. */
+  readonly binSiteLinks = computed(() =>
+    (this.customer().binSites ?? []).map(site => ({
+      label: formatBinSiteLabel(site),
+      url: googleMapsCoordinatesUrl(site.latitude, site.longitude),
+    })));
 
   // Local state - signals
   activeTab = signal('contracts');
@@ -482,7 +494,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name?: string; latitude: number; longitude: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();

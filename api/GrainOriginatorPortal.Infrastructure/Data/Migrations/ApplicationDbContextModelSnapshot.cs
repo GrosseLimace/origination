@@ -1412,6 +1412,46 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("ProducerPlantingIntentions", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerBinSite", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.Property<decimal>("Latitude")
+                        .HasColumnType("decimal(9,6)")
+                        .HasColumnName("Latitude");
+
+                    b.Property<decimal>("Longitude")
+                        .HasColumnType("decimal(9,6)")
+                        .HasColumnName("Longitude");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("Name");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0)
+                        .HasColumnName("SortOrder");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("IX_ProducerBinSite_CustomerId");
+
+                    b.ToTable("ProducerBinSite", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerContact", b =>
                 {
                     b.Property<int>("Id")
@@ -2428,6 +2468,18 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_ProducerPlantingIntentions_Customer_CustomerId");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerBinSite", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProducerBinSite_Customer");
 
                     b.Navigation("Customer");
                 });

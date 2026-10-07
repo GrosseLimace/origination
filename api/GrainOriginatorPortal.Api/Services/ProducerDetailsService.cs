@@ -141,6 +141,17 @@ public class ProducerDetailsService : IProducerDetailsService
             })
             .ToList();
 
+        // Same null-means-preserve contract for bin sites.
+        var binSiteEntries = request.BinSites?
+            .Select((b, index) => new ProducerBinSiteEntry
+            {
+                Name = b.Name,
+                Latitude = b.Latitude,
+                Longitude = b.Longitude,
+                SortOrder = index
+            })
+            .ToList();
+
         var saved = await _repository.UpsertAsync(new ProducerDetailsUpsertArgs
         {
             CustomerId = customerId,
@@ -153,7 +164,8 @@ public class ProducerDetailsService : IProducerDetailsService
             Commodities = request.Commodities,
             LinkedProducerIds = request.LinkedProducerIds,
             GrainOnFarm = grainEntries,
-            Contacts = contactEntries
+            Contacts = contactEntries,
+            BinSites = binSiteEntries
         }, _requestContext.GetCurrentUser(), cancellationToken);
 
         var nameMap = await _displayNameLookup.ResolveAsync(
