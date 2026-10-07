@@ -106,7 +106,7 @@ const armItem = (title, path, apiVersion, columns, opts = {}) => ({
         },
       ],
     }),
-    size: opts.size ?? 0,
+    size: opts.size ?? (opts.tab === 'overview' ? 4 : 0),
     title,
     noDataMessage: opts.noDataMessage,
     showRefreshButton: true,
@@ -124,7 +124,7 @@ const kqlItem = (title, query, opts = {}) => ({
   content: {
     version: 'KqlItem/1.0',
     query,
-    size: opts.size ?? 0,
+    size: opts.size ?? (opts.tab === 'overview' ? 4 : 0),
     title,
     noDataMessage: opts.noDataMessage,
     showRefreshButton: true,
@@ -147,7 +147,7 @@ const argItem = (title, query, opts = {}) => ({
   content: {
     version: 'KqlItem/1.0',
     query,
-    size: opts.size ?? 0,
+    size: opts.size ?? (opts.tab === 'overview' ? 4 : 0),
     title,
     noDataMessage: opts.noDataMessage,
     showRefreshButton: true,
@@ -550,7 +550,6 @@ const items = [
     tab: 'overview',
     visualization: 'timechart',
     size: 1,
-    customWidth: '50',
     chartSettings: {
       seriesLabelSettings: [
         { seriesName: 'Requests', color: 'blue' },
@@ -582,12 +581,11 @@ const items = [
       '         Condition = tostring(properties.essentials.monitorCondition),',
       '         State = tostring(properties.essentials.alertState),',
       '         Target = tostring(properties.essentials.targetResourceName)',
-      '| project Fired, Alert = name, Severity, Condition, Target',
+      '| project Fired, Alert = name, Severity, Condition, State, Target',
       '| order by Fired desc',
     ].join('\n'),
     {
       tab: 'overview',
-      customWidth: '50',
       noDataMessage: 'No alerts fired in the last 30 days.',
       gridSettings: {
         formatters: [
