@@ -377,7 +377,9 @@ const logicRuns = (title, idParam, top, opts) =>
 const jobEvents = [
   'union',
   '  (traces | project timestamp, severityLevel, message),',
-  '  (exceptions | project timestamp, severityLevel = 3, message = coalesce(tostring(customDimensions.FormattedMessage), outerMessage))',
+  // toint(): traces.severityLevel is int. A bare 3 is long, and union splits same-named columns of
+  // different types into severityLevel_int / severityLevel_long, so the where below cannot find it.
+  '  (exceptions | project timestamp, severityLevel = toint(3), message = coalesce(tostring(customDimensions.FormattedMessage), outerMessage))',
   '| where timestamp {TimeRange}',
 ].join('\n');
 
