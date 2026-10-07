@@ -13,7 +13,8 @@ public class ProducerBinSite
     public int Id { get; set; }
     public long CustomerId { get; set; }
     public string? Name { get; set; }
-    /// <summary>decimal(9,6) — six places is ~0.1 m, the precision the card asks for.</summary>
+    /// <summary>decimal(18,15) — keeps a full Google Maps paste (up to ~15 places) exactly as
+    /// entered. The profile shortens it to six places for display; the map link uses all of it.</summary>
     public decimal Latitude { get; set; }
     public decimal Longitude { get; set; }
     /// <summary>Display order within the producer.</summary>
@@ -44,7 +45,9 @@ public static class BinSiteRules
 {
     public const int MaxPerCustomer = 3;
     public const int NameMaxLength = 100;
-    public const int DecimalPlaces = 6;
+    /// <summary>Scale of the decimal(18,15) columns. Users never round by hand; anything finer than
+    /// this (beyond double precision anyway) is rounded on save so it fits the column.</summary>
+    public const int StoredDecimalPlaces = 15;
     public const double MinLatitude = 7.0;
     public const double MaxLatitude = 84.0;
     public const double MinLongitude = -180.0;

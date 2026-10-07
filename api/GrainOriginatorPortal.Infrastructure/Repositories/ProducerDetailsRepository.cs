@@ -403,9 +403,9 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
 
     /// <summary>
     /// Cleans incoming bin-site rows: trims the name (blank becomes null) and caps its length,
-    /// rounds both coordinates to six places so a full-precision Google Maps paste is stored the
-    /// way it is displayed, and collapses rows that land on the same rounded point. Range checks
-    /// are the request model's job; this only normalizes. SortOrder is the post-filter position.
+    /// keeps the coordinates as pasted (only rounding past the column's 15 places, so a value can
+    /// never fail to fit), and collapses rows on the identical point. Range checks are the request
+    /// model's job; this only normalizes. SortOrder is the post-filter position.
     /// </summary>
     private static List<ProducerBinSiteEntry> NormalizeBinSites(IReadOnlyList<ProducerBinSiteEntry> binSites)
     {
@@ -417,8 +417,8 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 return new ProducerBinSiteEntry
                 {
                     Name = string.IsNullOrEmpty(name) ? null : name,
-                    Latitude = Math.Round(b.Latitude, BinSiteRules.DecimalPlaces, MidpointRounding.AwayFromZero),
-                    Longitude = Math.Round(b.Longitude, BinSiteRules.DecimalPlaces, MidpointRounding.AwayFromZero)
+                    Latitude = Math.Round(b.Latitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero),
+                    Longitude = Math.Round(b.Longitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero)
                 };
             })
             .GroupBy(b => (b.Latitude, b.Longitude))

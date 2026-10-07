@@ -50,7 +50,7 @@ public record UpsertProducerDetailsRequest
 }
 
 /// <summary>One bin site. The ranges are the North American rules in <see cref="BinSiteRules"/>;
-/// the server rounds both coordinates to six decimal places on save.</summary>
+/// coordinates are stored at full precision (the profile shortens them for display).</summary>
 public record BinSiteItemRequest
 {
     [StringLength(BinSiteRules.NameMaxLength)]

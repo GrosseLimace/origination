@@ -88,12 +88,13 @@ describe('googleMapsSearchUrl', () => {
 });
 
 describe('googleMapsCoordinatesUrl', () => {
-  it('builds a Maps search link on the exact point, at six places', () => {
+  it('builds a Maps search link on the exact point', () => {
     expect(googleMapsCoordinatesUrl(39.115876, -95.143955))
       .toBe('https://www.google.com/maps/search/?api=1&query=39.115876%2C-95.143955');
   });
 
-  it('pads short values to six places', () => {
-    expect(googleMapsCoordinatesUrl(40.5, -96)).toContain('query=40.500000%2C-96.000000');
+  it('uses the full pasted precision, not the shortened display form', () => {
+    expect(googleMapsCoordinatesUrl(41.39034548435109, -95.00754031349179))
+      .toContain('query=41.39034548435109%2C-95.00754031349179');
   });
 });

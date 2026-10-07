@@ -29,7 +29,7 @@ export interface ProducerContactItem {
 }
 
 /** A user-entered on-farm bin site: an optional name and a North American lat/long pair, stored
- *  to six decimal places. See shared/utils/coordinates.ts for the rules. */
+ *  at full precision (shown to six places). See shared/utils/coordinates.ts for the rules. */
 export interface ProducerBinSiteItem {
   name?: string | null;
   latitude: number;

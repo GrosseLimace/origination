@@ -61,9 +61,10 @@ export function googleMapsSearchUrl(parts: AddressParts): string | null {
 
 /**
  * The same Maps URLs search link for a latitude/longitude pair (a bin site) — Maps drops a pin on
- * the exact point rather than geocoding text. Six places, matching what is stored and displayed.
+ * the exact point rather than geocoding text. Uses the full stored precision, not the shortened
+ * display form, so the pin lands exactly where the user copied it from.
  */
 export function googleMapsCoordinatesUrl(lat: number, lng: number): string {
-  const query = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  const query = `${lat},${lng}`;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }

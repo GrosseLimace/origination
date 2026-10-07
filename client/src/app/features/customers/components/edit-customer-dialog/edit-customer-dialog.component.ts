@@ -6,7 +6,7 @@ import { Customer, Contract, Ticket, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
-import { BIN_SITE_NAME_MAX_LENGTH, COORDINATE_EXAMPLE, MAX_BIN_SITES, formatCoordinatePair, parseCoordinatePair } from '@shared/utils/coordinates';
+import { BIN_SITE_NAME_MAX_LENGTH, COORDINATE_EXAMPLE, MAX_BIN_SITES, formatCoordinatePairFull, parseCoordinatePair } from '@shared/utils/coordinates';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, grainOnFarmTitle } from '@shared/utils/grain-on-farm';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
@@ -51,7 +51,7 @@ export class EditCustomerDialogComponent {
     primaryContact: string;
     primaryPhone: string;
     contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
-    // Parsed and rounded to six places; array order is the display order.
+    // Parsed at full precision (never rounded); array order is the display order.
     binSites: { name?: string; latitude: number; longitude: number }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
@@ -287,7 +287,7 @@ export class EditCustomerDialogComponent {
   private _binSitesFromCustomer(customer: Customer): { name: string; coords: string }[] {
     return (customer.binSites ?? []).map(b => ({
       name: b.name ?? '',
-      coords: formatCoordinatePair(b.latitude, b.longitude)
+      coords: formatCoordinatePairFull(b.latitude, b.longitude)
     }));
   }
 
@@ -1068,7 +1068,7 @@ export class EditCustomerDialogComponent {
       const primaryRow = contactRows.find(r => r.isPrimary);
 
       // Bin sites: drop fully-blank rows; every other row parsed cleanly or Save was disabled
-      // (binSitesInvalid), so the parse here only re-reads the rounded values.
+      // (binSitesInvalid), so the parse here only re-reads the values.
       const binSites = this.editBinSites().flatMap(r => {
         const parsed = parseCoordinatePair(r.coords);
         if (!parsed.ok) return [];

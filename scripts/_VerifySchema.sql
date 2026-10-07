@@ -57,6 +57,7 @@
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
 --   Updated 2026-10-07: 20261007145119_AddProducerBinSite created dbo.ProducerBinSite (6 columns,
 --   Latitude/Longitude decimal(9,6)); its only index is non-unique, so @UniqueIndexes is unchanged.
+--   20261007152343_WidenProducerBinSiteCoordinatePrecision then widened both to decimal(18,15).
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -425,8 +426,8 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- ProducerBinSite
 ('dbo', 'ProducerBinSite', 'Id',         'int',           0),
 ('dbo', 'ProducerBinSite', 'CustomerId', 'bigint',        0),
-('dbo', 'ProducerBinSite', 'Latitude',   'decimal(9,6)',  0),
-('dbo', 'ProducerBinSite', 'Longitude',  'decimal(9,6)',  0),
+('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 0),
+('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 0),
 ('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
 ('dbo', 'ProducerBinSite', 'SortOrder',  'int',           0),
 -- ProducerContact
@@ -686,7 +687,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260923124207_RenameGrainOnFarmGroupToCommodityCode'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
 ('20261005131626_DropCtrmSourceToggleUsers'),
-('20261007145119_AddProducerBinSite');
+('20261007145119_AddProducerBinSite'),
+('20261007152343_WidenProducerBinSiteCoordinatePrecision');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

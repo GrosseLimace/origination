@@ -460,9 +460,10 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
             entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(BinSiteRules.NameMaxLength).IsRequired(false);
-            // decimal(9,6) holds ±180.000000 exactly — the six places the bin-site rules require.
-            entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(9,6)").IsRequired();
-            entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(9,6)").IsRequired();
+            // decimal(18,15): three integer digits (±180) and fifteen places, so a full Google Maps
+            // paste is stored exactly as entered. Display shortens it; storage never does.
+            entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(18,15)").IsRequired();
+            entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(18,15)").IsRequired();
             entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
 
             entity.HasOne(e => e.Customer)

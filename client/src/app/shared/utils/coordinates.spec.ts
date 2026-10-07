@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { formatBinSiteLabel, formatCoordinatePair, parseCoordinatePair } from './coordinates';
+import { formatBinSiteLabel, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseCoordinatePair } from './coordinates';
 
 function ok(text: string) {
   const result = parseCoordinatePair(text);
@@ -19,8 +19,8 @@ describe('parseCoordinatePair — accepted input', () => {
     expect(ok('39.115876, -95.143955')).toEqual({ ok: true, lat: 39.115876, lng: -95.143955 });
   });
 
-  it('rounds a full-precision Google Maps paste to six places', () => {
-    expect(ok('39.11587612345678, -95.14395512345678')).toMatchObject({ lat: 39.115876, lng: -95.143955 });
+  it('keeps a full-precision Google Maps paste exactly — the user never rounds by hand', () => {
+    expect(ok('41.39034548435109, -95.00754031349179')).toEqual({ ok: true, lat: 41.39034548435109, lng: -95.00754031349179 });
   });
 
   it('accepts fewer than six places as-is', () => {
@@ -45,9 +45,8 @@ describe('parseCoordinatePair — accepted input', () => {
     expect(parseCoordinatePair(text).ok).toBe(true);
   });
 
-  it('judges the bounds after rounding, as the server stores it', () => {
-    // 84.0000004 rounds to 84.000000 — inside the box.
-    expect(ok('84.0000004, -80')).toMatchObject({ lat: 84 });
+  it('judges the bounds on the value as entered, since nothing is rounded', () => {
+    expect(parseCoordinatePair('84.0000004, -80').ok).toBe(false);
   });
 });
 
@@ -94,6 +93,19 @@ describe('parseCoordinatePair — rejected input', () => {
 describe('formatting', () => {
   it('always shows six places', () => {
     expect(formatCoordinatePair(40.5, -96)).toBe('40.500000, -96.000000');
+  });
+
+  it('shortens a long paste to six places for display only', () => {
+    expect(formatCoordinatePair(41.39034548435109, -95.00754031349179)).toBe('41.390345, -95.007540');
+  });
+
+  it('gives the full stored value back for editing, unshortened', () => {
+    expect(formatCoordinatePairFull(41.39034548435109, -95.00754031349179)).toBe('41.39034548435109, -95.00754031349179');
+  });
+
+  it('puts the full value in the hover title', () => {
+    expect(formatBinSiteTitle({ name: 'North Bins', latitude: 41.39034548435109, longitude: -95.00754031349179 }))
+      .toBe('North Bins: 41.39034548435109, -95.00754031349179 — open in Google Maps');
   });
 
   it('labels a named site with its name', () => {

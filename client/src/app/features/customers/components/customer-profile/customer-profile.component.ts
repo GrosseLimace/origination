@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener } from '@angular/core';
+import { Component, input, output, inject, effect, computed, linkedSignal, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
@@ -24,7 +24,7 @@ import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
-import { formatBinSiteLabel } from '@shared/utils/coordinates';
+import { formatBinSiteLabel, formatBinSiteTitle } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
@@ -179,12 +179,23 @@ export class CustomerProfileComponent {
     this.usageTracking.trackBinSiteMapClick(this.customer().id.toString());
   }
 
-  /** Bin sites under the address, each a Google Maps link to its exact point, in saved order. */
+  /** Bin sites under the address, each a Google Maps link to its exact (full-precision) point, in
+   *  saved order. The label is shortened to six places; the title carries the full value. */
   readonly binSiteLinks = computed(() =>
     (this.customer().binSites ?? []).map(site => ({
       label: formatBinSiteLabel(site),
+      title: formatBinSiteTitle(site),
       url: googleMapsCoordinatesUrl(site.latitude, site.longitude),
     })));
+
+  /** Two or more sites collapse behind an "N Bin Sites" toggle so they don't crowd the contact
+   *  column; a single site is shown inline. Closed again whenever a different producer is shown. */
+  readonly binSitesCollapsible = computed(() => this.binSiteLinks().length > 1);
+  readonly binSitesExpanded = linkedSignal({ source: () => this.customer().id, computation: () => false });
+
+  toggleBinSites(): void {
+    this.binSitesExpanded.update(open => !open);
+  }
 
   // Local state - signals
   activeTab = signal('contracts');

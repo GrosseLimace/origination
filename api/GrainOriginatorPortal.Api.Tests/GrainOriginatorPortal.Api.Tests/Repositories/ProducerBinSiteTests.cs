@@ -12,7 +12,7 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
 /// <summary>
 /// Exercises the bin-site replace-on-upsert + compose-on-read added to
-/// <see cref="ProducerDetailsRepository"/>: six-place rounding, name cleanup, duplicate collapse,
+/// <see cref="ProducerDetailsRepository"/>: full-precision storage, name cleanup, duplicate collapse,
 /// the null-BinSites-preserves-rows rule, and the hand-cascade on delete.
 /// </summary>
 public class ProducerBinSiteTests
@@ -61,17 +61,31 @@ public class ProducerBinSiteTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task Upsert_RoundsCoordinatesToSixPlaces()
+    public async Task Upsert_KeepsAFullGoogleMapsPasteExactly()
     {
         using var db = NewContext();
         var repo = Repo(db);
 
-        // A full-precision Google Maps paste; the second value sits exactly on a midpoint.
-        await repo.UpsertAsync(Args(new[] { Site(39.11587612345678m, -95.1439555m) }), "tuser", CancellationToken.None);
+        // Copied straight from Google Maps — users never round by hand.
+        await repo.UpsertAsync(Args(new[] { Site(41.39034548435109m, -95.00754031349179m) }), "tuser", CancellationToken.None);
 
         var site = Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.BinSites);
-        Assert.Equal(39.115876m, site.Latitude);
-        Assert.Equal(-95.143956m, site.Longitude); // away from zero
+        Assert.Equal(41.39034548435109m, site.Latitude);
+        Assert.Equal(-95.00754031349179m, site.Longitude);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_RoundsOnlyPastTheColumnsFifteenPlaces()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        await repo.UpsertAsync(Args(new[] { Site(41.12345678901234567m, -95.1234567890123455m) }), "tuser", CancellationToken.None);
+
+        var site = Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.BinSites);
+        Assert.Equal(41.123456789012346m, site.Latitude);
+        Assert.Equal(-95.123456789012346m, site.Longitude); // midpoint, away from zero
     }
 
     // -------------------------------------------------------------------------
@@ -94,7 +108,7 @@ public class ProducerBinSiteTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task Upsert_CollapsesSitesThatRoundToTheSamePoint()
+    public async Task Upsert_CollapsesIdenticalPoints_ButKeepsNearbyOnes()
     {
         using var db = NewContext();
         var repo = Repo(db);
@@ -102,11 +116,12 @@ public class ProducerBinSiteTests
         await repo.UpsertAsync(Args(new[]
         {
             Site(39.115876m, -95.143955m, "First"),
-            Site(39.1158761m, -95.1439549m, "Second"),
+            Site(39.115876m, -95.143955m, "Duplicate"),
+            Site(39.1158761m, -95.1439549m, "Next door"),
         }), "tuser", CancellationToken.None);
 
-        var only = Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.BinSites);
-        Assert.Equal("First", only.Name);
+        var sites = (await repo.GetAsync(100, CancellationToken.None))!.BinSites;
+        Assert.Equal(new[] { "First", "Next door" }, sites.Select(s => s.Name));
     }
 
     // -------------------------------------------------------------------------

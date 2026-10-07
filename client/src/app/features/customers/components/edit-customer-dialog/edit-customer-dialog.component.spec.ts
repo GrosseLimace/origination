@@ -302,22 +302,29 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(component.hasChanges()).toBe(false);
   });
 
-  it('emits parsed, rounded sites in row order and drops blank rows', () => {
+  it('emits the full pasted precision in row order and drops blank rows', () => {
     open(makeCustomer());
     component.addBinSiteRow();
     component.addBinSiteRow();
     component.addBinSiteRow();
-    component.updateBinSiteField(0, 'name', '  Anderson Site ');
-    component.updateBinSiteField(0, 'coords', '39.11587612345678, -95.14395512345678');
+    component.updateBinSiteField(0, 'name', '  North Bins ');
+    component.updateBinSiteField(0, 'coords', '41.39034548435109, -95.00754031349179');
     component.updateBinSiteField(2, 'coords', '40.5,-96');
     expect(component.hasChanges()).toBe(true);
 
     component.onSave();
 
     expect(saved.at(-1)?.binSites).toEqual([
-      { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 },
+      { name: 'North Bins', latitude: 41.39034548435109, longitude: -95.00754031349179 },
       { name: undefined, latitude: 40.5, longitude: -96 },
     ]);
+  });
+
+  it('reopens a saved long paste unshortened, so editing never loses digits', () => {
+    open(makeCustomer({ binSites: [{ name: 'North Bins', latitude: 41.39034548435109, longitude: -95.00754031349179 }] }));
+
+    expect(component.editBinSites()[0].coords).toBe('41.39034548435109, -95.00754031349179');
+    expect(component.hasChanges()).toBe(false);
   });
 
   it('emits an empty list when every site is removed, so the server clears them', () => {

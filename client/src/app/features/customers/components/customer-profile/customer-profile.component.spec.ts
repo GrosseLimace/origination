@@ -262,10 +262,48 @@ describe('CustomerProfileComponent — bin site links', () => {
       .toBe('https://www.google.com/maps/search/?api=1&query=39.115876%2C-95.143955');
   });
 
+  it('shortens a long paste in the label but keeps all of it in the title and the link', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ name: 'North Bins', latitude: 41.39034548435109, longitude: -95.00754031349179 }],
+    }));
+
+    const [link] = component.binSiteLinks();
+    expect(link.label).toBe('North Bins: 41.390345, -95.007540');
+    expect(link.title).toContain('41.39034548435109, -95.00754031349179');
+    expect(link.url).toContain('41.39034548435109%2C-95.00754031349179');
+  });
+
   it('shows nothing when the producer has no bin sites', () => {
     ref.setInput('customer', makeCustomer());
 
     expect(component.binSiteLinks()).toEqual([]);
+  });
+
+  it('shows a single site inline, with no toggle', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ latitude: 39.1, longitude: -95.1 }] }));
+
+    expect(component.binSitesCollapsible()).toBe(false);
+  });
+
+  it('collapses two or more sites behind a toggle that starts closed', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ latitude: 39.1, longitude: -95.1 }, { latitude: 39.2, longitude: -95.2 }],
+    }));
+
+    expect(component.binSitesCollapsible()).toBe(true);
+    expect(component.binSitesExpanded()).toBe(false);
+    component.toggleBinSites();
+    expect(component.binSitesExpanded()).toBe(true);
+  });
+
+  it('closes the list again when a different producer is shown', () => {
+    const twoSites = [{ latitude: 39.1, longitude: -95.1 }, { latitude: 39.2, longitude: -95.2 }];
+    ref.setInput('customer', makeCustomer({ id: 1, binSites: twoSites }));
+    component.toggleBinSites();
+
+    ref.setInput('customer', makeCustomer({ id: 2, binSites: twoSites }));
+
+    expect(component.binSitesExpanded()).toBe(false);
   });
 
   it('tracks the click under its own subfeature', () => {
