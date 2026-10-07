@@ -109,9 +109,12 @@ public class CtrmCustomerReaderTests
         };
     }
 
-    private static IConfiguration Config(int aliasCount = 20, int concurrency = 2) =>
+    /// <summary>Configuration for the aliased fallback path; <paramref name="strategy"/> is pinned to
+    /// <c>aliased</c> because sourceCodes is the default since E7.</summary>
+    private static IConfiguration Config(int aliasCount = 20, int concurrency = 2, string strategy = "aliased") =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
+            [CtrmCustomerReader.LookupStrategyKey] = strategy,
             [CtrmCustomerReader.AliasCountKey] = aliasCount.ToString(),
             [CtrmCustomerReader.ConcurrencyKey] = concurrency.ToString(),
             ["Ctrm:BackgroundMaxDeferSeconds"] = "0",
@@ -494,5 +497,479 @@ public class CtrmCustomerReaderTests
         Assert.Null(probe.IdKind);
         Assert.Contains("CtrmCustomerQueries.CustomerProjection", read.Detail);
         Assert.Equal(2, client.Calls);
+    }
+
+    // =================================================================================================
+    // E7: the sourceCodes list path (the default). One customers(sourceCodes:) request per chunk, chunks
+    // sized by the estimated rendered filter length, paged with skip/take; the same fail-closed rules.
+
+    /// <summary>
+    /// Answers <see cref="CtrmCustomerQueries.CustomersBySourceCodes"/> from its variables: one row per
+    /// requested code unless <see cref="RowsFor"/> or <see cref="Unknown"/> says otherwise, sliced by
+    /// skip/take. Any other customers document fails the test, so the routing is proven by the fake.
+    /// </summary>
+    private sealed class CustomerListClient : ICtrmGraphQlClient
+    {
+        public sealed record Request(string Document, IReadOnlyList<string> Codes, int Skip, int Take, bool HasSourceSystem, string? SourceSystem);
+
+        public bool IsConfigured => true;
+        public List<string> Documents { get; } = [];
+        public List<Request> Requests { get; } = [];
+        public int Calls { get { lock (Documents) return Documents.Count; } }
+
+        /// <summary>Codes answered with these rows instead of the default single row.</summary>
+        public Dictionary<string, List<CtrmCustomerDto>> RowsFor { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Codes CTRM does not know (no rows).</summary>
+        public HashSet<string> Unknown { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>(codes, skip) → a failure to answer instead; null = answer normally. PartialSuccess also carries the data.</summary>
+        public Func<IReadOnlyList<string>, int, CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>>?>? FailWhen { get; init; }
+        /// <summary>Requests (by their codes) that throw a TaskCanceledException the caller did not ask for.</summary>
+        public Func<IReadOnlyList<string>, bool>? ThrowWhen { get; init; }
+        /// <summary>Every page claims another page follows (a server that never stops paging).</summary>
+        public bool AlwaysHasNextPage { get; init; }
+        public CtrmReadResult<JsonElement> ProbeAnswer { get; init; } = new()
+        {
+            Status = CtrmReadStatus.Ok, HttpStatus = 200,
+            Value = JsonSerializer.SerializeToElement(new { customers = new { totalCount = 16700, items = new[] { new { sourceCode = "P000042", activeYN = "Y" } } } })
+        };
+
+        public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
+        {
+            lock (Documents) Documents.Add(document);
+            Assert.DoesNotContain('#', document);
+
+            if (document == CtrmCustomerQueries.CustomersProbe)
+                return Task.FromResult((CtrmReadResult<T>)(object)ProbeAnswer);
+
+            Assert.Equal(CtrmCustomerQueries.CustomersBySourceCodes, document);
+            var map = variables!.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(variables));
+            var codes = ((IEnumerable<string>)map["codes"]!).ToList();
+            var skip = Convert.ToInt32(map["skip"]);
+            var take = Convert.ToInt32(map["take"]);
+            var hasSystem = map.TryGetValue("sourceSystem", out var system);
+            lock (Requests) Requests.Add(new Request(document, codes, skip, take, hasSystem, system as string));
+
+            if (ThrowWhen?.Invoke(codes) == true)
+                return Task.FromException<CtrmReadResult<T>>(new TaskCanceledException("stub: the request timed out"));
+
+            var all = new List<CtrmCustomerDto>();
+            for (var i = 0; i < codes.Count; i++)
+            {
+                if (Unknown.Contains(codes[i])) continue;
+                all.AddRange(RowsFor.TryGetValue(codes[i], out var rows) ? rows : [CustomerAliasClient.Row(codes[i], id: 1000 + i)]);
+            }
+
+            var page = new CtrmPage<CtrmCustomerDto>
+            {
+                TotalCount = all.Count,
+                PageInfo = new CtrmPageInfo { Skip = skip, Take = take, HasNextPage = AlwaysHasNextPage || skip + take < all.Count },
+                Items = [.. all.Skip(skip).Take(take)]
+            };
+            var data = new Dictionary<string, CtrmPage<CtrmCustomerDto>> { ["customers"] = page };
+
+            if (FailWhen?.Invoke(codes, skip) is { } failure)
+            {
+                var answer = failure.Status == CtrmReadStatus.PartialSuccess ? failure with { Value = data } : failure;
+                return Task.FromResult((CtrmReadResult<T>)(object)answer);
+            }
+
+            return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)(object)data });
+        }
+    }
+
+    /// <summary>Configuration for the list path: the strategy key is ABSENT unless given, so the default is exercised.</summary>
+    private static IConfiguration ListConfig(
+        int concurrency = 2, string? strategy = null, string? maxFilterChars = null, string? maxPerRequest = null, string? sourceSystem = null)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            [CtrmCustomerReader.ConcurrencyKey] = concurrency.ToString(),
+            ["Ctrm:BackgroundMaxDeferSeconds"] = "0",
+            ["Ctrm:ServerTimeoutRetries"] = "0",
+            ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0"
+        };
+        if (strategy is not null) settings[CtrmCustomerReader.LookupStrategyKey] = strategy;
+        if (maxFilterChars is not null) settings[CtrmCustomerReader.SourceCodesMaxFilterCharsKey] = maxFilterChars;
+        if (maxPerRequest is not null) settings[CtrmCustomerReader.SourceCodesMaxPerRequestKey] = maxPerRequest;
+        if (sourceSystem is not null) settings[CtrmCustomerReader.SourceSystemKey] = sourceSystem;
+        return new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Chunking by estimated filter length
+
+    [Fact]
+    public void ChunkBySourceCodeFilterLength_FiveHundredSevenCharCodesAtBudget6000_ChunksOfAtMost375_InOrder()
+    {
+        // The measured rejection: 500 seven-char codes rendered to 7,987 encoded characters (limit 7,000).
+        // Estimated 7 + 9 = 16 per code, so a 6,000 budget holds 375.
+        var codes = Codes(500);
+
+        var chunks = CtrmCustomerReader.ChunkBySourceCodeFilterLength(codes, 6000, 400);
+
+        Assert.Equal([375, 125], chunks.Select(c => c.Count));
+        Assert.All(chunks, c => Assert.True(c.Count <= 375));
+        Assert.Equal(codes, chunks.SelectMany(c => c));
+    }
+
+    [Fact]
+    public void ChunkBySourceCodeFilterLength_MaxPerRequestCapsAChunkBeforeTheBudgetDoes()
+    {
+        var codes = Codes(500);
+
+        var chunks = CtrmCustomerReader.ChunkBySourceCodeFilterLength(codes, 7000, 100);
+
+        Assert.Equal([100, 100, 100, 100, 100], chunks.Select(c => c.Count));
+        Assert.Equal(codes, chunks.SelectMany(c => c));
+    }
+
+    [Fact]
+    public void ChunkBySourceCodeFilterLength_CodeLongerThanTheBudget_FormsItsOwnChunk()
+    {
+        var longCode = new string('X', 600);
+
+        var chunks = CtrmCustomerReader.ChunkBySourceCodeFilterLength(["A1", "B2", longCode, "C3"], 500, 400);
+
+        Assert.Equal(3, chunks.Count);
+        Assert.Equal(["A1", "B2"], chunks[0]);
+        Assert.Equal([longCode], chunks[1]);
+        Assert.Equal(["C3"], chunks[2]);
+    }
+
+    [Fact]
+    public void ChunkBySourceCodeFilterLength_NoCodes_NoChunks()
+    {
+        Assert.Empty(CtrmCustomerReader.ChunkBySourceCodeFilterLength([], 6000, 400));
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // Strategy routing
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("sourceCodes")]
+    [InlineData("something-else")]
+    public async Task GetBySourceCodesAsync_StrategyNotAliased_SendsTheSourceCodesListDocument(string? strategy)
+    {
+        var client = new CustomerListClient();
+
+        var read = await Sut(client, ListConfig(strategy: strategy)).GetBySourceCodesAsync(Codes(10), CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.Equal(10, read.Value!.Found);
+        Assert.Equal([CtrmCustomerQueries.CustomersBySourceCodes], client.Documents);
+    }
+
+    [Theory]
+    [InlineData("aliased")]
+    [InlineData(" ALIASED ")]
+    public async Task GetBySourceCodesAsync_StrategyAliased_SendsTheAliasedDocument(string strategy)
+    {
+        var client = new CustomerAliasClient();
+
+        var read = await Sut(client, Config(strategy: strategy)).GetBySourceCodesAsync(Codes(10), CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.Equal(10, read.Value!.Found);
+        Assert.Single(client.Documents);
+        Assert.StartsWith("query {\n  c0: customers(skip: 0, take: 5, sourceCode: ", client.Documents[0]);
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // List path happy path
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_450CodesAtDefaults_TwoRequests_KeyedByRequestedCode_CaseAndPaddingTolerated()
+    {
+        var client = new CustomerListClient();
+        var codes = Codes(447);
+        codes.AddRange(["tatobin ", " Smitfar", "Jones1"]);
+        client.Unknown.UnionWith(["P000010", "P000011"]);
+        client.RowsFor["TATOBIN"] = [CustomerAliasClient.Row(" TATOBIN ", id: 7)];   // Db2 CHAR padding, other case
+
+        var read = await Sut(client, ListConfig()).GetBySourceCodesAsync(codes, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, read.Status);
+        var lookup = read.Value!;
+        Assert.Equal(450, lookup.Requested);
+        Assert.Equal(2, lookup.Requests);
+        Assert.Equal(2, client.Calls);
+        Assert.Equal(448, lookup.Found);
+        Assert.Equal(2, lookup.Missing);
+        Assert.Equal(0, lookup.Duplicates);
+        Assert.False(lookup.ByCode.ContainsKey("P000010"));
+        Assert.Equal("7", lookup.ByCode["TATOBIN"].IdText);
+        Assert.True(lookup.ByCode.ContainsKey("smitfar"));
+        Assert.True(lookup.ByCode.ContainsKey("JONES1"));
+
+        // 375 + 75 codes at the 6,000-character default, every code sent exactly once, trimmed, first page only.
+        Assert.Equal([375, 75], client.Requests.Select(r => r.Codes.Count).OrderByDescending(n => n));
+        Assert.Equal(450, client.Requests.SelectMany(r => r.Codes).Distinct(StringComparer.Ordinal).Count());
+        Assert.Contains("tatobin", client.Requests.SelectMany(r => r.Codes));
+        Assert.All(client.Requests, r =>
+        {
+            Assert.Equal(0, r.Skip);
+            Assert.Equal(CtrmCustomerReader.SourceCodesPageSize, r.Take);
+            Assert.False(r.HasSourceSystem);                     // not configured → the variable is not sent at all
+        });
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_ConfiguredSourceSystem_IsSentAsAVariable()
+    {
+        var client = new CustomerListClient();
+
+        var read = await Sut(client, ListConfig(sourceSystem: " CTRM ")).GetBySourceCodesAsync(Codes(5), CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        var request = Assert.Single(client.Requests);
+        Assert.True(request.HasSourceSystem);
+        Assert.Equal("CTRM", request.SourceSystem);
+    }
+
+    [Theory]
+    [InlineData("100000", "1000", 437)]    // budget clamps to 7,000 → 7000 / 16 = 437 codes
+    [InlineData("10", null, 31)]           // budget clamps to 500 → 500 / 16 = 31 codes
+    [InlineData(null, "0", 1)]             // per-request cap clamps to 1
+    [InlineData(null, "5000", 375)]        // per-request cap clamps to 1,000; the 6,000 default budget still binds
+    [InlineData("garbage", "garbage", 375)] // unparseable → defaults (6,000 / 400)
+    public async Task GetBySourceCodesAsync_ListPath_KnobsAreClamped(string? maxFilterChars, string? maxPerRequest, int expectedFirstChunk)
+    {
+        var client = new CustomerListClient();
+
+        var read = await Sut(client, ListConfig(concurrency: 1, maxFilterChars: maxFilterChars, maxPerRequest: maxPerRequest))
+            .GetBySourceCodesAsync(Codes(500), CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.Equal(expectedFirstChunk, client.Requests[0].Codes.Count);
+        Assert.Equal(500, read.Value!.Found);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_PagesWithinAChunk_UntilNoNextPage_AndMergesTheRows()
+    {
+        // Three codes with 200 MDM rows each = 600 rows: page one (500) says hasNextPage, page two (100) does not.
+        // The third code's only active row is the very last row, so it can only be picked if page two was merged.
+        var client = new CustomerListClient();
+        string[] codes = ["P000001", "P000002", "P000003"];
+        for (var c = 0; c < codes.Length; c++)
+            client.RowsFor[codes[c]] = [.. Enumerable.Range(0, 200).Select(i => CustomerAliasClient.Row(codes[c], id: c * 1000 + i, activeYN: i == 199 ? "Y" : "N"))];
+
+        var read = await Sut(client, ListConfig()).GetBySourceCodesAsync(codes, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, read.Status);
+        Assert.Equal(2, read.Value!.Requests);
+        Assert.Equal([0, 500], client.Requests.Select(r => r.Skip));
+        Assert.All(client.Requests, r => Assert.Equal(codes, r.Codes));
+        Assert.Equal(3, read.Value.Found);
+        Assert.Equal(3, read.Value.Duplicates);
+        Assert.Equal("2199", read.Value.ByCode["P000003"].IdText);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_ServerThatNeverStopsPaging_FailsClosedAtThePageCap()
+    {
+        var client = new CustomerListClient { AlwaysHasNextPage = true };
+
+        var read = await Sut(client, ListConfig()).GetBySourceCodesAsync(Codes(5), CancellationToken.None);
+
+        Assert.False(read.Ok);
+        Assert.Null(read.Value);
+        Assert.Equal(CtrmCustomerReader.SourceCodesMaxPagesPerChunk, client.Calls);
+        Assert.Contains($"{CtrmCustomerReader.SourceCodesMaxPagesPerChunk} page", read.Detail);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_CodeWithThreeRows_CountsOneDuplicate_AndKeepsTheCanonical()
+    {
+        var client = new CustomerListClient();
+        client.RowsFor["P000004"] =
+        [
+            CustomerAliasClient.Row("P000004", id: 1, activeYN: "N"),
+            CustomerAliasClient.Row("p000004", id: 9, activeYN: "Y", master: false),
+            CustomerAliasClient.Row("P000004 ", id: 7, activeYN: "Y", master: true),
+        ];
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+
+        var read = await new CtrmCustomerReader(client, ListConfig(), logger.Object).GetBySourceCodesAsync(Codes(25), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Ok, read.Status);
+        Assert.Equal(1, read.Value!.Duplicates);
+        Assert.Equal(25, read.Value.Found);
+        Assert.Equal(0, read.Value.Missing);
+        Assert.Equal("7", read.Value.ByCode["P000004"].IdText);
+        VerifyWarning(logger, m => m.Contains("CUSTOMER_SYNC_DUPLICATE_SOURCE_CODE") && m.Contains("P000004") && !m.Contains("Farms"), Times.Once());
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // List path fails closed
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_FirstChunkFails_AtConcurrencyOne_OtherChunksAreNotSent()
+    {
+        var client = new CustomerListClient { FailWhen = (codes, _) => codes[0] == "P000000" ? Failure(CtrmReadStatus.EgressBlocked, 0) : null };
+
+        var read = await Sut(client, ListConfig(concurrency: 1, maxPerRequest: "100")).GetBySourceCodesAsync(Codes(300), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.EgressBlocked, read.Status);
+        Assert.Null(read.Value);
+        Assert.Equal(1, client.Calls);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_LaterChunkUnauthorized_FailsTheWholeRead_WithPermissionMissing()
+    {
+        var client = new CustomerListClient { FailWhen = (codes, _) => codes[0] == "P000100" ? Failure(CtrmReadStatus.Unauthorized, 403) : null };
+
+        var read = await Sut(client, ListConfig(maxPerRequest: "100")).GetBySourceCodesAsync(Codes(300), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Unauthorized, read.Status);
+        Assert.Null(read.Value);
+        Assert.Equal("missing", CtrmCustomerReader.DescribePermission(read));
+        Assert.Contains("Customers.Read.All", read.Detail);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_FailureOnASecondPage_FailsTheWholeRead()
+    {
+        var client = new CustomerListClient { FailWhen = (_, skip) => skip > 0 ? Failure(CtrmReadStatus.Throttled, 429) : null };
+        client.RowsFor["P000001"] = [.. Enumerable.Range(0, 600).Select(i => CustomerAliasClient.Row("P000001", id: i))];
+
+        var read = await Sut(client, ListConfig()).GetBySourceCodesAsync(Codes(3), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Throttled, read.Status);
+        Assert.Null(read.Value);
+        Assert.Equal(2, client.Calls);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_PartialSuccess_IsAFailure()
+    {
+        var client = new CustomerListClient { FailWhen = (_, _) => Failure(CtrmReadStatus.PartialSuccess, 200, "HC0018", "stub partial") };
+
+        var read = await Sut(client, ListConfig()).GetBySourceCodesAsync(Codes(30), CancellationToken.None);
+
+        Assert.False(read.Ok);
+        Assert.Null(read.Value);
+        Assert.Equal(CtrmReadStatus.QueryError, read.Status);
+        Assert.Contains("partial answer (data plus errors): ", read.Detail);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_ChunkCancelledWithoutTheCaller_FailsTheWholeRead_AsError()
+    {
+        var client = new CustomerListClient { ThrowWhen = codes => codes[0] == "P000100" };
+
+        var read = await Sut(client, ListConfig(maxPerRequest: "100")).GetBySourceCodesAsync(Codes(300), CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Error, read.Status);
+        Assert.Null(read.Value);
+        Assert.Contains("cancel", read.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("P000099")]     // a code nobody asked for
+    [InlineData("P000150")]     // a code requested - but in ANOTHER chunk
+    [InlineData("   ")]         // blank
+    public async Task GetBySourceCodesAsync_ListPath_RowWhoseSourceCodeThisChunkDidNotRequest_IsAFilterMismatch(string strayCode)
+    {
+        var client = new CustomerListClient();
+        client.RowsFor["P000003"] = [CustomerAliasClient.Row("P000003", id: 1), CustomerAliasClient.Row(strayCode, id: 2)];
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+        var codes = Codes(98).Concat(["P000150"]).ToList();      // chunks of 50: P000150 is in the second
+
+        var read = await new CtrmCustomerReader(client, ListConfig(maxPerRequest: "50"), logger.Object).GetBySourceCodesAsync(codes, CancellationToken.None);
+
+        Assert.Equal(CtrmReadStatus.Error, read.Status);
+        Assert.Equal(CtrmCustomerReader.FilterMismatchCode, read.ErrorCode);
+        Assert.Null(read.Value);
+        Assert.Contains("no longer an exact match", read.Detail);
+        Assert.Equal("unknown", CtrmCustomerReader.DescribePermission(read));
+        VerifyWarning(logger, m => m.Contains("CUSTOMER_SYNC_FILTER_MISMATCH"), Times.Once());
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_FilterTooLongValidation_IsSourceUnavailable_NamingTheKnob()
+    {
+        var client = new CustomerListClient
+        {
+            FailWhen = (_, _) => Failure(CtrmReadStatus.QueryError, 200, "VALIDATION",
+                "CTRM rejected the query: The filter is too long for the Profisee endpoint (7987 encoded characters, limit 7000). The limit is on the length of the rendered filter, not on the number of values (code VALIDATION)")
+        };
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+
+        var read = await new CtrmCustomerReader(client, ListConfig(), logger.Object).GetBySourceCodesAsync(Codes(30), CancellationToken.None);
+
+        Assert.False(read.Ok);
+        Assert.Null(read.Value);
+        Assert.Equal("VALIDATION", read.ErrorCode);
+        Assert.StartsWith("sourceCodes filter too long for the API — lower CustomerSync:SourceCodesMaxFilterChars: ", read.Detail);
+        Assert.Contains("7987 encoded characters", read.Detail);
+        VerifyWarning(logger, m => m.Contains("CUSTOMER_SYNC_SOURCE_UNAVAILABLE"), Times.Once());
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_OtherValidationError_IsNotReportedAsFilterTooLong()
+    {
+        var client = new CustomerListClient
+        {
+            FailWhen = (_, _) => Failure(CtrmReadStatus.QueryError, 200, "VALIDATION", "CTRM rejected the query: take must be between 1 and 500 (code VALIDATION)")
+        };
+
+        var read = await Sut(client, ListConfig()).GetBySourceCodesAsync(Codes(3), CancellationToken.None);
+
+        Assert.Null(read.Value);
+        Assert.DoesNotContain("SourceCodesMaxFilterChars", read.Detail);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_ServerTimeout_IsSourceUnavailable_NotSchemaMismatch()
+    {
+        var client = new CustomerListClient
+        {
+            FailWhen = (_, _) => Failure(CtrmReadStatus.QueryError, 400, CtrmServerTimeoutRetry.ServerTimeoutCode, "The request exceeded the configured timeout of `00:00:30`.")
+        };
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+
+        var read = await new CtrmCustomerReader(client, ListConfig(), logger.Object).GetBySourceCodesAsync(Codes(30), CancellationToken.None);
+
+        Assert.Null(read.Value);
+        Assert.DoesNotContain("CustomerProjection", read.Detail);
+        Assert.Contains("HC0045", read.Detail);
+        VerifyWarning(logger, m => m.Contains("CUSTOMER_SYNC_SOURCE_UNAVAILABLE"), Times.Once());
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_ListPath_Http400QueryError_IsSchemaMismatch_NamingTheListDocument()
+    {
+        var client = new CustomerListClient
+        {
+            FailWhen = (_, _) => Failure(CtrmReadStatus.QueryError, 400, "HC0020", "The argument `sourceCodes` does not exist.")
+        };
+        var logger = new Mock<ILogger<CtrmCustomerReader>>();
+
+        var read = await new CtrmCustomerReader(client, ListConfig(), logger.Object).GetBySourceCodesAsync(Codes(3), CancellationToken.None);
+
+        Assert.Null(read.Value);
+        Assert.Contains("CtrmCustomerQueries.CustomerProjection", read.Detail);
+        Assert.Contains("CustomersBySourceCodes", read.Detail);
+        Assert.Contains("sourceCodes", read.Detail);
+        VerifyWarning(logger, m => m.Contains("CUSTOMER_SYNC_SCHEMA_MISMATCH"), Times.Once());
+    }
+
+    [Fact]
+    public async Task ProbeAsync_DefaultStrategy_LooksTheSampleUpThroughTheListDocument()
+    {
+        var client = new CustomerListClient();
+
+        var read = await Sut(client, ListConfig()).ProbeAsync(" P000042 ", CancellationToken.None);
+
+        Assert.True(read.Ok, read.Detail);
+        Assert.True(read.Value!.ProjectionAccepted);
+        Assert.True(read.Value.SampleFound);
+        Assert.Equal("Number", read.Value.IdKind);
+        Assert.Equal([CtrmCustomerQueries.CustomersProbe, CtrmCustomerQueries.CustomersBySourceCodes], client.Documents);
+        Assert.Equal(["P000042"], client.Requests.Single().Codes);
     }
 }

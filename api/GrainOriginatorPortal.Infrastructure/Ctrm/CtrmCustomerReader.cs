@@ -10,12 +10,21 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// Reads CTRM customer master records by producer code (<c>sourceCode</c>) for the nightly customer sync.
 /// </summary>
 /// <remarks>
-/// <para><b>Aliased, because the list filter is not verified.</b> <c>customers(sourceCode:)</c> is
-/// confirmed; a <c>sourceCodes:</c> list argument is not. So each request carries
-/// <c>CustomerSync:CustomerAliasCount</c> aliased <c>customers(sourceCode:)</c> fields - the same shape
-/// the contract reader's aliased strategy proved safe - and <c>CustomerSync:CtrmConcurrency</c> requests
-/// are in flight at once, all behind <see cref="CtrmTradeUnitThrottle"/> so a nightly run stands aside for
-/// user clicks.</para>
+/// <para><b>Two strategies, chosen by <c>CustomerSync:CustomerLookupStrategy</c> (plan E7).</b></para>
+/// <list type="bullet">
+/// <item><c>sourceCodes</c> (the default; anything but the literal <c>aliased</c>): one
+/// <c>customers(sourceCodes:)</c> list filter per chunk, paged with skip/take. Measured on nonprod
+/// 2026-10-06: 100 codes ≈ 5 s, all matched. The API limits the RENDERED filter (7,000 encoded characters),
+/// not the number of values, so chunks are sized by <see cref="ChunkBySourceCodeFilterLength"/>.</item>
+/// <item><c>aliased</c> (fallback only): <c>CustomerSync:CustomerAliasCount</c> aliased
+/// <c>customers(sourceCode:)</c> fields per request. Measured ~27 s per 20 codes with HC0045 timeouts -
+/// unusable at ~16,800 producers. Deleted one PROD release after sourceCodes is verified (plan E7b),
+/// together with <see cref="CtrmCustomerQueries.CustomersBySourceCodesAliased"/> and
+/// <c>CustomerSync:CustomerAliasCount</c>.</item>
+/// </list>
+/// <para>Either way <c>CustomerSync:CtrmConcurrency</c> chunks are in flight at once, every request behind
+/// <see cref="CtrmTradeUnitThrottle"/> (so a nightly run stands aside for user clicks) and the HC0045
+/// retry, and the same fail-closed rules apply.</para>
 ///
 /// <para>Logs carry counts and timings - never customer names, phones or addresses. Producer codes
 /// appear only in the duplicate-source-code line, at most ten of them.</para>
@@ -26,8 +35,64 @@ public sealed class CtrmCustomerReader
     public const string ConcurrencyKey = "CustomerSync:CtrmConcurrency";
     public const string SourceSystemKey = "CustomerSync:CtrmSourceSystem";
 
-    /// <summary>Carried in <see cref="CtrmReadResult{T}.ErrorCode"/> when an aliased answer contains a row whose
-    /// <c>sourceCode</c> is not the one that alias asked for. Not a GraphQL error code: the API answered
+    /// <summary><c>sourceCodes</c> (default) or <c>aliased</c> (fallback until plan E7b deletes it).</summary>
+    public const string LookupStrategyKey = "CustomerSync:CustomerLookupStrategy";
+    public const string AliasedStrategy = "aliased";
+    public const string SourceCodesMaxFilterCharsKey = "CustomerSync:SourceCodesMaxFilterChars";
+    public const string SourceCodesMaxPerRequestKey = "CustomerSync:SourceCodesMaxPerRequest";
+
+    /// <summary>Rows per page of a <c>customers(sourceCodes:)</c> request (the API's take ceiling).</summary>
+    public const int SourceCodesPageSize = 500;
+
+    /// <summary>
+    /// Page cap per sourceCodes chunk. A chunk is at most 1,000 codes and normally ~375, so needing more than
+    /// 20 × 500 rows means heavy duplication or a server that never stops paging - either way the read fails
+    /// closed rather than walking on.
+    /// </summary>
+    public const int SourceCodesMaxPagesPerChunk = 20;
+
+    /// <summary>
+    /// Estimated rendered-filter characters a code costs beyond its own length. Measured: 500 seven-character
+    /// codes rendered to 7,987 encoded characters ≈ 16 per code = 7 + 9.
+    /// </summary>
+    public const int SourceCodeFilterOverhead = 9;
+
+    /// <summary>
+    /// Splits <paramref name="codes"/> into sourceCodes chunks, greedily and in order: a chunk closes when the
+    /// next code would push its estimated filter length (Σ code length + <see cref="SourceCodeFilterOverhead"/>)
+    /// past <paramref name="maxFilterChars"/>, or when it already holds <paramref name="maxPerRequest"/> codes.
+    /// A single code longer than the budget still forms its own chunk - the API, not this estimate, has the
+    /// final word, and a "too long" answer fails the read closed.
+    /// </summary>
+    /// <remarks>Public rather than internal only because Infrastructure exposes no internals to the test project.</remarks>
+    public static List<IReadOnlyList<string>> ChunkBySourceCodeFilterLength(IReadOnlyList<string> codes, int maxFilterChars, int maxPerRequest)
+    {
+        ArgumentNullException.ThrowIfNull(codes);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxFilterChars, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxPerRequest, 1);
+
+        var chunks = new List<IReadOnlyList<string>>();
+        var current = new List<string>();
+        var length = 0;
+        foreach (var code in codes)
+        {
+            var cost = code.Length + SourceCodeFilterOverhead;
+            if (current.Count > 0 && (length + cost > maxFilterChars || current.Count >= maxPerRequest))
+            {
+                chunks.Add(current);
+                current = [];
+                length = 0;
+            }
+            current.Add(code);
+            length += cost;
+        }
+        if (current.Count > 0) chunks.Add(current);
+        return chunks;
+    }
+
+    /// <summary>Carried in <see cref="CtrmReadResult{T}.ErrorCode"/> when an answer contains a row whose
+    /// <c>sourceCode</c> is blank or was not asked for - by that alias (aliased), or by that chunk's
+    /// <c>sourceCodes</c> list (default). Not a GraphQL error code: the API answered
     /// cleanly, but its <c>sourceCode</c> filter is no longer an exact match, so the whole read is refused —
     /// trusting it would copy another producer's master data onto ours, and the guard would never notice.</summary>
     public const string FilterMismatchCode = "CUSTOMER_SYNC_FILTER_MISMATCH";
@@ -49,14 +114,15 @@ public sealed class CtrmCustomerReader
     /// <remarks>
     /// <para><b>Fails closed.</b> The nightly sync deactivates every customer this lookup does not return,
     /// so a shorter dictionary is never an acceptable answer. The first chunk that is not a clean
-    /// <see cref="CtrmReadStatus.Ok"/> - including <see cref="CtrmReadStatus.PartialSuccess"/>, where an
-    /// errored alias is a customer we do not have, an Ok answer missing an alias, and an answer whose rows do
-    /// not carry the requested sourceCode (<see cref="FilterMismatchCode"/>) - fails the WHOLE read
-    /// with <see cref="CtrmReadResult{T}.Value"/> null, and chunks not yet sent are cancelled.</para>
+    /// <see cref="CtrmReadStatus.Ok"/> - including <see cref="CtrmReadStatus.PartialSuccess"/> (an errored
+    /// alias or page is a customer we do not have), an Ok answer missing an alias or its customers object, a
+    /// sourceCodes chunk that hits <see cref="SourceCodesMaxPagesPerChunk"/>, and an answer carrying a row
+    /// whose sourceCode was not requested (<see cref="FilterMismatchCode"/>) - fails the WHOLE read with
+    /// <see cref="CtrmReadResult{T}.Value"/> null, and chunks not yet sent are cancelled.</para>
     ///
     /// <para>The failure detail names the cause an operator has to act on: the missing
-    /// <c>Customers.Read.All</c> permission (not granted to our clients yet, so the first thing Dev sees),
-    /// or a projection field the API does not have (HTTP 400).</para>
+    /// <c>Customers.Read.All</c> permission, a projection field or argument the API does not have (HTTP 400),
+    /// or a sourceCodes filter the API says is too long (lower <c>CustomerSync:SourceCodesMaxFilterChars</c>).</para>
     /// </remarks>
     public async Task<CtrmReadResult<CtrmCustomerLookup>> GetBySourceCodesAsync(
         IReadOnlyCollection<string> sourceCodes, CancellationToken cancellationToken)
@@ -67,87 +133,37 @@ public sealed class CtrmCustomerReader
         if (codes.Count == 0)
             return new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.Ok, Value = lookup };
 
-        var aliasCount = Math.Clamp(CtrmConfig.ReadInt(_configuration, AliasCountKey, 20), 1, 50);
         var concurrency = Math.Clamp(CtrmConfig.ReadInt(_configuration, ConcurrencyKey, 2), 1, 8);
         var sourceSystem = _configuration[SourceSystemKey]?.Trim();
         if (string.IsNullOrEmpty(sourceSystem)) sourceSystem = null;
 
-        var chunks = codes.Chunk(aliasCount).Select(c => (IReadOnlyList<string>)c.ToList()).ToList();
-        using var slot = new SemaphoreSlim(concurrency, concurrency);
-        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        List<IReadOnlyList<string>> chunks;
+        string shape;
+        Func<int, IReadOnlyList<string>, Action, CancellationToken, Task<ChunkOutcome>> readChunk;
+        if (string.Equals(_configuration[LookupStrategyKey]?.Trim(), AliasedStrategy, StringComparison.OrdinalIgnoreCase))
+        {
+            var aliasCount = Math.Clamp(CtrmConfig.ReadInt(_configuration, AliasCountKey, 20), 1, 50);
+            chunks = [.. codes.Chunk(aliasCount).Select(c => (IReadOnlyList<string>)c.ToList())];
+            shape = $"aliased, up to {aliasCount} alias(es) per request";
+            readChunk = (index, chunk, countRequest, token) => ReadAliasedChunkAsync(index, chunk, sourceSystem, countRequest, token);
+        }
+        else
+        {
+            var maxFilterChars = Math.Clamp(CtrmConfig.ReadInt(_configuration, SourceCodesMaxFilterCharsKey, 6000), 500, 7000);
+            var maxPerRequest = Math.Clamp(CtrmConfig.ReadInt(_configuration, SourceCodesMaxPerRequestKey, 400), 1, 1000);
+            chunks = ChunkBySourceCodeFilterLength(codes, maxFilterChars, maxPerRequest);
+            shape = $"sourceCodes, filter budget {maxFilterChars} chars and at most {maxPerRequest} code(s) per chunk";
+            readChunk = (index, chunk, countRequest, token) => ReadSourceCodesChunkAsync(index, chunk, sourceSystem, countRequest, token);
+        }
+
         var stopwatch = Stopwatch.StartNew();
-        var requests = 0;
-        ChunkFailure? firstFailure = null;
+        var (results, failed, requests) = await ReadChunksAsync(chunks, concurrency, readChunk, cancellationToken);
 
-        void Record(int index, CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> failure)
-        {
-            Interlocked.CompareExchange(ref firstFailure, new ChunkFailure(index, failure), null);
-            stop.Cancel();
-        }
-
-        // Null = not sent, or abandoned, because another chunk had already failed the read (or this one
-        // failed and recorded itself).
-        async Task<List<(string Code, List<CtrmCustomerDto> Items)>?> One(int index, IReadOnlyList<string> chunk)
-        {
-            try
-            {
-                await slot.WaitAsync(stop.Token);
-            }
-            catch (OperationCanceledException) when (stop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-            {
-                return null;
-            }
-
-            try
-            {
-                if (stop.IsCancellationRequested) return null;
-
-                Interlocked.Increment(ref requests);
-                var document = CtrmCustomerQueries.CustomersBySourceCodesAliased(chunk, sourceSystem);
-                CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> read;
-                try
-                {
-                    read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
-                        () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, null, stop.Token),
-                        _configuration, _logger, $"customers chunk {index}"));
-                }
-                catch (OperationCanceledException) when (stop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                {
-                    return null;    // our own stop, after another chunk failed - that failure is already recorded
-                }
-                catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-                {
-                    // Cancelled by something other than the caller or our own stop - typically an HTTP
-                    // timeout surfacing as TaskCanceledException. A failure, never a silently missing chunk.
-                    Record(index, new()
-                    {
-                        Status = CtrmReadStatus.Error,
-                        Detail = $"the customers request was cancelled without the caller cancelling it (likely an HTTP timeout): {ex.Message}"
-                    });
-                    return null;
-                }
-
-                var (rows, failure) = MapChunk(read, chunk);
-                if (failure is not null)
-                {
-                    Record(index, failure);
-                    return null;
-                }
-                return rows;
-            }
-            finally
-            {
-                slot.Release();
-            }
-        }
-
-        var results = await Task.WhenAll(chunks.Select((chunk, index) => One(index, chunk)));
-
-        if (Volatile.Read(ref firstFailure) is { } failed)
-            return Fail(failed, chunks.Count, codes.Count, Volatile.Read(ref requests), stopwatch.ElapsedMilliseconds);
+        if (failed is not null)
+            return Fail(failed, shape, chunks.Count, codes.Count, requests, stopwatch.ElapsedMilliseconds);
 
         var duplicateCodes = new List<string>();
-        foreach (var (code, items) in results.SelectMany(r => r!))
+        foreach (var (code, items) in results!)
         {
             if (items.Count == 0)
             {
@@ -174,10 +190,176 @@ public sealed class CtrmCustomerReader
         }
 
         _logger.LogInformation(
-            "CTRM customer lookup: {Requested} code(s), {Found} found, {Missing} missing, {Duplicates} with duplicate rows, via {Requests} request(s) of up to {AliasCount} alias(es) in {ElapsedMs}ms.",
-            lookup.Requested, lookup.Found, lookup.Missing, lookup.Duplicates, lookup.Requests, aliasCount, stopwatch.ElapsedMilliseconds);
+            "CTRM customer lookup: {Requested} code(s), {Found} found, {Missing} missing, {Duplicates} with duplicate rows, via {Requests} request(s) in {Chunks} chunk(s) ({Strategy}) in {ElapsedMs}ms.",
+            lookup.Requested, lookup.Found, lookup.Missing, lookup.Duplicates, lookup.Requests, chunks.Count, shape, stopwatch.ElapsedMilliseconds);
 
         return new CtrmReadResult<CtrmCustomerLookup> { Status = CtrmReadStatus.Ok, Value = lookup };
+    }
+
+    /// <summary>One chunk's rows (requested code → its rows, in request order), or the failure that fails the read.</summary>
+    private readonly record struct ChunkOutcome(
+        List<(string Code, List<CtrmCustomerDto> Items)>? Rows,
+        CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>>? Failure);
+
+    /// <summary>
+    /// Runs every chunk, at most <paramref name="concurrency"/> at once; the first failure is recorded and
+    /// cancels the chunks still waiting or in flight. <c>Rows</c> is null exactly when <c>Failure</c> is set.
+    /// </summary>
+    private static async Task<(List<(string Code, List<CtrmCustomerDto> Items)>? Rows, ChunkFailure? Failure, int Requests)> ReadChunksAsync(
+        IReadOnlyList<IReadOnlyList<string>> chunks,
+        int concurrency,
+        Func<int, IReadOnlyList<string>, Action, CancellationToken, Task<ChunkOutcome>> readChunk,
+        CancellationToken cancellationToken)
+    {
+        using var slot = new SemaphoreSlim(concurrency, concurrency);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var requests = 0;
+        ChunkFailure? firstFailure = null;
+
+        void Record(int index, CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> failure)
+        {
+            Interlocked.CompareExchange(ref firstFailure, new ChunkFailure(index, failure), null);
+            stop.Cancel();
+        }
+
+        void CountRequest() => Interlocked.Increment(ref requests);
+
+        // Null = not sent, or abandoned, because another chunk had already failed the read (or this one
+        // failed and recorded itself).
+        async Task<List<(string Code, List<CtrmCustomerDto> Items)>?> One(int index, IReadOnlyList<string> chunk)
+        {
+            try
+            {
+                await slot.WaitAsync(stop.Token);
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (stop.IsCancellationRequested) return null;
+
+                ChunkOutcome outcome;
+                try
+                {
+                    outcome = await readChunk(index, chunk, CountRequest, stop.Token);
+                }
+                catch (OperationCanceledException) when (stop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    return null;    // our own stop, after another chunk failed - that failure is already recorded
+                }
+                catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Cancelled by something other than the caller or our own stop - typically an HTTP
+                    // timeout surfacing as TaskCanceledException. A failure, never a silently missing chunk.
+                    Record(index, new()
+                    {
+                        Status = CtrmReadStatus.Error,
+                        Detail = $"the customers request was cancelled without the caller cancelling it (likely an HTTP timeout): {ex.Message}"
+                    });
+                    return null;
+                }
+
+                if (outcome.Failure is { } failure)
+                {
+                    Record(index, failure);
+                    return null;
+                }
+                return outcome.Rows;
+            }
+            finally
+            {
+                slot.Release();
+            }
+        }
+
+        var results = await Task.WhenAll(chunks.Select((chunk, index) => One(index, chunk)));
+
+        return Volatile.Read(ref firstFailure) is { } failed
+            ? (null, failed, Volatile.Read(ref requests))
+            : ([.. results.SelectMany(r => r!)], null, Volatile.Read(ref requests));
+    }
+
+    /// <summary>The aliased fallback: one request per chunk, alias <c>c{i}</c> = <c>chunk[i]</c>. Deleted in plan E7b.</summary>
+    private async Task<ChunkOutcome> ReadAliasedChunkAsync(
+        int index, IReadOnlyList<string> chunk, string? sourceSystem, Action countRequest, CancellationToken token)
+    {
+        countRequest();
+        var document = CtrmCustomerQueries.CustomersBySourceCodesAliased(chunk, sourceSystem);
+        var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
+            () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, null, token),
+            _configuration, _logger, $"customers chunk {index}"));
+        var (rows, failure) = MapChunk(read, chunk);
+        return new ChunkOutcome(rows, failure);
+    }
+
+    /// <summary>
+    /// The default: <see cref="CtrmCustomerQueries.CustomersBySourceCodes"/> for the whole chunk, paged until
+    /// <c>hasNextPage</c> is false. Every page - and every HC0045 re-send - is counted as a request.
+    /// </summary>
+    private async Task<ChunkOutcome> ReadSourceCodesChunkAsync(
+        int index, IReadOnlyList<string> chunk, string? sourceSystem, Action countRequest, CancellationToken token)
+    {
+        // Requested code (as sent) → its rows. Case and padding on the returned sourceCode are tolerated
+        // (Db2 CHAR columns); a row for any code this chunk did not ask for is not.
+        var byCode = new Dictionary<string, List<CtrmCustomerDto>>(chunk.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var code in chunk) byCode[code] = [];
+
+        for (var page = 0; ; page++)
+        {
+            if (page == SourceCodesMaxPagesPerChunk)
+                return new ChunkOutcome(null, new()
+                {
+                    Status = CtrmReadStatus.Error,
+                    Detail = $"customers(sourceCodes:) for {chunk.Count} code(s) still reported hasNextPage after {SourceCodesMaxPagesPerChunk} pages of {SourceCodesPageSize} rows (page cap CtrmCustomerReader.SourceCodesMaxPagesPerChunk); that many rows for so few codes means heavy duplication or a paging fault, so nothing from this read is trusted."
+                });
+
+            var skip = page * SourceCodesPageSize;
+            // An unprovided variable leaves the argument absent, so sourceSystem is sent only when configured.
+            object variables = sourceSystem is null
+                ? new { codes = chunk, skip, take = SourceCodesPageSize }
+                : new { codes = chunk, sourceSystem, skip, take = SourceCodesPageSize };
+            var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
+                () =>
+                {
+                    countRequest();
+                    return _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(CtrmCustomerQueries.CustomersBySourceCodes, variables, token);
+                },
+                _configuration, _logger, $"customers sourceCodes chunk {index} page {page}"));
+
+            if (read.Status == CtrmReadStatus.PartialSuccess)
+                return new ChunkOutcome(null, read with { Status = CtrmReadStatus.QueryError, Value = null, Detail = "partial answer (data plus errors): " + read.Detail });
+            if (read.Status != CtrmReadStatus.Ok)
+                return new ChunkOutcome(null, read with { Value = null });
+            if (read.Value is not { } data || !data.TryGetValue("customers", out var customers) || customers is null)
+                return new ChunkOutcome(null, new()
+                {
+                    Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus,
+                    Detail = $"CTRM returned no customers object for a sourceCodes request for {chunk.Count} code(s)."
+                });
+            if (customers.PageInfo is null)
+                return new ChunkOutcome(null, new()
+                {
+                    Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus,
+                    Detail = $"CTRM returned no pageInfo for a sourceCodes request for {chunk.Count} code(s), so completeness cannot be established."
+                });
+
+            var items = customers.Items ?? [];
+            var stray = items.Count(d => d.SourceCode?.Trim() is not { Length: > 0 } returned || !byCode.ContainsKey(returned));
+            if (stray > 0)
+                return new ChunkOutcome(null, new()
+                {
+                    Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus, ErrorCode = FilterMismatchCode,
+                    Detail = $"a sourceCodes request for {chunk.Count} code(s) returned {stray} of {items.Count} row(s) whose sourceCode is blank or was not among the codes that request asked for; the sourceCodes filter is no longer an exact match, so nothing from this read is trusted."
+                });
+
+            foreach (var item in items) byCode[item.SourceCode!.Trim()].Add(item);
+
+            if (!customers.PageInfo.HasNextPage)
+                return new ChunkOutcome([.. chunk.Select(code => (code, byCode[code]))], null);
+        }
     }
 
     /// <summary>
@@ -309,7 +491,7 @@ public sealed class CtrmCustomerReader
         return (rows, null);
     }
 
-    private CtrmReadResult<CtrmCustomerLookup> Fail(ChunkFailure failed, int chunkCount, int codeCount, int requests, long elapsedMs)
+    private CtrmReadResult<CtrmCustomerLookup> Fail(ChunkFailure failed, string shape, int chunkCount, int codeCount, int requests, long elapsedMs)
     {
         var chunk = failed.Read;
         var (logCode, prefix) = Classify(chunk);
@@ -317,8 +499,8 @@ public sealed class CtrmCustomerReader
         var logDetail = detail.Length > MaxLoggedDetail ? detail[..MaxLoggedDetail] + "…" : detail;
 
         _logger.LogWarning(
-            "CTRM customer lookup failed [{ErrorCode}] [{ErrorCategory}]: chunk {Chunk} of {Chunks} ({Codes} code(s), {Requests} request(s) sent) answered {Status} (HTTP {HttpStatus}, GraphQL code {GraphQlCode}) after {ElapsedMs}ms; the whole read fails closed. {Detail}",
-            logCode, "Integration", failed.Index, chunkCount, codeCount, requests, chunk.Status, chunk.HttpStatus, chunk.ErrorCode, elapsedMs, logDetail);
+            "CTRM customer lookup failed [{ErrorCode}] [{ErrorCategory}]: chunk {Chunk} of {Chunks} ({Strategy}; {Codes} code(s), {Requests} request(s) sent) answered {Status} (HTTP {HttpStatus}, GraphQL code {GraphQlCode}) after {ElapsedMs}ms; the whole read fails closed. {Detail}",
+            logCode, "Integration", failed.Index, chunkCount, shape, codeCount, requests, chunk.Status, chunk.HttpStatus, chunk.ErrorCode, elapsedMs, logDetail);
 
         return new CtrmReadResult<CtrmCustomerLookup>
         {
@@ -335,18 +517,31 @@ public sealed class CtrmCustomerReader
     {
         if (chunk.Status == CtrmReadStatus.Error && chunk.ErrorCode == FilterMismatchCode)
             return (FilterMismatchCode,
-                "filter mismatch — customers(sourceCode:) returned rows for a different sourceCode; see CtrmCustomerQueries.CustomersBySourceCodesAliased: ");
+                "filter mismatch — customers(sourceCode:/sourceCodes:) returned rows for a sourceCode that was not requested; see CtrmCustomerQueries.CustomersBySourceCodes / CustomersBySourceCodesAliased: ");
         if (IsPermissionMissing(chunk.Status, chunk.ErrorCode))
             return ("CUSTOMER_SYNC_NO_PERMISSION",
                 "customers permission missing — Customers.Read.All (or ReadCustomersBasic) is not granted to this client: ");
         if (CtrmServerTimeoutRetry.IsServerTimeout(chunk))
             return ("CUSTOMER_SYNC_SOURCE_UNAVAILABLE",
                 "CTRM server timeout (HC0045) persisted after the configured retries — the gateway is slow, not a schema problem: ");
+        if (IsFilterTooLong(chunk))
+            return ("CUSTOMER_SYNC_SOURCE_UNAVAILABLE",
+                "sourceCodes filter too long for the API — lower CustomerSync:SourceCodesMaxFilterChars: ");
         if (chunk.Status == CtrmReadStatus.QueryError && chunk.HttpStatus == 400)
             return ("CUSTOMER_SYNC_SCHEMA_MISMATCH",
-                "schema mismatch — a field or argument in CtrmCustomerQueries.CustomerProjection / CustomersBySourceCodesAliased does not exist on the API (HTTP 400): ");
+                "schema mismatch — a field or argument in CtrmCustomerQueries.CustomerProjection / CustomersBySourceCodes / CustomersBySourceCodesAliased does not exist on the API (HTTP 400): ");
         return ("CUSTOMER_SYNC_SOURCE_UNAVAILABLE", "");
     }
+
+    /// <summary>
+    /// The API's answer to a rendered filter over its limit (measured 2026-10-06: HTTP 200, <c>VALIDATION</c>,
+    /// "The filter is too long for the Profisee endpoint (7987 encoded characters, limit 7000)"). Not a schema
+    /// problem: the chunk estimate undershot, and the operator's lever is a smaller filter budget.
+    /// </summary>
+    private static bool IsFilterTooLong<T>(CtrmReadResult<T> chunk) =>
+        !chunk.Ok
+        && string.Equals(chunk.ErrorCode, "VALIDATION", StringComparison.OrdinalIgnoreCase)
+        && (chunk.Detail?.Contains("too long", StringComparison.OrdinalIgnoreCase) ?? false);
 
     /// <summary>
     /// Whether a read shows the <c>customers</c> permission (<c>Customers.Read.All</c>) as granted:

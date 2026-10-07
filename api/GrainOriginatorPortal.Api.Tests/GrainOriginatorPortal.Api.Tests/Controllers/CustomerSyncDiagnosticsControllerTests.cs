@@ -591,9 +591,11 @@ public class CustomerSyncDiagnosticsControllerTests
                 ActiveYN = "Y",
                 IndustryCode1 = "PR"
             };
+            // The default sourceCodes list lookup answers under "customers"; the aliased fallback under "c0".
             var pages = new Dictionary<string, CtrmPage<CtrmCustomerDto>>
             {
-                ["c0"] = new CtrmPage<CtrmCustomerDto> { TotalCount = 1, Items = [row] }
+                [document == CtrmCustomerQueries.CustomersBySourceCodes ? "customers" : "c0"] =
+                    new CtrmPage<CtrmCustomerDto> { TotalCount = 1, PageInfo = new CtrmPageInfo { HasNextPage = false }, Items = [row] }
             };
             return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)(object)pages });
         }

@@ -101,6 +101,24 @@ public class CtrmCustomerSyncSourceTests
                 return Task.FromResult((CtrmReadResult<T>)answer);
             }
 
+            // The default lookup (E7): one customers(sourceCodes:) list per chunk; one page is enough here.
+            if (document == CtrmCustomerQueries.CustomersBySourceCodes)
+            {
+                var map = variables!.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(variables));
+                var requested = ((IEnumerable<string>)map["codes"]!).ToList();
+                lock (RequestedCodes) RequestedCodes.AddRange(requested);
+
+                if (LookupFailure is { } listFailure)
+                    return Task.FromResult((CtrmReadResult<T>)(object)listFailure);
+
+                var found = requested.SelectMany(c => Master.TryGetValue(c, out var rows) ? rows : []).ToList();
+                var data = new Dictionary<string, CtrmPage<CtrmCustomerDto>>
+                {
+                    ["customers"] = new() { TotalCount = found.Count, PageInfo = new() { HasNextPage = false }, Items = found }
+                };
+                return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)(object)data });
+            }
+
             var matches = Alias.Matches(document);
             Assert.NotEmpty(matches);
             var codes = matches.Select(m => JsonSerializer.Deserialize<string>(m.Groups[2].Value)!).ToList();

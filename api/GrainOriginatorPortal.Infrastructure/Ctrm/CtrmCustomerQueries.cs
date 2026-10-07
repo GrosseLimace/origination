@@ -59,6 +59,26 @@ public static class CtrmCustomerQueries
         return builder.ToString();
     }
 
+    /// <summary>
+    /// The bulk lookup (E7, the default strategy): one <c>customers(sourceCodes:)</c> list filter, paged with
+    /// skip/take. <c>$sourceSystem</c> is sent only when <c>CustomerSync:CtrmSourceSystem</c> is configured;
+    /// an argument whose variable is not provided is treated as absent, so no filter is applied.
+    /// </summary>
+    /// <remarks>
+    /// The API limits the RENDERED filter (7,000 encoded characters on Profisee), not the number of values,
+    /// so the reader sizes chunks by estimated filter length - see
+    /// <see cref="CtrmCustomerReader.ChunkBySourceCodeFilterLength"/>.
+    /// </remarks>
+    public const string CustomersBySourceCodes = $$"""
+        query ($codes: [String!], $sourceSystem: String, $skip: Int, $take: Int) {
+          customers(sourceCodes: $codes, sourceSystem: $sourceSystem, skip: $skip, take: $take) {
+            totalCount
+            pageInfo { hasNextPage }
+            items { {{CustomerProjection}} }
+          }
+        }
+        """;
+
     public const string ContractLinksInWindow = """
         query ($from: Date!, $to: Date!, $skip: Int, $take: Int) {
           contracts(skip: $skip, take: $take, contractDateFrom: $from, contractDateTo: $to) {

@@ -50,12 +50,28 @@ public class CtrmCustomerQueriesTests
     [InlineData(nameof(CtrmCustomerQueries.ContractLinksInWindow))]
     [InlineData(nameof(CtrmCustomerQueries.TicketLinksInWindow))]
     [InlineData(nameof(CtrmCustomerQueries.CustomersProbe))]
+    [InlineData(nameof(CtrmCustomerQueries.CustomersBySourceCodes))]
     public void Documents_ContainNoHashCommentLines(string constName)
     {
         var field = typeof(CtrmCustomerQueries).GetField(constName, BindingFlags.Public | BindingFlags.Static)!;
         var value = (string)field.GetRawConstantValue()!;
 
         Assert.DoesNotContain('#', value);
+    }
+
+    [Fact]
+    public void CustomersBySourceCodes_FiltersByTheCodesListVariable_PagesWithSkipTake_AndCarriesTheProjection()
+    {
+        var document = CtrmCustomerQueries.CustomersBySourceCodes;
+
+        Assert.StartsWith("query (", document);
+        Assert.Contains("$codes: [String!]", document);
+        Assert.Contains("$sourceSystem: String", document);
+        Assert.Contains("sourceCodes: $codes", document);
+        Assert.Contains("sourceSystem: $sourceSystem", document);
+        Assert.Contains("skip: $skip, take: $take", document);
+        Assert.Contains("pageInfo { hasNextPage }", document);
+        Assert.Contains("items { " + CtrmCustomerQueries.CustomerProjection + " }", document);
     }
 
     [Fact]
