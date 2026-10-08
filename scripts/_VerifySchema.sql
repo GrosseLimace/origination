@@ -55,6 +55,11 @@
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
+--   Updated 2026-10-08 (BarChart feed, backend only): 20260811142608_AddBarchartFeed, carried over
+--   unchanged from the Bid Sheet branch so that branch finds it already applied. Adds the five
+--   dbo.Barchart* tables (67 columns) plus BidSheetLocations.BarchartLocationKey and
+--   BidSheetLocationBids.Source/BarchartSymbol/QuoteAsOf: Tables 40 -> 45, Columns 371 -> 442.
+--   Its one new index (IX_BidSheetLocations_BarchartLocationKey) is non-unique, so not checked.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -107,9 +112,14 @@ DECLARE @Findings TABLE (
 );
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (40)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (45)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Tables (SchemaName, TableName) VALUES
+('dbo', 'BarchartApiCallAudit'),
+('dbo', 'BarchartCommodityMap'),
+('dbo', 'BarchartCurrentQuote'),
+('dbo', 'BarchartInstrument'),
+('dbo', 'BarchartQuoteSnapshot'),
 ('dbo', 'BidSheetLocationBids'),
 ('dbo', 'BidSheetLocationOrders'),
 ('dbo', 'BidSheetLocations'),
@@ -152,7 +162,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (371)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (442)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -166,7 +176,75 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 -- -----------------------------------------------------------------------------
 INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VALUES
 -- BidSheetLocations (BidSheetLocation entity)
+('dbo', 'BarchartApiCallAudit', 'ApiCallId',    'bigint',         0),
+('dbo', 'BarchartApiCallAudit', 'CalledAtUtc',  'datetime2(3)',   0),
+('dbo', 'BarchartApiCallAudit', 'Endpoint',     'nvarchar(100)',  0),
+('dbo', 'BarchartApiCallAudit', 'QueryParams',  'nvarchar(2000)', 1),
+('dbo', 'BarchartApiCallAudit', 'HttpStatus',   'int',            1),
+('dbo', 'BarchartApiCallAudit', 'Success',      'bit',            0),
+('dbo', 'BarchartApiCallAudit', 'RowsAffected', 'int',            1),
+('dbo', 'BarchartApiCallAudit', 'DurationMs',   'int',            1),
+('dbo', 'BarchartApiCallAudit', 'ErrorMessage', 'nvarchar(2000)', 1),
+('dbo', 'BarchartCommodityMap', 'BarchartCommodity', 'nvarchar(200)', 0),
+('dbo', 'BarchartCommodityMap', 'CommodityCode',     'nvarchar(50)',  0),
+('dbo', 'BarchartCommodityMap', 'CommodityName',     'nvarchar(200)', 1),
+('dbo', 'BarchartCommodityMap', 'CommodityCategory', 'nvarchar(100)', 1),
+('dbo', 'BarchartCommodityMap', 'IsActive',          'bit',           0),
+('dbo', 'BarchartCommodityMap', 'CreatedAt',         'datetime2(3)',  0),
+('dbo', 'BarchartCommodityMap', 'CreatedBy',         'nvarchar(255)', 0),
+('dbo', 'BarchartCommodityMap', 'ModifiedAt',        'datetime2(3)',  1),
+('dbo', 'BarchartCommodityMap', 'ModifiedBy',        'nvarchar(255)', 1),
+('dbo', 'BarchartCurrentQuote', 'Symbol',          'nvarchar(100)', 0),
+('dbo', 'BarchartCurrentQuote', 'LastPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'NetChange',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'PercentChange',   'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'OpenPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'HighPrice',       'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'LowPrice',        'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'ClosePrice',      'decimal(19,4)', 1),
+('dbo', 'BarchartCurrentQuote', 'UnitCode',        'nvarchar(10)',  1),
+('dbo', 'BarchartCurrentQuote', 'DayCode',         'nvarchar(5)',   1),
+('dbo', 'BarchartCurrentQuote', 'QuoteMode',       'nvarchar(10)',  1),
+('dbo', 'BarchartCurrentQuote', 'QuoteFlag',       'nvarchar(5)',   1),
+('dbo', 'BarchartCurrentQuote', 'TradeTimestamp',  'datetime2(3)',  1),
+('dbo', 'BarchartCurrentQuote', 'ServerTimestamp', 'datetime2(3)',  1),
+('dbo', 'BarchartCurrentQuote', 'UpdatedAtUtc',    'datetime2(3)',  0),
+('dbo', 'BarchartInstrument', 'Symbol',             'nvarchar(100)', 0),
+('dbo', 'BarchartInstrument', 'LocationKey',        'nvarchar(50)',  1),
+('dbo', 'BarchartInstrument', 'Root',               'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'InstrumentType',     'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryWindowFlag', 'char(1)',       1),
+('dbo', 'BarchartInstrument', 'SymbolDescription',  'nvarchar(500)', 1),
+('dbo', 'BarchartInstrument', 'Elevator',           'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'LocationName',       'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'FacilityType',       'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'Commodity',          'nvarchar(200)', 1),
+('dbo', 'BarchartInstrument', 'UnderlyingFuture',   'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryStart',      'datetime2(3)',  1),
+('dbo', 'BarchartInstrument', 'DeliveryEnd',        'datetime2(3)',  1),
+('dbo', 'BarchartInstrument', 'Address',            'nvarchar(500)', 1),
+('dbo', 'BarchartInstrument', 'City',               'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'State',              'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'ZipCode',            'nvarchar(20)',  1),
+('dbo', 'BarchartInstrument', 'Latitude',           'float',         1),
+('dbo', 'BarchartInstrument', 'Longitude',          'float',         1),
+('dbo', 'BarchartInstrument', 'County',             'nvarchar(100)', 1),
+('dbo', 'BarchartInstrument', 'StateFips',          'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'CountyFips',         'nvarchar(10)',  1),
+('dbo', 'BarchartInstrument', 'Phone',              'nvarchar(50)',  1),
+('dbo', 'BarchartInstrument', 'Website',            'nvarchar(300)', 1),
+('dbo', 'BarchartInstrument', 'IsTest',             'bit',           0),
+('dbo', 'BarchartInstrument', 'IsActive',           'bit',           0),
+('dbo', 'BarchartInstrument', 'FirstSeenUtc',       'datetime2(3)',  0),
+('dbo', 'BarchartInstrument', 'LastSeenUtc',        'datetime2(3)',  0),
+('dbo', 'BarchartQuoteSnapshot', 'SnapshotDate',   'date',          0),
+('dbo', 'BarchartQuoteSnapshot', 'Symbol',         'nvarchar(100)', 0),
+('dbo', 'BarchartQuoteSnapshot', 'LastPrice',      'decimal(19,4)', 1),
+('dbo', 'BarchartQuoteSnapshot', 'NetChange',      'decimal(19,4)', 1),
+('dbo', 'BarchartQuoteSnapshot', 'TradeTimestamp', 'datetime2(3)',  1),
+('dbo', 'BarchartQuoteSnapshot', 'CreatedAtUtc',   'datetime2(3)',  0),
 ('dbo', 'BidSheetLocations', 'Id',                'int',           0),
+('dbo', 'BidSheetLocations', 'BarchartLocationKey', 'nvarchar(50)', 1),
 ('dbo', 'BidSheetLocations', 'Address',           'nvarchar(300)', 1),
 ('dbo', 'BidSheetLocations', 'City',              'nvarchar(100)', 1),
 ('dbo', 'BidSheetLocations', 'CreatedAt',         'datetime2',     0),
@@ -194,6 +272,9 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheetLocationBids', 'ModifiedAt',        'datetime2',     1),
 ('dbo', 'BidSheetLocationBids', 'ModifiedBy',        'nvarchar(255)', 1),
 ('dbo', 'BidSheetLocationBids', 'Month',             'int',           0),
+('dbo', 'BidSheetLocationBids', 'Source',            'nvarchar(20)',  0),
+('dbo', 'BidSheetLocationBids', 'BarchartSymbol',    'nvarchar(100)', 1),
+('dbo', 'BidSheetLocationBids', 'QuoteAsOf',         'datetime2',     1),
 -- BidSheetLocationOrders (BidSheetLocationOrder entity)
 ('dbo', 'BidSheetLocationOrders', 'Id',            'int',           0),
 ('dbo', 'BidSheetLocationOrders', 'LocationOrder', 'nvarchar(max)', 0),
@@ -657,6 +738,7 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260805184524_AddDpContractQueryLibraryItems'),
 ('20260810141828_AddProducerContact'),
 ('20260810164128_AddNoContractsQueryLibraryItem'),
+('20260811142608_AddBarchartFeed'),
 ('20260812143729_AddCoverageQueryLibraryItems'),
 ('20260901190548_AddCommodityTradeGroupScope'),
 ('20260902152339_AddCommodityTradeUnitScope'),

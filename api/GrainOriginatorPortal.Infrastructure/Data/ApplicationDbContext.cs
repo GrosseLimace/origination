@@ -36,6 +36,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
     public DbSet<BidSheetLocationOrder> BidSheetLocationOrders => Set<BidSheetLocationOrder>();
     public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
+    public DbSet<BarchartInstrument> BarchartInstruments => Set<BarchartInstrument>();
+    public DbSet<BarchartCurrentQuote> BarchartCurrentQuotes => Set<BarchartCurrentQuote>();
+    public DbSet<BarchartQuoteSnapshot> BarchartQuoteSnapshots => Set<BarchartQuoteSnapshot>();
+    public DbSet<BarchartCommodityMap> BarchartCommodityMaps => Set<BarchartCommodityMap>();
+    public DbSet<BarchartApiCallAudit> BarchartApiCallAudits => Set<BarchartApiCallAudit>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
     public DbSet<HarvestWindow> HarvestWindows => Set<HarvestWindow>();
     public DbSet<UserActivity> UserActivities => Set<UserActivity>();
@@ -594,6 +599,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Latitude).IsRequired(false);
             entity.Property(e => e.Longitude).IsRequired(false);
             entity.Property(e => e.ElevatorCode).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.BarchartLocationKey).HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
             entity.Property(e => e.GroupName).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.IsScoularFacility).HasDefaultValue(false).IsRequired();
@@ -602,6 +608,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
             entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
+            // Non-unique: the same BarChart location may be placed in several trade units, one row per
+            // placement. Nothing sets this column until the Bid Sheet can link a location to the feed.
+            entity.HasIndex(e => e.BarchartLocationKey).HasDatabaseName("IX_BidSheetLocations_BarchartLocationKey");
             entity.HasMany(e => e.Bids).WithOne(b => b.Location).HasForeignKey(b => b.LocationId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -617,11 +626,145 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CropYear).IsRequired();
             entity.Property(e => e.Month).HasDefaultValue(0).IsRequired();
             entity.Property(e => e.Bid).HasMaxLength(50).IsRequired();
+            // Feed provenance. Every row is 'Manual' until the Bid Sheet can link a location to the feed;
+            // only the BarChart bridge ever writes 'Barchart'.
+            entity.Property(e => e.Source).HasMaxLength(20).HasDefaultValue(BidSources.Manual).IsRequired();
+            entity.Property(e => e.BarchartSymbol).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.QuoteAsOf).IsRequired(false);
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
             entity.HasIndex(e => new { e.LocationId, e.CommodityCode, e.CropYear, e.Month }).IsUnique().HasDatabaseName("UQ_BidSheetLocationBids_Location_Commodity_Year_Month");
+        });
+
+        // Vendor-loaded tables. Prices are DECIMAL(19,4) and all timestamps are DATETIME2(3)
+        // stored UTC (the vendor sends offsets; the load SQL converts) per style-guides/sql.md.
+        // These tables intentionally carry purpose-built timestamps (FirstSeen/LastSeen/Updated/
+        // Created) rather than the standard CreatedBy/ModifiedBy audit set — there is no meaningful
+        // human actor for machine-loaded vendor rows. BarchartCommodityMap is the exception: it is
+        // human-maintained and carries the full audit columns.
+        modelBuilder.Entity<BarchartInstrument>(entity =>
+        {
+            entity.ToTable("BarchartInstrument", schema: "dbo");
+            entity.HasKey(e => e.Symbol);
+            entity.Property(e => e.Symbol).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.LocationKey).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Root).HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.InstrumentType).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.DeliveryWindowFlag).HasColumnType("char(1)").IsRequired(false);
+            entity.Property(e => e.SymbolDescription).HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.Elevator).HasMaxLength(300).IsRequired(false);
+            entity.Property(e => e.LocationName).HasMaxLength(300).IsRequired(false);
+            entity.Property(e => e.FacilityType).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.Commodity).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.UnderlyingFuture).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.DeliveryStart).HasColumnType("datetime2(3)").IsRequired(false);
+            entity.Property(e => e.DeliveryEnd).HasColumnType("datetime2(3)").IsRequired(false);
+            entity.Property(e => e.Address).HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.City).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.State).HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.ZipCode).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.Latitude).IsRequired(false);
+            entity.Property(e => e.Longitude).IsRequired(false);
+            entity.Property(e => e.County).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.StateFips).HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.CountyFips).HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.Phone).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Website).HasMaxLength(300).IsRequired(false);
+            entity.Property(e => e.IsTest).HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.IsActive).HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.FirstSeenUtc).HasColumnType("datetime2(3)").HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+            entity.Property(e => e.LastSeenUtc).HasColumnType("datetime2(3)").HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+            // Drives the picker's group-by-location reads and the bridge's instrument lookup.
+            entity.HasIndex(e => e.LocationKey)
+                  .HasDatabaseName("IX_BarchartInstrument_LocationKey")
+                  .IncludeProperties(e => new { e.Commodity, e.InstrumentType, e.IsActive, e.IsTest });
+            entity.HasIndex(e => new { e.State, e.City }).HasDatabaseName("IX_BarchartInstrument_State_City");
+        });
+
+        modelBuilder.Entity<BarchartCurrentQuote>(entity =>
+        {
+            entity.ToTable("BarchartCurrentQuote", schema: "dbo");
+            entity.HasKey(e => e.Symbol);
+            entity.Property(e => e.Symbol).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.LastPrice).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.NetChange).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.PercentChange).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.OpenPrice).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.HighPrice).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.LowPrice).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.ClosePrice).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.UnitCode).HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.DayCode).HasMaxLength(5).IsRequired(false);
+            entity.Property(e => e.QuoteMode).HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.QuoteFlag).HasMaxLength(5).IsRequired(false);
+            entity.Property(e => e.TradeTimestamp).HasColumnType("datetime2(3)").IsRequired(false);
+            entity.Property(e => e.ServerTimestamp).HasColumnType("datetime2(3)").IsRequired(false);
+            entity.Property(e => e.UpdatedAtUtc).HasColumnType("datetime2(3)").HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+            entity.HasIndex(e => e.TradeTimestamp).IsDescending().HasDatabaseName("IX_BarchartCurrentQuote_TradeTimestamp");
+            // Shared-PK 1:1 with the catalog; no navigation property — reads go through raw SQL or the views.
+            entity.HasOne<BarchartInstrument>()
+                  .WithOne()
+                  .HasForeignKey<BarchartCurrentQuote>(e => e.Symbol)
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .HasConstraintName("FK_BarchartCurrentQuote_BarchartInstrument");
+        });
+
+        modelBuilder.Entity<BarchartQuoteSnapshot>(entity =>
+        {
+            entity.ToTable("BarchartQuoteSnapshot", schema: "dbo");
+            // (SnapshotDate, Symbol) makes a same-day re-load replace rather than duplicate,
+            // which is what lets the ingest endpoints be retried safely.
+            entity.HasKey(e => new { e.SnapshotDate, e.Symbol });
+            entity.Property(e => e.SnapshotDate).HasColumnType("date").IsRequired();
+            entity.Property(e => e.Symbol).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.LastPrice).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.NetChange).HasPrecision(19, 4).IsRequired(false);
+            entity.Property(e => e.TradeTimestamp).HasColumnType("datetime2(3)").IsRequired(false);
+            entity.Property(e => e.CreatedAtUtc).HasColumnType("datetime2(3)").HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+            entity.HasIndex(e => new { e.Symbol, e.SnapshotDate })
+                  .IsDescending(false, true)
+                  .HasDatabaseName("IX_BarchartQuoteSnapshot_Symbol_SnapshotDate");
+            entity.HasOne<BarchartInstrument>()
+                  .WithMany()
+                  .HasForeignKey(e => e.Symbol)
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .HasConstraintName("FK_BarchartQuoteSnapshot_BarchartInstrument");
+        });
+
+        modelBuilder.Entity<BarchartCommodityMap>(entity =>
+        {
+            entity.ToTable("BarchartCommodityMap", schema: "dbo");
+            entity.HasKey(e => e.BarchartCommodity);
+            entity.Property(e => e.BarchartCommodity).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.CommodityCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.CommodityName).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.CommodityCategory).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.IsActive).HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime2(3)").HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedAt).HasColumnType("datetime2(3)").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
+        });
+
+        modelBuilder.Entity<BarchartApiCallAudit>(entity =>
+        {
+            entity.ToTable("BarchartApiCallAudit", schema: "dbo");
+            entity.HasKey(e => e.ApiCallId);
+            entity.Property(e => e.ApiCallId).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CalledAtUtc).HasColumnType("datetime2(3)").HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+            entity.Property(e => e.Endpoint).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.QueryParams).HasMaxLength(2000).IsRequired(false);
+            entity.Property(e => e.HttpStatus).IsRequired(false);
+            entity.Property(e => e.Success).IsRequired();
+            entity.Property(e => e.RowsAffected).IsRequired(false);
+            entity.Property(e => e.DurationMs).IsRequired(false);
+            entity.Property(e => e.ErrorMessage).HasMaxLength(2000).IsRequired(false);
+            // Backs vw_BarchartMonthlyApiUsage and the pre-run budget check.
+            entity.HasIndex(e => e.CalledAtUtc)
+                  .HasDatabaseName("IX_BarchartApiCallAudit_CalledAtUtc")
+                  .IncludeProperties(e => new { e.Endpoint, e.Success });
         });
 
         modelBuilder.Entity<BidSheetLocationOrder>(entity =>
