@@ -19,6 +19,9 @@ export const BIN_SITE_BOUNDS = { minLat: 7, maxLat: 84, minLng: -180, maxLng: -5
  *  (BinSiteRules.MaxPerCustomer) so the dialog can never build a request the API would reject. */
 export const MAX_BIN_SITES = 100;
 export const BIN_SITE_NAME_MAX_LENGTH = 100;
+/** Per-site storage capacity ceiling in bushels — the same as the producer-level Bin Capacity
+ *  (BinSiteRules.MaxCapacity server-side). */
+export const MAX_BIN_SITE_CAPACITY = 100_000_000;
 /** Places shown on the profile. Display only — storage keeps the full value. */
 export const DISPLAY_DECIMALS = 6;
 
@@ -241,9 +244,27 @@ export function formatBinSiteLabel(site: ProducerBinSiteItem): string {
   return name ? `${name}: ${coords}` : coords;
 }
 
-/** Hover text for a bin-site link: the full-precision coordinates. */
+/** Hover text for a bin-site link: the full-precision coordinates, and the capacity when set. */
 export function formatBinSiteTitle(site: ProducerBinSiteItem): string {
   const coords = formatCoordinatePairFull(site.latitude, site.longitude);
   const name = site.name?.trim();
-  return `${name ? `${name}: ` : ''}${coords} — open in Google Maps`;
+  const capacity = formatBinSiteCapacity(site.capacity);
+  return `${name ? `${name}: ` : ''}${coords}${capacity ? ` · ${capacity}` : ''} — open in Google Maps`;
+}
+
+/** "50,000 bu", or '' when the site has no capacity. */
+export function formatBinSiteCapacity(capacity: number | null | undefined): string {
+  return capacity == null ? '' : `${capacity.toLocaleString('en-US')} bu`;
+}
+
+/** Reads a capacity input ("50,000", "50000 bu") as whole bushels, or null when it holds no digits. */
+export function parseBinSiteCapacity(text: string): number | null {
+  const digits = (text ?? '').replace(/[^0-9]/g, '');
+  return digits ? Number(digits) : null;
+}
+
+/** Keeps a capacity input to digits, grouped as typed: "50000" → "50,000". '' stays ''. */
+export function formatBinSiteCapacityInput(text: string): string {
+  const value = parseBinSiteCapacity(text);
+  return value === null ? '' : value.toLocaleString('en-US');
 }

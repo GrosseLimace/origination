@@ -31,11 +31,11 @@ public class ProducerBinSiteTests
     private static ProducerDetailsRepository Repo(ApplicationDbContext db) =>
         new(db, NullLogger<ProducerDetailsRepository>.Instance);
 
-    private static ProducerBinSiteEntry Site(decimal lat, decimal lng, string? name = null) =>
-        new() { Name = name, Latitude = lat, Longitude = lng };
+    private static ProducerBinSiteEntry Site(decimal lat, decimal lng, string? name = null, decimal? capacity = null) =>
+        new() { Name = name, Latitude = lat, Longitude = lng, Capacity = capacity };
 
-    private static ProducerDetailsUpsertArgs Args(IReadOnlyList<ProducerBinSiteEntry>? binSites, long customerId = 100) =>
-        new() { CustomerId = customerId, CustomerName = "Smith Farm", BinSites = binSites };
+    private static ProducerDetailsUpsertArgs Args(IReadOnlyList<ProducerBinSiteEntry>? binSites, long customerId = 100, decimal? binCapacity = null) =>
+        new() { CustomerId = customerId, CustomerName = "Smith Farm", BinSites = binSites, BinCapacity = binCapacity };
 
     // -------------------------------------------------------------------------
     [Fact]
@@ -196,5 +196,43 @@ public class ProducerBinSiteTests
         // Only the deleted producer's rows go; the other producer's site survives.
         var remaining = Assert.Single(await db.ProducerBinSites.ToListAsync());
         Assert.Equal(200, remaining.CustomerId);
+    }
+
+    // ===== Capacity (bushels, per site) =====
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_PersistsSiteCapacity_AndComposesItBack()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        await repo.UpsertAsync(Args(new[] { Site(39.1m, -95.1m, "North", capacity: 50_000m), Site(39.2m, -95.2m, "South") }),
+            "tuser", CancellationToken.None);
+
+        var sites = (await repo.GetAsync(100, CancellationToken.None))!.BinSites;
+        Assert.Equal(50_000m, sites[0].Capacity);
+        Assert.Null(sites[1].Capacity);
+        var all = await repo.GetAllAsync(CancellationToken.None);
+        Assert.Equal(50_000m, all.Single().BinSites[0].Capacity);
+    }
+
+    // -------------------------------------------------------------------------
+    // Site capacities are recorded per site only. Summing them into the producer's Bin Capacity was
+    // built and then deferred by the user (2026-10-08), so this pins that they do NOT touch it.
+    [Fact]
+    public async Task Upsert_SiteCapacities_LeaveBinCapacityAsSent()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        var saved = await repo.UpsertAsync(Args(new[]
+        {
+            Site(39.1m, -95.1m, capacity: 50_000m),
+            Site(39.2m, -95.2m, capacity: 25_000m),
+        }, binCapacity: 40_000m), "tuser", CancellationToken.None);
+
+        Assert.Equal(40_000m, saved.BinCapacity);
+        Assert.Equal(40_000m, (await repo.GetAsync(100, CancellationToken.None))!.BinCapacity);
     }
 }

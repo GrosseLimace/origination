@@ -218,7 +218,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
 describe('EditCustomerDialogComponent — bin sites', () => {
   let component: EditCustomerDialogComponent;
   let ref: ComponentRef<EditCustomerDialogComponent>;
-  let saved: { binSites: { name?: string; latitude: number; longitude: number }[] }[];
+  let saved: { binCapacity: number; binSites: { name?: string; latitude: number; longitude: number; capacity?: number }[] }[];
 
   beforeEach(() => {
     saved = [];
@@ -265,7 +265,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
   it('hydrates saved sites as six-place coordinate text, unchanged until edited', () => {
     open(makeCustomer({ binSites: [{ name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 }] }));
 
-    expect(component.editBinSites()).toEqual([{ name: 'Anderson Site', coords: '39.115876, -95.143955' }]);
+    expect(component.editBinSites()).toEqual([{ name: 'Anderson Site', coords: '39.115876, -95.143955', capacity: '' }]);
     expect(component.hasChanges()).toBe(false);
   });
 
@@ -350,10 +350,10 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     open(makeCustomer({ binSites: [{ name: 'North Bins', latitude: 41.39, longitude: -95.01 }] }));
 
     component.clearBinSiteField(0, 'coords');
-    expect(component.editBinSites()[0]).toEqual({ name: 'North Bins', coords: '' });
+    expect(component.editBinSites()[0]).toEqual({ name: 'North Bins', coords: '', capacity: '' });
 
     component.clearBinSiteField(0, 'name');
-    expect(component.editBinSites()[0]).toEqual({ name: '', coords: '' });
+    expect(component.editBinSites()[0]).toEqual({ name: '', coords: '', capacity: '' });
   });
 
   it('rewrites a valid free-hand entry as "lat, lng" when the field loses focus', () => {
@@ -388,5 +388,55 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     const [site] = saved.at(-1)!.binSites;
     expect(site.latitude).toBeCloseTo(41.390333333, 8);
     expect(site.longitude).toBeCloseTo(-95.007527778, 8);
+  });
+
+  // ── Capacity (bushels, per site) ────────────────────────────────────────────
+  it('keeps capacity to digits and groups them as typed', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+
+    component.onBinSiteCapacityInput(0, '50000 bu');
+
+    expect(component.editBinSites()[0].capacity).toBe('50,000');
+  });
+
+  it('asks for coordinates when only a capacity is entered', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.onBinSiteCapacityInput(0, '25000');
+
+    expect(component.binSiteErrors()[0]).toContain('coordinates');
+    expect(component.binSitesInvalid()).toBe(true);
+  });
+
+  it('rejects a capacity over the Bin Capacity ceiling', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'coords', '41.39, -95.01');
+    component.onBinSiteCapacityInput(0, '100000001');
+
+    expect(component.binSiteErrors()[0]).toContain('at most 100,000,000');
+  });
+
+  it('reopens a saved capacity grouped, unchanged until edited', () => {
+    open(makeCustomer({ binSites: [{ name: 'North Bins', latitude: 41.39, longitude: -95.01, capacity: 50000 }] }));
+
+    expect(component.editBinSites()[0].capacity).toBe('50,000');
+    expect(component.hasChanges()).toBe(false);
+  });
+
+  it('saves each site capacity, and leaves the typed Bin Capacity alone', () => {
+    // The sites are deliberately NOT summed into Bin Capacity (deferred by the user 2026-10-08).
+    open(makeCustomer({ binCapacity: 40000 }));
+    component.addBinSiteRow();
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'coords', '41.39, -95.01');
+    component.onBinSiteCapacityInput(0, '50,000');
+    component.updateBinSiteField(1, 'coords', '40.5, -96');
+
+    component.onSave();
+
+    expect(saved.at(-1)?.binSites.map(s => s.capacity)).toEqual([50000, undefined]);
+    expect(saved.at(-1)?.binCapacity).toBe(40000);
   });
 });

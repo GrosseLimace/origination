@@ -43,6 +43,7 @@ public static class ProducerDetailsMappings
             Name = b.Name,
             Latitude = b.Latitude,
             Longitude = b.Longitude,
+            Capacity = b.Capacity,
             SortOrder = b.SortOrder,
         }).ToList(),
     };

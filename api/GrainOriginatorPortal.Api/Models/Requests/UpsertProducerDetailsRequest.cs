@@ -63,6 +63,11 @@ public record BinSiteItemRequest
     [Range(BinSiteRules.MinLongitude, BinSiteRules.MaxLongitude,
         ErrorMessage = "Longitude must be negative (west), between -180 and -52, for North America.")]
     public required decimal Longitude { get; init; }
+
+    /// <summary>Storage capacity in bushels, optional. Stored per site only; it does not change the
+    /// producer-level BinCapacity.</summary>
+    [Range(0, BinSiteRules.MaxCapacity, ErrorMessage = "Bin site capacity must be between 0 and 100,000,000 bushels.")]
+    public decimal? Capacity { get; init; }
 }
 
 public record ContactItemRequest

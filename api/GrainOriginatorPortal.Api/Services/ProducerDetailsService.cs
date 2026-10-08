@@ -148,6 +148,7 @@ public class ProducerDetailsService : IProducerDetailsService
                 Name = b.Name,
                 Latitude = b.Latitude,
                 Longitude = b.Longitude,
+                Capacity = b.Capacity,
                 SortOrder = index
             })
             .ToList();

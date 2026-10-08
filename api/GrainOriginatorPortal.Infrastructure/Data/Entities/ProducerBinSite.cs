@@ -17,6 +17,9 @@ public class ProducerBinSite
     /// entered. The profile shortens it to six places for display; the map link uses all of it.</summary>
     public decimal Latitude { get; set; }
     public decimal Longitude { get; set; }
+    /// <summary>Storage capacity in bushels, optional. Independent of ProducerDetails.BinCapacity —
+    /// the sites are NOT summed into it (user decision 2026-10-08, deferred).</summary>
+    public decimal? Capacity { get; set; }
     /// <summary>Display order within the producer.</summary>
     public int SortOrder { get; set; }
 
@@ -31,6 +34,7 @@ public class ProducerBinSiteEntry
     public string? Name { get; set; }
     public decimal Latitude { get; set; }
     public decimal Longitude { get; set; }
+    public decimal? Capacity { get; set; }
     public int SortOrder { get; set; }
 }
 
@@ -54,4 +58,6 @@ public static class BinSiteRules
     public const double MaxLatitude = 84.0;
     public const double MinLongitude = -180.0;
     public const double MaxLongitude = -52.0;
+    /// <summary>Same ceiling as the producer-level Bin Capacity field (UpsertProducerDetailsRequest).</summary>
+    public const double MaxCapacity = 100_000_000;
 }

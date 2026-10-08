@@ -34,6 +34,7 @@ export interface ProducerBinSiteItem {
   name?: string | null;
   latitude: number;
   longitude: number;
+  capacity?: number | null; // storage capacity in bushels, per site (not summed into Bin Capacity)
   sortOrder?: number;
 }
 

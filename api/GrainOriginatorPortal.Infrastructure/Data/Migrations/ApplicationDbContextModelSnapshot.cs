@@ -1421,6 +1421,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<decimal?>("Capacity")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("Capacity");
+
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");

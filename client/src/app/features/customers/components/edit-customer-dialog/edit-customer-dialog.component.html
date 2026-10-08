@@ -217,13 +217,14 @@
                 </div>
 
                 @if (editBinSites().length > 0) {
-                  <div class="grid grid-cols-[1fr_1.4fr_1.25rem] gap-2 items-center px-1">
+                  <div class="grid grid-cols-[1fr_1.4fr_0.75fr_1.25rem] gap-2 items-center px-1">
                     <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name (optional)</span>
                     <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Latitude, Longitude</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Capacity (bu)</span>
                     <span></span>
                   </div>
                   @for (row of editBinSites(); track $index) {
-                    <div class="grid grid-cols-[1fr_1.4fr_1.25rem] gap-2 items-center">
+                    <div class="grid grid-cols-[1fr_1.4fr_0.75fr_1.25rem] gap-2 items-center">
                       <!-- Each input carries an inline × that empties it (shown only when it has a value). -->
                       <div class="relative">
                         <input type="text" [ngModel]="row.name" (ngModelChange)="updateBinSiteField($index, 'name', $event)"
@@ -247,6 +248,18 @@
                           [class]="binSiteErrors()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
                         @if (row.coords) {
                           <button type="button" (click)="clearBinSiteField($index, 'coords')" title="Clear coordinates" aria-label="Clear bin site coordinates"
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
+                        }
+                      </div>
+                      <!-- Storage capacity in bushels, optional. The sites' capacities add up to Bin Capacity. -->
+                      <div class="relative">
+                        <input type="text" inputmode="numeric" [ngModel]="row.capacity" (ngModelChange)="onBinSiteCapacityInput($index, $event)"
+                          placeholder="e.g., 50,000" maxlength="11" aria-label="Bin site storage capacity in bushels"
+                          class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                        @if (row.capacity) {
+                          <button type="button" (click)="clearBinSiteField($index, 'capacity')" title="Clear capacity" aria-label="Clear bin site capacity"
                             class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                           </button>

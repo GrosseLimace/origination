@@ -58,6 +58,8 @@
 --   Updated 2026-10-07: 20261007145119_AddProducerBinSite created dbo.ProducerBinSite (6 columns,
 --   Latitude/Longitude decimal(9,6)); its only index is non-unique, so @UniqueIndexes is unchanged.
 --   20261007152343_WidenProducerBinSiteCoordinatePrecision then widened both to decimal(18,15).
+--   Updated 2026-10-08: 20261008202530_AddProducerBinSiteCapacity added ProducerBinSite.Capacity,
+--   decimal(18,2) NULL (bushels, per site; not summed into ProducerDetails.BinCapacity).
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -156,7 +158,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (377)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (378)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -426,6 +428,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- ProducerBinSite
 ('dbo', 'ProducerBinSite', 'Id',         'int',           0),
 ('dbo', 'ProducerBinSite', 'CustomerId', 'bigint',        0),
+('dbo', 'ProducerBinSite', 'Capacity',   'decimal(18,2)', 1),
 ('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 0),
 ('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 0),
 ('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
@@ -627,7 +630,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (58)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (59)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -689,7 +692,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261005131626_DropCtrmSourceToggleUsers'),
 ('20261007145119_AddProducerBinSite'),
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
-('20261007162014_AddBinSiteQueryLibraryItems');
+('20261007162014_AddBinSiteQueryLibraryItems'),
+('20261008202530_AddProducerBinSiteCapacity');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

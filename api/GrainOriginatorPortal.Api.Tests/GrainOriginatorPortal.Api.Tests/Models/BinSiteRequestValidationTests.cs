@@ -112,4 +112,27 @@ public class BinSiteRequestValidationTests
 
         Assert.Contains(errors, e => e.MemberNames.Contains(nameof(UpsertProducerDetailsRequest.BinSites)));
     }
+
+    // ── Capacity ───────────────────────────────────────────────────────────────
+    [Theory]
+    [InlineData(null)]
+    [InlineData("0")]
+    [InlineData("50000")]
+    [InlineData("100000000")]
+    public void Capacity_IsOptional_AndAcceptedUpToTheBinCapacityCeiling(string? capacity)
+    {
+        var site = Site(39.1m, -95.1m) with { Capacity = capacity is null ? null : decimal.Parse(capacity) };
+
+        Assert.Empty(Validate(site));
+    }
+
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("100000001")]
+    public void Capacity_OutsideTheRange_IsRejected(string capacity)
+    {
+        var site = Site(39.1m, -95.1m) with { Capacity = decimal.Parse(capacity) };
+
+        Assert.Contains(Validate(site), e => e.MemberNames.Contains(nameof(BinSiteItemRequest.Capacity)));
+    }
 }

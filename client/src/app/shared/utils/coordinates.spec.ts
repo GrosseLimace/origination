@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { formatBinSiteLabel, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseCoordinatePair } from './coordinates';
+import { formatBinSiteCapacity, formatBinSiteCapacityInput, formatBinSiteLabel, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
 
 function ok(text: string) {
   const result = parseCoordinatePair(text);
@@ -188,5 +188,30 @@ describe('formatting', () => {
       .toBe('39.115876, -95.143955');
     expect(formatBinSiteLabel({ name: '   ', latitude: 39.115876, longitude: -95.143955 }))
       .toBe('39.115876, -95.143955');
+  });
+});
+
+describe('bin site capacity', () => {
+  it('reads digits only, as whole bushels', () => {
+    expect(parseBinSiteCapacity('50,000')).toBe(50000);
+    expect(parseBinSiteCapacity('50000 bu')).toBe(50000);
+    expect(parseBinSiteCapacity('')).toBeNull();
+    expect(parseBinSiteCapacity('bu')).toBeNull();
+  });
+
+  it('groups the input as typed', () => {
+    expect(formatBinSiteCapacityInput('1234567')).toBe('1,234,567');
+    expect(formatBinSiteCapacityInput('')).toBe('');
+  });
+
+  it('shows "N bu" for display, or nothing without a capacity', () => {
+    expect(formatBinSiteCapacity(50000)).toBe('50,000 bu');
+    expect(formatBinSiteCapacity(null)).toBe('');
+    expect(formatBinSiteCapacity(undefined)).toBe('');
+  });
+
+  it('puts the capacity in the hover title', () => {
+    expect(formatBinSiteTitle({ name: 'North', latitude: 41.39, longitude: -95.01, capacity: 50000 }))
+      .toBe('North: 41.39, -95.01 · 50,000 bu — open in Google Maps');
   });
 });

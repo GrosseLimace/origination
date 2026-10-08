@@ -464,6 +464,8 @@ public class ApplicationDbContext : DbContext
             // paste is stored exactly as entered. Display shortens it; storage never does.
             entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(18,15)").IsRequired();
             entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(18,15)").IsRequired();
+            // Bushels, same type as ProducerDetails.BinCapacity so the per-site sum lands exactly.
+            entity.Property(e => e.Capacity).HasColumnName("Capacity").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
 
             entity.HasOne(e => e.Customer)

@@ -6,7 +6,7 @@ import { Customer, Contract, Ticket, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
-import { BIN_SITE_NAME_MAX_LENGTH, COORDINATE_EXAMPLE, MAX_BIN_SITES, formatCoordinatePairFull, parseCoordinatePair } from '@shared/utils/coordinates';
+import { BIN_SITE_NAME_MAX_LENGTH, COORDINATE_EXAMPLE, MAX_BIN_SITES, MAX_BIN_SITE_CAPACITY, formatBinSiteCapacityInput, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from '@shared/utils/coordinates';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, grainOnFarmTitle } from '@shared/utils/grain-on-farm';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
@@ -51,8 +51,8 @@ export class EditCustomerDialogComponent {
     primaryContact: string;
     primaryPhone: string;
     contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
-    // Parsed at full precision (never rounded); array order is the display order.
-    binSites: { name?: string; latitude: number; longitude: number }[];
+    // Parsed at full precision (never rounded); array order is the display order. Capacity in bushels.
+    binSites: { name?: string; latitude: number; longitude: number; capacity?: number }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
@@ -255,37 +255,50 @@ export class EditCustomerDialogComponent {
     return [];
   }
 
-  // ── Bin sites (optional name + "lat, lng" paste field; as many as needed) ───
+  // ── Bin sites (optional name + "lat, lng" paste field + optional capacity; as many as needed) ───
   readonly maxBinSites = MAX_BIN_SITES;
   readonly binSiteNameMaxLength = BIN_SITE_NAME_MAX_LENGTH;
   readonly coordinateExample = COORDINATE_EXAMPLE;
-  editBinSites = signal<{ name: string; coords: string }[]>([]);
+  /** Capacity is kept as the displayed text ("50,000"); parseBinSiteCapacity reads the number. */
+  editBinSites = signal<{ name: string; coords: string; capacity: string }[]>([]);
 
-  /** Per-row validation message, or null. Fully-blank rows are fine (dropped on save); a named
-   *  row without coordinates is not, and any coordinates must pass the North American rules. */
+  /** Per-row validation message, or null. Fully-blank rows are fine (dropped on save); a row with a
+   *  name or a capacity but no coordinates is not, any coordinates must pass the North American
+   *  rules, and a capacity can't exceed the same ceiling as the producer-level Bin Capacity. */
   readonly binSiteErrors = computed(() =>
     this.editBinSites().map(r => {
-      if (!r.coords.trim()) return r.name.trim() ? 'Enter the coordinates for this site.' : null;
+      if (!r.coords.trim()) {
+        return r.name.trim() || r.capacity.trim() ? 'Enter the coordinates for this site.' : null;
+      }
       const parsed = parseCoordinatePair(r.coords);
-      return parsed.ok ? null : parsed.error;
+      if (!parsed.ok) return parsed.error;
+      const capacity = parseBinSiteCapacity(r.capacity);
+      return capacity !== null && capacity > MAX_BIN_SITE_CAPACITY
+        ? `Capacity can be at most ${MAX_BIN_SITE_CAPACITY.toLocaleString('en-US')} bushels.`
+        : null;
     }));
 
   readonly binSitesInvalid = computed(() => this.binSiteErrors().some(e => e !== null));
 
   addBinSiteRow(): void {
-    this.editBinSites.update(rows => rows.length >= MAX_BIN_SITES ? rows : [...rows, { name: '', coords: '' }]);
+    this.editBinSites.update(rows => rows.length >= MAX_BIN_SITES ? rows : [...rows, { name: '', coords: '', capacity: '' }]);
   }
 
   removeBinSiteRow(index: number): void {
     this.editBinSites.update(rows => rows.filter((_, i) => i !== index));
   }
 
-  updateBinSiteField(index: number, field: 'name' | 'coords', value: string): void {
+  updateBinSiteField(index: number, field: 'name' | 'coords' | 'capacity', value: string): void {
     this.editBinSites.update(rows => rows.map((r, i) => i === index ? { ...r, [field]: value } : r));
   }
 
+  /** Capacity accepts digits only and shows them grouped as typed ("50000" → "50,000"). */
+  onBinSiteCapacityInput(index: number, value: string): void {
+    this.updateBinSiteField(index, 'capacity', formatBinSiteCapacityInput(value));
+  }
+
   /** The inline × in each input. */
-  clearBinSiteField(index: number, field: 'name' | 'coords'): void {
+  clearBinSiteField(index: number, field: 'name' | 'coords' | 'capacity'): void {
     this.updateBinSiteField(index, field, '');
   }
 
@@ -301,10 +314,11 @@ export class EditCustomerDialogComponent {
     if (canonical !== row.coords) this.updateBinSiteField(index, 'coords', canonical);
   }
 
-  private _binSitesFromCustomer(customer: Customer): { name: string; coords: string }[] {
+  private _binSitesFromCustomer(customer: Customer): { name: string; coords: string; capacity: string }[] {
     return (customer.binSites ?? []).map(b => ({
       name: b.name ?? '',
-      coords: formatCoordinatePairFull(b.latitude, b.longitude)
+      coords: formatCoordinatePairFull(b.latitude, b.longitude),
+      capacity: b.capacity != null ? formatBinSiteCapacityInput(String(b.capacity)) : ''
     }));
   }
 
@@ -823,8 +837,8 @@ export class EditCustomerDialogComponent {
   private _serializeBinSites(): string {
     return JSON.stringify(
       this.editBinSites()
-        .filter(r => r.name.trim() || r.coords.trim())
-        .map(r => ({ n: r.name.trim(), c: r.coords.trim() }))
+        .filter(r => r.name.trim() || r.coords.trim() || r.capacity.trim())
+        .map(r => ({ n: r.name.trim(), c: r.coords.trim(), cap: parseBinSiteCapacity(r.capacity) }))
     );
   }
 
@@ -1089,7 +1103,7 @@ export class EditCustomerDialogComponent {
       const binSites = this.editBinSites().flatMap(r => {
         const parsed = parseCoordinatePair(r.coords);
         if (!parsed.ok) return [];
-        return [{ name: r.name.trim().slice(0, BIN_SITE_NAME_MAX_LENGTH) || undefined, latitude: parsed.lat, longitude: parsed.lng }];
+        return [{ name: r.name.trim().slice(0, BIN_SITE_NAME_MAX_LENGTH) || undefined, latitude: parsed.lat, longitude: parsed.lng, capacity: parseBinSiteCapacity(r.capacity) ?? undefined }];
       });
 
       // Only save user-added commodities to ProducerDetails — ticket-derived ones are

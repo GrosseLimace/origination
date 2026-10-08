@@ -285,6 +285,17 @@ describe('CustomerProfileComponent — bin site links', () => {
     expect(component.binSitesCollapsible()).toBe(false);
   });
 
+  it('shows each site capacity beside its link, and nothing for a site without one', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [
+        { name: 'North', latitude: 39.1, longitude: -95.1, capacity: 50000 },
+        { name: 'South', latitude: 39.2, longitude: -95.2 },
+      ],
+    }));
+
+    expect(component.binSiteLinks().map(l => l.capacity)).toEqual(['50,000 bu', '']);
+  });
+
   it('collapses two or more sites behind a toggle that starts closed', () => {
     ref.setInput('customer', makeCustomer({
       binSites: [{ latitude: 39.1, longitude: -95.1 }, { latitude: 39.2, longitude: -95.2 }],

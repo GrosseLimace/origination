@@ -120,6 +120,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 Name = x.Name,
                 Latitude = x.Latitude,
                 Longitude = x.Longitude,
+                Capacity = x.Capacity,
                 SortOrder = x.SortOrder
             }).ToList());
 
@@ -328,6 +329,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                     Name = item.Name,
                     Latitude = item.Latitude,
                     Longitude = item.Longitude,
+                    Capacity = item.Capacity,
                     SortOrder = item.SortOrder
                 });
             }
@@ -418,7 +420,8 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 {
                     Name = string.IsNullOrEmpty(name) ? null : name,
                     Latitude = Math.Round(b.Latitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero),
-                    Longitude = Math.Round(b.Longitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero)
+                    Longitude = Math.Round(b.Longitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero),
+                    Capacity = b.Capacity
                 };
             })
             .GroupBy(b => (b.Latitude, b.Longitude))
@@ -535,6 +538,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 Name = b.Name,
                 Latitude = b.Latitude,
                 Longitude = b.Longitude,
+                Capacity = b.Capacity,
                 SortOrder = b.SortOrder
             })
             .ToListAsync(cancellationToken);
