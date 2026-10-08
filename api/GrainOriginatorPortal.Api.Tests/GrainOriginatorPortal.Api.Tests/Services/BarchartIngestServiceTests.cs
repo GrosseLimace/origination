@@ -3,6 +3,7 @@ using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -24,7 +25,15 @@ public class BarchartIngestServiceTests
 
     public BarchartIngestServiceTests()
     {
-        _sut = new BarchartIngestService(_repository, NullLogger<BarchartIngestService>.Instance);
+        _sut = CreateService(applyBidsEnabled: "true");
+    }
+
+    private BarchartIngestService CreateService(string? applyBidsEnabled)
+    {
+        var settings = new Dictionary<string, string?>();
+        if (applyBidsEnabled != null) settings[BarchartIngestService.ApplyBidsEnabledSetting] = applyBidsEnabled;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        return new BarchartIngestService(_repository, config, NullLogger<BarchartIngestService>.Instance);
     }
 
     [Fact]
@@ -160,7 +169,29 @@ public class BarchartIngestServiceTests
         var result = await _sut.ApplyBidsAsync(locationId: 42, instrumentType: "bidCash");
 
         Assert.Equal(12, result.RowsAffected);
+        Assert.True(result.Enabled);
         await _repository.Received(1).ApplyBidsToBidSheetAsync(42, "bidCash", "barchart-feed", Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(null)]      // not configured at all -- the default must be off
+    [InlineData("false")]
+    public async Task ApplyBidsAsync_SwitchedOff_WritesNothingButSucceedsAndAuditsTheSkip(string? setting)
+    {
+        // The pipeline runs apply-bids on schedule everywhere; an environment that is not ready to show fed
+        // bids must answer success, or the integration team is paged nightly for a deliberate choice.
+        var sut = CreateService(setting);
+
+        var result = await sut.ApplyBidsAsync(locationId: null, instrumentType: "bidCash");
+
+        Assert.Equal(0, result.RowsAffected);
+        Assert.False(result.Enabled);
+        await _repository.DidNotReceive().ApplyBidsToBidSheetAsync(
+            Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _repository.Received(1).LogApiCallAsync(
+            Arg.Is<BarchartApiCallAudit>(a => a.Endpoint == "ingest/apply-bids" && a.Success
+                && a.RowsAffected == 0 && a.QueryParams!.Contains("skipped=disabled")),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

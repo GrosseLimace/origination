@@ -18,7 +18,16 @@ namespace GrainOriginatorPortal.Api.Services;
 public class BarchartIngestService : IBarchartIngestService
 {
     private readonly IBarchartIngestRepository _repository;
+    private readonly IConfiguration _config;
     private readonly ILogger<BarchartIngestService> _logger;
+
+    /// <summary>
+    /// Setting that lets apply-bids write to the Bid Sheet. Off unless an environment turns it on, so the
+    /// catalog and quotes can be loaded somewhere ahead of the Bid Sheet that displays them: the
+    /// pipeline runs every step on its normal schedule, and this environment decides when fed bids
+    /// start appearing.
+    /// </summary>
+    public const string ApplyBidsEnabledSetting = "Barchart:ApplyBidsEnabled";
 
     /// <summary>Actor stamped on feed-written rows. Ingest callers are machine identities with no user name.</summary>
     private const string FeedActor = GrainOriginatorPortal.Infrastructure.Abstractions.BarchartFeedDefaults.Actor;
@@ -37,9 +46,11 @@ public class BarchartIngestService : IBarchartIngestService
     /// </summary>
     public const int DefaultMaxDeactivationSharePercent = 25;
 
-    public BarchartIngestService(IBarchartIngestRepository repository, ILogger<BarchartIngestService> logger)
+    public BarchartIngestService(
+        IBarchartIngestRepository repository, IConfiguration config, ILogger<BarchartIngestService> logger)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _config = config ?? throw new ArgumentNullException(nameof(config));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -155,6 +166,25 @@ public class BarchartIngestService : IBarchartIngestService
     {
         var sw = Stopwatch.StartNew();
 
+        // Read per call, not at startup, so the answer always matches the environment's current setting.
+        if (!_config.GetValue<bool>(ApplyBidsEnabledSetting))
+        {
+            sw.Stop();
+
+            // A success, not an error: the pipeline is doing exactly what it should, and failing here would
+            // page the integration team every night for a choice this environment made on purpose. The
+            // audit row is what shows the skip was deliberate.
+            _logger.LogInformation(
+                "BarChart bridge skipped: {Setting} is off in this environment, so no bid cells were written [AUDIT_INGEST_APPLY_BIDS_SKIPPED]",
+                ApplyBidsEnabledSetting);
+
+            await AuditAsync("ingest/apply-bids",
+                $"locationId={locationId?.ToString() ?? "all"};instrumentType={instrumentType ?? "any"};skipped=disabled",
+                200, true, 0, sw, null, cancellationToken);
+
+            return new BarchartApplyBidsResponse { RowsAffected = 0, Enabled = false };
+        }
+
         try
         {
             var rows = await _repository.ApplyBidsToBidSheetAsync(
@@ -169,7 +199,7 @@ public class BarchartIngestService : IBarchartIngestService
                 $"locationId={locationId?.ToString() ?? "all"};instrumentType={instrumentType ?? "any"}",
                 200, true, rows, sw, null, cancellationToken);
 
-            return new BarchartApplyBidsResponse { RowsAffected = rows };
+            return new BarchartApplyBidsResponse { RowsAffected = rows, Enabled = true };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
