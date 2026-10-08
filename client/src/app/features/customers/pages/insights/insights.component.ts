@@ -80,7 +80,7 @@ const CATEGORY_META: Record<InsightCategory, {
     searchPlaceholder: 'Search by producer, code, or ticket #...',
   },
   OrganicStatusChanges: {
-    title: 'Organic Certification — Contracted Producers',
+    title: 'Organic Certification Change — Contracted Producers',
     headerClass: 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800',
     iconClass: 'text-amber-600 dark:text-amber-400',
     titleClass: 'text-amber-900 dark:text-amber-100',
@@ -93,7 +93,7 @@ const CATEGORY_META: Record<InsightCategory, {
   // risk today — we hold no open contract. Giving it amber would put two equally loud cards on the
   // page and teach the desk to skim past both.
   OrganicUncontracted: {
-    title: 'Organic Certification — No Open Contracts',
+    title: 'Organic Certification Change — No Open Contracts',
     headerClass: 'bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700',
     iconClass: 'text-gray-500 dark:text-gray-400',
     titleClass: 'text-gray-900 dark:text-gray-100',

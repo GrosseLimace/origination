@@ -67,6 +67,14 @@ public static class OrganicCertificationStatus
     /// least as serious, and an unfamiliar status USDA invents tomorrow should flag rather than
     /// slip through.
     ///
+    /// 🔑 The Actionable Insights categories this feeds are titled "Organic Certification CHANGE",
+    /// which looks inconsistent with a rule that requires no observed change. It is not. Two facts
+    /// make the change a safe inference even when we did not witness it (Bailey Cozart, 2026-10-08):
+    /// Scoular only enters contracts with certified producers, and the sender filters out operations
+    /// holding no certifications at all — so every producer who reaches us was certified at some
+    /// point. A non-certified status therefore always represents a change; we may simply have met
+    /// them after it happened. Do not "correct" those titles back.
+    ///
     /// Says nothing about contracts. Which of the two Actionable Insight categories a producer
     /// lands in — contracted or uncontracted — is decided by the caller, because only the caller
     /// knows the contract position.
