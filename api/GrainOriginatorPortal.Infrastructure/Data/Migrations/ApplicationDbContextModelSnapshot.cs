@@ -1524,6 +1524,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("BinSitesModifiedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("BinSitesModifiedAt");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")

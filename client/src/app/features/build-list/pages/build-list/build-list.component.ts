@@ -29,7 +29,7 @@ import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
 import { grainOnFarmColorKey, isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup } from '@shared/utils/grain-on-farm';
-import { binSiteNames, notesMentioningBinSites } from '@shared/utils/bin-site-mentions';
+import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -1063,6 +1063,24 @@ export class BuildListComponent {
     if (this.nlqFilterService.isRankingQuery(this.queryText())) {
       return list;
     }
+    // Grain on Farm & Bin Sites prompts (user 2026-10-09): producers with the most recent note naming one
+    // of their bin sites first, then the most recent change to their bin sites or grain on farm, then
+    // by name. The mention notes for the whole result are loaded up front (see _loadBinSiteNotes), so
+    // this order doesn't shuffle as you scroll.
+    if (this.showGrainOnFarmFilters()) {
+      const notesByCustomer = this.binSiteNotesByCustomer();
+      const lastMention = new Map<number, number>();
+      for (const [id, found] of notesByCustomer) {
+        let max = 0;
+        for (const n of found.notes) max = Math.max(max, BuildListComponent.parseNoteTime(n.createdAt));
+        lastMention.set(id, max);
+      }
+      const changed = (c: Customer) => (c.binSitesModifiedAt ? Date.parse(c.binSitesModifiedAt) || 0 : 0);
+      return [...list].sort((a, b) =>
+        (lastMention.get(b.id) ?? 0) - (lastMention.get(a.id) ?? 0)
+        || changed(b) - changed(a)
+        || (a.name || '').localeCompare(b.name || ''));
+    }
     // Storage prompts: surface the producers with the most grain in storage first (sort by total
     // storage bushels desc), matching the inline per-commodity breakdown shown on each result.
     // Alphabetical name is the tiebreaker (e.g. producers with equal / zero storage).
@@ -1939,6 +1957,10 @@ export class BuildListComponent {
   // per batch for those producers' notes containing any of their site names (a server superset the
   // client re-matches exactly).
 
+  /** A bin-mention note's text split into runs, the site names marked (shown in blue). */
+  binSiteRuns(text: string, siteNames: readonly string[]) { return splitByBinSiteNames(text ?? '', siteNames); }
+  readonly binSiteNameClass = BIN_SITE_NAME_CLASS;
+
   /** Bin-site mention notes are on screen: these prompts, unless a notes filter owns the middle column. */
   readonly binNotesActive = computed(() => this.showGrainOnFarmFilters() && !this.noteFilterActive());
 
@@ -1966,57 +1988,63 @@ export class BuildListComponent {
     return map;
   });
 
-  /** Fetches the bin-mention notes for producers in the render window that haven't been fetched. */
+  /**
+   * Fetches the bin-mention notes for EVERY producer in the result that has named bin sites (not just
+   * the rendered rows) — the result is ordered by the latest such note, so it needs them all up front.
+   * The ids and site names travel in the query string, and many sites could pass the 2,048-character
+   * limit IIS applies by default (a rejected request would read as "no notes"), so the work is split
+   * into requests under BIN_NOTES_QUERY_BUDGET, sent together; the rows re-order once when they land.
+   * A single producer whose names alone pass the budget is fetched by id only (the client still matches).
+   */
   private _loadBinSiteNotes(): void {
     if (!this.binNotesActive() || this._binNotesFetchInFlight) return;
-    const ids: number[] = [];
-    const keys: string[] = [];
-    const names = new Set<string>();
-    // The ids and site names travel in the query string, and a page of producers with many sites
-    // could pass the 2,048-character limit IIS applies by default — a rejected request would
-    // look like "no notes". So each request takes producers only while its query stays under
-    // BIN_NOTES_QUERY_BUDGET; the next one is picked up when it returns.
-    let queryLength = 0;
-    for (const c of this.renderedCustomers()) {
+    type Chunk = { ids: number[]; keys: string[]; names: Set<string>; length: number };
+    const chunks: Chunk[] = [];
+    let chunk: Chunk = { ids: [], keys: [], names: new Set(), length: 0 };
+    for (const c of this.filteredCustomers()) {
       const siteNames = binSiteNames(c.binSites);
       if (siteNames.length === 0) continue;
       const key = `${c.id}:${siteNames.join('|').toLowerCase()}`;
       if (this._binNoteFetchedKeys.has(key)) continue;
-      const fresh = siteNames.filter(n => !names.has(n));
-      const cost = String(c.id).length + 3 + fresh.reduce((sum, n) => sum + encodeURIComponent(n).length + 3, 0);
-      if (ids.length > 0 && queryLength + cost > BuildListComponent.BIN_NOTES_QUERY_BUDGET) break;
-      queryLength += cost;
-      ids.push(c.id);
-      keys.push(key);
-      fresh.forEach(n => names.add(n));
+      const cost = (names: Set<string>) => String(c.id).length + 3
+        + siteNames.filter(n => !names.has(n)).reduce((sum, n) => sum + encodeURIComponent(n).length + 3, 0);
+      if (chunk.ids.length > 0 && chunk.length + cost(chunk.names) > BuildListComponent.BIN_NOTES_QUERY_BUDGET) {
+        chunks.push(chunk);
+        chunk = { ids: [], keys: [], names: new Set(), length: 0 };
+      }
+      chunk.length += cost(chunk.names);
+      chunk.ids.push(c.id);
+      chunk.keys.push(key);
+      siteNames.forEach(n => chunk.names.add(n));
     }
-    // One producer whose site names alone pass the budget goes by id only: all their notes come
-    // back and the client match still picks out the ones naming a site.
-    const contentAny = queryLength > BuildListComponent.BIN_NOTES_QUERY_BUDGET ? undefined : [...names];
-    if (ids.length === 0) return;
+    if (chunk.ids.length > 0) chunks.push(chunk);
+    if (chunks.length === 0) return;
+
     this._binNotesFetchInFlight = true;
-    const done = () => {
+    const requests = chunks.map(ch => this.apiService.getNotes(undefined, {
+      customerIds: ch.ids,
+      contentAny: ch.length > BuildListComponent.BIN_NOTES_QUERY_BUDGET ? undefined : [...ch.names],
+    }).pipe(catchError(() => of([] as Note[]))));
+    forkJoin(requests).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(results => {
       this._binNotesFetchInFlight = false;
-      keys.forEach(k => this._binNoteFetchedKeys.add(k)); // also on error: don't retry-loop a failed set
-    };
-    this.apiService.getNotes(undefined, { customerIds: ids, contentAny })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (data) => {
-          done();
-          const seen = new Set(this._binNotes().map(n => n.id));
-          const fresh = (data ?? []).filter(n => !seen.has(n.id));
-          if (fresh.length) this._binNotes.set([...this._binNotes(), ...fresh]);
-          this._loadBinSiteNotes(); // producers that rendered while this was in flight
-        },
-        error: () => done(),
-      });
+      // Also on a failed piece: don't retry-loop it; the rows just show no mention notes.
+      chunks.forEach(ch => ch.keys.forEach(k => this._binNoteFetchedKeys.add(k)));
+      const seen = new Set(this._binNotes().map(n => n.id));
+      const fresh: Note[] = [];
+      for (const n of results.flat()) {
+        if (seen.has(n.id)) continue;
+        seen.add(n.id);
+        fresh.push(n);
+      }
+      if (fresh.length) this._binNotes.set([...this._binNotes(), ...fresh]);
+      this._loadBinSiteNotes(); // anything that changed while these were in flight
+    });
   }
 
-  /** Load bin-mention notes as the render window grows (new results or scrolling). */
+  /** Load bin-mention notes whenever the result (or the prompt) changes. */
   private readonly _binNotesLoader = effect(() => {
     this.binNotesActive();
-    this.renderedCustomers();
+    this.filteredCustomers();
     untracked(() => this._loadBinSiteNotes());
   });
   readonly showGeneralFilters = computed(() => {
@@ -2404,6 +2432,7 @@ export class BuildListComponent {
         return {
           ...customer,
           totalAcres: pd.totalAcres ?? customer.totalAcres,
+          binSitesModifiedAt: pd.binSitesModifiedAt ?? customer.binSitesModifiedAt,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,

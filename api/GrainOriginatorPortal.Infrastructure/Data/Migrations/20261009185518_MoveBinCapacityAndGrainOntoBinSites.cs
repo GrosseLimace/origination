@@ -13,7 +13,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
     ///     sorted after any existing sites, no coordinates;
     ///   • every grain row of theirs not tied to a site is tied to that new site. The new site holds no
     ///     grain yet, so UQ_ProducerGrainOnFarm_Customer_Site_Commodity cannot collide.
-    /// Runs before 20261009185642_DropProducerDetailsBinCapacity in the same deploy, which removes the
+    /// Runs before 20261009201700_DropProducerDetailsBinCapacity in the same deploy, which removes the
     /// column it reads. Set-based and one statement batch; a producer with nothing to move is untouched.
     /// Down is a no-op: the created sites are ordinary sites by then and may have been edited.
     /// </summary>

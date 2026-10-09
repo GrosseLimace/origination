@@ -74,8 +74,9 @@
 --   (FK to ProducerBinSite); UQ_ProducerGrainOnFarm_Customer_Commodity became
 --   UQ_ProducerGrainOnFarm_Customer_Site_Commodity (CustomerId, BinSiteId, CommodityCode).
 --   Updated 2026-10-09: 20261009185518_MoveBinCapacityAndGrainOntoBinSites (data only) put each producer's
---   BinCapacity and unlinked grain onto a new "Bin 1" site; 20261009185642_DropProducerDetailsBinCapacity
+--   BinCapacity and unlinked grain onto a new "Bin 1" site; 20261009201700_DropProducerDetailsBinCapacity
 --   then dropped ProducerDetails.BinCapacity.
+--   20261009201625_AddBinSitesModifiedAt added ProducerDetails.BinSitesModifiedAt datetime2 NULL (backfilled).
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -174,7 +175,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (381)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (382)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -460,6 +461,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerContact', 'SortOrder',  'int',           0),
 -- ProducerDetails
 ('dbo', 'ProducerDetails', 'Id',             'int',           0),
+('dbo', 'ProducerDetails', 'BinSitesModifiedAt', 'datetime2', 1),
 ('dbo', 'ProducerDetails', 'CreatedAt',      'datetime2',     0),
 ('dbo', 'ProducerDetails', 'CreatedBy',      'nvarchar(255)', 0),
 ('dbo', 'ProducerDetails', 'CustomerId',     'bigint',        0),
@@ -650,7 +652,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (69)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (70)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -723,7 +725,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009175647_LinkGrainOnFarmToBinSites'),
 ('20261009185518_MoveBinCapacityAndGrainOntoBinSites'),
 ('20261009185600_CombineGrainOnFarmAndBinSitePrompts'),
-('20261009185642_DropProducerDetailsBinCapacity');
+('20261009201625_AddBinSitesModifiedAt'),
+('20261009201700_DropProducerDetailsBinCapacity');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

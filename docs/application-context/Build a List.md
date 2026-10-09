@@ -151,8 +151,13 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
   show until "Show N more bin sites" (Show fewer). Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
   **Notes that mention a bin site** (2026-10-09): the row's middle column shows the producer's notes that name
   one of their saved bin sites — whole name, any case, not inside a longer word or number ("Bin 1" ≠ "bin 10")
-  — in the same note stack note prompts use (pinned first, then newest; "+N earlier notes", See more), pulled in
-  silently: no highlight, no label. Notes are added as usual. A small batch loader fetches, per
+  — in the same note stack note prompts use (pinned first, then newest; "+N earlier notes", See more), the site
+  names in blue text (no highlight box, no label; same as the producer Notes panel, `BIN_SITE_NAME_CLASS`).
+  **Order** on these prompts: latest note naming a bin site first, then the latest change to the producer's bin
+  sites or grain on farm (`ProducerDetails.BinSitesModifiedAt`, stamped only when a save actually changes them),
+  then name. Ranking prompts ("Top by grain on farm") keep their ranked order. The mention notes for the WHOLE
+  result load up front (budgeted parallel requests) so the order is right before scrolling. Only the producer
+  name opens the producer (selectable; a drag doesn't navigate); no last-contact/commodities column; full name. Notes are added as usual. A small batch loader fetches, per
   render batch, those producers' notes containing any site name (`contentAny` + `customerIds`, a superset the
   client re-matches with `notesMentioningBinSites`, `shared/utils/bin-site-mentions.ts`). When a notes filter
   is active its matches own the middle column instead.

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20261009185642_DropProducerDetailsBinCapacity")]
+    [Migration("20261009201700_DropProducerDetailsBinCapacity")]
     partial class DropProducerDetailsBinCapacity
     {
         /// <inheritdoc />
@@ -1526,6 +1526,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnName("Id");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("BinSitesModifiedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("BinSitesModifiedAt");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()

@@ -13,6 +13,7 @@ public static class ProducerDetailsMappings
         ScoularId = p.ScoularId,
         CustomerName = p.CustomerName,
         TotalAcres = p.TotalAcres,
+        BinSitesModifiedAt = p.BinSitesModifiedAt,
         PrimaryContact = p.PrimaryContact,
         PrimaryPhone = p.PrimaryPhone,
         Commodities = p.Commodities,

@@ -25,6 +25,7 @@ export interface Customer {
   extendedStateProvince?: string;
   extendedCountry?: string;
   totalAcres: number;
+  binSitesModifiedAt?: string | null; // when bin sites / grain on farm last changed (producer details)
   linkedProducerIds: string[];
   eSignEnabled: boolean;
   achEnabled: boolean;             // base.Customer.PaymentMethod == 'H'

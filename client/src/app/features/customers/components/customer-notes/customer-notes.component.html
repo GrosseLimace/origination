@@ -14,7 +14,7 @@
               #noteBackdrop
               aria-hidden="true"
               class="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-            >@for (seg of composeSegments(); track $index) {<span [class]="seg.kind === 'mention' ? 'text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'bin' ? 'rounded-sm bg-amber-100 text-amber-900 dark:bg-amber-500/25 dark:text-amber-100' : ''">{{ seg.text }}</span>}</div>
+            >@for (seg of composeSegments(); track $index) {<span [class]="seg.kind === 'mention' ? 'text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'bin' ? 'text-blue-600 dark:text-blue-400' : ''">{{ seg.text }}</span>}</div>
 
             <textarea
               #noteTextarea
@@ -229,7 +229,7 @@
               @if (editingNoteId() !== note.id) {
                 <p class="text-[length:var(--text-fluid-sm)] text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-2"
                    appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
-                   [class.line-clamp-4]="!isNoteExpanded(note.id)">@for (seg of noteViewSegments(note); track $index) {<span [class]="seg.kind === 'mention' ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'search' ? 'rounded bg-green-100 px-0.5 text-green-800 dark:bg-green-500/30 dark:text-green-200' : seg.kind === 'bin' ? 'rounded bg-amber-100 px-0.5 text-amber-900 dark:bg-amber-500/25 dark:text-amber-100' : ''" [attr.title]="seg.kind === 'bin' ? binSiteTitle : null">{{ seg.text }}</span>}</p>
+                   [class.line-clamp-4]="!isNoteExpanded(note.id)">@for (seg of noteViewSegments(note); track $index) {<span [class]="seg.kind === 'mention' ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'search' ? 'rounded bg-green-100 px-0.5 text-green-800 dark:bg-green-500/30 dark:text-green-200' : seg.kind === 'bin' ? binSiteNameClass : ''" [attr.title]="seg.kind === 'bin' ? binSiteTitle : null">{{ seg.text }}</span>}</p>
                 @if (isNoteOverflowing(note.id) || isNoteExpanded(note.id)) {
                   <button
                     (click)="toggleNoteExpand(note.id)"

@@ -247,4 +247,74 @@ public class ProducerGrainOnFarmSiteLinkTests
         Assert.Empty(db.ProducerGrainOnFarm.AsNoTracking());
         Assert.Empty(db.ProducerBinSites.AsNoTracking());
     }
+
+    // ===== BinSitesModifiedAt (Build a List orders by it) =====
+
+    private static readonly DateTime LongAgo = new(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    private static async Task<DateTime?> StampAsync(ApplicationDbContext db) =>
+        (await db.ProducerDetails.AsNoTracking().SingleAsync(p => p.CustomerId == 100)).BinSitesModifiedAt;
+
+    private static async Task BackdateAsync(ApplicationDbContext db)
+    {
+        var pd = await db.ProducerDetails.SingleAsync(p => p.CustomerId == 100);
+        pd.BinSitesModifiedAt = LongAgo;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_FirstSitesAndGrain_StampBinSitesModifiedAt()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        var saved = await repo.UpsertAsync(Args([Site(North, "North Bins")], [Grain("YC", North)]), "tuser", CancellationToken.None);
+
+        Assert.NotNull(saved.BinSitesModifiedAt);
+        Assert.NotNull(await StampAsync(db));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_SameSitesAndGrain_LeavesTheStampAlone()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+        await repo.UpsertAsync(Args([Site(North, "North Bins")], [Grain("YC", North, 30_000m)]), "tuser", CancellationToken.None);
+        await BackdateAsync(db);
+
+        // Same values (30000 vs 30000.00 read back), and a save that leaves sites out (null) entirely.
+        await repo.UpsertAsync(Args([Site(North, "North Bins")], [Grain("YC", North, 30_000.00m)]), "tuser", CancellationToken.None);
+        db.ChangeTracker.Clear();
+        await repo.UpsertAsync(Args(null, [Grain("YC", North, 30_000m)]), "tuser", CancellationToken.None);
+
+        Assert.Equal(LongAgo, await StampAsync(db));
+    }
+
+    // -------------------------------------------------------------------------
+    [Theory]
+    [InlineData("bushels")]
+    [InlineData("rename")]
+    [InlineData("add site")]
+    [InlineData("remove grain")]
+    public async Task Upsert_AChangeToSitesOrGrain_MovesTheStamp(string change)
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+        await repo.UpsertAsync(Args([Site(North, "North Bins")], [Grain("YC", North, 30_000m)]), "tuser", CancellationToken.None);
+        await BackdateAsync(db);
+
+        var args = change switch
+        {
+            "bushels" => Args([Site(North, "North Bins")], [Grain("YC", North, 31_000m)]),
+            "rename" => Args([Site(North, "North Quarter")], [Grain("YC", North, 30_000m)]),
+            "add site" => Args([Site(North, "North Bins"), Site(Home, "Home Place")], [Grain("YC", North, 30_000m)]),
+            _ => Args([Site(North, "North Bins")], []),
+        };
+        await repo.UpsertAsync(args, "tuser", CancellationToken.None);
+
+        Assert.True(await StampAsync(db) > LongAgo);
+    }
 }

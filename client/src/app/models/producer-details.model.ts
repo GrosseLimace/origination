@@ -4,6 +4,8 @@ export interface ProducerDetails {
   scoularId?: string;
   customerName: string;
   totalAcres?: number;
+  /** When the bin sites or grain on farm last actually changed (UTC ISO); null if never. */
+  binSitesModifiedAt?: string | null;
   primaryContact?: string; // derived server-side from the primary contact row (kept for compat)
   primaryPhone?: string;   // derived server-side from the primary contact row (kept for compat)
   commodities?: string; // Comma-separated list (e.g. "Corn,Soybeans,Wheat")

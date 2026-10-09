@@ -322,6 +322,7 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.CustomerName);
             entity.Ignore(e => e.LinkedProducerIds);
             entity.Property(e => e.TotalAcres).HasColumnName("TotalAcres").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.BinSitesModifiedAt).HasColumnName("BinSitesModifiedAt").IsRequired(false);
             entity.Property(e => e.PrimaryContact).HasColumnName("PrimaryContact").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.PrimaryPhone).HasColumnName("PrimaryPhone").HasMaxLength(50).IsRequired(false);
             // Commodities is composed server-side from dbo.CustomerCommodity on read

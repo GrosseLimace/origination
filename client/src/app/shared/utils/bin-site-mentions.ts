@@ -9,6 +9,10 @@
  */
 import { Note, ProducerBinSiteItem } from '@models';
 
+/** How a bin-site name looks inside note text — blue text, no highlight box (user 2026-10-09), the same
+ *  in the producer Notes panel and on Build a List. Green stays reserved for @mentions. */
+export const BIN_SITE_NAME_CLASS = 'font-medium text-blue-600 dark:text-blue-400';
+
 /** The distinct, trimmed site names worth matching, in the producer's site order. */
 export function binSiteNames(sites: readonly ProducerBinSiteItem[] | null | undefined): string[] {
   const seen = new Set<string>();

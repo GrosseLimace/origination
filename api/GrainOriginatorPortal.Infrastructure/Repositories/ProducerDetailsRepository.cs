@@ -310,6 +310,10 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             .Where(b => b.CustomerId == customerId)
             .ToListAsync(cancellationToken);
         var siteByKey = existingSites.ToDictionary(b => b.SiteKey);
+        // Snapshot the sites as they are BEFORE this save (the loop below edits these entities in place)
+        // for the BinSitesModifiedAt comparison further down.
+        var siteKeyById = existingSites.ToDictionary(b => b.Id, b => b.SiteKey);
+        var sitesBefore = SitesFingerprint(existingSites.Select(b => (b.SiteKey, b.Name, b.Latitude, b.Longitude, b.Capacity, b.SortOrder)));
         if (binSiteItems != null)
         {
             // A key already used by ANOTHER producer's site (a copied payload, a buggy client) would
@@ -367,6 +371,23 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             .GroupBy(x => (x.Site, Code: x.Row.CommodityCode.Trim().ToUpperInvariant()))
             .Select(g => g.Last())
             .ToList();
+        // BinSitesModifiedAt moves only when this save actually changes the producer's bin sites or grain
+        // on farm (Build a List orders its Grain on Farm & Bin Sites prompts by it) — an acres or contact
+        // edit that re-sends the same sites and grain leaves it alone.
+        var grainBefore = GrainFingerprint(oldGrain.Select(g => (
+            g.BinSiteId is { } id && siteKeyById.TryGetValue(id, out var k) ? k : (Guid?)null,
+            g.CommodityCode, g.BushelsOnHand, g.BushelsSold, g.TargetBushels, g.LastBid, g.Grade)));
+        var sitesAfter = binSiteItems == null
+            ? sitesBefore
+            : SitesFingerprint(binSiteItems.Select(b => (b.SiteKey, b.Name, b.Latitude, b.Longitude, b.Capacity, b.SortOrder)));
+        var grainAfter = GrainFingerprint(grainItems.Select(x => (
+            x.Site?.SiteKey, x.Row.CommodityCode.Trim(), x.Row.BushelsOnHand, x.Row.BushelsSold, x.Row.TargetBushels,
+            x.Row.LastBid, string.IsNullOrWhiteSpace(x.Row.Grade) ? null : x.Row.Grade.Trim())));
+        if (sitesAfter != sitesBefore || grainAfter != grainBefore)
+        {
+            saved.BinSitesModifiedAt = DateTime.UtcNow;
+        }
+
         foreach (var (item, site) in grainItems)
         {
             _appContext.ProducerGrainOnFarm.Add(new ProducerGrainOnFarm
@@ -458,6 +479,25 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
     /// would merge every site that has none. Range and required checks are the request model's job;
     /// this only normalizes. SortOrder is the post-filter position.
     /// </summary>
+    /// <summary>Order-independent text form of a producer's bin sites, for "did this save change them?".
+    /// Decimals are normalized (1.50 == 1.5) so a value read back from the database matches the same value
+    /// sent by the client.</summary>
+    private static string SitesFingerprint(IEnumerable<(Guid Key, string? Name, decimal? Lat, decimal? Lng, decimal? Capacity, int Sort)> sites) =>
+        string.Join("\n", sites
+            .Select(s => string.Join("|", s.Key, s.Name ?? "", Norm(s.Lat), Norm(s.Lng), Norm(s.Capacity), s.Sort))
+            .Order(StringComparer.Ordinal));
+
+    /// <summary>Same as <see cref="SitesFingerprint"/> for grain-on-farm rows (site key, code, values).</summary>
+    private static string GrainFingerprint(IEnumerable<(Guid? Site, string Code, decimal? OnHand, decimal? Sold, decimal? Target, decimal? LastBid, string? Grade)> rows) =>
+        string.Join("\n", rows
+            .Select(r => string.Join("|", r.Site?.ToString() ?? "", r.Code.Trim().ToUpperInvariant(), Norm(r.OnHand), Norm(r.Sold),
+                Norm(r.Target), Norm(r.LastBid), r.Grade ?? ""))
+            .Order(StringComparer.Ordinal));
+
+    /// <summary>A decimal without trailing zeros (dividing by 1.000…0 drops the scale), or "" for null.</summary>
+    private static string Norm(decimal? d) =>
+        d.HasValue ? (d.Value / 1.0000000000000000000000000000m).ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+
     private static List<ProducerBinSiteEntry> NormalizeBinSites(IReadOnlyList<ProducerBinSiteEntry> binSites,
         Dictionary<Guid, Guid> mergedKeys)
     {

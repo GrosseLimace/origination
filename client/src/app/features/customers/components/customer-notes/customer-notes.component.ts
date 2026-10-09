@@ -10,7 +10,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { TeamsDirectoryService, GraphTeamsChannel } from '@core/services/teams-directory.service';
 import { Customer, Note, NoteMention, MentionCatalog } from '@models';
 import { environment } from '@env/environment';
-import { binSiteNames, splitByBinSiteNames } from '@shared/utils/bin-site-mentions';
+import { binSiteNames, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
 
 /** A single selectable row in the "@" mention dropdown. */
 interface MentionOption {
@@ -330,7 +330,8 @@ export class CustomerNotesComponent {
     return out;
   }
 
-  /** Hover text on a highlighted bin-site name. */
+  readonly binSiteNameClass = BIN_SITE_NAME_CLASS;
+  /** Hover text on a bin-site name. */
   readonly binSiteTitle = 'Bin site — this note shows with the producer on Build a List (Grain on Farm & Bin Sites)';
 
   noteViewSegments(note: Note): { text: string; kind: 'plain' | 'mention' | 'search' | 'bin' }[] {

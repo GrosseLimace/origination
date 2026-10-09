@@ -1473,7 +1473,7 @@
                    highlight = the active keyword, showVia = name the linked producer a note came from) and by
                    the Grain on Farm & Bin Sites prompts (notes mentioning a bin site, highlight = the site
                    names, label = which sites). -->
-              <ng-template #noteStack let-notes let-customerId="customerId" let-highlight="highlight" let-showVia="showVia" let-label="label">
+              <ng-template #noteStack let-notes let-customerId="customerId" let-highlight="highlight" let-showVia="showVia" let-label="label" let-binNames="binNames">
                 @let revealed = getNoteExpandCount(customerId);
                 @let visibleNotes = notes.slice(0, 1 + revealed);
                 @let totalEarlier = notes.length - 1;
@@ -1500,10 +1500,18 @@
                           }
                         </div>
                         <div class="relative mt-0.5">
-                          <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
-                             [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
-                             class="text-gray-700 dark:text-gray-300 break-words"
-                             [innerHTML]="note.content | highlight: highlight"></p>
+                          @if (binNames?.length) {
+                            <!-- Bin-mention notes: the site names in blue text (same as the producer Notes panel),
+                                 rendered as plain text runs — no HTML. -->
+                            <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
+                               [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
+                               class="text-gray-700 dark:text-gray-300 break-words whitespace-pre-wrap">@for (run of binSiteRuns(note.content, binNames); track $index) {<span [class]="run.bin ? binSiteNameClass : ''">{{ run.text }}</span>}</p>
+                          } @else {
+                            <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
+                               [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
+                               class="text-gray-700 dark:text-gray-300 break-words"
+                               [innerHTML]="note.content | highlight: highlight"></p>
+                          }
                           @if (isNoteOverflowing(note.id) && !isNoteTextExpanded(note.id)) {
                             <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
                                     class="absolute bottom-0 right-0 flex items-center pl-10 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none bg-gradient-to-r from-transparent via-white to-white group-hover/card:via-gray-50 group-hover/card:to-gray-50 dark:via-gray-800 dark:to-gray-800 dark:group-hover/card:via-gray-700 dark:group-hover/card:to-gray-700">
@@ -1703,7 +1711,7 @@
                           } @else {
                             @let siteNotes = binSiteNotesByCustomer().get(customer.id);
                             @if (siteNotes) {
-                              <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: siteNotes.notes, customerId: customer.id, highlight: null, showVia: false, label: null }" />
+                              <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: siteNotes.notes, customerId: customer.id, highlight: null, showVia: false, label: null, binNames: siteNotes.sites }" />
                             }
                           }
                         </div>

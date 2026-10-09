@@ -37,6 +37,10 @@ public class ProducerDetails
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }
     public DateTime? ModifiedAt { get; set; }
+    /// <summary>When this producer's bin sites or grain on farm last actually changed (added, edited or
+    /// removed) — set by the repository only when a save changes them, unlike ModifiedAt, which any
+    /// producer-details edit moves. Build a List orders the Grain on Farm &amp; Bin Sites prompts by it.</summary>
+    public DateTime? BinSitesModifiedAt { get; set; }
 
     // Navigation property — FK to dbo.Customer. Populated via Include() so the
     // service layer can copy CustomerName / ScoularId onto the DTO without those
