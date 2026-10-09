@@ -249,10 +249,15 @@
                column — its rows (name · phone · email, full address) are the longest lines and
                shouldn't wrap onto a second row. Sized off the profile column, not the
                viewport: three columns only once there is room for them. -->
-          <div class="grid grid-cols-1 @md/profile:grid-cols-2 @lg/profile:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] @4xl/profile:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-4 @4xl/profile:gap-4 mb-4">
-            <!-- Contact -->
+          <!-- From @3xl (768px) the columns are Contact and Locations 1 : Farm Details 1.6 : Harvest Contract
+               Pace at its own width (user 2026-10-09), so the Grain on Farm table fits under its toggle in
+               Farm Details — measured in headless Edge: even 7-digit totals fit from 768px up. Below that
+               (a ~600px laptop column) no split leaves room for six columns, so the old split stays and the
+               table opens full width under the three columns instead (#grain-on-farm-table). -->
+          <div class="grid grid-cols-1 @md/profile:grid-cols-2 @lg/profile:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] @3xl/profile:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto] gap-x-3 gap-y-4 @4xl/profile:gap-4 mb-4">
+            <!-- Contact and Locations: people and numbers, the address, then the bin sites -->
             <div>
-              <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contact</h3>
+              <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contact and Locations</h3>
               <div class="space-y-2 text-sm @4xl/profile:text-base">
                 <!-- User-entered contacts, primary first (starred). The pulled-in ODS phone/email stay below. -->
                 @for (contact of getContacts(); track $index) {
@@ -407,16 +412,17 @@
                     <span>No commodities</span>
                   }
                 </div>
-                <!-- Grain on Farm — last in Farm Details, under Commodities. Total bushels on hand; click
-                     to open the breakdown, which shows as a full-width row under the three columns
-                     (#grain-on-farm-table). Values are entered in the Edit Producer dialog. -->
+                <!-- Grain on Farm — last in Farm Details, under Commodities. Total bushels on hand; click to
+                     open the breakdown right under it (#grain-on-farm-inline) — or, below @3xl where it can't
+                     fit, as a full-width row under the three columns (#grain-on-farm-table). Values are
+                     entered in the Edit Producer dialog. -->
                 <div>
                   <div class="flex w-fit items-center gap-2 -ml-1 px-1 py-0.5 rounded-md text-gray-600 dark:text-gray-400 transition-colors"
                        [class.cursor-pointer]="grainOnFarmRows().length > 0"
                        [class.select-none]="grainOnFarmRows().length > 0"
                        [class.hover:bg-gray-100]="grainOnFarmRows().length > 0"
                        [class.dark:hover:bg-gray-800]="grainOnFarmRows().length > 0"
-                       (click)="toggleGrainOnFarm()" aria-controls="grain-on-farm-table"
+                       (click)="toggleGrainOnFarm()" aria-controls="grain-on-farm-inline grain-on-farm-table"
                        [attr.aria-expanded]="grainOnFarmRows().length > 0 ? showGrainOnFarm() : null"
                        [title]="grainOnFarmRows().length > 0 ? (showGrainOnFarm() ? 'Hide breakdown' : 'Show breakdown') : ''">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -429,6 +435,11 @@
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 text-gray-400 transition-transform" [class.rotate-90]="showGrainOnFarm()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                     }
                   </div>
+                  @if (showGrainOnFarm() && grainOnFarmRows().length > 0) {
+                    <div id="grain-on-farm-inline" class="hidden @3xl/profile:block mt-1.5 max-w-full">
+                      <ng-container *ngTemplateOutlet="grainOnFarmTable" />
+                    </div>
+                  }
                 </div>
               </div>
             </div>
@@ -454,50 +465,53 @@
             </div>
           </div>
 
-          <!-- Grain on Farm, expanded: a full-width row under Contact | Farm Details | Harvest Contract Pace
-               (user 2026-10-09). Six columns didn't fit in the Farm Details third of the card on most
-               screens and ran into the pace box. Opened and closed only by the "N bu on farm" line in Farm
-               Details. Crop | Total | Sold | Grade | Target | Last Bid, grouped by the bin site the grain is
-               stored at: the site name is a line of its own above its crops, and rows saved before grain was
-               tied to sites come last under "Not tied to a bin site" (no heading when that is all there is).
-               w-auto hugs the content; values are centered under their headers and never wrap; Grade is free
-               text, so it is the one column capped and ellipsized (full text on hover). Blank values show a
-               dash; Target and Last Bid can be negative (basis) and show as "-$0.35". -->
-          @if (showGrainOnFarm() && grainOnFarmRows().length > 0) {
-            <div id="grain-on-farm-table" class="mb-4">
-              <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Grain on Farm</h3>
-              <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
-                <thead>
-                  <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                    <th scope="col" class="py-1 pr-4 @4xl/profile:pr-6 font-medium text-left">Crop</th>
-                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Total bushels on farm">Total</th>
-                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Bushels sold">Sold</th>
-                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center">Grade</th>
-                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Target price ($/bu)">Target</th>
-                    <th scope="col" class="py-1 pl-2 @4xl/profile:pl-3 font-medium text-center" title="Last bid ($/bu)">Last Bid</th>
-                  </tr>
-                </thead>
-                <tbody class="text-gray-700 dark:text-gray-300">
-                  <!-- $index, not the code: the same crop can be at two sites. -->
-                  @for (grp of grainOnFarmGroups(); track $index) {
-                    @if (grp.label) {
-                      <tr>
-                        <th scope="rowgroup" colspan="6" class="pt-1.5 pb-0.5 text-left text-[11px] @4xl/profile:text-xs font-semibold text-gray-600 dark:text-gray-300">{{ grp.label }}</th>
-                      </tr>
-                    }
-                    @for (g of grp.rows; track $index) {
-                      <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
-                        <td class="py-1 pr-4 @4xl/profile:pr-6 text-left whitespace-nowrap" [title]="grainChipTitle(g.commodityCode)">{{ g.commodityCode }}</td>
-                        <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
-                        <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
-                        <td class="py-1 px-2 @4xl/profile:px-3 text-center"><span class="inline-block max-w-[12rem] truncate align-bottom" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
-                        <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
-                        <td class="py-1 pl-2 @4xl/profile:pl-3 text-center whitespace-nowrap">{{ g.lastBid != null ? (g.lastBid | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
-                      </tr>
-                    }
+          <!-- The Grain on Farm table, shared by its two places (see the grid comment above): Crop | Total |
+               Sold | Grade | Target | Last Bid, grouped by the bin site the grain is stored at — the site
+               name is a line of its own above its crops; rows saved before grain was tied to sites come last
+               under "Not tied to a bin site" (no heading when that is all there is). w-auto hugs the content;
+               values are centered under their headers and never wrap; Grade is free text, so it is the one
+               column capped and ellipsized (full text on hover). Blank values show a dash; Target and Last
+               Bid can be negative (basis) and show as "-$0.35". -->
+          <ng-template #grainOnFarmTable>
+            <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
+              <thead>
+                <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                  <th scope="col" class="py-1 pr-2 @4xl/profile:pr-3 font-medium text-left">Crop</th>
+                  <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Total bushels on farm">Total</th>
+                  <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Bushels sold">Sold</th>
+                  <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center">Grade</th>
+                  <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Target price ($/bu)">Target</th>
+                  <th scope="col" class="py-1 pl-1 @4xl/profile:pl-2 font-medium text-center" title="Last bid ($/bu)">Last Bid</th>
+                </tr>
+              </thead>
+              <tbody class="text-gray-700 dark:text-gray-300">
+                <!-- $index, not the code: the same crop can be at two sites. -->
+                @for (grp of grainOnFarmGroups(); track $index) {
+                  @if (grp.label) {
+                    <tr>
+                      <th scope="rowgroup" colspan="6" class="pt-1.5 pb-0.5 text-left text-[11px] @4xl/profile:text-xs font-semibold text-gray-600 dark:text-gray-300">{{ grp.label }}</th>
+                    </tr>
                   }
-                </tbody>
-              </table>
+                  @for (g of grp.rows; track $index) {
+                    <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
+                      <td class="py-1 pr-2 @4xl/profile:pr-3 text-left whitespace-nowrap" [title]="grainChipTitle(g.commodityCode)">{{ g.commodityCode }}</td>
+                      <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
+                      <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
+                      <td class="py-1 px-1 @4xl/profile:px-2 text-center"><span class="inline-block max-w-[6rem] truncate align-bottom" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
+                      <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
+                      <td class="py-1 pl-1 @4xl/profile:pl-2 text-center whitespace-nowrap">{{ g.lastBid != null ? (g.lastBid | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
+                    </tr>
+                  }
+                }
+              </tbody>
+            </table>
+          </ng-template>
+
+          <!-- Below @3xl the table opens here, full width under the three columns. -->
+          @if (showGrainOnFarm() && grainOnFarmRows().length > 0) {
+            <div id="grain-on-farm-table" class="mb-4 @3xl/profile:hidden">
+              <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Grain on Farm</h3>
+              <ng-container *ngTemplateOutlet="grainOnFarmTable" />
             </div>
           }
 
