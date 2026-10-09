@@ -96,6 +96,9 @@ export class CustomerProfileComponent {
     (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
   /** Whether the per-commodity grain-on-farm breakdown is expanded in the profile header. */
   showGrainOnFarm = signal(false);
+  /** The breakdown is on screen: expanded and something to show. The template also widens the grid
+   *  for it (Contact spans both rows while the table spans Farm Details + Harvest Contract Pace). */
+  readonly grainOnFarmOpen = computed(() => this.showGrainOnFarm() && this.grainOnFarmRows().length > 0);
   /** Expand/collapse the breakdown — only when there's something to show. (Editing the values
    *  lives in the Edit Producer dialog; this is a read-only summary.) */
   toggleGrainOnFarm(): void {
