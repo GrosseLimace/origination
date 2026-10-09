@@ -16,6 +16,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements — and, since 2026-09-14, may post the note to its Teams channel instead | Medium | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-08-11 (amended 2026-09-14) | 2027-08-11 |
 | AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-09-01 | 2027-09-01 |
 | AR-09 | The caller's UPN (an email-shaped identifier) is written into the structured log scope of every request | Low | CWE-532 | Accepted | 2026-09-21 | 2027-09-21 |
+| AR-10 | Every Super Users member sees whole-organisation usage data and the full manager roster on the Usage Dashboard (the per-caller ViewAll scoping was retired) | Medium | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-10-09 | 2027-10-09 |
 
 ---
 
@@ -1410,6 +1411,63 @@ email-shaped value can be suppressed independently.
 Dashboard pilot audit (PR #613). Not routed for IT Security countersignature: unlike AR-01/02/08
 this is a data-classification choice about our own employees' identifiers rather than an
 object-level authorization gap — raise it with AR-01/02/08 if Security would rather rule on it.
+
+---
+
+## AR-10 — Every Super Users member sees whole-organisation usage data and the manager roster
+
+**Finding:** Until 2026-10-09 the Usage Dashboard answered two questions separately: "may you open
+it" (the `Admin` app role, granted by the *Origination App {Env} Super Users* group) and "how much of
+it do you see" (the `dbo.UsageDashboardViewAllUsers` table — a handful of names who got the manager
+dropdown and the whole organisation, while everyone else was pinned server-side to their own team
+and never received the manager roster). Branch `feature_UsageDashboardManagerForAll` retires the
+second question: the table is dropped, `UsageDashboardService` honours any `managerId` it is sent,
+`GET /usage-dashboard/managers` returns every manager's name, short name and report counts to every
+caller who passes the read policy, and the whole-organisation view is one click ("All Managers")
+away for all of them. The deleted code carried a comment warning that the roster is the company org
+chart and should not be handed out "just because someone can open the dashboard"; the pre-push code
+review flagged the widening against the least-privilege principle (CWE-284).
+
+**Accepted, because the narrower model no longer matched how the dashboard is meant to be used.**
+This was a product decision by the Origination owner (2026-10-09): everyone who can open the
+dashboard should be able to select any manager and see that team, with the signed-in user as the
+default. The people granted access are managers and IT (that is what the Super Users group is for),
+and the only effect of the retired control was to hide adoption numbers from other managers inside
+the same company.
+
+**What makes the residual risk acceptable:**
+
+- The data is adoption telemetry about Scoular employees — logins, screens used, notes written,
+  producers contacted — not customer PII and not credentials. The per-user drill-down shows the same
+  counters, not note contents or producer records.
+- The manager roster is names, short names and report counts. The same org chart is visible to every
+  employee in Outlook and Teams ("Organization" tab), so the endpoint discloses nothing the directory
+  does not already.
+- There is still exactly one gate, the Super Users Entra group, and it is administered in Entra, not
+  in app code or SQL. Membership is the access review surface.
+- Every read still passes the `UsageDashboardViewer` policy (pinned by a convention test), still goes
+  through `SecurityAuditMiddleware` for 401/403 outcomes, and still has `dbo.UsageDashboardExcludedUsers`
+  subtracted. Exclusion administration remains restricted to the `ExclusionManagers` allowlist.
+- Scope is Scoular-internal only — no external or guest accounts (see
+  [SECURITY-MODEL.md](../docs/application-context/SECURITY-MODEL.md)).
+
+**Revisit if any of these becomes true:**
+
+- The Super Users group starts being used to grant something other than dashboard access, so that
+  non-managers land in it for unrelated reasons.
+- The dashboard gains content that is sensitive per person (note text, compensation-adjacent
+  metrics, anything beyond activity counts).
+- A data-classification decision treats employee adoption telemetry as restricted.
+
+**Compensating direction if it ever needs changing:** migration
+`20261009145425_DropUsageDashboardViewAllUsers` has a `Down()` that recreates the table **with its
+original five-name seed**, and the scoping code (`ResolveEffectiveManagerIdAsync`,
+`UsageDashboardViewAllProvider`, the synthetic `UsageDashboardViewAll` role) is intact in git history
+immediately before commit `2c7df34d`. Re-introducing per-caller scoping is a revert, not a design.
+
+**Accepted by:** Origination engineering — recorded 2026-10-09 at the product owner's request.
+Surfaced by the pre-push code review of the branch. Routed with AR-01/02/07/08 for IT Security
+countersignature, because it is an authorization-scope widening rather than a classification choice.
 
 ---
 

@@ -278,7 +278,7 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? managerId,CancellationToken cancellationToken)
+    public async Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
@@ -326,7 +326,7 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? managerId,string? status, CancellationToken cancellationToken)
+    public async Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? managerId, string? status, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
@@ -383,7 +383,7 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? managerId,CancellationToken cancellationToken)
+    public async Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
@@ -417,7 +417,7 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? managerId,string? screen, CancellationToken cancellationToken)
+    public async Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? managerId, string? screen, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
@@ -535,7 +535,7 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? managerId,int weeks, CancellationToken cancellationToken)
+    public async Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? managerId, int weeks, CancellationToken cancellationToken)
     {
         weeks = Math.Clamp(weeks, 1, 52);
         var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
@@ -590,7 +590,7 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? managerId,CancellationToken cancellationToken)
+    public async Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
     {
         // Reads the raw tables for the whole window: the profiles/contracts columns are
         // distinct-by-producer across the entire range, which per-day rollups cannot reconstruct.
@@ -632,7 +632,7 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? managerId,CancellationToken cancellationToken)
+    public async Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
     {
         // Measured in distinct users, and now honors the manager filter and the excluded-users
         // list — the old per-feature-only rollup had no user dimension, so it could do neither.
@@ -673,7 +673,7 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? managerId,CancellationToken cancellationToken)
+    public async Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
@@ -694,7 +694,7 @@ public class UsageDashboardService : IUsageDashboardService
     }
 
     /// <inheritdoc />
-    public async Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? managerId,CancellationToken cancellationToken)
+    public async Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
         var userIds = await GetUserIdSetAsync(managerId, cancellationToken);

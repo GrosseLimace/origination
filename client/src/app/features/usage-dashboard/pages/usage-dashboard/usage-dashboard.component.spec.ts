@@ -354,6 +354,61 @@ describe('UsageDashboardComponent — manager default', () => {
     expect(api.calls['users']).toBe(1); // the data still loads — no manager means no directory lookup
   });
 
+  it('a retry that succeeds after a failed first load still applies the self default', () => {
+    // The first attempt settled the page on "All Managers" so it would not block; that must not
+    // use up the one chance to default once the roster actually arrives.
+    const api = makeApiStub(rosterWithMe);
+    api.managers$ = throwError(() => ({ status: 503 }));
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+    expect(component.managerFilter()).toBeNull();
+
+    api.managers$ = of(rosterWithMe);
+    component.loadManagers();
+    TestBed.tick();
+
+    expect(component.managerFilter()).toBe('CEgr');
+    expect(api.managerIds['users']).toEqual([undefined, 'CEgr']); // whole org, then the defaulted team
+  });
+
+  it('a retry after a successful load does not re-apply the default over a cleared filter', () => {
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+    expect(component.managerFilter()).toBe('CEgr');
+
+    component.managerFilter.set(null); // the user chose "All Managers"
+    TestBed.tick();
+    component.loadManagers();
+    TestBed.tick();
+
+    expect(component.managerFilter()).toBeNull();
+  });
+
+  it('a roster retry does not flip the page-level loading state', () => {
+    const api = makeApiStub(rosterWithMe);
+    api.managers$ = throwError(() => ({ status: 503 }));
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+    expect(component.loading()).toBe(false);
+
+    api.managers$ = new Subject<UsageManager[]>(); // held open
+    component.loadManagers();
+
+    expect(component.managersLoading()).toBe(true);
+    expect(component.loading()).toBe(false); // the dropdown shows its own spinner; the panels keep their data
+  });
+
+  it('does not show the empty-team message when the summary failed to load', () => {
+    // null is "not loaded", not "zero users" — the toast already reports the failure.
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+    component.summary.set(null);
+
+    expect(component.teamIsEmpty()).toBe(false);
+  });
+
   it('a retry after a failed load restores the roster without clobbering a choice the user made', () => {
     const api = makeApiStub(rosterWithMe);
     api.managers$ = throwError(() => ({ status: 503 }));

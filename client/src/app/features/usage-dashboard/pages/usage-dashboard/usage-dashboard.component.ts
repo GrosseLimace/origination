@@ -73,8 +73,14 @@ export class UsageDashboardComponent {
   readonly managersLoadFailed = signal(false);
 
   /** The data effects wait on this, so the first fetch already carries the defaulted manager instead
-   *  of loading the whole organisation and then reloading once the default is known. */
+   *  of loading the whole organisation and then reloading once the default is known. Set once the
+   *  first roster attempt has settled either way — a failed roster must not block the page. */
   private readonly managerFilterReady = signal(false);
+
+  /** Whether the self default has been applied from a successful roster load. Kept apart from
+   *  managerFilterReady so a Retry that succeeds after a failed first load still gets its one
+   *  chance to default, while a Retry after a successful load never re-applies it. */
+  private defaultManagerApplied = false;
 
   /** Bumped to force a reload — e.g. after the exclusion list changes, which moves every number. */
   private readonly refreshTick = signal(0);
@@ -103,14 +109,16 @@ export class UsageDashboardComponent {
    * response happens to arrive last.
    */
   private readonly pendingCount = signal(0);
-  readonly loading = computed(() => this.pendingCount() > 0);
+  /** Also true until the roster has settled the default manager — the data effects have not fired
+   *  yet at that point, so pendingCount alone would read as "nothing to wait for". */
+  readonly loading = computed(() => this.pendingCount() > 0 || !this.managerFilterReady());
 
   /** A selected manager whose team includes nobody who can sign in to the app resolves to an empty
    *  universe server-side, which would otherwise render as a wall of zeros with no explanation.
    *  Real state, not an error. Never shown for the whole-org view — zero users there would mean
-   *  something else entirely. */
+   *  something else entirely — and never when the summary simply failed to load (null, not zero). */
   readonly teamIsEmpty = computed(() =>
-    !!this.managerFilter() && !this.loading() && (this.summary()?.totalUsers ?? 0) === 0);
+    !!this.managerFilter() && !this.loading() && this.summary()?.totalUsers === 0);
 
   // ── Formatters (shared with the per-user drill-down) ──
   readonly formatTimeSpent = formatTimeSpent;
@@ -394,17 +402,20 @@ export class UsageDashboardComponent {
     return source.pipe(finalize(() => this.pendingCount.update(n => Math.max(0, n - 1))));
   }
 
-  /** Loads the manager roster. Also the filter's Retry handler after a failed load. */
+  /** Loads the manager roster. Also the filter's Retry handler after a failed load. Deliberately
+   *  not run through track(): the page-level spinner covers the first attempt via
+   *  managerFilterReady, and a Retry from inside the dropdown must not blank every panel. */
   loadManagers(): void {
     this.managersLoading.set(true);
     this.managersLoadFailed.set(false);
-    this.track(this.apiService.getUsageManagers())
+    this.apiService.getUsageManagers()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: rows => {
           this.managers.set(rows);
           this.managersLoading.set(false);
           this.applyDefaultManager(rows);
+          this.managerFilterReady.set(true);
         },
         error: () => {
           this.managersLoadFailed.set(true);
@@ -422,15 +433,17 @@ export class UsageDashboardComponent {
    * would select a name the dropdown cannot display and a team the server resolves to nobody.
    * They start at "All Managers" instead.
    *
-   * Runs once. A Retry after a failed load lands here again, and must not clobber a choice the
-   * user has since made.
+   * Applied once, from the first SUCCESSFUL roster load — so a Retry that finally succeeds after a
+   * failed first attempt still defaults, but a later Retry never re-applies it. Also skipped when
+   * the user has already picked a manager during an outage; their choice wins.
    */
   private applyDefaultManager(roster: UsageManager[]): void {
-    if (this.managerFilterReady()) return;
+    if (this.defaultManagerApplied) return;
+    this.defaultManagerApplied = true;
+    if (this.managerFilter() !== null) return;
     const me = this.userRoles.userShortName().toLowerCase();
     const self = me ? roster.find(m => m.userId.toLowerCase() === me) : undefined;
     if (self) this.managerFilter.set(self.userId);
-    this.managerFilterReady.set(true);
   }
 
   private loadCoreData(from: string, to: string, managerId?: string): void {

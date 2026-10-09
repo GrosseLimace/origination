@@ -59,7 +59,7 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetSummaryAsync(from, to, managerId,cancellationToken));
+        => Ok(await _service.GetSummaryAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("users")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
@@ -68,7 +68,7 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] string? managerId = null,
         [FromQuery] string? status = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetUsersAsync(from, to, managerId,status, cancellationToken));
+        => Ok(await _service.GetUsersAsync(from, to, managerId, status, cancellationToken));
 
     [HttpGet("daily-active")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
@@ -76,7 +76,7 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetDailyActiveAsync(from, to, managerId,cancellationToken));
+        => Ok(await _service.GetDailyActiveAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("feature-sessions")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
@@ -85,7 +85,7 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] string? managerId = null,
         [FromQuery] string? screen = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetFeatureSessionsAsync(from, to, managerId,screen, cancellationToken));
+        => Ok(await _service.GetFeatureSessionsAsync(from, to, managerId, screen, cancellationToken));
 
     // Trend view over whole calendar weeks — deliberately not bound to the dashboard's date filter.
     [HttpGet("weekly-trend")]
@@ -102,7 +102,7 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId,cancellationToken));
+        => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("underused-features")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
@@ -110,7 +110,7 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId,cancellationToken));
+        => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("query-library-usage")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
@@ -118,7 +118,7 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId,cancellationToken));
+        => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("query-search-gaps")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
@@ -126,7 +126,7 @@ public class UsageDashboardController : ControllerBase
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetQuerySearchGapsAsync(from, to, managerId,cancellationToken));
+        => Ok(await _service.GetQuerySearchGapsAsync(from, to, managerId, cancellationToken));
 
     /// <summary>Active managers for the manager filter. 503 when the TradeUnitPreferences DB is
     /// unreachable — fail closed, so the client shows "unavailable" instead of a stale roster.</summary>

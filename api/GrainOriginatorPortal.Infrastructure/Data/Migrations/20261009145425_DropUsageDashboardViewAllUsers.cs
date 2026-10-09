@@ -47,6 +47,24 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                 table: "UsageDashboardViewAllUsers",
                 column: "UserId",
                 unique: true);
+
+            // A true inverse of 20260921152258: that migration seeded these five names, and the old
+            // code reads an EMPTY table as "everyone is scoped to their own team" — so recreating the
+            // table bare on rollback would strip the manager dropdown from the very people who had it.
+            // Rows added by hand after the seed (e.g. BStebbins in PROD) are not recoverable here.
+            migrationBuilder.Sql(@"
+INSERT INTO dbo.UsageDashboardViewAllUsers (UserId, Reason, CreatedBy)
+SELECT v.UserId, v.Reason, 'migration'
+FROM (VALUES
+    ('CEgr',      'Seeded from UsageDashboard:ViewAll config'),
+    ('TThimesch', 'Seeded from UsageDashboard:ViewAll config'),
+    ('HCollins',  'Seeded from UsageDashboard:ViewAll config'),
+    ('MPaulson',  'Seeded from UsageDashboard:ViewAll config'),
+    ('SFletcher', 'Seeded from UsageDashboard:ViewAll config')
+) AS v(UserId, Reason)
+WHERE NOT EXISTS (
+    SELECT 1 FROM dbo.UsageDashboardViewAllUsers e WHERE e.UserId = v.UserId
+);");
         }
     }
 }
