@@ -333,26 +333,26 @@
                              Name is the only column that can grow, and it is capped and wraps (two
                              lines, then "…"; full name in the row's hover text), so a long name can't
                              push the table past the card. Numbers never wrap. -->
-                        <table class="w-auto max-w-full text-xs tabular-nums">
+                        <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
                           <thead>
-                            <tr class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                              <th scope="col" class="py-1 pr-2 font-medium text-left">Name</th>
-                              <th scope="col" class="py-1 px-1 font-medium text-center">Crop</th>
-                              <th scope="col" class="py-1 px-1 font-medium text-center" title="Capacity (bu)">Cap</th>
-                              <th scope="col" class="py-1 px-1 font-medium text-center" title="Marketed (bu)">Mkt</th>
-                              <th scope="col" class="py-1 px-1 font-medium text-center" title="Unmarketed (bu)">Unmkt</th>
-                              <th scope="col" class="py-1 pl-1 font-medium text-center"><span class="sr-only">Map</span></th>
+                            <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                              <th scope="col" class="py-1 pr-2 @4xl/profile:pr-3 font-medium text-left">Name</th>
+                              <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center">Crop</th>
+                              <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Capacity (bu)">Cap</th>
+                              <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Marketed (bu)">Mkt</th>
+                              <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Unmarketed (bu)">Unmkt</th>
+                              <th scope="col" class="py-1 pl-1 @4xl/profile:pl-2 font-medium text-center"><span class="sr-only">Map</span></th>
                             </tr>
                           </thead>
                           <tbody class="text-gray-700 dark:text-gray-300">
                             @for (site of binSiteRows(); track $index) {
                               <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle" [title]="site.title">
-                                <td class="py-1 pr-2 text-left"><span class="max-w-[10rem] line-clamp-2 break-words">{{ site.name }}</span></td>
-                                <td class="py-1 px-1 text-center whitespace-nowrap">{{ site.commodity }}</td>
-                                <td class="py-1 px-1 text-center whitespace-nowrap">{{ site.capacity }}</td>
-                                <td class="py-1 px-1 text-center whitespace-nowrap">{{ site.marketed }}</td>
-                                <td class="py-1 px-1 text-center whitespace-nowrap">{{ site.unmarketed }}</td>
-                                <td class="py-1 pl-1 text-center">
+                                <td class="py-1 pr-2 @4xl/profile:pr-3 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
+                                <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ site.commodity }}</td>
+                                <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ site.capacity }}</td>
+                                <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ site.marketed }}</td>
+                                <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ site.unmarketed }}</td>
+                                <td class="py-1 pl-1 @4xl/profile:pl-2 text-center">
                                   @if (site.url) {
                                     <a [href]="site.url" target="_blank" rel="noopener noreferrer" (click)="trackBinSiteMapClick()"
                                       title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
