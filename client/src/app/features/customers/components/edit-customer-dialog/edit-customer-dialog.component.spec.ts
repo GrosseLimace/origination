@@ -647,7 +647,8 @@ describe('EditCustomerDialogComponent — bin sites', () => {
 
     expect(component.grainRowsFor('site-north').map(r => r.commodityCode)).toEqual(['YC']);
     expect(component.unlinkedGrainRows().map(r => r.commodityCode)).toEqual(['SB', 'WH']);
-    expect(component.isGrainBlockOpen('site-north')).toBe(true);
+    // Every site starts collapsed, so a producer with several sites isn't a wall of inputs.
+    expect(component.isGrainBlockOpen('site-north')).toBe(false);
     expect(component.hasChanges()).toBe(false);
   });
 
@@ -670,5 +671,51 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(component.unlinkedGrainRows()).toHaveLength(0);
     expect(component.grainRowsFor('site-home').map(r => r.bushelsOnHand)).toEqual(['5000']);
     expect(component.hasChanges()).toBe(true);
+  });
+
+  it('expands and collapses the grain under a site, and sums its bushels for the collapsed line', () => {
+    open(makeCustomer({
+      binSites: [{ siteKey: 'site-north', name: 'North Bins' }],
+      grainOnFarm: [
+        { binSiteKey: 'site-north', commodityCode: 'YC', bushelsOnHand: 30000 },
+        { binSiteKey: 'site-north', commodityCode: 'SB', bushelsOnHand: 12500 },
+      ],
+    }));
+
+    expect(component.grainSummaryFor('site-north')).toEqual({ count: 2, total: 42500 });
+    component.toggleGrainForSite('site-north');
+    expect(component.isGrainBlockOpen('site-north')).toBe(true);
+    component.toggleGrainForSite('site-north');
+    expect(component.isGrainBlockOpen('site-north')).toBe(false);
+  });
+
+  it('puts the picker away once a commodity is added, leaving the block open on the new row', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    const key = component.editBinSites()[0].key;
+
+    component.openGrainForSite(key);
+    expect(component.grainPickerSite()).toBe(key);
+    component.selectGrainOption('YC');
+    component.addGrainRow(key);
+
+    expect(component.grainPickerSite()).toBeNull();
+    expect(component.newGrainCode()).toBe('');
+    expect(component.isGrainBlockOpen(key)).toBe(true);
+    expect(component.grainRowsFor(key)).toHaveLength(1);
+  });
+
+  it('Cancel puts the picker away without adding anything', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    const key = component.editBinSites()[0].key;
+    component.openGrainForSite(key);
+    component.selectGrainOption('YC');
+
+    component.cancelGrainPicker();
+
+    expect(component.grainPickerSite()).toBeNull();
+    expect(component.grainRowsFor(key)).toHaveLength(0);
+    expect(component.hasChanges()).toBe(false);
   });
 });

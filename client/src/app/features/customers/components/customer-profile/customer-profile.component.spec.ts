@@ -319,6 +319,21 @@ describe('CustomerProfileComponent — bin site table', () => {
     // The headline total still adds up every row, at every site.
     expect(component.grainOnFarmTotal()).toBe(126000);
   });
+
+  it('groups the table by site name, labelling rows without a site only when sites are present too', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ siteKey: 'north', name: 'North Quarter Home Place Bins by the Creek' }],
+      grainOnFarm: [
+        { binSiteKey: 'north', binSiteName: 'North Quarter Home Place Bins by the Creek', commodityCode: 'YC', bushelsOnHand: 30000 },
+        { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 100 },
+      ],
+    }));
+    expect(component.grainOnFarmGroups().map(g => [g.label, g.rows.map(r => r.commodityCode)]))
+      .toEqual([['North Quarter Home Place Bins by the Creek', ['YC']], ['Not tied to a bin site', ['WH']]]);
+
+    ref.setInput('customer', makeCustomer({ grainOnFarm: [{ commodityCode: 'WH', bushelsOnHand: 100 }] }));
+    expect(component.grainOnFarmGroups().map(g => g.label)).toEqual(['']);
+  });
 });
 
 // Covers the organic producer badge: which producers get it, and the header-panel spacing computed

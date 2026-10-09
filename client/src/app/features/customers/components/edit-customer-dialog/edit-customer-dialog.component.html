@@ -236,6 +236,13 @@
                   </button>
                 </div>
               </ng-template>
+              <ng-template #addGrainLinkTpl let-siteKey let-inBlock="inBlock">
+                <button type="button" (click)="openGrainForSite(siteKey)" [class.ml-3]="!inBlock"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  Add grain on farm
+                </button>
+              </ng-template>
               <ng-template #grainPickerTpl let-siteKey>
                 <div class="flex items-center gap-2">
                   <div class="relative flex-1 min-w-0">
@@ -267,6 +274,10 @@
                     class="shrink-0 inline-flex items-center gap-1 px-3 h-9 rounded-md text-sm font-medium bg-scoular-green-accessible text-white hover:bg-scoular-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                     Add
+                  </button>
+                  <button type="button" (click)="cancelGrainPicker()"
+                    class="shrink-0 h-9 px-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors">
+                    Cancel
                   </button>
                 </div>
               </ng-template>
@@ -352,28 +363,41 @@
                     @if (binSiteErrors()[$index]; as error) {
                       <p class="text-xs text-red-500 dark:text-red-400">{{ error }}</p>
                     }
-                    <!-- This site's Grain on Farm (user 2026-10-09): "Add grain on farm" opens the block,
-                         titled with the site's name; rows are one per commodity at this site. -->
-                    @if (isGrainBlockOpen(row.key)) {
+                    <!-- This site's Grain on Farm (user 2026-10-09). Collapsed when the dialog opens: a site
+                         with grain shows one toggle line, "▸ Grain on Farm — North Bins (2) · 42,500 bu";
+                         expanded, its rows. The commodity picker is on screen only while adding — "+ Add
+                         grain on farm" brings it up, and adding a crop (or Cancel) puts it away again. -->
+                    @let siteGrain = grainRowsFor(row.key);
+                    @let adding = grainPickerSite() === row.key;
+                    @if (siteGrain.length > 0) {
+                      <button type="button" (click)="toggleGrainForSite(row.key)" [attr.aria-expanded]="isGrainBlockOpen(row.key)"
+                        class="ml-3 flex max-w-full items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 transition-transform" [class.rotate-90]="isGrainBlockOpen(row.key)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        <span class="truncate">Grain on Farm — {{ row.name.trim() || 'this site' }}</span>
+                        <span class="shrink-0 font-normal text-gray-500 dark:text-gray-400">({{ grainSummaryFor(row.key).count }}) · {{ grainSummaryFor(row.key).total | number }} bu</span>
+                      </button>
+                    } @else if (adding) {
+                      <div class="ml-3 flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+                        <span class="truncate">Grain on Farm — {{ row.name.trim() || 'this site' }}</span>
+                      </div>
+                    }
+                    @if ((siteGrain.length > 0 && isGrainBlockOpen(row.key)) || adding) {
                       <div class="ml-3 pl-3 border-l-2 border-gray-200 dark:border-gray-600 space-y-1.5">
-                        <div class="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
-                          <span class="truncate">Grain on Farm — {{ row.name.trim() || 'this site' }}</span>
-                        </div>
-                        @if (grainRowsFor(row.key).length > 0) {
+                        @if (siteGrain.length > 0 && isGrainBlockOpen(row.key)) {
                           <ng-container *ngTemplateOutlet="grainHeaderTpl" />
-                          @for (g of grainRowsFor(row.key); track g.commodityCode) {
+                          @for (g of siteGrain; track g.commodityCode) {
                             <ng-container *ngTemplateOutlet="grainRowTpl; context: { $implicit: g }" />
                           }
                         }
-                        <ng-container *ngTemplateOutlet="grainPickerTpl; context: { $implicit: row.key }" />
+                        @if (adding) {
+                          <ng-container *ngTemplateOutlet="grainPickerTpl; context: { $implicit: row.key }" />
+                        } @else {
+                          <ng-container *ngTemplateOutlet="addGrainLinkTpl; context: { $implicit: row.key, inBlock: true }" />
+                        }
                       </div>
-                    } @else {
-                      <button type="button" (click)="openGrainForSite(row.key)"
-                        class="ml-3 inline-flex items-center gap-1 text-xs font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                        Add grain on farm
-                      </button>
+                    } @else if (siteGrain.length === 0) {
+                      <ng-container *ngTemplateOutlet="addGrainLinkTpl; context: { $implicit: row.key, inBlock: false }" />
                     }
                   }
                   <p class="text-xs text-gray-400 dark:text-gray-500">Paste straight from Google Maps (right-click the spot, click the coordinates) or type them — decimals, N/W letters or degrees-minutes-seconds all work, and nothing needs rounding. Must be in North America. Grain on farm uses the Planting Intentions commodity list; one the producer doesn't have is added to their Commodities.</p>

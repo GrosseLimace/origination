@@ -16,7 +16,7 @@ import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-custom
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem, GrainOnFarmItem } from '@models';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
@@ -72,6 +72,24 @@ export class CustomerProfileComponent {
     return (this.customer().grainOnFarm ?? [])
       .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.bushelsSold ?? 0) > 0 || g.targetBushels != null || g.lastBid != null || !!(g.grade ?? '').trim())
       .sort((a, b) => orderOf(a.binSiteKey) - orderOf(b.binSiteKey) || (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
+  });
+  /** The rows grouped by bin site for the table: one group per site in site order, then the rows not
+   *  tied to a site. The label is the site name; the unlinked group is labelled only when sites are
+   *  present too, so a producer with no linked grain shows a plain table as before. */
+  readonly grainOnFarmGroups = computed(() => {
+    const groups: { key: string | null; label: string; rows: GrainOnFarmItem[] }[] = [];
+    for (const g of this.grainOnFarmRows()) {
+      const key = g.binSiteKey ?? null;
+      let group = groups.find(x => x.key === key);
+      if (!group) {
+        group = { key, label: key ? (g.binSiteName?.trim() || 'Bin site') : '', rows: [] };
+        groups.push(group);
+      }
+      group.rows.push(g);
+    }
+    const unlinked = groups.find(x => x.key === null);
+    if (unlinked && groups.length > 1) unlinked.label = 'Not tied to a bin site';
+    return groups;
   });
   /** Total bushels currently on the farm (sum of per-commodity on-hand). */
   readonly grainOnFarmTotal = computed(() =>

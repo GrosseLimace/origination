@@ -401,8 +401,9 @@ export class EditCustomerDialogComponent {
   /** The site whose commodity picker is in use. There is one picker state, shared by the sites. */
   grainPickerSite = signal<string | null>(null);
 
-  /** Sites whose grain block the user opened ("Add grain on farm") before adding a row. A site with
-   *  rows always shows its block. */
+  /** Sites whose grain block is expanded. Every site starts collapsed when the dialog opens, so a
+   *  producer with several sites isn't one long wall of inputs (user 2026-10-09); a site with grain
+   *  shows a one-line summary instead, and "Add grain on farm" opens an empty site's block. */
   grainOpenSites = signal<ReadonlySet<string>>(new Set());
 
   /** A site's rows (null = the rows not tied to a site). */
@@ -413,10 +414,26 @@ export class EditCustomerDialogComponent {
   readonly unlinkedGrainRows = computed(() => this.editGrainOnFarm().filter(g => g.siteKey === null));
 
   isGrainBlockOpen(siteKey: string): boolean {
-    return this.grainOpenSites().has(siteKey) || this._siteHasGrain(siteKey);
+    return this.grainOpenSites().has(siteKey);
   }
 
-  /** "Add grain on farm" under a site: shows its block with the commodity picker ready. */
+  /** Expand or collapse one site's grain block. */
+  toggleGrainForSite(siteKey: string): void {
+    this.grainOpenSites.update(open => {
+      const next = new Set(open);
+      if (!next.delete(siteKey)) next.add(siteKey);
+      return next;
+    });
+  }
+
+  /** The collapsed line's numbers for a site: how many crops, and their total bushels. */
+  grainSummaryFor(siteKey: string): { count: number; total: number } {
+    const rows = this.grainRowsFor(siteKey);
+    return { count: rows.length, total: rows.reduce((sum, r) => sum + this._parseNumericInput(r.bushelsOnHand), 0) };
+  }
+
+  /** "Add grain on farm" under a site: expands its block and shows the commodity picker. The picker
+   *  is only on screen while adding; once a crop is added (or Cancel) it is replaced by the link. */
   openGrainForSite(siteKey: string): void {
     this.grainOpenSites.update(open => new Set(open).add(siteKey));
     this.grainPickerSite.set(siteKey);
@@ -543,7 +560,17 @@ export class EditCustomerDialogComponent {
       this.editCommodities.update(c => [...c, code]);
       this._grainAutoAddedCommodities.add(code);
     }
+    // Done adding: the picker goes away and "+ Add grain on farm" comes back for the next crop
+    // (user 2026-10-09). The block stays expanded so the new row is right there to fill in.
+    this.cancelGrainPicker();
+  }
+
+  /** Puts the picker away without adding anything. */
+  cancelGrainPicker(): void {
     this.newGrainCode.set('');
+    this.grainPickerSite.set(null);
+    this.grainPickerOpen.set(false);
+    this.grainPickerActive.set(-1);
   }
 
   removeGrainRow(siteKey: string | null, commodityCode: string): void {
