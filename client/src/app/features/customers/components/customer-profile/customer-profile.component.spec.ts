@@ -243,14 +243,14 @@ describe('CustomerProfileComponent — bin site table', () => {
   it('builds one table row per site, in saved order, with every cell formatted', () => {
     ref.setInput('customer', makeCustomer({
       binSites: [
-        { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955, capacity: 50000, commodityCode: 'YC', marketed: 20000, unmarketed: 30000, sortOrder: 0 },
+        { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955, capacity: 50000, commodityCode: 'YC', sortOrder: 0 },
         { name: 'North Quarter', latitude: 40.5, longitude: -96, capacity: 30000, sortOrder: 1 },
       ],
     }));
 
     const [first, second] = component.binSiteRows();
-    expect(first).toMatchObject({ name: 'Anderson Site', commodity: 'YC', capacity: '50,000', marketed: '20,000', unmarketed: '30,000' });
-    expect(second).toMatchObject({ name: 'North Quarter', commodity: '—', capacity: '30,000', marketed: '—', unmarketed: '—' });
+    expect(first).toMatchObject({ name: 'Anderson Site', commodity: 'YC', capacity: '50,000' });
+    expect(second).toMatchObject({ name: 'North Quarter', commodity: '—', capacity: '30,000' });
   });
 
   it('links each site with coordinates to its exact point in Google Maps', () => {

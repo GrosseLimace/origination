@@ -122,8 +122,6 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 Longitude = x.Longitude,
                 Capacity = x.Capacity,
                 CommodityCode = x.CommodityCode,
-                Marketed = x.Marketed,
-                Unmarketed = x.Unmarketed,
                 SortOrder = x.SortOrder
             }).ToList());
 
@@ -334,8 +332,6 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                     Longitude = item.Longitude,
                     Capacity = item.Capacity,
                     CommodityCode = item.CommodityCode,
-                    Marketed = item.Marketed,
-                    Unmarketed = item.Unmarketed,
                     SortOrder = item.SortOrder
                 });
             }
@@ -433,13 +429,11 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                     Latitude = Round(b.Latitude),
                     Longitude = Round(b.Longitude),
                     Capacity = b.Capacity,
-                    CommodityCode = string.IsNullOrWhiteSpace(b.CommodityCode) ? null : b.CommodityCode.Trim(),
-                    Marketed = b.Marketed,
-                    Unmarketed = b.Unmarketed
+                    CommodityCode = string.IsNullOrWhiteSpace(b.CommodityCode) ? null : b.CommodityCode.Trim()
                 };
             })
             .GroupBy(b => (Name: b.Name?.ToUpperInvariant(), b.Latitude, b.Longitude, b.Capacity,
-                           Commodity: b.CommodityCode?.ToUpperInvariant(), b.Marketed, b.Unmarketed))
+                           Commodity: b.CommodityCode?.ToUpperInvariant()))
             .Select(g => g.First())
             .ToList();
 
@@ -555,8 +549,6 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 Longitude = b.Longitude,
                 Capacity = b.Capacity,
                 CommodityCode = b.CommodityCode,
-                Marketed = b.Marketed,
-                Unmarketed = b.Unmarketed,
                 SortOrder = b.SortOrder
             })
             .ToListAsync(cancellationToken);

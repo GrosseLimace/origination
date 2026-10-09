@@ -24,11 +24,6 @@ public class ProducerBinSite
     /// <summary>Commodity code ("YC") from the Grain on Farm list, optional. Picking one the producer
     /// doesn't list adds it to their Commodities in the Edit dialog (client side).</summary>
     public string? CommodityCode { get; set; }
-    /// <summary>Bushels at this site already marketed (sold/contracted), typed by hand, optional.
-    /// Marketed + Unmarketed above Capacity is warned about in the dialog, never rejected.</summary>
-    public decimal? Marketed { get; set; }
-    /// <summary>Bushels at this site not yet marketed, typed by hand, optional.</summary>
-    public decimal? Unmarketed { get; set; }
     /// <summary>Display order within the producer.</summary>
     public int SortOrder { get; set; }
 
@@ -45,8 +40,6 @@ public class ProducerBinSiteEntry
     public decimal? Longitude { get; set; }
     public decimal? Capacity { get; set; }
     public string? CommodityCode { get; set; }
-    public decimal? Marketed { get; set; }
-    public decimal? Unmarketed { get; set; }
     public int SortOrder { get; set; }
 }
 

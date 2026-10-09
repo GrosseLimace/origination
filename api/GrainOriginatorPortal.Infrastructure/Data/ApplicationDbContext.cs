@@ -467,8 +467,6 @@ public class ApplicationDbContext : DbContext
             // Bushels, same type as ProducerDetails.BinCapacity so the per-site sum lands exactly.
             entity.Property(e => e.Capacity).HasColumnName("Capacity").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(BinSiteRules.CommodityCodeMaxLength).IsRequired(false);
-            entity.Property(e => e.Marketed).HasColumnName("Marketed").HasColumnType("decimal(18,2)").IsRequired(false);
-            entity.Property(e => e.Unmarketed).HasColumnName("Unmarketed").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
 
             entity.HasOne(e => e.Customer)

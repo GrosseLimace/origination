@@ -218,7 +218,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
 describe('EditCustomerDialogComponent — bin sites', () => {
   let component: EditCustomerDialogComponent;
   let ref: ComponentRef<EditCustomerDialogComponent>;
-  let saved: { binCapacity: number; commodities: string[]; binSites: { name?: string; latitude: number; longitude: number; capacity?: number; commodityCode?: string; marketed?: number; unmarketed?: number }[] }[];
+  let saved: { binCapacity: number; commodities: string[]; binSites: { name?: string; latitude: number; longitude: number; capacity?: number; commodityCode?: string }[] }[];
 
   beforeEach(() => {
     saved = [];
@@ -265,7 +265,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
   it('hydrates saved sites as six-place coordinate text, unchanged until edited', () => {
     open(makeCustomer({ binSites: [{ name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 }] }));
 
-    expect(component.editBinSites()).toEqual([{ name: 'Anderson Site', coords: '39.115876, -95.143955', capacity: '', marketed: '', unmarketed: '', commodityCode: '' }]);
+    expect(component.editBinSites()).toEqual([{ name: 'Anderson Site', coords: '39.115876, -95.143955', capacity: '', commodityCode: '' }]);
     expect(component.hasChanges()).toBe(false);
   });
 
@@ -321,13 +321,13 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     open(makeCustomer());
     component.addBinSiteRow();
     component.updateBinSiteField(0, 'name', 'Home place');
-    component.onBinSiteBushelsInput(0, 'capacity', '20000');
+    component.onBinSiteCapacityInput(0, '20000');
 
     component.onSave();
 
     expect(saved.at(-1)?.binSites).toEqual([{
       name: 'Home place', latitude: undefined, longitude: undefined, capacity: 20000,
-      commodityCode: undefined, marketed: undefined, unmarketed: undefined,
+      commodityCode: undefined,
     }]);
   });
 
@@ -379,10 +379,10 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     open(makeCustomer({ binSites: [{ name: 'North Bins', latitude: 41.39, longitude: -95.01 }] }));
 
     component.clearBinSiteField(0, 'coords');
-    expect(component.editBinSites()[0]).toEqual({ name: 'North Bins', coords: '', capacity: '', marketed: '', unmarketed: '', commodityCode: '' });
+    expect(component.editBinSites()[0]).toEqual({ name: 'North Bins', coords: '', capacity: '', commodityCode: '' });
 
     component.clearBinSiteField(0, 'name');
-    expect(component.editBinSites()[0]).toEqual({ name: '', coords: '', capacity: '', marketed: '', unmarketed: '', commodityCode: '' });
+    expect(component.editBinSites()[0]).toEqual({ name: '', coords: '', capacity: '', commodityCode: '' });
   });
 
   it('rewrites a valid free-hand entry as "lat, lng" when the field loses focus', () => {
@@ -474,37 +474,11 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(saved.at(-1)?.binCapacity).toBe(40000);
   });
 
-  // ── Marketed / Unmarketed / Commodity ───────────────────────────────────────
-  it('warns, but does not block Save, when Marketed + Unmarketed is more than Capacity', () => {
+  // ── Commodity ───────────────────────────────────────────────────────────────
+  it('asks for a name when only a commodity or capacity is entered', () => {
     open(makeCustomer());
     component.addBinSiteRow();
-    component.updateBinSiteField(0, 'name', 'Site 1');
-    component.updateBinSiteField(0, 'coords', '41.39, -95.01');
-    component.onBinSiteBushelsInput(0, 'capacity', '10000');
-    component.onBinSiteBushelsInput(0, 'marketed', '8000');
-    component.onBinSiteBushelsInput(0, 'unmarketed', '8000');
-
-    expect(component.binSiteWarnings()[0]).toContain('more than the Capacity');
-    expect(component.binSiteErrors()[0]).toBeNull();
-    expect(component.binSitesInvalid()).toBe(false);
-  });
-
-  it('no warning when Marketed + Unmarketed fits, or when Capacity is blank', () => {
-    open(makeCustomer());
-    component.addBinSiteRow();
-    component.addBinSiteRow();
-    component.onBinSiteBushelsInput(0, 'capacity', '10000');
-    component.onBinSiteBushelsInput(0, 'marketed', '4000');
-    component.onBinSiteBushelsInput(0, 'unmarketed', '6000');
-    component.onBinSiteBushelsInput(1, 'marketed', '99999');
-
-    expect(component.binSiteWarnings()).toEqual([null, null]);
-  });
-
-  it('asks for a name when only a commodity or marketing figure is entered', () => {
-    open(makeCustomer());
-    component.addBinSiteRow();
-    component.onBinSiteBushelsInput(0, 'marketed', '500');
+    component.onBinSiteCapacityInput(0, '500');
 
     expect(component.binSiteErrors()[0]).toContain('name');
   });
@@ -546,27 +520,25 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(component.editCommodities()).toContain('YC');
   });
 
-  it('saves commodity, marketed and unmarketed per site, and the new chip with the commodities', () => {
+  it('saves the commodity per site, and the new chip with the commodities', () => {
     open(makeCustomer());
     component.addBinSiteRow();
     component.updateBinSiteField(0, 'name', 'Site 1');
     component.updateBinSiteField(0, 'coords', '41.39, -95.01');
-    component.onBinSiteBushelsInput(0, 'capacity', '50,000');
-    component.onBinSiteBushelsInput(0, 'marketed', '20,000');
-    component.onBinSiteBushelsInput(0, 'unmarketed', '30,000');
+    component.onBinSiteCapacityInput(0, '50,000');
     component.setBinSiteCommodity(0, 'YC');
 
     component.onSave();
 
-    expect(saved.at(-1)?.binSites[0]).toMatchObject({ capacity: 50000, marketed: 20000, unmarketed: 30000, commodityCode: 'YC' });
+    expect(saved.at(-1)?.binSites[0]).toMatchObject({ capacity: 50000, commodityCode: 'YC' });
     expect(saved.at(-1)?.commodities).toContain('YC');
   });
 
   it('reopens a saved site with every field filled back in', () => {
-    open(makeCustomer({ binSites: [{ name: 'N', latitude: 41.39, longitude: -95.01, capacity: 50000, commodityCode: 'YC', marketed: 20000, unmarketed: 30000 }] }));
+    open(makeCustomer({ binSites: [{ name: 'N', latitude: 41.39, longitude: -95.01, capacity: 50000, commodityCode: 'YC' }] }));
 
     expect(component.editBinSites()[0]).toEqual({
-      name: 'N', coords: '41.39, -95.01', capacity: '50,000', marketed: '20,000', unmarketed: '30,000', commodityCode: 'YC',
+      name: 'N', coords: '41.39, -95.01', capacity: '50,000', commodityCode: 'YC',
     });
     expect(component.hasChanges()).toBe(false);
   });

@@ -85,15 +85,6 @@ public record BinSiteItemRequest : IValidatableObject
     /// <summary>Commodity code from the Grain on Farm list ("YC"), optional.</summary>
     [StringLength(BinSiteRules.CommodityCodeMaxLength)]
     public string? CommodityCode { get; init; }
-
-    /// <summary>Bushels already marketed, typed by hand, optional. Not checked against Capacity — the
-    /// dialog only warns when Marketed + Unmarketed is more than it.</summary>
-    [Range(0, BinSiteRules.MaxCapacity, ErrorMessage = "Marketed bushels must be between 0 and 100,000,000.")]
-    public decimal? Marketed { get; init; }
-
-    /// <summary>Bushels not yet marketed, typed by hand, optional.</summary>
-    [Range(0, BinSiteRules.MaxCapacity, ErrorMessage = "Unmarketed bushels must be between 0 and 100,000,000.")]
-    public decimal? Unmarketed { get; init; }
 }
 
 public record ContactItemRequest

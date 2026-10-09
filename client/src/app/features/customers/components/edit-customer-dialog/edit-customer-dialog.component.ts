@@ -12,25 +12,21 @@ import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, gr
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { AppStateService } from '@core/services/app-state.service';
 
-/** One bin-site row as edited: every field is the text in its input. Bushel fields hold the grouped
+/** One bin-site row as edited: every field is the text in its input. Capacity holds the grouped
  *  display text ("50,000"); commodityCode is '' when none is picked. */
 export interface BinSiteEditRow {
   name: string;
   coords: string;
   capacity: string;
-  marketed: string;
-  unmarketed: string;
   commodityCode: string;
 }
 
 const emptyBinSiteRow = (): BinSiteEditRow =>
-  ({ name: '', coords: '', capacity: '', marketed: '', unmarketed: '', commodityCode: '' });
+  ({ name: '', coords: '', capacity: '', commodityCode: '' });
 
 /** True when anything other than the coordinates has been filled in. */
 const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
-  !!(r.name.trim() || r.capacity.trim() || r.marketed.trim() || r.unmarketed.trim() || r.commodityCode.trim());
-
-const BIN_SITE_BUSHEL_LABELS = { capacity: 'Capacity', marketed: 'Marketed', unmarketed: 'Unmarketed' } as const;
+  !!(r.name.trim() || r.capacity.trim() || r.commodityCode.trim());
 
 @Component({
   selector: 'app-edit-customer-dialog',
@@ -72,7 +68,7 @@ export class EditCustomerDialogComponent {
     primaryPhone: string;
     contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
     // Parsed at full precision (never rounded); array order is the display order. Capacity in bushels.
-    binSites: { name: string; latitude?: number; longitude?: number; capacity?: number; commodityCode?: string; marketed?: number; unmarketed?: number }[];
+    binSites: { name: string; latitude?: number; longitude?: number; capacity?: number; commodityCode?: string }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
@@ -275,16 +271,16 @@ export class EditCustomerDialogComponent {
     return [];
   }
 
-  // ── Bin sites: Name | Capacity | Marketed | Unmarketed | Commodity | Lat/Long, as many as needed ───
+  // ── Bin sites: Name | Capacity | Commodity | Lat/Long, as many as needed ───
   readonly maxBinSites = MAX_BIN_SITES;
   readonly binSiteNameMaxLength = BIN_SITE_NAME_MAX_LENGTH;
   readonly coordinateExample = COORDINATE_EXAMPLE;
-  /** Bushel fields are kept as the displayed text ("50,000"); parseBinSiteCapacity reads the number. */
+  /** Capacity is kept as the displayed text ("50,000"); parseBinSiteCapacity reads the number. */
   editBinSites = signal<BinSiteEditRow[]>([]);
 
   /** Per-row validation message, or null. Only the Name is required (user 2026-10-09): a fully
    *  blank row is fine (dropped on save), a row with anything in it needs a name, coordinates are
-   *  optional but must pass the North American rules when typed, and each bushel field shares the
+   *  optional but must pass the North American rules when typed, and the capacity shares the
    *  producer-level Bin Capacity ceiling. Blocks Save. */
   readonly binSiteErrors = computed(() =>
     this.editBinSites().map(r => {
@@ -294,23 +290,11 @@ export class EditCustomerDialogComponent {
         const parsed = parseCoordinatePair(r.coords);
         if (!parsed.ok) return parsed.error;
       }
-      const over = (['capacity', 'marketed', 'unmarketed'] as const)
-        .find(f => (parseBinSiteCapacity(r[f]) ?? 0) > MAX_BIN_SITE_CAPACITY);
-      return over
-        ? `${BIN_SITE_BUSHEL_LABELS[over]} can be at most ${MAX_BIN_SITE_CAPACITY.toLocaleString('en-US')} bushels.`
+      return (parseBinSiteCapacity(r.capacity) ?? 0) > MAX_BIN_SITE_CAPACITY
+        ? `Capacity can be at most ${MAX_BIN_SITE_CAPACITY.toLocaleString('en-US')} bushels.`
         : null;
     }));
 
-  /** Per-row warning, or null: Marketed + Unmarketed more than the site's Capacity. Shown, never
-   *  blocks Save — the user may know something the numbers don't (user decision 2026-10-09). */
-  readonly binSiteWarnings = computed(() =>
-    this.editBinSites().map(r => {
-      const capacity = parseBinSiteCapacity(r.capacity);
-      const stored = (parseBinSiteCapacity(r.marketed) ?? 0) + (parseBinSiteCapacity(r.unmarketed) ?? 0);
-      return capacity !== null && stored > capacity
-        ? `Marketed + Unmarketed (${stored.toLocaleString('en-US')} bu) is more than the Capacity (${capacity.toLocaleString('en-US')} bu).`
-        : null;
-    }));
 
   readonly binSitesInvalid = computed(() => this.binSiteErrors().some(e => e !== null));
 
@@ -347,14 +331,9 @@ export class EditCustomerDialogComponent {
     this.editBinSites.update(rows => rows.map((r, i) => i === index ? { ...r, [field]: value } : r));
   }
 
-  /** Bushel fields accept digits only and show them grouped as typed ("50000" → "50,000"). */
-  onBinSiteBushelsInput(index: number, field: 'capacity' | 'marketed' | 'unmarketed', value: string): void {
-    this.updateBinSiteField(index, field, formatBinSiteCapacityInput(value));
-  }
-
-  /** Kept for the capacity input's existing callers. */
+  /** Capacity accepts digits only and shows them grouped as typed ("50000" → "50,000"). */
   onBinSiteCapacityInput(index: number, value: string): void {
-    this.onBinSiteBushelsInput(index, 'capacity', value);
+    this.updateBinSiteField(index, 'capacity', formatBinSiteCapacityInput(value));
   }
 
   /** Picking a commodity the producer doesn't list adds it to their Commodities chips, as Grain on
@@ -418,8 +397,6 @@ export class EditCustomerDialogComponent {
       name: b.name ?? '',
       coords: b.latitude != null && b.longitude != null ? formatCoordinatePairFull(b.latitude, b.longitude) : '',
       capacity: bushels(b.capacity),
-      marketed: bushels(b.marketed),
-      unmarketed: bushels(b.unmarketed),
       commodityCode: b.commodityCode ?? ''
     }));
   }
@@ -945,8 +922,7 @@ export class EditCustomerDialogComponent {
       this.editBinSites()
         .filter(r => r.coords.trim() || binSiteRowHasData(r))
         .map(r => ({
-          n: r.name.trim(), c: r.coords.trim(), cap: parseBinSiteCapacity(r.capacity),
-          m: parseBinSiteCapacity(r.marketed), u: parseBinSiteCapacity(r.unmarketed), cc: r.commodityCode.trim(),
+          n: r.name.trim(), c: r.coords.trim(), cap: parseBinSiteCapacity(r.capacity), cc: r.commodityCode.trim(),
         }))
     );
   }
@@ -1221,8 +1197,6 @@ export class EditCustomerDialogComponent {
           longitude: parsed?.ok ? parsed.lng : undefined,
           capacity: parseBinSiteCapacity(r.capacity) ?? undefined,
           commodityCode: r.commodityCode.trim() || undefined,
-          marketed: parseBinSiteCapacity(r.marketed) ?? undefined,
-          unmarketed: parseBinSiteCapacity(r.unmarketed) ?? undefined,
         }];
       });
 

@@ -314,9 +314,9 @@
                     <span class="truncate">{{ getCustomerEmail() }}</span>
                   </a>
                 }
-                <!-- Bin sites: one line at the very bottom of Contact, "Bin Sites (N)". It opens and closes
-                     the full-width table under the three columns (#bin-sites-table, below), so the
-                     table never squeezes Contact, Farm Details or Harvest Contract Pace. -->
+                <!-- Bin sites: at the very bottom of Contact, collapsed to one line, "Bin Sites (N)". The
+                     toggle is the only control; opened, a compact table right under it — Name | Crop |
+                     Cap | pin (user 2026-10-09: back in Contact once Marketed/Unmarketed went). -->
                 @if (binSiteRows().length > 0) {
                   <div>
                     <button type="button" (click)="toggleBinSites()" [attr.aria-expanded]="binSitesExpanded()" aria-controls="bin-sites-table"
@@ -324,6 +324,45 @@
                       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 transition-transform" [class.rotate-90]="binSitesExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                       <span>Bin Sites ({{ binSiteRows().length }})</span>
                     </button>
+                    @if (binSitesExpanded()) {
+                      <!-- Auto-sized, never scrolls: w-auto shrinks the table to its content and
+                           max-w-full stops it at the Contact column edge. Values are centered under
+                           their headers, empty ones "—"; the pin opens Google Maps (its tooltip is the
+                           only one on the rows), "—" when a site has no coordinates. Name is the only
+                           column that gives way: it wraps (two lines, then "…"); numbers never wrap. -->
+                      <div id="bin-sites-table" class="mt-1.5 ml-5 max-w-full">
+                        <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
+                          <thead>
+                            <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                              <th scope="col" class="py-1 pr-3 @4xl/profile:pr-4 font-medium text-left">Name</th>
+                              <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center">Crop</th>
+                              <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Capacity (bu)">Cap</th>
+                              <th scope="col" class="py-1 pl-2 @4xl/profile:pl-3 font-medium text-center"><span class="sr-only">Map</span></th>
+                            </tr>
+                          </thead>
+                          <tbody class="text-gray-700 dark:text-gray-300">
+                            @for (site of binSiteRows(); track $index) {
+                              <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
+                                <td class="py-1 pr-3 @4xl/profile:pr-4 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
+                                <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.commodity }}</td>
+                                <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.capacity }}</td>
+                                <td class="py-1 pl-2 @4xl/profile:pl-3 text-center">
+                                  @if (site.url) {
+                                    <a [href]="site.url" target="_blank" rel="noopener noreferrer" (click)="trackBinSiteMapClick()"
+                                      title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
+                                      class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                    </a>
+                                  } @else {
+                                    <span class="text-gray-300 dark:text-gray-600">—</span>
+                                  }
+                                </td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
                   </div>
                 }
               </div>
@@ -439,52 +478,6 @@
               }
             </div>
           </div>
-
-          <!-- Bin sites, expanded: a full-width row under Contact | Farm Details | Harvest Contract Pace
-               (user 2026-10-09), so long names stay on one line and nothing in those three columns
-               moves. Opened and closed only by the "Bin Sites (N)" toggle at the bottom of Contact. The
-               table still hugs its content: values centered under their headers, empty ones "—";
-               the pin opens Google Maps (its tooltip is the only one on the rows), "—" when a site has
-               no coordinates. A name wraps only if it is longer than the whole row. -->
-          @if (binSitesExpanded() && binSiteRows().length > 0) {
-            <div id="bin-sites-table" class="mb-4">
-              <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Bin Sites</h3>
-              <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
-                <thead>
-                  <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                    <th scope="col" class="py-1 pr-4 @4xl/profile:pr-6 font-medium text-left">Name</th>
-                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center">Crop</th>
-                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Capacity (bu)">Cap</th>
-                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Marketed (bu)">Mkt</th>
-                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Unmarketed (bu)">Unmkt</th>
-                    <th scope="col" class="py-1 pl-2 @4xl/profile:pl-3 font-medium text-center"><span class="sr-only">Map</span></th>
-                  </tr>
-                </thead>
-                <tbody class="text-gray-700 dark:text-gray-300">
-                  @for (site of binSiteRows(); track $index) {
-                    <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
-                      <td class="py-1 pr-4 @4xl/profile:pr-6 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
-                      <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.commodity }}</td>
-                      <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.capacity }}</td>
-                      <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.marketed }}</td>
-                      <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.unmarketed }}</td>
-                      <td class="py-1 pl-2 @4xl/profile:pl-3 text-center">
-                        @if (site.url) {
-                          <a [href]="site.url" target="_blank" rel="noopener noreferrer" (click)="trackBinSiteMapClick()"
-                            title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
-                            class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                          </a>
-                        } @else {
-                          <span class="text-gray-300 dark:text-gray-600">—</span>
-                        }
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          }
 
         </div>
       </div>

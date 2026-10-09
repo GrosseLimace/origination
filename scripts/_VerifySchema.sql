@@ -63,6 +63,7 @@
 --   Updated 2026-10-09: 20261009141509_AddBinSiteCommodityAndMarketing added ProducerBinSite.CommodityCode
 --   nvarchar(100) NULL, Marketed and Unmarketed decimal(18,2) NULL.
 --   20261009151758_MakeBinSiteCoordinatesOptional made Latitude/Longitude NULLable (only Name required).
+--   20261009163032_DropBinSiteMarketing dropped Marketed and Unmarketed again (no longer needed).
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -161,7 +162,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (381)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (379)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -435,10 +436,8 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerBinSite', 'CommodityCode', 'nvarchar(100)', 1),
 ('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 1),
 ('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 1),
-('dbo', 'ProducerBinSite', 'Marketed',   'decimal(18,2)', 1),
 ('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
 ('dbo', 'ProducerBinSite', 'SortOrder',  'int',           0),
-('dbo', 'ProducerBinSite', 'Unmarketed', 'decimal(18,2)', 1),
 -- ProducerContact
 ('dbo', 'ProducerContact', 'Id',         'int',           0),
 ('dbo', 'ProducerContact', 'CustomerId', 'bigint',        0),
@@ -636,7 +635,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (61)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (62)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -701,7 +700,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261007162014_AddBinSiteQueryLibraryItems'),
 ('20261008202530_AddProducerBinSiteCapacity'),
 ('20261009141509_AddBinSiteCommodityAndMarketing'),
-('20261009151758_MakeBinSiteCoordinatesOptional');
+('20261009151758_MakeBinSiteCoordinatesOptional'),
+('20261009163032_DropBinSiteMarketing');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

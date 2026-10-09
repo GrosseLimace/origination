@@ -45,8 +45,6 @@ public static class ProducerDetailsMappings
             Longitude = b.Longitude,
             Capacity = b.Capacity,
             CommodityCode = b.CommodityCode,
-            Marketed = b.Marketed,
-            Unmarketed = b.Unmarketed,
             SortOrder = b.SortOrder,
         }).ToList(),
     };

@@ -155,25 +155,13 @@ public class BinSiteRequestValidationTests
         Assert.Contains(Validate(site), e => e.MemberNames.Contains(nameof(BinSiteItemRequest.Capacity)));
     }
 
-    // ── Commodity + Marketed / Unmarketed ─────────────────────────────────────
+    // ── Commodity ──────────────────────────────────────────────────────────────
     [Fact]
-    public void CommodityAndMarketing_AreOptional_AndAcceptedInRange()
+    public void Commodity_IsOptional_AndAccepted()
     {
-        var site = Site(39.1m, -95.1m) with { CommodityCode = "YC", Marketed = 20_000m, Unmarketed = 100_000_000m };
+        var site = Site(39.1m, -95.1m) with { CommodityCode = "YC" };
 
         Assert.Empty(Validate(site));
-    }
-
-    [Theory]
-    [InlineData(nameof(BinSiteItemRequest.Marketed))]
-    [InlineData(nameof(BinSiteItemRequest.Unmarketed))]
-    public void NegativeMarketing_IsRejected(string field)
-    {
-        var site = field == nameof(BinSiteItemRequest.Marketed)
-            ? Site(39.1m, -95.1m) with { Marketed = -1m }
-            : Site(39.1m, -95.1m) with { Unmarketed = -1m };
-
-        Assert.Contains(Validate(site), e => e.MemberNames.Contains(field));
     }
 
     [Fact]
