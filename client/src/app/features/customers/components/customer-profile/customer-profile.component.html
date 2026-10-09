@@ -326,20 +326,14 @@
                       <span>Bin Sites ({{ binSiteRows().length }})</span>
                     </button>
                     @if (binSitesExpanded()) {
-                      <div class="mt-1.5 ml-5 overflow-x-auto">
-                        <!-- Fixed column widths so every value sits centered under its header whatever
-                             the names are. Name is the only left-aligned column and wraps to two lines
-                             (full name in the row's hover text); numbers never wrap. A minimum width
-                             makes a very narrow card scroll sideways rather than squash the columns. -->
-                        <table class="w-full min-w-[24rem] table-fixed text-xs tabular-nums">
-                          <colgroup>
-                            <col class="w-[32%]" />
-                            <col class="w-[12%]" />
-                            <col class="w-[17%]" />
-                            <col class="w-[15%]" />
-                            <col class="w-[16%]" />
-                            <col class="w-[8%]" />
-                          </colgroup>
+                      <div class="mt-1.5 ml-5 max-w-full">
+                        <!-- Auto-sized, never scrolls (user 2026-10-09): w-auto shrinks the table to its
+                             content, so with short names the numbers sit right beside them. Each column
+                             is as wide as its widest value, with the values centered under the header.
+                             Name is the only column that can grow, and it is capped and wraps (two
+                             lines, then "…"; full name in the row's hover text), so a long name can't
+                             push the table past the card. Numbers never wrap. -->
+                        <table class="w-auto max-w-full text-xs tabular-nums">
                           <thead>
                             <tr class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
                               <th scope="col" class="py-1 pr-2 font-medium text-left">Name</th>
@@ -347,18 +341,18 @@
                               <th scope="col" class="py-1 px-1 font-medium text-center" title="Capacity (bu)">Cap</th>
                               <th scope="col" class="py-1 px-1 font-medium text-center" title="Marketed (bu)">Mkt</th>
                               <th scope="col" class="py-1 px-1 font-medium text-center" title="Unmarketed (bu)">Unmkt</th>
-                              <th scope="col" class="py-1 font-medium text-center"><span class="sr-only">Map</span></th>
+                              <th scope="col" class="py-1 pl-1 font-medium text-center"><span class="sr-only">Map</span></th>
                             </tr>
                           </thead>
                           <tbody class="text-gray-700 dark:text-gray-300">
                             @for (site of binSiteRows(); track $index) {
                               <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle" [title]="site.title">
-                                <td class="py-1 pr-2 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
-                                <td class="py-1 px-1 text-center whitespace-nowrap truncate">{{ site.commodity }}</td>
+                                <td class="py-1 pr-2 text-left"><span class="max-w-[10rem] line-clamp-2 break-words">{{ site.name }}</span></td>
+                                <td class="py-1 px-1 text-center whitespace-nowrap">{{ site.commodity }}</td>
                                 <td class="py-1 px-1 text-center whitespace-nowrap">{{ site.capacity }}</td>
                                 <td class="py-1 px-1 text-center whitespace-nowrap">{{ site.marketed }}</td>
                                 <td class="py-1 px-1 text-center whitespace-nowrap">{{ site.unmarketed }}</td>
-                                <td class="py-1 text-center">
+                                <td class="py-1 pl-1 text-center">
                                   @if (site.url) {
                                     <a [href]="site.url" target="_blank" rel="noopener noreferrer" (click)="trackBinSiteMapClick()"
                                       title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
