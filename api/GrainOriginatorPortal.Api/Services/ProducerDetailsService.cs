@@ -122,9 +122,12 @@ public class ProducerDetailsService : IProducerDetailsService
         var grainEntries = (request.GrainOnFarm ?? [])
             .Select(g => new GrainOnFarmEntry
             {
+                BinSiteKey = g.BinSiteKey,
                 CommodityCode = g.EffectiveCommodityCode,
                 BushelsOnHand = g.BushelsOnHand,
+                BushelsSold = g.BushelsSold,
                 TargetBushels = g.TargetBushels,
+                LastBid = g.LastBid,
                 Grade = g.Grade
             })
             .ToList();
@@ -145,9 +148,11 @@ public class ProducerDetailsService : IProducerDetailsService
         var binSiteEntries = request.BinSites?
             .Select((b, index) => new ProducerBinSiteEntry
             {
+                SiteKey = b.SiteKey ?? Guid.NewGuid(),
                 Name = b.Name,
                 Latitude = b.Latitude,
                 Longitude = b.Longitude,
+                Capacity = b.Capacity,
                 SortOrder = index
             })
             .ToList();
@@ -158,7 +163,6 @@ public class ProducerDetailsService : IProducerDetailsService
             ScoularId = request.ScoularId,
             CustomerName = request.CustomerName,
             TotalAcres = request.TotalAcres,
-            BinCapacity = request.BinCapacity,
             PrimaryContact = request.PrimaryContact,
             PrimaryPhone = request.PrimaryPhone,
             Commodities = request.Commodities,

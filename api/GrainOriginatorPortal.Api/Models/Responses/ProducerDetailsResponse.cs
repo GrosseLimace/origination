@@ -9,7 +9,8 @@ public record ProducerDetailsResponse
     public string? ScoularId { get; init; }
     public string CustomerName { get; init; } = string.Empty;
     public decimal? TotalAcres { get; init; }
-    public decimal? BinCapacity { get; init; }
+    /// <summary>When this producer's bin sites or grain on farm last changed (UTC); null if never.</summary>
+    public DateTime? BinSitesModifiedAt { get; init; }
     public string? PrimaryContact { get; init; }
     public string? PrimaryPhone { get; init; }
     public string? Commodities { get; init; }
@@ -32,9 +33,12 @@ public record ProducerDetailsResponse
 
 public record BinSiteItemResponse
 {
+    /// <summary>Stable across saves; grain-on-farm rows point at their site with it.</summary>
+    public Guid SiteKey { get; init; }
     public string? Name { get; init; }
-    public decimal Latitude { get; init; }
-    public decimal Longitude { get; init; }
+    public decimal? Latitude { get; init; }
+    public decimal? Longitude { get; init; }
+    public decimal? Capacity { get; init; }
     public int SortOrder { get; init; }
 }
 
@@ -49,9 +53,16 @@ public record ContactItemResponse
 
 public record GrainOnFarmItemResponse
 {
+    /// <summary>The bin site this grain is stored at (<see cref="BinSiteItemResponse.SiteKey"/>);
+    /// null on rows saved before sites were linked.</summary>
+    public Guid? BinSiteKey { get; init; }
+    /// <summary>That site's name, for display.</summary>
+    public string? BinSiteName { get; init; }
     /// <summary>Commodity code, or a legacy crop-group name on rows saved before codes.</summary>
     public string CommodityCode { get; init; } = string.Empty;
     public decimal? BushelsOnHand { get; init; }
+    public decimal? BushelsSold { get; init; }
     public decimal? TargetBushels { get; init; }
+    public decimal? LastBid { get; init; }
     public string? Grade { get; init; }
 }

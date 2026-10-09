@@ -76,6 +76,25 @@
 --   Updated 2026-10-07: 20261007145119_AddProducerBinSite created dbo.ProducerBinSite (6 columns,
 --   Latitude/Longitude decimal(9,6)); its only index is non-unique, so @UniqueIndexes is unchanged.
 --   20261007152343_WidenProducerBinSiteCoordinatePrecision then widened both to decimal(18,15).
+--   Updated 2026-10-08: 20261008202530_AddProducerBinSiteCapacity added ProducerBinSite.Capacity,
+--   decimal(18,2) NULL (bushels, per site; not summed into ProducerDetails.BinCapacity).
+--   Updated 2026-10-09: 20261009141509_AddBinSiteCommodityAndMarketing added ProducerBinSite.CommodityCode
+--   nvarchar(100) NULL, Marketed and Unmarketed decimal(18,2) NULL.
+--   20261009151758_MakeBinSiteCoordinatesOptional made Latitude/Longitude NULLable (only Name required).
+--   20261009163032_DropBinSiteMarketing dropped Marketed and Unmarketed again (no longer needed).
+--   20261009170849_DropBinSiteCommodity dropped CommodityCode too (a site is now Name, Capacity, Lat/Long).
+--   Updated 2026-10-08: 20261008202827_AddBushelsSoldToGrainOnFarm added
+--   ProducerGrainOnFarm.BushelsSold decimal(18,2) NULL, so Columns grew to 372.
+--   Updated 2026-10-09: 20261009162336_AddLastBidToGrainOnFarm added
+--   ProducerGrainOnFarm.LastBid decimal(18,4) NULL, so Columns grew to 373.
+--   Updated 2026-10-09: 20261009175647_LinkGrainOnFarmToBinSites added ProducerBinSite.SiteKey
+--   uniqueidentifier NOT NULL (UQ_ProducerBinSite_SiteKey) and ProducerGrainOnFarm.BinSiteId int NULL
+--   (FK to ProducerBinSite); UQ_ProducerGrainOnFarm_Customer_Commodity became
+--   UQ_ProducerGrainOnFarm_Customer_Site_Commodity (CustomerId, BinSiteId, CommodityCode).
+--   Updated 2026-10-09: 20261009185518_MoveBinCapacityAndGrainOntoBinSites (data only) put each producer's
+--   BinCapacity and unlinked grain onto a new "Bin 1" site; 20261009201700_DropProducerDetailsBinCapacity
+--   then dropped ProducerDetails.BinCapacity.
+--   20261009201625_AddBinSitesModifiedAt added ProducerDetails.BinSitesModifiedAt datetime2 NULL (backfilled).
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -185,7 +204,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (524)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (529)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -569,29 +588,6 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertificationScope', 'ScopeStatus',            'nvarchar(50)', 1),
 ('dbo', 'OrganicCertificationScope', 'StatusEffectiveDate',    'date',         1),
 ('dbo', 'OrganicCertificationScope', 'UpdatedOn',              'datetime2',    0),
-('dbo', 'ProducerContact', 'Id',         'int',           0),
-('dbo', 'ProducerContact', 'CustomerId', 'bigint',        0),
-('dbo', 'ProducerContact', 'Email',      'nvarchar(255)', 1),
-('dbo', 'ProducerContact', 'IsPrimary',  'bit',           0),
-('dbo', 'ProducerContact', 'Name',       'nvarchar(200)', 0),
-('dbo', 'ProducerContact', 'Phone',      'nvarchar(50)',  1),
-('dbo', 'ProducerContact', 'SortOrder',  'int',           0),
-('dbo', 'ProducerDetails', 'Id',             'int',           0),
-('dbo', 'ProducerDetails', 'BinCapacity',    'decimal(18,2)', 1),
-('dbo', 'ProducerDetails', 'CreatedAt',      'datetime2',     0),
-('dbo', 'ProducerDetails', 'CreatedBy',      'nvarchar(255)', 0),
-('dbo', 'ProducerDetails', 'CustomerId',     'bigint',        0),
-('dbo', 'ProducerDetails', 'ModifiedAt',     'datetime2',     1),
-('dbo', 'ProducerDetails', 'ModifiedBy',     'nvarchar(255)', 1),
-('dbo', 'ProducerDetails', 'PrimaryContact', 'nvarchar(255)', 1),
-('dbo', 'ProducerDetails', 'PrimaryPhone',   'nvarchar(50)',  1),
-('dbo', 'ProducerDetails', 'TotalAcres',     'decimal(18,2)', 1),
-('dbo', 'ProducerGrainOnFarm', 'Id',             'int',           0),
-('dbo', 'ProducerGrainOnFarm', 'BushelsOnHand',  'decimal(18,2)', 1),
-('dbo', 'ProducerGrainOnFarm', 'CommodityCode',  'nvarchar(100)', 0),
-('dbo', 'ProducerGrainOnFarm', 'CustomerId',     'bigint',        0),
-('dbo', 'ProducerGrainOnFarm', 'Grade',          'nvarchar(100)', 1),
-('dbo', 'ProducerGrainOnFarm', 'TargetBushels',  'decimal(18,2)', 1),
 -- ProducerPlantingIntentions (PlantingIntention entity)
 ('dbo', 'ProducerPlantingIntentions', 'Id',           'int',           0),
 ('dbo', 'ProducerPlantingIntentions', 'Acres',        'int',           0),
@@ -612,10 +608,42 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- ProducerBinSite
 ('dbo', 'ProducerBinSite', 'Id',         'int',           0),
 ('dbo', 'ProducerBinSite', 'CustomerId', 'bigint',        0),
-('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 0),
-('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 0),
+('dbo', 'ProducerBinSite', 'Capacity',   'decimal(18,2)', 1),
+('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 1),
+('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 1),
 ('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
+('dbo', 'ProducerBinSite', 'SiteKey',    'uniqueidentifier', 0),
 ('dbo', 'ProducerBinSite', 'SortOrder',  'int',           0),
+-- ProducerContact
+('dbo', 'ProducerContact', 'Id',         'int',           0),
+('dbo', 'ProducerContact', 'CustomerId', 'bigint',        0),
+('dbo', 'ProducerContact', 'Email',      'nvarchar(255)', 1),
+('dbo', 'ProducerContact', 'IsPrimary',  'bit',           0),
+('dbo', 'ProducerContact', 'Name',       'nvarchar(200)', 0),
+('dbo', 'ProducerContact', 'Phone',      'nvarchar(50)',  1),
+('dbo', 'ProducerContact', 'SortOrder',  'int',           0),
+-- ProducerDetails
+('dbo', 'ProducerDetails', 'Id',             'int',           0),
+('dbo', 'ProducerDetails', 'BinSitesModifiedAt', 'datetime2', 1),
+('dbo', 'ProducerDetails', 'CreatedAt',      'datetime2',     0),
+('dbo', 'ProducerDetails', 'CreatedBy',      'nvarchar(255)', 0),
+('dbo', 'ProducerDetails', 'CustomerId',     'bigint',        0),
+('dbo', 'ProducerDetails', 'ModifiedAt',     'datetime2',     1),
+('dbo', 'ProducerDetails', 'ModifiedBy',     'nvarchar(255)', 1),
+('dbo', 'ProducerDetails', 'PrimaryContact', 'nvarchar(255)', 1),
+('dbo', 'ProducerDetails', 'PrimaryPhone',   'nvarchar(50)',  1),
+('dbo', 'ProducerDetails', 'TotalAcres',     'decimal(18,2)', 1),
+-- ProducerGrainOnFarm
+('dbo', 'ProducerGrainOnFarm', 'Id',             'int',           0),
+('dbo', 'ProducerGrainOnFarm', 'BinSiteId',      'int',           1),
+('dbo', 'ProducerGrainOnFarm', 'BushelsOnHand',  'decimal(18,2)', 1),
+('dbo', 'ProducerGrainOnFarm', 'BushelsSold',    'decimal(18,2)', 1),
+('dbo', 'ProducerGrainOnFarm', 'CommodityCode',  'nvarchar(100)', 0),
+('dbo', 'ProducerGrainOnFarm', 'CustomerId',     'bigint',        0),
+('dbo', 'ProducerGrainOnFarm', 'Grade',          'nvarchar(100)', 1),
+('dbo', 'ProducerGrainOnFarm', 'LastBid',        'decimal(18,4)', 1),
+('dbo', 'ProducerGrainOnFarm', 'TargetBushels',  'decimal(18,2)', 1),
+-- ProducerReminders (ProducerReminder entity)
 ('dbo', 'ProducerReminders', 'Id',             'int',            0),
 ('dbo', 'ProducerReminders', 'CompletedAt',    'datetime2',      1),
 ('dbo', 'ProducerReminders', 'CreatedAt',      'datetime2',      0),
@@ -738,7 +766,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- (no rows)
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (25)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (26)
 -- EF Core auto-names single-property unique indexes as IX_<table>_<column>;
 -- this project uses explicit names (IX_*/UQ_*/UX_*) for most indexes.
 -- (NON-unique indexes such as IX_*_Timestamp are intentionally NOT listed.)
@@ -759,8 +787,9 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'ESignEnrollment',             'UQ_eSignEnrollment_CustomerCode'),
 ('dbo', 'FeatureUsageDaily',           'UQ_FeatureUsageDaily'),
 ('dbo', 'MbpLocationSynonym',          'IX_MbpLocationSynonym_LocationId'),
+('dbo', 'ProducerBinSite',             'UQ_ProducerBinSite_SiteKey'),
 ('dbo', 'ProducerDetails',             'IX_ProducerDetails_CustomerId'),
-('dbo', 'ProducerGrainOnFarm',         'UQ_ProducerGrainOnFarm_Customer_Commodity'),
+('dbo', 'ProducerGrainOnFarm',         'UQ_ProducerGrainOnFarm_Customer_Site_Commodity'),
 ('dbo', 'TeamsChannels',               'UX_TeamsChannels_ChannelId'),
 ('dbo', 'UsageDashboardExcludedUsers', 'IX_UsageDashboardExcludedUsers_UserId'),
 ('dbo', 'OrganicCertification',        'UQ_OrganicCertification_Nopid'),
@@ -772,7 +801,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (83)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (95)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -859,7 +888,28 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261007145119_AddProducerBinSite'),
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
 ('20261007162014_AddBinSiteQueryLibraryItems'),
-('20261009145425_DropUsageDashboardViewAllUsers');WITH ActualCols AS (
+('20261008202530_AddProducerBinSiteCapacity'),
+('20261008202827_AddBushelsSoldToGrainOnFarm'),
+('20261009141509_AddBinSiteCommodityAndMarketing'),
+('20261009145425_DropUsageDashboardViewAllUsers'),
+('20261009151758_MakeBinSiteCoordinatesOptional'),
+('20261009162336_AddLastBidToGrainOnFarm'),
+('20261009163032_DropBinSiteMarketing'),
+('20261009170849_DropBinSiteCommodity'),
+('20261009175647_LinkGrainOnFarmToBinSites'),
+('20261009185518_MoveBinCapacityAndGrainOntoBinSites'),
+('20261009185600_CombineGrainOnFarmAndBinSitePrompts'),
+('20261009201625_AddBinSitesModifiedAt'),
+('20261009201700_DropProducerDetailsBinCapacity');
+
+-- =============================================================================
+-- Collect every discrepancy into @Findings.
+-- The ActualCols CTE reconstructs the SQL type string from sys.columns to match
+-- the expected format: 'nvarchar(20)', 'nvarchar(max)', 'decimal(12,2)', 'int',
+-- 'bigint', 'float', 'date', 'bit', 'datetime2', 'datetime2(3)', etc.
+-- =============================================================================
+
+;WITH ActualCols AS (
     SELECT
         s.name AS SchemaName,
         t.name AS TableName,

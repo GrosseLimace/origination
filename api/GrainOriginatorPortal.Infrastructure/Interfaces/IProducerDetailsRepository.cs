@@ -15,7 +15,6 @@ public sealed record ProducerDetailsUpsertArgs
     public string? ScoularId { get; init; }
     public required string CustomerName { get; init; }
     public decimal? TotalAcres { get; init; }
-    public decimal? BinCapacity { get; init; }
     /// <summary>Legacy single-contact fields — used only when <see cref="Contacts"/> is null;
     /// otherwise both are derived from the primary contact row (dual-write).</summary>
     public string? PrimaryContact { get; init; }

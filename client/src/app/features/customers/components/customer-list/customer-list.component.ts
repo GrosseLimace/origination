@@ -156,7 +156,6 @@ export class CustomerListComponent {
           return {
             ...c,
             totalAcres: pd.totalAcres ?? c.totalAcres,
-            binCapacity: pd.binCapacity ?? c.binCapacity,
             primaryContact: pd.primaryContact ?? c.primaryContact,
             commodities: pd.commodities ? pd.commodities.split(',').map(s => s.trim()) : c.commodities
           };

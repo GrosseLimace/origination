@@ -6,17 +6,25 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 /// A user-entered on-farm bin site for a producer: an optional name and a latitude/longitude
 /// pair, shown under the address as a Google Maps link. A producer can have as many as they need
 /// (only a sanity ceiling, <see cref="BinSiteRules.MaxPerCustomer"/>). Replaced as a set on upsert
-/// (mirrors the ProducerContact child-table pattern).
+/// (mirrors the ProducerContact child-table pattern), so <see cref="Id"/> changes on every save;
+/// <see cref="SiteKey"/> is the identity that survives, and what grain-on-farm rows link through.
 /// </summary>
 public class ProducerBinSite
 {
     public int Id { get; set; }
     public long CustomerId { get; set; }
+    /// <summary>Stable identity across saves (the client generates it for a new site). Grain on Farm
+    /// rows name their site by this key in the API; the database link is ProducerGrainOnFarm.BinSiteId.</summary>
+    public Guid SiteKey { get; set; }
     public string? Name { get; set; }
-    /// <summary>decimal(18,15) — keeps a full Google Maps paste (up to ~15 places) exactly as
-    /// entered. The profile shortens it to six places for display; the map link uses all of it.</summary>
-    public decimal Latitude { get; set; }
-    public decimal Longitude { get; set; }
+    /// <summary>Optional (only the Name is required, user 2026-10-09); when present, both are set and
+    /// stored as decimal(18,15) — a full Google Maps paste exactly as entered. The profile shortens
+    /// them to six places; a site without them shows as plain text with no map link.</summary>
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+    /// <summary>Storage capacity in bushels, optional — the only place capacity is recorded since the
+    /// producer-level ProducerDetails.BinCapacity was dropped (2026-10-09; its values became "Bin 1" sites).</summary>
+    public decimal? Capacity { get; set; }
     /// <summary>Display order within the producer.</summary>
     public int SortOrder { get; set; }
 
@@ -28,9 +36,11 @@ public class ProducerBinSite
 /// and passed to the repository upsert (write). Not an EF entity.</summary>
 public class ProducerBinSiteEntry
 {
+    public Guid SiteKey { get; set; }
     public string? Name { get; set; }
-    public decimal Latitude { get; set; }
-    public decimal Longitude { get; set; }
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+    public decimal? Capacity { get; set; }
     public int SortOrder { get; set; }
 }
 
@@ -54,4 +64,6 @@ public static class BinSiteRules
     public const double MaxLatitude = 84.0;
     public const double MinLongitude = -180.0;
     public const double MaxLongitude = -52.0;
+    /// <summary>The ceiling the dropped producer-level Bin Capacity had, so every moved value fits.</summary>
+    public const double MaxCapacity = 100_000_000;
 }

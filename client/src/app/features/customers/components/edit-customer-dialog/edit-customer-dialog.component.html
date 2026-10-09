@@ -197,8 +197,93 @@
                 }
               </div>
 
-              <!-- Bin sites: optional name + one "lat, lng" field (Google Maps' copy format). Up to
-                   three; shown under the address on the profile as map links. -->
+              <!-- Grain on Farm pieces shared by every bin site's block and the "not tied to a bin site"
+                   block below: the column header, one row, and a site's add-a-commodity picker. -->
+              <ng-template #grainHeaderTpl>
+                <div class="grid grid-cols-[repeat(6,minmax(0,1fr))_1.25rem] items-center gap-1.5 px-2">
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Commodity</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Total bu</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Sold bu</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Grade</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Target</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Last bid</span>
+                  <span></span>
+                </div>
+              </ng-template>
+              <ng-template #grainRowTpl let-row>
+                <div class="grid grid-cols-[repeat(6,minmax(0,1fr))_1.25rem] items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-600 bg-gray-50/70 dark:bg-gray-700/40 px-2 py-1.5">
+                  <span class="min-w-0 flex items-center gap-1 text-sm font-semibold text-gray-800 dark:text-gray-200" [title]="grainRowTitle(row.commodityCode)">
+                    <span class="truncate">{{ row.commodityCode }}</span>
+                    @if (isLegacyGrainRow(row.commodityCode)) {
+                      <!-- Saved before Grain on Farm used codes: still valid, but a crop group. -->
+                      <span class="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase tracking-wide bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Group</span>
+                    }
+                  </span>
+                  <input type="text" inputmode="numeric" [(ngModel)]="row.bushelsOnHand" placeholder="Total"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <input type="text" inputmode="numeric" [(ngModel)]="row.bushelsSold" placeholder="Sold"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <input type="text" [(ngModel)]="row.grade" placeholder="Grade"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <!-- Target and Last bid accept negatives (basis), so no inputmode — a numeric/decimal
+                       phone keypad has no minus key — and no "$" adornment, which reads wrong on "-0.35". -->
+                  <input type="text" [(ngModel)]="row.targetBushels" placeholder="Target"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <input type="text" [(ngModel)]="row.lastBid" placeholder="Last bid"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <button type="button" (click)="removeGrainRow(row.siteKey, row.commodityCode)" title="Remove {{ row.commodityCode }}" class="shrink-0 text-gray-400 hover:text-scoular-red transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  </button>
+                </div>
+              </ng-template>
+              <ng-template #addGrainLinkTpl let-siteKey let-inBlock="inBlock">
+                <button type="button" (click)="openGrainForSite(siteKey)" [class.ml-3]="!inBlock"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  Add grain on farm
+                </button>
+              </ng-template>
+              <ng-template #grainPickerTpl let-siteKey>
+                <div class="flex items-center gap-2">
+                  <div class="relative flex-1 min-w-0">
+                    <button type="button" (click)="toggleGrainPicker(siteKey)" (blur)="closeGrainPickerDelayed()"
+                      (keydown)="onGrainPickerKeydown($event, siteKey)" aria-haspopup="listbox" [attr.aria-expanded]="grainPickerOpen() && grainPickerSite() === siteKey"
+                      class="w-full h-9 px-2 pr-7 flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-left focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                      [class.text-gray-900]="grainPickerSite() === siteKey && !!newGrainCode()" [class.dark:text-white]="grainPickerSite() === siteKey && !!newGrainCode()"
+                      [class.text-gray-500]="grainPickerSite() !== siteKey || !newGrainCode()" [class.dark:text-gray-400]="grainPickerSite() !== siteKey || !newGrainCode()">
+                      <span class="truncate">{{ grainPickerLabelFor(siteKey) }}</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 transition-transform" [class.rotate-180]="grainPickerOpen() && grainPickerSite() === siteKey" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    @if (grainPickerOpen() && grainPickerSite() === siteKey) {
+                      <div role="listbox" class="absolute left-0 top-full z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        @for (g of grainOptions(); track g.code) {
+                          <button type="button" role="option" tabindex="-1" [attr.id]="'grain-opt-' + $index" [attr.aria-selected]="g.code === newGrainCode()" (mousedown)="selectGrainOption(g.code)"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                            [class.bg-gray-100]="g.code === newGrainCode() || $index === grainPickerActive()" [class.dark:bg-gray-700]="g.code === newGrainCode() || $index === grainPickerActive()">
+                            {{ g.label }}
+                          </button>
+                        } @empty {
+                          <div class="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                            {{ isLoadingCommodities() ? 'Loading commodities…' : 'No more commodities to add' }}
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                  <button type="button" (click)="addGrainRow(siteKey)" [disabled]="grainPickerSite() !== siteKey || !newGrainCode()"
+                    class="shrink-0 inline-flex items-center gap-1 px-3 h-9 rounded-md text-sm font-medium bg-scoular-green-accessible text-white hover:bg-scoular-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add
+                  </button>
+                  <button type="button" (click)="cancelGrainPicker()"
+                    class="shrink-0 h-9 px-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors">
+                    Cancel
+                  </button>
+                </div>
+              </ng-template>
+
+              <!-- Bin sites: Name | Capacity | Lat/Long, as many as needed, each with its own Grain on Farm
+                   right under it. Shown at the bottom of Contact on the profile, with map links. -->
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
                   <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -217,18 +302,21 @@
                 </div>
 
                 @if (editBinSites().length > 0) {
-                  <div class="grid grid-cols-[1fr_1.4fr_1.25rem] gap-2 items-center px-1">
-                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name (optional)</span>
+                  <!-- Name | Capacity | Lat/Long | remove — one line per site. -->
+                  <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_1.25rem] gap-2 items-center px-1">
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name <span class="text-red-500" aria-hidden="true">*</span></span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Capacity (bu)</span>
                     <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Latitude, Longitude</span>
                     <span></span>
                   </div>
                   @for (row of editBinSites(); track $index) {
-                    <div class="grid grid-cols-[1fr_1.4fr_1.25rem] gap-2 items-center">
+                    <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_1.25rem] gap-2 items-center">
                       <!-- Each input carries an inline × that empties it (shown only when it has a value). -->
                       <div class="relative">
                         <input type="text" [ngModel]="row.name" (ngModelChange)="updateBinSiteField($index, 'name', $event)"
                           placeholder="Site Name" [attr.maxlength]="binSiteNameMaxLength" aria-label="Bin site name"
-                          class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                          [attr.aria-invalid]="binSiteNameMissing()[$index] ? true : null" [class]="binSiteNameMissing()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'"
+                          class="w-full h-9 pl-2.5 pr-7 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
                         @if (row.name) {
                           <button type="button" (click)="clearBinSiteField($index, 'name')" title="Clear name" aria-label="Clear bin site name"
                             class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
@@ -236,15 +324,30 @@
                           </button>
                         }
                       </div>
+                      <!-- Capacity: digits only, grouped as typed. The placeholder is just "BU" — the column
+                           header names the field. -->
+                      <div class="min-w-0">
+                        <div class="relative">
+                          <input type="text" inputmode="numeric" [ngModel]="row.capacity" (ngModelChange)="onBinSiteCapacityInput($index, $event)"
+                            placeholder="BU" maxlength="11" aria-label="Bin site capacity in bushels"
+                            class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                          @if (row.capacity) {
+                            <button type="button" (click)="clearBinSiteField($index, 'capacity')" title="Clear capacity" aria-label="Clear bin site capacity"
+                              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                            </button>
+                          }
+                        </div>
+                      </div>
                       <!-- Free-hand entry: decimals, N/S/E/W letters or degrees-minutes-seconds. On blur a
                            valid entry is rewritten as "lat, lng" so the user sees how it was read. -->
                       <div class="relative">
                         <input type="text" [ngModel]="row.coords" (ngModelChange)="updateBinSiteField($index, 'coords', $event)"
                           (blur)="normalizeBinSiteCoords($index)"
                           [placeholder]="coordinateExample" aria-label="Bin site latitude and longitude"
-                          [attr.aria-invalid]="binSiteErrors()[$index] ? true : null"
+                          [attr.aria-invalid]="binSiteCoordsInvalid()[$index] ? true : null"
                           class="w-full h-9 pl-2.5 pr-7 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                          [class]="binSiteErrors()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
+                          [class]="binSiteCoordsInvalid()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
                         @if (row.coords) {
                           <button type="button" (click)="clearBinSiteField($index, 'coords')" title="Clear coordinates" aria-label="Clear bin site coordinates"
                             class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
@@ -260,13 +363,84 @@
                     @if (binSiteErrors()[$index]; as error) {
                       <p class="text-xs text-red-500 dark:text-red-400">{{ error }}</p>
                     }
+                    <!-- This site's Grain on Farm (user 2026-10-09). Collapsed when the dialog opens: a site
+                         with grain shows one toggle line, "▸ Grain on Farm — North Bins (2) · 42,500 bu";
+                         expanded, its rows. The commodity picker is on screen only while adding — "+ Add
+                         grain on farm" brings it up, and adding a crop (or Cancel) puts it away again. -->
+                    @let siteGrain = grainRowsFor(row.key);
+                    @let adding = grainPickerSite() === row.key;
+                    @if (siteGrain.length > 0) {
+                      <button type="button" (click)="toggleGrainForSite(row.key)" [attr.aria-expanded]="isGrainBlockOpen(row.key)"
+                        class="ml-3 flex max-w-full items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 transition-transform" [class.rotate-90]="isGrainBlockOpen(row.key)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        <span class="truncate">Grain on Farm — {{ row.name.trim() || 'this site' }}</span>
+                        <span class="shrink-0 font-normal text-gray-500 dark:text-gray-400">({{ grainSummaryFor(row.key).count }}) · {{ grainSummaryFor(row.key).total | number }} bu</span>
+                      </button>
+                    } @else if (adding) {
+                      <div class="ml-3 flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+                        <span class="truncate">Grain on Farm — {{ row.name.trim() || 'this site' }}</span>
+                      </div>
+                    }
+                    @if ((siteGrain.length > 0 && isGrainBlockOpen(row.key)) || adding) {
+                      <div class="ml-3 pl-3 border-l-2 border-gray-200 dark:border-gray-600 space-y-1.5">
+                        @if (siteGrain.length > 0 && isGrainBlockOpen(row.key)) {
+                          <ng-container *ngTemplateOutlet="grainHeaderTpl" />
+                          @for (g of siteGrain; track g.commodityCode) {
+                            <ng-container *ngTemplateOutlet="grainRowTpl; context: { $implicit: g }" />
+                          }
+                        }
+                        @if (adding) {
+                          <ng-container *ngTemplateOutlet="grainPickerTpl; context: { $implicit: row.key }" />
+                        } @else {
+                          <ng-container *ngTemplateOutlet="addGrainLinkTpl; context: { $implicit: row.key, inBlock: true }" />
+                        }
+                      </div>
+                    } @else if (siteGrain.length === 0) {
+                      <ng-container *ngTemplateOutlet="addGrainLinkTpl; context: { $implicit: row.key, inBlock: false }" />
+                    }
                   }
-                  <p class="text-xs text-gray-400 dark:text-gray-500">Paste straight from Google Maps (right-click the spot, click the coordinates) or type them — decimals, N/W letters or degrees-minutes-seconds all work, and nothing needs rounding. Must be in North America.</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500">Paste straight from Google Maps (right-click the spot, click the coordinates) or type them — decimals, N/W letters or degrees-minutes-seconds all work, and nothing needs rounding. Must be in North America. Grain on farm uses the Planting Intentions commodity list; one the producer doesn't have is added to their Commodities.</p>
                 } @else {
-                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No bin sites added — use "Add bin site" to record each one by latitude and longitude.</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No bin sites added — use "Add bin site". Only the name is required; add the capacity and location when you have them.</p>
                 }
               </div>
 
+              <!-- Grain on Farm saved before it belonged to a bin site (2026-10-09). Shown only while such
+                   rows exist; each can be moved onto a site, and nothing new is added here — new grain on
+                   farm goes under a bin site above. -->
+              @if (unlinkedGrainRows().length > 0) {
+                <div class="space-y-2">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>
+                    </svg>
+                    Grain on Farm — not tied to a bin site
+                  </label>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">Saved before grain on farm belonged to a bin site. Move each row to the site it's stored at.</p>
+                  <div class="space-y-1.5">
+                    <ng-container *ngTemplateOutlet="grainHeaderTpl" />
+                    @for (g of unlinkedGrainRows(); track g.commodityCode) {
+                      <ng-container *ngTemplateOutlet="grainRowTpl; context: { $implicit: g }" />
+                      <div class="flex items-center gap-2 pl-2">
+                        @if (grainMoveTargets(g.commodityCode).length > 0) {
+                          <select (change)="moveGrainRowToSite(g.commodityCode, $any($event.target).value)" [attr.aria-label]="'Move ' + g.commodityCode + ' to a bin site'"
+                            class="h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-scoular-green">
+                            <option value="">Move {{ g.commodityCode }} to a bin site…</option>
+                            @for (t of grainMoveTargets(g.commodityCode); track t.key) {
+                              <option [value]="t.key">{{ t.name }}</option>
+                            }
+                          </select>
+                        } @else {
+                          <span class="text-xs text-gray-400 dark:text-gray-500">Add a named bin site above to move {{ g.commodityCode }} to it.</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Acres alone in half the row (Bin Capacity was removed 2026-10-09: capacity lives on each bin site). -->
               <div class="grid grid-cols-2 gap-4">
                 <div class="space-y-2">
                   <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -297,116 +471,6 @@
                     }
                   </div>
                 </div>
-
-                <div class="space-y-2">
-                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/>
-                    </svg>
-                    Bin Capacity (bu)
-                  </label>
-                  <div class="relative">
-                    <input
-                      type="text"
-                      inputmode="numeric"
-                      [(ngModel)]="editBinCapacity"
-                      placeholder="e.g., 45,000"
-                      maxlength="10"
-                      (focus)="clearZeroOnFocus('editBinCapacity')"
-                      (blur)="normalizeNumericOnBlur('editBinCapacity')"
-                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                    />
-                    @if (editBinCapacity && editBinCapacity !== '0') {
-                      <button type="button" (click)="editBinCapacity = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                      </button>
-                    }
-                  </div>
-                </div>
-              </div>
-
-              <!-- Grain on Farm (per commodity code: bushels on hand, grade, target) -->
-              <div class="space-y-2">
-                <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>
-                  </svg>
-                  Grain on Farm
-                </label>
-
-                <!-- Add control stays above the entered amounts -->
-                <div class="flex items-center gap-2">
-                  <!-- Custom list, not a native <select>: a native one opens upward near the bottom of
-                       the dialog and the direction can't be controlled. This one always drops down. -->
-                  <div class="relative flex-1 min-w-0">
-                    <button type="button" (click)="grainPickerOpen.set(!grainPickerOpen()); grainPickerActive.set(-1)" (blur)="closeGrainPickerDelayed()"
-                      (keydown)="onGrainPickerKeydown($event)" aria-haspopup="listbox" [attr.aria-expanded]="grainPickerOpen()"
-                      class="w-full h-9 px-2 pr-7 flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-left focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                      [class.text-gray-900]="!!newGrainCode()" [class.dark:text-white]="!!newGrainCode()"
-                      [class.text-gray-500]="!newGrainCode()" [class.dark:text-gray-400]="!newGrainCode()">
-                      <span class="truncate">{{ grainPickerLabel() }}</span>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 transition-transform" [class.rotate-180]="grainPickerOpen()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                    </button>
-                    @if (grainPickerOpen()) {
-                      <div role="listbox" class="absolute left-0 top-full z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                        @for (g of grainOptions(); track g.code) {
-                          <button type="button" role="option" tabindex="-1" [attr.id]="'grain-opt-' + $index" [attr.aria-selected]="g.code === newGrainCode()" (mousedown)="selectGrainOption(g.code)"
-                            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
-                            [class.bg-gray-100]="g.code === newGrainCode() || $index === grainPickerActive()" [class.dark:bg-gray-700]="g.code === newGrainCode() || $index === grainPickerActive()">
-                            {{ g.label }}
-                          </button>
-                        } @empty {
-                          <div class="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
-                            {{ isLoadingCommodities() ? 'Loading commodities…' : 'No more commodities to add' }}
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
-                  <button type="button" (click)="addGrainRow()" [disabled]="!newGrainCode()"
-                    class="shrink-0 inline-flex items-center gap-1 px-3 h-9 rounded-md text-sm font-medium bg-scoular-green-accessible text-white hover:bg-scoular-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                    Add
-                  </button>
-                </div>
-                <p class="text-[0.7rem] text-gray-500 dark:text-gray-400">Same list as Planting Intentions. Picking one the producer doesn't have also adds it to their Commodities.</p>
-
-                @if (editGrainOnFarm().length > 0) {
-                  <div class="space-y-1.5">
-                    <div class="grid grid-cols-[1fr_1fr_1fr_1fr_1.25rem] items-center gap-1.5 px-2">
-                      <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Commodity</span>
-                      <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Bushels</span>
-                      <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Grade</span>
-                      <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Target</span>
-                      <span></span>
-                    </div>
-                    @for (row of editGrainOnFarm(); track row.commodityCode) {
-                      <div class="grid grid-cols-[1fr_1fr_1fr_1fr_1.25rem] items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-600 bg-gray-50/70 dark:bg-gray-700/40 px-2 py-1.5">
-                        <span class="min-w-0 flex items-center gap-1 text-sm font-semibold text-gray-800 dark:text-gray-200" [title]="grainRowTitle(row.commodityCode)">
-                          <span class="truncate">{{ row.commodityCode }}</span>
-                          @if (isLegacyGrainRow(row.commodityCode)) {
-                            <!-- Saved before Grain on Farm used codes: still valid, but a crop group. -->
-                            <span class="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase tracking-wide bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Group</span>
-                          }
-                        </span>
-                        <input type="text" inputmode="numeric" [(ngModel)]="row.bushelsOnHand" placeholder="Bushels"
-                          class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
-                        <input type="text" [(ngModel)]="row.grade" placeholder="Grade"
-                          class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
-                        <div class="relative">
-                          <span class="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-gray-500 dark:text-gray-400 pointer-events-none">$</span>
-                          <input type="text" inputmode="decimal" [(ngModel)]="row.targetBushels" placeholder="Target"
-                            class="w-full h-8 pl-5 pr-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
-                        </div>
-                        <button type="button" (click)="removeGrainRow(row.commodityCode)" title="Remove {{ row.commodityCode }}" class="shrink-0 text-gray-400 hover:text-scoular-red transition-colors">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                        </button>
-                      </div>
-                    }
-                  </div>
-                } @else {
-                  <p class="text-xs text-gray-400 dark:text-gray-500">No grain on farm added yet.</p>
-                }
               </div>
 
               <!-- Commodities -->
