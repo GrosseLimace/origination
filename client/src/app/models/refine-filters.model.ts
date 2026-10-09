@@ -29,6 +29,11 @@ export interface RefinementFilters {
   // a saved list that still carries them in its JSON simply ignores them.
   hasBinSites?: boolean;
   noBinSites?: boolean;
+  binSitesAtLeast?: number | null;       // at least this many bin sites
+  binCapacityOver?: number | null;       // total capacity across the producer's sites over this (bu)
+  binSiteNameContains?: string;          // a site name containing this text
+  binSitesWithLocation?: boolean;        // a site with latitude/longitude
+  binSitesMissingLocation?: boolean;     // a site still missing latitude/longitude
   // Customer info
   hasPrimaryContact?: boolean;
   noPrimaryContact?: boolean;
@@ -84,6 +89,12 @@ export interface RefinementFilters {
   hasGrade?: boolean;        // has a free-text grade entered on a grain-on-farm row
   gradeOver?: number | null; // grade's parsed number at/above this (e.g. "4.4%" -> 4.4)
   gradeUnder?: number | null;// grade's parsed number at/below this
+  // The other grain-on-farm inputs (2026-10-09) — see shared/utils/grain-bin-refine.ts.
+  grainSoldOver?: number | null;   // total bushels SOLD (crop-scoped rows) over this
+  hasGrainSold?: boolean;          // any row with bushels sold
+  hasLastBid?: boolean;            // any row with a last bid
+  lastBidOver?: number | null;     // a row's last bid at/above this (signed: basis can be negative)
+  lastBidUnder?: number | null;    // a row's last bid at/below this
   // Dynamic
   crops?: string[];
   states?: string[];

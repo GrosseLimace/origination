@@ -7,6 +7,7 @@ import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planti
 import { dpTotalBushels, dpTotalCharges, dpContractCount } from '@shared/utils/dp-aggregate';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from '@shared/utils/crop-group-match';
 import { isGrainAndBinSitesCategory } from '@shared/utils/grain-on-farm';
+import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
 
 export interface NlqFilterContext {
   customers: Customer[];
@@ -268,7 +269,8 @@ export class NlqFilterService {
     if (isContracts) return 'Contracts';
     const isGrainOnFarm = r.grainOnFarmBushelsOver != null || !!r.hasGrainTarget || !!r.noGrainTarget
       || r.grainTargetOver != null || r.grainTargetUnder != null || !!r.hasGrade
-      || r.gradeOver != null || r.gradeUnder != null;
+      || r.gradeOver != null || r.gradeUnder != null
+      || activeGrainBinRefineCount(r) > 0;
     if (isGrainOnFarm) return 'Grain on Farm';
     return null;
   }
@@ -814,6 +816,16 @@ export class NlqFilterService {
       if (filters.grainTargetUnder != null && filters.grainTargetUnder > 0) {
         list = list.filter(c => grainRowsFor(c).some(g => g.targetBushels != null && g.targetBushels <= filters.grainTargetUnder!));
       }
+    }
+
+    // Sold, Last Bid and the bin-site fields — shared with Build a List (grain-bin-refine.ts).
+    if (activeGrainBinRefineCount(filters) > 0) {
+      list = applyGrainBinRefinements(list, filters, c => {
+        const rows = c.grainOnFarm ?? [];
+        return cropSelection.isEmpty
+          ? rows
+          : rows.filter(g => matchesCropSelection(g.commodityCode, cropSelection, cropLookup, { groupOnlyValue: true }));
+      });
     }
 
     if (!cropSelection.isEmpty) {

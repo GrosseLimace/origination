@@ -1155,10 +1155,11 @@
                 @if (showGrainOnFarmFilters()) {
                   @let hgs = hiddenFilters();
                   <div class="flex flex-wrap gap-x-4 sm:gap-x-10 gap-y-4 sm:gap-y-5">
-                    @if (!hgs.has('hasBinSites')) {
-                      <!-- Bin Sites -->
-                      <div class="space-y-2.5">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Bin Sites</p>
+                    <!-- Bin Sites: count, total capacity, name, map location (every bin-site input). Has / No
+                         bin sites hide when the prompt already says it, like in General. -->
+                    <div class="space-y-2.5">
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Bin Sites</p>
+                      @if (!hgs.has('hasBinSites')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                           <input type="checkbox" [ngModel]="pendingRefinements().hasBinSites" (ngModelChange)="updateRefinement(r => ({...r, hasBinSites: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
                           Has bin sites
@@ -1167,8 +1168,42 @@
                           <input type="checkbox" [ngModel]="pendingRefinements().noBinSites" (ngModelChange)="updateRefinement(r => ({...r, noBinSites: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
                           No bin sites
                         </label>
+                      }
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">At least</span>
+                        <input type="number" min="1" step="1"
+                          [ngModel]="pendingRefinements().binSitesAtLeast || ''"
+                          (ngModelChange)="updateRefinement(r => ({...r, binSitesAtLeast: $event ? +$event : null}))"
+                          placeholder="2"
+                          class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                        <span>sites</span>
                       </div>
-                    }
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Capacity over</span>
+                        <input type="number" min="1"
+                          [ngModel]="pendingRefinements().binCapacityOver || ''"
+                          (ngModelChange)="updateRefinement(r => ({...r, binCapacityOver: $event ? +$event : null}))"
+                          placeholder="bu"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                        <span>bu</span>
+                      </div>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Site name has</span>
+                        <input type="text" maxlength="100"
+                          [ngModel]="pendingRefinements().binSiteNameContains || ''"
+                          (ngModelChange)="updateRefinement(r => ({...r, binSiteNameContains: $event}))"
+                          placeholder="e.g. North"
+                          class="w-28 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().binSitesWithLocation" (ngModelChange)="updateRefinement(r => ({...r, binSitesWithLocation: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                          Has a map location
+                        </label>
+                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().binSitesMissingLocation" (ngModelChange)="updateRefinement(r => ({...r, binSitesMissingLocation: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                          Missing a map location
+                        </label>
+                    </div>
                     <!-- Grain on Farm -->
                     <div class="space-y-2.5">
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Grain on Farm</p>
@@ -1181,6 +1216,19 @@
                           class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         <span>bu</span>
                       </div>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Sold bushels over</span>
+                        <input type="number" min="1"
+                          [ngModel]="pendingRefinements().grainSoldOver || ''"
+                          (ngModelChange)="updateRefinement(r => ({...r, grainSoldOver: $event ? +$event : null}))"
+                          placeholder="bu"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                        <span>bu</span>
+                      </div>
+                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasGrainSold" (ngModelChange)="updateRefinement(r => ({...r, hasGrainSold: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                          Has sold bushels
+                        </label>
                       <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                         <input type="checkbox" [ngModel]="pendingRefinements().hasGrainTarget" (ngModelChange)="updateRefinement(r => ({...r, hasGrainTarget: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                         Has a target price
@@ -1208,6 +1256,31 @@
                           [ngModel]="pendingRefinements().grainTargetUnder || ''"
                           (ngModelChange)="updateRefinement(r => ({...r, grainTargetUnder: $event ? +$event : null}))"
                           placeholder="6.00"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                    </div>
+
+                    <!-- Last Bid ($/bu) — signed (a basis bid can be negative or zero), so blank, not 0, means "off". -->
+                    <div class="space-y-2.5">
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Last Bid ($/bu)</p>
+                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasLastBid" (ngModelChange)="updateRefinement(r => ({...r, hasLastBid: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                          Has a last bid
+                        </label>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Last bid over $</span>
+                        <input type="number" step="0.01"
+                          [ngModel]="pendingRefinements().lastBidOver ?? ''"
+                          (ngModelChange)="updateRefinement(r => ({...r, lastBidOver: $event === '' || $event == null ? null : +$event}))"
+                          placeholder="-0.40"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Last bid under $</span>
+                        <input type="number" step="0.01"
+                          [ngModel]="pendingRefinements().lastBidUnder ?? ''"
+                          (ngModelChange)="updateRefinement(r => ({...r, lastBidUnder: $event === '' || $event == null ? null : +$event}))"
+                          placeholder="4.25"
                           class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
                     </div>

@@ -30,6 +30,7 @@ import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.direct
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
 import { grainOnFarmColorKey, isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup } from '@shared/utils/grain-on-farm';
 import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
+import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -389,7 +390,7 @@ export class BuildListComponent {
       r.gradeOver != null, r.gradeUnder != null,
       r.crops && r.crops.length > 0, r.states && r.states.length > 0,
       r.deliveryLocations && r.deliveryLocations.length > 0
-    ].filter(Boolean).length;
+    ].filter(Boolean).length + activeGrainBinRefineCount(r);
   });
 
   /** Matches a commodity string against selected crop filters. Delegates to the shared matcher
@@ -689,6 +690,17 @@ export class BuildListComponent {
       if (r.grainTargetUnder != null && r.grainTargetUnder > 0) {
         list = list.filter(c => grainRowsFor(c).some(g => g.targetBushels != null && g.targetBushels <= r.grainTargetUnder!));
       }
+    }
+
+    // Sold, Last Bid and the bin-site fields (shared with NlqFilterService — see grain-bin-refine.ts).
+    // Grain filters use the same crop-scoped rows as the block above.
+    if (activeGrainBinRefineCount(r) > 0) {
+      list = applyGrainBinRefinements(list, r, c => {
+        const rows = c.grainOnFarm ?? [];
+        return selectedCrops.isEmpty
+          ? rows
+          : rows.filter(g => !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY));
+      });
     }
 
     // Customer info
@@ -3781,7 +3793,8 @@ export class BuildListComponent {
       filters.gradeOver != null || filters.gradeUnder != null ||
       (filters.crops && filters.crops.length > 0) ||
       (filters.states && filters.states.length > 0) ||
-      (filters.deliveryLocations && filters.deliveryLocations.length > 0)
+      (filters.deliveryLocations && filters.deliveryLocations.length > 0) ||
+      activeGrainBinRefineCount(filters) > 0
     );
   }
 

@@ -141,7 +141,12 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
   grain-on-farm AND bin-site prompt in one column — grain on farm is stored at a bin site. It was
   `Grain on Farm`, and the bin-site cards sat under `Producers`. The client treats the old name the same
   (`isGrainAndBinSitesCategory`, `shared/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
-  category in `Filters._promptCategory`. Its refine panel adds Has/No bin sites to the grain filters, and
+  category in `Filters._promptCategory`. Its refine panel has a filter for every input (2026-10-09):
+  **Bin Sites** — has / no sites, at least N sites, total capacity over N bu, site name contains, has / missing a
+  map location; **Grain on Farm** — bushels on farm over, sold bushels over, has sold bushels, has / no target;
+  **Target Price** over / under; **Last Bid** — has a last bid, over / under (signed; $0.00 counts); **Grade** —
+  has, over / under; plus the Crops chips (scoped to grain rows). The newer ones (Sold, Last Bid, all bin-site
+  fields but has/no) live once in `shared/utils/grain-bin-refine.ts`, called by both refine copies, and
   each result row leads with a neutral "N bin sites" chip before the per-crop bushel chips.
   **Result rows** (2026-10-09): from a 1536px viewport (`2xl`) a row is name | **bin sites & grain** (fixed 31rem — the widest
   table measured 471px — so notes line up down the list) | **notes** | last contact; narrower, the notes sit under
