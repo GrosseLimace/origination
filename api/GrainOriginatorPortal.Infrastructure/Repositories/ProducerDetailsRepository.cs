@@ -121,6 +121,9 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 Latitude = x.Latitude,
                 Longitude = x.Longitude,
                 Capacity = x.Capacity,
+                CommodityCode = x.CommodityCode,
+                Marketed = x.Marketed,
+                Unmarketed = x.Unmarketed,
                 SortOrder = x.SortOrder
             }).ToList());
 
@@ -330,6 +333,9 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                     Latitude = item.Latitude,
                     Longitude = item.Longitude,
                     Capacity = item.Capacity,
+                    CommodityCode = item.CommodityCode,
+                    Marketed = item.Marketed,
+                    Unmarketed = item.Unmarketed,
                     SortOrder = item.SortOrder
                 });
             }
@@ -421,7 +427,10 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                     Name = string.IsNullOrEmpty(name) ? null : name,
                     Latitude = Math.Round(b.Latitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero),
                     Longitude = Math.Round(b.Longitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero),
-                    Capacity = b.Capacity
+                    Capacity = b.Capacity,
+                    CommodityCode = string.IsNullOrWhiteSpace(b.CommodityCode) ? null : b.CommodityCode.Trim(),
+                    Marketed = b.Marketed,
+                    Unmarketed = b.Unmarketed
                 };
             })
             .GroupBy(b => (b.Latitude, b.Longitude))
@@ -539,6 +548,9 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 Latitude = b.Latitude,
                 Longitude = b.Longitude,
                 Capacity = b.Capacity,
+                CommodityCode = b.CommodityCode,
+                Marketed = b.Marketed,
+                Unmarketed = b.Unmarketed,
                 SortOrder = b.SortOrder
             })
             .ToListAsync(cancellationToken);

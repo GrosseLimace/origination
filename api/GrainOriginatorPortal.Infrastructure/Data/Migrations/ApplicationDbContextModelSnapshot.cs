@@ -1425,6 +1425,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("Capacity");
 
+                    b.Property<string>("CommodityCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("CommodityCode");
+
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
@@ -1437,6 +1442,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,15)")
                         .HasColumnName("Longitude");
 
+                    b.Property<decimal?>("Marketed")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("Marketed");
+
                     b.Property<string>("Name")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -1447,6 +1456,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0)
                         .HasColumnName("SortOrder");
+
+                    b.Property<decimal?>("Unmarketed")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("Unmarketed");
 
                     b.HasKey("Id");
 

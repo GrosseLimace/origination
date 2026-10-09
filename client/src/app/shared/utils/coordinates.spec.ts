@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { formatBinSiteCapacity, formatBinSiteCapacityInput, formatBinSiteLabel, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
+import { formatBinSiteCapacity, formatBinSiteCapacityInput, formatBinSiteDetails, formatBinSiteLabel, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
 
 function ok(text: string) {
   const result = parseCoordinatePair(text);
@@ -212,6 +212,15 @@ describe('bin site capacity', () => {
 
   it('puts the capacity in the hover title', () => {
     expect(formatBinSiteTitle({ name: 'North', latitude: 41.39, longitude: -95.01, capacity: 50000 }))
-      .toBe('North: 41.39, -95.01 · 50,000 bu — open in Google Maps');
+      .toBe('North: 41.39, -95.01 · 50,000 bu capacity — open in Google Maps');
+  });
+});
+
+describe('formatBinSiteDetails', () => {
+  it('lists commodity and bushels in order, only what is filled in', () => {
+    expect(formatBinSiteDetails({ latitude: 1, longitude: -1, commodityCode: 'YC', capacity: 50000, marketed: 20000, unmarketed: 30000 }))
+      .toBe('YC · 50,000 bu capacity · 20,000 marketed · 30,000 unmarketed');
+    expect(formatBinSiteDetails({ latitude: 1, longitude: -1, marketed: 0 })).toBe('0 marketed');
+    expect(formatBinSiteDetails({ latitude: 1, longitude: -1 })).toBe('');
   });
 });

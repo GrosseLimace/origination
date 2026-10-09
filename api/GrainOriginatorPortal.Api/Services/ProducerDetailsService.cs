@@ -149,6 +149,9 @@ public class ProducerDetailsService : IProducerDetailsService
                 Latitude = b.Latitude,
                 Longitude = b.Longitude,
                 Capacity = b.Capacity,
+                CommodityCode = b.CommodityCode,
+                Marketed = b.Marketed,
+                Unmarketed = b.Unmarketed,
                 SortOrder = index
             })
             .ToList();

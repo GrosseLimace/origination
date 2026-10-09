@@ -302,9 +302,9 @@
                      Labels are shortened to six places and truncate if the column is narrow; the
                      hover title and the map link carry the full pasted value. -->
                 <ng-template #binSiteLink let-site>
-                  <!-- The capacity sits outside the link and doesn't shrink, so a narrow column
-                       truncates the coordinates, never the bushels. -->
-                  <div class="flex min-w-0 items-center gap-2">
+                  <!-- Link line (name + coordinates), then a small detail line under it with the
+                       commodity and bushels — too much for one line beside the coordinates. -->
+                  <div class="min-w-0">
                     <a [href]="site.url" target="_blank" rel="noopener noreferrer"
                        (click)="trackBinSiteMapClick()" [title]="site.title"
                        class="flex min-w-0 items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
@@ -313,8 +313,8 @@
                       </svg>
                       <span class="truncate">{{ site.label }}</span>
                     </a>
-                    @if (site.capacity) {
-                      <span class="shrink-0 text-gray-500 dark:text-gray-400">{{ site.capacity }}</span>
+                    @if (site.details) {
+                      <p class="ml-5 text-xs text-gray-500 dark:text-gray-400">{{ site.details }}</p>
                     }
                   </div>
                 </ng-template>

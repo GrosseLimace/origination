@@ -35,6 +35,9 @@ export interface ProducerBinSiteItem {
   latitude: number;
   longitude: number;
   capacity?: number | null; // storage capacity in bushels, per site (not summed into Bin Capacity)
+  commodityCode?: string | null; // from the Grain on Farm list ("YC")
+  marketed?: number | null;      // bushels already marketed, typed by hand
+  unmarketed?: number | null;    // bushels not yet marketed, typed by hand
   sortOrder?: number;
 }
 

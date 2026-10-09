@@ -248,8 +248,20 @@ export function formatBinSiteLabel(site: ProducerBinSiteItem): string {
 export function formatBinSiteTitle(site: ProducerBinSiteItem): string {
   const coords = formatCoordinatePairFull(site.latitude, site.longitude);
   const name = site.name?.trim();
-  const capacity = formatBinSiteCapacity(site.capacity);
-  return `${name ? `${name}: ` : ''}${coords}${capacity ? ` · ${capacity}` : ''} — open in Google Maps`;
+  const details = formatBinSiteDetails(site);
+  return `${name ? `${name}: ` : ''}${coords}${details ? ` · ${details}` : ''} — open in Google Maps`;
+}
+
+/** The profile's detail line under a bin-site link: "YC · 50,000 bu capacity · 20,000 marketed ·
+ *  30,000 unmarketed", listing only what's filled in; '' when nothing is. */
+export function formatBinSiteDetails(site: ProducerBinSiteItem): string {
+  const n = (v: number | null | undefined) => (v == null ? null : v.toLocaleString('en-US'));
+  return [
+    site.commodityCode?.trim() || null,
+    n(site.capacity) && `${n(site.capacity)} bu capacity`,
+    n(site.marketed) && `${n(site.marketed)} marketed`,
+    n(site.unmarketed) && `${n(site.unmarketed)} unmarketed`,
+  ].filter(Boolean).join(' · ');
 }
 
 /** "50,000 bu", or '' when the site has no capacity. */

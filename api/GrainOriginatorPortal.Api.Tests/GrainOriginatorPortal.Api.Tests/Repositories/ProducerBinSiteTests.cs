@@ -235,4 +235,58 @@ public class ProducerBinSiteTests
         Assert.Equal(40_000m, saved.BinCapacity);
         Assert.Equal(40_000m, (await repo.GetAsync(100, CancellationToken.None))!.BinCapacity);
     }
+
+    // ===== Commodity + Marketed / Unmarketed (per site, typed by hand) =====
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_PersistsCommodityAndMarketing_AndComposesThemBack()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        var site = Site(39.1m, -95.1m, "North", capacity: 50_000m);
+        site.CommodityCode = "  YC ";
+        site.Marketed = 20_000m;
+        site.Unmarketed = 30_000m;
+        await repo.UpsertAsync(Args(new[] { site }), "tuser", CancellationToken.None);
+
+        var one = Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.BinSites);
+        Assert.Equal("YC", one.CommodityCode); // trimmed
+        Assert.Equal(20_000m, one.Marketed);
+        Assert.Equal(30_000m, one.Unmarketed);
+        var fromAll = Assert.Single((await repo.GetAllAsync(CancellationToken.None)).Single().BinSites);
+        Assert.Equal(("YC", 20_000m, 30_000m), (fromAll.CommodityCode, fromAll.Marketed, fromAll.Unmarketed));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_BlankCommodity_IsStoredAsNull()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        var site = Site(39.1m, -95.1m);
+        site.CommodityCode = "   ";
+        await repo.UpsertAsync(Args(new[] { site }), "tuser", CancellationToken.None);
+
+        Assert.Null(Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.BinSites).CommodityCode);
+    }
+
+    // -------------------------------------------------------------------------
+    // Marketed + Unmarketed over Capacity is only a dialog warning — the server keeps what was typed.
+    [Fact]
+    public async Task Upsert_MarketingOverCapacity_IsStoredAsTyped()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        var site = Site(39.1m, -95.1m, capacity: 10_000m);
+        site.Marketed = 8_000m;
+        site.Unmarketed = 8_000m;
+        await repo.UpsertAsync(Args(new[] { site }), "tuser", CancellationToken.None);
+
+        var one = Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.BinSites);
+        Assert.Equal((10_000m, 8_000m, 8_000m), (one.Capacity, one.Marketed, one.Unmarketed));
+    }
 }

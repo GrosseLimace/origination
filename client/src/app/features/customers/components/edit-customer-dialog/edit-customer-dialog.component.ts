@@ -12,6 +12,26 @@ import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, gr
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { AppStateService } from '@core/services/app-state.service';
 
+/** One bin-site row as edited: every field is the text in its input. Bushel fields hold the grouped
+ *  display text ("50,000"); commodityCode is '' when none is picked. */
+export interface BinSiteEditRow {
+  name: string;
+  coords: string;
+  capacity: string;
+  marketed: string;
+  unmarketed: string;
+  commodityCode: string;
+}
+
+const emptyBinSiteRow = (): BinSiteEditRow =>
+  ({ name: '', coords: '', capacity: '', marketed: '', unmarketed: '', commodityCode: '' });
+
+/** True when anything other than the coordinates has been filled in. */
+const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
+  !!(r.name.trim() || r.capacity.trim() || r.marketed.trim() || r.unmarketed.trim() || r.commodityCode.trim());
+
+const BIN_SITE_BUSHEL_LABELS = { capacity: 'Capacity', marketed: 'Marketed', unmarketed: 'Unmarketed' } as const;
+
 @Component({
   selector: 'app-edit-customer-dialog',
   standalone: true,
@@ -52,7 +72,7 @@ export class EditCustomerDialogComponent {
     primaryPhone: string;
     contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
     // Parsed at full precision (never rounded); array order is the display order. Capacity in bushels.
-    binSites: { name?: string; latitude: number; longitude: number; capacity?: number }[];
+    binSites: { name?: string; latitude: number; longitude: number; capacity?: number; commodityCode?: string; marketed?: number; unmarketed?: number }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
@@ -255,51 +275,118 @@ export class EditCustomerDialogComponent {
     return [];
   }
 
-  // ── Bin sites (optional name + "lat, lng" paste field + optional capacity; as many as needed) ───
+  // ── Bin sites: Name | Capacity | Marketed | Unmarketed | Commodity | Lat/Long, as many as needed ───
   readonly maxBinSites = MAX_BIN_SITES;
   readonly binSiteNameMaxLength = BIN_SITE_NAME_MAX_LENGTH;
   readonly coordinateExample = COORDINATE_EXAMPLE;
-  /** Capacity is kept as the displayed text ("50,000"); parseBinSiteCapacity reads the number. */
-  editBinSites = signal<{ name: string; coords: string; capacity: string }[]>([]);
+  /** Bushel fields are kept as the displayed text ("50,000"); parseBinSiteCapacity reads the number. */
+  editBinSites = signal<BinSiteEditRow[]>([]);
 
-  /** Per-row validation message, or null. Fully-blank rows are fine (dropped on save); a row with a
-   *  name or a capacity but no coordinates is not, any coordinates must pass the North American
-   *  rules, and a capacity can't exceed the same ceiling as the producer-level Bin Capacity. */
+  /** Per-row validation message, or null. Fully-blank rows are fine (dropped on save); a row with
+   *  anything in it but no coordinates is not, any coordinates must pass the North American rules,
+   *  and each bushel field shares the producer-level Bin Capacity ceiling. Blocks Save. */
   readonly binSiteErrors = computed(() =>
     this.editBinSites().map(r => {
-      if (!r.coords.trim()) {
-        return r.name.trim() || r.capacity.trim() ? 'Enter the coordinates for this site.' : null;
-      }
+      if (!r.coords.trim()) return binSiteRowHasData(r) ? 'Enter the coordinates for this site.' : null;
       const parsed = parseCoordinatePair(r.coords);
       if (!parsed.ok) return parsed.error;
+      const over = (['capacity', 'marketed', 'unmarketed'] as const)
+        .find(f => (parseBinSiteCapacity(r[f]) ?? 0) > MAX_BIN_SITE_CAPACITY);
+      return over
+        ? `${BIN_SITE_BUSHEL_LABELS[over]} can be at most ${MAX_BIN_SITE_CAPACITY.toLocaleString('en-US')} bushels.`
+        : null;
+    }));
+
+  /** Per-row warning, or null: Marketed + Unmarketed more than the site's Capacity. Shown, never
+   *  blocks Save — the user may know something the numbers don't (user decision 2026-10-09). */
+  readonly binSiteWarnings = computed(() =>
+    this.editBinSites().map(r => {
       const capacity = parseBinSiteCapacity(r.capacity);
-      return capacity !== null && capacity > MAX_BIN_SITE_CAPACITY
-        ? `Capacity can be at most ${MAX_BIN_SITE_CAPACITY.toLocaleString('en-US')} bushels.`
+      const stored = (parseBinSiteCapacity(r.marketed) ?? 0) + (parseBinSiteCapacity(r.unmarketed) ?? 0);
+      return capacity !== null && stored > capacity
+        ? `Marketed + Unmarketed (${stored.toLocaleString('en-US')} bu) is more than the Capacity (${capacity.toLocaleString('en-US')} bu).`
         : null;
     }));
 
   readonly binSitesInvalid = computed(() => this.binSiteErrors().some(e => e !== null));
 
+  /** Commodity choices: the same scoped list Grain on Farm offers, without its "already used"
+   *  filter — two sites can hold the same crop. */
+  readonly binSiteCommodityOptions = computed(() => buildGrainOnFarmOptions({
+    planting: this.scopedCommodities().filter(c => c.showInPlantingIntentions),
+    used: [],
+  }));
+
+  /** True when a row's saved code isn't in today's list (deactivated, or another trade unit's crop),
+   *  so the template can still show it as the selected option instead of a blank. */
+  isUnlistedBinSiteCommodity(code: string): boolean {
+    return !!code && !this.binSiteCommodityOptions().some(o => o.code === code);
+  }
+
   addBinSiteRow(): void {
-    this.editBinSites.update(rows => rows.length >= MAX_BIN_SITES ? rows : [...rows, { name: '', coords: '', capacity: '' }]);
+    this.editBinSites.update(rows => rows.length >= MAX_BIN_SITES ? rows : [...rows, emptyBinSiteRow()]);
   }
 
   removeBinSiteRow(index: number): void {
     this.editBinSites.update(rows => rows.filter((_, i) => i !== index));
+    this._syncBinSiteCommodityChips();
   }
 
-  updateBinSiteField(index: number, field: 'name' | 'coords' | 'capacity', value: string): void {
+  updateBinSiteField(index: number, field: keyof BinSiteEditRow, value: string): void {
     this.editBinSites.update(rows => rows.map((r, i) => i === index ? { ...r, [field]: value } : r));
   }
 
-  /** Capacity accepts digits only and shows them grouped as typed ("50000" → "50,000"). */
+  /** Bushel fields accept digits only and show them grouped as typed ("50000" → "50,000"). */
+  onBinSiteBushelsInput(index: number, field: 'capacity' | 'marketed' | 'unmarketed', value: string): void {
+    this.updateBinSiteField(index, field, formatBinSiteCapacityInput(value));
+  }
+
+  /** Kept for the capacity input's existing callers. */
   onBinSiteCapacityInput(index: number, value: string): void {
-    this.updateBinSiteField(index, 'capacity', formatBinSiteCapacityInput(value));
+    this.onBinSiteBushelsInput(index, 'capacity', value);
+  }
+
+  /** Picking a commodity the producer doesn't list adds it to their Commodities chips, as Grain on
+   *  Farm does; changing or clearing it takes back a chip that only this produced. */
+  setBinSiteCommodity(index: number, code: string): void {
+    this.updateBinSiteField(index, 'commodityCode', code);
+    this._syncBinSiteCommodityChips();
   }
 
   /** The inline × in each input. */
-  clearBinSiteField(index: number, field: 'name' | 'coords' | 'capacity'): void {
+  clearBinSiteField(index: number, field: keyof BinSiteEditRow): void {
+    if (field === 'commodityCode') {
+      this.setBinSiteCommodity(index, '');
+      return;
+    }
     this.updateBinSiteField(index, field, '');
+  }
+
+  /** Codes this dialog session put onto the Commodities chips because of a bin site — the bin-site
+   *  twin of _grainAutoAddedCommodities, kept separate so neither list removes the other's chip. */
+  private _binSiteAutoAddedCommodities = new Set<string>();
+
+  /** Makes the chips match the bin sites: adds a chip for any site commodity the producer doesn't
+   *  list (remembering it), and removes a remembered chip once no site uses it — unless a Grain on
+   *  Farm row or that list's own auto-add still needs it. Never touches a chip the user, tickets or
+   *  contracts put there. */
+  private _syncBinSiteCommodityChips(): void {
+    const key = (c: string) => c.trim().toLowerCase();
+    const used = new Set(this.editBinSites().map(r => key(r.commodityCode)).filter(Boolean));
+    for (const code of [...this._binSiteAutoAddedCommodities]) {
+      if (used.has(key(code))) continue;
+      this._binSiteAutoAddedCommodities.delete(code);
+      const stillNeeded = this._grainAutoAddedCommodities.has(code)
+        || this.editGrainOnFarm().some(g => key(g.commodityCode) === key(code));
+      if (!stillNeeded) this.editCommodities.update(c => c.filter(x => key(x) !== key(code)));
+    }
+    for (const row of this.editBinSites()) {
+      const code = row.commodityCode.trim();
+      if (code && !this.editCommodities().some(c => key(c) === key(code))) {
+        this.editCommodities.update(c => [...c, code]);
+        this._binSiteAutoAddedCommodities.add(code);
+      }
+    }
   }
 
   /** On blur, rewrite a valid free-hand entry ("41.39 N, 95.01 W", degrees-minutes-seconds, …) as
@@ -314,11 +401,15 @@ export class EditCustomerDialogComponent {
     if (canonical !== row.coords) this.updateBinSiteField(index, 'coords', canonical);
   }
 
-  private _binSitesFromCustomer(customer: Customer): { name: string; coords: string; capacity: string }[] {
+  private _binSitesFromCustomer(customer: Customer): BinSiteEditRow[] {
+    const bushels = (v: number | null | undefined) => v != null ? formatBinSiteCapacityInput(String(v)) : '';
     return (customer.binSites ?? []).map(b => ({
       name: b.name ?? '',
       coords: formatCoordinatePairFull(b.latitude, b.longitude),
-      capacity: b.capacity != null ? formatBinSiteCapacityInput(String(b.capacity)) : ''
+      capacity: bushels(b.capacity),
+      marketed: bushels(b.marketed),
+      unmarketed: bushels(b.unmarketed),
+      commodityCode: b.commodityCode ?? ''
     }));
   }
 
@@ -437,6 +528,8 @@ export class EditCustomerDialogComponent {
     if (this._grainAutoAddedCommodities.delete(commodityCode)) {
       this.editCommodities.update(c => c.filter(x => x !== commodityCode));
     }
+    // A bin site may still hold that commodity — put its chip back if so.
+    this._syncBinSiteCommodityChips();
   }
 
   // ── Collapsible sections (edit dialog) ──────────────────────────────────
@@ -530,6 +623,7 @@ export class EditCustomerDialogComponent {
         })));
         this.newGrainCode.set('');
         this._grainAutoAddedCommodities.clear();
+        this._binSiteAutoAddedCommodities.clear();
         this.grainPickerOpen.set(false);
 
         // Store original values
@@ -605,6 +699,7 @@ export class EditCustomerDialogComponent {
     this.editGrainOnFarm.set([]);
     this.newGrainCode.set('');
     this._grainAutoAddedCommodities.clear();
+    this._binSiteAutoAddedCommodities.clear();
     this.grainPickerOpen.set(false);
     this.grainPickerActive.set(-1);
     this.editContacts.set([]);
@@ -837,8 +932,11 @@ export class EditCustomerDialogComponent {
   private _serializeBinSites(): string {
     return JSON.stringify(
       this.editBinSites()
-        .filter(r => r.name.trim() || r.coords.trim() || r.capacity.trim())
-        .map(r => ({ n: r.name.trim(), c: r.coords.trim(), cap: parseBinSiteCapacity(r.capacity) }))
+        .filter(r => r.coords.trim() || binSiteRowHasData(r))
+        .map(r => ({
+          n: r.name.trim(), c: r.coords.trim(), cap: parseBinSiteCapacity(r.capacity),
+          m: parseBinSiteCapacity(r.marketed), u: parseBinSiteCapacity(r.unmarketed), cc: r.commodityCode.trim(),
+        }))
     );
   }
 
@@ -1047,6 +1145,7 @@ export class EditCustomerDialogComponent {
     })));
     this.newGrainCode.set('');
     this._grainAutoAddedCommodities.clear();
+    this._binSiteAutoAddedCommodities.clear();
     this.grainPickerOpen.set(false);
     this.grainPickerActive.set(-1);
     this.editLinkedProducerIds.set([...this._originalLinkedProducerIds]);
@@ -1103,7 +1202,15 @@ export class EditCustomerDialogComponent {
       const binSites = this.editBinSites().flatMap(r => {
         const parsed = parseCoordinatePair(r.coords);
         if (!parsed.ok) return [];
-        return [{ name: r.name.trim().slice(0, BIN_SITE_NAME_MAX_LENGTH) || undefined, latitude: parsed.lat, longitude: parsed.lng, capacity: parseBinSiteCapacity(r.capacity) ?? undefined }];
+        return [{
+          name: r.name.trim().slice(0, BIN_SITE_NAME_MAX_LENGTH) || undefined,
+          latitude: parsed.lat,
+          longitude: parsed.lng,
+          capacity: parseBinSiteCapacity(r.capacity) ?? undefined,
+          commodityCode: r.commodityCode.trim() || undefined,
+          marketed: parseBinSiteCapacity(r.marketed) ?? undefined,
+          unmarketed: parseBinSiteCapacity(r.unmarketed) ?? undefined,
+        }];
       });
 
       // Only save user-added commodities to ProducerDetails — ticket-derived ones are

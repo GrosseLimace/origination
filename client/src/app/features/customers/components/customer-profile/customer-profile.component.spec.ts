@@ -285,15 +285,16 @@ describe('CustomerProfileComponent — bin site links', () => {
     expect(component.binSitesCollapsible()).toBe(false);
   });
 
-  it('shows each site capacity beside its link, and nothing for a site without one', () => {
+  it('shows a detail line of commodity and bushels under each link, and none when empty', () => {
     ref.setInput('customer', makeCustomer({
       binSites: [
-        { name: 'North', latitude: 39.1, longitude: -95.1, capacity: 50000 },
+        { name: 'North', latitude: 39.1, longitude: -95.1, capacity: 50000, commodityCode: 'YC', marketed: 20000, unmarketed: 30000 },
         { name: 'South', latitude: 39.2, longitude: -95.2 },
       ],
     }));
 
-    expect(component.binSiteLinks().map(l => l.capacity)).toEqual(['50,000 bu', '']);
+    expect(component.binSiteLinks().map(l => l.details))
+      .toEqual(['YC · 50,000 bu capacity · 20,000 marketed · 30,000 unmarketed', '']);
   });
 
   it('collapses two or more sites behind a toggle that starts closed', () => {

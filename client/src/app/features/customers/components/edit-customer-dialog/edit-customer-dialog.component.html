@@ -1,6 +1,7 @@
 
     @if (isOpen() && customer()) {
-      <app-dialog [isOpen]="true" [scrollBody]="true" (close)="onCancel()">
+      <!-- size xl (1024px): wide enough for a bin-site row's six fields on one line. -->
+      <app-dialog [isOpen]="true" [scrollBody]="true" size="xl" (close)="onCancel()">
         <app-dialog-header>
           <app-dialog-title>Edit Producer Details</app-dialog-title>
           <app-dialog-description>Update farm details and manage associations for {{ customer()!.name }}</app-dialog-description>
@@ -217,14 +218,34 @@
                 </div>
 
                 @if (editBinSites().length > 0) {
-                  <div class="grid grid-cols-[1fr_1.4fr_0.75fr_1.25rem] gap-2 items-center px-1">
+                  <!-- One shared bushel input (Capacity / Marketed / Unmarketed): digits only, grouped as
+                       typed, with an inline ×. -->
+                  <ng-template #bushelInput let-i="i" let-field="field" let-value="value" let-label="label">
+                    <div class="relative">
+                      <input type="text" inputmode="numeric" [ngModel]="value" (ngModelChange)="onBinSiteBushelsInput(i, field, $event)"
+                        [placeholder]="label + ' (bu)'" maxlength="11" [attr.aria-label]="'Bin site ' + label + ' in bushels'"
+                        class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                      @if (value) {
+                        <button type="button" (click)="clearBinSiteField(i, field)" [title]="'Clear ' + label" [attr.aria-label]="'Clear bin site ' + label"
+                          class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </button>
+                      }
+                    </div>
+                  </ng-template>
+                  <!-- Name | Capacity | Marketed | Unmarketed | Commodity | Lat/Long | remove — one line on
+                       a wide screen (the dialog is size xl for this), two columns when narrow. -->
+                  <div class="hidden md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.9fr)_minmax(0,1.2fr)_minmax(0,1.7fr)_1.25rem] gap-2 items-center px-1">
                     <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name (optional)</span>
-                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Latitude, Longitude</span>
                     <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Capacity (bu)</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Marketed (bu)</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Unmarketed (bu)</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Commodity</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Latitude, Longitude</span>
                     <span></span>
                   </div>
                   @for (row of editBinSites(); track $index) {
-                    <div class="grid grid-cols-[1fr_1.4fr_0.75fr_1.25rem] gap-2 items-center">
+                    <div class="grid grid-cols-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.9fr)_minmax(0,1.2fr)_minmax(0,1.7fr)_1.25rem] gap-2 items-center">
                       <!-- Each input carries an inline × that empties it (shown only when it has a value). -->
                       <div class="relative">
                         <input type="text" [ngModel]="row.name" (ngModelChange)="updateBinSiteField($index, 'name', $event)"
@@ -237,6 +258,23 @@
                           </button>
                         }
                       </div>
+                      <ng-container *ngTemplateOutlet="bushelInput; context: { i: $index, field: 'capacity', value: row.capacity, label: 'Capacity' }" />
+                      <ng-container *ngTemplateOutlet="bushelInput; context: { i: $index, field: 'marketed', value: row.marketed, label: 'Marketed' }" />
+                      <ng-container *ngTemplateOutlet="bushelInput; context: { i: $index, field: 'unmarketed', value: row.unmarketed, label: 'Unmarketed' }" />
+                      <!-- Commodity: the Grain on Farm list. Picking one the producer doesn't list adds it to
+                           their Commodities chips (setBinSiteCommodity). -->
+                      <select [ngModel]="row.commodityCode" (ngModelChange)="setBinSiteCommodity($index, $event)"
+                        aria-label="Bin site commodity"
+                        class="w-full h-9 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                        [class.text-gray-400]="!row.commodityCode">
+                        <option value="">Commodity</option>
+                        @if (isUnlistedBinSiteCommodity(row.commodityCode)) {
+                          <option [value]="row.commodityCode">{{ row.commodityCode }}</option>
+                        }
+                        @for (opt of binSiteCommodityOptions(); track opt.code) {
+                          <option [value]="opt.code">{{ opt.label }}</option>
+                        }
+                      </select>
                       <!-- Free-hand entry: decimals, N/S/E/W letters or degrees-minutes-seconds. On blur a
                            valid entry is rewritten as "lat, lng" so the user sees how it was read. -->
                       <div class="relative">
@@ -253,18 +291,6 @@
                           </button>
                         }
                       </div>
-                      <!-- Storage capacity in bushels, optional. The sites' capacities add up to Bin Capacity. -->
-                      <div class="relative">
-                        <input type="text" inputmode="numeric" [ngModel]="row.capacity" (ngModelChange)="onBinSiteCapacityInput($index, $event)"
-                          placeholder="e.g., 50,000" maxlength="11" aria-label="Bin site storage capacity in bushels"
-                          class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
-                        @if (row.capacity) {
-                          <button type="button" (click)="clearBinSiteField($index, 'capacity')" title="Clear capacity" aria-label="Clear bin site capacity"
-                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                          </button>
-                        }
-                      </div>
                       <button type="button" (click)="removeBinSiteRow($index)" title="Remove bin site"
                         class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors justify-self-center">
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -272,6 +298,9 @@
                     </div>
                     @if (binSiteErrors()[$index]; as error) {
                       <p class="text-xs text-red-500 dark:text-red-400">{{ error }}</p>
+                    } @else if (binSiteWarnings()[$index]; as warning) {
+                      <!-- A warning only: Save stays enabled. -->
+                      <p class="text-xs text-amber-600 dark:text-amber-400">{{ warning }}</p>
                     }
                   }
                   <p class="text-xs text-gray-400 dark:text-gray-500">Paste straight from Google Maps (right-click the spot, click the coordinates) or type them — decimals, N/W letters or degrees-minutes-seconds all work, and nothing needs rounding. Must be in North America.</p>

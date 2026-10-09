@@ -60,6 +60,8 @@
 --   20261007152343_WidenProducerBinSiteCoordinatePrecision then widened both to decimal(18,15).
 --   Updated 2026-10-08: 20261008202530_AddProducerBinSiteCapacity added ProducerBinSite.Capacity,
 --   decimal(18,2) NULL (bushels, per site; not summed into ProducerDetails.BinCapacity).
+--   Updated 2026-10-09: 20261009141509_AddBinSiteCommodityAndMarketing added ProducerBinSite.CommodityCode
+--   nvarchar(100) NULL, Marketed and Unmarketed decimal(18,2) NULL.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -158,7 +160,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (378)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (381)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -429,10 +431,13 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerBinSite', 'Id',         'int',           0),
 ('dbo', 'ProducerBinSite', 'CustomerId', 'bigint',        0),
 ('dbo', 'ProducerBinSite', 'Capacity',   'decimal(18,2)', 1),
+('dbo', 'ProducerBinSite', 'CommodityCode', 'nvarchar(100)', 1),
 ('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 0),
 ('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 0),
+('dbo', 'ProducerBinSite', 'Marketed',   'decimal(18,2)', 1),
 ('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
 ('dbo', 'ProducerBinSite', 'SortOrder',  'int',           0),
+('dbo', 'ProducerBinSite', 'Unmarketed', 'decimal(18,2)', 1),
 -- ProducerContact
 ('dbo', 'ProducerContact', 'Id',         'int',           0),
 ('dbo', 'ProducerContact', 'CustomerId', 'bigint',        0),
@@ -630,7 +635,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (59)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (60)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -693,7 +698,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261007145119_AddProducerBinSite'),
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
 ('20261007162014_AddBinSiteQueryLibraryItems'),
-('20261008202530_AddProducerBinSiteCapacity');
+('20261008202530_AddProducerBinSiteCapacity'),
+('20261009141509_AddBinSiteCommodityAndMarketing');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
