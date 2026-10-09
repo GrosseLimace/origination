@@ -24,7 +24,7 @@ import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
-import { binSiteHasCoordinates, formatBinSiteTitle } from '@shared/utils/coordinates';
+import { binSiteHasCoordinates } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
@@ -179,10 +179,9 @@ export class CustomerProfileComponent {
     this.usageTracking.trackBinSiteMapClick(this.customer().id.toString());
   }
 
-  /** Bin sites as rows of the mini-table at the bottom of the Contact column, in saved order, every
-   *  cell already formatted ("50,000", or "—" when empty). The coordinates aren't a column (too
-   *  tight for the narrow card): they're in the row's hover title at full precision, and the pin
-   *  opens them in Google Maps — or there's no pin when the site has none. */
+  /** Bin sites as rows of the full-width table under the three detail columns, in saved order, every
+   *  cell already formatted ("50,000", or "—" when empty). The coordinates aren't a column: the pin
+   *  opens them in Google Maps at full precision — or there's no pin when the site has none. */
   readonly binSiteRows = computed(() => {
     const bushels = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-US'));
     return (this.customer().binSites ?? []).map(site => ({
@@ -191,7 +190,6 @@ export class CustomerProfileComponent {
       capacity: bushels(site.capacity),
       marketed: bushels(site.marketed),
       unmarketed: bushels(site.unmarketed),
-      title: formatBinSiteTitle(site),
       url: binSiteHasCoordinates(site) ? googleMapsCoordinatesUrl(site.latitude, site.longitude) : null,
     }));
   });

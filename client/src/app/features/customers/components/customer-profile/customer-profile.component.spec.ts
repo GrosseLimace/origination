@@ -216,7 +216,7 @@ describe('CustomerProfileComponent — address map link', () => {
 });
 
 // Covers the bin-site mini-table at the bottom of the Contact column: formatted cells (dashes when
-// empty), the exact-point map link only when a site has coordinates, the hover text, and that the
+// empty), the exact-point map link only when a site has coordinates, and that the
 // table starts collapsed and re-collapses per producer.
 describe('CustomerProfileComponent — bin site table', () => {
   let component: CustomerProfileComponent;
@@ -262,14 +262,6 @@ describe('CustomerProfileComponent — bin site table', () => {
       .toBe('https://www.google.com/maps/search/?api=1&query=41.39034548435109%2C-95.00754031349179');
   });
 
-  it('puts the full coordinates and details in the row hover text', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [{ name: 'North', latitude: 41.39034548435109, longitude: -95.00754031349179, capacity: 50000 }],
-    }));
-
-    expect(component.binSiteRows()[0].title)
-      .toBe('North: 41.39034548435109, -95.00754031349179 · 50,000 bu capacity — open in Google Maps');
-  });
 
   it('gives a site without coordinates no map link', () => {
     ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Home place', capacity: 20000 }] }));

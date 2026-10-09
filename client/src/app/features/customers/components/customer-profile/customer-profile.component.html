@@ -444,8 +444,8 @@
                (user 2026-10-09), so long names stay on one line and nothing in those three columns
                moves. Opened and closed only by the "Bin Sites (N)" toggle at the bottom of Contact. The
                table still hugs its content: values centered under their headers, empty ones "—";
-               the pin opens Google Maps, "—" when a site has no coordinates; the row hover text has
-               the full coordinates and details. A name wraps only if it is longer than the whole row. -->
+               the pin opens Google Maps (its tooltip is the only one on the rows), "—" when a site has
+               no coordinates. A name wraps only if it is longer than the whole row. -->
           @if (binSitesExpanded() && binSiteRows().length > 0) {
             <div id="bin-sites-table" class="mb-4">
               <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Bin Sites</h3>
@@ -462,7 +462,7 @@
                 </thead>
                 <tbody class="text-gray-700 dark:text-gray-300">
                   @for (site of binSiteRows(); track $index) {
-                    <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle" [title]="site.title">
+                    <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
                       <td class="py-1 pr-4 @4xl/profile:pr-6 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
                       <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.commodity }}</td>
                       <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.capacity }}</td>
@@ -476,7 +476,7 @@
                             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                           </a>
                         } @else {
-                          <span class="text-gray-300 dark:text-gray-600" title="No location recorded">—</span>
+                          <span class="text-gray-300 dark:text-gray-600">—</span>
                         }
                       </td>
                     </tr>

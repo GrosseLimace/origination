@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { binSiteHasCoordinates, formatBinSiteCapacity, formatBinSiteCapacityInput, formatBinSiteDetails, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
+import { binSiteHasCoordinates, formatBinSiteCapacityInput, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
 
 function ok(text: string) {
   const result = parseCoordinatePair(text);
@@ -161,24 +161,9 @@ describe('parseCoordinatePair — places outside North America', () => {
 });
 
 describe('formatting', () => {
-  it('always shows six places', () => {
-    expect(formatCoordinatePair(40.5, -96)).toBe('40.500000, -96.000000');
-  });
-
-  it('shortens a long paste to six places for display only', () => {
-    expect(formatCoordinatePair(41.39034548435109, -95.00754031349179)).toBe('41.390345, -95.007540');
-  });
-
   it('gives the full stored value back for editing, unshortened', () => {
     expect(formatCoordinatePairFull(41.39034548435109, -95.00754031349179)).toBe('41.39034548435109, -95.00754031349179');
   });
-
-  it('puts the full value in the hover title', () => {
-    expect(formatBinSiteTitle({ name: 'North Bins', latitude: 41.39034548435109, longitude: -95.00754031349179 }))
-      .toBe('North Bins: 41.39034548435109, -95.00754031349179 — open in Google Maps');
-  });
-
-
 });
 
 describe('bin site capacity', () => {
@@ -193,27 +178,8 @@ describe('bin site capacity', () => {
     expect(formatBinSiteCapacityInput('1234567')).toBe('1,234,567');
     expect(formatBinSiteCapacityInput('')).toBe('');
   });
-
-  it('shows "N bu" for display, or nothing without a capacity', () => {
-    expect(formatBinSiteCapacity(50000)).toBe('50,000 bu');
-    expect(formatBinSiteCapacity(null)).toBe('');
-    expect(formatBinSiteCapacity(undefined)).toBe('');
-  });
-
-  it('puts the capacity in the hover title', () => {
-    expect(formatBinSiteTitle({ name: 'North', latitude: 41.39, longitude: -95.01, capacity: 50000 }))
-      .toBe('North: 41.39, -95.01 · 50,000 bu capacity — open in Google Maps');
-  });
 });
 
-describe('formatBinSiteDetails', () => {
-  it('lists commodity and bushels in order, only what is filled in', () => {
-    expect(formatBinSiteDetails({ latitude: 1, longitude: -1, commodityCode: 'YC', capacity: 50000, marketed: 20000, unmarketed: 30000 }))
-      .toBe('YC · 50,000 bu capacity · 20,000 marketed · 30,000 unmarketed');
-    expect(formatBinSiteDetails({ latitude: 1, longitude: -1, marketed: 0 })).toBe('0 marketed');
-    expect(formatBinSiteDetails({ latitude: 1, longitude: -1 })).toBe('');
-  });
-});
 
 // Only the name is required (2026-10-09), so a site may have no coordinates at all.
 describe('bin site without coordinates', () => {
@@ -225,7 +191,4 @@ describe('bin site without coordinates', () => {
   });
 
 
-  it('has hover text without "open in Google Maps"', () => {
-    expect(formatBinSiteTitle(site)).toBe('Home place: 20,000 bu capacity');
-  });
 });
