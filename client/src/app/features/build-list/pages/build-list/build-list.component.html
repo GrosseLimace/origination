@@ -1100,12 +1100,12 @@
                 @if (showPlantingFilters()) {
                   @let hp = hiddenFilters();
                   <div class="flex flex-wrap gap-x-4 sm:gap-x-10 gap-y-4 sm:gap-y-5">
-                    <!-- Planting Year & Type -->
+                    <!-- Crop Year & Type -->
                     <div class="space-y-2.5">
-                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Planting Year & Type</p>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Crop Year & Type</p>
                       @if (!hp.has('plantingYear')) {
                         <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                          <span class="shrink-0">Planting year</span>
+                          <span class="shrink-0">Crop Year</span>
                           <input type="number" min="2020" max="2030"
                             [ngModel]="pendingRefinements().plantingYear || ''"
                             (ngModelChange)="updateRefinement(r => ({...r, plantingYear: $event ? +$event : null}))"
