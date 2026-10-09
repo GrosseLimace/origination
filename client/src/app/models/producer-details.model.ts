@@ -27,13 +27,16 @@ export interface ProducerContactItem {
   sortOrder?: number;
 }
 
-/** Per-commodity grain-on-farm row: bushels on the farm, a grade note, and the $/bu target. */
+/** Per-commodity grain-on-farm row: total bushels on the farm, how many of those are sold, a grade
+ *  note, and the $/bu target. */
 export interface GrainOnFarmItem {
   /** Commodity code ("YC", "HRWW"), or a crop-group name ("Corn") on rows saved before
    *  2026-09-23 — see shared/utils/grain-on-farm.ts. Read it through the crop matcher, never
    *  compare it to a group string directly. */
   commodityCode: string;
-  bushelsOnHand?: number;
-  targetBushels?: number;
+  bushelsOnHand?: number;   // total bushels on the farm, sold or not
+  bushelsSold?: number;     // of the total, how many are already sold (user-entered)
+  targetBushels?: number;   // $/bu target PRICE — not bushels, despite the name; may be negative (basis)
+  lastBid?: number;         // last bid, user-entered; may be negative (basis)
   grade?: string;           // free-text grade / quality note (e.g. "4.4%", "TW 58")
 }

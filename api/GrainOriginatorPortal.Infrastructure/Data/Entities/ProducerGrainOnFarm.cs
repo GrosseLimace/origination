@@ -4,7 +4,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 /// <summary>
 /// Per-commodity "grain on farm" for a producer: how many bushels of one commodity (e.g. YC, HRWW,
-/// YSBO) are currently on the farm, a grade note, and the $/bu target. One row per (customer,
+/// YSBO) are currently on the farm (total), how many of those are already sold, a grade note, and
+/// the $/bu target. One row per (customer,
 /// commodity code). Replaced as a set on upsert (mirrors the CustomerCommodity child-table pattern).
 ///
 /// Keyed by CODE, the same values the producer's Commodities chips hold, so HRWW and SRWW are two
@@ -19,8 +20,14 @@ public class ProducerGrainOnFarm
     public long CustomerId { get; set; }
     /// <summary>Commodity code (Commodity.Code), or a legacy crop-group name on rows saved before codes.</summary>
     public string CommodityCode { get; set; } = string.Empty;
+    /// <summary>Total bushels on the farm, sold or not.</summary>
     public decimal? BushelsOnHand { get; set; }
+    /// <summary>Of <see cref="BushelsOnHand"/>, how many are already sold. User-entered.</summary>
+    public decimal? BushelsSold { get; set; }
+    /// <summary>The $/bu target PRICE — not bushels, despite the name. May be negative (basis).</summary>
     public decimal? TargetBushels { get; set; }
+    /// <summary>Last bid for this commodity, user-entered. May be negative (basis). 4 decimals.</summary>
+    public decimal? LastBid { get; set; }
     /// <summary>Free-text grade / quality note (e.g. "4.4%", "TW 58"). Not necessarily numeric.</summary>
     public string? Grade { get; set; }
 
@@ -34,6 +41,8 @@ public class GrainOnFarmEntry
 {
     public string CommodityCode { get; set; } = string.Empty;
     public decimal? BushelsOnHand { get; set; }
+    public decimal? BushelsSold { get; set; }
     public decimal? TargetBushels { get; set; }
+    public decimal? LastBid { get; set; }
     public string? Grade { get; set; }
 }

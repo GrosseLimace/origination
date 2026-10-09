@@ -84,8 +84,18 @@ public record GrainOnFarmItemRequest
     [Range(0, 1_000_000_000)]
     public decimal? BushelsOnHand { get; init; }
 
+    /// <summary>How many of the <see cref="BushelsOnHand"/> bushels are already sold. Entered by the
+    /// user, not derived from contracts; not checked against the total.</summary>
     [Range(0, 1_000_000_000)]
+    public decimal? BushelsSold { get; init; }
+
+    /// <summary>$/bu target price. May be negative (a basis target).</summary>
+    [Range(-1_000_000_000, 1_000_000_000)]
     public decimal? TargetBushels { get; init; }
+
+    /// <summary>Last bid for this commodity, entered by the user. May be negative (a basis bid).</summary>
+    [Range(-1_000_000_000, 1_000_000_000)]
+    public decimal? LastBid { get; init; }
 
     /// <summary>Free-text grade / quality note (e.g. "4.4%", "TW 58"). Not necessarily numeric.</summary>
     [StringLength(100)]

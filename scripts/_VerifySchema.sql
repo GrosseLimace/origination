@@ -55,6 +55,10 @@
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
+--   Updated 2026-10-08: 20261008202827_AddBushelsSoldToGrainOnFarm added
+--   ProducerGrainOnFarm.BushelsSold decimal(18,2) NULL, so Columns grew to 372.
+--   Updated 2026-10-09: 20261009162336_AddLastBidToGrainOnFarm added
+--   ProducerGrainOnFarm.LastBid decimal(18,4) NULL, so Columns grew to 373.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -152,7 +156,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (371)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (373)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -441,9 +445,11 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- ProducerGrainOnFarm
 ('dbo', 'ProducerGrainOnFarm', 'Id',             'int',           0),
 ('dbo', 'ProducerGrainOnFarm', 'BushelsOnHand',  'decimal(18,2)', 1),
+('dbo', 'ProducerGrainOnFarm', 'BushelsSold',    'decimal(18,2)', 1),
 ('dbo', 'ProducerGrainOnFarm', 'CommodityCode',  'nvarchar(100)', 0),
 ('dbo', 'ProducerGrainOnFarm', 'CustomerId',     'bigint',        0),
 ('dbo', 'ProducerGrainOnFarm', 'Grade',          'nvarchar(100)', 1),
+('dbo', 'ProducerGrainOnFarm', 'LastBid',        'decimal(18,4)', 1),
 ('dbo', 'ProducerGrainOnFarm', 'TargetBushels',  'decimal(18,2)', 1),
 -- ProducerReminders (ProducerReminder entity)
 ('dbo', 'ProducerReminders', 'Id',             'int',            0),
@@ -675,7 +681,9 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260921204500_SplitFlaxPlantingCategoryByColour'),
 ('20260923124207_RenameGrainOnFarmGroupToCommodityCode'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
-('20261005131626_DropCtrmSourceToggleUsers');
+('20261005131626_DropCtrmSourceToggleUsers'),
+('20261008202827_AddBushelsSoldToGrainOnFarm'),
+('20261009162336_AddLastBidToGrainOnFarm');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

@@ -55,7 +55,7 @@ export class EditCustomerDialogComponent {
     eSignEnabled: boolean;
     tradeUnitCodes: string[];        // Desired ACTIVE manual TU set — reconciled on "Save Changes".
     reconcileTradeUnits: boolean;    // Only reconcile when it's safe + meaningful (see canReconcileTradeUnits).
-    grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[];
+    grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[];
     // Planting intentions to re-home because their trade unit is being removed. The PARENT runs
     // these, because it owns the cached intention lists that the profile renders — doing it here
     // would move the rows server-side while the table kept showing the old trade unit.
@@ -263,12 +263,12 @@ export class EditCustomerDialogComponent {
   filteredCommodities = signal<Commodity[]>([]);
   showSuggestions = signal(false);
 
-  // ── Grain on Farm (per commodity CODE: on-hand, grade, target) ──────────
+  // ── Grain on Farm (per commodity CODE: total bu, sold bu, grade, target) ──────────
   // Numbers are kept as strings for the inputs and parsed on save (mirrors editBinCapacity).
   // Rows are keyed by commodity code, the same values as the Commodities chips. A row saved before
   // 2026-09-23 may hold a crop-group name instead ("Corn"); it round-trips untouched and is flagged
   // in the template so the user can swap it for a code. See shared/utils/grain-on-farm.ts.
-  editGrainOnFarm = signal<{ commodityCode: string; bushelsOnHand: string; targetBushels: string; grade: string }[]>([]);
+  editGrainOnFarm = signal<{ commodityCode: string; bushelsOnHand: string; bushelsSold: string; targetBushels: string; lastBid: string; grade: string }[]>([]);
   newGrainCode = signal(''); // commodity code selected in the "add row" dropdown
 
   /** Dropdown options: one list of every planting-intentions commodity the user's trade units can
@@ -354,7 +354,7 @@ export class EditCustomerDialogComponent {
   addGrainRow(): void {
     const code = this.newGrainCode().trim();
     if (!code || this.editGrainOnFarm().some(r => r.commodityCode.toLowerCase() === code.toLowerCase())) return;
-    this.editGrainOnFarm.update(rows => [...rows, { commodityCode: code, bushelsOnHand: '', targetBushels: '', grade: '' }]);
+    this.editGrainOnFarm.update(rows => [...rows, { commodityCode: code, bushelsOnHand: '', bushelsSold: '', targetBushels: '', lastBid: '', grade: '' }]);
     if (!this.editCommodities().some(c => c.toLowerCase() === code.toLowerCase())) {
       this.editCommodities.update(c => [...c, code]);
       this._grainAutoAddedCommodities.add(code);
@@ -453,7 +453,9 @@ export class EditCustomerDialogComponent {
         this.editGrainOnFarm.set((customer.grainOnFarm || []).map(g => ({
           commodityCode: g.commodityCode,
           bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
+          bushelsSold: g.bushelsSold != null ? String(g.bushelsSold) : '',
           targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
+          lastBid: g.lastBid != null ? String(g.lastBid) : '',
           grade: g.grade ?? ''
         })));
         this.newGrainCode.set('');
@@ -742,7 +744,7 @@ export class EditCustomerDialogComponent {
   private _serializeGrain(): string {
     return JSON.stringify(
       this.editGrainOnFarm()
-        .map(r => ({ g: r.commodityCode, h: r.bushelsOnHand.trim(), t: r.targetBushels.trim(), gr: r.grade.trim() }))
+        .map(r => ({ g: r.commodityCode, h: r.bushelsOnHand.trim(), s: r.bushelsSold.trim(), t: r.targetBushels.trim(), lb: r.lastBid.trim(), gr: r.grade.trim() }))
         .sort((a, b) => a.g.localeCompare(b.g))
     );
   }
@@ -843,12 +845,15 @@ export class EditCustomerDialogComponent {
     return isNaN(num) ? 0 : num;
   }
 
-  /** Parses a number that may contain a decimal point (e.g. the grain-on-farm target like "5.5").
-   *  Strips everything except digits and a dot, then parses as a float. */
-  private _parseDecimalInput(value: string): number {
-    const cleaned = value.replace(/[^0-9.]/g, '');
-    const num = parseFloat(cleaned);
-    return isNaN(num) ? 0 : num;
+  /** Parses a signed decimal for the grain-on-farm Target and Last Bid, which can be negative basis
+   *  values ("-0.35", "-$0.35", "$5.50"). A minus anywhere before the first digit makes it negative;
+   *  "$", commas and spaces are ignored. Blank or unparseable input is undefined ("not entered"),
+   *  never 0 — a 0 bid is a real value. */
+  private _parseSignedDecimalInput(value: string): number | undefined {
+    const text = value.trim();
+    const num = parseFloat(text.replace(/[^0-9.]/g, ''));
+    if (isNaN(num)) return undefined;
+    return /^[^0-9.]*-/.test(text) ? -num : num;
   }
 
   clearCommoditySearch(): void {
@@ -958,7 +963,9 @@ export class EditCustomerDialogComponent {
     this.editGrainOnFarm.set((this.customer()?.grainOnFarm || []).map(g => ({
       commodityCode: g.commodityCode,
       bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
+      bushelsSold: g.bushelsSold != null ? String(g.bushelsSold) : '',
       targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
+      lastBid: g.lastBid != null ? String(g.lastBid) : '',
       grade: g.grade ?? ''
     })));
     this.newGrainCode.set('');
@@ -1033,7 +1040,9 @@ export class EditCustomerDialogComponent {
           .map(r => ({
             commodityCode: r.commodityCode,
             bushelsOnHand: r.bushelsOnHand.trim() ? this._parseNumericInput(r.bushelsOnHand) : undefined,
-            targetBushels: r.targetBushels.trim() ? this._parseDecimalInput(r.targetBushels) : undefined,
+            bushelsSold: r.bushelsSold.trim() ? this._parseNumericInput(r.bushelsSold) : undefined,
+            targetBushels: this._parseSignedDecimalInput(r.targetBushels),
+            lastBid: this._parseSignedDecimalInput(r.lastBid),
             grade: r.grade.trim() || undefined
           })),
         intentionMoves: [...this._stagedIntentionMoves()].map(([from, to]) => ({ from, to }))

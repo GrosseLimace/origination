@@ -97,6 +97,15 @@ describe('NlqFilterService — grain on farm + target', () => {
     expect(ids('target under $6')).toEqual([1]);
   });
 
+  it('a negative (basis) target counts as a target set', () => {
+    const echo = customer(5, 'Echo Farms', [{ commodityCode: 'Corn', bushelsOnHand: 10000, targetBushels: -0.25 }]);
+    const withEcho = (q: string) =>
+      svc.parseAndFilter(q, ctx([...all, echo])).customers.map(c => c.id).sort((a, b) => a - b);
+    expect(withEcho('producers with a target')).toEqual([1, 3, 5]);
+    expect(withEcho('grain on farm with no target set')).toEqual([2]);
+    expect(withEcho('target under $6')).toEqual([1, 5]);
+  });
+
   it('"top producers by grain on farm" → ranked by total bushels on hand (desc), no-grain dropped', () => {
     const ordered = svc.parseAndFilter('top 25 producers by grain on farm', ctx(all)).customers.map(c => c.id);
     expect(ordered).toEqual([1, 2, 3]); // alpha 80k > bravo 20k > charlie 5k; delta (0) excluded

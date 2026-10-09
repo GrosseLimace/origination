@@ -1535,6 +1535,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("BushelsOnHand");
 
+                    b.Property<decimal?>("BushelsSold")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("BushelsSold");
+
                     b.Property<string>("CommodityCode")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1549,6 +1553,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("Grade");
+
+                    b.Property<decimal?>("LastBid")
+                        .HasColumnType("decimal(18,4)")
+                        .HasColumnName("LastBid");
 
                     b.Property<decimal?>("TargetBushels")
                         .HasColumnType("decimal(18,2)")

@@ -209,4 +209,22 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
     expect(component.tuRemovalPrompt()).toBeNull();
     expect(component.selectedTuCodes()).toEqual(['2190']);
   });
+
+  // Not a trade-unit rule, but this suite already drives onSave(): Target and Last bid are basis
+  // values that can be negative, so the minus sign must survive parsing ("$" and commas don't).
+  it('saves grain-on-farm Target and Last bid as signed numbers, blank as not entered', () => {
+    withMemberships(manual('2190'));
+    component.editGrainOnFarm.set([
+      { commodityCode: 'YC', bushelsOnHand: '80,000', bushelsSold: '30,000', grade: '', targetBushels: '-0.25', lastBid: '-$0.3525' },
+      { commodityCode: 'YSB', bushelsOnHand: '40000', bushelsSold: '', grade: '', targetBushels: '$12.50', lastBid: '' },
+    ]);
+
+    component.onSave();
+
+    const grain = (saved.at(-1) as unknown as { grainOnFarm: { commodityCode: string; bushelsSold?: number; targetBushels?: number; lastBid?: number }[] }).grainOnFarm;
+    expect(grain).toEqual([
+      expect.objectContaining({ commodityCode: 'YC', bushelsSold: 30000, targetBushels: -0.25, lastBid: -0.3525 }),
+      expect.objectContaining({ commodityCode: 'YSB', bushelsSold: undefined, targetBushels: 12.5, lastBid: undefined }),
+    ]);
+  });
 });

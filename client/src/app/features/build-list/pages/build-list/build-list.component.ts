@@ -672,18 +672,18 @@ export class BuildListComponent {
         list = list.filter(c => grainRowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0) > r.grainOnFarmBushelsOver!);
       }
       if (r.hasGrainTarget) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
+        list = list.filter(c => grainRowsFor(c).some(g => g.targetBushels != null));
       }
       if (r.noGrainTarget) {
         // Has grain on farm but no target price set — the actionable "needs a target" list.
         list = list.filter(c => grainRowsFor(c).some(g => (g.bushelsOnHand ?? 0) > 0)
-          && !grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
+          && !grainRowsFor(c).some(g => g.targetBushels != null));
       }
       if (r.grainTargetOver != null && r.grainTargetOver > 0) {
         list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) >= r.grainTargetOver!));
       }
       if (r.grainTargetUnder != null && r.grainTargetUnder > 0) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0 && (g.targetBushels ?? 0) <= r.grainTargetUnder!));
+        list = list.filter(c => grainRowsFor(c).some(g => g.targetBushels != null && g.targetBushels <= r.grainTargetUnder!));
       }
     }
 

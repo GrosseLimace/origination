@@ -17,9 +17,8 @@ import { CustomerPrintReportComponent } from '../customer-print-report/customer-
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
-import { commodityChipClass } from '@shared/utils/commodity-color';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
-import { grainOnFarmColorKey, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
+import { grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
@@ -63,11 +62,11 @@ export class CustomerProfileComponent {
   public customer = input.required<Customer>();
   public allCustomers = input<Customer[]>([]);
 
-  // ── Grain on Farm (per-commodity on-hand + target) ──────────────────────
-  /** Grain-on-farm rows with a positive on-hand or target, or a grade entered — sorted by on-hand desc. */
+  // ── Grain on Farm (per-commodity total + sold + target) ──────────────────────
+  /** Grain-on-farm rows with a positive total or sold, a target or last bid, or a grade entered — sorted by total desc. */
   readonly grainOnFarmRows = computed(() =>
     (this.customer().grainOnFarm ?? [])
-      .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.targetBushels ?? 0) > 0 || !!(g.grade ?? '').trim())
+      .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.bushelsSold ?? 0) > 0 || g.targetBushels != null || g.lastBid != null || !!(g.grade ?? '').trim())
       .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0)));
   /** Total bushels currently on the farm (sum of per-commodity on-hand). */
   readonly grainOnFarmTotal = computed(() =>
@@ -79,16 +78,11 @@ export class CustomerProfileComponent {
   toggleGrainOnFarm(): void {
     if (this.grainOnFarmRows().length > 0) this.showGrainOnFarm.update(v => !v);
   }
-  // Rows hold a commodity code (or a legacy crop-group name). Colour by the crop group so YC, YCNG
-  // and an old "Corn" row are all corn amber; hover shows the commodity name. Lazy computeds, so
-  // reading the `commodities` input declared further down is safe.
+  // Rows hold a commodity code (or a legacy crop-group name); hover on the Crop cell shows the
+  // commodity name. Lazy computeds, so reading the `commodities` input declared further down is safe.
   private readonly _grainLookup = computed(() => buildCropGroupLookup(this.commodities()));
   private readonly _grainByCode = computed(() => indexCommoditiesByCode(this.commodities()));
-  /** Tailwind chip classes for a grain-on-farm commodity — the shared per-crop color. */
-  grainChipClass(value: string): string {
-    return commodityChipClass(grainOnFarmColorKey(value, this._grainLookup()));
-  }
-  /** Hover text for a grain-on-farm chip: the commodity name, or the legacy-row note. */
+  /** Hover text for a grain-on-farm crop: the commodity name, or the legacy-row note. */
   grainChipTitle(value: string): string {
     return grainOnFarmTitle(value, this._grainByCode(), this._grainLookup());
   }
@@ -148,7 +142,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -482,7 +476,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();

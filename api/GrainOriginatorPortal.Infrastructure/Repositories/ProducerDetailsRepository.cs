@@ -78,7 +78,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         // Same batching pattern for ProducerGrainOnFarm → per-commodity on-hand/grade/target rows.
         var grainRows = await _appContext.ProducerGrainOnFarm.AsNoTracking()
             .Where(g => customerIds.Contains(g.CustomerId))
-            .Select(g => new { g.CustomerId, g.CommodityCode, g.BushelsOnHand, g.TargetBushels, g.Grade })
+            .Select(g => new { g.CustomerId, g.CommodityCode, g.BushelsOnHand, g.BushelsSold, g.TargetBushels, g.LastBid, g.Grade })
             .ToListAsync(cancellationToken);
         var grainByCustomer = grainRows
             .GroupBy(x => x.CustomerId)
@@ -86,7 +86,9 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             {
                 CommodityCode = x.CommodityCode,
                 BushelsOnHand = x.BushelsOnHand,
+                BushelsSold = x.BushelsSold,
                 TargetBushels = x.TargetBushels,
+                LastBid = x.LastBid,
                 Grade = x.Grade
             }).ToList());
 
@@ -260,7 +262,9 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 CustomerId = customerId,
                 CommodityCode = item.CommodityCode.Trim(),
                 BushelsOnHand = item.BushelsOnHand,
+                BushelsSold = item.BushelsSold,
                 TargetBushels = item.TargetBushels,
+                LastBid = item.LastBid,
                 Grade = string.IsNullOrWhiteSpace(item.Grade) ? null : item.Grade.Trim()
             });
         }
@@ -454,7 +458,9 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             {
                 CommodityCode = g.CommodityCode,
                 BushelsOnHand = g.BushelsOnHand,
+                BushelsSold = g.BushelsSold,
                 TargetBushels = g.TargetBushels,
+                LastBid = g.LastBid,
                 Grade = g.Grade
             })
             .ToListAsync(cancellationToken);

@@ -778,17 +778,17 @@ export class NlqFilterService {
         list = list.filter(c => grainRowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0) > filters.grainOnFarmBushelsOver!);
       }
       if (filters.hasGrainTarget) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
+        list = list.filter(c => grainRowsFor(c).some(g => g.targetBushels != null));
       }
       if (filters.noGrainTarget) {
         list = list.filter(c => grainRowsFor(c).some(g => (g.bushelsOnHand ?? 0) > 0)
-          && !grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
+          && !grainRowsFor(c).some(g => g.targetBushels != null));
       }
       if (filters.grainTargetOver != null && filters.grainTargetOver > 0) {
         list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) >= filters.grainTargetOver!));
       }
       if (filters.grainTargetUnder != null && filters.grainTargetUnder > 0) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0 && (g.targetBushels ?? 0) <= filters.grainTargetUnder!));
+        list = list.filter(c => grainRowsFor(c).some(g => g.targetBushels != null && g.targetBushels <= filters.grainTargetUnder!));
       }
     }
 
@@ -1772,7 +1772,7 @@ export class NlqFilterService {
       const totalBu = (c: Customer) => rowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0);
       const maxTarget = (c: Customer) => rowsFor(c).reduce((m, g) => Math.max(m, g.targetBushels ?? 0), 0);
       const hasGrain = (c: Customer) => rowsFor(c).some(g => (g.bushelsOnHand ?? 0) > 0);
-      const hasTarget = (c: Customer) => rowsFor(c).some(g => (g.targetBushels ?? 0) > 0);
+      const hasTarget = (c: Customer) => rowsFor(c).some(g => g.targetBushels != null);
       const hasGrade = (c: Customer) => rowsFor(c).some(g => !!(g.grade ?? '').trim());
 
       // Target price thresholds — "target over $5.50", "target price above 6", "target under 4.25".
@@ -1787,7 +1787,7 @@ export class NlqFilterService {
         result = result.filter(c => maxTarget(c) >= min);
       } else if (targetUnder) {
         const max = parseFloat(targetUnder[1].replace(/,/g, ''));
-        result = result.filter(c => rowsFor(c).some(g => (g.targetBushels ?? 0) > 0 && (g.targetBushels ?? 0) <= max));
+        result = result.filter(c => rowsFor(c).some(g => g.targetBushels != null && g.targetBushels <= max));
       } else if (grainTargetContext && negativeTarget) {
         // "grain on farm without a target set" — actionable: has grain but no target price yet.
         result = result.filter(c => hasGrain(c) && !hasTarget(c));

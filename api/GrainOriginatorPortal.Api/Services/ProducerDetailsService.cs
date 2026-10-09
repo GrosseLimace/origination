@@ -124,7 +124,9 @@ public class ProducerDetailsService : IProducerDetailsService
             {
                 CommodityCode = g.EffectiveCommodityCode,
                 BushelsOnHand = g.BushelsOnHand,
+                BushelsSold = g.BushelsSold,
                 TargetBushels = g.TargetBushels,
+                LastBid = g.LastBid,
                 Grade = g.Grade
             })
             .ToList();

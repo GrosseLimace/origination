@@ -411,7 +411,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
             entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(100).IsRequired();
             entity.Property(e => e.BushelsOnHand).HasColumnName("BushelsOnHand").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.BushelsSold).HasColumnName("BushelsSold").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.TargetBushels).HasColumnName("TargetBushels").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.LastBid).HasColumnName("LastBid").HasColumnType("decimal(18,4)").IsRequired(false);
             entity.Property(e => e.Grade).HasColumnName("Grade").HasMaxLength(100).IsRequired(false);
 
             entity.HasOne(e => e.Customer)

@@ -26,7 +26,9 @@ public static class ProducerDetailsMappings
         {
             CommodityCode = g.CommodityCode,
             BushelsOnHand = g.BushelsOnHand,
+            BushelsSold = g.BushelsSold,
             TargetBushels = g.TargetBushels,
+            LastBid = g.LastBid,
             Grade = g.Grade,
         }).ToList(),
         // Repository composes contacts primary-first; keep that order on the wire.

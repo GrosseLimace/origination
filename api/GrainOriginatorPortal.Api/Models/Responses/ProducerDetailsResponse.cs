@@ -41,6 +41,8 @@ public record GrainOnFarmItemResponse
     /// <summary>Commodity code, or a legacy crop-group name on rows saved before codes.</summary>
     public string CommodityCode { get; init; } = string.Empty;
     public decimal? BushelsOnHand { get; init; }
+    public decimal? BushelsSold { get; init; }
     public decimal? TargetBushels { get; init; }
+    public decimal? LastBid { get; init; }
     public string? Grade { get; init; }
 }
