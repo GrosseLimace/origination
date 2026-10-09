@@ -29,6 +29,7 @@ import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
 import { grainOnFarmColorKey, isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup } from '@shared/utils/grain-on-farm';
+import { binSiteNames, notesMentioningBinSites } from '@shared/utils/bin-site-mentions';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -1927,6 +1928,82 @@ export class BuildListComponent {
   /** The "Grain on Farm & Bin Sites" prompts (or a saved list from the pre-rename "Grain on Farm"):
    *  grain filters plus has/no bin sites in one panel, and crop + bushel chips on each result. */
   readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && isGrainAndBinSitesCategory(this.effectiveLibraryCategory()));
+
+  // ── Notes that mention a bin site (Grain on Farm & Bin Sites prompts, user 2026-10-09) ────────
+  // Notes are added as usual; on these prompts a result row's middle column shows the producer's
+  // notes that name one of their saved bin sites — the same column and note stack note prompts use.
+  // Loaded by its own small batch loader (not the note-prompt machinery): as rows render, one fetch
+  // per batch for those producers' notes containing any of their site names (a server superset the
+  // client re-matches exactly).
+
+  /** Bin-site mention notes are on screen: these prompts, unless a notes filter owns the middle column. */
+  readonly binNotesActive = computed(() => this.showGrainOnFarmFilters() && !this.noteFilterActive());
+
+  /** Notes fetched for bin-site mentions (accumulated across render batches). */
+  private readonly _binNotes = signal<Note[]>([]);
+  /** "customerId:site names" already fetched — a renamed site changes the key, so it refetches. */
+  private readonly _binNoteFetchedKeys = new Set<string>();
+  private _binNotesFetchInFlight = false;
+
+  /** Per producer: the notes naming one of their bin sites, pinned first then newest, and which sites. */
+  readonly binSiteNotesByCustomer = computed(() => {
+    const map = new Map<number, { notes: Note[]; sites: string[] }>();
+    if (!this.binNotesActive()) return map;
+    const byCustomer = new Map<number, Note[]>();
+    for (const n of this._binNotes()) {
+      const arr = byCustomer.get(n.customerId);
+      if (arr) arr.push(n); else byCustomer.set(n.customerId, [n]);
+    }
+    for (const c of this.customers()) {
+      const notes = byCustomer.get(c.id);
+      if (!notes) continue;
+      const found = notesMentioningBinSites(notes, binSiteNames(c.binSites));
+      if (found) map.set(c.id, found);
+    }
+    return map;
+  });
+
+  /** Fetches the bin-mention notes for producers in the render window that haven't been fetched. */
+  private _loadBinSiteNotes(): void {
+    if (!this.binNotesActive() || this._binNotesFetchInFlight) return;
+    const ids: number[] = [];
+    const keys: string[] = [];
+    const names = new Set<string>();
+    for (const c of this.renderedCustomers()) {
+      const siteNames = binSiteNames(c.binSites);
+      if (siteNames.length === 0) continue;
+      const key = `${c.id}:${siteNames.join('|').toLowerCase()}`;
+      if (this._binNoteFetchedKeys.has(key)) continue;
+      ids.push(c.id);
+      keys.push(key);
+      siteNames.forEach(n => names.add(n));
+    }
+    if (ids.length === 0) return;
+    this._binNotesFetchInFlight = true;
+    const done = () => {
+      this._binNotesFetchInFlight = false;
+      keys.forEach(k => this._binNoteFetchedKeys.add(k)); // also on error: don't retry-loop a failed set
+    };
+    this.apiService.getNotes(undefined, { customerIds: ids, contentAny: [...names] })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          done();
+          const seen = new Set(this._binNotes().map(n => n.id));
+          const fresh = (data ?? []).filter(n => !seen.has(n.id));
+          if (fresh.length) this._binNotes.set([...this._binNotes(), ...fresh]);
+          this._loadBinSiteNotes(); // producers that rendered while this was in flight
+        },
+        error: () => done(),
+      });
+  }
+
+  /** Load bin-mention notes as the render window grows (new results or scrolling). */
+  private readonly _binNotesLoader = effect(() => {
+    this.binNotesActive();
+    this.renderedCustomers();
+    untracked(() => this._loadBinSiteNotes());
+  });
   readonly showGeneralFilters = computed(() => {
     if (this.isResolvingSavedListCategory()) return false;
     const cat = this.effectiveLibraryCategory();

@@ -147,6 +147,13 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
   opens every row): a line per bin site — name · capacity · map pin — with the grain stored there under it
   (Crop | Total | Sold | Grade | Target | Last Bid), sites with no grain marked "No grain on farm recorded",
   and any rows not tied to a site last. Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
+  **Notes that mention a bin site** (2026-10-09): the row's middle column shows the producer's notes that name
+  one of their saved bin sites — whole name, any case, not inside a longer word or number ("Bin 1" ≠ "bin 10")
+  — in the same note stack note prompts use (newest/pinned first, "+N earlier", See more), the site names
+  highlighted and a "Mentions North Bins" label. Notes are added as usual. A small batch loader fetches, per
+  render batch, those producers' notes containing any site name (`contentAny` + `customerIds`, a superset the
+  client re-matches with `notesMentioningBinSites`, `shared/utils/bin-site-mentions.ts`). When a notes filter
+  is active its matches own the middle column instead.
 - Derive `SortOrder` from `MAX(SortOrder) + 10` within the category rather than hardcoding: the
   original cards were inserted straight into each database, so numbering differs per environment.
 - **Check the QueryText against the parser before choosing it.** Words like `planting` or `deliver`

@@ -1479,6 +1479,77 @@
                   </button>
                 </div>
               }
+              <!-- One producer's note stack in a result row's middle column: newest (pinned first) shown, "+N
+                   earlier notes" / Hide, See more / See less. Used by note prompts (notes = the matches,
+                   highlight = the active keyword, showVia = name the linked producer a note came from) and by
+                   the Grain on Farm & Bin Sites prompts (notes mentioning a bin site, highlight = the site
+                   names, label = which sites). -->
+              <ng-template #noteStack let-notes let-customerId="customerId" let-highlight="highlight" let-showVia="showVia" let-label="label">
+                @let revealed = getNoteExpandCount(customerId);
+                @let visibleNotes = notes.slice(0, 1 + revealed);
+                @let totalEarlier = notes.length - 1;
+                @let remaining = totalEarlier - revealed;
+                <div class="min-w-0 max-w-3xl pl-3 border-l-2 border-scoular-green/30 dark:border-scoular-green-accessible/40 self-center">
+                  @if (label) {
+                    <p class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">{{ label }}</p>
+                  }
+                  <!-- All visible notes in a single divide-y container so each adjacent
+                       pair gets a horizontal separator (including most-recent → first-earlier). -->
+                  <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                    @for (note of visibleNotes; track note.id) {
+                      <div class="text-sm py-3 first:pt-0 last:pb-0">
+                        <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <span class="font-medium">{{ note.createdBy }}</span>
+                          <span class="text-gray-300 dark:text-gray-600">·</span>
+                          <span>{{ note.createdAt | date:'MMM d, h:mm a' }}</span>
+                          @if (note.isPinned) {
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="text-scoular-yellow"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                          }
+                          @if (showVia && note.viaName) {
+                            <span class="text-gray-300 dark:text-gray-600">·</span>
+                            <span class="italic text-gray-400 dark:text-gray-500">{{ note.viaName }}</span>
+                          }
+                        </div>
+                        <div class="relative mt-0.5">
+                          <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
+                             [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
+                             class="text-gray-700 dark:text-gray-300 break-words"
+                             [innerHTML]="note.content | highlight: highlight"></p>
+                          @if (isNoteOverflowing(note.id) && !isNoteTextExpanded(note.id)) {
+                            <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                    class="absolute bottom-0 right-0 flex items-center pl-10 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none bg-gradient-to-r from-transparent via-white to-white group-hover/card:via-gray-50 group-hover/card:to-gray-50 dark:via-gray-800 dark:to-gray-800 dark:group-hover/card:via-gray-700 dark:group-hover/card:to-gray-700">
+                              … See more
+                            </button>
+                          }
+                          @if (isNoteTextExpanded(note.id)) {
+                            <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                    class="mt-0.5 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
+                              See less
+                            </button>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+
+                  @if (notes.length > 1) {
+                    <div class="mt-2 flex items-center gap-3 text-xs">
+                      @if (remaining > 0) {
+                        <button type="button" (click)="$event.stopPropagation(); expandMoreNotes(customerId, totalEarlier)"
+                                class="text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
+                          +{{ remaining }} earlier {{ remaining === 1 ? 'note' : 'notes' }}
+                        </button>
+                      }
+                      @if (revealed > 0) {
+                        <button type="button" (click)="$event.stopPropagation(); collapseNotes(customerId)"
+                                class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:underline cursor-pointer focus:outline-none">
+                          Hide
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              </ng-template>
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
                 @for (customer of rendered; track customer.id) {
                   @let contactInfo = getLastContactInfo(customer.id);
@@ -1491,7 +1562,7 @@
                   <div class="group/card py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                        [class.cursor-pointer]="!linkedFeatureActive()"
                        (click)="!linkedFeatureActive() && selectCustomer(customer)">
-                    <div [ngClass]="noteFilterActive()
+                    <div [ngClass]="noteFilterActive() || binNotesActive()
                           ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-6'
                           : 'flex items-start gap-4 justify-between'">
                       <div class="flex items-start gap-3" [class.shrink-0]="!wideIdentityColumn()" [class.w-72]="!wideIdentityColumn()" [class.flex-1]="wideIdentityColumn()" [class.min-w-0]="wideIdentityColumn()">
@@ -1609,67 +1680,17 @@
                         <div></div>
                       }
                       @if (matchingNotes && matchingNotes.length > 0) {
-                        @let revealed = getNoteExpandCount(customer.id);
-                        @let visibleNotes = matchingNotes.slice(0, 1 + revealed);
-                        @let totalEarlier = matchingNotes.length - 1;
-                        @let remaining = totalEarlier - revealed;
-                        <div class="min-w-0 max-w-3xl pl-3 border-l-2 border-scoular-green/30 dark:border-scoular-green-accessible/40 self-center">
-                          <!-- All visible notes in a single divide-y container so each adjacent
-                               pair gets a horizontal separator (including most-recent → first-earlier). -->
-                          <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                            @for (note of visibleNotes; track note.id) {
-                              <div class="text-sm py-3 first:pt-0 last:pb-0">
-                                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                                  <span class="font-medium">{{ note.createdBy }}</span>
-                                  <span class="text-gray-300 dark:text-gray-600">·</span>
-                                  <span>{{ note.createdAt | date:'MMM d, h:mm a' }}</span>
-                                  @if (note.isPinned) {
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="text-scoular-yellow"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
-                                  }
-                                  @if (linkedInfo && !isLinkedOpen && note.viaName) {
-                                    <span class="text-gray-300 dark:text-gray-600">·</span>
-                                    <span class="italic text-gray-400 dark:text-gray-500">{{ note.viaName }}</span>
-                                  }
-                                </div>
-                                <div class="relative mt-0.5">
-                                  <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
-                                     [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
-                                     class="text-gray-700 dark:text-gray-300 break-words"
-                                     [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
-                                  @if (isNoteOverflowing(note.id) && !isNoteTextExpanded(note.id)) {
-                                    <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
-                                            class="absolute bottom-0 right-0 flex items-center pl-10 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none bg-gradient-to-r from-transparent via-white to-white group-hover/card:via-gray-50 group-hover/card:to-gray-50 dark:via-gray-800 dark:to-gray-800 dark:group-hover/card:via-gray-700 dark:group-hover/card:to-gray-700">
-                                      … See more
-                                    </button>
-                                  }
-                                  @if (isNoteTextExpanded(note.id)) {
-                                    <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
-                                            class="mt-0.5 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
-                                      See less
-                                    </button>
-                                  }
-                                </div>
-                              </div>
-                            }
-                          </div>
-
-                          @if (matchingNotes.length > 1) {
-                            <div class="mt-2 flex items-center gap-3 text-xs">
-                              @if (remaining > 0) {
-                                <button type="button" (click)="expandMoreNotes(customer.id, totalEarlier)"
-                                        class="text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
-                                  +{{ remaining }} earlier {{ remaining === 1 ? 'note' : 'notes' }}
-                                </button>
-                              }
-                              @if (revealed > 0) {
-                                <button type="button" (click)="collapseNotes(customer.id)"
-                                        class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:underline cursor-pointer focus:outline-none">
-                                  Hide
-                                </button>
-                              }
-                            </div>
-                          }
-                        </div>
+                        <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: matchingNotes, customerId: customer.id, highlight: getActiveNoteKeyword(), showVia: !!linkedInfo && !isLinkedOpen, label: null }" />
+                      }
+                      <!-- Grain on Farm & Bin Sites prompts: the producer's notes that mention one of their bin
+                           sites by name, in the same middle column and style as notes on note prompts. -->
+                      @if (binNotesActive()) {
+                        @let siteNotes = binSiteNotesByCustomer().get(customer.id);
+                        @if (siteNotes) {
+                          <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: siteNotes.notes, customerId: customer.id, highlight: siteNotes.sites, showVia: false, label: 'Mentions ' + siteNotes.sites.join(', ') }" />
+                        } @else {
+                          <div></div>
+                        }
                       }
 
                       <div class="flex items-start gap-2 shrink-0">
