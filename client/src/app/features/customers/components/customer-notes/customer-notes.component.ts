@@ -10,6 +10,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { TeamsDirectoryService, GraphTeamsChannel } from '@core/services/teams-directory.service';
 import { Customer, Note, NoteMention, MentionCatalog } from '@models';
 import { environment } from '@env/environment';
+import { binSiteNames, splitByBinSiteNames } from '@shared/utils/bin-site-mentions';
 
 /** A single selectable row in the "@" mention dropdown. */
 interface MentionOption {
@@ -77,8 +78,14 @@ export class CustomerNotesComponent {
   mentions = signal<NoteMention[]>([]);
   /** Live segmentation of the compose text so already-selected @mentions show green as the
    *  user keeps typing (turns green on select, not only after the note is saved). */
+  /** Live segmentation of the compose text: @mentions green, and the producer's bin-site names
+   *  highlighted as soon as they are typed (user 2026-10-09) so the writer can see the note will show
+   *  with that bin on Build a List. */
   readonly composeSegments = computed(() =>
-    this._segmentMentions(this.newNote(), this.mentions().map(m => m.name))
+    this._withBinSites(
+      this._segmentMentions(this.newNote(), this.mentions().map(m => m.name))
+        .map(seg => ({ text: seg.text, kind: (seg.mention ? 'mention' : 'plain') as 'plain' | 'mention' })),
+      this._binSiteNamesFor(this.customer().id))
   );
   mentionDropdownOpen = signal(false);
   mentionQuery = signal('');
@@ -300,7 +307,33 @@ export class CustomerNotesComponent {
   /** Segments a saved note's body for display: @mention runs (shown green, signalling the note was
    *  shared with them) plus, within the remaining text, any current search-term matches (highlighted).
    *  Pure string splitting into text segments — no HTML is built, so there is no XSS surface. */
-  noteViewSegments(note: Note): { text: string; kind: 'plain' | 'mention' | 'search' }[] {
+  /** Bin-site names per producer shown in this panel (the producer and any linked producers whose
+   *  notes appear here), so a note is highlighted against its own producer's sites. */
+  private readonly _binSiteNamesByCustomer = computed(() => {
+    const map = new Map<number, string[]>();
+    for (const c of [this.customer(), ...this.linkedCustomers()]) map.set(c.id, binSiteNames(c.binSites));
+    return map;
+  });
+
+  private _binSiteNamesFor(customerId: number | null | undefined): string[] {
+    return customerId == null ? [] : (this._binSiteNamesByCustomer().get(customerId) ?? []);
+  }
+
+  /** Splits the plain runs further by bin-site name (same matching Build a List uses). */
+  private _withBinSites<K extends string>(segs: { text: string; kind: K | 'plain' }[], siteNames: string[]): { text: string; kind: K | 'plain' | 'bin' }[] {
+    if (siteNames.length === 0) return segs;
+    const out: { text: string; kind: K | 'plain' | 'bin' }[] = [];
+    for (const seg of segs) {
+      if (seg.kind !== 'plain') { out.push(seg); continue; }
+      for (const run of splitByBinSiteNames(seg.text, siteNames)) out.push({ text: run.text, kind: run.bin ? 'bin' : 'plain' });
+    }
+    return out;
+  }
+
+  /** Hover text on a highlighted bin-site name. */
+  readonly binSiteTitle = 'Bin site — this note shows with the producer on Build a List (Grain on Farm & Bin Sites)';
+
+  noteViewSegments(note: Note): { text: string; kind: 'plain' | 'mention' | 'search' | 'bin' }[] {
     // Only mentions the author actually typed produce highlight tokens. Rows carrying `via` were
     // expanded server-side out of a group mention — they're recipients, not text the author wrote,
     // so highlighting their names would light up words that merely happen to appear in the note.
@@ -308,10 +341,14 @@ export class CustomerNotesComponent {
     const mentionSegs = this._segmentMentions(note.content ?? '', typedNames);
     const terms = this.noteSearch().trim().toLowerCase().split(/\s+/).filter(Boolean);
 
-    const out: { text: string; kind: 'plain' | 'mention' | 'search' }[] = [];
-    for (const seg of mentionSegs) {
-      if (seg.mention) { out.push({ text: seg.text, kind: 'mention' }); continue; }
-      if (terms.length === 0) { out.push({ text: seg.text, kind: 'plain' }); continue; }
+    // Mentions first, then bin-site names (user 2026-10-09: so readers can tell a note is about a bin and
+    // will show on Build a List), then search terms inside what is still plain.
+    const withBins = this._withBinSites(
+      mentionSegs.map(seg => ({ text: seg.text, kind: (seg.mention ? 'mention' : 'plain') as 'plain' | 'mention' })),
+      this._binSiteNamesFor(note.customerId));
+    const out: { text: string; kind: 'plain' | 'mention' | 'search' | 'bin' }[] = [];
+    for (const seg of withBins) {
+      if (seg.kind !== 'plain' || terms.length === 0) { out.push(seg); continue; }
       for (const part of this._splitBySearchTerms(seg.text, terms)) out.push(part);
     }
     return out;

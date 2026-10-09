@@ -1548,16 +1548,22 @@
                   @let matchingNotes = noteFilterActive()
                     ? (isLinkedOpen ? getOwnMatchingNotes(customer) : (matchingNotesByCustomer().get(customer.id) ?? null))
                     : null;
+                  <!-- The whole row opens the producer, except where only the name does: linked-producer views
+                       and the Grain on Farm & Bin Sites prompts (user 2026-10-09: so text can be selected/copied). -->
+                  @let nameOnlyOpens = linkedFeatureActive() || showGrainOnFarmFilters();
                   <div class="group/card py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                       [class.cursor-pointer]="!linkedFeatureActive()"
-                       (click)="!linkedFeatureActive() && selectCustomer(customer)">
+                       [class.cursor-pointer]="!nameOnlyOpens"
+                       (click)="!nameOnlyOpens && selectCustomer(customer)">
                     <!-- Grain on Farm & Bin Sites prompts (user 2026-10-09): from 2xl, name | bin sites & grain |
-                         notes | last contact, the bin-sites column a fixed 31rem (the widest table measured 471px) so the notes line up down the list;
-                         narrower, the notes sit under the bin sites in one middle column (four columns would leave
-                         the notes a sliver on a laptop). Note prompts: name | notes | last contact. Others:
-                         name … last contact. -->
+                         notes, the bin-sites column a fixed 31rem (the widest table measured 471px) so the notes line
+                         up down the list; narrower, the notes sit under the bin sites in one middle column. No
+                         last-contact / commodities column on these prompts — that room goes to the name, which wraps
+                         instead of truncating. While Manage Members is open, an auto column holds the exclude button.
+                         Note prompts: name | notes | last contact. Others: name … last contact. -->
                     <div [ngClass]="showGrainOnFarmFilters()
-                          ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] 2xl:grid-cols-[18rem_31rem_minmax(0,1fr)_auto] items-start gap-x-6 2xl:gap-x-10 gap-y-4'
+                          ? (showManageMembersPanel()
+                              ? 'grid grid-cols-[20rem_minmax(0,1fr)_auto] 2xl:grid-cols-[22rem_31rem_minmax(0,1fr)_auto] items-start gap-x-6 2xl:gap-x-10 gap-y-4'
+                              : 'grid grid-cols-[20rem_minmax(0,1fr)] 2xl:grid-cols-[22rem_31rem_minmax(0,1fr)] items-start gap-x-6 2xl:gap-x-10 gap-y-4')
                           : noteFilterActive()
                             ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-6'
                             : 'flex items-start gap-4 justify-between'">
@@ -1567,17 +1573,26 @@
                           <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(customer.name) }}</span>
                         </div>
                         <div class="min-w-0 flex-1">
-                          @if (linkedFeatureActive()) {
+                          @let fullName = showGrainOnFarmFilters();
+                          @if (fullName) {
+                            <!-- A link, not a button, so the name can still be selected and copied; a drag-select
+                                 doesn't open the producer (openProducerFromName). -->
+                            <a role="link" tabindex="0" (click)="openProducerFromName(customer)" (keydown.enter)="selectCustomer(customer)"
+                               class="font-medium text-gray-900 dark:text-white hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:underline cursor-pointer break-words">
+                              {{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.scoularId }})</span>
+                            </a>
+                          } @else if (linkedFeatureActive()) {
                             <button type="button" (click)="$event.stopPropagation(); selectCustomer(customer)"
-                                    class="font-medium text-gray-900 dark:text-white hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:underline cursor-pointer text-left truncate block w-full">
+                                    class="font-medium text-gray-900 dark:text-white hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:underline cursor-pointer text-left block w-full"
+                                    [ngClass]="fullName ? 'break-words' : 'truncate'">
                               {{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.scoularId }})</span>
                             </button>
                           } @else {
-                            <div class="font-medium text-gray-900 dark:text-white truncate">
+                            <div class="font-medium text-gray-900 dark:text-white" [ngClass]="fullName ? 'break-words' : 'truncate'">
                               {{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.scoularId }})</span>
                             </div>
                           }
-                          <div class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ customer.farm }}</div>
+                          <div class="text-sm text-gray-500 dark:text-gray-400" [ngClass]="fullName ? 'break-words' : 'truncate'">{{ customer.farm }}</div>
                           <!-- Location + the prompt's dimension chips (storage bu / planting acres /
                                grain on farm) inline on one wrapping row; other categories show total acres. -->
                           @let chips = resultChips(customer);
@@ -1632,23 +1647,25 @@
                             </thead>
                             <tbody class="text-gray-700 dark:text-gray-300">
                               @for (site of (allSites ? siteGroups : siteGroups.slice(0, binSitesVisible)); track $index) {
+                                @let siteRows = allSites ? site.rows : site.rows.slice(0, binSiteCropsVisible);
                                 <tr>
                                   <th scope="rowgroup" colspan="6" class="pt-3 pb-1 text-left font-semibold text-gray-700 dark:text-gray-200">
-                                    <span class="inline-flex items-center gap-1.5">
+                                    <!-- Plain inline text (not flex) so a long name and its capacity wrap as one sentence. -->
+                                    <span>
                                       {{ site.name }}
                                       @if (site.capacity != null) {
                                         <span class="font-normal text-gray-400 dark:text-gray-500">· {{ site.capacity | number }} bu capacity</span>
                                       }
                                       @if (site.mapUrl) {
                                         <a [href]="site.mapUrl" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()" title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
-                                           class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                                           class="ml-1 inline-flex align-[-2px] text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
                                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                                         </a>
                                       }
                                     </span>
                                   </th>
                                 </tr>
-                                @for (g of site.rows; track $index) {
+                                @for (g of siteRows; track $index) {
                                   <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
                                     <td class="py-1.5 pr-5 text-left whitespace-nowrap">{{ g.commodityCode }}</td>
                                     <td class="py-1.5 px-3 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
@@ -1665,10 +1682,11 @@
                               }
                             </tbody>
                           </table>
-                            @if (siteGroups.length > binSitesVisible) {
+                            @let hiddenLabel = binSiteGrainHiddenLabel(siteGroups);
+                            @if (hiddenLabel) {
                               <button type="button" (click)="$event.stopPropagation(); toggleBinSitesShowAll(customer.id)"
                                       class="mt-1.5 inline-flex items-center gap-1 text-[13px] font-medium text-scoular-green-accessible dark:text-scoular-green hover:underline focus:outline-none">
-                                {{ allSites ? 'Show fewer' : 'Show ' + (siteGroups.length - binSitesVisible) + ' more bin site' + (siteGroups.length - binSitesVisible === 1 ? '' : 's') }}
+                                {{ allSites ? 'Show fewer' : hiddenLabel }}
                               </button>
                             }
                           } @else {
@@ -1698,8 +1716,10 @@
                         }
                       }
 
+                      @if (!showGrainOnFarmFilters() || showManageMembersPanel()) {
                       <div class="flex items-start gap-2 shrink-0"
                            [ngClass]="showGrainOnFarmFilters() ? 'col-start-3 row-start-1 row-span-2 2xl:col-start-4 2xl:row-span-1' : ''">
+                        @if (!showGrainOnFarmFilters()) {
                         <div class="text-right">
                           <span [class]="contactInfo.colorClass + ' text-sm'">
                             {{ contactInfo.text }}
@@ -1710,6 +1730,7 @@
                             }
                           </div>
                         </div>
+                        }
                         @if (showManageMembersPanel()) {
                           <button type="button"
                                   (click)="$event.stopPropagation(); excludeCustomerFromList(customer.id)"
@@ -1725,6 +1746,7 @@
                           </button>
                         }
                       </div>
+                      }
                     </div>
 
                     @if (linkedInfo && isLinkedOpen) {

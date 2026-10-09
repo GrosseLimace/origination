@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { binSiteMentionPattern, binSiteNames, notesMentioningBinSites } from './bin-site-mentions';
+import { binSiteMentionPattern, binSiteNames, notesMentioningBinSites, splitByBinSiteNames } from './bin-site-mentions';
 
 const note = (id: number, content: string, createdAt: string, isPinned = false) => ({ id, content, createdAt: new Date(createdAt), isPinned });
 
@@ -50,5 +50,19 @@ describe('notesMentioningBinSites', () => {
   it('is null when nothing mentions a site, or there are no sites', () => {
     expect(notesMentioningBinSites(notes, ['East Quarter'])).toBeNull();
     expect(notesMentioningBinSites(notes, [])).toBeNull();
+  });
+});
+
+describe('splitByBinSiteNames', () => {
+  it('marks each run naming a site, longest name first, keeping the text exactly', () => {
+    const text = 'North Bins full, north side empty; moved to bin 1 not bin 10';
+    const runs = splitByBinSiteNames(text, ['North', 'North Bins', 'Bin 1']);
+    expect(runs.map(r => r.text).join('')).toBe(text);
+    expect(runs.filter(r => r.bin).map(r => r.text)).toEqual(['North Bins', 'north', 'bin 1']);
+  });
+
+  it('returns the text as one plain run with no sites, and nothing for empty text', () => {
+    expect(splitByBinSiteNames('hello', [])).toEqual([{ text: 'hello', bin: false }]);
+    expect(splitByBinSiteNames('', ['North Bins'])).toEqual([]);
   });
 });

@@ -56,3 +56,26 @@ export function notesMentioningBinSites<T extends Pick<Note, 'id' | 'content' | 
   });
   return { notes: matched, sites: siteNames.filter(n => mentioned.has(n)) };
 }
+
+/**
+ * Splits note text into runs, marking each run that names one of the bin sites — the same matching
+ * Build a List uses, so what the Notes panel highlights is exactly what shows there. Longest name
+ * first ("North Bins" before "North"). Pure string work, no HTML — callers render the runs as text.
+ */
+export function splitByBinSiteNames(text: string, siteNames: readonly string[]): { text: string; bin: boolean }[] {
+  if (!text) return [];
+  const names = [...siteNames].filter(n => n.trim()).sort((a, b) => b.length - a.length);
+  if (names.length === 0) return [{ text, bin: false }];
+  const alternatives = names.map(n => binSiteMentionPattern(n).source).join('|');
+  const re = new RegExp(alternatives, 'giu');
+  const out: { text: string; bin: boolean }[] = [];
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    const at = m.index ?? 0;
+    if (at > last) out.push({ text: text.slice(last, at), bin: false });
+    out.push({ text: m[0], bin: true });
+    last = at + m[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last), bin: false });
+  return out;
+}

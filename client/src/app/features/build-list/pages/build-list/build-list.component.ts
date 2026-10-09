@@ -410,6 +410,9 @@ export class BuildListComponent {
   // readable — each batch appears as the user scrolls to it (no new fetch). Reset to the first
   // batch whenever the result set changes (effect in the constructor).
   private static readonly _RENDER_BATCH = 40;
+  /** Query-string budget for one bin-mention notes request (ids + site names, URL-encoded) — well
+   *  under the 2,048 characters IIS allows by default. See _loadBinSiteNotes. */
+  private static readonly BIN_NOTES_QUERY_BUDGET = 1500;
   readonly renderLimit = signal(BuildListComponent._RENDER_BATCH);
   /** The slice of displayedCustomers currently rendered to the DOM. */
   readonly renderedCustomers = computed(() => this.displayedCustomers().slice(0, this.renderLimit()));
@@ -1969,22 +1972,34 @@ export class BuildListComponent {
     const ids: number[] = [];
     const keys: string[] = [];
     const names = new Set<string>();
+    // The ids and site names travel in the query string, and a page of producers with many sites
+    // could pass the 2,048-character limit IIS applies by default — a rejected request would
+    // look like "no notes". So each request takes producers only while its query stays under
+    // BIN_NOTES_QUERY_BUDGET; the next one is picked up when it returns.
+    let queryLength = 0;
     for (const c of this.renderedCustomers()) {
       const siteNames = binSiteNames(c.binSites);
       if (siteNames.length === 0) continue;
       const key = `${c.id}:${siteNames.join('|').toLowerCase()}`;
       if (this._binNoteFetchedKeys.has(key)) continue;
+      const fresh = siteNames.filter(n => !names.has(n));
+      const cost = String(c.id).length + 3 + fresh.reduce((sum, n) => sum + encodeURIComponent(n).length + 3, 0);
+      if (ids.length > 0 && queryLength + cost > BuildListComponent.BIN_NOTES_QUERY_BUDGET) break;
+      queryLength += cost;
       ids.push(c.id);
       keys.push(key);
-      siteNames.forEach(n => names.add(n));
+      fresh.forEach(n => names.add(n));
     }
+    // One producer whose site names alone pass the budget goes by id only: all their notes come
+    // back and the client match still picks out the ones naming a site.
+    const contentAny = queryLength > BuildListComponent.BIN_NOTES_QUERY_BUDGET ? undefined : [...names];
     if (ids.length === 0) return;
     this._binNotesFetchInFlight = true;
     const done = () => {
       this._binNotesFetchInFlight = false;
       keys.forEach(k => this._binNoteFetchedKeys.add(k)); // also on error: don't retry-loop a failed set
     };
-    this.apiService.getNotes(undefined, { customerIds: ids, contentAny: [...names] })
+    this.apiService.getNotes(undefined, { customerIds: ids, contentAny })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -4378,8 +4393,30 @@ export class BuildListComponent {
   // Each result row shows its bin sites and the grain stored at each one in a column right after the
   // name (the same grouping the producer profile uses); the notes column follows it.
 
-  /** Bin sites shown per producer before "Show N more bin sites" (user: show a certain amount at once). */
+  /** Opens the producer from its name — unless the click ended a text selection (the user was
+   *  selecting the name to copy it). */
+  openProducerFromName(customer: Customer): void {
+    if (window.getSelection()?.toString().trim()) return;
+    this.selectCustomer(customer);
+  }
+
+  /** Bin sites, and crops per site, shown per producer before "Show more" (user: show a certain amount at
+   *  once). A site holding many crops would otherwise make one row very tall. */
   readonly binSitesVisible = 2;
+  readonly binSiteCropsVisible = 4;
+
+  /** The collapsed breakdown's link — "Show 4 more bin sites", "Show 3 more crops", or both — or null
+   *  when nothing is hidden. */
+  binSiteGrainHiddenLabel(groups: BinSiteGrainGroup[]): string | null {
+    const sites = Math.max(0, groups.length - this.binSitesVisible);
+    const crops = groups.slice(0, this.binSitesVisible)
+      .reduce((n, g) => n + Math.max(0, g.rows.length - this.binSiteCropsVisible), 0);
+    const parts = [
+      sites ? `${sites} more bin site${sites === 1 ? '' : 's'}` : '',
+      crops ? `${crops} more crop${crops === 1 ? '' : 's'}` : '',
+    ].filter(Boolean);
+    return parts.length ? `Show ${parts.join(' and ')}` : null;
+  }
   /** Producers whose full list of bin sites is showing. */
   readonly binSitesShowAll = signal<ReadonlySet<number>>(new Set());
 
