@@ -68,7 +68,6 @@ export class CustomerPrintReportComponent {
   // Section toggles — initialized in the effect when dialog opens
   showTotalAcres = signal(true);
   showTotalContracted = signal(true);
-  showBinCapacity = signal(true);
   showContracts = signal(true);
   showPricingLines = signal(true);
   showTickets = signal(true);
@@ -104,7 +103,6 @@ export class CustomerPrintReportComponent {
         untracked(() => {
           this.showTotalAcres.set((this.customer().totalAcres ?? 0) > 0);
           this.showTotalContracted.set(this.totalContracted() > 0);
-          this.showBinCapacity.set((this.customer().binCapacity ?? 0) > 0);
           this.showContracts.set(this.contracts().filter(c => !c.closedDate).length > 0);
           this.showTickets.set(this.tickets().filter(t => !t.isApplied).length > 0);
           this.showPlanting.set(this.plantingIntentions().length > 0);
@@ -314,10 +312,6 @@ export class CustomerPrintReportComponent {
     if (this.showTotalContracted()) {
       const contracted = this.totalContracted();
       items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub: '' });
-    }
-    if (this.showBinCapacity()) {
-      const binCapacity = this.customer().binCapacity ?? 0;
-      items.push({ label: 'Bin Capacity', value: binCapacity > 0 ? this.formatBu(binCapacity) : '0 bu', sub: '' });
     }
     return items;
   });

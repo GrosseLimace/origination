@@ -98,7 +98,7 @@ Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/ap
 - **Contact frequency** — `contactedOnlyOnce`, `contactedMoreThan5`.
 - **Contact author** — `contactedByMeOnly`, `contactedBySomeoneElse`.
 - **Notes content** — `hasPinnedNotes`, `noteKeyword`.
-- **Producer size** — `acresOver`, `hasBinCapacity`, `noBinCapacity`, `hasBinSites`, `noBinSites`. Bin **sites** (the lat/long locations under the address) are not bin **capacity**: free-text "with/without bin sites" (also "bin locations", "bin coordinates") and "more than N" / "at least N" / "N+" / "multiple" bin sites filter on the sites, and the capacity patterns deliberately ignore those words so neither query triggers the other.
+- **Producer size** — `acresOver`, `hasBinSites`, `noBinSites`. Free-text "with/without bin sites" (also "bin locations", "bin coordinates") and "more than N" / "at least N" / "N+" / "multiple" bin sites filter on the sites. The producer-level **bin capacity** filters (`hasBinCapacity` / `noBinCapacity`, "has bin capacity", "bin capacity over N") were removed 2026-10-09 with the field itself — capacity now lives on each bin site; a saved list still carrying those flags in its JSON just ignores them.
 - **Producer info** — `hasPrimaryContact`, `noPrimaryContact`, `hasEmail`, `hasPhone`, `hasLinkedProducers`, `notEsignEnrolled`.
 - **Producer activity** — `hasActiveContracts`, `hasDeliveriesThisYear`, `hasPlantingIntentions`, `hasGrainInStorage`.
 - **Tickets** — `ticketQuantityOver`, `ticketsInLastDays`, `avgMoistureOver/Under`, `avgTestWeightOver/Under`, `avgProteinOver/Under`.
@@ -135,8 +135,37 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
   card later self-heals without a second migration. Note the guard means a QueryText collision is
   **silently skipped** — check the target DB if the card doesn't appear.
 - `Category` must match an existing value **exactly** (`Contracts`, `Notes`, `Tickets`, `Storage`,
-  `Planting`, `Grain on Farm`, `General`) — it's compared case-sensitively and drives which refine
-  panel renders (`showContractFilters` etc.). A new value creates a new tab.
+  `Planting`, `Grain on Farm & Bin Sites`, `General`, `Producers`) — it's compared case-sensitively and drives
+  which refine panel renders (`showContractFilters` etc.). A new value creates a new tab.
+- **`Grain on Farm & Bin Sites`** (2026-10-09, migration `CombineGrainOnFarmAndBinSitePrompts`) holds every
+  grain-on-farm AND bin-site prompt in one column — grain on farm is stored at a bin site. It was
+  `Grain on Farm`, and the bin-site cards sat under `Producers`. The client treats the old name the same
+  (`isGrainAndBinSitesCategory`, `shared/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
+  category in `Filters._promptCategory`. Its refine panel has a filter for every input (2026-10-09):
+  **Bin Sites** — has / no sites, at least N sites, total capacity over N bu, site name contains, has / missing a
+  map location; **Grain on Farm** — bushels on farm over, sold bushels over, has sold bushels, has / no target;
+  **Target Price** over / under; **Last Bid** — has a last bid, over / under (signed; $0.00 counts); **Grade** —
+  has, over / under; plus the Crops chips (scoped to grain rows). The newer ones (Sold, Last Bid, all bin-site
+  fields but has/no) live once in `shared/utils/grain-bin-refine.ts`, called by both refine copies, and
+  each result row leads with a neutral "N bin sites" chip before the per-crop bushel chips.
+  **Result rows** (2026-10-09): from a 1536px viewport (`2xl`) a row is name | **bin sites & grain** (fixed 31rem — the widest
+  table measured 471px — so notes line up down the list) | **notes** | last contact; narrower, the notes sit under
+  the bin sites in one middle column. The bin sites & grain table (text-sm, a crop-row separator) shows a line
+  per bin site — name · capacity · map pin — with the grain stored there under it (Crop | Total | Sold | Grade |
+  Target | Last Bid), "No grain on farm recorded" for an empty site and untied rows last; only the first 2 sites
+  show until "Show N more bin sites" (Show fewer). Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
+  **Notes that mention a bin site** (2026-10-09): the row's middle column shows the producer's notes that name
+  one of their saved bin sites — whole name, any case, not inside a longer word or number ("Bin 1" ≠ "bin 10")
+  — in the same note stack note prompts use (pinned first, then newest; "+N earlier notes", See more), the site
+  names in blue text (no highlight box, no label; same as the producer Notes panel, `BIN_SITE_NAME_CLASS`).
+  **Order** on these prompts: latest note naming a bin site first, then the latest change to the producer's bin
+  sites or grain on farm (`ProducerDetails.BinSitesModifiedAt`, stamped only when a save actually changes them),
+  then name. Ranking prompts ("Top by grain on farm") keep their ranked order. The mention notes for the WHOLE
+  result load up front (budgeted parallel requests) so the order is right before scrolling. Only the producer
+  name opens the producer (selectable; a drag doesn't navigate); no last-contact/commodities column; full name. Notes are added as usual. A small batch loader fetches, per
+  render batch, those producers' notes containing any site name (`contentAny` + `customerIds`, a superset the
+  client re-matches with `notesMentioningBinSites`, `shared/utils/bin-site-mentions.ts`). When a notes filter
+  is active its matches own the middle column instead.
 - Derive `SortOrder` from `MAX(SortOrder) + 10` within the category rather than hardcoding: the
   original cards were inserted straight into each database, so numbering differs per environment.
 - **Check the QueryText against the parser before choosing it.** Words like `planting` or `deliver`

@@ -215,9 +215,10 @@ describe('CustomerProfileComponent — address map link', () => {
   });
 });
 
-// Covers the bin-site links under the address: label text (named and unnamed), the exact-point map
-// link, and that opening one is recorded separately from the address link.
-describe('CustomerProfileComponent — bin site links', () => {
+// Covers the bin-site mini-table at the bottom of the Contact column: formatted cells (dashes when
+// empty), the exact-point map link only when a site has coordinates, and that the
+// table starts collapsed and re-collapses per producer.
+describe('CustomerProfileComponent — bin site table', () => {
   let component: CustomerProfileComponent;
   let ref: ComponentRef<CustomerProfileComponent>;
   let tracking: { trackBinSiteMapClick: ReturnType<typeof vi.fn> };
@@ -239,79 +240,99 @@ describe('CustomerProfileComponent — bin site links', () => {
     ref = fixture.componentRef;
   });
 
-  it('labels each site with its name and six-place coordinates, in saved order', () => {
+  it('builds one table row per site, in saved order, with every cell formatted', () => {
     ref.setInput('customer', makeCustomer({
       binSites: [
-        { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955, sortOrder: 0 },
-        { name: null, latitude: 40.5, longitude: -96, sortOrder: 1 },
+        { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955, capacity: 50000, sortOrder: 0 },
+        { name: 'North Quarter', latitude: 40.5, longitude: -96, capacity: 30000, sortOrder: 1 },
       ],
     }));
 
-    expect(component.binSiteLinks().map(l => l.label)).toEqual([
-      'Anderson Site: 39.115876, -95.143955',
-      '40.500000, -96.000000',
-    ]);
+    const [first, second] = component.binSiteRows();
+    expect(first).toMatchObject({ name: 'Anderson Site', capacity: '50,000' });
+    expect(second).toMatchObject({ name: 'North Quarter', capacity: '30,000' });
   });
 
-  it('links each site to its exact point in Google Maps', () => {
+  it('links each site with coordinates to its exact point in Google Maps', () => {
     ref.setInput('customer', makeCustomer({
-      binSites: [{ name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 }],
+      binSites: [{ name: 'Anderson Site', latitude: 41.39034548435109, longitude: -95.00754031349179 }],
     }));
 
-    expect(component.binSiteLinks()[0].url)
-      .toBe('https://www.google.com/maps/search/?api=1&query=39.115876%2C-95.143955');
+    expect(component.binSiteRows()[0].url)
+      .toBe('https://www.google.com/maps/search/?api=1&query=41.39034548435109%2C-95.00754031349179');
   });
 
-  it('shortens a long paste in the label but keeps all of it in the title and the link', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [{ name: 'North Bins', latitude: 41.39034548435109, longitude: -95.00754031349179 }],
-    }));
 
-    const [link] = component.binSiteLinks();
-    expect(link.label).toBe('North Bins: 41.390345, -95.007540');
-    expect(link.title).toContain('41.39034548435109, -95.00754031349179');
-    expect(link.url).toContain('41.39034548435109%2C-95.00754031349179');
+  it('gives a site without coordinates no map link', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Home place', capacity: 20000 }] }));
+
+    const [row] = component.binSiteRows();
+    expect(row.url).toBeNull();
+    expect(row.name).toBe('Home place');
   });
 
-  it('shows nothing when the producer has no bin sites', () => {
+  it('has no rows when the producer has no bin sites', () => {
     ref.setInput('customer', makeCustomer());
 
-    expect(component.binSiteLinks()).toEqual([]);
+    expect(component.binSiteRows()).toEqual([]);
   });
 
-  it('shows a single site inline, with no toggle', () => {
-    ref.setInput('customer', makeCustomer({ binSites: [{ latitude: 39.1, longitude: -95.1 }] }));
+  it('starts collapsed even with a single site, and toggles open', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Only one', latitude: 39.1, longitude: -95.1 }] }));
 
-    expect(component.binSitesCollapsible()).toBe(false);
-  });
-
-  it('collapses two or more sites behind a toggle that starts closed', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [{ latitude: 39.1, longitude: -95.1 }, { latitude: 39.2, longitude: -95.2 }],
-    }));
-
-    expect(component.binSitesCollapsible()).toBe(true);
     expect(component.binSitesExpanded()).toBe(false);
     component.toggleBinSites();
     expect(component.binSitesExpanded()).toBe(true);
   });
 
-  it('closes the list again when a different producer is shown', () => {
-    const twoSites = [{ latitude: 39.1, longitude: -95.1 }, { latitude: 39.2, longitude: -95.2 }];
-    ref.setInput('customer', makeCustomer({ id: 1, binSites: twoSites }));
+  it('closes the table again when a different producer is shown', () => {
+    const sites = [{ name: 'A', latitude: 39.1, longitude: -95.1 }];
+    ref.setInput('customer', makeCustomer({ id: 1, binSites: sites }));
     component.toggleBinSites();
 
-    ref.setInput('customer', makeCustomer({ id: 2, binSites: twoSites }));
+    ref.setInput('customer', makeCustomer({ id: 2, binSites: sites }));
 
     expect(component.binSitesExpanded()).toBe(false);
   });
 
-  it('tracks the click under its own subfeature', () => {
+  it('tracks a map click under its own subfeature', () => {
     ref.setInput('customer', makeCustomer({ id: 42 }));
 
     component.trackBinSiteMapClick();
 
     expect(tracking.trackBinSiteMapClick).toHaveBeenCalledWith('42');
+  });
+
+  it('lists grain on farm grouped by bin site, in site order, rows without a site last', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
+      grainOnFarm: [
+        { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 90000 },
+        { binSiteKey: 'home', binSiteName: 'Home Place', commodityCode: 'YC', bushelsOnHand: 5000 },
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'SB', bushelsOnHand: 1000 },
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 },
+      ],
+    }));
+
+    expect(component.grainOnFarmRows().map(g => `${g.binSiteName ?? '—'} ${g.commodityCode}`))
+      .toEqual(['North Bins YC', 'North Bins SB', 'Home Place YC', '— WH']);
+    // The headline total still adds up every row, at every site.
+    expect(component.grainOnFarmTotal()).toBe(126000);
+  });
+
+  it('groups the table by site name, labelling rows without a site only when sites are present too', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ siteKey: 'north', name: 'North Quarter Home Place Bins by the Creek' }],
+      grainOnFarm: [
+        { binSiteKey: 'north', binSiteName: 'North Quarter Home Place Bins by the Creek', commodityCode: 'YC', bushelsOnHand: 30000 },
+        { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 100 },
+      ],
+    }));
+    expect(component.grainOnFarmGroups().map(g => [g.label, g.rows.map(r => r.commodityCode)]))
+      .toEqual([['North Quarter Home Place Bins by the Creek', ['YC']], ['Not tied to a bin site', ['WH']]]);
+
+    ref.setInput('customer', makeCustomer({ grainOnFarm: [{ commodityCode: 'WH', bushelsOnHand: 100 }] }));
+    expect(component.grainOnFarmGroups().map(g => g.label)).toEqual(['']);
   });
 });
 

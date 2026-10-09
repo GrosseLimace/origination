@@ -31,8 +31,8 @@ public class ProducerBinSiteTests
     private static ProducerDetailsRepository Repo(ApplicationDbContext db) =>
         new(db, NullLogger<ProducerDetailsRepository>.Instance);
 
-    private static ProducerBinSiteEntry Site(decimal lat, decimal lng, string? name = null) =>
-        new() { Name = name, Latitude = lat, Longitude = lng };
+    private static ProducerBinSiteEntry Site(decimal lat, decimal lng, string? name = null, decimal? capacity = null) =>
+        new() { Name = name, Latitude = lat, Longitude = lng, Capacity = capacity };
 
     private static ProducerDetailsUpsertArgs Args(IReadOnlyList<ProducerBinSiteEntry>? binSites, long customerId = 100) =>
         new() { CustomerId = customerId, CustomerName = "Smith Farm", BinSites = binSites };
@@ -108,20 +108,42 @@ public class ProducerBinSiteTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task Upsert_CollapsesIdenticalPoints_ButKeepsNearbyOnes()
+    public async Task Upsert_CollapsesOnlyExactDuplicateRows()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        // Only the Name is required now, so sharing a point (or having none) is not a duplicate —
+        // only a row identical in every field is.
+        await repo.UpsertAsync(Args(new[]
+        {
+            Site(39.115876m, -95.143955m, "First"),
+            Site(39.115876m, -95.143955m, "first"),          // same row, different case → collapsed
+            Site(39.115876m, -95.143955m, "Same spot, other bin"),
+            Site(39.1158761m, -95.1439549m, "Next door"),
+        }), "tuser", CancellationToken.None);
+
+        var sites = (await repo.GetAsync(100, CancellationToken.None))!.BinSites;
+        Assert.Equal(new[] { "First", "Same spot, other bin", "Next door" }, sites.Select(s => s.Name));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_SitesWithoutCoordinates_AreKeptSeparately()
     {
         using var db = NewContext();
         var repo = Repo(db);
 
         await repo.UpsertAsync(Args(new[]
         {
-            Site(39.115876m, -95.143955m, "First"),
-            Site(39.115876m, -95.143955m, "Duplicate"),
-            Site(39.1158761m, -95.1439549m, "Next door"),
+            new ProducerBinSiteEntry { Name = "Home place" },
+            new ProducerBinSiteEntry { Name = "North quarter", Capacity = 20_000m },
         }), "tuser", CancellationToken.None);
 
         var sites = (await repo.GetAsync(100, CancellationToken.None))!.BinSites;
-        Assert.Equal(new[] { "First", "Next door" }, sites.Select(s => s.Name));
+        Assert.Equal(new[] { "Home place", "North quarter" }, sites.Select(s => s.Name));
+        Assert.All(sites, s => Assert.Null(s.Latitude));
+        Assert.All(sites, s => Assert.Null(s.Longitude));
     }
 
     // -------------------------------------------------------------------------
@@ -197,4 +219,24 @@ public class ProducerBinSiteTests
         var remaining = Assert.Single(await db.ProducerBinSites.ToListAsync());
         Assert.Equal(200, remaining.CustomerId);
     }
+
+    // ===== Capacity (bushels, per site) =====
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_PersistsSiteCapacity_AndComposesItBack()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        await repo.UpsertAsync(Args(new[] { Site(39.1m, -95.1m, "North", capacity: 50_000m), Site(39.2m, -95.2m, "South") }),
+            "tuser", CancellationToken.None);
+
+        var sites = (await repo.GetAsync(100, CancellationToken.None))!.BinSites;
+        Assert.Equal(50_000m, sites[0].Capacity);
+        Assert.Null(sites[1].Capacity);
+        var all = await repo.GetAllAsync(CancellationToken.None);
+        Assert.Equal(50_000m, all.Single().BinSites[0].Capacity);
+    }
+
 }

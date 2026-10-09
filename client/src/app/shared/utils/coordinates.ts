@@ -9,8 +9,8 @@ import type { ProducerBinSiteItem } from '@models';
  * (~-52°).
  *
  * Precision: users never round by hand. A Google Maps paste ("41.39034548435109, -95.00754031349179")
- * is kept and stored exactly as entered, and the map link uses all of it. Only the profile display
- * is shortened, to six places (~0.1 m) — see formatCoordinatePair.
+ * is kept and stored exactly as entered, and the map link uses all of it. The profile doesn't print
+ * coordinates at all — each bin site's pin opens them in Google Maps.
  *
  * Mirrored server-side by BinSiteRules (api/.../Data/Entities/ProducerBinSite.cs) — keep in step.
  */
@@ -19,8 +19,9 @@ export const BIN_SITE_BOUNDS = { minLat: 7, maxLat: 84, minLng: -180, maxLng: -5
  *  (BinSiteRules.MaxPerCustomer) so the dialog can never build a request the API would reject. */
 export const MAX_BIN_SITES = 100;
 export const BIN_SITE_NAME_MAX_LENGTH = 100;
-/** Places shown on the profile. Display only — storage keeps the full value. */
-export const DISPLAY_DECIMALS = 6;
+/** Per-site storage capacity ceiling in bushels (BinSiteRules.MaxCapacity server-side) — the ceiling the
+ *  removed producer-level Bin Capacity had. */
+export const MAX_BIN_SITE_CAPACITY = 100_000_000;
 
 export const COORDINATE_EXAMPLE = '39.115876, -95.143955';
 
@@ -223,27 +224,26 @@ export function parseCoordinatePair(text: string): CoordinateParseResult {
   return fail(`That point is outside North America — longitude must be between ${BIN_SITE_BOUNDS.minLng} and ${BIN_SITE_BOUNDS.maxLng}.`);
 }
 
-/** Display form, shortened to six places: "41.390345, -95.007540". */
-export function formatCoordinatePair(lat: number, lng: number): string {
-  return `${lat.toFixed(DISPLAY_DECIMALS)}, ${lng.toFixed(DISPLAY_DECIMALS)}`;
-}
-
 /** Full-precision form, exactly as stored: "41.39034548435109, -95.00754031349179". Used for the
  *  edit field and the hover text, so nothing the user pasted is lost. */
 export function formatCoordinatePairFull(lat: number, lng: number): string {
   return `${lat}, ${lng}`;
 }
 
-/** "Site Name: 41.390345, -95.007540", or just the coordinates when the site is unnamed. */
-export function formatBinSiteLabel(site: ProducerBinSiteItem): string {
-  const coords = formatCoordinatePair(site.latitude, site.longitude);
-  const name = site.name?.trim();
-  return name ? `${name}: ${coords}` : coords;
+/** True when the site has a full coordinate pair. Only the name is required (2026-10-09), so a
+ *  site may have none — it then shows as plain text with no map link. */
+export function binSiteHasCoordinates(site: ProducerBinSiteItem): site is ProducerBinSiteItem & { latitude: number; longitude: number } {
+  return site.latitude != null && site.longitude != null;
 }
 
-/** Hover text for a bin-site link: the full-precision coordinates. */
-export function formatBinSiteTitle(site: ProducerBinSiteItem): string {
-  const coords = formatCoordinatePairFull(site.latitude, site.longitude);
-  const name = site.name?.trim();
-  return `${name ? `${name}: ` : ''}${coords} — open in Google Maps`;
+/** Reads a capacity input ("50,000", "50000 bu") as whole bushels, or null when it holds no digits. */
+export function parseBinSiteCapacity(text: string): number | null {
+  const digits = (text ?? '').replace(/[^0-9]/g, '');
+  return digits ? Number(digits) : null;
+}
+
+/** Keeps a capacity input to digits, grouped as typed: "50000" → "50,000". '' stays ''. */
+export function formatBinSiteCapacityInput(text: string): string {
+  const value = parseBinSiteCapacity(text);
+  return value === null ? '' : value.toLocaleString('en-US');
 }

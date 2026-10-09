@@ -2272,15 +2272,19 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<decimal?>("Capacity")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("Capacity");
+
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
 
-                    b.Property<decimal>("Latitude")
+                    b.Property<decimal?>("Latitude")
                         .HasColumnType("decimal(18,15)")
                         .HasColumnName("Latitude");
 
-                    b.Property<decimal>("Longitude")
+                    b.Property<decimal?>("Longitude")
                         .HasColumnType("decimal(18,15)")
                         .HasColumnName("Longitude");
 
@@ -2288,6 +2292,12 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("Name");
+
+                    b.Property<Guid>("SiteKey")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("SiteKey")
+                        .HasDefaultValueSql("NEWID()");
 
                     b.Property<int>("SortOrder")
                         .ValueGeneratedOnAdd()
@@ -2299,6 +2309,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     b.HasIndex("CustomerId")
                         .HasDatabaseName("IX_ProducerBinSite_CustomerId");
+
+                    b.HasIndex("SiteKey")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_ProducerBinSite_SiteKey");
 
                     b.ToTable("ProducerBinSite", "dbo");
                 });
@@ -2361,9 +2375,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<decimal?>("BinCapacity")
-                        .HasColumnType("decimal(18,2)")
-                        .HasColumnName("BinCapacity");
+                    b.Property<DateTime?>("BinSitesModifiedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("BinSitesModifiedAt");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -2422,9 +2436,17 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("BinSiteId")
+                        .HasColumnType("int")
+                        .HasColumnName("BinSiteId");
+
                     b.Property<decimal?>("BushelsOnHand")
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("BushelsOnHand");
+
+                    b.Property<decimal?>("BushelsSold")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("BushelsSold");
 
                     b.Property<string>("CommodityCode")
                         .IsRequired()
@@ -2441,15 +2463,22 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("Grade");
 
+                    b.Property<decimal?>("LastBid")
+                        .HasColumnType("decimal(18,4)")
+                        .HasColumnName("LastBid");
+
                     b.Property<decimal?>("TargetBushels")
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("TargetBushels");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CustomerId", "CommodityCode")
+                    b.HasIndex("BinSiteId")
+                        .HasDatabaseName("IX_ProducerGrainOnFarm_BinSiteId");
+
+                    b.HasIndex("CustomerId", "BinSiteId", "CommodityCode")
                         .IsUnique()
-                        .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Commodity");
+                        .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Site_Commodity");
 
                     b.ToTable("ProducerGrainOnFarm", "dbo");
                 });
@@ -3408,12 +3437,20 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerGrainOnFarm", b =>
                 {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerBinSite", "BinSite")
+                        .WithMany()
+                        .HasForeignKey("BinSiteId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_ProducerGrainOnFarm_BinSite");
+
                     b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_ProducerGrainOnFarm_Customer");
+
+                    b.Navigation("BinSite");
 
                     b.Navigation("Customer");
                 });

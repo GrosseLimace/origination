@@ -255,10 +255,18 @@
                column — its rows (name · phone · email, full address) are the longest lines and
                shouldn't wrap onto a second row. Sized off the profile column, not the
                viewport: three columns only once there is room for them. -->
-          <div class="grid grid-cols-1 @md/profile:grid-cols-2 @lg/profile:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] @4xl/profile:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-4 @4xl/profile:gap-4 mb-4">
-            <!-- Contact -->
-            <div>
-              <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contact</h3>
+          <!-- The Grain on Farm table, when open, is a fourth grid item (#grain-on-farm-table). From @2xl
+               (672px) it sits right under the "bu on farm" line and spans Farm Details AND the room under
+               Harvest Contract Pace (user 2026-10-09), while Contact and Locations stretches down beside it
+               (row-span-2; grid-rows auto/1fr so any extra height lands in the table's row, never as a gap
+               between Farm Details and the table). Measured in headless Edge with 7-digit totals: the span
+               fits from ~650px. Below @2xl (the ~600px laptop column) it opens full width under the three
+               columns instead. -->
+          <div class="grid grid-cols-1 @md/profile:grid-cols-2 @lg/profile:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] @4xl/profile:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-4 @4xl/profile:gap-4 mb-4"
+               [ngClass]="{ '@2xl/profile:grid-rows-[auto_1fr]': grainOnFarmOpen() }">
+            <!-- Contact and Locations: people and numbers, the address, then the bin sites -->
+            <div [ngClass]="{ '@2xl/profile:row-span-2': grainOnFarmOpen() }">
+              <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contact and Locations</h3>
               <div class="space-y-2 text-sm @4xl/profile:text-base">
                 <!-- User-entered contacts, primary first (starred). The pulled-in ODS phone/email stay below. -->
                 @for (contact of getContacts(); track $index) {
@@ -304,37 +312,6 @@
                     <span>{{ getContactAddress() }}</span>
                   </div>
                 }
-                <!-- Bin sites: one is shown inline; two or more collapse behind an "N Bin Sites" toggle.
-                     Labels are shortened to six places and truncate if the column is narrow; the
-                     hover title and the map link carry the full pasted value. -->
-                <ng-template #binSiteLink let-site>
-                  <a [href]="site.url" target="_blank" rel="noopener noreferrer"
-                     (click)="trackBinSiteMapClick()" [title]="site.title"
-                     class="flex min-w-0 items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
-                    </svg>
-                    <span class="truncate">{{ site.label }}</span>
-                  </a>
-                </ng-template>
-                @if (binSitesCollapsible()) {
-                  <button type="button" (click)="toggleBinSites()" [attr.aria-expanded]="binSitesExpanded()"
-                    class="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 transition-transform" [class.rotate-90]="binSitesExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                    <span>{{ binSiteLinks().length }} Bin Sites</span>
-                  </button>
-                  @if (binSitesExpanded()) {
-                    <div class="ml-5 space-y-1">
-                      @for (site of binSiteLinks(); track $index) {
-                        <ng-container *ngTemplateOutlet="binSiteLink; context: { $implicit: site }" />
-                      }
-                    </div>
-                  }
-                } @else {
-                  @for (site of binSiteLinks(); track $index) {
-                    <ng-container *ngTemplateOutlet="binSiteLink; context: { $implicit: site }" />
-                  }
-                }
                 @if (getCustomerPhone()) {
                   <a [href]="'tel:' + getCustomerPhone()" (click)="trackCallClick()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -350,6 +327,55 @@
                     </svg>
                     <span class="truncate">{{ getCustomerEmail() }}</span>
                   </a>
+                }
+                <!-- Bin sites: at the very bottom of Contact, collapsed to one line, "Bin Sites (N)". The
+                     toggle is the only control; opened, a compact table right under it — Name | Cap |
+                     pin (user 2026-10-09: back in Contact once Marketed/Unmarketed went). -->
+                @if (binSiteRows().length > 0) {
+                  <div>
+                    <button type="button" (click)="toggleBinSites()" [attr.aria-expanded]="binSitesExpanded()" aria-controls="bin-sites-table"
+                      class="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 transition-transform" [class.rotate-90]="binSitesExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                      <span>Bin Sites ({{ binSiteRows().length }})</span>
+                    </button>
+                    @if (binSitesExpanded()) {
+                      <!-- Auto-sized, never scrolls: w-auto shrinks the table to its content and
+                           max-w-full stops it at the Contact column edge. Values are centered under
+                           their headers, empty ones "—"; the pin opens Google Maps (its tooltip is the
+                           only one on the rows), "—" when a site has no coordinates. Name is the only
+                           column that gives way: it wraps (two lines, then "…"); numbers never wrap. -->
+                      <div id="bin-sites-table" class="mt-1.5 ml-5 max-w-full">
+                        <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
+                          <thead>
+                            <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                              <th scope="col" class="py-1 pr-3 @4xl/profile:pr-4 font-medium text-left">Name</th>
+                              <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Capacity (bu)">Cap</th>
+                              <th scope="col" class="py-1 pl-2 @4xl/profile:pl-3 font-medium text-center"><span class="sr-only">Map</span></th>
+                            </tr>
+                          </thead>
+                          <tbody class="text-gray-700 dark:text-gray-300">
+                            @for (site of binSiteRows(); track $index) {
+                              <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
+                                <td class="py-1 pr-3 @4xl/profile:pr-4 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
+                                <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.capacity }}</td>
+                                <td class="py-1 pl-2 @4xl/profile:pl-3 text-center">
+                                  @if (site.url) {
+                                    <a [href]="site.url" target="_blank" rel="noopener noreferrer" (click)="trackBinSiteMapClick()"
+                                      title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
+                                      class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                    </a>
+                                  } @else {
+                                    <span class="text-gray-300 dark:text-gray-600">—</span>
+                                  }
+                                </td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
                 }
               </div>
             </div>
@@ -367,58 +393,6 @@
                     <circle cx="18" cy="18" r="2"/><circle cx="7" cy="15" r="5"/>
                   </svg>
                   <span>{{ (customer().totalAcres || 0) | number }} acres</span>
-                </div>
-                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/>
-                  </svg>
-                  <span>{{ (customer().binCapacity || 0) | number }} bu capacity</span>
-                </div>
-                <!-- Grain on Farm — total bushels on hand; click to expand the per-commodity
-                     on-hand / target breakdown. Values are entered in the Edit Producer dialog.
-                     Toggle + breakdown live in one wrapper so the wrapper is a single row in the
-                     space-y-2 rhythm — a full 8px gap to Commodities below — while the breakdown is
-                     tucked close (mt-1) under the total line above. -->
-                <div>
-                  <div class="flex w-fit items-center gap-2 -ml-1 px-1 py-0.5 rounded-md text-gray-600 dark:text-gray-400 transition-colors"
-                       [class.cursor-pointer]="grainOnFarmRows().length > 0"
-                       [class.select-none]="grainOnFarmRows().length > 0"
-                       [class.hover:bg-gray-100]="grainOnFarmRows().length > 0"
-                       [class.dark:hover:bg-gray-800]="grainOnFarmRows().length > 0"
-                       (click)="toggleGrainOnFarm()"
-                       [title]="grainOnFarmRows().length > 0 ? (showGrainOnFarm() ? 'Hide breakdown' : 'Show breakdown') : ''">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
-                      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
-                      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
-                    </svg>
-                    <span class="whitespace-nowrap">{{ grainOnFarmTotal() | number }} bu on farm</span>
-                    @if (grainOnFarmRows().length > 0) {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 text-gray-400 transition-transform" [class.rotate-90]="showGrainOnFarm()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                    }
-                  </div>
-                  @if (showGrainOnFarm() && grainOnFarmRows().length > 0) {
-                    <!-- Invisible 4-column grid: chip | on-hand (bu) | grade | target ($). No box/headers;
-                         one line per commodity, numbers right-aligned so they line up across rows.
-                         Everything is 13px (chip included) and whitespace-nowrap so "25,000 bu"
-                         never splits from its unit. This column is a third of the card, so the grade
-                         column is the pressure valve: minmax(0,auto) lets it shrink and ellipsize
-                         (full text on hover) instead of the row wrapping. pl + max-w-full (border-box)
-                         keeps the indented grid inside the column so that shrink can kick in.
-                         Absent grade/target render an empty cell to hold the column positions. -->
-                    <div class="mt-1 pl-[21px] grid grid-cols-[auto_auto_minmax(0,auto)_auto] items-center gap-x-1.5 gap-y-1 w-fit max-w-full text-[13px]">
-                      @for (g of grainOnFarmRows(); track g.commodityCode) {
-                        <span class="justify-self-start inline-flex items-center px-1.5 py-0.5 rounded font-medium whitespace-nowrap" [ngClass]="grainChipClass(g.commodityCode)" [title]="grainChipTitle(g.commodityCode)">{{ g.commodityCode }}</span>
-                        <span class="text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-400 cursor-help" title="On hand">{{ (g.bushelsOnHand || 0) | number }} bu</span>
-                        <span class="truncate text-gray-500 dark:text-gray-400 cursor-help" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() }}</span>
-                        @if ((g.targetBushels || 0) > 0) {
-                          <span class="text-right tabular-nums whitespace-nowrap font-medium text-scoular-green-accessible dark:text-scoular-green cursor-help" title="Target">{{ g.targetBushels | currency:'USD':'symbol':'1.2-2' }}</span>
-                        } @else {
-                          <span></span>
-                        }
-                      }
-                    </div>
-                  }
                 </div>
                 <div class="flex items-start gap-2 text-gray-600 dark:text-gray-400">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 mt-0.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -440,6 +414,29 @@
                   } @else {
                     <span>No commodities</span>
                   }
+                </div>
+                <!-- Grain on Farm — last in Farm Details, under Commodities. Total bushels on hand; click to
+                     open the breakdown (#grain-on-farm-table, the grid item after Harvest Contract Pace).
+                     Values are entered in the Edit Producer dialog. -->
+                <div>
+                  <div class="flex w-fit items-center gap-2 -ml-1 px-1 py-0.5 rounded-md text-gray-600 dark:text-gray-400 transition-colors"
+                       [class.cursor-pointer]="grainOnFarmRows().length > 0"
+                       [class.select-none]="grainOnFarmRows().length > 0"
+                       [class.hover:bg-gray-100]="grainOnFarmRows().length > 0"
+                       [class.dark:hover:bg-gray-800]="grainOnFarmRows().length > 0"
+                       (click)="toggleGrainOnFarm()" aria-controls="grain-on-farm-table"
+                       [attr.aria-expanded]="grainOnFarmRows().length > 0 ? showGrainOnFarm() : null"
+                       [title]="grainOnFarmRows().length > 0 ? (showGrainOnFarm() ? 'Hide breakdown' : 'Show breakdown') : ''">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
+                    </svg>
+                    <span class="whitespace-nowrap">{{ grainOnFarmTotal() | number }} bu on farm</span>
+                    @if (grainOnFarmRows().length > 0) {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 text-gray-400 transition-transform" [class.rotate-90]="showGrainOnFarm()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    }
+                  </div>
                 </div>
               </div>
             </div>
@@ -463,7 +460,53 @@
                 </div>
               }
             </div>
+
+            <!-- Grain on Farm, open: Crop | Total | Sold | Grade | Target | Last Bid, grouped by the bin site the
+                 grain is stored at — the site name is a line of its own above its crops; rows saved before grain
+                 was tied to sites come last under "Not tied to a bin site" (no heading when that is all there is).
+                 w-auto hugs the content; values are centered under their headers and never wrap; Grade is free
+                 text, so it is the one column capped and ellipsized (full text on hover). Blank values show a
+                 dash; Target and Last Bid can be negative (basis); Target shows as "-$0.35", Last Bid as typed — no "$", no padded decimals ("-0.35", "4"). The heading shows only
+                 when it is full width; from @2xl it sits right under its "bu on farm" line (-mt-2). -->
+            @if (grainOnFarmOpen()) {
+              <div id="grain-on-farm-table" class="col-span-full @2xl/profile:col-start-2 @2xl/profile:col-span-2 @2xl/profile:-mt-2 min-w-0">
+                <h3 class="@2xl/profile:hidden text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Grain on Farm</h3>
+                <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
+                  <thead>
+                    <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                      <th scope="col" class="py-1 pr-2 @4xl/profile:pr-3 font-medium text-left">Crop</th>
+                      <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Total bushels on farm">Total</th>
+                      <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Bushels sold">Sold</th>
+                      <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center">Grade</th>
+                      <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Target price ($/bu)">Target</th>
+                      <th scope="col" class="py-1 pl-1 @4xl/profile:pl-2 font-medium text-center" title="Last bid">Last Bid</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-700 dark:text-gray-300">
+                    <!-- $index, not the code: the same crop can be at two sites. -->
+                    @for (grp of grainOnFarmGroups(); track $index) {
+                      @if (grp.label) {
+                        <tr>
+                          <th scope="rowgroup" colspan="6" class="pt-1.5 pb-0.5 text-left text-[11px] @4xl/profile:text-xs font-semibold text-gray-600 dark:text-gray-300">{{ grp.label }}</th>
+                        </tr>
+                      }
+                      @for (g of grp.rows; track $index) {
+                        <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
+                          <td class="py-1 pr-2 @4xl/profile:pr-3 text-left whitespace-nowrap" [title]="grainChipTitle(g.commodityCode)">{{ g.commodityCode }}</td>
+                          <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
+                          <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
+                          <td class="py-1 px-1 @4xl/profile:px-2 text-center"><span class="inline-block max-w-[6rem] truncate align-bottom" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
+                          <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
+                          <td class="py-1 pl-1 @4xl/profile:pl-2 text-center whitespace-nowrap">{{ formatLastBid(g.lastBid) }}</td>
+                        </tr>
+                      }
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
           </div>
+
 
         </div>
       </div>

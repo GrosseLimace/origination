@@ -58,7 +58,7 @@ The app's global state container, built on Angular signals. No NgRx, no Redux �
 | `storedGrain` | `StoredGrain[]` | Computed in service from `ctrm.vw_GNTA39D1` |
 | `savedLists` | `SavedList[]` | User's saved Build-a-List queries |
 | `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
-| `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin capacity, etc.) |
+| `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin sites, grain on farm, etc.) |
 | `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer — CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
 | `selectedTradeUnits`, `selectedGroupNames` | `string[]` | The TU selector's current state |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
@@ -152,9 +152,9 @@ All app-owned tables, all in `dbo`:
 | `CustomerLink` | Linked-producer edges (formerly `ProducerDetails.LinkedProducerIds` CSV; now a proper relationship table). |
 | `CustomerCommodity` | Per-customer commodity list (formerly `ProducerDetails.Commodities` CSV). |
 | `Notes` | Producer notes (with pin, soft-delete). Joined to `Customer` via FK; `CustomerName`/`CustomerCode` resolved on read. |
-| `ProducerDetails` | Enrichment fields (acres, bin capacity, etc. — linked producers / commodities / contacts are separate tables). `PrimaryContact`/`PrimaryPhone` are legacy columns dual-written from the primary `ProducerContact` row for search/lookup compat. |
+| `ProducerDetails` | Enrichment fields (acres, etc. — `BinCapacity` was dropped 2026-10-09, capacity lives on `ProducerBinSite` — linked producers / commodities / contacts are separate tables). `PrimaryContact`/`PrimaryPhone` are legacy columns dual-written from the primary `ProducerContact` row for search/lookup compat. |
 | `ProducerContact` | User-entered contacts per producer (name, phone, email; exactly one `IsPrimary`). Replaced as a set on producer-details upsert; searched by customer search (name + digits-only phone). |
-| `ProducerBinSite` | User-entered on-farm bin sites per producer (optional name + `Latitude`/`Longitude` `decimal(18,15)`, the full pasted value — display shortens to six places), as many as needed (100-site sanity ceiling). Replaced as a set on producer-details upsert (null = preserve); hand-cascaded on details delete. North American bounds in `BinSiteRules`, mirrored by `client/src/app/shared/utils/coordinates.ts`. |
+| `ProducerBinSite` | User-entered on-farm bin sites per producer (stable `SiteKey` uniqueidentifier, unique, matched on save so sites update in place; grain-on-farm rows link to them via `ProducerGrainOnFarm.BinSiteId` (nullable FK, NoAction; unique customer + site + code), required name (app-enforced; column stays NULLable for older rows) + optional `Latitude`/`Longitude` + optional `Capacity` bushels `decimal(18,2)`; the only capacity recorded since ProducerDetails.BinCapacity was dropped; `decimal(18,15)`, the full pasted value — display shortens to six places), as many as needed (100-site sanity ceiling). Replaced as a set on producer-details upsert (null = preserve); hand-cascaded on details delete. North American bounds in `BinSiteRules`, mirrored by `client/src/app/shared/utils/coordinates.ts`. |
 | `ProducerPlantingIntentions` | Per-producer planting intentions (note: table named "Producer..." but EF model is `PlantingIntention`) |
 | `Commodities` | Crop catalog (synced additively from ODS contract/ticket codes). `ShowInPlantingIntentions` (bit) flags the curated subset shown in the Planting Intentions crop dropdown — served by `GET /commodities/planting`; the full list is still `GET /commodities`. |
 | `DashboardPlantingEstimates`, `DashboardMarketShares`, `DashboardActualHarvests` | Planting Intentions Dashboard persistence |

@@ -13,7 +13,7 @@ public static class ProducerDetailsMappings
         ScoularId = p.ScoularId,
         CustomerName = p.CustomerName,
         TotalAcres = p.TotalAcres,
-        BinCapacity = p.BinCapacity,
+        BinSitesModifiedAt = p.BinSitesModifiedAt,
         PrimaryContact = p.PrimaryContact,
         PrimaryPhone = p.PrimaryPhone,
         Commodities = p.Commodities,
@@ -24,9 +24,13 @@ public static class ProducerDetailsMappings
         ModifiedAt = p.ModifiedAt,
         GrainOnFarm = p.GrainOnFarm.Select(g => new GrainOnFarmItemResponse
         {
+            BinSiteKey = g.BinSiteKey,
+            BinSiteName = g.BinSiteName,
             CommodityCode = g.CommodityCode,
             BushelsOnHand = g.BushelsOnHand,
+            BushelsSold = g.BushelsSold,
             TargetBushels = g.TargetBushels,
+            LastBid = g.LastBid,
             Grade = g.Grade,
         }).ToList(),
         // Repository composes contacts primary-first; keep that order on the wire.
@@ -40,9 +44,11 @@ public static class ProducerDetailsMappings
         }).ToList(),
         BinSites = p.BinSites.Select(b => new BinSiteItemResponse
         {
+            SiteKey = b.SiteKey,
             Name = b.Name,
             Latitude = b.Latitude,
             Longitude = b.Longitude,
+            Capacity = b.Capacity,
             SortOrder = b.SortOrder,
         }).ToList(),
     };
