@@ -24,7 +24,7 @@ import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
-import { binSiteHasCoordinates, formatBinSiteDetails, formatBinSiteLabel, formatBinSiteTitle } from '@shared/utils/coordinates';
+import { binSiteHasCoordinates, formatBinSiteTitle } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
@@ -179,20 +179,25 @@ export class CustomerProfileComponent {
     this.usageTracking.trackBinSiteMapClick(this.customer().id.toString());
   }
 
-  /** Bin sites under the address, each a Google Maps link to its exact (full-precision) point, in
-   *  saved order. The label is shortened to six places; the title carries the full value. */
-  readonly binSiteLinks = computed(() =>
-    (this.customer().binSites ?? []).map(site => ({
-      label: formatBinSiteLabel(site),
+  /** Bin sites as rows of the mini-table at the bottom of the Contact column, in saved order, every
+   *  cell already formatted ("50,000", or "—" when empty). The coordinates aren't a column (too
+   *  tight for the narrow card): they're in the row's hover title at full precision, and the pin
+   *  opens them in Google Maps — or there's no pin when the site has none. */
+  readonly binSiteRows = computed(() => {
+    const bushels = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-US'));
+    return (this.customer().binSites ?? []).map(site => ({
+      name: site.name?.trim() || 'Bin site',
+      commodity: site.commodityCode?.trim() || '—',
+      capacity: bushels(site.capacity),
+      marketed: bushels(site.marketed),
+      unmarketed: bushels(site.unmarketed),
       title: formatBinSiteTitle(site),
-      details: formatBinSiteDetails(site),
-      // No coordinates → no map link; the template shows the site as plain text.
       url: binSiteHasCoordinates(site) ? googleMapsCoordinatesUrl(site.latitude, site.longitude) : null,
-    })));
+    }));
+  });
 
-  /** Two or more sites collapse behind an "N Bin Sites" toggle so they don't crowd the contact
-   *  column; a single site is shown inline. Closed again whenever a different producer is shown. */
-  readonly binSitesCollapsible = computed(() => this.binSiteLinks().length > 1);
+  /** The bin-site table starts collapsed to one line, "▸ Bin Sites (N)", however many there are,
+   *  and closes again whenever a different producer is shown. */
   readonly binSitesExpanded = linkedSignal({ source: () => this.customer().id, computation: () => false });
 
   toggleBinSites(): void {

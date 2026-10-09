@@ -243,15 +243,6 @@ export function binSiteHasCoordinates(site: ProducerBinSiteItem): site is Produc
   return site.latitude != null && site.longitude != null;
 }
 
-/** "Site Name: 41.390345, -95.007540"; just the name when it has no coordinates; just the
- *  coordinates for an older unnamed site. */
-export function formatBinSiteLabel(site: ProducerBinSiteItem): string {
-  const name = site.name?.trim() ?? '';
-  if (!binSiteHasCoordinates(site)) return name || 'Bin site';
-  const coords = formatCoordinatePair(site.latitude, site.longitude);
-  return name ? `${name}: ${coords}` : coords;
-}
-
 /** Hover text: the full-precision coordinates and the detail line; "open in Google Maps" only
  *  when there is somewhere to open. */
 export function formatBinSiteTitle(site: ProducerBinSiteItem): string {

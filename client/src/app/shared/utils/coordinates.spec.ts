@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { binSiteHasCoordinates, formatBinSiteCapacity, formatBinSiteCapacityInput, formatBinSiteDetails, formatBinSiteLabel, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
+import { binSiteHasCoordinates, formatBinSiteCapacity, formatBinSiteCapacityInput, formatBinSiteDetails, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
 
 function ok(text: string) {
   const result = parseCoordinatePair(text);
@@ -178,17 +178,7 @@ describe('formatting', () => {
       .toBe('North Bins: 41.39034548435109, -95.00754031349179 — open in Google Maps');
   });
 
-  it('labels a named site with its name', () => {
-    expect(formatBinSiteLabel({ name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 }))
-      .toBe('Anderson Site: 39.115876, -95.143955');
-  });
 
-  it('shows only the coordinates for an unnamed site', () => {
-    expect(formatBinSiteLabel({ name: null, latitude: 39.115876, longitude: -95.143955 }))
-      .toBe('39.115876, -95.143955');
-    expect(formatBinSiteLabel({ name: '   ', latitude: 39.115876, longitude: -95.143955 }))
-      .toBe('39.115876, -95.143955');
-  });
 });
 
 describe('bin site capacity', () => {
@@ -234,9 +224,6 @@ describe('bin site without coordinates', () => {
     expect(binSiteHasCoordinates({ latitude: 41.39, longitude: -95.01 })).toBe(true);
   });
 
-  it('labels with the name alone', () => {
-    expect(formatBinSiteLabel(site)).toBe('Home place');
-  });
 
   it('has hover text without "open in Google Maps"', () => {
     expect(formatBinSiteTitle(site)).toBe('Home place: 20,000 bu capacity');
