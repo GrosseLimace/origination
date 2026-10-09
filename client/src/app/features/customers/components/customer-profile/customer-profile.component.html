@@ -314,61 +314,16 @@
                     <span class="truncate">{{ getCustomerEmail() }}</span>
                   </a>
                 }
-                <!-- Bin sites: at the very bottom of Contact, always collapsed to one line so they never
-                     crowd the card. Expanded, a compact table — Name | Crop | Cap | Mkt | Unmkt | pin.
-                     The pin opens the site in Google Maps; a site without coordinates gets a dash. The
-                     row's hover text has the full coordinates and details. -->
+                <!-- Bin sites: one line at the very bottom of Contact, "Bin Sites (N)". It opens and closes
+                     the full-width table under the three columns (#bin-sites-table, below), so the
+                     table never squeezes Contact, Farm Details or Harvest Contract Pace. -->
                 @if (binSiteRows().length > 0) {
                   <div>
-                    <button type="button" (click)="toggleBinSites()" [attr.aria-expanded]="binSitesExpanded()"
+                    <button type="button" (click)="toggleBinSites()" [attr.aria-expanded]="binSitesExpanded()" aria-controls="bin-sites-table"
                       class="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors">
                       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 transition-transform" [class.rotate-90]="binSitesExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                       <span>Bin Sites ({{ binSiteRows().length }})</span>
                     </button>
-                    @if (binSitesExpanded()) {
-                      <div class="mt-1.5 ml-5 max-w-full">
-                        <!-- Auto-sized, never scrolls (user 2026-10-09): w-auto shrinks the table to its
-                             content, so with short names the numbers sit right beside them. Each column
-                             is as wide as its widest value, with the values centered under the header.
-                             Name is the only column that can grow, and it is capped and wraps (two
-                             lines, then "…"; full name in the row's hover text), so a long name can't
-                             push the table past the card. Numbers never wrap. -->
-                        <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
-                          <thead>
-                            <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                              <th scope="col" class="py-1 pr-2 @4xl/profile:pr-3 font-medium text-left">Name</th>
-                              <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center">Crop</th>
-                              <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Capacity (bu)">Cap</th>
-                              <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Marketed (bu)">Mkt</th>
-                              <th scope="col" class="py-1 px-1 @4xl/profile:px-2 font-medium text-center" title="Unmarketed (bu)">Unmkt</th>
-                              <th scope="col" class="py-1 pl-1 @4xl/profile:pl-2 font-medium text-center"><span class="sr-only">Map</span></th>
-                            </tr>
-                          </thead>
-                          <tbody class="text-gray-700 dark:text-gray-300">
-                            @for (site of binSiteRows(); track $index) {
-                              <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle" [title]="site.title">
-                                <td class="py-1 pr-2 @4xl/profile:pr-3 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
-                                <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ site.commodity }}</td>
-                                <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ site.capacity }}</td>
-                                <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ site.marketed }}</td>
-                                <td class="py-1 px-1 @4xl/profile:px-2 text-center whitespace-nowrap">{{ site.unmarketed }}</td>
-                                <td class="py-1 pl-1 @4xl/profile:pl-2 text-center">
-                                  @if (site.url) {
-                                    <a [href]="site.url" target="_blank" rel="noopener noreferrer" (click)="trackBinSiteMapClick()"
-                                      title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
-                                      class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
-                                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                                    </a>
-                                  } @else {
-                                    <span class="text-gray-300 dark:text-gray-600" title="No location recorded">—</span>
-                                  }
-                                </td>
-                              </tr>
-                            }
-                          </tbody>
-                        </table>
-                      </div>
-                    }
                   </div>
                 }
               </div>
@@ -484,6 +439,52 @@
               }
             </div>
           </div>
+
+          <!-- Bin sites, expanded: a full-width row under Contact | Farm Details | Harvest Contract Pace
+               (user 2026-10-09), so long names stay on one line and nothing in those three columns
+               moves. Opened and closed only by the "Bin Sites (N)" toggle at the bottom of Contact. The
+               table still hugs its content: values centered under their headers, empty ones "—";
+               the pin opens Google Maps, "—" when a site has no coordinates; the row hover text has
+               the full coordinates and details. A name wraps only if it is longer than the whole row. -->
+          @if (binSitesExpanded() && binSiteRows().length > 0) {
+            <div id="bin-sites-table" class="mb-4">
+              <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Bin Sites</h3>
+              <table class="w-auto max-w-full text-xs @4xl/profile:text-sm tabular-nums">
+                <thead>
+                  <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                    <th scope="col" class="py-1 pr-4 @4xl/profile:pr-6 font-medium text-left">Name</th>
+                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center">Crop</th>
+                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Capacity (bu)">Cap</th>
+                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Marketed (bu)">Mkt</th>
+                    <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Unmarketed (bu)">Unmkt</th>
+                    <th scope="col" class="py-1 pl-2 @4xl/profile:pl-3 font-medium text-center"><span class="sr-only">Map</span></th>
+                  </tr>
+                </thead>
+                <tbody class="text-gray-700 dark:text-gray-300">
+                  @for (site of binSiteRows(); track $index) {
+                    <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle" [title]="site.title">
+                      <td class="py-1 pr-4 @4xl/profile:pr-6 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
+                      <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.commodity }}</td>
+                      <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.capacity }}</td>
+                      <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.marketed }}</td>
+                      <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.unmarketed }}</td>
+                      <td class="py-1 pl-2 @4xl/profile:pl-3 text-center">
+                        @if (site.url) {
+                          <a [href]="site.url" target="_blank" rel="noopener noreferrer" (click)="trackBinSiteMapClick()"
+                            title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
+                            class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                          </a>
+                        } @else {
+                          <span class="text-gray-300 dark:text-gray-600" title="No location recorded">—</span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
 
         </div>
       </div>
