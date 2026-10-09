@@ -4298,10 +4298,11 @@ export class BuildListComponent {
   }
 
   // ── Bin sites & grain breakdown (Grain on Farm & Bin Sites prompts, user 2026-10-09) ─────────
-  // Each result can open a breakdown of its bin sites and the grain stored at each one — the same
-  // grouping the producer profile uses. Closed by default; "Expand all" opens every displayed row.
+  // Each result shows its bin sites and the grain stored at each one in the row's middle column (the
+  // same grouping the producer profile uses). When a notes filter has that column, the breakdown is a
+  // toggle under the name instead, opened per producer.
 
-  /** Producers whose breakdown is open. */
+  /** Producers whose toggled breakdown is open (notes-filter case only). */
   readonly binSiteGrainOpen = signal<ReadonlySet<number>>(new Set());
 
   isBinSiteGrainOpen(customerId: number): boolean {
@@ -4314,20 +4315,6 @@ export class BuildListComponent {
       if (!next.delete(customerId)) next.add(customerId);
       return next;
     });
-  }
-
-  /** True when every displayed producer that has a breakdown is open — drives Expand/Collapse all. */
-  readonly allBinSiteGrainOpen = computed(() => {
-    const ids = this.displayedCustomers().filter(c => this.hasBinSiteGrain(c)).map(c => c.id);
-    const open = this.binSiteGrainOpen();
-    return ids.length > 0 && ids.every(id => open.has(id));
-  });
-
-  /** Opens every displayed producer's breakdown, or closes them all. */
-  toggleAllBinSiteGrain(): void {
-    this.binSiteGrainOpen.set(this.allBinSiteGrainOpen()
-      ? new Set()
-      : new Set(this.displayedCustomers().filter(c => this.hasBinSiteGrain(c)).map(c => c.id)));
   }
 
   hasBinSiteGrain(customer: Customer): boolean {

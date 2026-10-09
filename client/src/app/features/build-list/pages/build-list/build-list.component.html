@@ -1468,17 +1468,58 @@
                 <button type="button" (click)="clearRefinements()" class="mt-3 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 underline">Clear refinements</button>
               </div>
             } @else {
-              @if (showGrainOnFarmFilters()) {
-                <!-- Open or close every producer's bin sites & grain breakdown at once. -->
-                <div class="flex justify-end -mt-1 mb-1">
-                  <button type="button" (click)="toggleAllBinSiteGrain()"
-                          class="inline-flex items-center gap-1 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green hover:underline focus:outline-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-                         [class.rotate-90]="allBinSiteGrainOpen()" class="transition-transform"><path d="m9 18 6-6-6-6"/></svg>
-                    {{ allBinSiteGrainOpen() ? 'Collapse all' : 'Expand all' }} bin sites &amp; grain
-                  </button>
-                </div>
-              }
+              <!-- One producer's bin sites & grain: a line per bin site (name · capacity · map pin) with the grain
+                   stored there under it — Crop | Total | Sold | Grade | Target | Last Bid — the same grouping as the
+                   profile's Grain on Farm table. large = the middle column of a result row (text-sm, roomier cells);
+                   otherwise the compact copy under the name. The map pin doesn't open the producer. -->
+              <ng-template #binSiteGrainTable let-customer let-large="large">
+                <table class="w-auto max-w-full tabular-nums" [ngClass]="large ? 'text-sm' : 'text-xs'">
+                  <thead>
+                    <tr class="uppercase tracking-wide whitespace-nowrap text-gray-400 dark:text-gray-500" [ngClass]="large ? 'text-xs' : 'text-[10px]'">
+                      <th scope="col" [ngClass]="large ? 'pr-6' : 'pr-3'" class="py-1 font-medium text-left">Crop</th>
+                      <th scope="col" [ngClass]="large ? 'px-4' : 'px-2'" class="py-1 font-medium text-center" title="Total bushels on farm">Total</th>
+                      <th scope="col" [ngClass]="large ? 'px-4' : 'px-2'" class="py-1 font-medium text-center" title="Bushels sold">Sold</th>
+                      <th scope="col" [ngClass]="large ? 'px-4' : 'px-2'" class="py-1 font-medium text-center">Grade</th>
+                      <th scope="col" [ngClass]="large ? 'px-4' : 'px-2'" class="py-1 font-medium text-center" title="Target price ($/bu)">Target</th>
+                      <th scope="col" [ngClass]="large ? 'pl-4' : 'pl-2'" class="py-1 font-medium text-center" title="Last bid ($/bu)">Last Bid</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-700 dark:text-gray-300">
+                    @for (site of binSiteGrainBreakdown(customer); track $index) {
+                      <tr>
+                        <th scope="rowgroup" colspan="6" class="pt-2 pb-0.5 text-left font-semibold text-gray-700 dark:text-gray-200">
+                          <span class="inline-flex items-center gap-1.5">
+                            {{ site.name }}
+                            @if (site.capacity != null) {
+                              <span class="font-normal text-gray-400 dark:text-gray-500">· {{ site.capacity | number }} bu capacity</span>
+                            }
+                            @if (site.mapUrl) {
+                              <a [href]="site.mapUrl" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()" title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
+                                 class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                                <svg xmlns="http://www.w3.org/2000/svg" [attr.width]="large ? 14 : 12" [attr.height]="large ? 14 : 12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                              </a>
+                            }
+                          </span>
+                        </th>
+                      </tr>
+                      @for (g of site.rows; track $index) {
+                        <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
+                          <td [ngClass]="large ? 'pr-6' : 'pr-3'" class="py-1 text-left whitespace-nowrap">{{ g.commodityCode }}</td>
+                          <td [ngClass]="large ? 'px-4' : 'px-2'" class="py-1 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
+                          <td [ngClass]="large ? 'px-4' : 'px-2'" class="py-1 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
+                          <td [ngClass]="large ? 'px-4' : 'px-2'" class="py-1 text-center"><span class="inline-block truncate align-bottom" [ngClass]="large ? 'max-w-[14rem]' : 'max-w-[10rem]'" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
+                          <td [ngClass]="large ? 'px-4' : 'px-2'" class="py-1 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
+                          <td [ngClass]="large ? 'pl-4' : 'pl-2'" class="py-1 text-center whitespace-nowrap">{{ g.lastBid != null ? (g.lastBid | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
+                        </tr>
+                      } @empty {
+                        <tr class="border-t border-gray-100 dark:border-gray-700/60">
+                          <td colspan="6" class="py-1 text-gray-400 dark:text-gray-500 italic">No grain on farm recorded</td>
+                        </tr>
+                      }
+                    }
+                  </tbody>
+                </table>
+              </ng-template>
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
                 @for (customer of rendered; track customer.id) {
                   @let contactInfo = getLastContactInfo(customer.id);
@@ -1488,10 +1529,14 @@
                   @let matchingNotes = noteFilterActive()
                     ? (isLinkedOpen ? getOwnMatchingNotes(customer) : (matchingNotesByCustomer().get(customer.id) ?? null))
                     : null;
+                  <!-- Grain on Farm & Bin Sites prompts put the bin sites & grain breakdown in the row's middle
+                       column, always shown and at a readable size (user 2026-10-09) — unless a notes filter
+                       already uses that column, in which case it stays a toggle under the name. -->
+                  @let middleGrain = showGrainOnFarmFilters() && !noteFilterActive();
                   <div class="group/card py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                        [class.cursor-pointer]="!linkedFeatureActive()"
                        (click)="!linkedFeatureActive() && selectCustomer(customer)">
-                    <div [ngClass]="noteFilterActive()
+                    <div [ngClass]="noteFilterActive() || middleGrain
                           ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-6'
                           : 'flex items-start gap-4 justify-between'">
                       <div class="flex items-start gap-3" [class.shrink-0]="!wideIdentityColumn()" [class.w-72]="!wideIdentityColumn()" [class.flex-1]="wideIdentityColumn()" [class.min-w-0]="wideIdentityColumn()">
@@ -1531,11 +1576,9 @@
                               <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
                             }
                           </div>
-                          <!-- Bin sites & grain breakdown (Grain on Farm & Bin Sites prompts): closed by default,
-                               opened per row or with "Expand all" above the list. Same layout as the profile's
-                               Grain on Farm table — a line per bin site (name · capacity · map pin), its crops
-                               under it — so the two read alike. Clicks inside don't open the producer. -->
-                          @if (showGrainOnFarmFilters() && hasBinSiteGrain(customer)) {
+                          <!-- Bin sites & grain as a toggle under the name — only when a notes filter has the
+                               middle column (otherwise the breakdown is shown there, below). -->
+                          @if (showGrainOnFarmFilters() && noteFilterActive() && hasBinSiteGrain(customer)) {
                             <button type="button" (click)="$event.stopPropagation(); toggleBinSiteGrain(customer.id)" [attr.aria-expanded]="isBinSiteGrainOpen(customer.id)"
                                     class="mt-1.5 inline-flex items-center gap-1 text-xs text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer focus:outline-none">
                               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
@@ -1544,52 +1587,7 @@
                             </button>
                             @if (isBinSiteGrainOpen(customer.id)) {
                               <div class="mt-1.5 ml-3.5 max-w-full cursor-default" (click)="$event.stopPropagation()">
-                                <table class="w-auto max-w-full text-xs tabular-nums">
-                                  <thead>
-                                    <tr class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                                      <th scope="col" class="py-1 pr-3 font-medium text-left">Crop</th>
-                                      <th scope="col" class="py-1 px-2 font-medium text-center" title="Total bushels on farm">Total</th>
-                                      <th scope="col" class="py-1 px-2 font-medium text-center" title="Bushels sold">Sold</th>
-                                      <th scope="col" class="py-1 px-2 font-medium text-center">Grade</th>
-                                      <th scope="col" class="py-1 px-2 font-medium text-center" title="Target price ($/bu)">Target</th>
-                                      <th scope="col" class="py-1 pl-2 font-medium text-center" title="Last bid ($/bu)">Last Bid</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody class="text-gray-700 dark:text-gray-300">
-                                    @for (site of binSiteGrainBreakdown(customer); track $index) {
-                                      <tr>
-                                        <th scope="rowgroup" colspan="6" class="pt-1.5 pb-0.5 text-left font-semibold text-gray-600 dark:text-gray-300">
-                                          <span class="inline-flex items-center gap-1.5">
-                                            {{ site.name }}
-                                            @if (site.capacity != null) {
-                                              <span class="font-normal text-gray-400 dark:text-gray-500">· {{ site.capacity | number }} bu capacity</span>
-                                            }
-                                            @if (site.mapUrl) {
-                                              <a [href]="site.mapUrl" target="_blank" rel="noopener noreferrer" title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
-                                                 class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                                              </a>
-                                            }
-                                          </span>
-                                        </th>
-                                      </tr>
-                                      @for (g of site.rows; track $index) {
-                                        <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
-                                          <td class="py-1 pr-3 text-left whitespace-nowrap">{{ g.commodityCode }}</td>
-                                          <td class="py-1 px-2 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
-                                          <td class="py-1 px-2 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
-                                          <td class="py-1 px-2 text-center"><span class="inline-block max-w-[10rem] truncate align-bottom" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
-                                          <td class="py-1 px-2 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
-                                          <td class="py-1 pl-2 text-center whitespace-nowrap">{{ g.lastBid != null ? (g.lastBid | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
-                                        </tr>
-                                      } @empty {
-                                        <tr class="border-t border-gray-100 dark:border-gray-700/60">
-                                          <td colspan="6" class="py-1 text-gray-400 dark:text-gray-500 italic">No grain on farm recorded</td>
-                                        </tr>
-                                      }
-                                    }
-                                  </tbody>
-                                </table>
+                                <ng-container *ngTemplateOutlet="binSiteGrainTable; context: { $implicit: customer, large: false }" />
                               </div>
                             }
                           }
@@ -1605,6 +1603,15 @@
                         </div>
                       </div>
 
+                      @if (middleGrain) {
+                        <div class="min-w-0">
+                          @if (hasBinSiteGrain(customer)) {
+                            <ng-container *ngTemplateOutlet="binSiteGrainTable; context: { $implicit: customer, large: true }" />
+                          } @else {
+                            <p class="pt-1 text-sm italic text-gray-400 dark:text-gray-500">No bin sites or grain on farm recorded</p>
+                          }
+                        </div>
+                      }
                       @if (noteFilterActive() && (!matchingNotes || matchingNotes.length === 0)) {
                         <div></div>
                       }
