@@ -219,18 +219,23 @@
 
                 @if (editBinSites().length > 0) {
                   <!-- One shared bushel input (Capacity / Marketed / Unmarketed): digits only, grouped as
-                       typed, with an inline ×. -->
+                       typed, with an inline ×. The placeholder is just "BU" — the column header names the
+                       field — so it fits the narrow box; on small screens, where the header row is hidden,
+                       a tiny label above the box names it instead. -->
                   <ng-template #bushelInput let-i="i" let-field="field" let-value="value" let-label="label">
-                    <div class="relative">
-                      <input type="text" inputmode="numeric" [ngModel]="value" (ngModelChange)="onBinSiteBushelsInput(i, field, $event)"
-                        [placeholder]="label + ' (bu)'" maxlength="11" [attr.aria-label]="'Bin site ' + label + ' in bushels'"
-                        class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
-                      @if (value) {
-                        <button type="button" (click)="clearBinSiteField(i, field)" [title]="'Clear ' + label" [attr.aria-label]="'Clear bin site ' + label"
-                          class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                        </button>
-                      }
+                    <div class="min-w-0">
+                      <span class="md:hidden block mb-0.5 text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">{{ label }}</span>
+                      <div class="relative">
+                        <input type="text" inputmode="numeric" [ngModel]="value" (ngModelChange)="onBinSiteBushelsInput(i, field, $event)"
+                          placeholder="BU" maxlength="11" [attr.aria-label]="'Bin site ' + label + ' in bushels'"
+                          class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                        @if (value) {
+                          <button type="button" (click)="clearBinSiteField(i, field)" [title]="'Clear ' + label" [attr.aria-label]="'Clear bin site ' + label"
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
+                        }
+                      </div>
                     </div>
                   </ng-template>
                   <!-- Name | Capacity | Marketed | Unmarketed | Commodity | Lat/Long | remove — one line on
