@@ -237,19 +237,32 @@ export function formatCoordinatePairFull(lat: number, lng: number): string {
   return `${lat}, ${lng}`;
 }
 
-/** "Site Name: 41.390345, -95.007540", or just the coordinates when the site is unnamed. */
+/** True when the site has a full coordinate pair. Only the name is required (2026-10-09), so a
+ *  site may have none — it then shows as plain text with no map link. */
+export function binSiteHasCoordinates(site: ProducerBinSiteItem): site is ProducerBinSiteItem & { latitude: number; longitude: number } {
+  return site.latitude != null && site.longitude != null;
+}
+
+/** "Site Name: 41.390345, -95.007540"; just the name when it has no coordinates; just the
+ *  coordinates for an older unnamed site. */
 export function formatBinSiteLabel(site: ProducerBinSiteItem): string {
+  const name = site.name?.trim() ?? '';
+  if (!binSiteHasCoordinates(site)) return name || 'Bin site';
   const coords = formatCoordinatePair(site.latitude, site.longitude);
-  const name = site.name?.trim();
   return name ? `${name}: ${coords}` : coords;
 }
 
-/** Hover text for a bin-site link: the full-precision coordinates, and the capacity when set. */
+/** Hover text: the full-precision coordinates and the detail line; "open in Google Maps" only
+ *  when there is somewhere to open. */
 export function formatBinSiteTitle(site: ProducerBinSiteItem): string {
-  const coords = formatCoordinatePairFull(site.latitude, site.longitude);
   const name = site.name?.trim();
   const details = formatBinSiteDetails(site);
-  return `${name ? `${name}: ` : ''}${coords}${details ? ` · ${details}` : ''} — open in Google Maps`;
+  const parts = [
+    binSiteHasCoordinates(site) ? formatCoordinatePairFull(site.latitude, site.longitude) : null,
+    details || null,
+  ].filter(Boolean).join(' · ');
+  const text = `${name ?? ''}${name && parts ? ': ' : ''}${parts}`;
+  return binSiteHasCoordinates(site) ? `${text} — open in Google Maps` : text;
 }
 
 /** The profile's detail line under a bin-site link: "YC · 50,000 bu capacity · 20,000 marketed ·

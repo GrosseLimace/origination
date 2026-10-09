@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { formatBinSiteCapacity, formatBinSiteCapacityInput, formatBinSiteDetails, formatBinSiteLabel, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
+import { binSiteHasCoordinates, formatBinSiteCapacity, formatBinSiteCapacityInput, formatBinSiteDetails, formatBinSiteLabel, formatBinSiteTitle, formatCoordinatePair, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from './coordinates';
 
 function ok(text: string) {
   const result = parseCoordinatePair(text);
@@ -222,5 +222,23 @@ describe('formatBinSiteDetails', () => {
       .toBe('YC · 50,000 bu capacity · 20,000 marketed · 30,000 unmarketed');
     expect(formatBinSiteDetails({ latitude: 1, longitude: -1, marketed: 0 })).toBe('0 marketed');
     expect(formatBinSiteDetails({ latitude: 1, longitude: -1 })).toBe('');
+  });
+});
+
+// Only the name is required (2026-10-09), so a site may have no coordinates at all.
+describe('bin site without coordinates', () => {
+  const site = { name: 'Home place', capacity: 20000 };
+
+  it('is recognised as having none', () => {
+    expect(binSiteHasCoordinates(site)).toBe(false);
+    expect(binSiteHasCoordinates({ latitude: 41.39, longitude: -95.01 })).toBe(true);
+  });
+
+  it('labels with the name alone', () => {
+    expect(formatBinSiteLabel(site)).toBe('Home place');
+  });
+
+  it('has hover text without "open in Google Maps"', () => {
+    expect(formatBinSiteTitle(site)).toBe('Home place: 20,000 bu capacity');
   });
 });

@@ -49,20 +49,33 @@ public record UpsertProducerDetailsRequest
     public IReadOnlyList<BinSiteItemRequest>? BinSites { get; init; }
 }
 
-/// <summary>One bin site. The ranges are the North American rules in <see cref="BinSiteRules"/>;
-/// coordinates are stored at full precision (the profile shortens them for display).</summary>
-public record BinSiteItemRequest
+/// <summary>One bin site. Only the Name is required (user 2026-10-09); everything else is optional.
+/// Coordinates, when given, come as a pair inside the North American box in <see cref="BinSiteRules"/>
+/// and are stored at full precision (the profile shortens them for display).</summary>
+public record BinSiteItemRequest : IValidatableObject
 {
+    [Required(AllowEmptyStrings = false, ErrorMessage = "Each bin site needs a name.")]
     [StringLength(BinSiteRules.NameMaxLength)]
-    public string? Name { get; init; }
+    public required string Name { get; init; }
 
     [Range(BinSiteRules.MinLatitude, BinSiteRules.MaxLatitude,
         ErrorMessage = "Latitude must be between 7 and 84 (north of the equator, in North America).")]
-    public required decimal Latitude { get; init; }
+    public decimal? Latitude { get; init; }
 
     [Range(BinSiteRules.MinLongitude, BinSiteRules.MaxLongitude,
         ErrorMessage = "Longitude must be negative (west), between -180 and -52, for North America.")]
-    public required decimal Longitude { get; init; }
+    public decimal? Longitude { get; init; }
+
+    /// <summary>A whitespace-only name passes [Required] (it only rejects ""), and half a coordinate
+    /// pair is meaningless — both are rejected here.</summary>
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(Name))
+            yield return new ValidationResult("Each bin site needs a name.", [nameof(Name)]);
+        if (Latitude.HasValue != Longitude.HasValue)
+            yield return new ValidationResult("Give both latitude and longitude, or neither.",
+                [Latitude.HasValue ? nameof(Longitude) : nameof(Latitude)]);
+    }
 
     /// <summary>Storage capacity in bushels, optional. Stored per site only; it does not change the
     /// producer-level BinCapacity.</summary>

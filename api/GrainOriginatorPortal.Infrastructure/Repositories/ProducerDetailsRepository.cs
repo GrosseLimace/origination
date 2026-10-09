@@ -412,11 +412,16 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
     /// <summary>
     /// Cleans incoming bin-site rows: trims the name (blank becomes null) and caps its length,
     /// keeps the coordinates as pasted (only rounding past the column's 15 places, so a value can
-    /// never fail to fit), and collapses rows on the identical point. Range checks are the request
-    /// model's job; this only normalizes. SortOrder is the post-filter position.
+    /// never fail to fit), and collapses rows that are exact duplicates in every field. Coordinates
+    /// are optional now (only the Name is required, 2026-10-09), so collapsing on the point alone
+    /// would merge every site that has none. Range and required checks are the request model's job;
+    /// this only normalizes. SortOrder is the post-filter position.
     /// </summary>
     private static List<ProducerBinSiteEntry> NormalizeBinSites(IReadOnlyList<ProducerBinSiteEntry> binSites)
     {
+        static decimal? Round(decimal? v) =>
+            v.HasValue ? Math.Round(v.Value, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero) : null;
+
         var cleaned = binSites
             .Select(b =>
             {
@@ -425,15 +430,16 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 return new ProducerBinSiteEntry
                 {
                     Name = string.IsNullOrEmpty(name) ? null : name,
-                    Latitude = Math.Round(b.Latitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero),
-                    Longitude = Math.Round(b.Longitude, BinSiteRules.StoredDecimalPlaces, MidpointRounding.AwayFromZero),
+                    Latitude = Round(b.Latitude),
+                    Longitude = Round(b.Longitude),
                     Capacity = b.Capacity,
                     CommodityCode = string.IsNullOrWhiteSpace(b.CommodityCode) ? null : b.CommodityCode.Trim(),
                     Marketed = b.Marketed,
                     Unmarketed = b.Unmarketed
                 };
             })
-            .GroupBy(b => (b.Latitude, b.Longitude))
+            .GroupBy(b => (Name: b.Name?.ToUpperInvariant(), b.Latitude, b.Longitude, b.Capacity,
+                           Commodity: b.CommodityCode?.ToUpperInvariant(), b.Marketed, b.Unmarketed))
             .Select(g => g.First())
             .ToList();
 

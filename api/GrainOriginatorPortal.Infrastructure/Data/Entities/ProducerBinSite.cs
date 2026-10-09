@@ -13,10 +13,11 @@ public class ProducerBinSite
     public int Id { get; set; }
     public long CustomerId { get; set; }
     public string? Name { get; set; }
-    /// <summary>decimal(18,15) — keeps a full Google Maps paste (up to ~15 places) exactly as
-    /// entered. The profile shortens it to six places for display; the map link uses all of it.</summary>
-    public decimal Latitude { get; set; }
-    public decimal Longitude { get; set; }
+    /// <summary>Optional (only the Name is required, user 2026-10-09); when present, both are set and
+    /// stored as decimal(18,15) — a full Google Maps paste exactly as entered. The profile shortens
+    /// them to six places; a site without them shows as plain text with no map link.</summary>
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
     /// <summary>Storage capacity in bushels, optional. Independent of ProducerDetails.BinCapacity —
     /// the sites are NOT summed into it (user decision 2026-10-08, deferred).</summary>
     public decimal? Capacity { get; set; }
@@ -40,8 +41,8 @@ public class ProducerBinSite
 public class ProducerBinSiteEntry
 {
     public string? Name { get; set; }
-    public decimal Latitude { get; set; }
-    public decimal Longitude { get; set; }
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
     public decimal? Capacity { get; set; }
     public string? CommodityCode { get; set; }
     public decimal? Marketed { get; set; }

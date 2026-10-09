@@ -288,19 +288,47 @@ describe('EditCustomerDialogComponent — bin sites', () => {
   it('flags a row whose coordinates break the rules and blocks Save', () => {
     open(makeCustomer());
     component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'North Bins');
     component.updateBinSiteField(0, 'coords', '39.115876, 95.143955');
 
     expect(component.binSiteErrors()[0]).toContain('minus sign');
+    expect(component.binSiteCoordsInvalid()[0]).toBe(true);
     expect(component.binSitesInvalid()).toBe(true);
   });
 
-  it('flags a named row with no coordinates', () => {
+  // Only the Name is required (user 2026-10-09).
+  it('accepts a named row with nothing else', () => {
     open(makeCustomer());
     component.addBinSiteRow();
     component.updateBinSiteField(0, 'name', 'North Bins');
 
-    expect(component.binSiteErrors()[0]).toContain('coordinates');
+    expect(component.binSiteErrors()[0]).toBeNull();
+    expect(component.binSitesInvalid()).toBe(false);
+  });
+
+  it('asks for a name once a row has anything in it, and outlines only the name', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'coords', '41.39, -95.01');
+
+    expect(component.binSiteErrors()[0]).toContain('name');
+    expect(component.binSiteNameMissing()[0]).toBe(true);
+    expect(component.binSiteCoordsInvalid()[0]).toBe(false);
     expect(component.binSitesInvalid()).toBe(true);
+  });
+
+  it('saves a site with no coordinates, without latitude or longitude', () => {
+    open(makeCustomer());
+    component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'Home place');
+    component.onBinSiteBushelsInput(0, 'capacity', '20000');
+
+    component.onSave();
+
+    expect(saved.at(-1)?.binSites).toEqual([{
+      name: 'Home place', latitude: undefined, longitude: undefined, capacity: 20000,
+      commodityCode: undefined, marketed: undefined, unmarketed: undefined,
+    }]);
   });
 
   it('does not count an added-then-left-blank row as a change or an error', () => {
@@ -318,14 +346,15 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     component.addBinSiteRow();
     component.updateBinSiteField(0, 'name', '  North Bins ');
     component.updateBinSiteField(0, 'coords', '41.39034548435109, -95.00754031349179');
+    component.updateBinSiteField(2, 'name', 'South');
     component.updateBinSiteField(2, 'coords', '40.5,-96');
     expect(component.hasChanges()).toBe(true);
 
     component.onSave();
 
-    expect(saved.at(-1)?.binSites).toEqual([
+    expect(saved.at(-1)?.binSites.map(s => ({ name: s.name, latitude: s.latitude, longitude: s.longitude }))).toEqual([
       { name: 'North Bins', latitude: 41.39034548435109, longitude: -95.00754031349179 },
-      { name: undefined, latitude: 40.5, longitude: -96 },
+      { name: 'South', latitude: 40.5, longitude: -96 },
     ]);
   });
 
@@ -369,6 +398,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
   it('leaves an invalid entry as typed so the user can fix it', () => {
     open(makeCustomer());
     component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'Site 1');
     component.updateBinSiteField(0, 'coords', '39.9042, 116.4074'); // Beijing
 
     component.normalizeBinSiteCoords(0);
@@ -381,6 +411,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
   it('saves a free-hand entry as the same decimal degrees the blur shows', () => {
     open(makeCustomer());
     component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'Site 1');
     component.updateBinSiteField(0, 'coords', `41°23'25.2"N 95°00'27.1"W`);
 
     component.onSave();
@@ -400,18 +431,19 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(component.editBinSites()[0].capacity).toBe('50,000');
   });
 
-  it('asks for coordinates when only a capacity is entered', () => {
+  it('asks for a name when only a capacity is entered', () => {
     open(makeCustomer());
     component.addBinSiteRow();
     component.onBinSiteCapacityInput(0, '25000');
 
-    expect(component.binSiteErrors()[0]).toContain('coordinates');
+    expect(component.binSiteErrors()[0]).toContain('name');
     expect(component.binSitesInvalid()).toBe(true);
   });
 
   it('rejects a capacity over the Bin Capacity ceiling', () => {
     open(makeCustomer());
     component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'Site 1');
     component.updateBinSiteField(0, 'coords', '41.39, -95.01');
     component.onBinSiteCapacityInput(0, '100000001');
 
@@ -430,6 +462,8 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     open(makeCustomer({ binCapacity: 40000 }));
     component.addBinSiteRow();
     component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'Site 1');
+    component.updateBinSiteField(1, 'name', 'Site 2');
     component.updateBinSiteField(0, 'coords', '41.39, -95.01');
     component.onBinSiteCapacityInput(0, '50,000');
     component.updateBinSiteField(1, 'coords', '40.5, -96');
@@ -444,6 +478,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
   it('warns, but does not block Save, when Marketed + Unmarketed is more than Capacity', () => {
     open(makeCustomer());
     component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'Site 1');
     component.updateBinSiteField(0, 'coords', '41.39, -95.01');
     component.onBinSiteBushelsInput(0, 'capacity', '10000');
     component.onBinSiteBushelsInput(0, 'marketed', '8000');
@@ -466,12 +501,12 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(component.binSiteWarnings()).toEqual([null, null]);
   });
 
-  it('asks for coordinates when only a commodity or marketing figure is entered', () => {
+  it('asks for a name when only a commodity or marketing figure is entered', () => {
     open(makeCustomer());
     component.addBinSiteRow();
     component.onBinSiteBushelsInput(0, 'marketed', '500');
 
-    expect(component.binSiteErrors()[0]).toContain('coordinates');
+    expect(component.binSiteErrors()[0]).toContain('name');
   });
 
   it('adds a new commodity to the chips, and takes it back off when the site changes it', () => {
@@ -514,6 +549,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
   it('saves commodity, marketed and unmarketed per site, and the new chip with the commodities', () => {
     open(makeCustomer());
     component.addBinSiteRow();
+    component.updateBinSiteField(0, 'name', 'Site 1');
     component.updateBinSiteField(0, 'coords', '41.39, -95.01');
     component.onBinSiteBushelsInput(0, 'capacity', '50,000');
     component.onBinSiteBushelsInput(0, 'marketed', '20,000');

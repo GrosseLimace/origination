@@ -32,8 +32,8 @@ export interface ProducerContactItem {
  *  at full precision (shown to six places). See shared/utils/coordinates.ts for the rules. */
 export interface ProducerBinSiteItem {
   name?: string | null;
-  latitude: number;
-  longitude: number;
+  latitude?: number | null;  // optional: only the name is required (2026-10-09)
+  longitude?: number | null;
   capacity?: number | null; // storage capacity in bushels, per site (not summed into Bin Capacity)
   commodityCode?: string | null; // from the Grain on Farm list ("YC")
   marketed?: number | null;      // bushels already marketed, typed by hand

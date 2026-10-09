@@ -20,7 +20,8 @@ public class BinSiteRequestValidationTests
         return results;
     }
 
-    private static BinSiteItemRequest Site(decimal lat, decimal lng, string? name = null) =>
+    // A name by default: it is the one required field (2026-10-09), so every other test stays about its own rule.
+    private static BinSiteItemRequest Site(decimal? lat, decimal? lng, string name = "North Bins") =>
         new() { Name = name, Latitude = lat, Longitude = lng };
 
     // ── Latitude ───────────────────────────────────────────────────────────────
@@ -76,9 +77,27 @@ public class BinSiteRequestValidationTests
 
     // ── Name ───────────────────────────────────────────────────────────────────
     [Fact]
-    public void Name_IsOptional()
+    public void Name_IsTheOnlyRequiredField()
     {
-        Assert.Empty(Validate(Site(39.1m, -95.1m, name: null)));
+        Assert.Empty(Validate(Site(null, null)));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void BlankName_IsRejected(string name)
+    {
+        Assert.Contains(Validate(Site(39.1m, -95.1m, name)), e => e.MemberNames.Contains(nameof(BinSiteItemRequest.Name)));
+    }
+
+    [Theory]
+    [InlineData("39.1", null)]
+    [InlineData(null, "-95.1")]
+    public void HalfACoordinatePair_IsRejected(string? lat, string? lng)
+    {
+        var errors = Validate(Site(lat is null ? null : decimal.Parse(lat), lng is null ? null : decimal.Parse(lng)));
+
+        Assert.Contains(errors, e => e.ErrorMessage!.Contains("both latitude and longitude"));
     }
 
     [Fact]

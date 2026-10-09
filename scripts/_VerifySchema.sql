@@ -62,6 +62,7 @@
 --   decimal(18,2) NULL (bushels, per site; not summed into ProducerDetails.BinCapacity).
 --   Updated 2026-10-09: 20261009141509_AddBinSiteCommodityAndMarketing added ProducerBinSite.CommodityCode
 --   nvarchar(100) NULL, Marketed and Unmarketed decimal(18,2) NULL.
+--   20261009151758_MakeBinSiteCoordinatesOptional made Latitude/Longitude NULLable (only Name required).
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -432,8 +433,8 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerBinSite', 'CustomerId', 'bigint',        0),
 ('dbo', 'ProducerBinSite', 'Capacity',   'decimal(18,2)', 1),
 ('dbo', 'ProducerBinSite', 'CommodityCode', 'nvarchar(100)', 1),
-('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 0),
-('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 0),
+('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 1),
+('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 1),
 ('dbo', 'ProducerBinSite', 'Marketed',   'decimal(18,2)', 1),
 ('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
 ('dbo', 'ProducerBinSite', 'SortOrder',  'int',           0),
@@ -635,7 +636,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (60)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (61)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -699,7 +700,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
 ('20261007162014_AddBinSiteQueryLibraryItems'),
 ('20261008202530_AddProducerBinSiteCapacity'),
-('20261009141509_AddBinSiteCommodityAndMarketing');
+('20261009141509_AddBinSiteCommodityAndMarketing'),
+('20261009151758_MakeBinSiteCoordinatesOptional');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

@@ -33,8 +33,8 @@ public record ProducerDetailsResponse
 public record BinSiteItemResponse
 {
     public string? Name { get; init; }
-    public decimal Latitude { get; init; }
-    public decimal Longitude { get; init; }
+    public decimal? Latitude { get; init; }
+    public decimal? Longitude { get; init; }
     public decimal? Capacity { get; init; }
     public string? CommodityCode { get; init; }
     public decimal? Marketed { get; init; }

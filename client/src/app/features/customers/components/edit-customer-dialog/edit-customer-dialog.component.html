@@ -241,7 +241,7 @@
                   <!-- Name | Capacity | Marketed | Unmarketed | Commodity | Lat/Long | remove — one line on
                        a wide screen (the dialog is size xl for this), two columns when narrow. -->
                   <div class="hidden md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.9fr)_minmax(0,1.2fr)_minmax(0,1.7fr)_1.25rem] gap-2 items-center px-1">
-                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name (optional)</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name <span class="text-red-500" aria-hidden="true">*</span></span>
                     <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Capacity (bu)</span>
                     <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Marketed (bu)</span>
                     <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Unmarketed (bu)</span>
@@ -255,7 +255,8 @@
                       <div class="relative">
                         <input type="text" [ngModel]="row.name" (ngModelChange)="updateBinSiteField($index, 'name', $event)"
                           placeholder="Site Name" [attr.maxlength]="binSiteNameMaxLength" aria-label="Bin site name"
-                          class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                          [attr.aria-invalid]="binSiteNameMissing()[$index] ? true : null" [class]="binSiteNameMissing()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'"
+                          class="w-full h-9 pl-2.5 pr-7 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
                         @if (row.name) {
                           <button type="button" (click)="clearBinSiteField($index, 'name')" title="Clear name" aria-label="Clear bin site name"
                             class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
@@ -286,9 +287,9 @@
                         <input type="text" [ngModel]="row.coords" (ngModelChange)="updateBinSiteField($index, 'coords', $event)"
                           (blur)="normalizeBinSiteCoords($index)"
                           [placeholder]="coordinateExample" aria-label="Bin site latitude and longitude"
-                          [attr.aria-invalid]="binSiteErrors()[$index] ? true : null"
+                          [attr.aria-invalid]="binSiteCoordsInvalid()[$index] ? true : null"
                           class="w-full h-9 pl-2.5 pr-7 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                          [class]="binSiteErrors()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
+                          [class]="binSiteCoordsInvalid()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
                         @if (row.coords) {
                           <button type="button" (click)="clearBinSiteField($index, 'coords')" title="Clear coordinates" aria-label="Clear bin site coordinates"
                             class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
@@ -310,7 +311,7 @@
                   }
                   <p class="text-xs text-gray-400 dark:text-gray-500">Paste straight from Google Maps (right-click the spot, click the coordinates) or type them — decimals, N/W letters or degrees-minutes-seconds all work, and nothing needs rounding. Must be in North America.</p>
                 } @else {
-                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No bin sites added — use "Add bin site" to record each one by latitude and longitude.</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No bin sites added — use "Add bin site". Only the name is required; add the location, bushels and commodity when you have them.</p>
                 }
               </div>
 

@@ -279,6 +279,14 @@ describe('CustomerProfileComponent — bin site links', () => {
     expect(component.binSiteLinks()).toEqual([]);
   });
 
+  it('gives a site without coordinates no map link, just its name', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Home place' }] }));
+
+    const [link] = component.binSiteLinks();
+    expect(link.url).toBeNull();
+    expect(link.label).toBe('Home place');
+  });
+
   it('shows a single site inline, with no toggle', () => {
     ref.setInput('customer', makeCustomer({ binSites: [{ latitude: 39.1, longitude: -95.1 }] }));
 

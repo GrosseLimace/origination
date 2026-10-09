@@ -1434,11 +1434,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
 
-                    b.Property<decimal>("Latitude")
+                    b.Property<decimal?>("Latitude")
                         .HasColumnType("decimal(18,15)")
                         .HasColumnName("Latitude");
 
-                    b.Property<decimal>("Longitude")
+                    b.Property<decimal?>("Longitude")
                         .HasColumnType("decimal(18,15)")
                         .HasColumnName("Longitude");
 

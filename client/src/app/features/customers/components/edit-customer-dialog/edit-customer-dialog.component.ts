@@ -72,7 +72,7 @@ export class EditCustomerDialogComponent {
     primaryPhone: string;
     contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
     // Parsed at full precision (never rounded); array order is the display order. Capacity in bushels.
-    binSites: { name?: string; latitude: number; longitude: number; capacity?: number; commodityCode?: string; marketed?: number; unmarketed?: number }[];
+    binSites: { name: string; latitude?: number; longitude?: number; capacity?: number; commodityCode?: string; marketed?: number; unmarketed?: number }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
@@ -282,14 +282,18 @@ export class EditCustomerDialogComponent {
   /** Bushel fields are kept as the displayed text ("50,000"); parseBinSiteCapacity reads the number. */
   editBinSites = signal<BinSiteEditRow[]>([]);
 
-  /** Per-row validation message, or null. Fully-blank rows are fine (dropped on save); a row with
-   *  anything in it but no coordinates is not, any coordinates must pass the North American rules,
-   *  and each bushel field shares the producer-level Bin Capacity ceiling. Blocks Save. */
+  /** Per-row validation message, or null. Only the Name is required (user 2026-10-09): a fully
+   *  blank row is fine (dropped on save), a row with anything in it needs a name, coordinates are
+   *  optional but must pass the North American rules when typed, and each bushel field shares the
+   *  producer-level Bin Capacity ceiling. Blocks Save. */
   readonly binSiteErrors = computed(() =>
     this.editBinSites().map(r => {
-      if (!r.coords.trim()) return binSiteRowHasData(r) ? 'Enter the coordinates for this site.' : null;
-      const parsed = parseCoordinatePair(r.coords);
-      if (!parsed.ok) return parsed.error;
+      if (!r.coords.trim() && !binSiteRowHasData(r)) return null;
+      if (!r.name.trim()) return 'Enter a name for this site.';
+      if (r.coords.trim()) {
+        const parsed = parseCoordinatePair(r.coords);
+        if (!parsed.ok) return parsed.error;
+      }
       const over = (['capacity', 'marketed', 'unmarketed'] as const)
         .find(f => (parseBinSiteCapacity(r[f]) ?? 0) > MAX_BIN_SITE_CAPACITY);
       return over
@@ -309,6 +313,13 @@ export class EditCustomerDialogComponent {
     }));
 
   readonly binSitesInvalid = computed(() => this.binSiteErrors().some(e => e !== null));
+
+  /** Which input to outline in red: the name when a row has data but no name, the coordinates
+   *  only when what was typed there doesn't parse — not for every row error. */
+  readonly binSiteNameMissing = computed(() =>
+    this.editBinSites().map(r => !r.name.trim() && (!!r.coords.trim() || binSiteRowHasData(r))));
+  readonly binSiteCoordsInvalid = computed(() =>
+    this.editBinSites().map(r => !!r.coords.trim() && !parseCoordinatePair(r.coords).ok));
 
   /** Commodity choices: the same scoped list Grain on Farm offers, without its "already used"
    *  filter — two sites can hold the same crop. */
@@ -405,7 +416,7 @@ export class EditCustomerDialogComponent {
     const bushels = (v: number | null | undefined) => v != null ? formatBinSiteCapacityInput(String(v)) : '';
     return (customer.binSites ?? []).map(b => ({
       name: b.name ?? '',
-      coords: formatCoordinatePairFull(b.latitude, b.longitude),
+      coords: b.latitude != null && b.longitude != null ? formatCoordinatePairFull(b.latitude, b.longitude) : '',
       capacity: bushels(b.capacity),
       marketed: bushels(b.marketed),
       unmarketed: bushels(b.unmarketed),
@@ -1197,15 +1208,17 @@ export class EditCustomerDialogComponent {
       if (contactRows.length > 0 && !contactRows.some(r => r.isPrimary)) contactRows[0].isPrimary = true;
       const primaryRow = contactRows.find(r => r.isPrimary);
 
-      // Bin sites: drop fully-blank rows; every other row parsed cleanly or Save was disabled
+      // Bin sites: drop fully-blank rows (no name — Save is disabled for a row with data but no
+      // name). Coordinates are optional; any that were typed parsed cleanly or Save was disabled
       // (binSitesInvalid), so the parse here only re-reads the values.
       const binSites = this.editBinSites().flatMap(r => {
-        const parsed = parseCoordinatePair(r.coords);
-        if (!parsed.ok) return [];
+        const name = r.name.trim().slice(0, BIN_SITE_NAME_MAX_LENGTH);
+        if (!name) return [];
+        const parsed = r.coords.trim() ? parseCoordinatePair(r.coords) : null;
         return [{
-          name: r.name.trim().slice(0, BIN_SITE_NAME_MAX_LENGTH) || undefined,
-          latitude: parsed.lat,
-          longitude: parsed.lng,
+          name,
+          latitude: parsed?.ok ? parsed.lat : undefined,
+          longitude: parsed?.ok ? parsed.lng : undefined,
           capacity: parseBinSiteCapacity(r.capacity) ?? undefined,
           commodityCode: r.commodityCode.trim() || undefined,
           marketed: parseBinSiteCapacity(r.marketed) ?? undefined,

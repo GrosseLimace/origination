@@ -462,8 +462,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(BinSiteRules.NameMaxLength).IsRequired(false);
             // decimal(18,15): three integer digits (±180) and fifteen places, so a full Google Maps
             // paste is stored exactly as entered. Display shortens it; storage never does.
-            entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(18,15)").IsRequired();
-            entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(18,15)").IsRequired();
+            entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(18,15)").IsRequired(false);
+            entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(18,15)").IsRequired(false);
             // Bushels, same type as ProducerDetails.BinCapacity so the per-site sum lands exactly.
             entity.Property(e => e.Capacity).HasColumnName("Capacity").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(BinSiteRules.CommodityCodeMaxLength).IsRequired(false);
