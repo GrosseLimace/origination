@@ -1537,22 +1537,22 @@
                                under it — so the two read alike. Clicks inside don't open the producer. -->
                           @if (showGrainOnFarmFilters() && hasBinSiteGrain(customer)) {
                             <button type="button" (click)="$event.stopPropagation(); toggleBinSiteGrain(customer.id)" [attr.aria-expanded]="isBinSiteGrainOpen(customer.id)"
-                                    class="mt-1.5 inline-flex items-center gap-1 text-xs text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer focus:outline-none">
+                                    class="mt-1.5 inline-flex items-center gap-1 text-[13px] text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer focus:outline-none">
                               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
                                    [class.rotate-90]="isBinSiteGrainOpen(customer.id)" class="transition-transform"><path d="m9 18 6-6-6-6"/></svg>
                               Bin sites &amp; grain
                             </button>
                             @if (isBinSiteGrainOpen(customer.id)) {
                               <div class="mt-1.5 ml-3.5 max-w-full cursor-default" (click)="$event.stopPropagation()">
-                                <table class="w-auto max-w-full text-xs tabular-nums">
+                                <table class="w-auto max-w-full text-[13px] tabular-nums">
                                   <thead>
-                                    <tr class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                                      <th scope="col" class="py-1 pr-3 font-medium text-left">Crop</th>
-                                      <th scope="col" class="py-1 px-2 font-medium text-center" title="Total bushels on farm">Total</th>
-                                      <th scope="col" class="py-1 px-2 font-medium text-center" title="Bushels sold">Sold</th>
-                                      <th scope="col" class="py-1 px-2 font-medium text-center">Grade</th>
-                                      <th scope="col" class="py-1 px-2 font-medium text-center" title="Target price ($/bu)">Target</th>
-                                      <th scope="col" class="py-1 pl-2 font-medium text-center" title="Last bid ($/bu)">Last Bid</th>
+                                    <tr class="text-[11px] uppercase tracking-wide whitespace-nowrap text-gray-400 dark:text-gray-500">
+                                      <th scope="col" class="py-1 pr-4 font-medium text-left">Crop</th>
+                                      <th scope="col" class="py-1 px-2.5 font-medium text-center" title="Total bushels on farm">Total</th>
+                                      <th scope="col" class="py-1 px-2.5 font-medium text-center" title="Bushels sold">Sold</th>
+                                      <th scope="col" class="py-1 px-2.5 font-medium text-center">Grade</th>
+                                      <th scope="col" class="py-1 px-2.5 font-medium text-center" title="Target price ($/bu)">Target</th>
+                                      <th scope="col" class="py-1 pl-2.5 font-medium text-center" title="Last bid ($/bu)">Last Bid</th>
                                     </tr>
                                   </thead>
                                   <tbody class="text-gray-700 dark:text-gray-300">
@@ -1567,7 +1567,7 @@
                                             @if (site.mapUrl) {
                                               <a [href]="site.mapUrl" target="_blank" rel="noopener noreferrer" title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
                                                  class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                                               </a>
                                             }
                                           </span>
@@ -1575,12 +1575,12 @@
                                       </tr>
                                       @for (g of site.rows; track $index) {
                                         <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
-                                          <td class="py-1 pr-3 text-left whitespace-nowrap">{{ g.commodityCode }}</td>
-                                          <td class="py-1 px-2 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
-                                          <td class="py-1 px-2 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
-                                          <td class="py-1 px-2 text-center"><span class="inline-block max-w-[10rem] truncate align-bottom" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
-                                          <td class="py-1 px-2 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
-                                          <td class="py-1 pl-2 text-center whitespace-nowrap">{{ g.lastBid != null ? (g.lastBid | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
+                                          <td class="py-1 pr-4 text-left whitespace-nowrap">{{ g.commodityCode }}</td>
+                                          <td class="py-1 px-2.5 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
+                                          <td class="py-1 px-2.5 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
+                                          <td class="py-1 px-2.5 text-center"><span class="inline-block max-w-[10rem] truncate align-bottom" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
+                                          <td class="py-1 px-2.5 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
+                                          <td class="py-1 pl-2.5 text-center whitespace-nowrap">{{ g.lastBid != null ? (g.lastBid | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
                                         </tr>
                                       } @empty {
                                         <tr class="border-t border-gray-100 dark:border-gray-700/60">
