@@ -52,7 +52,6 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 ### Monitoring
 - **Application Insights** — Performance monitoring, exception tracking, SQL query tracking
 - **Smart Detection** — Automatic Failure Anomalies alerting (action group per app, configurable by dev team)
-- **Operations Workbook** — Cross-environment view of deployments, Logic App runs, background jobs, alerts and integration health; see `infra/workbooks/README.md`
 
 ### Security
 - **Managed Identity** — No passwords for Azure service access
