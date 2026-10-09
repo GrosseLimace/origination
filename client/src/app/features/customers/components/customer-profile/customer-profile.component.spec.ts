@@ -215,6 +215,95 @@ describe('CustomerProfileComponent — address map link', () => {
   });
 });
 
+// Covers the bin-site mini-table at the bottom of the Contact column: formatted cells (dashes when
+// empty), the exact-point map link only when a site has coordinates, and that the
+// table starts collapsed and re-collapses per producer.
+describe('CustomerProfileComponent — bin site table', () => {
+  let component: CustomerProfileComponent;
+  let ref: ComponentRef<CustomerProfileComponent>;
+  let tracking: { trackBinSiteMapClick: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    tracking = { trackBinSiteMapClick: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: {} },
+        { provide: ThemeService, useValue: {} },
+        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {}, ...tracking } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerProfileComponent, {
+      set: { template: '', templateUrl: undefined, imports: [] },
+    });
+    const fixture = TestBed.createComponent(CustomerProfileComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+  });
+
+  it('builds one table row per site, in saved order, with every cell formatted', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [
+        { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955, capacity: 50000, sortOrder: 0 },
+        { name: 'North Quarter', latitude: 40.5, longitude: -96, capacity: 30000, sortOrder: 1 },
+      ],
+    }));
+
+    const [first, second] = component.binSiteRows();
+    expect(first).toMatchObject({ name: 'Anderson Site', capacity: '50,000' });
+    expect(second).toMatchObject({ name: 'North Quarter', capacity: '30,000' });
+  });
+
+  it('links each site with coordinates to its exact point in Google Maps', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ name: 'Anderson Site', latitude: 41.39034548435109, longitude: -95.00754031349179 }],
+    }));
+
+    expect(component.binSiteRows()[0].url)
+      .toBe('https://www.google.com/maps/search/?api=1&query=41.39034548435109%2C-95.00754031349179');
+  });
+
+
+  it('gives a site without coordinates no map link', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Home place', capacity: 20000 }] }));
+
+    const [row] = component.binSiteRows();
+    expect(row.url).toBeNull();
+    expect(row.name).toBe('Home place');
+  });
+
+  it('has no rows when the producer has no bin sites', () => {
+    ref.setInput('customer', makeCustomer());
+
+    expect(component.binSiteRows()).toEqual([]);
+  });
+
+  it('starts collapsed even with a single site, and toggles open', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Only one', latitude: 39.1, longitude: -95.1 }] }));
+
+    expect(component.binSitesExpanded()).toBe(false);
+    component.toggleBinSites();
+    expect(component.binSitesExpanded()).toBe(true);
+  });
+
+  it('closes the table again when a different producer is shown', () => {
+    const sites = [{ name: 'A', latitude: 39.1, longitude: -95.1 }];
+    ref.setInput('customer', makeCustomer({ id: 1, binSites: sites }));
+    component.toggleBinSites();
+
+    ref.setInput('customer', makeCustomer({ id: 2, binSites: sites }));
+
+    expect(component.binSitesExpanded()).toBe(false);
+  });
+
+  it('tracks a map click under its own subfeature', () => {
+    ref.setInput('customer', makeCustomer({ id: 42 }));
+
+    component.trackBinSiteMapClick();
+
+    expect(tracking.trackBinSiteMapClick).toHaveBeenCalledWith('42');
+  });
+});
+
 // Covers the organic producer badge: which producers get it, and the header-panel spacing computed
 // it introduced. The gate itself is unit-tested in @shared/utils/organic-visibility.spec.ts — these
 // assert the component wires the producer's own fields into it and nothing else.

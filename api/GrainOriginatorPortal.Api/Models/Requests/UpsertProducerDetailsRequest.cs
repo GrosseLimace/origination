@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
@@ -40,6 +41,46 @@ public record UpsertProducerDetailsRequest
     /// preserved and the legacy PrimaryContact/PrimaryPhone fields above are used as-sent. When
     /// provided, the legacy fields are ignored and derived from the primary row instead.</summary>
     public IReadOnlyList<ContactItemRequest>? Contacts { get; init; }
+
+    /// <summary>User-entered bin sites, as many as needed (sanity ceiling <see cref="BinSiteRules.MaxPerCustomer"/>). Same
+    /// contract as <see cref="Contacts"/>: replaces the existing set on save, array order is the
+    /// display order, and NULL (property absent) preserves the existing rows.</summary>
+    [MaxLength(BinSiteRules.MaxPerCustomer, ErrorMessage = "A producer can have at most 100 bin sites.")]
+    public IReadOnlyList<BinSiteItemRequest>? BinSites { get; init; }
+}
+
+/// <summary>One bin site. Only the Name is required (user 2026-10-09); everything else is optional.
+/// Coordinates, when given, come as a pair inside the North American box in <see cref="BinSiteRules"/>
+/// and are stored at full precision (the profile shortens them for display).</summary>
+public record BinSiteItemRequest : IValidatableObject
+{
+    [Required(AllowEmptyStrings = false, ErrorMessage = "Each bin site needs a name.")]
+    [StringLength(BinSiteRules.NameMaxLength)]
+    public required string Name { get; init; }
+
+    [Range(BinSiteRules.MinLatitude, BinSiteRules.MaxLatitude,
+        ErrorMessage = "Latitude must be between 7 and 84 (north of the equator, in North America).")]
+    public decimal? Latitude { get; init; }
+
+    [Range(BinSiteRules.MinLongitude, BinSiteRules.MaxLongitude,
+        ErrorMessage = "Longitude must be negative (west), between -180 and -52, for North America.")]
+    public decimal? Longitude { get; init; }
+
+    /// <summary>A whitespace-only name passes [Required] (it only rejects ""), and half a coordinate
+    /// pair is meaningless — both are rejected here.</summary>
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(Name))
+            yield return new ValidationResult("Each bin site needs a name.", [nameof(Name)]);
+        if (Latitude.HasValue != Longitude.HasValue)
+            yield return new ValidationResult("Give both latitude and longitude, or neither.",
+                [Latitude.HasValue ? nameof(Longitude) : nameof(Latitude)]);
+    }
+
+    /// <summary>Storage capacity in bushels, optional. Stored per site only; it does not change the
+    /// producer-level BinCapacity.</summary>
+    [Range(0, BinSiteRules.MaxCapacity, ErrorMessage = "Bin site capacity must be between 0 and 100,000,000 bushels.")]
+    public decimal? Capacity { get; init; }
 }
 
 public record ContactItemRequest

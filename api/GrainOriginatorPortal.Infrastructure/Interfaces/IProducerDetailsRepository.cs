@@ -24,12 +24,15 @@ public sealed record ProducerDetailsUpsertArgs
     public string? LinkedProducerIds { get; init; }
     public IReadOnlyList<GrainOnFarmEntry> GrainOnFarm { get; init; } = [];
     public IReadOnlyList<ProducerContactEntry>? Contacts { get; init; }
+    /// <summary>Same null-vs-empty contract as <see cref="Contacts"/>: null preserves the existing
+    /// bin-site rows, an empty list removes them all.</summary>
+    public IReadOnlyList<ProducerBinSiteEntry>? BinSites { get; init; }
 }
 
 /// <summary>
 /// Persistence for producer details. CustomerName/ScoularId and the LinkedProducerIds /
 /// Commodities CSVs are composed from the related Customer / CustomerLink / CustomerCommodity
-/// tables (those columns were dropped from dbo.ProducerDetails). GrainOnFarm and Contacts are
+/// tables (those columns were dropped from dbo.ProducerDetails). GrainOnFarm, Contacts and BinSites are
 /// composed from their child tables and rebuilt as a set on upsert. CreatedBy/ModifiedBy
 /// display-name enrichment is done by the caller; the owning user is passed into Upsert.
 /// </summary>
@@ -38,7 +41,7 @@ public interface IProducerDetailsRepository
     Task<ProducerDetails?> GetAsync(long customerId, CancellationToken cancellationToken);
     Task<List<ProducerDetails>> GetAllAsync(CancellationToken cancellationToken);
     Task<ProducerDetails> UpsertAsync(ProducerDetailsUpsertArgs args, string currentUser, CancellationToken cancellationToken);
-    /// <summary>Deletes a producer's details and hand-cascades the ProducerContacts and
-    /// ProducerGrainOnFarm child rows. Returns false when no details row existed.</summary>
+    /// <summary>Deletes a producer's details and hand-cascades the ProducerContacts,
+    /// ProducerBinSites and ProducerGrainOnFarm child rows. Returns false when no details row existed.</summary>
     Task<bool> DeleteAsync(long customerId, string currentUser, CancellationToken cancellationToken);
 }

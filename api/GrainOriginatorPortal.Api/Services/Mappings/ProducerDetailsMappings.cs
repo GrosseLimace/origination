@@ -40,5 +40,13 @@ public static class ProducerDetailsMappings
             IsPrimary = c.IsPrimary,
             SortOrder = c.SortOrder,
         }).ToList(),
+        BinSites = p.BinSites.Select(b => new BinSiteItemResponse
+        {
+            Name = b.Name,
+            Latitude = b.Latitude,
+            Longitude = b.Longitude,
+            Capacity = b.Capacity,
+            SortOrder = b.SortOrder,
+        }).ToList(),
     };
 }

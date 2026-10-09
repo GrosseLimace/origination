@@ -625,6 +625,7 @@ export class HomeComponent {
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
           contacts: pd.contacts ?? customer.contacts,
+          binSites: pd.binSites ?? customer.binSites,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
@@ -1214,6 +1215,7 @@ export class HomeComponent {
         binCapacity: pd.binCapacity ?? customer.binCapacity,
         primaryContact: pd.primaryContact ?? customer.primaryContact,
         contacts: pd.contacts ?? customer.contacts,
+        binSites: pd.binSites ?? customer.binSites,
         commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
         linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
       };
@@ -1233,6 +1235,7 @@ export class HomeComponent {
               primaryContact: details.primaryContact ?? sel.primaryContact,
               primaryPhone: details.primaryPhone ?? sel.primaryPhone,
               contacts: details.contacts ?? sel.contacts,
+              binSites: details.binSites ?? sel.binSites,
               commodities: details.commodities ? details.commodities.split(',').map(c => c.trim()) : sel.commodities,
               linkedProducerIds: details.linkedProducerIds ? details.linkedProducerIds.split(',').filter(Boolean) : sel.linkedProducerIds
             };
@@ -1313,6 +1316,7 @@ export class HomeComponent {
       primaryContact: pd.primaryContact ?? fetched.primaryContact,
       primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
       contacts: pd.contacts ?? fetched.contacts,
+      binSites: pd.binSites ?? fetched.binSites,
       commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
       linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
     };
@@ -1934,7 +1938,7 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[]; intentionMoves?: { from: string; to: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[]; intentionMoves?: { from: string; to: string }[] }): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
@@ -2002,7 +2006,7 @@ export class HomeComponent {
     });
   }
 
-  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
+  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
     const customers = this.customers();
     const sel = this.selectedCustomer();
     const customer = customers.find(c => c.id === data.customerId)
@@ -2014,6 +2018,7 @@ export class HomeComponent {
     const allCommodities = [...new Set([...ticketCommodities, ...contractCommodities, ...data.commodities])].sort();
 
     const optimisticContacts = data.contacts.map((c, i) => ({ ...c, sortOrder: i }));
+    const optimisticBinSites = data.binSites.map((b, i) => ({ ...b, sortOrder: i }));
     const updated: Customer = {
       ...customer,
       totalAcres: data.acres,
@@ -2023,6 +2028,7 @@ export class HomeComponent {
       primaryContact: data.primaryContact,
       primaryPhone: data.primaryPhone,
       contacts: optimisticContacts,
+      binSites: optimisticBinSites,
       linkedProducerIds: data.linkedProducerIds,
       eSignEnabled: data.eSignEnabled
     };
@@ -2039,13 +2045,14 @@ export class HomeComponent {
       commodities: savedCommodities,
       linkedProducerIds: savedLinkedIds,
       grainOnFarm: data.grainOnFarm,
-      contacts: data.contacts
+      contacts: data.contacts,
+      binSites: data.binSites
     };
 
     const existingPd = this.producerDetailsMap().get(data.customerId);
     if (existingPd) {
       const map = new Map(this.producerDetailsMap());
-      map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, primaryPhone: data.primaryPhone || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: data.grainOnFarm, contacts: optimisticContacts });
+      map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, primaryPhone: data.primaryPhone || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: data.grainOnFarm, contacts: optimisticContacts, binSites: optimisticBinSites });
       this.producerDetailsMap.set(map);
     }
 
@@ -2278,6 +2285,7 @@ export class HomeComponent {
               primaryContact: pd.primaryContact ?? fetched.primaryContact,
               primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
               contacts: pd.contacts ?? fetched.contacts,
+              binSites: pd.binSites ?? fetched.binSites,
               commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
               linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
             };

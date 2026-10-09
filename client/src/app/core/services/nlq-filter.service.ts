@@ -48,6 +48,29 @@ export interface NlqFilterResult {
   matchedPatterns: string[];
 }
 
+// "Bin" means two different things in a producer query: bin CAPACITY (bushels of on-farm storage)
+// and bin SITES (the lat/long locations under the address). The capacity patterns carry a
+// negative lookahead so "producers with bin sites" never filters on storage capacity.
+const BIN_SITE_WORDS = String.raw`bin\s*(?:sites?|locations?|coordinates|gps)`;
+const NOT_BIN_SITE = String.raw`(?!\s*(?:sites?|locations?|coordinates|gps)\b)`;
+const HAS_BIN_CAPACITY = new RegExp(String.raw`(?:has|have|with)\s+(?:a\s+)?(?:bin${NOT_BIN_SITE}|storage)\s*(?:capacity|space)?`, 'i');
+const NO_BIN_CAPACITY = new RegExp(String.raw`(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?(?:bin${NOT_BIN_SITE}|storage)\s*(?:capacity|space)?`, 'i');
+const HAS_BIN_SITES = new RegExp(String.raw`(?:has|have|with)\s+(?:an?\s+|any\s+)?${BIN_SITE_WORDS}`, 'i');
+const NO_BIN_SITES = new RegExp(String.raw`(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:an?\s+|any\s+)?${BIN_SITE_WORDS}`, 'i');
+const BIN_SITES_MORE_THAN = new RegExp(String.raw`(?:more than|over)\s+(\d+)\s+${BIN_SITE_WORDS}`, 'i');
+const BIN_SITES_AT_LEAST = new RegExp(String.raw`(?:at least\s+(\d+)|(\d+)\s*(?:\+|or more))\s+${BIN_SITE_WORDS}`, 'i');
+const BIN_SITES_MULTIPLE = new RegExp(String.raw`(?:multiple|several|more than one)\s+${BIN_SITE_WORDS}`, 'i');
+
+/** Minimum bin-site count a query asks for — "more than 2 bin sites" → 3, "at least 2" / "2+" /
+ *  "2 or more" → 2, "multiple" / "several" / "more than one" → 2 — or null when it asks for none. */
+function binSiteMinimum(lowerQuery: string): number | null {
+  const moreThan = BIN_SITES_MORE_THAN.exec(lowerQuery);
+  if (moreThan) return Number(moreThan[1]) + 1;
+  const atLeast = BIN_SITES_AT_LEAST.exec(lowerQuery);
+  if (atLeast) return Number(atLeast[1] ?? atLeast[2]);
+  return BIN_SITES_MULTIPLE.test(lowerQuery) ? 2 : null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class NlqFilterService {
 
@@ -1173,10 +1196,17 @@ export class NlqFilterService {
     if (cityTestMatch && !this.stateNames[cityTestMatch[1].trim()]) matched.push('city_filter');
 
     // Has/no bin capacity (boolean) — "has bin capacity", "with bin storage", "have bin capacity"
-    const hasBin = /(?:has|have|with)\s+(?:a\s+)?(?:bin|storage)\s*(?:capacity|space)?/i.test(lowerQuery);
-    const noBin = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?(?:bin|storage)\s*(?:capacity|space)?/i.test(lowerQuery);
+    const hasBin = HAS_BIN_CAPACITY.test(lowerQuery);
+    const noBin = NO_BIN_CAPACITY.test(lowerQuery);
     if (hasBin && !noBin) matched.push('has_bin_capacity');
     if (noBin) matched.push('no_bin_capacity');
+
+    // Bin sites (lat/long locations) — "with bin sites", "without bin locations", "more than 2 bin sites"
+    const hasSites = HAS_BIN_SITES.test(lowerQuery);
+    const noSites = NO_BIN_SITES.test(lowerQuery);
+    if (hasSites && !noSites) matched.push('has_bin_sites');
+    if (noSites) matched.push('no_bin_sites');
+    if (binSiteMinimum(lowerQuery) != null) matched.push('bin_sites_count');
 
     // Has/no commodities (boolean) — "has commodities", "with commodities set up", "have commodities"
     const hasCommodities = /(?:has|have|with)\s+(?:a\s+)?commodit(?:y|ies)|commodit(?:y|ies)\s+(?:set|listed|on file)/i.test(lowerQuery);
@@ -1982,8 +2012,8 @@ export class NlqFilterService {
     }
 
     // Has/no bin capacity (boolean — any value set vs. none)
-    const hasBinFilter = /(?:has|have|with)\s+(?:a\s+)?(?:bin|storage)\s*(?:capacity|space)?/i.test(lowerQuery);
-    const noBinFilter = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?(?:bin|storage)\s*(?:capacity|space)?/i.test(lowerQuery);
+    const hasBinFilter = HAS_BIN_CAPACITY.test(lowerQuery);
+    const noBinFilter = NO_BIN_CAPACITY.test(lowerQuery);
     if (hasBinFilter && !noBinFilter) {
       if (!(/(?:bin|storage)\s*capacity\s*(?:over|above|more than)/i.test(lowerQuery))) {
         result = result.filter(c => (c.binCapacity ?? 0) > 0);
@@ -1991,6 +2021,19 @@ export class NlqFilterService {
     }
     if (noBinFilter) {
       result = result.filter(c => !c.binCapacity || c.binCapacity === 0);
+    }
+
+    // Has/no bin sites, and "more than N" / "at least N" / "multiple" bin sites. A count implies
+    // having some, so it replaces the plain has-filter rather than stacking on it.
+    const binSiteCount = (c: Customer) => c.binSites?.length ?? 0;
+    const minSites = binSiteMinimum(lowerQuery);
+    const noSitesFilter = NO_BIN_SITES.test(lowerQuery);
+    if (noSitesFilter) {
+      result = result.filter(c => binSiteCount(c) === 0);
+    } else if (minSites != null) {
+      result = result.filter(c => binSiteCount(c) >= minSites);
+    } else if (HAS_BIN_SITES.test(lowerQuery)) {
+      result = result.filter(c => binSiteCount(c) > 0);
     }
 
     // Has/no commodities (any commodities set up vs. none)

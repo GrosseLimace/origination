@@ -1,5 +1,6 @@
 
     @if (isOpen() && customer()) {
+      <!-- size xl (1024px): wide enough for a bin-site row's six fields on one line. -->
       <app-dialog [isOpen]="true" [scrollBody]="true" (close)="onCancel()">
         <app-dialog-header>
           <app-dialog-title>Edit Producer Details</app-dialog-title>
@@ -194,6 +195,94 @@
                   }
                 } @else {
                   <p class="text-xs text-gray-400 dark:text-gray-500 italic">No contacts added — use "Add contact" for people or numbers (Dad's cell, the shop line, an insurance email).</p>
+                }
+              </div>
+
+              <!-- Bin sites: optional name + one "lat, lng" field (Google Maps' copy format). Up to
+                   three; shown under the address on the profile as map links. -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    Bin Sites
+                  </label>
+                  @if (editBinSites().length < maxBinSites) {
+                    <button type="button" (click)="addBinSiteRow()"
+                      class="flex items-center gap-1 text-sm font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                      Add bin site
+                    </button>
+                  }
+                </div>
+
+                @if (editBinSites().length > 0) {
+                  <!-- Name | Capacity | Lat/Long | remove — one line per site. -->
+                  <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_1.25rem] gap-2 items-center px-1">
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name <span class="text-red-500" aria-hidden="true">*</span></span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Capacity (bu)</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Latitude, Longitude</span>
+                    <span></span>
+                  </div>
+                  @for (row of editBinSites(); track $index) {
+                    <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_1.25rem] gap-2 items-center">
+                      <!-- Each input carries an inline × that empties it (shown only when it has a value). -->
+                      <div class="relative">
+                        <input type="text" [ngModel]="row.name" (ngModelChange)="updateBinSiteField($index, 'name', $event)"
+                          placeholder="Site Name" [attr.maxlength]="binSiteNameMaxLength" aria-label="Bin site name"
+                          [attr.aria-invalid]="binSiteNameMissing()[$index] ? true : null" [class]="binSiteNameMissing()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'"
+                          class="w-full h-9 pl-2.5 pr-7 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                        @if (row.name) {
+                          <button type="button" (click)="clearBinSiteField($index, 'name')" title="Clear name" aria-label="Clear bin site name"
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
+                        }
+                      </div>
+                      <!-- Capacity: digits only, grouped as typed. The placeholder is just "BU" — the column
+                           header names the field. -->
+                      <div class="min-w-0">
+                        <div class="relative">
+                          <input type="text" inputmode="numeric" [ngModel]="row.capacity" (ngModelChange)="onBinSiteCapacityInput($index, $event)"
+                            placeholder="BU" maxlength="11" aria-label="Bin site capacity in bushels"
+                            class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                          @if (row.capacity) {
+                            <button type="button" (click)="clearBinSiteField($index, 'capacity')" title="Clear capacity" aria-label="Clear bin site capacity"
+                              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                            </button>
+                          }
+                        </div>
+                      </div>
+                      <!-- Free-hand entry: decimals, N/S/E/W letters or degrees-minutes-seconds. On blur a
+                           valid entry is rewritten as "lat, lng" so the user sees how it was read. -->
+                      <div class="relative">
+                        <input type="text" [ngModel]="row.coords" (ngModelChange)="updateBinSiteField($index, 'coords', $event)"
+                          (blur)="normalizeBinSiteCoords($index)"
+                          [placeholder]="coordinateExample" aria-label="Bin site latitude and longitude"
+                          [attr.aria-invalid]="binSiteCoordsInvalid()[$index] ? true : null"
+                          class="w-full h-9 pl-2.5 pr-7 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                          [class]="binSiteCoordsInvalid()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
+                        @if (row.coords) {
+                          <button type="button" (click)="clearBinSiteField($index, 'coords')" title="Clear coordinates" aria-label="Clear bin site coordinates"
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
+                        }
+                      </div>
+                      <button type="button" (click)="removeBinSiteRow($index)" title="Remove bin site"
+                        class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors justify-self-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                    @if (binSiteErrors()[$index]; as error) {
+                      <p class="text-xs text-red-500 dark:text-red-400">{{ error }}</p>
+                    }
+                  }
+                  <p class="text-xs text-gray-400 dark:text-gray-500">Paste straight from Google Maps (right-click the spot, click the coordinates) or type them — decimals, N/W letters or degrees-minutes-seconds all work, and nothing needs rounding. Must be in North America.</p>
+                } @else {
+                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No bin sites added — use "Add bin site". Only the name is required; add the capacity and location when you have them.</p>
                 }
               </div>
 
@@ -553,7 +642,7 @@
           <button
             type="button"
             class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-scoular-green-accessible text-white hover:bg-scoular-green-accessible h-10 px-4 py-2"
-            [disabled]="!hasChanges() || !canSave() || contactsInvalid()"
+            [disabled]="!hasChanges() || !canSave() || contactsInvalid() || binSitesInvalid()"
             (click)="onSave()"
           >
             Save Changes

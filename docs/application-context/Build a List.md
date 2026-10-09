@@ -98,7 +98,7 @@ Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/ap
 - **Contact frequency** — `contactedOnlyOnce`, `contactedMoreThan5`.
 - **Contact author** — `contactedByMeOnly`, `contactedBySomeoneElse`.
 - **Notes content** — `hasPinnedNotes`, `noteKeyword`.
-- **Producer size** — `acresOver`, `hasBinCapacity`, `noBinCapacity`.
+- **Producer size** — `acresOver`, `hasBinCapacity`, `noBinCapacity`, `hasBinSites`, `noBinSites`. Bin **sites** (the lat/long locations under the address) are not bin **capacity**: free-text "with/without bin sites" (also "bin locations", "bin coordinates") and "more than N" / "at least N" / "N+" / "multiple" bin sites filter on the sites, and the capacity patterns deliberately ignore those words so neither query triggers the other.
 - **Producer info** — `hasPrimaryContact`, `noPrimaryContact`, `hasEmail`, `hasPhone`, `hasLinkedProducers`, `notEsignEnrolled`.
 - **Producer activity** — `hasActiveContracts`, `hasDeliveriesThisYear`, `hasPlantingIntentions`, `hasGrainInStorage`.
 - **Tickets** — `ticketQuantityOver`, `ticketsInLastDays`, `avgMoistureOver/Under`, `avgTestWeightOver/Under`, `avgProteinOver/Under`.
