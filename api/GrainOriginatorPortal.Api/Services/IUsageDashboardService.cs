@@ -12,32 +12,34 @@ namespace GrainOriginatorPortal.Api.Services;
 /// server's local timezone.
 /// </para><para>
 /// <c>managerId</c> (a short name from <see cref="GetManagersAsync"/>) narrows the user universe
-/// to that manager's entire org subtree, manager included. Unknown ids yield empty results; a
-/// TradeUnitPreferences outage while a manager filter is active surfaces as a 503.
+/// to that manager's entire org subtree, manager included; null is the whole organisation. It is
+/// the dashboard's only filter — the dashboard is organised by reporting line, not by trade unit.
+/// Unknown ids yield empty results; a TradeUnitPreferences outage while a manager filter is
+/// active surfaces as a 503.
 /// </para></summary>
 public interface IUsageDashboardService
 {
-    Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken);
-    Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, string? status, CancellationToken cancellationToken);
-    Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken);
-    Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, string? screen, CancellationToken cancellationToken);
+    Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken);
+    Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? managerId, string? status, CancellationToken cancellationToken);
+    Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken);
+    Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? managerId, string? screen, CancellationToken cancellationToken);
 
     /// <summary>Login trend for the most recent <paramref name="weeks"/> calendar weeks (Monday-start).
     /// Deliberately independent of the dashboard's date filter — it is a trend view, not a window view.</summary>
-    Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? tradeUnitKey, string? managerId, int weeks, CancellationToken cancellationToken);
+    Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? managerId, int weeks, CancellationToken cancellationToken);
 
-    Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken);
+    Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken);
 
-    Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken);
-    Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken);
-    Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? tradeUnitKey, string? managerId, CancellationToken cancellationToken);
+    Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken);
+    Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken);
+    Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken);
 
     /// <summary>Active managers for the manager filter, name-sorted with report counts.
     /// 503 when the TradeUnitPreferences DB is unreachable (fail closed; see <see cref="UsageManagerDto"/>).</summary>
     Task<List<UsageManagerDto>> GetManagersAsync(CancellationToken cancellationToken);
 
-    /// <summary>Per-user drill-down. Returns null when the user is not in the allowed (TU-filtered) set.</summary>
-    Task<UserUsageDetailDto?> GetUserDetailAsync(string userId, DateOnly from, DateOnly to, string? tradeUnitKey, CancellationToken cancellationToken);
+    /// <summary>Per-user drill-down. Returns null when the user is not in the dashboard's user universe.</summary>
+    Task<UserUsageDetailDto?> GetUserDetailAsync(string userId, DateOnly from, DateOnly to, CancellationToken cancellationToken);
 
     // ── Excluded-users administration ──
 

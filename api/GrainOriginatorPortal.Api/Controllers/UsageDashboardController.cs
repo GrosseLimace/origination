@@ -18,8 +18,8 @@ namespace GrainOriginatorPortal.Api.Controllers;
 // AND — a class-level policy would also block the telemetry endpoint below, which
 // needs to accept click events from every signed-in user for user-activity tracking.
 // Exclusion administration stays AdminOnly (+ the ExclusionManagers allowlist).
-// These policies decide who may CALL a read. How much of the org each read returns is a separate
-// concern, scoped per caller in UsageDashboardService against dbo.UsageDashboardViewAllUsers.
+// Everyone who passes the read policy sees the whole organisation and may narrow it to any
+// manager's team with `managerId` — there is no per-caller scoping beyond that policy.
 [Authorize]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase
@@ -49,82 +49,84 @@ public class UsageDashboardController : ControllerBase
     // DateTime keeps the boundary from shifting with the server's local timezone.
     //
     // `managerId` (a short name from /managers) narrows every panel to that manager's entire org
-    // subtree, manager included. Unknown ids yield empty results rather than errors.
+    // subtree, manager included; omitted means the whole organisation. It is the dashboard's only
+    // filter — the app-wide trade-unit selection is deliberately not an input here. Unknown ids
+    // yield empty results rather than errors.
 
     [HttpGet("summary")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<UsageDashboardSummaryDto>> GetSummary(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetSummaryAsync(from, to, tradeUnitKey, managerId, cancellationToken));
+        => Ok(await _service.GetSummaryAsync(from, to, managerId,cancellationToken));
 
     [HttpGet("users")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<UsageDashboardUserDto>>> GetUsers(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         [FromQuery] string? status = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetUsersAsync(from, to, tradeUnitKey, managerId, status, cancellationToken));
+        => Ok(await _service.GetUsersAsync(from, to, managerId,status, cancellationToken));
 
     [HttpGet("daily-active")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<DailyActiveDto>>> GetDailyActive(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetDailyActiveAsync(from, to, tradeUnitKey, managerId, cancellationToken));
+        => Ok(await _service.GetDailyActiveAsync(from, to, managerId,cancellationToken));
 
     [HttpGet("feature-sessions")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<FeatureSessionsDto>>> GetFeatureSessions(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         [FromQuery] string? screen = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetFeatureSessionsAsync(from, to, tradeUnitKey, managerId, screen, cancellationToken));
+        => Ok(await _service.GetFeatureSessionsAsync(from, to, managerId,screen, cancellationToken));
 
     // Trend view over whole calendar weeks — deliberately not bound to the dashboard's date filter.
     [HttpGet("weekly-trend")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<WeeklyTrendDto>>> GetWeeklyTrend(
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         [FromQuery] int weeks = 8,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetWeeklyTrendAsync(tradeUnitKey, managerId, weeks, cancellationToken));
+        => Ok(await _service.GetWeeklyTrendAsync(managerId, weeks, cancellationToken));
 
     [HttpGet("activity-breakdown")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<ActivityBreakdownDto>>> GetActivityBreakdown(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetActivityBreakdownAsync(from, to, tradeUnitKey, managerId, cancellationToken));
+        => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId,cancellationToken));
 
     [HttpGet("underused-features")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetUnderusedFeaturesAsync(from, to, tradeUnitKey, managerId, cancellationToken));
+        => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId,cancellationToken));
 
     [HttpGet("query-library-usage")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetQueryLibraryUsageAsync(from, to, tradeUnitKey, managerId, cancellationToken));
+        => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId,cancellationToken));
 
     [HttpGet("query-search-gaps")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null, [FromQuery] string? managerId = null,
+        [FromQuery] string? managerId = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetQuerySearchGapsAsync(from, to, tradeUnitKey, managerId, cancellationToken));
+        => Ok(await _service.GetQuerySearchGapsAsync(from, to, managerId,cancellationToken));
 
     /// <summary>Active managers for the manager filter. 503 when the TradeUnitPreferences DB is
     /// unreachable — fail closed, so the client shows "unavailable" instead of a stale roster.</summary>
@@ -139,10 +141,9 @@ public class UsageDashboardController : ControllerBase
     public async Task<ActionResult<UserUsageDetailDto>> GetUserDetail(
         string userId,
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
-        [FromQuery] string? tradeUnitKey = null,
         CancellationToken cancellationToken = default)
     {
-        var detail = await _service.GetUserDetailAsync(userId, from, to, tradeUnitKey, cancellationToken);
+        var detail = await _service.GetUserDetailAsync(userId, from, to, cancellationToken);
         if (detail is null) return NotFound();
         return Ok(detail);
     }
