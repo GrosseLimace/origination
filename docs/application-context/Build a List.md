@@ -143,9 +143,8 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
   (`isGrainAndBinSitesCategory`, `shared/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
   category in `Filters._promptCategory`. Its refine panel adds Has/No bin sites to the grain filters, and
   each result row leads with a neutral "N bin sites" chip before the per-crop bushel chips.
-  Each row shows its **bin sites & grain** breakdown in the row's middle column, always on and at text-sm
-  (2026-10-09; the row becomes 18rem identity | breakdown | last contact). If a notes filter already uses
-  the middle column, it falls back to a per-row toggle under the name. The breakdown: a line per bin site — name · capacity · map pin — with the grain stored there under it
+  Each row can also open a **Bin sites & grain** breakdown (closed by default; "Expand all" above the list
+  opens every row): a line per bin site — name · capacity · map pin — with the grain stored there under it
   (Crop | Total | Sold | Grade | Target | Last Bid), sites with no grain marked "No grain on farm recorded",
   and any rows not tied to a site last. Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
 - Derive `SortOrder` from `MAX(SortOrder) + 10` within the category rather than hardcoding: the
