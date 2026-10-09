@@ -12,60 +12,46 @@ This is the only screen in the app gated by an actual role (vs. just "authentica
 gated server-side too, via the `UsageDashboardViewer` policy (equivalent to `AdminOnly` today, but named
 separately so the read surface stays distinct from exclusion administration).
 
-Two different questions decide what a person sees here, and they are deliberately kept apart —
-see [Who sees how much](#who-sees-how-much).
+One question decides whether a person sees it at all; what they then see is the same for everyone —
+see [Who sees what](#who-sees-what).
 
 
-## Who sees how much
-
-Two independent questions, answered by two different sources. Confusing them is the easiest way to
-get this wrong.
+## Who sees what
 
 | Question | Answered by | Changed how |
 | --- | --- | --- |
 | May you open the dashboard at all? | `Admin` app role, granted by the **"Origination App {Env} Super Users"** Entra group | Entra group membership |
-| How much of the org do you see? | the **`dbo.UsageDashboardViewAllUsers`** table | a SQL `INSERT` / `DELETE` |
 
-Everyone in the Super Users group who is **not** in that table is auto-scoped to themselves plus
-everyone reporting to them — the manager dropdown is hidden and they can only drill into users inside
-their own subtree. The subtree is resolved from TradeUnitPreferences `vw_UserManagerLookup` by
-materialized-path prefix, then intersected with the Entra app-access set so only people who can
-actually sign in are counted.
+Everyone who can open the dashboard sees the **whole organisation** and gets the **manager
+dropdown**, which is the dashboard's only filter. It defaults to the signed-in user (when they manage
+someone — a non-manager is not in the roster and starts at "All Managers") and can be set to any
+manager in the company. Picking a manager narrows every panel to that manager's entire team, reports
+of reports included, manager included; clearing it shows everyone. The team is resolved from
+TradeUnitPreferences `vw_UserManagerLookup` by materialized-path prefix, then intersected with the
+Entra app-access set so only people who can actually sign in are counted.
 
-`ViewAll` is deliberately **not** derived from the `Admin` role. That role only says "may open this".
-It also could not work: every name in the table already holds `Admin` in QA and PROD through the
-Super Users groups, so an Admin-implies-view-all rule would leave nobody scoped in the only
-environments that matter.
+There is **no trade-unit filter**. The dashboard is organised by reporting line, so the app-wide
+trade-unit selector is deliberately absent from both the dashboard and the per-user drill-down, and the
+usage endpoints do not accept a `tradeUnitKey`.
 
-### Changing who sees the whole org
+### History
 
-Run `scripts/Manage-UsageDashboardViewAll.sql` against the environment's Origination database.
-
-- Takes effect within **~60 seconds** (the API caches the list for a minute). No redeploy, no
-  App Service restart.
-- The person whose access changed then needs a **browser refresh** — the SPA decides whether to draw
-  the manager dropdown from the synthetic `UsageDashboardViewAll` role in `/api/me`, which it only
-  calls at page load.
-- Fill in `Reason` and `CreatedBy`. They are the only audit trail for a row that widens what someone
-  can see.
-
-This list used to be the `UsageDashboard:ViewAll` array in `appsettings.json`, which meant a deploy
-and a restart per change. The migration `AddUsageDashboardViewAllUsers` seeds the five names that
-were in that array.
-
-**Fail-closed by construction.** An empty table means everyone is scoped, never that everyone sees
-everything — so if the table cannot be read, `UsageDashboardViewAllProvider` degrades to an empty
-list and logs, rather than throwing or widening anyone's view. Enforcement is server-side at a single
-funnel, `UsageDashboardService.ResolveEffectiveManagerIdAsync`; every read passes through it, so
-scoping cannot be forgotten on a future endpoint.
+Until 2026-10-09 a second question — "how much of the org do you see?" — was answered by the
+`dbo.UsageDashboardViewAllUsers` table (and before that by a `UsageDashboard:ViewAll` config array).
+Only the names in it got the manager dropdown and the whole org; everyone else was silently pinned to
+their own team server-side, and `/api/me` carried a synthetic `UsageDashboardViewAll` role to tell the
+SPA which case applied. All of that was retired by migration `DropUsageDashboardViewAllUsers`: the
+table, its entity and cached reader, the admin SQL script, the synthetic role, and the per-caller
+rewrite of `managerId` in `UsageDashboardService`. The server now honours whatever `managerId` it is
+sent, for every caller who passes the read policy.
 
 | Piece | Path |
 | --- | --- |
-| Table entity | `api/GrainOriginatorPortal.Infrastructure/Data/Entities/UsageDashboardViewAllUser.cs` |
-| Cached reader | `api/GrainOriginatorPortal.Api/Services/UsageDashboardViewAllProvider.cs` |
 | Access rules | `api/GrainOriginatorPortal.Api/Authorization/UsageDashboardAccess.cs` |
-| Manager subtree | `api/GrainOriginatorPortal.Api/Services/ManagerDirectoryService.cs` |
-| Admin SQL | `scripts/Manage-UsageDashboardViewAll.sql` |
+| Manager roster + subtree | `api/GrainOriginatorPortal.Api/Services/ManagerDirectoryService.cs` |
+| Manager filter (presentational) | `client/src/app/features/usage-dashboard/components/manager-filter/` |
+| Default-to-self + roster load | `usage-dashboard.component.ts` (`loadManagers`, `applyDefaultManager`) |
+
 ## How users reach it
 
 - "Usage Dashboard" item in the profile menu — only rendered when (a) the user has the `Admin` role and (b) `environment.usageDashboardEnabled === true`.
@@ -107,7 +93,7 @@ cannot disagree.
 
 | Section | Description |
 | --- | --- |
-| **Header** | Title, Trade Unit Selector, **Excluded Users** gear, date range buttons ("7 Days", "30 Days", "Custom"). |
+| **Header** | Title, **Manager** filter (defaults to the signed-in user), **Excluded Users** gear, date range buttons ("7 Days", "30 Days", "Custom"). |
 | **4 KPI cards** | Adoption Rate (%), Avg Logins / Week (or / Month), Avg Session Duration, Needs Attention. |
 | **Tab pills** | `Who's Using It` · `What They're Doing` · `Who Isn't Using It` |
 
@@ -135,7 +121,7 @@ total session count. `Avg Session Duration` is weighted by login count.
   the same statuses as the donut.
 - Low Usage Originators — the `Light Usage` tier (used within the last week, but not today),
   most-stale first.
-- Underused Features, ranked by **distinct users**, honoring the trade-unit filter and exclusions.
+- Underused Features, ranked by **distinct users**, honoring the manager filter and exclusions.
 
 ## Data flow
 
@@ -184,8 +170,8 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 | --- | --- |
 | Component | `client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts` |
 | Drill-down | `client/src/app/features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts` |
-| Shared formatting / sorting | `client/src/app/features/usage-dashboard/utils/` (`usage-format.ts`, `table-sort.ts`, `trade-unit-key.ts`) |
-| Sort icon, exclusions panel | `client/src/app/features/usage-dashboard/components/` |
+| Shared formatting / sorting | `client/src/app/features/usage-dashboard/utils/` (`usage-format.ts`, `table-sort.ts`) |
+| Sort icon, manager filter, exclusions panel | `client/src/app/features/usage-dashboard/components/` |
 | Frontend tracking service | `client/src/app/core/services/usage-tracking.service.ts` |
 | Admin guard | `client/src/app/guards/admin.guard.ts` |
 | Controller | `api/GrainOriginatorPortal.Api/Controllers/UsageDashboardController.cs` |
@@ -203,8 +189,8 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 
 All read endpoints require `[Authorize(Policy = UsageDashboardAccess.PolicyName)]` (`"UsageDashboardViewer"`,
 equivalent to `AdminOnly` today). Every panel endpoint also accepts `?managerId=` to narrow the view to
-that manager's whole org subtree — but the value is only honoured for callers in
-`dbo.UsageDashboardViewAllUsers`; everyone else is silently pinned to their own subtree. The exclusion endpoints
+that manager's whole org subtree; omitted means the whole organisation. It is honoured for every
+caller — there is no per-caller scoping beyond the read policy. The exclusion endpoints
 (`access-users`, `excluded-users` CRUD) are additionally restricted to the
 `UsageDashboard:ExclusionManagers` allowlist in appsettings (the named IT users) — other admins get
 403 and never see the gear.
@@ -238,9 +224,9 @@ that manager's whole org subtree — but the value is only honoured for callers 
 | `UserSession` | One row per visit burst; `DurationMinutes` is a persisted computed column. |
 | `UserActivityDaily` | Per-user daily rollup — requests, sessions, session minutes, and per-feature counters. |
 | `FeatureUsageDaily` | Per-feature daily rollup (no user dimension). `SessionCount` is **no longer written** — it used to hold unique-users as a stand-in for sessions. |
-| `UserFeatureUsageDaily` | Per-user-per-feature daily rollup: `RequestCount`, `InteractionCount`, `ScreenMinutes`. The user dimension is what lets the feature panels honor trade-unit filters and exclusions. |
+| `UserFeatureUsageDaily` | Per-user-per-feature daily rollup: `RequestCount`, `InteractionCount`, `ScreenMinutes`. The user dimension is what lets the feature panels honor the manager filter and exclusions. |
 | `WeeklyLoginAggregate` | Per-user weekly rollup — `LoginCount` is distinct active days, `SessionCount` is sessions. Read by `/weekly-trend`. |
-| `UserTradeUnitSnapshot` | Cached user → trade-unit mapping from the TradeUnitPreferences DB (`vw_UserTradeUnitPreferences`; was the Entitlements DB until 2026-08-18). Rebuilt every 6 hours inside one transaction. |
+| `UserTradeUnitSnapshot` | Cached user → trade-unit mapping from the TradeUnitPreferences DB (`vw_UserTradeUnitPreferences`; was the Entitlements DB until 2026-08-18). Rebuilt every 6 hours inside one transaction. The dashboard only reads its user ids (as the fallback universe) and display names; the trade-unit codes serve the rest of the app. |
 | `UsageDashboardExcludedUsers` | Accounts hidden from every dashboard view. Managed from the UI (gear icon) or by SQL. |
 | `QueryLibrary` | Library prompt names, for resolving `TargetId`s. |
 
@@ -251,16 +237,17 @@ that manager's whole org subtree — but the value is only honoured for callers 
 
 `UsageDashboardService.GetUserIdSetAsync`:
 
-1. If **no** trade-unit filter and the Entra app-access set is available → the universe is the access
-   group itself (everyone who can actually sign in), so someone with access but no entitlements row
-   is still visible.
-2. Otherwise → `UserTradeUnitSnapshot` for the selected trade units, intersected with the access set.
-3. If Graph is unavailable, this **fails open** to the full entitlements snapshot rather than
-   breaking the dashboard.
+1. If the Entra app-access set is available → the universe is the access group itself (everyone
+   who can actually sign in), so someone with access but no entitlements row is still visible.
+2. If Graph is unavailable, this **fails open** to the full entitlements snapshot
+   (`UserTradeUnitSnapshot` user ids) rather than breaking the dashboard.
+3. If a `managerId` was sent → intersected with that manager's org subtree (manager included). An
+   unknown manager yields an **empty** universe, never the whole org; a TradeUnitPreferences outage
+   while a manager is selected surfaces as a 503 rather than silently widening the view.
 4. Finally, `UsageDashboardExcludedUsers` is subtracted (case-insensitive).
 
-Resolving this costs a snapshot query plus an exclusion read, and a page load hits ~a dozen
-endpoints — so it is cached for 60 seconds per normalized trade-unit key. Adding or removing an
+Resolving this costs an access-set read plus an exclusion read, and a page load hits ~a dozen
+endpoints — so it is cached for 60 seconds per normalized manager id. Adding or removing an
 exclusion bumps `UsageUniverseCacheState.Generation`, which makes every cached entry unreachable so
 the change lands on the next request.
 
@@ -294,7 +281,8 @@ Free-text `TargetId`s (library searches, NLQ requests, unshipped searches) pass 
 
 ## Per-user drill-down
 
-Click any row on the Originator table → `/usage-dashboard/users/:userId?from=…&to=…&tradeUnitKey=…`.
+Click any row on the Originator table → `/usage-dashboard/users/:userId?from=…&to=…`. The manager
+filter is not carried over — it narrows who is listed, not one person's numbers.
 Shows an identity card, 4 KPIs, a daily-activity chart, time per screen, and seven per-feature tabs:
 Producer Page · Build a List · Actionable Insights (incl. the Unshipped Bushels page) · Bid Sheet ·
 Planting Dashboard · Calculators · Daily Recap. Each tab ends with that feature's recent activity.

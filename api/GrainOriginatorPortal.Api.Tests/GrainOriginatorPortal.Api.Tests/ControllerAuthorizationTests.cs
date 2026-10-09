@@ -74,9 +74,8 @@ public class ControllerAuthorizationTests
     /// must carry an explicit policy — the class-level [Authorize] alone would only require a
     /// sign-in. Reads take the UsageDashboardViewer policy (the Admin role, granted by the Super
     /// Users group); exclusion administration must stay strictly AdminOnly. The single exception is
-    /// the telemetry endpoint, which every signed-in user posts to. Note the read policy governs
-    /// only who may OPEN a read — how much of the org it returns is scoped separately in
-    /// UsageDashboardService against the UsageDashboard:ViewAll list.
+    /// the telemetry endpoint, which every signed-in user posts to. The read policy is the whole
+    /// gate: anyone who passes it sees the entire organisation and may filter by any manager.
     /// </summary>
     [Fact]
     public void UsageDashboardController_EveryActionExceptClickEvent_CarriesADashboardPolicy()

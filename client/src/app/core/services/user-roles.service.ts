@@ -29,21 +29,27 @@ export class UserRolesService {
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly _roles = signal<string[]>([]);
+  private readonly _userId = signal('');
   private readonly _ready$ = new ReplaySubject<string[]>(1);
 
   readonly roles: Signal<string[]> = this._roles.asReadonly();
   readonly isAdmin = computed(() => this._roles().includes('Admin'));
 
-  /** Usage-dashboard access: the Admin app role, which is how the "Origination App {Env} Super
-   *  Users" group grants it. How MUCH of the dashboard you then see is a separate question —
-   *  see canViewAllUsage. */
-  readonly canViewUsageDashboard = computed(() => this._roles().includes('Admin'));
+  /** The signed-in user's UPN as `/api/me` reports it (empty until it has answered). */
+  readonly userId: Signal<string> = this._userId.asReadonly();
 
-  /** Whether to offer the usage-dashboard manager dropdown. Note this is NOT implied by `isAdmin`:
-   *  an Admin who isn't on the server's UsageDashboard:ViewAll list is scoped to their own org
-   *  subtree, same as anyone else. Presentation only — the server re-derives the scope from config
-   *  on every request, so hiding or showing this control cannot change what data comes back. */
-  readonly canViewAllUsage = computed(() => this._roles().includes('UsageDashboardViewAll'));
+  /** Short name — the UPN before the '@' — which is the key the usage tables and the manager
+   *  directory use. The usage dashboard defaults its manager filter to this. */
+  readonly userShortName = computed(() => {
+    const id = this._userId();
+    const at = id.indexOf('@');
+    return at > 0 ? id.slice(0, at) : id;
+  });
+
+  /** Usage-dashboard access: the Admin app role, which is how the "Origination App {Env} Super
+   *  Users" group grants it. Everyone who can open the dashboard sees the whole organisation and
+   *  may filter it by any manager — there is no second "how much do you see" role. */
+  readonly canViewUsageDashboard = computed(() => this._roles().includes('Admin'));
 
   constructor() {
     this.msalBroadcast.inProgress$.pipe(
@@ -71,6 +77,7 @@ export class UserRolesService {
       catchError(() => of<MeResponse>({ userId: '', roles: [] })),
       tap(response => {
         const roles = response?.roles ?? [];
+        this._userId.set(response?.userId ?? '');
         this._roles.set(roles);
         this._ready$.next(roles);
       }),

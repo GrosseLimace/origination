@@ -40,7 +40,6 @@
 --     * @CheckConstraints       = every t.HasCheckConstraint(...) (none today).
 --
 --   Last regenerated: 2026-09-21 against the snapshot as of migration
---   20260921152258_AddUsageDashboardViewAllUsers (re-parsed the snapshot; every
 --   previously listed row was reproduced unchanged by the rules above).
 --   Updated 2026-09-22 (bid-sheet branch): merged with this branch's objects rather than
 --   regenerated. Main's baseline is kept for every table it owns -- it is AHEAD of this branch on
@@ -61,6 +60,8 @@
 --   dbo.CtrmSourceToggleUsers tester table and 20261005131626_DropCtrmSourceToggleUsers drops it at
 --   the CTRM go-live, so neither the table nor its columns or index are expected; only @Migrations
 --   grew, by both ids.
+--   when the manager dropdown was opened to everyone), so its table, five columns and unique index
+--   are no longer expected; @Migrations grew by that id.
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
@@ -127,7 +128,7 @@ DECLARE @Findings TABLE (
 );
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (52)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (51)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'BarchartApiCallAudit'),
@@ -173,7 +174,6 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'SavedLists'),
 ('dbo', 'TeamsChannels'),
 ('dbo', 'UsageDashboardExcludedUsers'),
-('dbo', 'UsageDashboardViewAllUsers'),
 ('dbo', 'UserActivity'),
 ('dbo', 'UserActivityDaily'),
 ('dbo', 'UserClickEvent'),
@@ -185,7 +185,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (529)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (524)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -668,12 +668,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UsageDashboardExcludedUsers', 'CreatedBy', 'nvarchar(255)', 0),
 ('dbo', 'UsageDashboardExcludedUsers', 'Reason',    'nvarchar(500)', 1),
 ('dbo', 'UsageDashboardExcludedUsers', 'UserId',    'nvarchar(256)', 0),
--- UsageDashboardViewAllUsers (UsageDashboardViewAllUser entity)
-('dbo', 'UsageDashboardViewAllUsers', 'Id',        'int',           0),
-('dbo', 'UsageDashboardViewAllUsers', 'CreatedAt', 'datetime2',     0),
-('dbo', 'UsageDashboardViewAllUsers', 'CreatedBy', 'nvarchar(255)', 0),
-('dbo', 'UsageDashboardViewAllUsers', 'Reason',    'nvarchar(500)', 1),
-('dbo', 'UsageDashboardViewAllUsers', 'UserId',    'nvarchar(256)', 0),
+-- UserActivity
 ('dbo', 'UserActivity', 'Id',             'bigint',        0),
 ('dbo', 'UserActivity', 'DurationMs',     'int',           0),
 ('dbo', 'UserActivity', 'FeatureCode',    'nvarchar(50)',  0),
@@ -743,7 +738,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- (no rows)
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (26)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (25)
 -- EF Core auto-names single-property unique indexes as IX_<table>_<column>;
 -- this project uses explicit names (IX_*/UQ_*/UX_*) for most indexes.
 -- (NON-unique indexes such as IX_*_Timestamp are intentionally NOT listed.)
@@ -770,7 +765,6 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'UsageDashboardExcludedUsers', 'IX_UsageDashboardExcludedUsers_UserId'),
 ('dbo', 'OrganicCertification',        'UQ_OrganicCertification_Nopid'),
 ('dbo', 'OrganicCertificationScope',   'UQ_OrganicCertificationScope_Certification_Scope'),
-('dbo', 'UsageDashboardViewAllUsers',  'IX_UsageDashboardViewAllUsers_UserId'),
 ('dbo', 'UserActivityDaily',           'UQ_UserActivityDaily_UserId_Date'),
 ('dbo', 'UserFeatureUsageDaily',       'UQ_UserFeatureUsageDaily'),
 ('dbo', 'UserPreferences',             'UQ_UserPreferences_UserId'),
@@ -778,7 +772,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (82)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (83)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -864,7 +858,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261007120000_WidenOrganicCertificationItemText'),
 ('20261007145119_AddProducerBinSite'),
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
-('20261007162014_AddBinSiteQueryLibraryItems');
+('20261007162014_AddBinSiteQueryLibraryItems'),
+('20261009145425_DropUsageDashboardViewAllUsers');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
