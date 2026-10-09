@@ -6,12 +6,16 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 /// A user-entered on-farm bin site for a producer: an optional name and a latitude/longitude
 /// pair, shown under the address as a Google Maps link. A producer can have as many as they need
 /// (only a sanity ceiling, <see cref="BinSiteRules.MaxPerCustomer"/>). Replaced as a set on upsert
-/// (mirrors the ProducerContact child-table pattern).
+/// (mirrors the ProducerContact child-table pattern), so <see cref="Id"/> changes on every save;
+/// <see cref="SiteKey"/> is the identity that survives, and what grain-on-farm rows link through.
 /// </summary>
 public class ProducerBinSite
 {
     public int Id { get; set; }
     public long CustomerId { get; set; }
+    /// <summary>Stable identity across saves (the client generates it for a new site). Grain on Farm
+    /// rows name their site by this key in the API; the database link is ProducerGrainOnFarm.BinSiteId.</summary>
+    public Guid SiteKey { get; set; }
     public string? Name { get; set; }
     /// <summary>Optional (only the Name is required, user 2026-10-09); when present, both are set and
     /// stored as decimal(18,15) — a full Google Maps paste exactly as entered. The profile shortens
@@ -32,6 +36,7 @@ public class ProducerBinSite
 /// and passed to the repository upsert (write). Not an EF entity.</summary>
 public class ProducerBinSiteEntry
 {
+    public Guid SiteKey { get; set; }
     public string? Name { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }

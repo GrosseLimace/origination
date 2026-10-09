@@ -69,6 +69,10 @@
 --   ProducerGrainOnFarm.BushelsSold decimal(18,2) NULL, so Columns grew to 372.
 --   Updated 2026-10-09: 20261009162336_AddLastBidToGrainOnFarm added
 --   ProducerGrainOnFarm.LastBid decimal(18,4) NULL, so Columns grew to 373.
+--   Updated 2026-10-09: 20261009175647_LinkGrainOnFarmToBinSites added ProducerBinSite.SiteKey
+--   uniqueidentifier NOT NULL (UQ_ProducerBinSite_SiteKey) and ProducerGrainOnFarm.BinSiteId int NULL
+--   (FK to ProducerBinSite); UQ_ProducerGrainOnFarm_Customer_Commodity became
+--   UQ_ProducerGrainOnFarm_Customer_Site_Commodity (CustomerId, BinSiteId, CommodityCode).
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -167,7 +171,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (380)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (382)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -441,6 +445,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerBinSite', 'Latitude',   'decimal(18,15)', 1),
 ('dbo', 'ProducerBinSite', 'Longitude',  'decimal(18,15)', 1),
 ('dbo', 'ProducerBinSite', 'Name',       'nvarchar(100)', 1),
+('dbo', 'ProducerBinSite', 'SiteKey',    'uniqueidentifier', 0),
 ('dbo', 'ProducerBinSite', 'SortOrder',  'int',           0),
 -- ProducerContact
 ('dbo', 'ProducerContact', 'Id',         'int',           0),
@@ -463,6 +468,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerDetails', 'TotalAcres',     'decimal(18,2)', 1),
 -- ProducerGrainOnFarm
 ('dbo', 'ProducerGrainOnFarm', 'Id',             'int',           0),
+('dbo', 'ProducerGrainOnFarm', 'BinSiteId',      'int',           1),
 ('dbo', 'ProducerGrainOnFarm', 'BushelsOnHand',  'decimal(18,2)', 1),
 ('dbo', 'ProducerGrainOnFarm', 'BushelsSold',    'decimal(18,2)', 1),
 ('dbo', 'ProducerGrainOnFarm', 'CommodityCode',  'nvarchar(100)', 0),
@@ -612,7 +618,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- (no rows)
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (21)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (22)
 -- EF Core auto-names single-property unique indexes as IX_<table>_<column>;
 -- this project uses explicit names (IX_*/UQ_*/UX_*) for most indexes.
 -- (NON-unique indexes such as IX_*_Timestamp are intentionally NOT listed.)
@@ -630,8 +636,9 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'ESignEnrollment',             'UQ_eSignEnrollment_CustomerCode'),
 ('dbo', 'FeatureUsageDaily',           'UQ_FeatureUsageDaily'),
 ('dbo', 'MbpLocationSynonym',          'IX_MbpLocationSynonym_LocationId'),
+('dbo', 'ProducerBinSite',             'UQ_ProducerBinSite_SiteKey'),
 ('dbo', 'ProducerDetails',             'IX_ProducerDetails_CustomerId'),
-('dbo', 'ProducerGrainOnFarm',         'UQ_ProducerGrainOnFarm_Customer_Commodity'),
+('dbo', 'ProducerGrainOnFarm',         'UQ_ProducerGrainOnFarm_Customer_Site_Commodity'),
 ('dbo', 'TeamsChannels',               'UX_TeamsChannels_ChannelId'),
 ('dbo', 'UsageDashboardExcludedUsers', 'IX_UsageDashboardExcludedUsers_UserId'),
 ('dbo', 'UsageDashboardViewAllUsers',  'IX_UsageDashboardViewAllUsers_UserId'),
@@ -641,7 +648,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (65)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (66)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -710,7 +717,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009151758_MakeBinSiteCoordinatesOptional'),
 ('20261009162336_AddLastBidToGrainOnFarm'),
 ('20261009163032_DropBinSiteMarketing'),
-('20261009170849_DropBinSiteCommodity');
+('20261009170849_DropBinSiteCommodity'),
+('20261009175647_LinkGrainOnFarmToBinSites');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

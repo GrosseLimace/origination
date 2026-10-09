@@ -122,6 +122,7 @@ public class ProducerDetailsService : IProducerDetailsService
         var grainEntries = (request.GrainOnFarm ?? [])
             .Select(g => new GrainOnFarmEntry
             {
+                BinSiteKey = g.BinSiteKey,
                 CommodityCode = g.EffectiveCommodityCode,
                 BushelsOnHand = g.BushelsOnHand,
                 BushelsSold = g.BushelsSold,
@@ -147,6 +148,7 @@ public class ProducerDetailsService : IProducerDetailsService
         var binSiteEntries = request.BinSites?
             .Select((b, index) => new ProducerBinSiteEntry
             {
+                SiteKey = b.SiteKey ?? Guid.NewGuid(),
                 Name = b.Name,
                 Latitude = b.Latitude,
                 Longitude = b.Longitude,

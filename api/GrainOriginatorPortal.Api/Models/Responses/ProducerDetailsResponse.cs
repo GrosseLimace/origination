@@ -32,6 +32,8 @@ public record ProducerDetailsResponse
 
 public record BinSiteItemResponse
 {
+    /// <summary>Stable across saves; grain-on-farm rows point at their site with it.</summary>
+    public Guid SiteKey { get; init; }
     public string? Name { get; init; }
     public decimal? Latitude { get; init; }
     public decimal? Longitude { get; init; }
@@ -50,6 +52,11 @@ public record ContactItemResponse
 
 public record GrainOnFarmItemResponse
 {
+    /// <summary>The bin site this grain is stored at (<see cref="BinSiteItemResponse.SiteKey"/>);
+    /// null on rows saved before sites were linked.</summary>
+    public Guid? BinSiteKey { get; init; }
+    /// <summary>That site's name, for display.</summary>
+    public string? BinSiteName { get; init; }
     /// <summary>Commodity code, or a legacy crop-group name on rows saved before codes.</summary>
     public string CommodityCode { get; init; } = string.Empty;
     public decimal? BushelsOnHand { get; init; }

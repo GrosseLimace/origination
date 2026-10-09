@@ -24,6 +24,8 @@ public static class ProducerDetailsMappings
         ModifiedAt = p.ModifiedAt,
         GrainOnFarm = p.GrainOnFarm.Select(g => new GrainOnFarmItemResponse
         {
+            BinSiteKey = g.BinSiteKey,
+            BinSiteName = g.BinSiteName,
             CommodityCode = g.CommodityCode,
             BushelsOnHand = g.BushelsOnHand,
             BushelsSold = g.BushelsSold,
@@ -42,6 +44,7 @@ public static class ProducerDetailsMappings
         }).ToList(),
         BinSites = p.BinSites.Select(b => new BinSiteItemResponse
         {
+            SiteKey = b.SiteKey,
             Name = b.Name,
             Latitude = b.Latitude,
             Longitude = b.Longitude,

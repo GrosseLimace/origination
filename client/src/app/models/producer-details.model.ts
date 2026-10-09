@@ -31,6 +31,8 @@ export interface ProducerContactItem {
 /** A user-entered on-farm bin site: an optional name and a North American lat/long pair, stored
  *  at full precision (shown to six places). See shared/utils/coordinates.ts for the rules. */
 export interface ProducerBinSiteItem {
+  /** Stable across saves (the client makes one for a new site); grain-on-farm rows link to it. */
+  siteKey?: string;
   name?: string | null;
   latitude?: number | null;  // optional: only the name is required (2026-10-09)
   longitude?: number | null;
@@ -41,6 +43,11 @@ export interface ProducerBinSiteItem {
 /** Per-commodity grain-on-farm row: total bushels on the farm, how many of those are sold, a grade
  *  note, and the $/bu target. */
 export interface GrainOnFarmItem {
+  /** The bin site this grain is stored at (its siteKey); null on rows saved before grain was tied
+   *  to sites (2026-10-09). */
+  binSiteKey?: string | null;
+  /** That site's name, for display (read only). */
+  binSiteName?: string | null;
   /** Commodity code ("YC", "HRWW"), or a crop-group name ("Corn") on rows saved before
    *  2026-09-23 — see shared/utils/grain-on-farm.ts. Read it through the crop matcher, never
    *  compare it to a group string directly. */

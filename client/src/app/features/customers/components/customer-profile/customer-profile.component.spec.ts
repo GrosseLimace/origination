@@ -302,6 +302,23 @@ describe('CustomerProfileComponent — bin site table', () => {
 
     expect(tracking.trackBinSiteMapClick).toHaveBeenCalledWith('42');
   });
+
+  it('lists grain on farm grouped by bin site, in site order, rows without a site last', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
+      grainOnFarm: [
+        { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 90000 },
+        { binSiteKey: 'home', binSiteName: 'Home Place', commodityCode: 'YC', bushelsOnHand: 5000 },
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'SB', bushelsOnHand: 1000 },
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 },
+      ],
+    }));
+
+    expect(component.grainOnFarmRows().map(g => `${g.binSiteName ?? '—'} ${g.commodityCode}`))
+      .toEqual(['North Bins YC', 'North Bins SB', 'Home Place YC', '— WH']);
+    // The headline total still adds up every row, at every site.
+    expect(component.grainOnFarmTotal()).toBe(126000);
+  });
 });
 
 // Covers the organic producer badge: which producers get it, and the header-panel spacing computed

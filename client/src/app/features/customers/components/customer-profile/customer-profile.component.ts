@@ -64,11 +64,15 @@ export class CustomerProfileComponent {
   public allCustomers = input<Customer[]>([]);
 
   // ── Grain on Farm (per-commodity total + sold + target) ──────────────────────
-  /** Grain-on-farm rows with a positive total or sold, a target or last bid, or a grade entered — sorted by total desc. */
-  readonly grainOnFarmRows = computed(() =>
-    (this.customer().grainOnFarm ?? [])
+  /** Grain-on-farm rows with a positive total or sold, a target or last bid, or a grade entered —
+   *  grouped by bin site in the sites' order (rows not tied to a site last), total desc within a site. */
+  readonly grainOnFarmRows = computed(() => {
+    const siteOrder = new Map((this.customer().binSites ?? []).map((b, i) => [b.siteKey, i]));
+    const orderOf = (key: string | null | undefined) => (key ? siteOrder.get(key) : undefined) ?? Number.MAX_SAFE_INTEGER;
+    return (this.customer().grainOnFarm ?? [])
       .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.bushelsSold ?? 0) > 0 || g.targetBushels != null || g.lastBid != null || !!(g.grade ?? '').trim())
-      .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0)));
+      .sort((a, b) => orderOf(a.binSiteKey) - orderOf(b.binSiteKey) || (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
+  });
   /** Total bushels currently on the farm (sum of per-commodity on-hand). */
   readonly grainOnFarmTotal = computed(() =>
     (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
@@ -143,7 +147,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -501,7 +505,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();

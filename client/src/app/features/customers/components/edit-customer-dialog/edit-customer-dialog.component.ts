@@ -15,13 +15,29 @@ import { AppStateService } from '@core/services/app-state.service';
 /** One bin-site row as edited: every field is the text in its input. Capacity holds the grouped
  *  display text ("50,000"). */
 export interface BinSiteEditRow {
+  /** The site's stable SiteKey: the saved one, or a fresh one for a new row. Grain rows point at it. */
+  key: string;
   name: string;
   coords: string;
   capacity: string;
 }
 
+const newSiteKey = (): string => crypto.randomUUID();
+
 const emptyBinSiteRow = (): BinSiteEditRow =>
-  ({ name: '', coords: '', capacity: '' });
+  ({ key: newSiteKey(), name: '', coords: '', capacity: '' });
+
+/** One grain-on-farm row as edited. Numbers are the input text, parsed on save. siteKey is the bin
+ *  site it belongs to; null only on rows saved before grain was tied to sites (2026-10-09). */
+export interface GrainEditRow {
+  siteKey: string | null;
+  commodityCode: string;
+  bushelsOnHand: string;
+  bushelsSold: string;
+  targetBushels: string;
+  lastBid: string;
+  grade: string;
+}
 
 /** True when anything other than the coordinates has been filled in. */
 const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
@@ -67,13 +83,13 @@ export class EditCustomerDialogComponent {
     primaryPhone: string;
     contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
     // Parsed at full precision (never rounded); array order is the display order. Capacity in bushels.
-    binSites: { name: string; latitude?: number; longitude?: number; capacity?: number }[];
+    binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
     tradeUnitCodes: string[];        // Desired ACTIVE manual TU set — reconciled on "Save Changes".
     reconcileTradeUnits: boolean;    // Only reconcile when it's safe + meaningful (see canReconcileTradeUnits).
-    grainOnFarm: { commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[];
+    grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[];
     // Planting intentions to re-home because their trade unit is being removed. The PARENT runs
     // these, because it owns the cached intention lists that the profile renders — doing it here
     // would move the rows server-side while the table kept showing the old trade unit.
@@ -278,13 +294,14 @@ export class EditCustomerDialogComponent {
   editBinSites = signal<BinSiteEditRow[]>([]);
 
   /** Per-row validation message, or null. Only the Name is required (user 2026-10-09): a fully
-   *  blank row is fine (dropped on save), a row with anything in it needs a name, coordinates are
-   *  optional but must pass the North American rules when typed, and the capacity shares the
-   *  producer-level Bin Capacity ceiling. Blocks Save. */
+   *  blank row is fine (dropped on save), a row with anything in it — grain on farm included — needs
+   *  a name, coordinates are optional but must pass the North American rules when typed, and the
+   *  capacity shares the producer-level Bin Capacity ceiling. Blocks Save. */
   readonly binSiteErrors = computed(() =>
     this.editBinSites().map(r => {
-      if (!r.coords.trim() && !binSiteRowHasData(r)) return null;
-      if (!r.name.trim()) return 'Enter a name for this site.';
+      const hasGrain = this._siteHasGrain(r.key);
+      if (!r.coords.trim() && !binSiteRowHasData(r) && !hasGrain) return null;
+      if (!r.name.trim()) return hasGrain ? 'Enter a name for this site — it has grain on farm.' : 'Enter a name for this site.';
       if (r.coords.trim()) {
         const parsed = parseCoordinatePair(r.coords);
         if (!parsed.ok) return parsed.error;
@@ -299,7 +316,11 @@ export class EditCustomerDialogComponent {
   /** Which input to outline in red: the name when a row has data but no name, the coordinates
    *  only when what was typed there doesn't parse — not for every row error. */
   readonly binSiteNameMissing = computed(() =>
-    this.editBinSites().map(r => !r.name.trim() && (!!r.coords.trim() || binSiteRowHasData(r))));
+    this.editBinSites().map(r => !r.name.trim() && (!!r.coords.trim() || binSiteRowHasData(r) || this._siteHasGrain(r.key))));
+
+  private _siteHasGrain(key: string): boolean {
+    return this.editGrainOnFarm().some(g => g.siteKey === key);
+  }
   readonly binSiteCoordsInvalid = computed(() =>
     this.editBinSites().map(r => !!r.coords.trim() && !parseCoordinatePair(r.coords).ok));
 
@@ -307,8 +328,16 @@ export class EditCustomerDialogComponent {
     this.editBinSites.update(rows => rows.length >= MAX_BIN_SITES ? rows : [...rows, emptyBinSiteRow()]);
   }
 
+  /** Removing a site removes its grain on farm too (nothing is saved until Save Changes). */
   removeBinSiteRow(index: number): void {
+    const key = this.editBinSites()[index]?.key;
     this.editBinSites.update(rows => rows.filter((_, i) => i !== index));
+    if (!key) return;
+    const codes = this.editGrainOnFarm().filter(g => g.siteKey === key).map(g => g.commodityCode);
+    this.editGrainOnFarm.update(rows => rows.filter(g => g.siteKey !== key));
+    codes.forEach(code => this._releaseGrainChip(code));
+    this.grainOpenSites.update(open => { const next = new Set(open); next.delete(key); return next; });
+    if (this.grainPickerSite() === key) this.grainPickerSite.set(null);
   }
 
   updateBinSiteField(index: number, field: keyof BinSiteEditRow, value: string): void {
@@ -340,6 +369,7 @@ export class EditCustomerDialogComponent {
   private _binSitesFromCustomer(customer: Customer): BinSiteEditRow[] {
     const bushels = (v: number | null | undefined) => v != null ? formatBinSiteCapacityInput(String(v)) : '';
     return (customer.binSites ?? []).map(b => ({
+      key: b.siteKey ?? newSiteKey(),
       name: b.name ?? '',
       coords: b.latitude != null && b.longitude != null ? formatCoordinatePairFull(b.latitude, b.longitude) : '',
       capacity: bushels(b.capacity)
@@ -357,22 +387,69 @@ export class EditCustomerDialogComponent {
   filteredCommodities = signal<Commodity[]>([]);
   showSuggestions = signal(false);
 
-  // ── Grain on Farm (per commodity CODE: total bu, sold bu, grade, target) ──────────
+  // ── Grain on Farm, tied to bin sites (total bu, sold bu, grade, target, last bid) ──────
+  // Each bin site has its own grain on farm, entered inline under the site (user 2026-10-09): one
+  // row per commodity per site. Rows saved before then have no site; they show in their own block
+  // with a "Move to" picker, and nothing new can be added there.
   // Numbers are kept as strings for the inputs and parsed on save (mirrors editBinCapacity).
-  // Rows are keyed by commodity code, the same values as the Commodities chips. A row saved before
-  // 2026-09-23 may hold a crop-group name instead ("Corn"); it round-trips untouched and is flagged
-  // in the template so the user can swap it for a code. See shared/utils/grain-on-farm.ts.
-  editGrainOnFarm = signal<{ commodityCode: string; bushelsOnHand: string; bushelsSold: string; targetBushels: string; lastBid: string; grade: string }[]>([]);
-  newGrainCode = signal(''); // commodity code selected in the "add row" dropdown
+  // Codes are the same values as the Commodities chips. A row saved before 2026-09-23 may hold a
+  // crop-group name instead ("Corn"); it round-trips untouched and is flagged in the template so
+  // the user can swap it for a code. See shared/utils/grain-on-farm.ts.
+  editGrainOnFarm = signal<GrainEditRow[]>([]);
+  newGrainCode = signal(''); // commodity code selected in the open site's "add" dropdown
+
+  /** The site whose commodity picker is in use. There is one picker state, shared by the sites. */
+  grainPickerSite = signal<string | null>(null);
+
+  /** Sites whose grain block the user opened ("Add grain on farm") before adding a row. A site with
+   *  rows always shows its block. */
+  grainOpenSites = signal<ReadonlySet<string>>(new Set());
+
+  /** A site's rows (null = the rows not tied to a site). */
+  grainRowsFor(siteKey: string | null): GrainEditRow[] {
+    return this.editGrainOnFarm().filter(g => g.siteKey === siteKey);
+  }
+
+  readonly unlinkedGrainRows = computed(() => this.editGrainOnFarm().filter(g => g.siteKey === null));
+
+  isGrainBlockOpen(siteKey: string): boolean {
+    return this.grainOpenSites().has(siteKey) || this._siteHasGrain(siteKey);
+  }
+
+  /** "Add grain on farm" under a site: shows its block with the commodity picker ready. */
+  openGrainForSite(siteKey: string): void {
+    this.grainOpenSites.update(open => new Set(open).add(siteKey));
+    this.grainPickerSite.set(siteKey);
+    this.newGrainCode.set('');
+  }
+
+  /** Opens or closes a site's commodity list, switching the shared picker to that site first. */
+  toggleGrainPicker(siteKey: string): void {
+    if (this.grainPickerSite() !== siteKey) {
+      this.grainPickerSite.set(siteKey);
+      this.newGrainCode.set('');
+      this.grainPickerOpen.set(true);
+    } else {
+      this.grainPickerOpen.set(!this.grainPickerOpen());
+    }
+    this.grainPickerActive.set(-1);
+  }
 
   /** Dropdown options: one list of every planting-intentions commodity the user's trade units can
-   *  see — the same list the planting crop picker offers. */
+   *  see — the same list the planting crop picker offers — minus what the picker's site already has.
+   *  Two sites can hold the same crop. */
   readonly grainOptions = computed(() => buildGrainOnFarmOptions({
     // The flag guard matters only in the full-catalog fallback (_loadCommoditiesFallback), where it
     // keeps a couple of thousand non-crop codes out; the planting list is all true.
     planting: this.scopedCommodities().filter(c => c.showInPlantingIntentions),
-    used: this.editGrainOnFarm().map(r => r.commodityCode),
+    used: this.grainRowsFor(this.grainPickerSite()).map(r => r.commodityCode),
   }));
+
+  /** The picker's label for one site: its chosen commodity, or the placeholder. */
+  grainPickerLabelFor(siteKey: string): string {
+    if (this.grainPickerSite() !== siteKey) return 'Add a commodity…';
+    return this.grainPickerLabel();
+  }
 
   /** Whether the grain "add a commodity" list is open. A custom list rather than a native <select>
    *  because the browser opens a native one upward near the bottom of the dialog, and that can't be
@@ -387,7 +464,12 @@ export class EditCustomerDialogComponent {
 
   /** Arrow keys open the list and move the highlight, Enter picks it, Escape closes — what a native
    *  <select> gave keyboard users for free. */
-  onGrainPickerKeydown(event: KeyboardEvent): void {
+  onGrainPickerKeydown(event: KeyboardEvent, siteKey: string): void {
+    if (this.grainPickerSite() !== siteKey) {
+      this.grainPickerSite.set(siteKey);
+      this.newGrainCode.set('');
+      this.grainPickerOpen.set(false);
+    }
     const options = this.grainOptions();
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -432,6 +514,14 @@ export class EditCustomerDialogComponent {
    *  back off — but never a chip the user or the producer's tickets/contracts already had. */
   private _grainAutoAddedCommodities = new Set<string>();
 
+  /** Takes back a chip this session added for a grain row, once no row (at any site) uses it. */
+  private _releaseGrainChip(code: string): void {
+    if (this.editGrainOnFarm().some(r => r.commodityCode.toLowerCase() === code.toLowerCase())) return;
+    if (this._grainAutoAddedCommodities.delete(code)) {
+      this.editCommodities.update(c => c.filter(x => x !== code));
+    }
+  }
+
   /** A row still holding a pre-code crop-group name ("Corn"). Only a real group name qualifies, so a
    *  code missing from the active catalog is never flagged, and nothing is flagged before load. */
   isLegacyGrainRow(value: string): boolean {
@@ -445,10 +535,10 @@ export class EditCustomerDialogComponent {
 
   /** Adds a grain row and, when the producer doesn't already list that commodity, adds it to their
    *  Commodities chips too (as a user-added, removable chip), so the two lists stay in step. */
-  addGrainRow(): void {
-    const code = this.newGrainCode().trim();
-    if (!code || this.editGrainOnFarm().some(r => r.commodityCode.toLowerCase() === code.toLowerCase())) return;
-    this.editGrainOnFarm.update(rows => [...rows, { commodityCode: code, bushelsOnHand: '', bushelsSold: '', targetBushels: '', lastBid: '', grade: '' }]);
+  addGrainRow(siteKey: string): void {
+    const code = this.grainPickerSite() === siteKey ? this.newGrainCode().trim() : '';
+    if (!code || this.grainRowsFor(siteKey).some(r => r.commodityCode.toLowerCase() === code.toLowerCase())) return;
+    this.editGrainOnFarm.update(rows => [...rows, { siteKey, commodityCode: code, bushelsOnHand: '', bushelsSold: '', targetBushels: '', lastBid: '', grade: '' }]);
     if (!this.editCommodities().some(c => c.toLowerCase() === code.toLowerCase())) {
       this.editCommodities.update(c => [...c, code]);
       this._grainAutoAddedCommodities.add(code);
@@ -456,11 +546,46 @@ export class EditCustomerDialogComponent {
     this.newGrainCode.set('');
   }
 
-  removeGrainRow(commodityCode: string): void {
-    this.editGrainOnFarm.update(rows => rows.filter(r => r.commodityCode !== commodityCode));
-    if (this._grainAutoAddedCommodities.delete(commodityCode)) {
-      this.editCommodities.update(c => c.filter(x => x !== commodityCode));
-    }
+  removeGrainRow(siteKey: string | null, commodityCode: string): void {
+    this.editGrainOnFarm.update(rows => rows.filter(r => !(r.siteKey === siteKey && r.commodityCode === commodityCode)));
+    this._releaseGrainChip(commodityCode);
+  }
+
+  /** Sites a row without a site can move to: named sites that don't already hold that commodity. */
+  grainMoveTargets(commodityCode: string): { key: string; name: string }[] {
+    return this.editBinSites()
+      .filter(s => s.name.trim() && !this.grainRowsFor(s.key).some(r => r.commodityCode.toLowerCase() === commodityCode.toLowerCase()))
+      .map(s => ({ key: s.key, name: s.name.trim() }));
+  }
+
+  /** Ties a row saved before sites were linked to one of the producer's sites. */
+  moveGrainRowToSite(commodityCode: string, siteKey: string): void {
+    if (!siteKey || !this.grainMoveTargets(commodityCode).some(t => t.key === siteKey)) return;
+    this.editGrainOnFarm.update(rows => rows.map(r =>
+      r.siteKey === null && r.commodityCode === commodityCode ? { ...r, siteKey } : r));
+  }
+
+  /** Grain rows from the saved customer. A key naming no current site (shouldn't happen) is shown as
+   *  not tied to a site rather than hidden. */
+  private _grainFromCustomer(customer: Customer | null | undefined): GrainEditRow[] {
+    const siteKeys = new Set((customer?.binSites ?? []).map(b => b.siteKey).filter(Boolean));
+    return (customer?.grainOnFarm || []).map(g => ({
+      siteKey: g.binSiteKey && siteKeys.has(g.binSiteKey) ? g.binSiteKey : null,
+      commodityCode: g.commodityCode,
+      bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
+      bushelsSold: g.bushelsSold != null ? String(g.bushelsSold) : '',
+      targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
+      lastBid: g.lastBid != null ? String(g.lastBid) : '',
+      grade: g.grade ?? ''
+    }));
+  }
+
+  private _resetGrainPicker(): void {
+    this.newGrainCode.set('');
+    this.grainPickerSite.set(null);
+    this.grainOpenSites.set(new Set());
+    this.grainPickerOpen.set(false);
+    this.grainPickerActive.set(-1);
   }
 
   // ── Collapsible sections (edit dialog) ──────────────────────────────────
@@ -546,17 +671,9 @@ export class EditCustomerDialogComponent {
         this.editESignEnabled.set(customer.eSignEnabled);
         this.editContacts.set(this._contactsFromCustomer(customer));
         this.editBinSites.set(this._binSitesFromCustomer(customer));
-        this.editGrainOnFarm.set((customer.grainOnFarm || []).map(g => ({
-          commodityCode: g.commodityCode,
-          bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
-          bushelsSold: g.bushelsSold != null ? String(g.bushelsSold) : '',
-          targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
-          lastBid: g.lastBid != null ? String(g.lastBid) : '',
-          grade: g.grade ?? ''
-        })));
-        this.newGrainCode.set('');
+        this.editGrainOnFarm.set(this._grainFromCustomer(customer));
         this._grainAutoAddedCommodities.clear();
-        this.grainPickerOpen.set(false);
+        this._resetGrainPicker();
 
         // Store original values
         this._originalAcres = customer.totalAcres || 0;
@@ -629,10 +746,8 @@ export class EditCustomerDialogComponent {
     this.editBinCapacity = '';
     this.editCommodities.set([]);
     this.editGrainOnFarm.set([]);
-    this.newGrainCode.set('');
     this._grainAutoAddedCommodities.clear();
-    this.grainPickerOpen.set(false);
-    this.grainPickerActive.set(-1);
+    this._resetGrainPicker();
     this.editContacts.set([]);
     this.editBinSites.set([]);
     this.editLinkedProducerIds.set([]);
@@ -843,8 +958,8 @@ export class EditCustomerDialogComponent {
   private _serializeGrain(): string {
     return JSON.stringify(
       this.editGrainOnFarm()
-        .map(r => ({ g: r.commodityCode, h: r.bushelsOnHand.trim(), s: r.bushelsSold.trim(), t: r.targetBushels.trim(), lb: r.lastBid.trim(), gr: r.grade.trim() }))
-        .sort((a, b) => a.g.localeCompare(b.g))
+        .map(r => ({ k: r.siteKey ?? '', g: r.commodityCode, h: r.bushelsOnHand.trim(), s: r.bushelsSold.trim(), t: r.targetBushels.trim(), lb: r.lastBid.trim(), gr: r.grade.trim() }))
+        .sort((a, b) => a.k.localeCompare(b.k) || a.g.localeCompare(b.g))
     );
   }
 
@@ -863,7 +978,7 @@ export class EditCustomerDialogComponent {
   private _serializeBinSites(): string {
     return JSON.stringify(
       this.editBinSites()
-        .filter(r => r.coords.trim() || binSiteRowHasData(r))
+        .filter(r => r.coords.trim() || binSiteRowHasData(r) || this._siteHasGrain(r.key))
         .map(r => ({
           n: r.name.trim(), c: r.coords.trim(), cap: parseBinSiteCapacity(r.capacity),
         }))
@@ -1070,18 +1185,9 @@ export class EditCustomerDialogComponent {
     this.editAcres = String(this._originalAcres || 0);
     this.editBinCapacity = String(this._originalBinCapacity || 0);
     this.editCommodities.set([...this._originalCommodities]);
-    this.editGrainOnFarm.set((this.customer()?.grainOnFarm || []).map(g => ({
-      commodityCode: g.commodityCode,
-      bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
-      bushelsSold: g.bushelsSold != null ? String(g.bushelsSold) : '',
-      targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
-      lastBid: g.lastBid != null ? String(g.lastBid) : '',
-      grade: g.grade ?? ''
-    })));
-    this.newGrainCode.set('');
+    this.editGrainOnFarm.set(this._grainFromCustomer(this.customer()));
     this._grainAutoAddedCommodities.clear();
-    this.grainPickerOpen.set(false);
-    this.grainPickerActive.set(-1);
+    this._resetGrainPicker();
     this.editLinkedProducerIds.set([...this._originalLinkedProducerIds]);
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(this._originalESignEnabled);
@@ -1138,6 +1244,7 @@ export class EditCustomerDialogComponent {
         if (!name) return [];
         const parsed = r.coords.trim() ? parseCoordinatePair(r.coords) : null;
         return [{
+          siteKey: r.key,
           name,
           latitude: parsed?.ok ? parsed.lat : undefined,
           longitude: parsed?.ok ? parsed.lng : undefined,
@@ -1164,6 +1271,7 @@ export class EditCustomerDialogComponent {
         grainOnFarm: this.editGrainOnFarm()
           .filter(r => r.commodityCode)
           .map(r => ({
+            binSiteKey: r.siteKey ?? undefined,
             commodityCode: r.commodityCode,
             bushelsOnHand: r.bushelsOnHand.trim() ? this._parseNumericInput(r.bushelsOnHand) : undefined,
             bushelsSold: r.bushelsSold.trim() ? this._parseNumericInput(r.bushelsSold) : undefined,

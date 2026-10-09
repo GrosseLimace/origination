@@ -4138,13 +4138,20 @@ export class BuildListComponent {
   }
 
   /**
-   * Per-crop grain-on-farm rows that actually have bushels on hand, largest first — the chips
-   * shown inline on Grain on Farm results.
+   * Per-crop grain on farm with bushels on hand, largest first — the chips shown inline on Grain on
+   * Farm results. Rows are per bin site, so one crop stored at two sites is summed into one chip.
    */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
-    return (customer.grainOnFarm ?? [])
-      .filter(g => !!g.commodityCode && (g.bushelsOnHand ?? 0) > 0)
-      .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
+    const byCrop = new Map<string, GrainOnFarmItem>();
+    for (const g of customer.grainOnFarm ?? []) {
+      if (!g.commodityCode || (g.bushelsOnHand ?? 0) <= 0) continue;
+      const key = g.commodityCode.toUpperCase();
+      const seen = byCrop.get(key);
+      byCrop.set(key, seen
+        ? { ...seen, bushelsOnHand: (seen.bushelsOnHand ?? 0) + (g.bushelsOnHand ?? 0) }
+        : { commodityCode: g.commodityCode, bushelsOnHand: g.bushelsOnHand });
+    }
+    return [...byCrop.values()].sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
   }
 
   /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
