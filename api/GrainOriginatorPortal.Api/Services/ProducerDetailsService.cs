@@ -163,7 +163,6 @@ public class ProducerDetailsService : IProducerDetailsService
             ScoularId = request.ScoularId,
             CustomerName = request.CustomerName,
             TotalAcres = request.TotalAcres,
-            BinCapacity = request.BinCapacity,
             PrimaryContact = request.PrimaryContact,
             PrimaryPhone = request.PrimaryPhone,
             Commodities = request.Commodities,

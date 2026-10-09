@@ -15,8 +15,8 @@ public record UpsertProducerDetailsRequest
     [Range(0, 10_000_000)]
     public decimal? TotalAcres { get; init; }
 
-    [Range(0, 100_000_000)]
-    public decimal? BinCapacity { get; init; }
+    // BinCapacity was removed 2026-10-09 (capacity lives on each bin site). A client cached from before
+    // still sends it; System.Text.Json ignores the unknown property, so that save still succeeds.
 
     [StringLength(200)]
     public string? PrimaryContact { get; init; }
@@ -82,8 +82,8 @@ public record BinSiteItemRequest : IValidatableObject
                 [Latitude.HasValue ? nameof(Longitude) : nameof(Latitude)]);
     }
 
-    /// <summary>Storage capacity in bushels, optional. Stored per site only; it does not change the
-    /// producer-level BinCapacity.</summary>
+    /// <summary>Storage capacity in bushels, optional — the only place capacity is recorded since the
+    /// producer-level Bin Capacity was removed (2026-10-09).</summary>
     [Range(0, BinSiteRules.MaxCapacity, ErrorMessage = "Bin site capacity must be between 0 and 100,000,000 bushels.")]
     public decimal? Capacity { get; init; }
 }

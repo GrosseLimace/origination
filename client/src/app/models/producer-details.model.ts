@@ -4,7 +4,6 @@ export interface ProducerDetails {
   scoularId?: string;
   customerName: string;
   totalAcres?: number;
-  binCapacity?: number;
   primaryContact?: string; // derived server-side from the primary contact row (kept for compat)
   primaryPhone?: string;   // derived server-side from the primary contact row (kept for compat)
   commodities?: string; // Comma-separated list (e.g. "Corn,Soybeans,Wheat")
@@ -36,7 +35,7 @@ export interface ProducerBinSiteItem {
   name?: string | null;
   latitude?: number | null;  // optional: only the name is required (2026-10-09)
   longitude?: number | null;
-  capacity?: number | null; // storage capacity in bushels, per site (not summed into Bin Capacity)
+  capacity?: number | null; // storage capacity in bushels, per site (the only capacity recorded)
   sortOrder?: number;
 }
 

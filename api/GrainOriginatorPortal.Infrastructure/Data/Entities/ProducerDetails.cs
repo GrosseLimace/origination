@@ -14,7 +14,8 @@ public class ProducerDetails
     public string? ScoularId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public decimal? TotalAcres { get; set; }
-    public decimal? BinCapacity { get; set; }
+    // BinCapacity was dropped 2026-10-09: storage capacity lives on each bin site (ProducerBinSite.Capacity);
+    // the values moved onto a "Bin 1" site (migration MoveBinCapacityAndGrainOntoBinSites).
     public string? PrimaryContact { get; set; }
     public string? PrimaryPhone { get; set; } // user-entered override for the pulled-in phone number
     public string? Commodities { get; set; } // Comma-separated list (e.g. "Corn,Soybeans,Wheat")

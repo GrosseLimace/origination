@@ -158,7 +158,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
     {
         var customerId = args.CustomerId;
         var (scoularId, customerName) = (args.ScoularId, args.CustomerName);
-        var (totalAcres, binCapacity) = (args.TotalAcres, args.BinCapacity);
+        var totalAcres = args.TotalAcres;
         var (commodities, linkedProducerIds) = (args.Commodities, args.LinkedProducerIds);
         var grainOnFarm = args.GrainOnFarm;
 
@@ -187,7 +187,6 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             existing.ScoularId = scoularId;
             existing.CustomerName = customerName;
             existing.TotalAcres = totalAcres;
-            existing.BinCapacity = binCapacity;
             existing.PrimaryContact = primaryContact;
             existing.PrimaryPhone = primaryPhone;
             existing.Commodities = commodities;
@@ -204,7 +203,6 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 ScoularId = scoularId,
                 CustomerName = customerName,
                 TotalAcres = totalAcres,
-                BinCapacity = binCapacity,
                 PrimaryContact = primaryContact,
                 PrimaryPhone = primaryPhone,
                 Commodities = commodities,

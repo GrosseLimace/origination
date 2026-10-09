@@ -322,7 +322,6 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.CustomerName);
             entity.Ignore(e => e.LinkedProducerIds);
             entity.Property(e => e.TotalAcres).HasColumnName("TotalAcres").HasColumnType("decimal(18,2)").IsRequired(false);
-            entity.Property(e => e.BinCapacity).HasColumnName("BinCapacity").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.PrimaryContact).HasColumnName("PrimaryContact").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.PrimaryPhone).HasColumnName("PrimaryPhone").HasMaxLength(50).IsRequired(false);
             // Commodities is composed server-side from dbo.CustomerCommodity on read
@@ -481,7 +480,8 @@ public class ApplicationDbContext : DbContext
             // paste is stored exactly as entered. Display shortens it; storage never does.
             entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(18,15)").IsRequired(false);
             entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(18,15)").IsRequired(false);
-            // Bushels, same type as ProducerDetails.BinCapacity so the per-site sum lands exactly.
+            // Bushels, decimal(18,2) — the type the dropped ProducerDetails.BinCapacity had, so the values
+            // moved onto "Bin 1" sites landed exactly.
             entity.Property(e => e.Capacity).HasColumnName("Capacity").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
 

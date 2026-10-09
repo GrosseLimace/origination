@@ -19,8 +19,8 @@ export const BIN_SITE_BOUNDS = { minLat: 7, maxLat: 84, minLng: -180, maxLng: -5
  *  (BinSiteRules.MaxPerCustomer) so the dialog can never build a request the API would reject. */
 export const MAX_BIN_SITES = 100;
 export const BIN_SITE_NAME_MAX_LENGTH = 100;
-/** Per-site storage capacity ceiling in bushels — the same as the producer-level Bin Capacity
- *  (BinSiteRules.MaxCapacity server-side). */
+/** Per-site storage capacity ceiling in bushels (BinSiteRules.MaxCapacity server-side) — the ceiling the
+ *  removed producer-level Bin Capacity had. */
 export const MAX_BIN_SITE_CAPACITY = 100_000_000;
 
 export const COORDINATE_EXAMPLE = '39.115876, -95.143955';

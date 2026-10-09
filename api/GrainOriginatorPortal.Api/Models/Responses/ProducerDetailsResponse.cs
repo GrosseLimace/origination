@@ -9,7 +9,6 @@ public record ProducerDetailsResponse
     public string? ScoularId { get; init; }
     public string CustomerName { get; init; } = string.Empty;
     public decimal? TotalAcres { get; init; }
-    public decimal? BinCapacity { get; init; }
     public string? PrimaryContact { get; init; }
     public string? PrimaryPhone { get; init; }
     public string? Commodities { get; init; }

@@ -440,6 +440,7 @@
                 </div>
               }
 
+              <!-- Acres alone in half the row (Bin Capacity was removed 2026-10-09: capacity lives on each bin site). -->
               <div class="grid grid-cols-2 gap-4">
                 <div class="space-y-2">
                   <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -465,32 +466,6 @@
                     />
                     @if (editAcres && editAcres !== '0') {
                       <button type="button" (click)="editAcres = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                      </button>
-                    }
-                  </div>
-                </div>
-
-                <div class="space-y-2">
-                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/>
-                    </svg>
-                    Bin Capacity (bu)
-                  </label>
-                  <div class="relative">
-                    <input
-                      type="text"
-                      inputmode="numeric"
-                      [(ngModel)]="editBinCapacity"
-                      placeholder="e.g., 45,000"
-                      maxlength="10"
-                      (focus)="clearZeroOnFocus('editBinCapacity')"
-                      (blur)="normalizeNumericOnBlur('editBinCapacity')"
-                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                    />
-                    @if (editBinCapacity && editBinCapacity !== '0') {
-                      <button type="button" (click)="editBinCapacity = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                       </button>
                     }

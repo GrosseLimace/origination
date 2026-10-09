@@ -9,7 +9,7 @@ import { Customer, ProducerBinSiteItem } from '@models';
  */
 const site = (lat: number): ProducerBinSiteItem => ({ name: null, latitude: lat, longitude: -95.1 });
 
-function customer(id: number, over: { binSites?: ProducerBinSiteItem[]; binCapacity?: number } = {}): Customer {
+function customer(id: number, over: { binSites?: ProducerBinSiteItem[] } = {}): Customer {
   return {
     id, name: `Farm ${id}`, farm: '', location: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
     email: '', phone: '', ...over,
@@ -28,9 +28,9 @@ describe('NlqFilterService — bin sites', () => {
   const one = customer(2, { binSites: [site(39.1)] });
   const two = customer(3, { binSites: [site(39.1), site(39.2)] });
   const three = customer(4, { binSites: [site(39.1), site(39.2), site(39.3)] });
-  // Capacity but no sites, and sites but no capacity — the collision cases.
-  const capacityOnly = customer(5, { binCapacity: 50_000 });
-  const sitesNoCapacity = customer(6, { binSites: [site(40.1)], binCapacity: 0 });
+  // Ids 5 and 6 were the producer-level bin capacity collision cases; that field is gone (2026-10-09).
+  const capacityOnly = customer(5);
+  const sitesNoCapacity = customer(6, { binSites: [site(40.1)] });
 
   const all = [none, one, two, three, capacityOnly, sitesNoCapacity];
   const ids = (q: string) => svc.parseAndFilter(q, ctx(all)).customers.map(c => c.id).sort((a, b) => a - b);
@@ -81,9 +81,10 @@ describe('NlqFilterService — bin sites', () => {
     expect(ids('producers without bin sites')).toContain(5);    // capacity, no sites
   });
 
-  it('a bin-capacity query still means capacity, not sites', () => {
-    expect(ids('producers with bin capacity')).toEqual([5]);
-    expect(ids('producers that have bin capacity')).toEqual([5]);
+  it('a bin-capacity phrase no longer filters, and never reads as bin sites', () => {
+    // The producer-level bin capacity was removed 2026-10-09; its phrases match nothing now.
+    expect(ids('producers with bin capacity')).toEqual([1, 2, 3, 4, 5, 6]);
     expect(patterns('producers with bin capacity')).not.toContain('has_bin_sites');
+    expect(patterns('producers with bin capacity')).not.toContain('has_bin_capacity');
   });
 });

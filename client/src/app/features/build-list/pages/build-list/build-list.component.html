@@ -816,14 +816,6 @@
                             class="w-20 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                         </div>
                       }
-                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().hasBinCapacity" (ngModelChange)="updateRefinement(r => ({...r, hasBinCapacity: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
-                        Has bin capacity
-                      </label>
-                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        <input type="checkbox" [ngModel]="pendingRefinements().noBinCapacity" (ngModelChange)="updateRefinement(r => ({...r, noBinCapacity: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
-                        No bin capacity
-                      </label>
                       @if (!hg.has('hasBinSites')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                           <input type="checkbox" [ngModel]="pendingRefinements().hasBinSites" (ngModelChange)="updateRefinement(r => ({...r, hasBinSites: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">

@@ -364,7 +364,7 @@ export class BuildListComponent {
       r.contactedOnlyOnce, r.contactedMoreThan5,
       r.contactedByMeOnly, r.contactedBySomeoneElse,
       r.hasPinnedNotes, r.noteKeyword?.trim(),
-      r.acresOver != null && r.acresOver > 0, r.hasBinCapacity, r.noBinCapacity, r.hasBinSites, r.noBinSites,
+      r.acresOver != null && r.acresOver > 0, r.hasBinSites, r.noBinSites,
       r.hasPrimaryContact, r.noPrimaryContact, r.hasEmail, r.hasPhone, r.hasLinkedProducers, r.notEsignEnrolled,
       r.hasActiveContracts, r.hasDeliveriesThisYear, r.hasPlantingIntentions, r.hasGrainInStorage,
       r.ticketQuantityOver != null && r.ticketQuantityOver > 0,
@@ -635,12 +635,6 @@ export class BuildListComponent {
     // Customer size
     if (r.acresOver != null && r.acresOver > 0) {
       list = list.filter(c => (c.totalAcres ?? 0) > r.acresOver!);
-    }
-    if (r.hasBinCapacity) {
-      list = list.filter(c => (c.binCapacity ?? 0) > 0);
-    }
-    if (r.noBinCapacity) {
-      list = list.filter(c => !c.binCapacity || c.binCapacity === 0);
     }
     if (r.hasBinSites) {
       list = list.filter(c => (c.binSites?.length ?? 0) > 0);
@@ -2304,7 +2298,7 @@ export class BuildListComponent {
     });
   }
 
-  /** Merge ProducerDetails into customer objects (commodities, bin capacity, etc.). */
+  /** Merge ProducerDetails into customer objects (commodities, acres, bin sites, etc.). */
   private _mergeProducerDetails(details: ProducerDetails[]): void {
     if (details.length === 0) return;
     const detailsMap = new Map(details.map(d => [d.customerId, d]));
@@ -2316,7 +2310,6 @@ export class BuildListComponent {
         return {
           ...customer,
           totalAcres: pd.totalAcres ?? customer.totalAcres,
-          binCapacity: pd.binCapacity ?? customer.binCapacity,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
@@ -3643,7 +3636,6 @@ export class BuildListComponent {
       filters.hasPinnedNotes ||
       filters.noteKeyword?.trim() ||
       (filters.acresOver != null && filters.acresOver > 0) ||
-      filters.hasBinCapacity || filters.noBinCapacity ||
       filters.hasBinSites || filters.noBinSites ||
       filters.hasPrimaryContact || filters.noPrimaryContact ||
       filters.hasEmail || filters.hasPhone || filters.hasLinkedProducers || filters.notEsignEnrolled ||

@@ -48,13 +48,10 @@ export interface NlqFilterResult {
   matchedPatterns: string[];
 }
 
-// "Bin" means two different things in a producer query: bin CAPACITY (bushels of on-farm storage)
-// and bin SITES (the lat/long locations under the address). The capacity patterns carry a
-// negative lookahead so "producers with bin sites" never filters on storage capacity.
+// Bin SITES — the producer's on-farm locations (name, capacity, lat/long). The producer-level bin
+// CAPACITY these once had to be told apart from was removed 2026-10-09 (its values became "Bin 1"
+// sites), along with its "has bin capacity" / "bin capacity over N" phrases.
 const BIN_SITE_WORDS = String.raw`bin\s*(?:sites?|locations?|coordinates|gps)`;
-const NOT_BIN_SITE = String.raw`(?!\s*(?:sites?|locations?|coordinates|gps)\b)`;
-const HAS_BIN_CAPACITY = new RegExp(String.raw`(?:has|have|with)\s+(?:a\s+)?(?:bin${NOT_BIN_SITE}|storage)\s*(?:capacity|space)?`, 'i');
-const NO_BIN_CAPACITY = new RegExp(String.raw`(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?(?:bin${NOT_BIN_SITE}|storage)\s*(?:capacity|space)?`, 'i');
 const HAS_BIN_SITES = new RegExp(String.raw`(?:has|have|with)\s+(?:an?\s+|any\s+)?${BIN_SITE_WORDS}`, 'i');
 const NO_BIN_SITES = new RegExp(String.raw`(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:an?\s+|any\s+)?${BIN_SITE_WORDS}`, 'i');
 const BIN_SITES_MORE_THAN = new RegExp(String.raw`(?:more than|over)\s+(\d+)\s+${BIN_SITE_WORDS}`, 'i');
@@ -1195,12 +1192,6 @@ export class NlqFilterService {
       : lowerQuery.match(/\b(?:in|from|near|around)\s+([a-z][a-z\s]{1,25}?)(?=\s+(?:customers?|producers?|farmers?|growers?|area|region|with|who|and|that|having)|$)/);
     if (cityTestMatch && !this.stateNames[cityTestMatch[1].trim()]) matched.push('city_filter');
 
-    // Has/no bin capacity (boolean) — "has bin capacity", "with bin storage", "have bin capacity"
-    const hasBin = HAS_BIN_CAPACITY.test(lowerQuery);
-    const noBin = NO_BIN_CAPACITY.test(lowerQuery);
-    if (hasBin && !noBin) matched.push('has_bin_capacity');
-    if (noBin) matched.push('no_bin_capacity');
-
     // Bin sites (lat/long locations) — "with bin sites", "without bin locations", "more than 2 bin sites"
     const hasSites = HAS_BIN_SITES.test(lowerQuery);
     const noSites = NO_BIN_SITES.test(lowerQuery);
@@ -1763,15 +1754,6 @@ export class NlqFilterService {
       result = result.filter(c => !c.primaryContact?.trim());
     }
 
-    // Bin capacity
-    const binCapMatch = lowerQuery.match(/(?:bin|storage)\s*capacity\s*(?:over|above|more than|greater than|exceeding|at least)\s*(\d+(?:,\d+)?)/);
-    const binCapMatch2 = lowerQuery.match(/(?:more than|over)\s*(\d+(?:,\d+)?)\s*(?:bushels?\s+)?(?:bin|storage)\s*capacity/);
-    const binThreshold = binCapMatch?.[1] || binCapMatch2?.[1];
-    if (binThreshold) {
-      const minBin = this.parseQuantity(binThreshold);
-      result = result.filter(c => (c.binCapacity ?? 0) >= minBin);
-    }
-
     // ── Grain on Farm — per-commodity bushels on hand + a $/bu target price entered on the
     //    producer profile (dbo.ProducerGrainOnFarm). Supports:
     //      "grain on farm", "no grain on farm", "grain on farm over 50k", "corn on farm",
@@ -2009,18 +1991,6 @@ export class NlqFilterService {
         const extCity = (c.extendedCity || '').toLowerCase();
         return loc.includes(city) || extCity.includes(city);
       });
-    }
-
-    // Has/no bin capacity (boolean — any value set vs. none)
-    const hasBinFilter = HAS_BIN_CAPACITY.test(lowerQuery);
-    const noBinFilter = NO_BIN_CAPACITY.test(lowerQuery);
-    if (hasBinFilter && !noBinFilter) {
-      if (!(/(?:bin|storage)\s*capacity\s*(?:over|above|more than)/i.test(lowerQuery))) {
-        result = result.filter(c => (c.binCapacity ?? 0) > 0);
-      }
-    }
-    if (noBinFilter) {
-      result = result.filter(c => !c.binCapacity || c.binCapacity === 0);
     }
 
     // Has/no bin sites, and "more than N" / "at least N" / "multiple" bin sites. A count implies

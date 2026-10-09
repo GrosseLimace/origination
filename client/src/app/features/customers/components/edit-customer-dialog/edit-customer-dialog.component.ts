@@ -75,7 +75,6 @@ export class EditCustomerDialogComponent {
   public save = output<{
     customerId: number;
     acres: number;
-    binCapacity: number;
     commodities: string[];
     // Derived from the primary contact row — kept on the payload so downstream consumers
     // (optimistic updates, linked-producer propagation) don't need to re-derive it.
@@ -216,7 +215,6 @@ export class EditCustomerDialogComponent {
   });
 
   editAcres: string = '';
-  editBinCapacity: string = '';
   editCommodities = signal<string[]>([]);
   private _derivedCommoditySet = new Set<string>();
   editLinkedProducerIds = signal<string[]>([]);
@@ -296,7 +294,7 @@ export class EditCustomerDialogComponent {
   /** Per-row validation message, or null. Only the Name is required (user 2026-10-09): a fully
    *  blank row is fine (dropped on save), a row with anything in it — grain on farm included — needs
    *  a name, coordinates are optional but must pass the North American rules when typed, and the
-   *  capacity shares the producer-level Bin Capacity ceiling. Blocks Save. */
+   *  capacity is capped at MAX_BIN_SITE_CAPACITY. Blocks Save. */
   readonly binSiteErrors = computed(() =>
     this.editBinSites().map(r => {
       const hasGrain = this._siteHasGrain(r.key);
@@ -391,7 +389,7 @@ export class EditCustomerDialogComponent {
   // Each bin site has its own grain on farm, entered inline under the site (user 2026-10-09): one
   // row per commodity per site. Rows saved before then have no site; they show in their own block
   // with a "Move to" picker, and nothing new can be added there.
-  // Numbers are kept as strings for the inputs and parsed on save (mirrors editBinCapacity).
+  // Numbers are kept as strings for the inputs and parsed on save (mirrors editAcres).
   // Codes are the same values as the Commodities chips. A row saved before 2026-09-23 may hold a
   // crop-group name instead ("Corn"); it round-trips untouched and is flagged in the template so
   // the user can swap it for a code. See shared/utils/grain-on-farm.ts.
@@ -635,7 +633,6 @@ export class EditCustomerDialogComponent {
 
   // Original values to track changes
   private _originalAcres: number = 0;
-  private _originalBinCapacity: number = 0;
   private _originalCommodities: string[] = [];
   private _originalGrainOnFarm: string = '[]'; // serialized snapshot for change detection
   private _originalLinkedProducerIds: string[] = [];
@@ -683,7 +680,6 @@ export class EditCustomerDialogComponent {
       // When isOpen becomes true, initialize the form from the customer
       if (isOpen && customer && !this._initialized) {
         this.editAcres = String(customer.totalAcres || 0);
-        this.editBinCapacity = String(customer.binCapacity || 0);
         const ticketCommodities = [...new Set(
           this.tickets().map(t => t.productCode || '').filter(Boolean)
         )];
@@ -704,7 +700,6 @@ export class EditCustomerDialogComponent {
 
         // Store original values
         this._originalAcres = customer.totalAcres || 0;
-        this._originalBinCapacity = customer.binCapacity || 0;
         this._originalCommodities = [...this.editCommodities()];
         this._originalGrainOnFarm = this._serializeGrain();
         this._originalLinkedProducerIds = [...(customer.linkedProducerIds || [])];
@@ -770,7 +765,6 @@ export class EditCustomerDialogComponent {
 
   private _clearDetailFields(): void {
     this.editAcres = '';
-    this.editBinCapacity = '';
     this.editCommodities.set([]);
     this.editGrainOnFarm.set([]);
     this._grainAutoAddedCommodities.clear();
@@ -971,7 +965,6 @@ export class EditCustomerDialogComponent {
       || this.editCommodities().some(c => !this._originalCommodities.includes(c));
 
     return this._parseNumericInput(this.editAcres) !== this._originalAcres
-      || this._parseNumericInput(this.editBinCapacity) !== this._originalBinCapacity
       || commoditiesChanged
       || this._serializeGrain() !== this._originalGrainOnFarm
       || this.editESignEnabled() !== this._originalESignEnabled
@@ -1080,13 +1073,13 @@ export class EditCustomerDialogComponent {
     }
   }
 
-  clearZeroOnFocus(field: 'editAcres' | 'editBinCapacity'): void {
+  clearZeroOnFocus(field: 'editAcres'): void {
     if (this[field] === '0') {
       this[field] = '';
     }
   }
 
-  normalizeNumericOnBlur(field: 'editAcres' | 'editBinCapacity'): void {
+  normalizeNumericOnBlur(field: 'editAcres'): void {
     const num = this._parseNumericInput(this[field]);
     this[field] = String(num);
   }
@@ -1210,7 +1203,6 @@ export class EditCustomerDialogComponent {
   onCancel(): void {
     // Reset all fields back to original values
     this.editAcres = String(this._originalAcres || 0);
-    this.editBinCapacity = String(this._originalBinCapacity || 0);
     this.editCommodities.set([...this._originalCommodities]);
     this.editGrainOnFarm.set(this._grainFromCustomer(this.customer()));
     this._grainAutoAddedCommodities.clear();
@@ -1284,7 +1276,6 @@ export class EditCustomerDialogComponent {
       this.save.emit({
         customerId: customer.id,
         acres: this._parseNumericInput(this.editAcres),
-        binCapacity: this._parseNumericInput(this.editBinCapacity),
         commodities: this.editCommodities().filter(c => !this.isTicketCommodity(c)),
         primaryContact: primaryRow?.name ?? '',
         primaryPhone: primaryRow?.phone ?? '',

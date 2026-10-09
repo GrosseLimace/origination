@@ -237,7 +237,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
   let component: EditCustomerDialogComponent;
   let ref: ComponentRef<EditCustomerDialogComponent>;
   let saved: {
-    binCapacity: number; commodities: string[];
+    commodities: string[];
     binSites: { siteKey: string; name?: string; latitude?: number; longitude?: number; capacity?: number }[];
     grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number }[];
   }[];
@@ -478,9 +478,9 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(component.hasChanges()).toBe(false);
   });
 
-  it('saves each site capacity, and leaves the typed Bin Capacity alone', () => {
-    // The sites are deliberately NOT summed into Bin Capacity (deferred by the user 2026-10-08).
-    open(makeCustomer({ binCapacity: 40000 }));
+  it('saves each site capacity, and sends no producer-level Bin Capacity', () => {
+    // The producer-level Bin Capacity was removed 2026-10-09: capacity lives on each site.
+    open(makeCustomer());
     component.addBinSiteRow();
     component.addBinSiteRow();
     component.updateBinSiteField(0, 'name', 'Site 1');
@@ -492,7 +492,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     component.onSave();
 
     expect(saved.at(-1)?.binSites.map(s => s.capacity)).toEqual([50000, undefined]);
-    expect(saved.at(-1)?.binCapacity).toBe(40000);
+    expect(saved.at(-1)).not.toHaveProperty('binCapacity');
   });
 
   it('asks for a name when only a capacity is entered', () => {

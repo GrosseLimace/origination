@@ -25,9 +25,8 @@ export interface RefinementFilters {
   noteKeyword?: string | null;
   // Customer size
   acresOver?: number | null;
-  hasBinCapacity?: boolean;
-  noBinCapacity?: boolean;
-  // Bin sites (lat/long locations under the address) — not to be confused with bin capacity above
+  // Bin sites (the producer's on-farm locations). The has/no bin CAPACITY flags were removed 2026-10-09;
+  // a saved list that still carries them in its JSON simply ignores them.
   hasBinSites?: boolean;
   noBinSites?: boolean;
   // Customer info
