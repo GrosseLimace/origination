@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Commodity } from '@models';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from './crop-group-match';
 import {
-  buildGrainOnFarmOptions, GRAIN_AND_BIN_SITES_CATEGORY, grainOnFarmColorKey, isGrainAndBinSitesCategory, grainOnFarmTitle, indexCommoditiesByCode, isGrainOnFarmCode, isLegacyGrainGroup,
+  binSiteGrainBreakdown, buildGrainOnFarmOptions, GRAIN_AND_BIN_SITES_CATEGORY, grainOnFarmColorKey, isGrainAndBinSitesCategory, grainOnFarmTitle, indexCommoditiesByCode, isGrainOnFarmCode, isLegacyGrainGroup,
 } from './grain-on-farm';
 
 const commodity = (code: string, name: string, category?: string): Commodity =>
@@ -116,5 +116,43 @@ describe('isGrainAndBinSitesCategory', () => {
     expect(isGrainAndBinSitesCategory('Grain on Farm')).toBe(true);
     expect(isGrainAndBinSitesCategory('Producers')).toBe(false);
     expect(isGrainAndBinSitesCategory(null)).toBe(false);
+  });
+});
+
+describe('binSiteGrainBreakdown', () => {
+  const sites = [
+    { siteKey: 'north', name: 'North Bins', capacity: 50000, latitude: 41.39, longitude: -95.01 },
+    { siteKey: 'home', name: '  ', capacity: null },
+    { siteKey: 'east', name: 'East Quarter' },
+  ];
+  const grain = [
+    { binSiteKey: 'north', commodityCode: 'YC', bushelsOnHand: 30000 },
+    { binSiteKey: 'north', commodityCode: 'SB', bushelsOnHand: 12500 },
+    { binSiteKey: 'home', commodityCode: 'YC', bushelsOnHand: 5000 },
+    { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 100 },
+    { binSiteKey: 'gone', commodityCode: 'OATS', bushelsOnHand: 7 },
+  ];
+
+  it('lists every site in order with the grain stored there, then the grain not tied to a site', () => {
+    const groups = binSiteGrainBreakdown(sites, grain);
+    expect(groups.map(g => [g.name, g.rows.map(r => r.commodityCode)])).toEqual([
+      ['North Bins', ['YC', 'SB']],
+      ['Bin site', ['YC']],          // blank name falls back
+      ['East Quarter', []],          // a site with no grain is still listed
+      ['Not tied to a bin site', ['WH', 'OATS']],  // no key, or a key naming no current site
+    ]);
+  });
+
+  it('carries capacity and a map link only when the site has coordinates', () => {
+    const [north, home] = binSiteGrainBreakdown(sites, grain);
+    expect(north.capacity).toBe(50000);
+    expect(north.mapUrl).toContain('41.39');
+    expect(home.capacity).toBeNull();
+    expect(home.mapUrl).toBeNull();
+  });
+
+  it('has no unlinked group when every row has a site, and nothing at all for an empty producer', () => {
+    expect(binSiteGrainBreakdown(sites, grain.slice(0, 3)).map(g => g.name)).not.toContain('Not tied to a bin site');
+    expect(binSiteGrainBreakdown(undefined, undefined)).toEqual([]);
   });
 });

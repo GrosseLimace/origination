@@ -143,6 +143,10 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
   (`isGrainAndBinSitesCategory`, `shared/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
   category in `Filters._promptCategory`. Its refine panel adds Has/No bin sites to the grain filters, and
   each result row leads with a neutral "N bin sites" chip before the per-crop bushel chips.
+  Each row can also open a **Bin sites & grain** breakdown (closed by default; "Expand all" above the list
+  opens every row): a line per bin site — name · capacity · map pin — with the grain stored there under it
+  (Crop | Total | Sold | Grade | Target | Last Bid), sites with no grain marked "No grain on farm recorded",
+  and any rows not tied to a site last. Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
 - Derive `SortOrder` from `MAX(SortOrder) + 10` within the category rather than hardcoding: the
   original cards were inserted straight into each database, so numbering differs per environment.
 - **Check the QueryText against the parser before choosing it.** Words like `planting` or `deliver`

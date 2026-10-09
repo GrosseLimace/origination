@@ -13,7 +13,9 @@
  * pickers offer the same commodities) and the small display helpers the profile
  * breakdown and Build-A-List chips share, so those surfaces cannot drift apart.
  */
-import { Commodity } from '@models';
+import { Commodity, GrainOnFarmItem, ProducerBinSiteItem } from '@models';
+import { googleMapsCoordinatesUrl } from './address';
+import { binSiteHasCoordinates } from './coordinates';
 import { CropGroupLookup, resolveCropGroup } from './crop-group-match';
 
 /** Build a List library category holding every grain-on-farm AND bin-site prompt (user 2026-10-09:
@@ -123,4 +125,37 @@ export function grainOnFarmTitle(
 export function grainOnFarmColorKey(value: string | null | undefined, lookup?: CropGroupLookup | null): string {
   const v = (value || '').trim();
   return resolveCropGroup(v, lookup) ?? v;
+}
+
+/** One bin site's line in a bin-sites-and-grain breakdown, with the grain stored there. */
+export interface BinSiteGrainGroup {
+  name: string;
+  capacity: number | null;
+  /** Google Maps link when the site has coordinates. */
+  mapUrl: string | null;
+  rows: GrainOnFarmItem[];
+}
+
+/**
+ * A producer's bin sites in their saved order — each with its capacity, a map link when it has
+ * coordinates, and the grain rows stored there — then a "Not tied to a bin site" group for any grain
+ * rows without a (current) site, saved before grain belonged to sites. A site with no grain is still
+ * listed, with no rows. Used by Build a List's per-producer breakdown.
+ */
+export function binSiteGrainBreakdown(
+  binSites: readonly ProducerBinSiteItem[] | null | undefined,
+  grain: readonly GrainOnFarmItem[] | null | undefined,
+): BinSiteGrainGroup[] {
+  const rows = grain ?? [];
+  const sites = binSites ?? [];
+  const groups: BinSiteGrainGroup[] = sites.map(site => ({
+    name: site.name?.trim() || 'Bin site',
+    capacity: site.capacity ?? null,
+    mapUrl: binSiteHasCoordinates(site) ? googleMapsCoordinatesUrl(site.latitude, site.longitude) : null,
+    rows: rows.filter(g => !!site.siteKey && g.binSiteKey === site.siteKey),
+  }));
+  const keys = new Set(sites.map(s => s.siteKey).filter(Boolean));
+  const unlinked = rows.filter(g => !g.binSiteKey || !keys.has(g.binSiteKey));
+  if (unlinked.length > 0) groups.push({ name: 'Not tied to a bin site', capacity: null, mapUrl: null, rows: unlinked });
+  return groups;
 }

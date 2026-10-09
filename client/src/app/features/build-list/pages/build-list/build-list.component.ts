@@ -28,7 +28,7 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
-import { grainOnFarmColorKey, isGrainAndBinSitesCategory } from '@shared/utils/grain-on-farm';
+import { grainOnFarmColorKey, isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup } from '@shared/utils/grain-on-farm';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -4295,6 +4295,48 @@ export class BuildListComponent {
         .map(g => ({ text: `${g.commodityCode} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: grainOnFarmColorKey(g.commodityCode, this._cropGroupLookup()) }))];
     }
     return [];
+  }
+
+  // ── Bin sites & grain breakdown (Grain on Farm & Bin Sites prompts, user 2026-10-09) ─────────
+  // Each result can open a breakdown of its bin sites and the grain stored at each one — the same
+  // grouping the producer profile uses. Closed by default; "Expand all" opens every displayed row.
+
+  /** Producers whose breakdown is open. */
+  readonly binSiteGrainOpen = signal<ReadonlySet<number>>(new Set());
+
+  isBinSiteGrainOpen(customerId: number): boolean {
+    return this.binSiteGrainOpen().has(customerId);
+  }
+
+  toggleBinSiteGrain(customerId: number): void {
+    this.binSiteGrainOpen.update(open => {
+      const next = new Set(open);
+      if (!next.delete(customerId)) next.add(customerId);
+      return next;
+    });
+  }
+
+  /** True when every displayed producer that has a breakdown is open — drives Expand/Collapse all. */
+  readonly allBinSiteGrainOpen = computed(() => {
+    const ids = this.displayedCustomers().filter(c => this.hasBinSiteGrain(c)).map(c => c.id);
+    const open = this.binSiteGrainOpen();
+    return ids.length > 0 && ids.every(id => open.has(id));
+  });
+
+  /** Opens every displayed producer's breakdown, or closes them all. */
+  toggleAllBinSiteGrain(): void {
+    this.binSiteGrainOpen.set(this.allBinSiteGrainOpen()
+      ? new Set()
+      : new Set(this.displayedCustomers().filter(c => this.hasBinSiteGrain(c)).map(c => c.id)));
+  }
+
+  hasBinSiteGrain(customer: Customer): boolean {
+    return (customer.binSites?.length ?? 0) > 0 || (customer.grainOnFarm?.length ?? 0) > 0;
+  }
+
+  /** The rows of a producer's breakdown — see binSiteGrainBreakdown in shared/utils/grain-on-farm. */
+  binSiteGrainBreakdown(customer: Customer): BinSiteGrainGroup[] {
+    return binSiteGrainBreakdown(customer.binSites, customer.grainOnFarm);
   }
 
   /**
