@@ -1468,17 +1468,6 @@
                 <button type="button" (click)="clearRefinements()" class="mt-3 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 underline">Clear refinements</button>
               </div>
             } @else {
-              @if (showGrainOnFarmFilters()) {
-                <!-- Open or close every producer's bin sites & grain breakdown at once. -->
-                <div class="flex justify-end -mt-1 mb-1">
-                  <button type="button" (click)="toggleAllBinSiteGrain()"
-                          class="inline-flex items-center gap-1 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green hover:underline focus:outline-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-                         [class.rotate-90]="allBinSiteGrainOpen()" class="transition-transform"><path d="m9 18 6-6-6-6"/></svg>
-                    {{ allBinSiteGrainOpen() ? 'Collapse all' : 'Expand all' }} bin sites &amp; grain
-                  </button>
-                </div>
-              }
               <!-- One producer's note stack in a result row's middle column: newest (pinned first) shown, "+N
                    earlier notes" / Hide, See more / See less. Used by note prompts (notes = the matches,
                    highlight = the active keyword, showVia = name the linked producer a note came from) and by
@@ -1562,10 +1551,18 @@
                   <div class="group/card py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                        [class.cursor-pointer]="!linkedFeatureActive()"
                        (click)="!linkedFeatureActive() && selectCustomer(customer)">
-                    <div [ngClass]="noteFilterActive() || binNotesActive()
-                          ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-6'
-                          : 'flex items-start gap-4 justify-between'">
-                      <div class="flex items-start gap-3" [class.shrink-0]="!wideIdentityColumn()" [class.w-72]="!wideIdentityColumn()" [class.flex-1]="wideIdentityColumn()" [class.min-w-0]="wideIdentityColumn()">
+                    <!-- Grain on Farm & Bin Sites prompts (user 2026-10-09): from 2xl, name | bin sites & grain |
+                         notes | last contact, the bin-sites column a fixed 31rem (the widest table measured 471px) so the notes line up down the list;
+                         narrower, the notes sit under the bin sites in one middle column (four columns would leave
+                         the notes a sliver on a laptop). Note prompts: name | notes | last contact. Others:
+                         name … last contact. -->
+                    <div [ngClass]="showGrainOnFarmFilters()
+                          ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] 2xl:grid-cols-[18rem_31rem_minmax(0,1fr)_auto] items-start gap-x-6 2xl:gap-x-10 gap-y-4'
+                          : noteFilterActive()
+                            ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-6'
+                            : 'flex items-start gap-4 justify-between'">
+                      <div class="flex items-start gap-3" [class.shrink-0]="!wideIdentityColumn()" [class.w-72]="!wideIdentityColumn()" [class.flex-1]="wideIdentityColumn()" [class.min-w-0]="wideIdentityColumn()"
+                           [ngClass]="showGrainOnFarmFilters() ? 'row-span-2 2xl:row-span-1' : ''">
                         <div class="w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
                           <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(customer.name) }}</span>
                         </div>
@@ -1602,68 +1599,6 @@
                               <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
                             }
                           </div>
-                          <!-- Bin sites & grain breakdown (Grain on Farm & Bin Sites prompts): closed by default,
-                               opened per row or with "Expand all" above the list. Same layout as the profile's
-                               Grain on Farm table — a line per bin site (name · capacity · map pin), its crops
-                               under it — so the two read alike. Clicks inside don't open the producer. -->
-                          @if (showGrainOnFarmFilters() && hasBinSiteGrain(customer)) {
-                            <button type="button" (click)="$event.stopPropagation(); toggleBinSiteGrain(customer.id)" [attr.aria-expanded]="isBinSiteGrainOpen(customer.id)"
-                                    class="mt-1.5 inline-flex items-center gap-1 text-[13px] text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer focus:outline-none">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-                                   [class.rotate-90]="isBinSiteGrainOpen(customer.id)" class="transition-transform"><path d="m9 18 6-6-6-6"/></svg>
-                              Bin sites &amp; grain
-                            </button>
-                            @if (isBinSiteGrainOpen(customer.id)) {
-                              <div class="mt-1.5 ml-3.5 max-w-full cursor-default" (click)="$event.stopPropagation()">
-                                <table class="w-auto max-w-full text-[13px] tabular-nums">
-                                  <thead>
-                                    <tr class="text-[11px] uppercase tracking-wide whitespace-nowrap text-gray-400 dark:text-gray-500">
-                                      <th scope="col" class="py-1 pr-4 font-medium text-left">Crop</th>
-                                      <th scope="col" class="py-1 px-2.5 font-medium text-center" title="Total bushels on farm">Total</th>
-                                      <th scope="col" class="py-1 px-2.5 font-medium text-center" title="Bushels sold">Sold</th>
-                                      <th scope="col" class="py-1 px-2.5 font-medium text-center">Grade</th>
-                                      <th scope="col" class="py-1 px-2.5 font-medium text-center" title="Target price ($/bu)">Target</th>
-                                      <th scope="col" class="py-1 pl-2.5 font-medium text-center" title="Last bid ($/bu)">Last Bid</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody class="text-gray-700 dark:text-gray-300">
-                                    @for (site of binSiteGrainBreakdown(customer); track $index) {
-                                      <tr>
-                                        <th scope="rowgroup" colspan="6" class="pt-1.5 pb-0.5 text-left font-semibold text-gray-600 dark:text-gray-300">
-                                          <span class="inline-flex items-center gap-1.5">
-                                            {{ site.name }}
-                                            @if (site.capacity != null) {
-                                              <span class="font-normal text-gray-400 dark:text-gray-500">· {{ site.capacity | number }} bu capacity</span>
-                                            }
-                                            @if (site.mapUrl) {
-                                              <a [href]="site.mapUrl" target="_blank" rel="noopener noreferrer" title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
-                                                 class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                                              </a>
-                                            }
-                                          </span>
-                                        </th>
-                                      </tr>
-                                      @for (g of site.rows; track $index) {
-                                        <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
-                                          <td class="py-1 pr-4 text-left whitespace-nowrap">{{ g.commodityCode }}</td>
-                                          <td class="py-1 px-2.5 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
-                                          <td class="py-1 px-2.5 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
-                                          <td class="py-1 px-2.5 text-center"><span class="inline-block max-w-[10rem] truncate align-bottom" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
-                                          <td class="py-1 px-2.5 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
-                                          <td class="py-1 pl-2.5 text-center whitespace-nowrap">{{ g.lastBid != null ? (g.lastBid | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
-                                        </tr>
-                                      } @empty {
-                                        <tr class="border-t border-gray-100 dark:border-gray-700/60">
-                                          <td colspan="6" class="py-1 text-gray-400 dark:text-gray-500 italic">No grain on farm recorded</td>
-                                        </tr>
-                                      }
-                                    }
-                                  </tbody>
-                                </table>
-                              </div>
-                            }
-                          }
                           @if (linkedInfo) {
                             <button type="button" (click)="$event.stopPropagation(); toggleLinkedExpand(customer.id)"
                                     class="mt-1.5 inline-flex items-center gap-1 text-xs text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer focus:outline-none">
@@ -1676,24 +1611,95 @@
                         </div>
                       </div>
 
-                      @if (noteFilterActive() && (!matchingNotes || matchingNotes.length === 0)) {
-                        <div></div>
-                      }
-                      @if (matchingNotes && matchingNotes.length > 0) {
-                        <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: matchingNotes, customerId: customer.id, highlight: getActiveNoteKeyword(), showVia: !!linkedInfo && !isLinkedOpen, label: null }" />
-                      }
-                      <!-- Grain on Farm & Bin Sites prompts: the producer's notes that mention one of their bin
-                           sites by name, in the same middle column and style as notes on note prompts. -->
-                      @if (binNotesActive()) {
-                        @let siteNotes = binSiteNotesByCustomer().get(customer.id);
-                        @if (siteNotes) {
-                          <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: siteNotes.notes, customerId: customer.id, highlight: siteNotes.sites, showVia: false, label: 'Mentions ' + siteNotes.sites.join(', ') }" />
-                        } @else {
+                      <!-- Bin sites & grain, next to the name: a line per bin site (name · capacity · map pin) with
+                           the grain stored there under it — Crop | Total | Sold | Grade | Target | Last Bid — the
+                           same grouping as the profile's Grain on Farm table. Only the map pin stops the row click. -->
+                      @if (showGrainOnFarmFilters()) {
+                        @let siteGroups = binSiteGrainBreakdown(customer);
+                        @let allSites = binSitesShowAll().has(customer.id);
+                        <div class="min-w-0 col-start-2 row-start-1">
+                          @if (hasBinSiteGrain(customer)) {
+                            <table class="w-auto max-w-full text-sm tabular-nums">
+                            <thead>
+                              <tr class="text-xs uppercase tracking-wide whitespace-nowrap text-gray-400 dark:text-gray-500">
+                                <th scope="col" class="py-1.5 pr-5 font-medium text-left">Crop</th>
+                                <th scope="col" class="py-1.5 px-3 font-medium text-center" title="Total bushels on farm">Total</th>
+                                <th scope="col" class="py-1.5 px-3 font-medium text-center" title="Bushels sold">Sold</th>
+                                <th scope="col" class="py-1.5 px-3 font-medium text-center">Grade</th>
+                                <th scope="col" class="py-1.5 px-3 font-medium text-center" title="Target price ($/bu)">Target</th>
+                                <th scope="col" class="py-1.5 pl-3 font-medium text-center" title="Last bid ($/bu)">Last Bid</th>
+                              </tr>
+                            </thead>
+                            <tbody class="text-gray-700 dark:text-gray-300">
+                              @for (site of (allSites ? siteGroups : siteGroups.slice(0, binSitesVisible)); track $index) {
+                                <tr>
+                                  <th scope="rowgroup" colspan="6" class="pt-3 pb-1 text-left font-semibold text-gray-700 dark:text-gray-200">
+                                    <span class="inline-flex items-center gap-1.5">
+                                      {{ site.name }}
+                                      @if (site.capacity != null) {
+                                        <span class="font-normal text-gray-400 dark:text-gray-500">· {{ site.capacity | number }} bu capacity</span>
+                                      }
+                                      @if (site.mapUrl) {
+                                        <a [href]="site.mapUrl" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()" title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
+                                           class="inline-flex text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                        </a>
+                                      }
+                                    </span>
+                                  </th>
+                                </tr>
+                                @for (g of site.rows; track $index) {
+                                  <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
+                                    <td class="py-1.5 pr-5 text-left whitespace-nowrap">{{ g.commodityCode }}</td>
+                                    <td class="py-1.5 px-3 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
+                                    <td class="py-1.5 px-3 text-center whitespace-nowrap">{{ (g.bushelsSold || 0) > 0 ? (g.bushelsSold | number) : '—' }}</td>
+                                    <td class="py-1.5 px-3 text-center"><span class="inline-block max-w-[7rem] truncate align-bottom" [title]="g.grade?.trim() ? 'Grade: ' + g.grade : ''">{{ g.grade?.trim() || '—' }}</span></td>
+                                    <td class="py-1.5 px-3 text-center whitespace-nowrap">{{ g.targetBushels != null ? (g.targetBushels | currency:'USD':'symbol':'1.2-2') : '—' }}</td>
+                                    <td class="py-1.5 pl-3 text-center whitespace-nowrap">{{ g.lastBid != null ? (g.lastBid | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
+                                  </tr>
+                                } @empty {
+                                  <tr class="border-t border-gray-100 dark:border-gray-700/60">
+                                    <td colspan="6" class="py-1.5 text-gray-400 dark:text-gray-500 italic">No grain on farm recorded</td>
+                                  </tr>
+                                }
+                              }
+                            </tbody>
+                          </table>
+                            @if (siteGroups.length > binSitesVisible) {
+                              <button type="button" (click)="$event.stopPropagation(); toggleBinSitesShowAll(customer.id)"
+                                      class="mt-1.5 inline-flex items-center gap-1 text-[13px] font-medium text-scoular-green-accessible dark:text-scoular-green hover:underline focus:outline-none">
+                                {{ allSites ? 'Show fewer' : 'Show ' + (siteGroups.length - binSitesVisible) + ' more bin site' + (siteGroups.length - binSitesVisible === 1 ? '' : 's') }}
+                              </button>
+                            }
+                          } @else {
+                            <p class="pt-0.5 text-sm italic text-gray-400 dark:text-gray-500">No bin sites or grain on farm recorded</p>
+                          }
+                        </div>
+                        <!-- Notes column: under the bin sites below 2xl, its own column from 2xl. A notes filter's
+                             matches when one is active, otherwise the notes that mention a bin site. -->
+                        <div class="min-w-0 col-start-2 row-start-2 2xl:col-start-3 2xl:row-start-1">
+                          @if (noteFilterActive()) {
+                            @if (matchingNotes && matchingNotes.length > 0) {
+                              <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: matchingNotes, customerId: customer.id, highlight: getActiveNoteKeyword(), showVia: !!linkedInfo && !isLinkedOpen, label: null }" />
+                            }
+                          } @else {
+                            @let siteNotes = binSiteNotesByCustomer().get(customer.id);
+                            @if (siteNotes) {
+                              <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: siteNotes.notes, customerId: customer.id, highlight: null, showVia: false, label: null }" />
+                            }
+                          }
+                        </div>
+                      } @else {
+                        @if (noteFilterActive() && (!matchingNotes || matchingNotes.length === 0)) {
                           <div></div>
+                        }
+                        @if (matchingNotes && matchingNotes.length > 0) {
+                          <ng-container *ngTemplateOutlet="noteStack; context: { $implicit: matchingNotes, customerId: customer.id, highlight: getActiveNoteKeyword(), showVia: !!linkedInfo && !isLinkedOpen, label: null }" />
                         }
                       }
 
-                      <div class="flex items-start gap-2 shrink-0">
+                      <div class="flex items-start gap-2 shrink-0"
+                           [ngClass]="showGrainOnFarmFilters() ? 'col-start-3 row-start-1 row-span-2 2xl:col-start-4 2xl:row-span-1' : ''">
                         <div class="text-right">
                           <span [class]="contactInfo.colorClass + ' text-sm'">
                             {{ contactInfo.text }}

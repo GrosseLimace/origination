@@ -4374,37 +4374,21 @@ export class BuildListComponent {
     return [];
   }
 
-  // ── Bin sites & grain breakdown (Grain on Farm & Bin Sites prompts, user 2026-10-09) ─────────
-  // Each result can open a breakdown of its bin sites and the grain stored at each one — the same
-  // grouping the producer profile uses. Closed by default; "Expand all" opens every displayed row.
+  // ── Bin sites & grain (Grain on Farm & Bin Sites prompts, user 2026-10-09) ────────────────────
+  // Each result row shows its bin sites and the grain stored at each one in a column right after the
+  // name (the same grouping the producer profile uses); the notes column follows it.
 
-  /** Producers whose breakdown is open. */
-  readonly binSiteGrainOpen = signal<ReadonlySet<number>>(new Set());
+  /** Bin sites shown per producer before "Show N more bin sites" (user: show a certain amount at once). */
+  readonly binSitesVisible = 2;
+  /** Producers whose full list of bin sites is showing. */
+  readonly binSitesShowAll = signal<ReadonlySet<number>>(new Set());
 
-  isBinSiteGrainOpen(customerId: number): boolean {
-    return this.binSiteGrainOpen().has(customerId);
-  }
-
-  toggleBinSiteGrain(customerId: number): void {
-    this.binSiteGrainOpen.update(open => {
+  toggleBinSitesShowAll(customerId: number): void {
+    this.binSitesShowAll.update(open => {
       const next = new Set(open);
       if (!next.delete(customerId)) next.add(customerId);
       return next;
     });
-  }
-
-  /** True when every displayed producer that has a breakdown is open — drives Expand/Collapse all. */
-  readonly allBinSiteGrainOpen = computed(() => {
-    const ids = this.displayedCustomers().filter(c => this.hasBinSiteGrain(c)).map(c => c.id);
-    const open = this.binSiteGrainOpen();
-    return ids.length > 0 && ids.every(id => open.has(id));
-  });
-
-  /** Opens every displayed producer's breakdown, or closes them all. */
-  toggleAllBinSiteGrain(): void {
-    this.binSiteGrainOpen.set(this.allBinSiteGrainOpen()
-      ? new Set()
-      : new Set(this.displayedCustomers().filter(c => this.hasBinSiteGrain(c)).map(c => c.id)));
   }
 
   hasBinSiteGrain(customer: Customer): boolean {

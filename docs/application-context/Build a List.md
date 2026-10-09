@@ -143,14 +143,16 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
   (`isGrainAndBinSitesCategory`, `shared/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
   category in `Filters._promptCategory`. Its refine panel adds Has/No bin sites to the grain filters, and
   each result row leads with a neutral "N bin sites" chip before the per-crop bushel chips.
-  Each row can also open a **Bin sites & grain** breakdown (closed by default; "Expand all" above the list
-  opens every row): a line per bin site — name · capacity · map pin — with the grain stored there under it
-  (Crop | Total | Sold | Grade | Target | Last Bid), sites with no grain marked "No grain on farm recorded",
-  and any rows not tied to a site last. Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
+  **Result rows** (2026-10-09): from a 1536px viewport (`2xl`) a row is name | **bin sites & grain** (fixed 31rem — the widest
+  table measured 471px — so notes line up down the list) | **notes** | last contact; narrower, the notes sit under
+  the bin sites in one middle column. The bin sites & grain table (text-sm, a crop-row separator) shows a line
+  per bin site — name · capacity · map pin — with the grain stored there under it (Crop | Total | Sold | Grade |
+  Target | Last Bid), "No grain on farm recorded" for an empty site and untied rows last; only the first 2 sites
+  show until "Show N more bin sites" (Show fewer). Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
   **Notes that mention a bin site** (2026-10-09): the row's middle column shows the producer's notes that name
   one of their saved bin sites — whole name, any case, not inside a longer word or number ("Bin 1" ≠ "bin 10")
-  — in the same note stack note prompts use (newest/pinned first, "+N earlier", See more), the site names
-  highlighted and a "Mentions North Bins" label. Notes are added as usual. A small batch loader fetches, per
+  — in the same note stack note prompts use (pinned first, then newest; "+N earlier notes", See more), pulled in
+  silently: no highlight, no label. Notes are added as usual. A small batch loader fetches, per
   render batch, those producers' notes containing any site name (`contentAny` + `customerIds`, a superset the
   client re-matches with `notesMentioningBinSites`, `shared/utils/bin-site-mentions.ts`). When a notes filter
   is active its matches own the middle column instead.
