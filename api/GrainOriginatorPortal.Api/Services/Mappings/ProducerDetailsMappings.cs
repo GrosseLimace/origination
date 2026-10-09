@@ -44,7 +44,6 @@ public static class ProducerDetailsMappings
             Latitude = b.Latitude,
             Longitude = b.Longitude,
             Capacity = b.Capacity,
-            CommodityCode = b.CommodityCode,
             SortOrder = b.SortOrder,
         }).ToList(),
     };

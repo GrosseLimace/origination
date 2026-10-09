@@ -1425,11 +1425,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("Capacity");
 
-                    b.Property<string>("CommodityCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("CommodityCode");
-
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");

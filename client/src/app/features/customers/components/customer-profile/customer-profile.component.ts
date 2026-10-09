@@ -149,7 +149,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name: string; latitude?: number; longitude?: number; capacity?: number; commodityCode?: string }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -186,7 +186,6 @@ export class CustomerProfileComponent {
     const bushels = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-US'));
     return (this.customer().binSites ?? []).map(site => ({
       name: site.name?.trim() || 'Bin site',
-      commodity: site.commodityCode?.trim() || '—',
       capacity: bushels(site.capacity),
       url: binSiteHasCoordinates(site) ? googleMapsCoordinatesUrl(site.latitude, site.longitude) : null,
     }));
@@ -508,7 +507,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name: string; latitude?: number; longitude?: number; capacity?: number; commodityCode?: string }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();

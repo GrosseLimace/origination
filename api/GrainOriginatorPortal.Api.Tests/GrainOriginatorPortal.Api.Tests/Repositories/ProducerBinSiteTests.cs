@@ -257,37 +257,4 @@ public class ProducerBinSiteTests
         Assert.Equal(40_000m, saved.BinCapacity);
         Assert.Equal(40_000m, (await repo.GetAsync(100, CancellationToken.None))!.BinCapacity);
     }
-
-    // ===== Commodity (per site) =====
-
-    // -------------------------------------------------------------------------
-    [Fact]
-    public async Task Upsert_PersistsCommodity_AndComposesItBack()
-    {
-        using var db = NewContext();
-        var repo = Repo(db);
-
-        var site = Site(39.1m, -95.1m, "North", capacity: 50_000m);
-        site.CommodityCode = "  YC ";
-        await repo.UpsertAsync(Args(new[] { site }), "tuser", CancellationToken.None);
-
-        var one = Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.BinSites);
-        Assert.Equal("YC", one.CommodityCode); // trimmed
-        var fromAll = Assert.Single((await repo.GetAllAsync(CancellationToken.None)).Single().BinSites);
-        Assert.Equal("YC", fromAll.CommodityCode);
-    }
-
-    // -------------------------------------------------------------------------
-    [Fact]
-    public async Task Upsert_BlankCommodity_IsStoredAsNull()
-    {
-        using var db = NewContext();
-        var repo = Repo(db);
-
-        var site = Site(39.1m, -95.1m);
-        site.CommodityCode = "   ";
-        await repo.UpsertAsync(Args(new[] { site }), "tuser", CancellationToken.None);
-
-        Assert.Null(Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.BinSites).CommodityCode);
-    }
 }

@@ -13,20 +13,19 @@ import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { AppStateService } from '@core/services/app-state.service';
 
 /** One bin-site row as edited: every field is the text in its input. Capacity holds the grouped
- *  display text ("50,000"); commodityCode is '' when none is picked. */
+ *  display text ("50,000"). */
 export interface BinSiteEditRow {
   name: string;
   coords: string;
   capacity: string;
-  commodityCode: string;
 }
 
 const emptyBinSiteRow = (): BinSiteEditRow =>
-  ({ name: '', coords: '', capacity: '', commodityCode: '' });
+  ({ name: '', coords: '', capacity: '' });
 
 /** True when anything other than the coordinates has been filled in. */
 const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
-  !!(r.name.trim() || r.capacity.trim() || r.commodityCode.trim());
+  !!(r.name.trim() || r.capacity.trim());
 
 @Component({
   selector: 'app-edit-customer-dialog',
@@ -68,7 +67,7 @@ export class EditCustomerDialogComponent {
     primaryPhone: string;
     contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
     // Parsed at full precision (never rounded); array order is the display order. Capacity in bushels.
-    binSites: { name: string; latitude?: number; longitude?: number; capacity?: number; commodityCode?: string }[];
+    binSites: { name: string; latitude?: number; longitude?: number; capacity?: number }[];
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
@@ -271,7 +270,7 @@ export class EditCustomerDialogComponent {
     return [];
   }
 
-  // ── Bin sites: Name | Capacity | Commodity | Lat/Long, as many as needed ───
+  // ── Bin sites: Name | Capacity | Lat/Long, as many as needed ───
   readonly maxBinSites = MAX_BIN_SITES;
   readonly binSiteNameMaxLength = BIN_SITE_NAME_MAX_LENGTH;
   readonly coordinateExample = COORDINATE_EXAMPLE;
@@ -295,7 +294,6 @@ export class EditCustomerDialogComponent {
         : null;
     }));
 
-
   readonly binSitesInvalid = computed(() => this.binSiteErrors().some(e => e !== null));
 
   /** Which input to outline in red: the name when a row has data but no name, the coordinates
@@ -305,26 +303,12 @@ export class EditCustomerDialogComponent {
   readonly binSiteCoordsInvalid = computed(() =>
     this.editBinSites().map(r => !!r.coords.trim() && !parseCoordinatePair(r.coords).ok));
 
-  /** Commodity choices: the same scoped list Grain on Farm offers, without its "already used"
-   *  filter — two sites can hold the same crop. */
-  readonly binSiteCommodityOptions = computed(() => buildGrainOnFarmOptions({
-    planting: this.scopedCommodities().filter(c => c.showInPlantingIntentions),
-    used: [],
-  }));
-
-  /** True when a row's saved code isn't in today's list (deactivated, or another trade unit's crop),
-   *  so the template can still show it as the selected option instead of a blank. */
-  isUnlistedBinSiteCommodity(code: string): boolean {
-    return !!code && !this.binSiteCommodityOptions().some(o => o.code === code);
-  }
-
   addBinSiteRow(): void {
     this.editBinSites.update(rows => rows.length >= MAX_BIN_SITES ? rows : [...rows, emptyBinSiteRow()]);
   }
 
   removeBinSiteRow(index: number): void {
     this.editBinSites.update(rows => rows.filter((_, i) => i !== index));
-    this._syncBinSiteCommodityChips();
   }
 
   updateBinSiteField(index: number, field: keyof BinSiteEditRow, value: string): void {
@@ -336,47 +320,9 @@ export class EditCustomerDialogComponent {
     this.updateBinSiteField(index, 'capacity', formatBinSiteCapacityInput(value));
   }
 
-  /** Picking a commodity the producer doesn't list adds it to their Commodities chips, as Grain on
-   *  Farm does; changing or clearing it takes back a chip that only this produced. */
-  setBinSiteCommodity(index: number, code: string): void {
-    this.updateBinSiteField(index, 'commodityCode', code);
-    this._syncBinSiteCommodityChips();
-  }
-
   /** The inline × in each input. */
   clearBinSiteField(index: number, field: keyof BinSiteEditRow): void {
-    if (field === 'commodityCode') {
-      this.setBinSiteCommodity(index, '');
-      return;
-    }
     this.updateBinSiteField(index, field, '');
-  }
-
-  /** Codes this dialog session put onto the Commodities chips because of a bin site — the bin-site
-   *  twin of _grainAutoAddedCommodities, kept separate so neither list removes the other's chip. */
-  private _binSiteAutoAddedCommodities = new Set<string>();
-
-  /** Makes the chips match the bin sites: adds a chip for any site commodity the producer doesn't
-   *  list (remembering it), and removes a remembered chip once no site uses it — unless a Grain on
-   *  Farm row or that list's own auto-add still needs it. Never touches a chip the user, tickets or
-   *  contracts put there. */
-  private _syncBinSiteCommodityChips(): void {
-    const key = (c: string) => c.trim().toLowerCase();
-    const used = new Set(this.editBinSites().map(r => key(r.commodityCode)).filter(Boolean));
-    for (const code of [...this._binSiteAutoAddedCommodities]) {
-      if (used.has(key(code))) continue;
-      this._binSiteAutoAddedCommodities.delete(code);
-      const stillNeeded = this._grainAutoAddedCommodities.has(code)
-        || this.editGrainOnFarm().some(g => key(g.commodityCode) === key(code));
-      if (!stillNeeded) this.editCommodities.update(c => c.filter(x => key(x) !== key(code)));
-    }
-    for (const row of this.editBinSites()) {
-      const code = row.commodityCode.trim();
-      if (code && !this.editCommodities().some(c => key(c) === key(code))) {
-        this.editCommodities.update(c => [...c, code]);
-        this._binSiteAutoAddedCommodities.add(code);
-      }
-    }
   }
 
   /** On blur, rewrite a valid free-hand entry ("41.39 N, 95.01 W", degrees-minutes-seconds, …) as
@@ -396,8 +342,7 @@ export class EditCustomerDialogComponent {
     return (customer.binSites ?? []).map(b => ({
       name: b.name ?? '',
       coords: b.latitude != null && b.longitude != null ? formatCoordinatePairFull(b.latitude, b.longitude) : '',
-      capacity: bushels(b.capacity),
-      commodityCode: b.commodityCode ?? ''
+      capacity: bushels(b.capacity)
     }));
   }
 
@@ -516,8 +461,6 @@ export class EditCustomerDialogComponent {
     if (this._grainAutoAddedCommodities.delete(commodityCode)) {
       this.editCommodities.update(c => c.filter(x => x !== commodityCode));
     }
-    // A bin site may still hold that commodity — put its chip back if so.
-    this._syncBinSiteCommodityChips();
   }
 
   // ── Collapsible sections (edit dialog) ──────────────────────────────────
@@ -611,7 +554,6 @@ export class EditCustomerDialogComponent {
         })));
         this.newGrainCode.set('');
         this._grainAutoAddedCommodities.clear();
-        this._binSiteAutoAddedCommodities.clear();
         this.grainPickerOpen.set(false);
 
         // Store original values
@@ -687,7 +629,6 @@ export class EditCustomerDialogComponent {
     this.editGrainOnFarm.set([]);
     this.newGrainCode.set('');
     this._grainAutoAddedCommodities.clear();
-    this._binSiteAutoAddedCommodities.clear();
     this.grainPickerOpen.set(false);
     this.grainPickerActive.set(-1);
     this.editContacts.set([]);
@@ -922,7 +863,7 @@ export class EditCustomerDialogComponent {
       this.editBinSites()
         .filter(r => r.coords.trim() || binSiteRowHasData(r))
         .map(r => ({
-          n: r.name.trim(), c: r.coords.trim(), cap: parseBinSiteCapacity(r.capacity), cc: r.commodityCode.trim(),
+          n: r.name.trim(), c: r.coords.trim(), cap: parseBinSiteCapacity(r.capacity),
         }))
     );
   }
@@ -1132,7 +1073,6 @@ export class EditCustomerDialogComponent {
     })));
     this.newGrainCode.set('');
     this._grainAutoAddedCommodities.clear();
-    this._binSiteAutoAddedCommodities.clear();
     this.grainPickerOpen.set(false);
     this.grainPickerActive.set(-1);
     this.editLinkedProducerIds.set([...this._originalLinkedProducerIds]);
@@ -1170,7 +1110,6 @@ export class EditCustomerDialogComponent {
         });
       }
 
-
       // Contacts: drop fully-blank rows, normalize to exactly one primary. Rows with details but
       // no name are blocked before this point (contactsInvalid gates the Save button).
       const contactRows = this.editContacts()
@@ -1196,7 +1135,6 @@ export class EditCustomerDialogComponent {
           latitude: parsed?.ok ? parsed.lat : undefined,
           longitude: parsed?.ok ? parsed.lng : undefined,
           capacity: parseBinSiteCapacity(r.capacity) ?? undefined,
-          commodityCode: r.commodityCode.trim() || undefined,
         }];
       });
 

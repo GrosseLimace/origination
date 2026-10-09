@@ -315,8 +315,8 @@
                   </a>
                 }
                 <!-- Bin sites: at the very bottom of Contact, collapsed to one line, "Bin Sites (N)". The
-                     toggle is the only control; opened, a compact table right under it — Name | Crop |
-                     Cap | pin (user 2026-10-09: back in Contact once Marketed/Unmarketed went). -->
+                     toggle is the only control; opened, a compact table right under it — Name | Cap |
+                     pin (user 2026-10-09: back in Contact once Marketed/Unmarketed went). -->
                 @if (binSiteRows().length > 0) {
                   <div>
                     <button type="button" (click)="toggleBinSites()" [attr.aria-expanded]="binSitesExpanded()" aria-controls="bin-sites-table"
@@ -335,7 +335,6 @@
                           <thead>
                             <tr class="text-[10px] @4xl/profile:text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
                               <th scope="col" class="py-1 pr-3 @4xl/profile:pr-4 font-medium text-left">Name</th>
-                              <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center">Crop</th>
                               <th scope="col" class="py-1 px-2 @4xl/profile:px-3 font-medium text-center" title="Capacity (bu)">Cap</th>
                               <th scope="col" class="py-1 pl-2 @4xl/profile:pl-3 font-medium text-center"><span class="sr-only">Map</span></th>
                             </tr>
@@ -344,7 +343,6 @@
                             @for (site of binSiteRows(); track $index) {
                               <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
                                 <td class="py-1 pr-3 @4xl/profile:pr-4 text-left"><span class="line-clamp-2 break-words">{{ site.name }}</span></td>
-                                <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.commodity }}</td>
                                 <td class="py-1 px-2 @4xl/profile:px-3 text-center whitespace-nowrap">{{ site.capacity }}</td>
                                 <td class="py-1 pl-2 @4xl/profile:pl-3 text-center">
                                   @if (site.url) {

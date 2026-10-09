@@ -21,9 +21,6 @@ public class ProducerBinSite
     /// <summary>Storage capacity in bushels, optional. Independent of ProducerDetails.BinCapacity —
     /// the sites are NOT summed into it (user decision 2026-10-08, deferred).</summary>
     public decimal? Capacity { get; set; }
-    /// <summary>Commodity code ("YC") from the Grain on Farm list, optional. Picking one the producer
-    /// doesn't list adds it to their Commodities in the Edit dialog (client side).</summary>
-    public string? CommodityCode { get; set; }
     /// <summary>Display order within the producer.</summary>
     public int SortOrder { get; set; }
 
@@ -39,7 +36,6 @@ public class ProducerBinSiteEntry
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
     public decimal? Capacity { get; set; }
-    public string? CommodityCode { get; set; }
     public int SortOrder { get; set; }
 }
 
@@ -65,6 +61,4 @@ public static class BinSiteRules
     public const double MaxLongitude = -52.0;
     /// <summary>Same ceiling as the producer-level Bin Capacity field (UpsertProducerDetailsRequest).</summary>
     public const double MaxCapacity = 100_000_000;
-    /// <summary>Same as ProducerGrainOnFarm.CommodityCode.</summary>
-    public const int CommodityCodeMaxLength = 100;
 }

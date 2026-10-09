@@ -36,7 +36,6 @@ public record BinSiteItemResponse
     public decimal? Latitude { get; init; }
     public decimal? Longitude { get; init; }
     public decimal? Capacity { get; init; }
-    public string? CommodityCode { get; init; }
     public int SortOrder { get; init; }
 }
 

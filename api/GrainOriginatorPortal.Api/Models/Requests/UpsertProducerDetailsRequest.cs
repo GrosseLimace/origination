@@ -81,10 +81,6 @@ public record BinSiteItemRequest : IValidatableObject
     /// producer-level BinCapacity.</summary>
     [Range(0, BinSiteRules.MaxCapacity, ErrorMessage = "Bin site capacity must be between 0 and 100,000,000 bushels.")]
     public decimal? Capacity { get; init; }
-
-    /// <summary>Commodity code from the Grain on Farm list ("YC"), optional.</summary>
-    [StringLength(BinSiteRules.CommodityCodeMaxLength)]
-    public string? CommodityCode { get; init; }
 }
 
 public record ContactItemRequest

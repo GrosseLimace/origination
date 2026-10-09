@@ -154,21 +154,4 @@ public class BinSiteRequestValidationTests
 
         Assert.Contains(Validate(site), e => e.MemberNames.Contains(nameof(BinSiteItemRequest.Capacity)));
     }
-
-    // ── Commodity ──────────────────────────────────────────────────────────────
-    [Fact]
-    public void Commodity_IsOptional_AndAccepted()
-    {
-        var site = Site(39.1m, -95.1m) with { CommodityCode = "YC" };
-
-        Assert.Empty(Validate(site));
-    }
-
-    [Fact]
-    public void CommodityCode_Over100Characters_IsRejected()
-    {
-        var site = Site(39.1m, -95.1m) with { CommodityCode = new string('X', 101) };
-
-        Assert.Contains(Validate(site), e => e.MemberNames.Contains(nameof(BinSiteItemRequest.CommodityCode)));
-    }
 }

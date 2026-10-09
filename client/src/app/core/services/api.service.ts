@@ -719,7 +719,7 @@ export class ApiService {
 
   /** Creates or updates producer details for a customer. `contacts` and `binSites` array order is
    *  the display order; omitting either property entirely preserves the customer's existing rows. */
-  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityCode: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[]; binSites?: { name: string; latitude?: number | null; longitude?: number | null; capacity?: number | null; commodityCode?: string | null }[] }): Observable<ProducerDetails> {
+  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityCode: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[]; binSites?: { name: string; latitude?: number | null; longitude?: number | null; capacity?: number | null }[] }): Observable<ProducerDetails> {
     return this.http.put<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`, data)
       .pipe(catchError(e => this.handleError(e)));
   }
