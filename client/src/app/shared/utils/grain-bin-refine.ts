@@ -13,7 +13,7 @@ import { binSiteHasCoordinates } from './coordinates';
 
 type GrainBinRefine = Pick<RefinementFilters,
   'grainSoldOver' | 'hasGrainSold' | 'hasLastBid' | 'lastBidOver' | 'lastBidUnder'
-  | 'binSitesAtLeast' | 'binCapacityOver' | 'binSiteNameContains' | 'binSitesWithLocation' | 'binSitesMissingLocation'>;
+  | 'binCapacityOver' | 'binSiteNameContains' | 'binSitesWithLocation' | 'binSitesMissingLocation'>;
 
 /** How many of these filters are set — for the "N filters" count and "is anything refined". */
 export function activeGrainBinRefineCount(r: GrainBinRefine | null | undefined): number {
@@ -24,7 +24,6 @@ export function activeGrainBinRefineCount(r: GrainBinRefine | null | undefined):
     !!r.hasLastBid,
     r.lastBidOver != null,
     r.lastBidUnder != null,
-    (r.binSitesAtLeast ?? 0) > 0,
     (r.binCapacityOver ?? 0) > 0,
     !!r.binSiteNameContains?.trim(),
     !!r.binSitesWithLocation,
@@ -57,9 +56,6 @@ export function applyGrainBinRefinements<T extends Customer>(
     out = out.filter(c => grainRowsFor(c).some(g => g.lastBid != null && g.lastBid <= r.lastBidUnder!));
   }
   // ── Bin sites ──
-  if ((r.binSitesAtLeast ?? 0) > 0) {
-    out = out.filter(c => (c.binSites?.length ?? 0) >= r.binSitesAtLeast!);
-  }
   if ((r.binCapacityOver ?? 0) > 0) {
     // The producer's total storage: the sum of their sites' capacities.
     out = out.filter(c => (c.binSites ?? []).reduce((sum, s) => sum + (s.capacity ?? 0), 0) > r.binCapacityOver!);

@@ -18,7 +18,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem, GrainOnFarmItem } from '@models';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
-import { grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
+import { formatLastBid, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
@@ -112,6 +112,8 @@ export class CustomerProfileComponent {
   grainChipTitle(value: string): string {
     return grainOnFarmTitle(value, this._grainByCode(), this._grainLookup());
   }
+  /** Last Bid as typed: no "$", no padded decimals. */
+  readonly formatLastBid = formatLastBid;
   public selectedTradeUnits = input<string[]>([]);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);

@@ -159,3 +159,11 @@ export function binSiteGrainBreakdown(
   if (unlinked.length > 0) groups.push({ name: 'Not tied to a bin site', capacity: null, mapUrl: null, rows: unlinked });
   return groups;
 }
+
+const LAST_BID_FORMAT = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+
+/** A grain row's Last Bid for display: no "$" and no padded decimals (user 2026-10-09) — "4", "-0.35",
+ *  "0.1525" — up to the four places the column stores. A dash when there is none. */
+export function formatLastBid(value: number | null | undefined): string {
+  return value == null ? '—' : LAST_BID_FORMAT.format(value);
+}

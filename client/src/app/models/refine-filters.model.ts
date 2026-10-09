@@ -29,7 +29,6 @@ export interface RefinementFilters {
   // a saved list that still carries them in its JSON simply ignores them.
   hasBinSites?: boolean;
   noBinSites?: boolean;
-  binSitesAtLeast?: number | null;       // at least this many bin sites
   binCapacityOver?: number | null;       // total capacity across the producer's sites over this (bu)
   binSiteNameContains?: string;          // a site name containing this text
   binSitesWithLocation?: boolean;        // a site with latitude/longitude

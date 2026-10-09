@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Commodity } from '@models';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from './crop-group-match';
 import {
-  binSiteGrainBreakdown, buildGrainOnFarmOptions, GRAIN_AND_BIN_SITES_CATEGORY, grainOnFarmColorKey, isGrainAndBinSitesCategory, grainOnFarmTitle, indexCommoditiesByCode, isGrainOnFarmCode, isLegacyGrainGroup,
+  binSiteGrainBreakdown, buildGrainOnFarmOptions, formatLastBid, GRAIN_AND_BIN_SITES_CATEGORY, grainOnFarmColorKey, isGrainAndBinSitesCategory, grainOnFarmTitle, indexCommoditiesByCode, isGrainOnFarmCode, isLegacyGrainGroup,
 } from './grain-on-farm';
 
 const commodity = (code: string, name: string, category?: string): Commodity =>
@@ -154,5 +154,21 @@ describe('binSiteGrainBreakdown', () => {
   it('has no unlinked group when every row has a site, and nothing at all for an empty producer', () => {
     expect(binSiteGrainBreakdown(sites, grain.slice(0, 3)).map(g => g.name)).not.toContain('Not tied to a bin site');
     expect(binSiteGrainBreakdown(undefined, undefined)).toEqual([]);
+  });
+});
+
+describe('formatLastBid', () => {
+  it('no "$" and no padded decimals — only the places the value has', () => {
+    expect(formatLastBid(4)).toBe('4');
+    expect(formatLastBid(4.5)).toBe('4.5');
+    expect(formatLastBid(-0.35)).toBe('-0.35');
+    expect(formatLastBid(0.1525)).toBe('0.1525');
+    expect(formatLastBid(0)).toBe('0');
+    expect(formatLastBid(1250.25)).toBe('1,250.25');
+  });
+
+  it('a dash when there is no bid', () => {
+    expect(formatLastBid(null)).toBe('—');
+    expect(formatLastBid(undefined)).toBe('—');
   });
 });

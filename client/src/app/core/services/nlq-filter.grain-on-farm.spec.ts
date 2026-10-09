@@ -201,6 +201,17 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
       .map(c => c.id);
     expect(result).toContain(5);
   });
+
+  it('a crop chip matches the crops entered on grain rows — even with no bushels on hand — not the producer commodities', () => {
+    // Foxtrot entered wheat at a site (sold out, nothing on hand); Golf trades wheat but has none on farm.
+    const foxtrot = customer(6, 'Foxtrot Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 0 }]);
+    const golf = { ...customer(7, 'Golf Farms', [{ commodityCode: 'YC', bushelsOnHand: 9000 }]), commodities: ['SRWW'] } as Customer;
+    const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
+    const result = svc.applyRefinementFilters([foxtrot, golf],
+      { _promptCategory: 'Grain on Farm & Bin Sites', crops: ['SRWW'] } as never, [], [], { commodities })
+      .map(c => c.id);
+    expect(result).toEqual([6]);
+  });
 });
 
 // Since 2026-09-23 rows hold commodity CODES. The blocks above keep crop-group values on purpose:

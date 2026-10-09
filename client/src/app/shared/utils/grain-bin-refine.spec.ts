@@ -40,8 +40,7 @@ describe('applyGrainBinRefinements — grain on farm', () => {
 });
 
 describe('applyGrainBinRefinements — bin sites', () => {
-  it('at least N sites, and total capacity over N', () => {
-    expect(ids({ binSitesAtLeast: 2 })).toEqual([1]);
+  it('total capacity over N', () => {
     expect(ids({ binCapacityOver: 60000 })).toEqual([1]);   // 50,000 + 20,000
     expect(ids({ binCapacityOver: 4000 })).toEqual([1, 2]);
   });
@@ -57,7 +56,7 @@ describe('applyGrainBinRefinements — bin sites', () => {
 describe('activeGrainBinRefineCount', () => {
   it('counts set filters; zero and blank are off except a signed last bid', () => {
     expect(activeGrainBinRefineCount({})).toBe(0);
-    expect(activeGrainBinRefineCount({ grainSoldOver: 0, binSiteNameContains: '  ', binSitesAtLeast: null })).toBe(0);
+    expect(activeGrainBinRefineCount({ grainSoldOver: 0, binSiteNameContains: '  ' })).toBe(0);
     expect(activeGrainBinRefineCount({ lastBidOver: 0, hasGrainSold: true, binSitesWithLocation: true })).toBe(3);
   });
 });

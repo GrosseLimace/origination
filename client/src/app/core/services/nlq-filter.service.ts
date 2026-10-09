@@ -891,9 +891,8 @@ export class NlqFilterService {
           )
         ));
       } else if (dim === 'Grain on Farm') {
-        list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          matchesCropGroupOnly(g.commodityCode) && (g.bushelsOnHand ?? 0) > 0
-        ));
+        // The crops on the producer's grain-on-farm rows — any row entered, with or without bushels.
+        list = list.filter(c => (c.grainOnFarm ?? []).some(g => matchesCropGroupOnly(g.commodityCode)));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => matchesCrop(crop)));
       }

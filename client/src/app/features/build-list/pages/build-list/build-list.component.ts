@@ -28,7 +28,7 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
-import { grainOnFarmColorKey, isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup } from '@shared/utils/grain-on-farm';
+import { grainOnFarmColorKey, isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@shared/utils/grain-on-farm';
 import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
 import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
@@ -963,9 +963,10 @@ export class BuildListComponent {
           );
         });
       } else if (dim === 'Grain on Farm') {
-        // Scope crop matching to the producer's grain-on-farm rows (with bushels on hand).
+        // Scope crop matching to the crops on the producer's grain-on-farm rows — any row they entered,
+        // not their contract/ticket commodities.
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY) && (g.bushelsOnHand ?? 0) > 0
+          !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY)
         ));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => this._matchesCropFilter(crop, selectedCrops)));
@@ -1138,6 +1139,9 @@ export class BuildListComponent {
    * so the filter degrades to something usable rather than disappearing.
    */
   readonly availableCrops = computed(() => {
+    // Grain on Farm & Bin Sites prompts: the crops entered on the producers' grain-on-farm rows, not
+    // the trade-unit catalog — the chip filters those rows (user 2026-10-09).
+    if (this.showGrainOnFarmFilters()) return this._grainCropsInResults();
     const scoped = scopeCommodities(this.plantingCommodities(), {
       groupNames: this.appState.inScopeGroupNames(),
       tradeUnitCodes: this.appState.inScopeTradeUnitCodes(),
@@ -1164,17 +1168,23 @@ export class BuildListComponent {
     for (const c of this.filteredCustomers()) {
       for (const crop of (c.commodities ?? [])) add(crop);
     }
-    if (this.showGrainOnFarmFilters()) {
-      for (const c of this.filteredCustomers()) {
-        for (const g of (c.grainOnFarm ?? [])) {
-          if ((g.bushelsOnHand ?? 0) > 0) add(g.commodityCode);
-        }
-      }
-    }
     if (this.showDpFilters()) {
       const dpByCustomer = this._dpByCustomerId();
       for (const c of this.filteredCustomers()) {
         for (const d of (dpByCustomer.get(c.id) ?? [])) add(d.crop);
+      }
+    }
+    return [...codes].sort();
+  }
+
+  /** The distinct commodity codes on the current results' grain-on-farm rows (any row the user
+   *  entered, with or without bushels on hand). */
+  private _grainCropsInResults(): string[] {
+    const codes = new Set<string>();
+    for (const c of this.filteredCustomers()) {
+      for (const g of (c.grainOnFarm ?? [])) {
+        const code = (g.commodityCode || '').trim();
+        if (code) codes.add(code.toUpperCase());
       }
     }
     return [...codes].sort();
@@ -4434,6 +4444,8 @@ export class BuildListComponent {
   // ── Bin sites & grain (Grain on Farm & Bin Sites prompts, user 2026-10-09) ────────────────────
   // Each result row shows its bin sites and the grain stored at each one in a column right after the
   // name (the same grouping the producer profile uses); the notes column follows it.
+
+  readonly formatLastBid = formatLastBid;
 
   /** Opens the producer from its name — unless the click ended a text selection (the user was
    *  selecting the name to copy it). */
