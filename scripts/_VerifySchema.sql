@@ -650,7 +650,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (68)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (69)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -722,6 +722,7 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009170849_DropBinSiteCommodity'),
 ('20261009175647_LinkGrainOnFarmToBinSites'),
 ('20261009185518_MoveBinCapacityAndGrainOntoBinSites'),
+('20261009185600_CombineGrainOnFarmAndBinSitePrompts'),
 ('20261009185642_DropProducerDetailsBinCapacity');
 
 -- =============================================================================

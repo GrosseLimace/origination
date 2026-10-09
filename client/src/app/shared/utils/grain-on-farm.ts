@@ -16,6 +16,20 @@
 import { Commodity } from '@models';
 import { CropGroupLookup, resolveCropGroup } from './crop-group-match';
 
+/** Build a List library category holding every grain-on-farm AND bin-site prompt (user 2026-10-09:
+ *  grain on farm belongs to a bin site, so their prompts share one column). Before that the grain
+ *  cards were "Grain on Farm" and the bin-site cards sat under "Producers"; the rename is migration
+ *  CombineGrainOnFarmAndBinSitePrompts. */
+export const GRAIN_AND_BIN_SITES_CATEGORY = 'Grain on Farm & Bin Sites';
+
+/** The category before the rename. A saved list remembers the category of the prompt it came from
+ *  (`_promptCategory`), so lists saved before then still carry it — treat it as the same thing. */
+export const LEGACY_GRAIN_ON_FARM_CATEGORY = 'Grain on Farm';
+
+export function isGrainAndBinSitesCategory(category: string | null | undefined): boolean {
+  return category === GRAIN_AND_BIN_SITES_CATEGORY || category === LEGACY_GRAIN_ON_FARM_CATEGORY;
+}
+
 export interface GrainOnFarmOption {
   code: string;
   /** "YELLOW CORN (YC)" — the same shape the planting-intentions crop picker shows. */

@@ -1150,9 +1150,25 @@
                   </div>
                 }
 
-                <!-- Grain on Farm filters -->
+                <!-- Grain on Farm & Bin Sites filters (one category since 2026-10-09: grain is stored at a
+                     bin site). Has/no bin sites are hidden when the prompt already says it, like in General. -->
                 @if (showGrainOnFarmFilters()) {
+                  @let hgs = hiddenFilters();
                   <div class="flex flex-wrap gap-x-4 sm:gap-x-10 gap-y-4 sm:gap-y-5">
+                    @if (!hgs.has('hasBinSites')) {
+                      <!-- Bin Sites -->
+                      <div class="space-y-2.5">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Bin Sites</p>
+                        <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().hasBinSites" (ngModelChange)="updateRefinement(r => ({...r, hasBinSites: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                          Has bin sites
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                          <input type="checkbox" [ngModel]="pendingRefinements().noBinSites" (ngModelChange)="updateRefinement(r => ({...r, noBinSites: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                          No bin sites
+                        </label>
+                      </div>
+                    }
                     <!-- Grain on Farm -->
                     <div class="space-y-2.5">
                       <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Grain on Farm</p>
@@ -1495,7 +1511,7 @@
                             @if (chips.length) {
                               <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
                               @for (chip of chips; track chip.text) {
-                                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium shrink-0" [ngClass]="commodityChipClass(chip.colorKey)">
+                                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium shrink-0" [ngClass]="chip.neutral ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' : commodityChipClass(chip.colorKey)">
                                   {{ chip.text }}
                                 </span>
                               }
@@ -1641,7 +1657,7 @@
                                   @if (linkedChips.length) {
                                     <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
                                     @for (chip of linkedChips; track chip.text) {
-                                      <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium shrink-0" [ngClass]="commodityChipClass(chip.colorKey)">
+                                      <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium shrink-0" [ngClass]="chip.neutral ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' : commodityChipClass(chip.colorKey)">
                                         {{ chip.text }}
                                       </span>
                                     }

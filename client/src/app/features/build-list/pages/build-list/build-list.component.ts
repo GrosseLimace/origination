@@ -28,7 +28,7 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
-import { grainOnFarmColorKey } from '@shared/utils/grain-on-farm';
+import { grainOnFarmColorKey, isGrainAndBinSitesCategory } from '@shared/utils/grain-on-farm';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -1924,7 +1924,9 @@ export class BuildListComponent {
   readonly showStorageFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Storage');
   readonly showDpFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'DP Contracts');
   readonly showPlantingFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Planting');
-  readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Grain on Farm');
+  /** The "Grain on Farm & Bin Sites" prompts (or a saved list from the pre-rename "Grain on Farm"):
+   *  grain filters plus has/no bin sites in one panel, and crop + bushel chips on each result. */
+  readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && isGrainAndBinSitesCategory(this.effectiveLibraryCategory()));
   readonly showGeneralFilters = computed(() => {
     if (this.isResolvingSavedListCategory()) return false;
     const cat = this.effectiveLibraryCategory();
@@ -4271,7 +4273,7 @@ export class BuildListComponent {
    *
    * Numbers are formatted here rather than in the template because each chip is a single string.
    */
-  resultChips(customer: Customer): { text: string; colorKey: string }[] {
+  resultChips(customer: Customer): { text: string; colorKey: string; neutral?: boolean }[] {
     if (this.showDpFilters()) {
       return this.dpBreakdown(customer)
         .map(b => ({ text: `${b.crop} ${b.bushels.toLocaleString('en-US')}`, colorKey: b.category }));
@@ -4285,8 +4287,12 @@ export class BuildListComponent {
         .map(c => ({ text: `${c.label} · ${c.acres.toLocaleString('en-US')} ac · ${c.year}`, colorKey: c.colorKey }));
     }
     if (this.showGrainOnFarmFilters()) {
-      return this.grainOnFarmBreakdown(customer)
-        .map(g => ({ text: `${g.commodityCode} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: grainOnFarmColorKey(g.commodityCode, this._cropGroupLookup()) }));
+      // Grain on farm is stored at bin sites, so the row leads with how many sites the producer has
+      // (a neutral chip — it is not a crop), then one chip per crop with its bushels.
+      const sites = customer.binSites?.length ?? 0;
+      const siteChip = sites > 0 ? [{ text: `${sites} bin site${sites === 1 ? '' : 's'}`, colorKey: '', neutral: true }] : [];
+      return [...siteChip, ...this.grainOnFarmBreakdown(customer)
+        .map(g => ({ text: `${g.commodityCode} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: grainOnFarmColorKey(g.commodityCode, this._cropGroupLookup()) }))];
     }
     return [];
   }

@@ -6,6 +6,7 @@ import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
 import { dpTotalBushels, dpTotalCharges, dpContractCount } from '@shared/utils/dp-aggregate';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from '@shared/utils/crop-group-match';
+import { isGrainAndBinSitesCategory } from '@shared/utils/grain-on-farm';
 
 export interface NlqFilterContext {
   customers: Customer[];
@@ -236,9 +237,12 @@ export class NlqFilterService {
     explicitCategory?: string | null
   ): 'Storage' | 'Tickets' | 'DP Contracts' | 'Planting' | 'Contracts' | 'Grain on Farm' | null {
     if (explicitCategory === 'Storage' || explicitCategory === 'Tickets' || explicitCategory === 'DP Contracts'
-      || explicitCategory === 'Planting' || explicitCategory === 'Contracts' || explicitCategory === 'Grain on Farm') {
+      || explicitCategory === 'Planting' || explicitCategory === 'Contracts') {
       return explicitCategory;
     }
+    // "Grain on Farm & Bin Sites" (or the pre-rename "Grain on Farm" a saved list may carry) is the
+    // grain-on-farm dimension — the name of the dimension stays "Grain on Farm".
+    if (isGrainAndBinSitesCategory(explicitCategory)) return 'Grain on Farm';
     const r = filters;
     if (!r) return null;
     const isDp = !!r.hasDpContracts

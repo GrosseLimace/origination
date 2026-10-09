@@ -192,6 +192,15 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
       .map(c => c.id).sort((a, b) => a - b);
     expect(result).toContain(5);
   });
+
+  it('scopes a crop chip to grain rows under the renamed "Grain on Farm & Bin Sites" category too', () => {
+    const echo = customer(5, 'Echo Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 15000 }]);
+    const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
+    const result = svc.applyRefinementFilters([...all, echo],
+      { _promptCategory: 'Grain on Farm & Bin Sites', crops: ['Wheat'] } as never, [], [], { commodities })
+      .map(c => c.id);
+    expect(result).toContain(5);
+  });
 });
 
 // Since 2026-09-23 rows hold commodity CODES. The blocks above keep crop-group values on purpose:

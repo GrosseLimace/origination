@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Commodity } from '@models';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from './crop-group-match';
 import {
-  buildGrainOnFarmOptions, grainOnFarmColorKey, grainOnFarmTitle, indexCommoditiesByCode, isGrainOnFarmCode, isLegacyGrainGroup,
+  buildGrainOnFarmOptions, GRAIN_AND_BIN_SITES_CATEGORY, grainOnFarmColorKey, isGrainAndBinSitesCategory, grainOnFarmTitle, indexCommoditiesByCode, isGrainOnFarmCode, isLegacyGrainGroup,
 } from './grain-on-farm';
 
 const commodity = (code: string, name: string, category?: string): Commodity =>
@@ -106,5 +106,15 @@ describe('grain-on-farm values through the crop matcher', () => {
   it('a code chip still matches a legacy group row of its own crop', () => {
     expect(matches('Wheat', ['HRWW'])).toBe(true);
     expect(matches('Corn', ['HRWW'])).toBe(false);
+  });
+});
+
+describe('isGrainAndBinSitesCategory', () => {
+  it('is the combined Build a List category, and the pre-rename name saved lists still carry', () => {
+    expect(GRAIN_AND_BIN_SITES_CATEGORY).toBe('Grain on Farm & Bin Sites');
+    expect(isGrainAndBinSitesCategory('Grain on Farm & Bin Sites')).toBe(true);
+    expect(isGrainAndBinSitesCategory('Grain on Farm')).toBe(true);
+    expect(isGrainAndBinSitesCategory('Producers')).toBe(false);
+    expect(isGrainAndBinSitesCategory(null)).toBe(false);
   });
 });

@@ -135,8 +135,14 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
   card later self-heals without a second migration. Note the guard means a QueryText collision is
   **silently skipped** — check the target DB if the card doesn't appear.
 - `Category` must match an existing value **exactly** (`Contracts`, `Notes`, `Tickets`, `Storage`,
-  `Planting`, `Grain on Farm`, `General`) — it's compared case-sensitively and drives which refine
-  panel renders (`showContractFilters` etc.). A new value creates a new tab.
+  `Planting`, `Grain on Farm & Bin Sites`, `General`, `Producers`) — it's compared case-sensitively and drives
+  which refine panel renders (`showContractFilters` etc.). A new value creates a new tab.
+- **`Grain on Farm & Bin Sites`** (2026-10-09, migration `CombineGrainOnFarmAndBinSitePrompts`) holds every
+  grain-on-farm AND bin-site prompt in one column — grain on farm is stored at a bin site. It was
+  `Grain on Farm`, and the bin-site cards sat under `Producers`. The client treats the old name the same
+  (`isGrainAndBinSitesCategory`, `shared/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
+  category in `Filters._promptCategory`. Its refine panel adds Has/No bin sites to the grain filters, and
+  each result row leads with a neutral "N bin sites" chip before the per-crop bushel chips.
 - Derive `SortOrder` from `MAX(SortOrder) + 10` within the category rather than hardcoding: the
   original cards were inserted straight into each database, so numbering differs per environment.
 - **Check the QueryText against the parser before choosing it.** Words like `planting` or `deliver`
