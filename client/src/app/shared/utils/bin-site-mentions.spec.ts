@@ -31,6 +31,13 @@ describe('binSiteMentionPattern', () => {
     expect(binSiteMentionPattern('Bins (East)').test('moved corn to bins (east)')).toBe(true);
     expect(binSiteMentionPattern('A+B').test('AAB')).toBe(false);
   });
+
+  it('a hyphen or slash in a name compiles under the u flag and matches literally', () => {
+    expect(() => binSiteMentionPattern('Hwy-30 Bins')).not.toThrow();
+    expect(binSiteMentionPattern('Hwy-30 Bins').test('corn at hwy-30 bins')).toBe(true);
+    expect(binSiteMentionPattern('Hwy-30 Bins').test('hwy 30 bins')).toBe(false);
+    expect(binSiteMentionPattern('North/South').test('the north/south site')).toBe(true);
+  });
 });
 
 describe('notesMentioningBinSites', () => {

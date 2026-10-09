@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin, of, catchError, timeout, tap, Subject, takeUntil } from 'rxjs';
+import { forkJoin, from, of, catchError, mergeMap, toArray, timeout, tap, Subject, takeUntil } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
@@ -366,7 +366,7 @@ export class BuildListComponent {
       r.contactedOnlyOnce, r.contactedMoreThan5,
       r.contactedByMeOnly, r.contactedBySomeoneElse,
       r.hasPinnedNotes, r.noteKeyword?.trim(),
-      r.acresOver != null && r.acresOver > 0, r.hasBinSites, r.noBinSites,
+      r.acresOver != null && r.acresOver > 0,
       r.hasPrimaryContact, r.noPrimaryContact, r.hasEmail, r.hasPhone, r.hasLinkedProducers, r.notEsignEnrolled,
       r.hasActiveContracts, r.hasDeliveriesThisYear, r.hasPlantingIntentions, r.hasGrainInStorage,
       r.ticketQuantityOver != null && r.ticketQuantityOver > 0,
@@ -640,12 +640,6 @@ export class BuildListComponent {
     // Customer size
     if (r.acresOver != null && r.acresOver > 0) {
       list = list.filter(c => (c.totalAcres ?? 0) > r.acresOver!);
-    }
-    if (r.hasBinSites) {
-      list = list.filter(c => (c.binSites?.length ?? 0) > 0);
-    }
-    if (r.noBinSites) {
-      list = list.filter(c => (c.binSites?.length ?? 0) === 0);
     }
 
     // Grain on farm (bushels on hand + $/bu target). Crop-scoped when crops are selected, so
@@ -2047,7 +2041,8 @@ export class BuildListComponent {
       customerIds: ch.ids,
       contentAny: ch.length > BuildListComponent.BIN_NOTES_QUERY_BUDGET ? undefined : [...ch.names],
     }).pipe(catchError(() => of([] as Note[]))));
-    forkJoin(requests).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(results => {
+    // At most four requests in flight at once; order doesn't matter (results are flattened and deduped).
+    from(requests).pipe(mergeMap(r => r, 4), toArray(), takeUntilDestroyed(this.destroyRef)).subscribe(results => {
       this._binNotesFetchInFlight = false;
       // Also on a failed piece: don't retry-loop it; the rows just show no mention notes.
       chunks.forEach(ch => ch.keys.forEach(k => this._binNoteFetchedKeys.add(k)));

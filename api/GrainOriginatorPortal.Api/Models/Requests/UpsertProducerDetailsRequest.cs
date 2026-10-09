@@ -12,7 +12,7 @@ public record UpsertProducerDetailsRequest
     [StringLength(200)]
     public required string CustomerName { get; init; }
 
-    [Range(0, 10_000_000)]
+    [Range(0d, 10_000_000d)]
     public decimal? TotalAcres { get; init; }
 
     // BinCapacity was removed 2026-10-09 (capacity lives on each bin site). A client cached from before
@@ -32,8 +32,11 @@ public record UpsertProducerDetailsRequest
     [StringLength(1000)]
     public string? LinkedProducerIds { get; init; }
 
-    /// <summary>Per-commodity grain-on-farm rows (bushels on hand + target). Replaces the customer's
-    /// existing set on save. Rows with an unknown/blank commodity code are ignored server-side.</summary>
+    /// <summary>Per-commodity grain-on-farm rows (bushels on hand, sold, target, last bid), each tied to
+    /// one of <see cref="BinSites"/> by key. Replaces the customer's existing set on save. Rows with a
+    /// blank commodity code are dropped server-side; duplicates per (site, code) collapse to the last one.
+    /// Capped at 2,000 rows (100 sites × the commodity catalog is well under that).</summary>
+    [MaxLength(2000)]
     public IReadOnlyList<GrainOnFarmItemRequest>? GrainOnFarm { get; init; }
 
     /// <summary>User-entered contacts. Replaces the customer's existing set on save; array order is
@@ -131,20 +134,20 @@ public record GrainOnFarmItemRequest
     public string EffectiveCommodityCode =>
         !string.IsNullOrWhiteSpace(CommodityCode) ? CommodityCode : CommodityGroup ?? string.Empty;
 
-    [Range(0, 1_000_000_000)]
+    [Range(0d, 1_000_000_000d)]
     public decimal? BushelsOnHand { get; init; }
 
     /// <summary>How many of the <see cref="BushelsOnHand"/> bushels are already sold. Entered by the
     /// user, not derived from contracts; not checked against the total.</summary>
-    [Range(0, 1_000_000_000)]
+    [Range(0d, 1_000_000_000d)]
     public decimal? BushelsSold { get; init; }
 
     /// <summary>$/bu target price. May be negative (a basis target).</summary>
-    [Range(-1_000_000_000, 1_000_000_000)]
+    [Range(-1_000_000_000d, 1_000_000_000d)]
     public decimal? TargetBushels { get; init; }
 
     /// <summary>Last bid for this commodity, entered by the user. May be negative (a basis bid).</summary>
-    [Range(-1_000_000_000, 1_000_000_000)]
+    [Range(-1_000_000_000d, 1_000_000_000d)]
     public decimal? LastBid { get; init; }
 
     /// <summary>Free-text grade / quality note (e.g. "4.4%", "TW 58"). Not necessarily numeric.</summary>

@@ -294,6 +294,22 @@ public class ProducerGrainOnFarmSiteLinkTests
     }
 
     // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_SameValueBeyondColumnScale_LeavesTheStampAlone()
+    {
+        // decimal(18,2) stores 30000.555 as 30000.56; the comparison must round the same way or every later
+        // save (an acres edit, say) would see 30000.56 != 30000.555 and move the stamp.
+        using var db = NewContext();
+        var repo = Repo(db);
+        await repo.UpsertAsync(Args([Site(North, "North Bins")], [Grain("YC", North, 30_000.555m)]), "tuser", CancellationToken.None);
+        await BackdateAsync(db);
+
+        await repo.UpsertAsync(Args([Site(North, "North Bins")], [Grain("YC", North, 30_000.56m)]), "tuser", CancellationToken.None);
+
+        Assert.Equal(LongAgo, await StampAsync(db));
+    }
+
+    // -------------------------------------------------------------------------
     [Theory]
     [InlineData("bushels")]
     [InlineData("rename")]

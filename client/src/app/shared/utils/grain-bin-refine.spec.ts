@@ -40,6 +40,11 @@ describe('applyGrainBinRefinements — grain on farm', () => {
 });
 
 describe('applyGrainBinRefinements — bin sites', () => {
+  it('has / no bin sites', () => {
+    expect(ids({ hasBinSites: true })).toEqual([1, 2]);
+    expect(ids({ noBinSites: true })).toEqual([3]);
+  });
+
   it('total capacity over N', () => {
     expect(ids({ binCapacityOver: 60000 })).toEqual([1]);   // 50,000 + 20,000
     expect(ids({ binCapacityOver: 4000 })).toEqual([1, 2]);

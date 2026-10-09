@@ -484,19 +484,23 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
     /// sent by the client.</summary>
     private static string SitesFingerprint(IEnumerable<(Guid Key, string? Name, decimal? Lat, decimal? Lng, decimal? Capacity, int Sort)> sites) =>
         string.Join("\n", sites
-            .Select(s => string.Join("|", s.Key, s.Name ?? "", Norm(s.Lat), Norm(s.Lng), Norm(s.Capacity), s.Sort))
+            .Select(s => string.Join("|", s.Key, s.Name ?? "", Norm(s.Lat, 15), Norm(s.Lng, 15), Norm(s.Capacity, 2), s.Sort))
             .Order(StringComparer.Ordinal));
 
     /// <summary>Same as <see cref="SitesFingerprint"/> for grain-on-farm rows (site key, code, values).</summary>
     private static string GrainFingerprint(IEnumerable<(Guid? Site, string Code, decimal? OnHand, decimal? Sold, decimal? Target, decimal? LastBid, string? Grade)> rows) =>
         string.Join("\n", rows
-            .Select(r => string.Join("|", r.Site?.ToString() ?? "", r.Code.Trim().ToUpperInvariant(), Norm(r.OnHand), Norm(r.Sold),
-                Norm(r.Target), Norm(r.LastBid), r.Grade ?? ""))
+            .Select(r => string.Join("|", r.Site?.ToString() ?? "", r.Code.Trim().ToUpperInvariant(), Norm(r.OnHand, 2), Norm(r.Sold, 2),
+                Norm(r.Target, 2), Norm(r.LastBid, 4), r.Grade ?? ""))
             .Order(StringComparer.Ordinal));
 
-    /// <summary>A decimal without trailing zeros (dividing by 1.000…0 drops the scale), or "" for null.</summary>
-    private static string Norm(decimal? d) =>
-        d.HasValue ? (d.Value / 1.0000000000000000000000000000m).ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+    /// <summary>A decimal rounded to the column's scale (so a value as sent compares equal to the same value
+    /// read back from the database — otherwise every later save would re-stamp BinSitesModifiedAt) and without
+    /// trailing zeros (dividing by 1.000…0 drops the scale), or "" for null.</summary>
+    private static string Norm(decimal? d, int scale) =>
+        d.HasValue
+            ? (Math.Round(d.Value, scale, MidpointRounding.AwayFromZero) / 1.0000000000000000000000000000m).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : "";
 
     private static List<ProducerBinSiteEntry> NormalizeBinSites(IReadOnlyList<ProducerBinSiteEntry> binSites,
         Dictionary<Guid, Guid> mergedKeys)

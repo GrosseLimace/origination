@@ -28,7 +28,9 @@ export function binSiteNames(sites: readonly ProducerBinSiteItem[] | null | unde
 
 /** Whole-name, case-insensitive matcher for one site name (inner spaces match any run of whitespace). */
 export function binSiteMentionPattern(name: string): RegExp {
-  const escaped = name.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
+  // Not "-": it needs no escape outside a character class, and under the u flag "\-" is an error
+  // (a site named "Hwy-30 Bins" would throw and blank the Notes panel / Build a List row).
+  const escaped = name.trim().replace(/[/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
   return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu');
 }
 
