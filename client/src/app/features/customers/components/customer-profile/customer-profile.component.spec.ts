@@ -334,6 +334,42 @@ describe('CustomerProfileComponent — bin site table', () => {
     ref.setInput('customer', makeCustomer({ grainOnFarm: [{ commodityCode: 'WH', bushelsOnHand: 100 }] }));
     expect(component.grainOnFarmGroups().map(g => g.label)).toEqual(['']);
   });
+
+  it('with grain at more than one site, every site starts closed and opens on its own', () => {
+    const twoSites = (id: number) => makeCustomer({
+      id,
+      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
+      grainOnFarm: [
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 },
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'SB', bushelsOnHand: 5000 },
+        { binSiteKey: 'home', binSiteName: 'Home Place', commodityCode: 'YC', bushelsOnHand: 1000 },
+      ],
+    });
+    ref.setInput('customer', twoSites(1));
+
+    expect(component.grainGroupsCollapsible()).toBe(true);
+    expect([component.isGrainGroupOpen(0), component.isGrainGroupOpen(1)]).toEqual([false, false]);
+    expect(component.anyGrainGroupOpen()).toBe(false);
+    expect(component.grainGroupSummary(component.grainOnFarmGroups()[0].rows)).toBe('2 crops · 35,000 bu');
+
+    component.toggleGrainGroup(1);
+    expect([component.isGrainGroupOpen(0), component.isGrainGroupOpen(1)]).toEqual([false, true]);
+    expect(component.anyGrainGroupOpen()).toBe(true);
+
+    // Another producer starts closed again.
+    ref.setInput('customer', twoSites(2));
+    expect(component.isGrainGroupOpen(1)).toBe(false);
+  });
+
+  it('with grain at one site (or none), the table shows open as before', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
+      grainOnFarm: [{ binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 }],
+    }));
+    expect(component.grainGroupsCollapsible()).toBe(false);
+    expect(component.isGrainGroupOpen(0)).toBe(true);
+    expect(component.anyGrainGroupOpen()).toBe(true);
+  });
 });
 
 // Covers the organic producer badge: which producers get it, and the header-panel spacing computed

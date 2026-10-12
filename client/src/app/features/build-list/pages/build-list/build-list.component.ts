@@ -28,7 +28,7 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
-import { grainOnFarmColorKey, isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@shared/utils/grain-on-farm';
+import { isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@shared/utils/grain-on-farm';
 import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
 import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
@@ -4426,12 +4426,10 @@ export class BuildListComponent {
         .map(c => ({ text: `${c.label} · ${c.acres.toLocaleString('en-US')} ac · ${c.year}`, colorKey: c.colorKey }));
     }
     if (this.showGrainOnFarmFilters()) {
-      // Grain on farm is stored at bin sites, so the row leads with how many sites the producer has
-      // (a neutral chip — it is not a crop), then one chip per crop with its bushels.
+      // Only how many bin sites the producer has (a neutral chip — it is not a crop). The crops are in the
+      // bin-site breakdown next to the name, so no per-crop chips here (user 2026-10-12: too much at once).
       const sites = customer.binSites?.length ?? 0;
-      const siteChip = sites > 0 ? [{ text: `${sites} bin site${sites === 1 ? '' : 's'}`, colorKey: '', neutral: true }] : [];
-      return [...siteChip, ...this.grainOnFarmBreakdown(customer)
-        .map(g => ({ text: `${g.commodityCode} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: grainOnFarmColorKey(g.commodityCode, this._cropGroupLookup()) }))];
+      return [{ text: sites > 0 ? `${sites} bin site${sites === 1 ? '' : 's'}` : 'No bin sites', colorKey: '', neutral: true }];
     }
     return [];
   }
@@ -4449,22 +4447,47 @@ export class BuildListComponent {
     this.selectCustomer(customer);
   }
 
-  /** Bin sites, and crops per site, shown per producer before "Show more" (user: show a certain amount at
-   *  once). A site holding many crops would otherwise make one row very tall. */
-  readonly binSitesVisible = 2;
-  readonly binSiteCropsVisible = 4;
+  /** Bin sites listed per producer before "Show more". Each is one line until opened, so a few more fit
+   *  than when every site showed its grain. */
+  readonly binSitesVisible = 4;
 
-  /** The collapsed breakdown's link — "Show 4 more bin sites", "Show 3 more crops", or both — or null
-   *  when nothing is hidden. */
+  /** "Show 3 more bin sites", or null when every site is listed. */
   binSiteGrainHiddenLabel(groups: BinSiteGrainGroup[]): string | null {
     const sites = Math.max(0, groups.length - this.binSitesVisible);
-    const crops = groups.slice(0, this.binSitesVisible)
-      .reduce((n, g) => n + Math.max(0, g.rows.length - this.binSiteCropsVisible), 0);
-    const parts = [
-      sites ? `${sites} more bin site${sites === 1 ? '' : 's'}` : '',
-      crops ? `${crops} more crop${crops === 1 ? '' : 's'}` : '',
-    ].filter(Boolean);
-    return parts.length ? `Show ${parts.join(' and ')}` : null;
+    return sites ? `Show ${sites} more bin site${sites === 1 ? '' : 's'}` : null;
+  }
+
+  /** Open bin sites, as "customerId:index" (index into binSiteGrainBreakdown, which keeps the saved site
+   *  order). Every site starts closed — its grain shows only once the user opens it (user 2026-10-12: a
+   *  producer with many bins showed too much at once). */
+  readonly openBinSites = signal<ReadonlySet<string>>(new Set());
+
+  isBinSiteOpen(customerId: number, index: number): boolean {
+    return this.openBinSites().has(`${customerId}:${index}`);
+  }
+
+  toggleBinSite(customerId: number, index: number): void {
+    const key = `${customerId}:${index}`;
+    this.openBinSites.update(open => {
+      const next = new Set(open);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
+
+  /** Whether any of this producer's sites is open — the crop column headings show only then. */
+  anyBinSiteOpen(customerId: number): boolean {
+    const prefix = `${customerId}:`;
+    for (const key of this.openBinSites()) if (key.startsWith(prefix)) return true;
+    return false;
+  }
+
+  /** A closed site's line: "2 crops · 35,000 bu", or "No grain on farm". */
+  binSiteGrainSummary(group: BinSiteGrainGroup): string {
+    const n = group.rows.length;
+    if (n === 0) return 'No grain on farm';
+    const bushels = group.rows.reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
+    return `${n} crop${n === 1 ? '' : 's'} · ${bushels.toLocaleString('en-US')} bu`;
   }
   /** Producers whose full list of bin sites is showing. */
   readonly binSitesShowAll = signal<ReadonlySet<number>>(new Set());

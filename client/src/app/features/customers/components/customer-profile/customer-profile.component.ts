@@ -94,6 +94,29 @@ export class CustomerProfileComponent {
     if (unlinked && groups.length > 1) unlinked.label = 'Not tied to a bin site';
     return groups;
   });
+  /** With grain at more than one bin site, each site is a closed line ("North Bins · 2 crops · 35,000 bu")
+   *  until the user opens it (user 2026-10-12: a producer with many bins showed too much at once). With one
+   *  site — or no sites — the table shows open, as before. */
+  readonly grainGroupsCollapsible = computed(() => this.grainOnFarmGroups().length > 1);
+  /** Open site groups, by index into grainOnFarmGroups (site order). All closed again when the producer changes. */
+  readonly openGrainGroups = linkedSignal<number, ReadonlySet<number>>({ source: () => this.customer().id, computation: () => new Set() });
+  isGrainGroupOpen(index: number): boolean {
+    return !this.grainGroupsCollapsible() || this.openGrainGroups().has(index);
+  }
+  toggleGrainGroup(index: number): void {
+    this.openGrainGroups.update(open => {
+      const next = new Set(open);
+      if (!next.delete(index)) next.add(index);
+      return next;
+    });
+  }
+  /** The crop column headings show once there is a row to label. */
+  readonly anyGrainGroupOpen = computed(() => !this.grainGroupsCollapsible() || this.openGrainGroups().size > 0);
+  /** A closed site's line: "2 crops · 35,000 bu". */
+  grainGroupSummary(rows: readonly GrainOnFarmItem[]): string {
+    const bushels = rows.reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
+    return `${rows.length} crop${rows.length === 1 ? '' : 's'} · ${bushels.toLocaleString('en-US')} bu`;
+  }
   /** Total bushels currently on the farm (sum of per-commodity on-hand). */
   readonly grainOnFarmTotal = computed(() =>
     (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
