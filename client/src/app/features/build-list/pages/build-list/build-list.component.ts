@@ -2404,6 +2404,11 @@ export class BuildListComponent {
         this._contractsReady.set(true); // Don't strand contract-queries waiting forever on error
         this._storageReady.set(true); // Same — don't strand storage-queries waiting forever on error
         this.toastService.error('Failed to load data');
+        // Same re-entry as the success path: a prompt parked during this reload must not sit on
+        // "Processing query..." for a note/DP fetch that nothing started.
+        if (this.queryText().trim() && this.isProcessing() && !this.hasGenerated()) {
+          this.processQuery();
+        }
       }
     });
 
