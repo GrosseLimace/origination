@@ -21,11 +21,6 @@
         "text": "The producer-level Bin Capacity field is gone. Any capacity or grain on farm entered before this release was moved onto a bin site named Bin 1, so nothing was lost; rename it when you next edit the producer."
       },
       {
-        "group": "Grain on farm",
-        "kind": "fixed",
-        "text": "A producer's grain on farm could be wiped when someone saved the producer from a page opened before the grain was added. Saves that are not editing grain on farm now leave it alone."
-      },
-      {
         "group": "Build a List",
         "kind": "added",
         "text": "A new Grain on Farm & Bin Sites group of prompts finds producers by what they have on farm. Each result shows the producer's bin sites with the grain at each one, and any notes that mention a bin site by name. The refine filters cover every bin site and grain on farm field."
