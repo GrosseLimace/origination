@@ -110,6 +110,15 @@ export class BuildListComponent {
   // forever. Loaded-flag, not length, so a real empty result still resolves.
   private _storageReady = signal(false);
   private _loadRequestId = 0;
+  /** Fires at the start of every _loadFresh so the previous load's subscriptions (core forkJoin +
+   *  background tickets) are dropped instead of lingering until they resolve. The requestId guard
+   *  already discarded their results; this stops the component from waiting on them at all, which
+   *  matters when the non-deferred selector fires one full reload per checkbox click. */
+  private readonly _cancelLoad$ = new Subject<void>();
+  /** Set when processQuery was called before core data was loaded (a prompt picked while a
+   *  trade-unit reload is in flight). Holds the trade-unit override so the re-run is identical to
+   *  the original call. Cleared by clearQuery, by a real processQuery run, and by the re-run. */
+  private _parkedQuery: { override?: string[] } | null = null;
   private _queryGenId = 0;
   // Key of the server-narrowed note slice currently in this.notes() for DISPLAY (encodes the
   // query generation + scope, e.g. `${gen}:content:beans|corn`, `${gen}:w:3`, `${gen}:pinned`).
@@ -277,6 +286,11 @@ export class BuildListComponent {
         // No trade unit selected — return to the gated state (as on a fresh visit with no
         // selection) so the prompt library is disabled. Otherwise coreDataLoaded stays true from
         // the prior selection and a user could run a prompt with no trade unit scoped.
+        // Drop any reload still in flight for the PREVIOUS selection too: left alone it would land
+        // later, flip coreDataLoaded back on and fill customers() with the old trade unit's roster.
+        this._cancelLoad$.next();
+        this._loadRequestId++;
+        this.loading.set(false);
         this.coreDataLoaded.set(false);
       }
     });
@@ -2302,6 +2316,7 @@ export class BuildListComponent {
   /** Fetches all data fresh from the API for the current trade units.
    *  @param clearSignals If true, clears data signals immediately (TU change). If false, keeps them for display (background refresh). */
   private _loadFresh(clearSignals = false): void {
+    this._cancelLoad$.next();
     const requestId = ++this._loadRequestId;
     this._ticketsReady.set(false);
     // Fresh contracts not yet confirmed — contract-aware queries will wait on this until the
@@ -2345,7 +2360,7 @@ export class BuildListComponent {
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
       producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    }).pipe(takeUntil(this._cancelLoad$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Ignore stale response from a previous TU's load
         if (requestId !== this._loadRequestId) return;
@@ -2383,6 +2398,16 @@ export class BuildListComponent {
         // stale cache and needs to silently refresh with the now-complete data.
         if (this.queryText().trim() && this.hasGenerated() && !this.isProcessing()) {
           this._applyNlqFilter();
+        } else if (this._parkedQuery) {
+          // A prompt picked DURING this reload was parked by processQuery's coreDataLoaded guard
+          // (the library stays clickable while a trade-unit change reloads). Re-enter processQuery
+          // instead of leaving it to _dataReadyEffect: that effect only WAITS for data, it never
+          // starts the lazy note/DP fetches, so a note or DP prompt would spin forever.
+          // Keyed on the explicit parked marker, NOT on isProcessing && !hasGenerated: a saved list
+          // clicked during the cache-path background refresh is ALSO in that state while its own
+          // _fetchAndFilter is in flight, and re-entering would bump _queryGenId and discard that
+          // fetch - the list rendered without its hand-added members.
+          this._runParkedQuery();
         }
       },
       error: () => {
@@ -2392,6 +2417,9 @@ export class BuildListComponent {
         this._contractsReady.set(true); // Don't strand contract-queries waiting forever on error
         this._storageReady.set(true); // Same — don't strand storage-queries waiting forever on error
         this.toastService.error('Failed to load data');
+        // Same re-entry as the success path: a prompt parked during this reload must not sit on
+        // "Processing query..." for a note/DP fetch that nothing started.
+        if (this._parkedQuery) this._runParkedQuery();
       }
     });
 
@@ -2418,6 +2446,7 @@ export class BuildListComponent {
         else ticketFetchFailed = true;
         return of([] as Ticket[]);
       }),
+      takeUntil(this._cancelLoad$),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;
@@ -2517,8 +2546,16 @@ export class BuildListComponent {
     this.hasGenerated() ? this.displayedCustomers() : this.customers()
   );
 
+  /** Re-runs the processQuery call that was parked behind the coreDataLoaded guard. */
+  private _runParkedQuery(): void {
+    const parked = this._parkedQuery;
+    this._parkedQuery = null;
+    if (parked && this.queryText().trim()) this.processQuery(parked.override);
+  }
+
   clearQuery(): void {
     this._queryGenId++;
+    this._parkedQuery = null;
     this.isProcessing.set(false);
     this.waitingForTickets.set(false);
     // Must be cleared here too: the recovery effect only clears it while a query is active, so a
@@ -2636,8 +2673,10 @@ export class BuildListComponent {
     // auto-triggers this query when coreDataLoaded becomes true.
     if (!this.coreDataLoaded()) {
       this.isProcessing.set(true);
+      this._parkedQuery = { override: overrideTradeUnits };
       return;
     }
+    this._parkedQuery = null;
 
     const queryGen = ++this._queryGenId;
     this.isProcessing.set(true);
