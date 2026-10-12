@@ -10,7 +10,8 @@ import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
-import { binSiteGrainBreakdown, formatLastBid } from '@shared/utils/grain-on-farm';
+import { binSiteGrainBreakdown, formatLastBid, grainOnFarmColorKey, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
+import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
 
@@ -389,6 +390,16 @@ export class CustomerPrintReportComponent {
   readonly grainOnFarmTotal = computed(() =>
     (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
   readonly formatLastBid = formatLastBid;
+  private readonly _cropGroupLookup = computed(() => buildCropGroupLookup(this.commodities()));
+  private readonly _commodityByCode = computed(() => indexCommoditiesByCode(this.commodities()));
+  /** Band tint for a grain-on-farm row. The rows hold commodity CODES (YC, HRWW), which the keyword
+   *  matcher in commodityBandColor cannot read, so resolve the code to its crop group first (YC → Corn →
+   *  yellow), then fall back to the commodity name, then the code. */
+  grainBandColor(code: string | null | undefined): string {
+    const group = grainOnFarmColorKey(code, this._cropGroupLookup());
+    const name = this._commodityByCode().get((code || '').trim().toUpperCase())?.name;
+    return this.commodityBandColor(group !== (code || '').trim() ? group : (name || group));
+  }
 
   readonly reportNotes = computed(() => {
     const allNotes = this.notes();

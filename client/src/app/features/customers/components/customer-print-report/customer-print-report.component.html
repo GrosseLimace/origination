@@ -356,7 +356,7 @@
                         </td>
                       </tr>
                       @for (g of site.rows; track $index) {
-                        <tr [style.background]="commodityBandColor(g.commodityCode)">
+                        <tr [style.background]="grainBandColor(g.commodityCode)">
                           <td style="padding: 4px 8px; text-align: left; font-weight: 500; border: 1px solid #e5e7eb;">{{ g.commodityCode }}</td>
                           <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ (g.bushelsOnHand ?? 0).toLocaleString() }} bu</td>
                           <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ (g.bushelsSold ?? 0) > 0 ? (g.bushelsSold ?? 0).toLocaleString() + ' bu' : '—' }}</td>
