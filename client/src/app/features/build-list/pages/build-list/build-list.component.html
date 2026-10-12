@@ -1686,15 +1686,18 @@
                         </div>
                       </div>
 
-                      <!-- Bin sites & grain, next to the name: a line per bin site (name · capacity · map pin) with
-                           the grain stored there under it — Crop | Total | Sold | Grade | Target | Last Bid — the
-                           same grouping as the profile's Grain on Farm table. Only the map pin stops the row click. -->
+                      <!-- Bin sites & grain, next to the name: one line per bin site (name · capacity · map pin ·
+                           "2 crops · 35,000 bu"), closed until the user opens it (user 2026-10-12: too much at once
+                           for a producer with many bins). An open site lists its grain — Crop | Total | Sold | Grade |
+                           Target | Last Bid — the same grouping as the profile's Grain on Farm table; the column
+                           headings show once any site is open. -->
                       @if (showGrainOnFarmFilters()) {
                         @let siteGroups = binSiteGrainBreakdown(customer);
                         @let allSites = binSitesShowAll().has(customer.id);
                         <div class="min-w-0 col-start-2 row-start-1">
                           @if (hasBinSiteGrain(customer)) {
                             <table class="w-auto max-w-full text-sm tabular-nums">
+                            @if (anyBinSiteOpen(customer.id)) {
                             <thead>
                               <tr class="text-xs uppercase tracking-wide whitespace-nowrap text-gray-400 dark:text-gray-500">
                                 <th scope="col" class="py-1.5 pr-5 font-medium text-left">Crop</th>
@@ -1705,27 +1708,37 @@
                                 <th scope="col" class="py-1.5 pl-3 font-medium text-center" title="Last bid">Last Bid</th>
                               </tr>
                             </thead>
+                            }
                             <tbody class="text-gray-700 dark:text-gray-300">
                               @for (site of (allSites ? siteGroups : siteGroups.slice(0, binSitesVisible)); track $index) {
-                                @let siteRows = allSites ? site.rows : site.rows.slice(0, binSiteCropsVisible);
-                                <tr>
-                                  <th scope="rowgroup" colspan="6" class="pt-3 pb-1 text-left font-semibold text-gray-700 dark:text-gray-200">
-                                    <!-- Plain inline text (not flex) so a long name and its capacity wrap as one sentence. -->
-                                    <span>
+                                @let siteOpen = isBinSiteOpen(customer.id, $index);
+                                <tr [class.border-t]="!$first" class="border-gray-100 dark:border-gray-700/60">
+                                  <th scope="rowgroup" colspan="6" class="py-1.5 text-left font-semibold text-gray-700 dark:text-gray-200">
+                                    <!-- The name opens / closes the site; inline text (not flex) so a long name, its capacity
+                                         and the summary wrap as one sentence. The map pin sits outside the button. -->
+                                    <button type="button" (click)="$event.stopPropagation(); toggleBinSite(customer.id, $index)"
+                                            [attr.aria-expanded]="siteOpen" [title]="siteOpen ? 'Hide the grain at ' + site.name : 'Show the grain at ' + site.name"
+                                            class="text-left hover:text-scoular-green-accessible dark:hover:text-scoular-green focus:outline-none focus-visible:underline cursor-pointer">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                                           class="inline-block align-[-1px] mr-1 text-gray-400 transition-transform" [class.rotate-90]="siteOpen"><polyline points="9 6 15 12 9 18"/></svg>
                                       {{ site.name }}
                                       @if (site.capacity != null) {
                                         <span class="font-normal text-gray-400 dark:text-gray-500">· {{ site.capacity | number }} bu capacity</span>
                                       }
+                                      @if (!siteOpen) {
+                                        <span class="font-normal text-gray-500 dark:text-gray-400">· {{ binSiteGrainSummary(site) }}</span>
+                                      }
+                                    </button>
                                       @if (site.mapUrl) {
                                         <a [href]="site.mapUrl" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()" title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
                                            class="ml-1 inline-flex align-[-2px] text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
                                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                                         </a>
                                       }
-                                    </span>
                                   </th>
                                 </tr>
-                                @for (g of siteRows; track $index) {
+                                @if (siteOpen) {
+                                @for (g of site.rows; track $index) {
                                   <tr class="border-t border-gray-100 dark:border-gray-700/60 align-middle">
                                     <td class="py-1.5 pr-5 text-left whitespace-nowrap">{{ g.commodityCode }}</td>
                                     <td class="py-1.5 px-3 text-center whitespace-nowrap">{{ (g.bushelsOnHand || 0) | number }}</td>
@@ -1738,6 +1751,7 @@
                                   <tr class="border-t border-gray-100 dark:border-gray-700/60">
                                     <td colspan="6" class="py-1.5 text-gray-400 dark:text-gray-500 italic">No grain on farm recorded</td>
                                   </tr>
+                                }
                                 }
                               }
                             </tbody>
