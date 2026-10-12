@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, Subject, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
+import { applyProducerDetails } from './apply-producer-details';
 import { catchError, map, takeUntil } from 'rxjs/operators';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
@@ -617,17 +618,7 @@ export class HomeComponent {
       const pd = detailsMap.get(customer.id);
       if (pd) {
         changed = true;
-        return {
-          ...customer,
-          totalAcres: pd.totalAcres ?? customer.totalAcres,
-          grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
-          primaryContact: pd.primaryContact ?? customer.primaryContact,
-          primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
-          contacts: pd.contacts ?? customer.contacts,
-          binSites: pd.binSites ?? customer.binSites,
-          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
-          linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
-        };
+        return applyProducerDetails(customer, pd);
       }
       return customer;
     });
@@ -1208,15 +1199,8 @@ export class HomeComponent {
     const pdMap = this.producerDetailsMap();
     const pd = pdMap.get(customer.id);
     if (pd) {
-      customer = {
-        ...customer,
-        totalAcres: pd.totalAcres ?? customer.totalAcres,
-        primaryContact: pd.primaryContact ?? customer.primaryContact,
-        contacts: pd.contacts ?? customer.contacts,
-        binSites: pd.binSites ?? customer.binSites,
-        commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
-        linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
-      };
+      customer = applyProducerDetails(customer, pd);
+      this._refreshSelectedProducerDetails(customer.id, pd);
     } else {
       this.apiService.getProducerDetails(customer.id).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (details) => {
@@ -1225,17 +1209,7 @@ export class HomeComponent {
           this.producerDetailsMap.set(map);
           const sel = this.selectedCustomer();
           if (sel?.id === customer.id) {
-            const updated = {
-              ...sel,
-              totalAcres: details.totalAcres ?? sel.totalAcres,
-              grainOnFarm: details.grainOnFarm ?? sel.grainOnFarm,
-              primaryContact: details.primaryContact ?? sel.primaryContact,
-              primaryPhone: details.primaryPhone ?? sel.primaryPhone,
-              contacts: details.contacts ?? sel.contacts,
-              binSites: details.binSites ?? sel.binSites,
-              commodities: details.commodities ? details.commodities.split(',').map(c => c.trim()) : sel.commodities,
-              linkedProducerIds: details.linkedProducerIds ? details.linkedProducerIds.split(',').filter(Boolean) : sel.linkedProducerIds
-            };
+            const updated = applyProducerDetails(sel, details);
             this.selectedCustomer.set(updated);
             this._fetchMissingLinkedProducers(updated);
             this._loadCustomerData(updated.id, updated);
@@ -1304,18 +1278,35 @@ export class HomeComponent {
   /** Applies ProducerDetails enrichment onto a freshly-fetched Customer. */
   private _enrichCustomer(fetched: Customer): Customer {
     const pd = this.producerDetailsMap().get(fetched.id);
-    if (!pd) return fetched;
-    return {
-      ...fetched,
-      totalAcres: pd.totalAcres ?? fetched.totalAcres,
-      grainOnFarm: pd.grainOnFarm ?? fetched.grainOnFarm,
-      primaryContact: pd.primaryContact ?? fetched.primaryContact,
-      primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
-      contacts: pd.contacts ?? fetched.contacts,
-      binSites: pd.binSites ?? fetched.binSites,
-      commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
-      linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
-    };
+    return pd ? applyProducerDetails(fetched, pd) : fetched;
+  }
+
+  /**
+   * Re-reads the clicked producer's details in the background and applies them if they changed since
+   * the page loaded them — e.g. a teammate added grain on farm (QA, RUNDMAP, 2026-10-12: the list showed
+   * none while Build a List, which reads fresh, showed 50,000 bu). The profile already shows the cached
+   * copy, so this only matters when something changed; then the map, the list row and the profile update.
+   */
+  private _refreshSelectedProducerDetails(customerId: number, cached: ProducerDetails): void {
+    this.apiService.getProducerDetails(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (details) => {
+        if (JSON.stringify(details) === JSON.stringify(cached)) return;
+        const linkedBefore = cached.linkedProducerIds ?? '';
+        this._mergeProducerDetails([details]);
+        const sel = this.selectedCustomer();
+        // _mergeProducerDetails updates the profile when the producer is in this trade unit's list; one
+        // opened from outside it (a linked producer in another trade unit) is updated here.
+        if (sel?.id === customerId && !this.customers().some(c => c.id === customerId)) {
+          const updated = applyProducerDetails(sel, details);
+          this.selectedCustomer.set(updated);
+          if ((details.linkedProducerIds ?? '') !== linkedBefore) {
+            this._fetchMissingLinkedProducers(updated);
+            this._ensureCustomerNotes(updated);
+          }
+        }
+      },
+      error: (err) => this._reportBackgroundFailure('refresh producer details', err)
+    });
   }
 
   /**
@@ -2270,19 +2261,7 @@ export class HomeComponent {
         next: (fetched) => {
           // Merge producer details if available
           const pd = this.producerDetailsMap().get(fetched.id);
-          if (pd) {
-            fetched = {
-              ...fetched,
-              totalAcres: pd.totalAcres ?? fetched.totalAcres,
-              grainOnFarm: pd.grainOnFarm ?? fetched.grainOnFarm,
-              primaryContact: pd.primaryContact ?? fetched.primaryContact,
-              primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
-              contacts: pd.contacts ?? fetched.contacts,
-              binSites: pd.binSites ?? fetched.binSites,
-              commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
-              linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
-            };
-          }
+          if (pd) fetched = applyProducerDetails(fetched, pd);
           // Cache so getLinkedGroup can find them even though they're outside the TU filter
           const cache = new Map(this._crossTradeUnitCustomers());
           cache.set(fetched.id, fetched);
