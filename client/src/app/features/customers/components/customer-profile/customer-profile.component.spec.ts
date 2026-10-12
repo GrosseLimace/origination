@@ -224,6 +224,7 @@ describe('CustomerProfileComponent — bin site table', () => {
   let tracking: { trackBinSiteMapClick: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
+    localStorage.clear();
     tracking = { trackBinSiteMapClick: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
@@ -284,23 +285,33 @@ describe('CustomerProfileComponent — bin site table', () => {
     expect(component.singleBinSite()?.url).toContain('39.1');
   });
 
-  it('two or more sites start collapsed behind the toggle, and toggle open', () => {
+  it('two or more sites sit behind the toggle, which starts open, and toggles closed', () => {
     ref.setInput('customer', makeCustomer({ binSites: [{ name: 'A' }, { name: 'B' }] }));
 
     expect(component.singleBinSite()).toBeNull();
-    expect(component.binSitesExpanded()).toBe(false);
-    component.toggleBinSites();
     expect(component.binSitesExpanded()).toBe(true);
+    component.toggleBinSites();
+    expect(component.binSitesExpanded()).toBe(false);
   });
 
-  it('closes the table again when a different producer is shown', () => {
-    const sites = [{ name: 'A', latitude: 39.1, longitude: -95.1 }];
-    ref.setInput('customer', makeCustomer({ id: 1, binSites: sites }));
+  // Like the Activity Summary: open until the user closes it, and a close sticks across producers
+  // and reloads (the profile is rebuilt between producers, so a new instance stands in for both).
+  it('remembers an explicit close of Bin Sites and of Grain on Farm, and an explicit reopen', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ name: 'A' }, { name: 'B' }],
+      grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 100 }],
+    }));
+    expect(component.showGrainOnFarm()).toBe(true);
     component.toggleBinSites();
+    component.toggleGrainOnFarm();
 
-    ref.setInput('customer', makeCustomer({ id: 2, binSites: sites }));
+    const again = TestBed.createComponent(CustomerProfileComponent).componentInstance;
+    expect([again.binSitesExpanded(), again.showGrainOnFarm()]).toEqual([false, false]);
 
-    expect(component.binSitesExpanded()).toBe(false);
+    component.toggleBinSites();
+    component.toggleGrainOnFarm();
+    const third = TestBed.createComponent(CustomerProfileComponent).componentInstance;
+    expect([third.binSitesExpanded(), third.showGrainOnFarm()]).toEqual([true, true]);
   });
 
   it('tracks a map click under its own subfeature', () => {
