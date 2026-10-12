@@ -171,7 +171,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         var primaryPhone = contactItems == null ? args.PrimaryPhone : primaryRow?.Phone;
         var mergedSiteKeys = new Dictionary<Guid, Guid>();
         var binSiteItems = args.BinSites == null ? null : NormalizeBinSites(args.BinSites, mergedSiteKeys);
-        foreach (var g in grainOnFarm)
+        foreach (var g in grainOnFarm ?? [])
         {
             if (g.BinSiteKey is { } key && mergedSiteKeys.TryGetValue(key, out var kept)) g.BinSiteKey = kept;
         }
@@ -314,6 +314,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         // for the BinSitesModifiedAt comparison further down.
         var siteKeyById = existingSites.ToDictionary(b => b.Id, b => b.SiteKey);
         var sitesBefore = SitesFingerprint(existingSites.Select(b => (b.SiteKey, b.Name, b.Latitude, b.Longitude, b.Capacity, b.SortOrder)));
+        var removedSiteIds = new HashSet<int>();
         if (binSiteItems != null)
         {
             // A key already used by ANOTHER producer's site (a copied payload, a buggy client) would
@@ -333,6 +334,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             if (removedSites.Count > 0)
             {
                 _appContext.ProducerBinSites.RemoveRange(removedSites);
+                removedSiteIds.UnionWith(removedSites.Select(b => b.Id));
             }
             siteByKey = new Dictionary<Guid, ProducerBinSite>();
             foreach (var item in binSiteItems)
@@ -352,37 +354,59 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             }
         }
 
-        // Same rebuild pattern for dbo.ProducerGrainOnFarm — replace the customer's grain-on-farm set.
-        // Each row resolves its BinSiteKey to one of the sites above; a key matching no site (a stale
-        // tab whose site was deleted elsewhere) saves the row without a site rather than losing it.
+        // dbo.ProducerGrainOnFarm. When the request carries grain, the same rebuild pattern — replace the
+        // customer's set. Each row resolves its BinSiteKey to one of the sites above; a key matching no site
+        // (a stale tab whose site was deleted elsewhere) saves the row without a site rather than losing it.
         // A removed site's rows go with the old set, and EF deletes them before the site
         // (FK_ProducerGrainOnFarm_BinSite). Dedupe by (site, commodity code), last write wins; skip
         // blank codes.
+        //
+        // Null grain (the same contract as Contacts and BinSites, 2026-10-12): the request isn't editing
+        // grain — the home page's automatic commodity save, a contact or linked-producer propagation — so
+        // the existing rows stay. Those saves used to resend grain from a cached copy, and a copy older
+        // than a teammate's edit wiped the teammate's rows (QA, RUNDMAP). Only the rows at a site this
+        // save removes go, as the FK would otherwise block removing the site.
         var oldGrain = await _appContext.ProducerGrainOnFarm
             .Where(g => g.CustomerId == customerId)
             .ToListAsync(cancellationToken);
-        if (oldGrain.Count > 0)
-        {
-            _appContext.ProducerGrainOnFarm.RemoveRange(oldGrain);
-        }
-        var grainItems = grainOnFarm
-            .Where(g => !string.IsNullOrWhiteSpace(g.CommodityCode))
-            .Select(g => (Row: g, Site: g.BinSiteKey is { } key && siteByKey.TryGetValue(key, out var site) ? site : null))
-            .GroupBy(x => (x.Site, Code: x.Row.CommodityCode.Trim().ToUpperInvariant()))
-            .Select(g => g.Last())
-            .ToList();
+        (Guid? Site, string Code, decimal? OnHand, decimal? Sold, decimal? Target, decimal? LastBid, string? Grade) Stored(ProducerGrainOnFarm g) => (
+            g.BinSiteId is { } id && siteKeyById.TryGetValue(id, out var k) ? k : (Guid?)null,
+            g.CommodityCode, g.BushelsOnHand, g.BushelsSold, g.TargetBushels, g.LastBid, g.Grade);
         // BinSitesModifiedAt moves only when this save actually changes the producer's bin sites or grain
         // on farm (Build a List orders its Grain on Farm & Bin Sites prompts by it) — an acres or contact
         // edit that re-sends the same sites and grain leaves it alone.
-        var grainBefore = GrainFingerprint(oldGrain.Select(g => (
-            g.BinSiteId is { } id && siteKeyById.TryGetValue(id, out var k) ? k : (Guid?)null,
-            g.CommodityCode, g.BushelsOnHand, g.BushelsSold, g.TargetBushels, g.LastBid, g.Grade)));
+        var grainBefore = GrainFingerprint(oldGrain.Select(Stored));
+        List<(GrainOnFarmEntry Row, ProducerBinSite? Site)> grainItems;
+        string grainAfter;
+        if (grainOnFarm == null)
+        {
+            var dropped = oldGrain.Where(g => g.BinSiteId is { } id && removedSiteIds.Contains(id)).ToList();
+            if (dropped.Count > 0)
+            {
+                _appContext.ProducerGrainOnFarm.RemoveRange(dropped);
+            }
+            grainItems = [];
+            grainAfter = GrainFingerprint(oldGrain.Except(dropped).Select(Stored));
+        }
+        else
+        {
+            if (oldGrain.Count > 0)
+            {
+                _appContext.ProducerGrainOnFarm.RemoveRange(oldGrain);
+            }
+            grainItems = grainOnFarm
+                .Where(g => !string.IsNullOrWhiteSpace(g.CommodityCode))
+                .Select(g => (Row: g, Site: g.BinSiteKey is { } key && siteByKey.TryGetValue(key, out var site) ? site : null))
+                .GroupBy(x => (x.Site, Code: x.Row.CommodityCode.Trim().ToUpperInvariant()))
+                .Select(g => g.Last())
+                .ToList();
+            grainAfter = GrainFingerprint(grainItems.Select(x => (
+                x.Site?.SiteKey, x.Row.CommodityCode.Trim(), x.Row.BushelsOnHand, x.Row.BushelsSold, x.Row.TargetBushels,
+                x.Row.LastBid, string.IsNullOrWhiteSpace(x.Row.Grade) ? null : x.Row.Grade.Trim())));
+        }
         var sitesAfter = binSiteItems == null
             ? sitesBefore
             : SitesFingerprint(binSiteItems.Select(b => (b.SiteKey, b.Name, b.Latitude, b.Longitude, b.Capacity, b.SortOrder)));
-        var grainAfter = GrainFingerprint(grainItems.Select(x => (
-            x.Site?.SiteKey, x.Row.CommodityCode.Trim(), x.Row.BushelsOnHand, x.Row.BushelsSold, x.Row.TargetBushels,
-            x.Row.LastBid, string.IsNullOrWhiteSpace(x.Row.Grade) ? null : x.Row.Grade.Trim())));
         if (sitesAfter != sitesBefore || grainAfter != grainBefore)
         {
             saved.BinSitesModifiedAt = DateTime.UtcNow;

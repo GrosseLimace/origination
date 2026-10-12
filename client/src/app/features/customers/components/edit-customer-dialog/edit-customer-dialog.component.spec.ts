@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { ComponentRef, signal } from '@angular/core';
-import { of, throwError } from 'rxjs';
+import { of, throwError, Subject } from 'rxjs';
+import { ProducerDetails } from '@models';
 import { EditCustomerDialogComponent } from './edit-customer-dialog.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
@@ -53,6 +54,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
             getCustomerTradeUnits: () => of([]),
             getCustomers: () => of([]),
             getPlantingIntentionsByCustomer: () => of(intentions),
+            getProducerDetails: () => of({ customerId: 42 } as ProducerDetails),
             removeDormantTradeUnit: () => of(undefined),
           },
         },
@@ -242,8 +244,11 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number }[];
   }[];
 
+  let details$: Subject<ProducerDetails>;
+
   beforeEach(() => {
     saved = [];
+    details$ = new Subject<ProducerDetails>();
     TestBed.configureTestingModule({
       providers: [
         {
@@ -253,6 +258,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
             getCommodities: () => of([]),
             getPlantingCommodities: () => of([]),
             getCustomerTradeUnits: () => of([]),
+            getProducerDetails: () => details$.asObservable(),
             // Non-empty on purpose: the producer-search preload effect re-fetches while its cache
             // is empty, so a synchronous empty result would loop TestBed.tick() forever.
             getCustomers: () => of([makeCustomer({ id: 7, name: 'Other Farm' })]),
@@ -283,6 +289,33 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     ref.setInput('isOpen', true);
     TestBed.tick();
   }
+
+  // The page's copy of the producer can be older than a teammate's edit, and a save sends the whole
+  // sets — so the dialog re-reads the saved details on open (QA, RUNDMAP, 2026-10-12).
+  it('swaps in the freshly read bin sites and grain when the user has not touched them', () => {
+    open(makeCustomer({ binSites: [{ siteKey: 'b1', name: 'Bin Site 1' }] }));
+    expect(component.editGrainOnFarm()).toEqual([]);
+
+    details$.next({
+      customerId: 42,
+      binSites: [{ siteKey: 'b1', name: 'Bin Site 1' }, { siteKey: 'b3', name: 'Bin 3', capacity: 1000000 }],
+      grainOnFarm: [{ binSiteKey: 'b3', binSiteName: 'Bin 3', commodityCode: 'YC', bushelsOnHand: 50000 }],
+    } as ProducerDetails);
+
+    expect(component.editBinSites().map(b => b.name)).toEqual(['Bin Site 1', 'Bin 3']);
+    expect(component.editGrainOnFarm().map(g => [g.commodityCode, g.siteKey])).toEqual([['YC', 'b3']]);
+    expect(component.hasChanges()).toBe(false); // the fresh rows are the new baseline
+  });
+
+  it('keeps what the user already edited when the fresh read lands', () => {
+    open(makeCustomer({ binSites: [{ siteKey: 'b1', name: 'Bin Site 1' }] }));
+    component.updateBinSiteField(0, 'name', 'Renamed');
+
+    details$.next({ customerId: 42, binSites: [{ siteKey: 'b1', name: 'Bin Site 1' }, { siteKey: 'b2', name: 'New' }], grainOnFarm: [] } as ProducerDetails);
+
+    expect(component.editBinSites().map(b => b.name)).toEqual(['Renamed']);
+    expect(component.hasChanges()).toBe(true);
+  });
 
   it('hydrates saved sites as six-place coordinate text, unchanged until edited', () => {
     open(makeCustomer({ binSites: [{ name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955 }] }));
