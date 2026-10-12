@@ -120,22 +120,43 @@ export class CustomerProfileComponent {
   /** Total bushels currently on the farm (sum of per-commodity on-hand). */
   readonly grainOnFarmTotal = computed(() =>
     (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
-  /** Whether the grain-on-farm breakdown is expanded in the profile header. Starts OPEN for a producer with
-   *  exactly one bin site (user 2026-10-12: nothing to choose between, so show it), closed with several or
-   *  none; back to that default whenever a different producer is shown. The source is a string so a save
-   *  that keeps the same producer and the same one-site-ness does not reset the toggle. */
-  showGrainOnFarm = linkedSignal<string, boolean>({
-    source: () => `${this.customer().id}:${(this.customer().binSites?.length ?? 0) === 1}`,
-    computation: source => source.endsWith(":true"),
-  });
+  // The two dropdowns remember an explicit close in localStorage (same pattern and reasons as
+  // ActivitySummaryComponent: the profile is torn down between producers, and someone who closed a
+  // section expects it to stay closed after a reload). Open by default.
+  private static readonly GRAIN_COLLAPSED_KEY = 'origination.profile.grainOnFarm.collapsed';
+  private static readonly BIN_SITES_COLLAPSED_KEY = 'origination.profile.binSites.collapsed';
+
+  private static readCollapsed(key: string): boolean {
+    try {
+      return localStorage.getItem(key) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private static writeCollapsed(key: string, collapsed: boolean): void {
+    try {
+      localStorage.setItem(key, collapsed ? 'true' : 'false');
+    } catch {
+      // Private browsing / storage disabled — the toggle still works for this session.
+    }
+  }
+
+  /** Whether the grain-on-farm breakdown is expanded in the profile header. Open by default and left however
+   *  the user set it — across producers and reloads, like the Activity Summary (user 2026-10-12); only an
+   *  explicit close is remembered. */
+  showGrainOnFarm = signal(!CustomerProfileComponent.readCollapsed(CustomerProfileComponent.GRAIN_COLLAPSED_KEY));
   /** The breakdown is on screen: expanded and something to show. The template also widens the grid
    *  for it (Contact spans both rows while the table spans Farm Details + Harvest Contract Pace). */
   readonly grainOnFarmOpen = computed(() => this.showGrainOnFarm() && this.grainOnFarmRows().length > 0);
   /** Expand/collapse the breakdown — only when there's something to show. (Editing the values
    *  lives in the Edit Producer dialog; this is a read-only summary.) */
   toggleGrainOnFarm(): void {
-    if (this.grainOnFarmRows().length > 0) this.showGrainOnFarm.update(v => !v);
+    if (this.grainOnFarmRows().length === 0) return;
+    this.showGrainOnFarm.update(v => !v);
+    CustomerProfileComponent.writeCollapsed(CustomerProfileComponent.GRAIN_COLLAPSED_KEY, !this.showGrainOnFarm());
   }
+
   // Rows hold a commodity code (or a legacy crop-group name); hover on the Crop cell shows the
   // commodity name. Lazy computeds, so reading the `commodities` input declared further down is safe.
   private readonly _grainLookup = computed(() => buildCropGroupLookup(this.commodities()));
@@ -251,12 +272,13 @@ export class CustomerProfileComponent {
     return rows.length === 1 ? rows[0] : null;
   });
 
-  /** With two or more bin sites, the table starts collapsed to one line, "▸ Bin Sites (N)", and closes
-   *  again whenever a different producer is shown. */
-  readonly binSitesExpanded = linkedSignal({ source: () => this.customer().id, computation: () => false });
+  /** With two or more bin sites, the "▸ Bin Sites (N)" table — open by default and left however the user
+   *  set it, across producers and reloads (user 2026-10-12); only an explicit close is remembered. */
+  readonly binSitesExpanded = signal(!CustomerProfileComponent.readCollapsed(CustomerProfileComponent.BIN_SITES_COLLAPSED_KEY));
 
   toggleBinSites(): void {
     this.binSitesExpanded.update(open => !open);
+    CustomerProfileComponent.writeCollapsed(CustomerProfileComponent.BIN_SITES_COLLAPSED_KEY, !this.binSitesExpanded());
   }
 
   // Local state - signals
