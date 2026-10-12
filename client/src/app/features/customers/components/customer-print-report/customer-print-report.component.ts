@@ -10,6 +10,8 @@ import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
+import { binSiteGrainBreakdown, formatLastBid, grainOnFarmColorKey, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
+import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
 
@@ -73,6 +75,8 @@ export class CustomerPrintReportComponent {
   showTickets = signal(true);
   showPlanting = signal(true);
   showStorage = signal(true);
+  /** Bin Sites & Grain on Farm section (user 2026-10-12). */
+  showBinSites = signal(true);
 
   // Originator info
   originatorName = signal('');
@@ -111,6 +115,7 @@ export class CustomerPrintReportComponent {
           this.selectedPlantingYears.set(this.plantingYears());
           this.plantingYearsExpanded.set(false);
           this.showStorage.set(this.storedGrain().length > 0);
+          this.showBinSites.set(this.binSiteGroups().length > 0);
           this.showPricingLines.set(this.visiblePricingLines().length > 0);
         });
       } else if (!open) {
@@ -378,6 +383,23 @@ export class CustomerPrintReportComponent {
     }
     return [...groupMap.values()].sort((a, b) => a.crop.localeCompare(b.crop));
   });
+
+  /** The producer's bin sites in saved order (name and capacity — no coordinates on paper) with the grain
+   *  stored there — the same grouping the producer page and Build a List use. */
+  readonly binSiteGroups = computed(() => binSiteGrainBreakdown(this.customer().binSites, this.customer().grainOnFarm));
+  readonly grainOnFarmTotal = computed(() =>
+    (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
+  readonly formatLastBid = formatLastBid;
+  private readonly _cropGroupLookup = computed(() => buildCropGroupLookup(this.commodities()));
+  private readonly _commodityByCode = computed(() => indexCommoditiesByCode(this.commodities()));
+  /** Band tint for a grain-on-farm row. The rows hold commodity CODES (YC, HRWW), which the keyword
+   *  matcher in commodityBandColor cannot read, so resolve the code to its crop group first (YC → Corn →
+   *  yellow), then fall back to the commodity name, then the code. */
+  grainBandColor(code: string | null | undefined): string {
+    const group = grainOnFarmColorKey(code, this._cropGroupLookup());
+    const name = this._commodityByCode().get((code || '').trim().toUpperCase())?.name;
+    return this.commodityBandColor(group !== (code || '').trim() ? group : (name || group));
+  }
 
   readonly reportNotes = computed(() => {
     const allNotes = this.notes();
