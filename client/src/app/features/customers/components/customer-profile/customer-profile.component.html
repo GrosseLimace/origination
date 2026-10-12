@@ -486,11 +486,11 @@
                       @let grpOpen = isGrainGroupOpen($index);
                       @if (grainGroupsCollapsible()) {
                         <tr>
-                          <th scope="rowgroup" colspan="6" class="pt-1.5 pb-0.5 text-left text-[11px] @4xl/profile:text-xs font-semibold text-gray-600 dark:text-gray-300">
+                          <th scope="rowgroup" colspan="6" class="pt-2 pb-0.5 text-left text-xs @4xl/profile:text-sm font-semibold text-gray-600 dark:text-gray-300">
                             <button type="button" (click)="toggleGrainGroup($index)" [attr.aria-expanded]="grpOpen"
                                     [title]="grpOpen ? 'Hide the grain at ' + grp.label : 'Show the grain at ' + grp.label"
                                     class="text-left hover:text-scoular-green-accessible dark:hover:text-scoular-green focus:outline-none focus-visible:underline cursor-pointer">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
                                    class="inline-block align-[-1px] mr-1 text-gray-400 transition-transform" [class.rotate-90]="grpOpen"><polyline points="9 6 15 12 9 18"/></svg>
                               {{ grp.label }}
                               @if (!grpOpen) {
@@ -501,7 +501,7 @@
                         </tr>
                       } @else if (grp.label) {
                         <tr>
-                          <th scope="rowgroup" colspan="6" class="pt-1.5 pb-0.5 text-left text-[11px] @4xl/profile:text-xs font-semibold text-gray-600 dark:text-gray-300">{{ grp.label }}</th>
+                          <th scope="rowgroup" colspan="6" class="pt-2 pb-0.5 text-left text-xs @4xl/profile:text-sm font-semibold text-gray-600 dark:text-gray-300">{{ grp.label }}</th>
                         </tr>
                       }
                       @if (grpOpen) {
