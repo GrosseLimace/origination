@@ -108,6 +108,11 @@ export class BuildListComponent {
   // forever. Loaded-flag, not length, so a real empty result still resolves.
   private _storageReady = signal(false);
   private _loadRequestId = 0;
+  /** Fires at the start of every _loadFresh so the previous load's subscriptions (core forkJoin +
+   *  background tickets) are dropped instead of lingering until they resolve. The requestId guard
+   *  already discarded their results; this stops the component from waiting on them at all, which
+   *  matters when the non-deferred selector fires one full reload per checkbox click. */
+  private readonly _cancelLoad$ = new Subject<void>();
   private _queryGenId = 0;
   // Key of the server-narrowed note slice currently in this.notes() for DISPLAY (encodes the
   // query generation + scope, e.g. `${gen}:content:beans|corn`, `${gen}:w:3`, `${gen}:pinned`).
@@ -2162,6 +2167,7 @@ export class BuildListComponent {
   /** Fetches all data fresh from the API for the current trade units.
    *  @param clearSignals If true, clears data signals immediately (TU change). If false, keeps them for display (background refresh). */
   private _loadFresh(clearSignals = false): void {
+    this._cancelLoad$.next();
     const requestId = ++this._loadRequestId;
     this._ticketsReady.set(false);
     // Fresh contracts not yet confirmed — contract-aware queries will wait on this until the
@@ -2205,7 +2211,7 @@ export class BuildListComponent {
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
       producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    }).pipe(takeUntil(this._cancelLoad$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Ignore stale response from a previous TU's load
         if (requestId !== this._loadRequestId) return;
@@ -2243,6 +2249,12 @@ export class BuildListComponent {
         // stale cache and needs to silently refresh with the now-complete data.
         if (this.queryText().trim() && this.hasGenerated() && !this.isProcessing()) {
           this._applyNlqFilter();
+        } else if (this.queryText().trim() && this.isProcessing() && !this.hasGenerated()) {
+          // A prompt picked DURING this reload was parked by processQuery's coreDataLoaded guard
+          // (the library stays clickable while a trade-unit change reloads). Re-enter processQuery
+          // instead of leaving it to _dataReadyEffect: that effect only WAITS for data, it never
+          // starts the lazy note/DP fetches, so a note or DP prompt would spin forever.
+          this.processQuery();
         }
       },
       error: () => {
@@ -2278,6 +2290,7 @@ export class BuildListComponent {
         else ticketFetchFailed = true;
         return of([] as Ticket[]);
       }),
+      takeUntil(this._cancelLoad$),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;

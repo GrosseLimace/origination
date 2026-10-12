@@ -364,8 +364,8 @@
                   <div class="space-y-1">
                     @for (item of group.queries; track item.id) {
                       <button type="button"
-                        (click)="coreDataLoaded() && selectLibraryQuery(item)"
-                        [disabled]="!hasTradeUnits() || !coreDataLoaded()"
+                        (click)="selectLibraryQuery(item)"
+                        [disabled]="!hasTradeUnits()"
                         class="group w-full text-left px-3 py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 hover:border-scoular-green/20 border border-transparent"
                       >
                         <span class="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-scoular-green-accessible dark:group-hover:text-scoular-green transition-colors">{{ item.name }}</span>
@@ -412,6 +412,15 @@
               Request a query
             </button>
           </div>
+        </div>
+      }
+
+      <!-- Trade-unit reload in progress with no query staged yet. Before this banner existed the
+           only visible effect of a reload was the greyed-out library, which read as a frozen page. -->
+      @if (!allProducersMode() && hasTradeUnits() && loading() && !isProcessing() && !waitingForTickets() && !waitingForNotes() && !waitingForDp()) {
+        <div class="flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+          <div class="inline-block animate-spin rounded-full h-5 w-5 border-[3px] border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green flex-shrink-0"></div>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Loading data for the selected trade units... You can pick a prompt now and it will run as soon as the data is ready.</p>
         </div>
       }
 
