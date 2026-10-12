@@ -41,7 +41,7 @@ public class ProducerGrainOnFarmSiteLinkTests
         new() { CommodityCode = code, BinSiteKey = site, BushelsOnHand = onHand };
 
     private static ProducerDetailsUpsertArgs Args(
-        IReadOnlyList<ProducerBinSiteEntry>? sites, IReadOnlyList<GrainOnFarmEntry> grain, long customerId = 100) =>
+        IReadOnlyList<ProducerBinSiteEntry>? sites, IReadOnlyList<GrainOnFarmEntry>? grain, long customerId = 100) =>
         new() { CustomerId = customerId, CustomerName = "Smith Farm", BinSites = sites, GrainOnFarm = grain };
 
     // -------------------------------------------------------------------------
@@ -261,6 +261,58 @@ public class ProducerGrainOnFarmSiteLinkTests
         pd.BinSitesModifiedAt = LongAgo;
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
+    }
+
+    // -------------------------------------------------------------------------
+    // Null grain = not provided = preserve (QA, RUNDMAP, 2026-10-12: the home page's automatic commodity
+    // save resent a cached, pre-teammate-edit copy and wiped the teammate's grain).
+    [Fact]
+    public async Task Upsert_NullGrain_PreservesTheRowsAndTheStamp()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+        await repo.UpsertAsync(Args([Site(North, "North Bins")], [Grain("YC", North, 50_000m), Grain("SB", North)]), "mpaulson", CancellationToken.None);
+        await BackdateAsync(db);
+
+        // An acres-style save that carries neither sites nor grain, then one that re-sends the sites only.
+        var saved = await repo.UpsertAsync(Args(null, null), "tuser", CancellationToken.None);
+        db.ChangeTracker.Clear();
+        var saved2 = await repo.UpsertAsync(Args([Site(North, "North Bins")], null), "tuser", CancellationToken.None);
+
+        Assert.Equal(2, saved.GrainOnFarm.Count);
+        Assert.Equal(2, saved2.GrainOnFarm.Count);
+        Assert.Equal(50_000m, saved2.GrainOnFarm.Single(g => g.CommodityCode == "YC").BushelsOnHand);
+        Assert.Equal(2, db.ProducerGrainOnFarm.AsNoTracking().Count());
+        Assert.Equal(LongAgo, await StampAsync(db));
+    }
+
+    [Fact]
+    public async Task Upsert_NullGrain_RemovingASite_DropsOnlyThatSitesRows()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+        await repo.UpsertAsync(Args([Site(North, "North Bins"), Site(Home, "Home Place")], [Grain("YC", North), Grain("SB", Home)]), "tuser", CancellationToken.None);
+        await BackdateAsync(db);
+
+        var saved = await repo.UpsertAsync(Args([Site(North, "North Bins")], null), "tuser", CancellationToken.None);
+
+        var row = Assert.Single(saved.GrainOnFarm);
+        Assert.Equal(("YC", North), (row.CommodityCode, row.BinSiteKey));
+        Assert.Single(db.ProducerBinSites.AsNoTracking());
+        Assert.True(await StampAsync(db) > LongAgo);
+    }
+
+    [Fact]
+    public async Task Upsert_EmptyGrain_StillRemovesEveryRow()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+        await repo.UpsertAsync(Args([Site(North, "North Bins")], [Grain("YC", North)]), "tuser", CancellationToken.None);
+
+        var saved = await repo.UpsertAsync(Args([Site(North, "North Bins")], []), "tuser", CancellationToken.None);
+
+        Assert.Empty(saved.GrainOnFarm);
+        Assert.Empty(db.ProducerGrainOnFarm.AsNoTracking());
     }
 
     // -------------------------------------------------------------------------

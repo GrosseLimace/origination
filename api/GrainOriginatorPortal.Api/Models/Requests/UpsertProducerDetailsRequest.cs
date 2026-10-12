@@ -33,7 +33,8 @@ public record UpsertProducerDetailsRequest
     public string? LinkedProducerIds { get; init; }
 
     /// <summary>Per-commodity grain-on-farm rows (bushels on hand, sold, target, last bid), each tied to
-    /// one of <see cref="BinSites"/> by key. Replaces the customer's existing set on save. Rows with a
+    /// one of <see cref="BinSites"/> by key. Replaces the customer's existing set on save; NULL (property
+    /// absent) means "not provided" — existing rows are preserved, like contacts and bin sites. Rows with a
     /// blank commodity code are dropped server-side; duplicates per (site, code) collapse to the last one.
     /// Capped at 2,000 rows (100 sites × the commodity catalog is well under that).</summary>
     [MaxLength(2000)]
