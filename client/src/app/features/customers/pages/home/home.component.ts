@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, Subject, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
-import { applyProducerDetails } from './apply-producer-details';
+import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { catchError, map, takeUntil } from 'rxjs/operators';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
@@ -1401,7 +1401,8 @@ export class HomeComponent {
       primaryPhone: primary.phone ?? null,
       commodities: existingPd?.commodities ?? null,
       linkedProducerIds: existingPd?.linkedProducerIds ?? ((linkedCustomer.linkedProducerIds || []).join(',') || null),
-      grainOnFarm: existingPd?.grainOnFarm ?? [],  // preserve — this save isn't editing grain on farm
+      // grainOnFarm intentionally omitted — this save isn't editing grain on farm, and the server
+      // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
       // Preserve any existing contact rows; otherwise seed the full primary row (name + phone +
       // email) so the linked producer gets the same contact card (never wipes rows).
       contacts: existingPd?.contacts && existingPd.contacts.length > 0
@@ -1883,7 +1884,8 @@ export class HomeComponent {
       primaryPhone: existingPd?.primaryPhone ?? null,
       commodities: merged.join(','),
       linkedProducerIds: existingPd?.linkedProducerIds ?? null,
-      grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
+      // grainOnFarm intentionally omitted — this save isn't editing grain on farm, and the server
+      // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
     }).subscribe({
       next: (pd) => {
         const map = new Map(this.producerDetailsMap());
@@ -2077,7 +2079,8 @@ export class HomeComponent {
       primaryPhone: existingPd?.primaryPhone ?? null,
         commodities: existingPd?.commodities ?? null,
         linkedProducerIds: updatedLinkedIds.length > 0 ? updatedLinkedIds.join(',') : null,
-        grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
+        // grainOnFarm intentionally omitted — this save isn't editing grain on farm, and the server
+        // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
         // `contacts` intentionally omitted — the server preserves existing rows when absent.
       }).subscribe({
         next: (pd) => {
@@ -2365,7 +2368,8 @@ export class HomeComponent {
       primaryPhone: customer.primaryPhone ?? null,
       commodities: updated.join(','),
       linkedProducerIds: (customer.linkedProducerIds ?? []).join(','),
-      grainOnFarm: customer.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
+      // grainOnFarm intentionally omitted — this save isn't editing grain on farm, and the server
+      // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
     }).subscribe({
       next: (savedDetails) => {
         // Reflect the new commodity in local state so the UI updates without a refresh.

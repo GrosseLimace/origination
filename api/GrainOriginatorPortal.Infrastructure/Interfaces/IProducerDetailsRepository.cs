@@ -21,7 +21,11 @@ public sealed record ProducerDetailsUpsertArgs
     public string? PrimaryPhone { get; init; }
     public string? Commodities { get; init; }
     public string? LinkedProducerIds { get; init; }
-    public IReadOnlyList<GrainOnFarmEntry> GrainOnFarm { get; init; } = [];
+    /// <summary>Same null-vs-empty contract as <see cref="Contacts"/> (since 2026-10-12): null preserves the
+    /// existing grain-on-farm rows — a save that isn't editing grain (the home page's automatic commodity
+    /// save, a contact or linked-producer propagation) sends none, instead of a cached copy that could be
+    /// older than a teammate's edit and wipe it (QA, RUNDMAP). An empty list removes them all.</summary>
+    public IReadOnlyList<GrainOnFarmEntry>? GrainOnFarm { get; init; }
     public IReadOnlyList<ProducerContactEntry>? Contacts { get; init; }
     /// <summary>Same null-vs-empty contract as <see cref="Contacts"/>: null preserves the existing
     /// bin-site rows, an empty list removes them all.</summary>

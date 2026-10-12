@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { Customer, Contract, Ticket, Commodity } from '@models';
+import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
@@ -605,6 +606,46 @@ export class EditCustomerDialogComponent {
     }));
   }
 
+  /**
+   * The form opens from the page's copy of the producer, which is as old as the page. A save sends the
+   * whole contact, bin-site and grain-on-farm sets, so a copy older than a teammate's edit would
+   * overwrite it (QA, RUNDMAP, 2026-10-12). Re-read the saved details on open and, for each set the
+   * user hasn't touched yet, swap in the fresh rows. Anything already edited is left alone; a failed
+   * read keeps the page's copy.
+   */
+  private _refreshFromServer(customer: Customer): void {
+    const openedFor = customer.id;
+    this.apiService.getProducerDetails(openedFor).subscribe({
+      next: (details) => {
+        if (!this.isOpen() || !this._initialized || this.customer()?.id !== openedFor) return;
+        const fresh = applyProducerDetails(customer, details);
+        if (this._parseNumericInput(this.editAcres) === this._originalAcres) {
+          this.editAcres = String(fresh.totalAcres || 0);
+          this._originalAcres = fresh.totalAcres || 0;
+        }
+        if (this._serializeContacts() === this._originalContacts) {
+          this.editContacts.set(this._contactsFromCustomer(fresh));
+          this._originalContacts = this._serializeContacts();
+        }
+        // Bin sites and grain go together: grain rows point at sites by key.
+        if (this._serializeBinSites() === this._originalBinSites && this._serializeGrain() === this._originalGrainOnFarm) {
+          this.editBinSites.set(this._binSitesFromCustomer(fresh));
+          this.editGrainOnFarm.set(this._grainFromCustomer(fresh));
+          this._grainAutoAddedCommodities.clear();
+          this._resetGrainPicker();
+          this._originalBinSites = this._serializeBinSites();
+          this._originalGrainOnFarm = this._serializeGrain();
+        }
+        const linkedNow = [...this.editLinkedProducerIds()].sort().join(',');
+        if (linkedNow === [...this._originalLinkedProducerIds].sort().join(',')) {
+          this.editLinkedProducerIds.set([...(fresh.linkedProducerIds || [])]);
+          this._originalLinkedProducerIds = [...(fresh.linkedProducerIds || [])];
+        }
+      },
+      error: () => { /* keep the page's copy */ },
+    });
+  }
+
   private _resetGrainPicker(): void {
     this.newGrainCode.set('');
     this.grainPickerSite.set(null);
@@ -745,6 +786,7 @@ export class EditCustomerDialogComponent {
         }
 
         this._initialized = true;
+        this._refreshFromServer(customer);
       }
 
       // Reset initialized flag when dialog closes
