@@ -10,7 +10,7 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, QueryLibraryItem } from '@models';
+import { Customer, QueryLibraryItem, SavedList } from '@models';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -212,6 +212,52 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     expect(button).not.toContain('coreDataLoaded');
     expect(button).not.toContain('!hasTradeUnits()');
     expect(html).toContain('Loading data for the selected trade units');
+  });
+
+  it('a saved list clicked during the cache-path background refresh keeps its hand-added members', () => {
+    // Arriving from the producer home page: customers are already cached, so _initLoad enables the
+    // page at once and refreshes in the background. A saved list clicked in that window runs its
+    // OWN fetch (_fetchAndFilter). The background refresh landing must not re-enter processQuery
+    // for it - that bumps _queryGenId, the list's fetch is discarded as superseded, and the
+    // hand-added producers it would have resolved never appear.
+    const roster = [customer(1, 'Regular Farm'), customer(7, 'Hand-added Farm')];
+    appState.setCustomers(roster);
+    const c = mount();
+    expect(c.coreDataLoaded()).toBe(true);
+    expect(c.loading()).toBe(false);
+    expect(api.batches.length).toBe(1); // the background refresh
+
+    const list: SavedList = { id: 1, name: 'Deliveries', query: 'Producers who delivered this month', includedCustomerIds: [7], createdAt: '' };
+    c.loadSavedList(list);
+    expect(c.isProcessing()).toBe(true);
+    expect(api.batches.length).toBe(2); // the list's own fetch
+
+    api.land(0, roster);          // background refresh lands first
+    TestBed.tick();
+    api.land(1, roster);          // then the list's fetch
+    TestBed.tick();
+
+    expect(c.isProcessing()).toBe(false);
+    expect(c.hasGenerated()).toBe(true);
+    expect(c.manuallyIncludedCustomers().map(x => x.id)).toEqual([7]);
+  });
+
+  it('deselecting every trade unit drops the reload that was in flight for the old one', () => {
+    const c = mount();
+    api.land(0, []);
+    appState.setTradeUnits(['2000']);
+    TestBed.tick();
+    expect(c.loading()).toBe(true);
+
+    appState.setTradeUnits([]);
+    TestBed.tick();
+    expect(c.loading()).toBe(false);
+    expect(c.coreDataLoaded()).toBe(false);
+
+    // The old reload landing must not re-open the page with the previous trade unit's roster.
+    api.land(1, [customer(9, 'Old TU Farm')]);
+    expect(c.coreDataLoaded()).toBe(false);
+    expect(c.customers()).toEqual([]);
   });
 
   it('still refuses prompts when only a group is selected (no explicit trade unit)', () => {
