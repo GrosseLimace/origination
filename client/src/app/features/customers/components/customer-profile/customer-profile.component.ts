@@ -117,8 +117,14 @@ export class CustomerProfileComponent {
   /** Total bushels currently on the farm (sum of per-commodity on-hand). */
   readonly grainOnFarmTotal = computed(() =>
     (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
-  /** Whether the per-commodity grain-on-farm breakdown is expanded in the profile header. */
-  showGrainOnFarm = signal(false);
+  /** Whether the grain-on-farm breakdown is expanded in the profile header. Starts OPEN for a producer with
+   *  exactly one bin site (user 2026-10-12: nothing to choose between, so show it), closed with several or
+   *  none; back to that default whenever a different producer is shown. The source is a string so a save
+   *  that keeps the same producer and the same one-site-ness does not reset the toggle. */
+  showGrainOnFarm = linkedSignal<string, boolean>({
+    source: () => `${this.customer().id}:${(this.customer().binSites?.length ?? 0) === 1}`,
+    computation: source => source.endsWith(":true"),
+  });
   /** The breakdown is on screen: expanded and something to show. The template also widens the grid
    *  for it (Contact spans both rows while the table spans Farm Details + Harvest Contract Pace). */
   readonly grainOnFarmOpen = computed(() => this.showGrainOnFarm() && this.grainOnFarmRows().length > 0);
@@ -390,7 +396,6 @@ export class CustomerProfileComponent {
       const _customer = this.customer();
       this.showESignRecipients.set(false);
       this.showOrganicDetail.set(false);
-      this.showGrainOnFarm.set(false); // collapse the grain-on-farm breakdown — default closed per producer
       this.cancelAddToList();
       const pendingYear = this.openPlantingYear();
       if (pendingYear && pendingYear > 0) {
