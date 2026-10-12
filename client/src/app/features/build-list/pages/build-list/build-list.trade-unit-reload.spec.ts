@@ -46,7 +46,10 @@ class ApiStub {
   getAllProducerDetails() { return of([]); }
   getQueryLibrary() { return of([]); }
   getPlantingCommodities() { return of([]); }
-  getUserTradeUnits() { return of([]); }
+  // The user belongs to trade units even when none is SELECTED (group-only selection). The
+  // library must gate on the explicit selection, not this fallback, because nothing loads
+  // without an explicit trade unit - a prompt accepted here would spin forever.
+  getUserTradeUnits() { return of([{ tradeUnitCodes: ['1000', '2000', '3000'] }]); }
   getTeamMembers() { return of([]); }
   getTeamSavedLists() { return of([]); }
   getNotes() { return of([]); }
@@ -205,17 +208,24 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     const at = html.indexOf('(click)="selectLibraryQuery(item)"');
     expect(at, 'library button click handler not found').toBeGreaterThan(-1);
     const button = html.slice(at, html.indexOf('>', at));
-    expect(button).toContain('[disabled]="!hasTradeUnits()"');
+    expect(button).toContain('[disabled]="!hasSelectedTradeUnit()"');
     expect(button).not.toContain('coreDataLoaded');
+    expect(button).not.toContain('!hasTradeUnits()');
     expect(html).toContain('Loading data for the selected trade units');
   });
 
-  it('still refuses prompts when no trade unit is selected', () => {
+  it('still refuses prompts when only a group is selected (no explicit trade unit)', () => {
     const c = mount();
     api.land(0, []);
+    appState.setSelectedGroupNames(['Western']);
     appState.setTradeUnits([]);
     TestBed.tick();
-    expect(c.hasTradeUnits()).toBe(false);
+    // The fallback says the user HAS trade units; the gate must ignore that.
+    expect(c.hasTradeUnits()).toBe(true);
+    expect(c.hasSelectedTradeUnit()).toBe(false);
     expect(c.coreDataLoaded()).toBe(false);
+    expect(c.loading()).toBe(false);
+    // ...because no reload is started for a group-only selection, so a parked prompt would never run.
+    expect(api.batches.length).toBe(1);
   });
 });
