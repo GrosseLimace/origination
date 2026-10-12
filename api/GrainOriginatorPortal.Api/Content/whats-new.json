@@ -1,5 +1,63 @@
 [
   {
+    "version": "2026.10.2",
+    "releasedOn": "2026-10-14",
+    "title": "Bin sites with grain on farm, more organic detail, and search by email",
+    "summary": "Record a producer's bin sites and the grain stored at each one, find producers by email, and see more about organic producers.",
+    "items": [
+      {
+        "group": "Bin sites",
+        "kind": "added",
+        "text": "A producer's page now lists their bin sites under Contact and Locations: a name, the capacity, and an optional map location that opens in Google Maps. Add or change them in Edit Producer."
+      },
+      {
+        "group": "Grain on farm",
+        "kind": "changed",
+        "text": "Grain on farm is now recorded at a bin site. In Edit Producer, add a site, then add the crops stored there with bushels on hand, bushels sold, grade, target price and last bid. The producer's page groups the grain by site."
+      },
+      {
+        "group": "Grain on farm",
+        "kind": "changed",
+        "text": "The producer-level Bin Capacity field is gone. Any capacity or grain on farm entered before this release was moved onto a bin site named Bin 1, so nothing was lost; rename it when you next edit the producer."
+      },
+      {
+        "group": "Grain on farm",
+        "kind": "fixed",
+        "text": "A producer's grain on farm could be wiped when someone saved the producer from a page opened before the grain was added. Saves that are not editing grain on farm now leave it alone."
+      },
+      {
+        "group": "Build a List",
+        "kind": "added",
+        "text": "A new Grain on Farm & Bin Sites group of prompts finds producers by what they have on farm. Each result shows the producer's bin sites with the grain at each one, and any notes that mention a bin site by name. The refine filters cover every bin site and grain on farm field."
+      },
+      {
+        "group": "Notes",
+        "kind": "added",
+        "text": "When a note mentions one of the producer's bin sites by name, the name shows in blue, and the note appears with that producer in Build a List."
+      },
+      {
+        "group": "Organic producers",
+        "kind": "added",
+        "text": "More certification information is now pulled in and shown for organic producers."
+      },
+      {
+        "group": "Producer search",
+        "kind": "added",
+        "text": "You can now find a producer by their email address."
+      },
+      {
+        "group": "Usage dashboard",
+        "kind": "changed",
+        "text": "Anyone with access to the usage dashboard can now pick a manager and see the people who report to them. It starts on whoever is signed in."
+      },
+      {
+        "group": "Lists and insights",
+        "kind": "changed",
+        "text": "Lists and insights built from contracts now load faster for large trade units."
+      }
+    ]
+  },
+  {
     "version": "2026.10.1",
     "releasedOn": "2026-10-06",
     "title": "Contracts and tickets now come straight from CTRM",
