@@ -323,7 +323,7 @@
             </div>
           }
 
-          <!-- Bin Sites & Grain on Farm: a band per site (name · capacity · coordinates), then the grain stored
+          <!-- Bin Sites & Grain on Farm: a band per site (name · capacity), then the grain stored
                there — the same grouping as the producer page. -->
           @if (showBinSites() && binSiteGroups().length > 0) {
             <div style="margin-bottom: 24px;">
@@ -352,9 +352,6 @@
                           {{ site.name }}
                           @if (site.capacity != null) {
                             <span style="font-weight: 400; color: #6b7280;">· {{ site.capacity.toLocaleString() }} bu capacity</span>
-                          }
-                          @if (site.coordinates) {
-                            <span style="font-weight: 400; color: #6b7280;">· {{ site.coordinates }}</span>
                           }
                         </td>
                       </tr>

@@ -11,7 +11,6 @@ import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { binSiteGrainBreakdown, formatLastBid } from '@shared/utils/grain-on-farm';
-import { binSiteHasCoordinates, formatCoordinatePairFull } from '@shared/utils/coordinates';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
 
@@ -384,19 +383,9 @@ export class CustomerPrintReportComponent {
     return [...groupMap.values()].sort((a, b) => a.crop.localeCompare(b.crop));
   });
 
-  /** The producer's bin sites in saved order, each with its coordinates as text (a map link is no use
-   *  on paper) and the grain stored there — the same grouping the producer page and Build a List use. */
-  readonly binSiteGroups = computed(() => {
-    const customer = this.customer();
-    const sites = customer.binSites ?? [];
-    return binSiteGrainBreakdown(sites, customer.grainOnFarm).map((group, i) => {
-      const site = sites[i];
-      return {
-        ...group,
-        coordinates: site && binSiteHasCoordinates(site) ? formatCoordinatePairFull(site.latitude!, site.longitude!) : null,
-      };
-    });
-  });
+  /** The producer's bin sites in saved order (name and capacity — no coordinates on paper) with the grain
+   *  stored there — the same grouping the producer page and Build a List use. */
+  readonly binSiteGroups = computed(() => binSiteGrainBreakdown(this.customer().binSites, this.customer().grainOnFarm));
   readonly grainOnFarmTotal = computed(() =>
     (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
   readonly formatLastBid = formatLastBid;
