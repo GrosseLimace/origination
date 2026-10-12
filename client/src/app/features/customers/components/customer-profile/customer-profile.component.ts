@@ -238,8 +238,15 @@ export class CustomerProfileComponent {
     }));
   });
 
-  /** The bin-site table starts collapsed to one line, "▸ Bin Sites (N)", however many there are,
-   *  and closes again whenever a different producer is shown. */
+  /** A producer with exactly one bin site: that site, shown on its own line in Contact (name · capacity ·
+   *  map pin) instead of a "Bin Sites (1)" toggle (user 2026-10-12). Null with none or several. */
+  readonly singleBinSite = computed(() => {
+    const rows = this.binSiteRows();
+    return rows.length === 1 ? rows[0] : null;
+  });
+
+  /** With two or more bin sites, the table starts collapsed to one line, "▸ Bin Sites (N)", and closes
+   *  again whenever a different producer is shown. */
   readonly binSitesExpanded = linkedSignal({ source: () => this.customer().id, computation: () => false });
 
   toggleBinSites(): void {

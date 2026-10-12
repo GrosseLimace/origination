@@ -1694,10 +1694,13 @@
                       @if (showGrainOnFarmFilters()) {
                         @let siteGroups = binSiteGrainBreakdown(customer);
                         @let allSites = binSitesShowAll().has(customer.id);
+                        <!-- One bin site: its grain shows open, no dropdown (user 2026-10-12). More than one: each
+                             site is closed until opened. -->
+                        @let oneSite = siteGroups.length === 1;
                         <div class="min-w-0 col-start-2 row-start-1">
                           @if (hasBinSiteGrain(customer)) {
                             <table class="w-auto max-w-full text-sm tabular-nums">
-                            @if (anyBinSiteOpen(customer.id)) {
+                            @if (oneSite || anyBinSiteOpen(customer.id)) {
                             <thead>
                               <tr class="text-xs uppercase tracking-wide whitespace-nowrap text-gray-400 dark:text-gray-500">
                                 <th scope="col" class="py-1.5 pr-5 font-medium text-left">Crop</th>
@@ -1711,11 +1714,19 @@
                             }
                             <tbody class="text-gray-700 dark:text-gray-300">
                               @for (site of (allSites ? siteGroups : siteGroups.slice(0, binSitesVisible)); track $index) {
-                                @let siteOpen = isBinSiteOpen(customer.id, $index);
+                                @let siteOpen = oneSite || isBinSiteOpen(customer.id, $index);
                                 <tr [class.border-t]="!$first" class="border-gray-100 dark:border-gray-700/60">
                                   <th scope="rowgroup" colspan="6" class="py-1.5 text-left font-semibold text-gray-700 dark:text-gray-200">
                                     <!-- The name opens / closes the site; inline text (not flex) so a long name, its capacity
                                          and the summary wrap as one sentence. The map pin sits outside the button. -->
+                                    @if (oneSite) {
+                                      <span>
+                                        {{ site.name }}
+                                        @if (site.capacity != null) {
+                                          <span class="font-normal text-gray-400 dark:text-gray-500">· {{ site.capacity | number }} bu capacity</span>
+                                        }
+                                      </span>
+                                    } @else {
                                     <button type="button" (click)="$event.stopPropagation(); toggleBinSite(customer.id, $index)"
                                             [attr.aria-expanded]="siteOpen" [title]="siteOpen ? 'Hide the grain at ' + site.name : 'Show the grain at ' + site.name"
                                             class="text-left hover:text-scoular-green-accessible dark:hover:text-scoular-green focus:outline-none focus-visible:underline cursor-pointer">
@@ -1729,6 +1740,7 @@
                                         <span class="font-normal text-gray-500 dark:text-gray-400">· {{ binSiteGrainSummary(site) }}</span>
                                       }
                                     </button>
+                                    }
                                       @if (site.mapUrl) {
                                         <a [href]="site.mapUrl" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()" title="Open in Google Maps" [attr.aria-label]="'Open ' + site.name + ' in Google Maps'"
                                            class="ml-1 inline-flex align-[-2px] text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">

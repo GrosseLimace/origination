@@ -277,9 +277,17 @@ describe('CustomerProfileComponent — bin site table', () => {
     expect(component.binSiteRows()).toEqual([]);
   });
 
-  it('starts collapsed even with a single site, and toggles open', () => {
-    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Only one', latitude: 39.1, longitude: -95.1 }] }));
+  it('shows a single site on its own line, with no "Bin Sites (1)" toggle', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Only one', latitude: 39.1, longitude: -95.1, capacity: 50000 }] }));
 
+    expect(component.singleBinSite()).toMatchObject({ name: 'Only one', capacity: '50,000' });
+    expect(component.singleBinSite()?.url).toContain('39.1');
+  });
+
+  it('two or more sites start collapsed behind the toggle, and toggle open', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'A' }, { name: 'B' }] }));
+
+    expect(component.singleBinSite()).toBeNull();
     expect(component.binSitesExpanded()).toBe(false);
     component.toggleBinSites();
     expect(component.binSitesExpanded()).toBe(true);
