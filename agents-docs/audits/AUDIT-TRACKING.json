@@ -383,7 +383,7 @@
       "id": "angular.god-components-zero-test-coverage",
       "audit": "angular",
       "severity": "critical",
-      "status": "open",
+      "status": "resolved",
       "title": "Business-critical \"god\" components carry zero test coverage",
       "description": "Five files containing the app's most complex logic (bid pricing/map rendering, contract/print orchestration, race-guarded multi-fetch data loading, BFS producer-linking, saved-list/NLQ enrichment) are entirely inside components, up to 4180 lines, with no matching .spec.ts.",
       "files": [
@@ -401,7 +401,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed; duplicate of test-gaps.angular-god-components. [2026-10-13] Re-checked: still zero .component.spec.ts for all five files. Line counts have grown, not shrunk: build-list.component.ts 4244→4557, home.component.ts 2220→2562, dashboard.component.ts 1707→1750, bid-sheet.component.ts 3005→3003, customer-list.component.ts holds at 863. Still open."
+      "notes": "[2026-09-21] Confirmed; duplicate of test-gaps.angular-god-components. [2026-10-13] Re-checked: still zero .component.spec.ts for all five files. Line counts have grown, not shrunk: build-list.component.ts 4244→4557, home.component.ts 2220→2562, dashboard.component.ts 1707→1750, bid-sheet.component.ts 3005→3003, customer-list.component.ts holds at 863. Still open.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Specs added for all four page components: build-list (44 tests, real template), bid-sheet (40, template blanked because the real one needs the trade-unit selector and a Leaflet map element; Leaflet is mocked out), home (42, template blanked because its children each carry their own services), dashboard (44, real template with only the trade-unit selector stubbed). 170 tests. They cover behaviour through public methods, signals and the rendered DOM where real: auto-save and its failure paths, exact API payloads for renames and upserts, stale-response guards, the background-failure toast throttle, the CTRM read-ahead gating, saved-list handling, rollup math and divide-by-zero guards. Verified by mutation: removing the rename trim (bid sheet), zeroing the toast quiet window (home), lifting the coverage cap (dashboard) and removing the save guard (build-list) each failed tests. Limits recorded in each file: home and bid-sheet test class logic not rendering, so a future OnPush conversion of those two needs a rendered spec first; map behaviour, focus/keyboard handling and note-content prompts are not covered."
     },
     {
       "id": "angular.route-guards-can-hang-navigation",
@@ -573,7 +578,7 @@
       "id": "angular.broad-unit-test-coverage-gap",
       "audit": "angular",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Broad unit-test coverage gap beyond the god components",
       "description": "31 of 49 components (63%) have no .spec.ts, including the entire shared UI kit and load-bearing utils like the BFS-based linked-producers.ts.",
       "files": [
@@ -590,7 +595,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Partially addressed — linked-producers.ts (the BFS utility, including all three non-termination cases) is now covered. The shared UI-kit component specs remain outstanding.\n[2026-09-28] Re-checked: 28 of 49 components (57%) now have a .spec.ts, up from 18/49 (37%). Real progress, but 21 components — including parts of the shared UI kit — are still untested. Still open.\n[2026-10-13] Re-checked: still 28 of 49 components (57%) have a .spec.ts; the same 21 remain untested. No change since 2026-09-28. Still open."
+      "notes": "[2026-09-21] Partially addressed — linked-producers.ts (the BFS utility, including all three non-termination cases) is now covered. The shared UI-kit component specs remain outstanding.\n[2026-09-28] Re-checked: 28 of 49 components (57%) now have a .spec.ts, up from 18/49 (37%). Real progress, but 21 components — including parts of the shared UI kit — are still untested. Still open.\n[2026-10-13] Re-checked: still 28 of 49 components (57%) have a .spec.ts; the same 21 remain untested. No change since 2026-09-28. Still open.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "21 new spec files, 233 tests: the three shared utils still untested (contract-delivery, ticket-view-filters, commodity-aliases), six core services (data-preload, user-preferences, usage-tracking, idle-timeout, theme, teams-directory), and twelve components (tickets-table, stored-grain-table, contract-pacing-card, producer-insights, year-over-year-chart, customer-list, customer-print-report, unshipped-bushels, calculator-widget, calculator-launcher, sort-icon, whats-new-release-list), all components rendered with the real template. Verified by mutation: widening the delivery completion threshold and inverting the applied-ticket filter each failed tests. Not covered: customer-map (needs a real Leaflet canvas). The confirm-dialog component and service were left out because they are dead code with unresolvable imports; see the clean-slop finding raised for them. Several behaviours the tests pin look like defects and are recorded as their own findings rather than fixed silently."
     },
     {
       "id": "angular.production-bootstrap-failures-swallowed",
@@ -1898,7 +1908,7 @@
       "id": "test-gaps.angular-god-components",
       "audit": "test-gaps",
       "severity": "critical",
-      "status": "open",
+      "status": "resolved",
       "title": "Five largest Angular feature components (up to 4180 lines) have zero test coverage",
       "description": "build-list, bid-sheet, home, dashboard, and customer-list components carry the app's densest business logic (bid pricing, multi-fetch race-guarded data loading, contract/print orchestration) with no .spec.ts at all. build-list.component.ts alone has 446 occurrences of price/calc/margin/freight/sort/filter keywords, confirming dense untested business logic. A regression in filtering, sorting, or pricing display logic inside any of these would only surface via manual QA or a user-reported bug, not CI.",
       "files": [
@@ -1917,7 +1927,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed and outstanding — wants the business logic extracted into testable units first, which is a multi-session effort rather than a test-writing one. [2026-09-28] Re-checked: still zero .spec.ts for all 5 components. New corroborating evidence: bid-sheet.component.ts's inline basis-sign display logic needed 4 separate fix/feat commits between 2026-09-19 and 2026-09-24 (836f228d, b737efda, e05a3145, 300fc554) to get the sign correct across the published-bids popup, Edit Bids cells, and catalog pins — each a symptom of the same rule living untested in 3+ places inside a component with no spec at all. [2026-10-13] Still open, still zero .spec.ts for all 5. build-list.component.ts grew from ~4180 to 4557 lines over the past two weeks of Bin Sites/Grain on Farm work, the largest untested file in the repo getting larger. Note the build-list reload/parked-prompt logic touched by that work is NOT part of this gap — that area already has a dedicated build-list.trade-unit-reload.spec.ts with regression cases added 2026-10-12."
+      "notes": "[2026-09-21] Confirmed and outstanding — wants the business logic extracted into testable units first, which is a multi-session effort rather than a test-writing one. [2026-09-28] Re-checked: still zero .spec.ts for all 5 components. New corroborating evidence: bid-sheet.component.ts's inline basis-sign display logic needed 4 separate fix/feat commits between 2026-09-19 and 2026-09-24 (836f228d, b737efda, e05a3145, 300fc554) to get the sign correct across the published-bids popup, Edit Bids cells, and catalog pins — each a symptom of the same rule living untested in 3+ places inside a component with no spec at all. [2026-10-13] Still open, still zero .spec.ts for all 5. build-list.component.ts grew from ~4180 to 4557 lines over the past two weeks of Bin Sites/Grain on Farm work, the largest untested file in the repo getting larger. Note the build-list reload/parked-prompt logic touched by that work is NOT part of this gap — that area already has a dedicated build-list.trade-unit-reload.spec.ts with regression cases added 2026-10-12.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Specs added for all four page components: build-list (44 tests, real template), bid-sheet (40, template blanked because the real one needs the trade-unit selector and a Leaflet map element; Leaflet is mocked out), home (42, template blanked because its children each carry their own services), dashboard (44, real template with only the trade-unit selector stubbed). 170 tests. They cover behaviour through public methods, signals and the rendered DOM where real: auto-save and its failure paths, exact API payloads for renames and upserts, stale-response guards, the background-failure toast throttle, the CTRM read-ahead gating, saved-list handling, rollup math and divide-by-zero guards. Verified by mutation: removing the rename trim (bid sheet), zeroing the toast quiet window (home), lifting the coverage cap (dashboard) and removing the save guard (build-list) each failed tests. Limits recorded in each file: home and bid-sheet test class logic not rendering, so a future OnPush conversion of those two needs a rendered spec first; map behaviour, focus/keyboard handling and note-content prompts are not covered."
     },
     {
       "id": "test-gaps.repository-layer-gap",
@@ -2724,7 +2739,7 @@
       "id": "angular.untested-god-components",
       "audit": "angular",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "The four largest, most business-critical feature pages have zero unit tests",
       "description": "build-list.component.ts (4,244 lines + 1,855-line template), bid-sheet.component.ts (3,005 lines), home.component.ts (2,220 lines), and dashboard.component.ts (1,707 lines) — roughly 11,000 lines of the app's most complex client-side business logic (list building, bid entry/pricing, the customer home dashboard, and the origination dashboard) — have no .spec.ts file at all. Only an unrelated small utility (print-layout.spec.ts) exists under bid-sheet/. This is the opposite of the style guide's 'Provide comprehensive testing with Vitest' requirement, concentrated in exactly the components where regressions would be most damaging.",
       "files": [
@@ -2741,7 +2756,12 @@
         "date": "2026-09-21"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] New — found during the angular-domain audit pass.\n[2026-09-22] STILL OPEN and not attempted in this pass. An agent was dispatched for it and produced nothing before stopping, so none of the four page components gained a spec. Sequence it ahead of angular.god-components-need-decomposition: specs first, then decomposition. Realistically this is scheduled work, not a single sitting, because the four files total roughly 11,000 lines and none of them can be instantiated without mocking ApiService, AppStateService, MsalService and the router.\n[2026-10-13] Re-checked: still zero .component.spec.ts for all four files, which have each grown further (build-list 4244→4557, bid-sheet 3005→3003, home 2220→2562, dashboard 1707→1750 lines). Still open; duplicate of angular.god-components-zero-test-coverage."
+      "notes": "[2026-09-21] New — found during the angular-domain audit pass.\n[2026-09-22] STILL OPEN and not attempted in this pass. An agent was dispatched for it and produced nothing before stopping, so none of the four page components gained a spec. Sequence it ahead of angular.god-components-need-decomposition: specs first, then decomposition. Realistically this is scheduled work, not a single sitting, because the four files total roughly 11,000 lines and none of them can be instantiated without mocking ApiService, AppStateService, MsalService and the router.\n[2026-10-13] Re-checked: still zero .component.spec.ts for all four files, which have each grown further (build-list 4244→4557, bid-sheet 3005→3003, home 2220→2562, dashboard 1707→1750 lines). Still open; duplicate of angular.god-components-zero-test-coverage.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Specs added for all four page components: build-list (44 tests, real template), bid-sheet (40, template blanked because the real one needs the trade-unit selector and a Leaflet map element; Leaflet is mocked out), home (42, template blanked because its children each carry their own services), dashboard (44, real template with only the trade-unit selector stubbed). 170 tests. They cover behaviour through public methods, signals and the rendered DOM where real: auto-save and its failure paths, exact API payloads for renames and upserts, stale-response guards, the background-failure toast throttle, the CTRM read-ahead gating, saved-list handling, rollup math and divide-by-zero guards. Verified by mutation: removing the rename trim (bid sheet), zeroing the toast quiet window (home), lifting the coverage cap (dashboard) and removing the save guard (build-list) each failed tests. Limits recorded in each file: home and bid-sheet test class logic not rendering, so a future OnPush conversion of those two needs a rendered spec first; map behaviour, focus/keyboard handling and note-content prompts are not covered."
     },
     {
       "id": "angular.god-components-need-decomposition",
