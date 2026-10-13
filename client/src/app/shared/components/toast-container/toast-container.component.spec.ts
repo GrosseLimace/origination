@@ -33,7 +33,8 @@ describe('ToastContainerComponent', () => {
 
     expect(screen.getByText('Bid saved')).toBeInTheDocument();
     expect(screen.getByText('Save failed')).toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(2);
+    // By accessible name: the dismiss control is icon-only, so this also proves it is labelled.
+    expect(screen.getAllByRole('button', { name: 'Dismiss notification' })).toHaveLength(2);
   });
 
   it('should dismiss only the toast whose button was clicked', async () => {

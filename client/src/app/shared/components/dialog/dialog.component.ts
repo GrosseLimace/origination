@@ -3,6 +3,9 @@ import { Component, input, output, inject, DestroyRef, effect, computed } from '
 @Component({
   selector: 'app-dialog',
   standalone: true,
+  // Document-level so Escape works wherever focus sits: inside the dialog, or still on the
+  // trigger button, which is where it usually is at the moment the dialog opens.
+  host: { '(document:keydown.escape)': 'onEscape()' },
   template: `
     @if (isOpen()) {
       <!-- Backdrop -->
@@ -19,6 +22,7 @@ import { Component, input, output, inject, DestroyRef, effect, computed } from '
             <button
               type="button"
               class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-transparent border-0 p-0 z-10"
+              aria-label="Close dialog"
               (click)="close.emit()"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -36,6 +40,9 @@ export class DialogComponent {
   public isOpen = input<boolean>(false);
   public size = input<'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'>('md');
   public closeOnBackdrop = input<boolean>(true);
+  /** Escape dismisses the dialog, as a modal is expected to. Opt out for the rare dialog where
+   *  abandoning part-way would lose work, and pair that with closeOnBackdrop false. */
+  public closeOnEscape = input<boolean>(true);
   public showCloseButton = input<boolean>(true);
   /** Scroll the body instead of the whole panel, so the title and the footer
    *  actions stay put. Worth turning on for any dialog tall enough to scroll on
@@ -87,6 +94,12 @@ export class DialogComponent {
     // Scrolling the body means the panel itself must not scroll.
     const overflow = this.scrollBody() ? 'flex flex-col overflow-hidden' : 'overflow-y-auto';
     return `${this.sizeClass} ${maxHeight} ${overflow}`;
+  }
+
+  public onEscape(): void {
+    if (this.isOpen() && this.closeOnEscape()) {
+      this.close.emit();
+    }
   }
 
   public onBackdropClick(): void {

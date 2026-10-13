@@ -1,4 +1,5 @@
-import { Component, input, output, effect, inject, signal, computed, untracked } from '@angular/core';
+import { Component, input, output, effect, inject, signal, computed, untracked, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
@@ -61,6 +62,7 @@ const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
 })
 export class EditCustomerDialogComponent {
   private readonly apiService = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly toast = inject(ToastService);
   private readonly appState = inject(AppStateService);
 
@@ -615,7 +617,7 @@ export class EditCustomerDialogComponent {
    */
   private _refreshFromServer(customer: Customer): void {
     const openedFor = customer.id;
-    this.apiService.getProducerDetails(openedFor).subscribe({
+    this.apiService.getProducerDetails(openedFor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (details) => {
         if (!this.isOpen() || !this._initialized || this.customer()?.id !== openedFor) return;
         const fresh = applyProducerDetails(customer, details);
@@ -692,7 +694,7 @@ export class EditCustomerDialogComponent {
     // is empty/errors so the dropdown never goes blank. Already-selected / ticket-derived
     // commodities display as their own code chips, so they show regardless of this list.
     this.isLoadingCommodities.set(true);
-    this.apiService.getPlantingCommodities().subscribe({
+    this.apiService.getPlantingCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (commodities) => {
         if (commodities.length > 0) {
           this.allCommodities.set(commodities);
@@ -771,7 +773,7 @@ export class EditCustomerDialogComponent {
         this.tuRemovalTarget.set('');
         if (this.allTradeUnits().length === 0 && !this.isLoadingTradeUnits()) {
           this.isLoadingTradeUnits.set(true);
-          this.apiService.getAllTradeUnits().subscribe({
+          this.apiService.getAllTradeUnits().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: (tus) => { this.allTradeUnits.set(tus); this.isLoadingTradeUnits.set(false); },
             error: () => { this.isLoadingTradeUnits.set(false); }
           });
@@ -828,7 +830,7 @@ export class EditCustomerDialogComponent {
   private _loadCurrentTradeUnits(customerId: number): void {
     this.isLoadingCurrentTradeUnits.set(true);
     this.currentTradeUnitsError.set(null);
-    this.apiService.getCustomerTradeUnits(customerId).subscribe({
+    this.apiService.getCustomerTradeUnits(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tus) => {
         this.currentTradeUnits.set(tus);
         // Only ACTIVE manual memberships prefill the editable set — removed ones (isActive=false)
@@ -906,7 +908,7 @@ export class EditCustomerDialogComponent {
       return;
     }
     this.isCheckingPlantingIntentions.set(true);
-    this.apiService.getPlantingIntentionsByCustomer(customer.id).subscribe({
+    this.apiService.getPlantingIntentionsByCustomer(customer.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: rows => {
         const byTu = new Map<string, { count: number; acres: number; years: number[] }>();
         for (const row of rows) {
@@ -1074,7 +1076,7 @@ export class EditCustomerDialogComponent {
   /** Safety net: load the full commodity list if the curated list is empty/unavailable, so the
    *  picker never blanks. */
   private _loadCommoditiesFallback(): void {
-    this.apiService.getCommodities().subscribe({
+    this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (commodities) => {
         this.allCommodities.set(commodities);
         this.isLoadingCommodities.set(false);
@@ -1160,7 +1162,7 @@ export class EditCustomerDialogComponent {
     // when the parameter is null/empty (see SqlDataService.cs). Previously this called
     // getTradeUnits() first just to round-trip the codes back as a scope, which was
     // dead weight once the local TU catalog was retired.
-    this.apiService.getCustomers().subscribe({
+    this.apiService.getCustomers().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (customers) => {
         this._allProducersForSearch = customers;
         this.isLoadingProducers.set(false);
@@ -1279,7 +1281,7 @@ export class EditCustomerDialogComponent {
       // wasn't committed; reopening the dialog will show it again from the refreshed list).
       const dormantRemovals = this.removedDormantTuCodes();
       for (const code of dormantRemovals) {
-        this.apiService.removeDormantTradeUnit(customer.id, code).subscribe({
+        this.apiService.removeDormantTradeUnit(customer.id, code).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           error: () => this.toast.error(`Couldn't remove trade unit ${code} — the producer may still have an open contract or ticket there.`)
         });
       }

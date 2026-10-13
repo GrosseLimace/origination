@@ -36,6 +36,8 @@ import { ToastService, Toast } from '@core/services/toast.service';
           </svg>
           <span class="flex-1 text-sm leading-snug">{{ toast.message }}</span>
           <button
+            type="button"
+            aria-label="Dismiss notification"
             (click)="toastService.dismiss(toast.id)"
             class="flex-shrink-0 p-0.5 hover:opacity-70 transition-opacity"
           >

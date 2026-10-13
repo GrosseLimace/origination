@@ -45,11 +45,10 @@ describe('DialogComponent', () => {
     );
   }
 
-  /** The close "X" carries no accessible name (icon only), so pick the button with no text. */
+  /** The close "X" is icon-only, so its accessible name comes from aria-label. Querying by that
+   *  name is the test that the label is present: an unlabelled button would not be found. */
   function closeButton(): HTMLElement {
-    const button = screen.getAllByRole('button').find(b => b.textContent?.trim() === '');
-    if (!button) throw new Error('close button not rendered');
-    return button;
+    return screen.getByRole('button', { name: 'Close dialog' });
   }
 
   function backdropAndWrapper(container: Element): [HTMLElement, HTMLElement] {
@@ -82,6 +81,35 @@ describe('DialogComponent', () => {
     await userEvent.click(closeButton());
 
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('should emit close when Escape is pressed', async () => {
+    const close = vi.fn();
+    await renderDialog('', { close });
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('should ignore Escape when closeOnEscape is false', async () => {
+    const close = vi.fn();
+    await renderDialog('[closeOnEscape]="false"', { close });
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('should ignore Escape while closed', async () => {
+    // The listener is on the document for the component's whole life, so a closed dialog must
+    // not emit for a keypress meant for something else on the page.
+    const close = vi.fn();
+    await renderDialog('', { isOpen: false, close });
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(close).not.toHaveBeenCalled();
   });
 
   it('should hide the X button when showCloseButton is false', async () => {

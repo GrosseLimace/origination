@@ -1,4 +1,5 @@
 import { Component, input, output, inject, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -127,7 +128,7 @@ export class PlantingIntentionsTableComponent {
     this.isLoadingProducerTradeUnits = this.producerTradeUnits.length === 0;
     // Codes only: the open-activity check the edit-customer dialog needs is a contract and ticket read
     // for the producer, which kept this picker waiting seconds for a flag it never uses.
-    this.apiService.getCustomerTradeUnits(customerId, { includeActivity: false }).subscribe({
+    this.apiService.getCustomerTradeUnits(customerId, { includeActivity: false }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: rows => {
         this.producerTradeUnits = rows.filter(r => r.isActive).map(r => r.tradeUnit.trim()).filter(Boolean).sort();
         this.isLoadingProducerTradeUnits = false;
@@ -381,7 +382,7 @@ export class PlantingIntentionsTableComponent {
     // Full list — used for display/resolution everywhere in this component.
     if (this.allCommodities.length === 0 && !this.isLoadingCommodities) {
       this.isLoadingCommodities = true;
-      this.apiService.getCommodities().subscribe({
+      this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (commodities) => {
           this.allCommodities = commodities;
           this.isLoadingCommodities = false;
@@ -400,7 +401,7 @@ export class PlantingIntentionsTableComponent {
     // fallback to allCommodities remains only as a last resort so the dropdown is never blank.
     if (this.plantingCommodities.length === 0 && !this.isLoadingPlantingCommodities) {
       this.isLoadingPlantingCommodities = true;
-      this.apiService.getPlantingCommodities().subscribe({
+      this.apiService.getPlantingCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (commodities) => {
           this.plantingCommodities = commodities;
           this.isLoadingPlantingCommodities = false;
