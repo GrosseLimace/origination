@@ -26,6 +26,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data;
 /// one entry; a comma appearing inside the brackets must not break it in half.</item>
 /// <item><b>Duplicates collapse.</b> Splitting the first example yields Alfalfa three times, once
 /// alone and twice as half of a pairing. A trader wants one chip per crop.</item>
+/// <item><b>A leading "and" / "or" is dropped.</b> Certifiers write prose lists — "Corn, Soybeans,
+/// and Wheat" — which would otherwise produce a chip reading "and Wheat". See
+/// <see cref="StripLeadingConjunction"/>.</item>
 /// </list>
 ///
 /// This is deliberately NOT clever. It does not try to recognise crop names, strip quantities or
@@ -92,11 +95,62 @@ public static class OrganicCertifiedCrops
 
         foreach (var part in parts)
         {
-            var trimmed = part.Trim();
+            var trimmed = StripLeadingConjunction(part.Trim());
             if (trimmed.Length == 0) continue;
             if (seen.Add(trimmed)) crops.Add(trimmed);
         }
 
         return crops;
     }
+
+    /// <summary>
+    /// Removes a leading "and " or "or " from a split piece.
+    ///
+    /// Certifiers write prose lists, not data: the first real message from the pipeline carried
+    /// "Corn, Soybeans, and Wheat" (LEHMMAD, Dev dark run 2026-10-12), which split into a chip
+    /// reading <i>"and Wheat"</i>. Both samples we had been testing against used bare comma lists,
+    /// so it took live certifier wording to surface this.
+    ///
+    /// ⚠️ The trailing space in the comparison is load-bearing, not punctuation. Matching the bare
+    /// prefix would eat the start of real crops — "Andean" would become "ean", "Orchardgrass" would
+    /// become "chardgrass". Only a whole leading word followed by whitespace is removed.
+    ///
+    /// Repeats, so "and/or Wheat" — which the "/" separator already breaks into "and" and
+    /// "or Wheat" — ends up as an empty piece (dropped) and "Wheat". A piece that is nothing BUT a
+    /// conjunction collapses to empty and is dropped by the caller, which is the right answer: it
+    /// was never a crop.
+    ///
+    /// Deliberately only "and" and "or". This stays a punctuation fixer, not a prose parser — the
+    /// class's honest failure mode is an odd-looking chip, never a missing crop.
+    /// </summary>
+    private static string StripLeadingConjunction(string piece)
+    {
+        var result = piece;
+
+        while (true)
+        {
+            var before = result;
+
+            foreach (var conjunction in Conjunctions)
+            {
+                if (result.Length > conjunction.Length
+                    && result.StartsWith(conjunction, StringComparison.OrdinalIgnoreCase)
+                    && char.IsWhiteSpace(result[conjunction.Length]))
+                {
+                    result = result[(conjunction.Length + 1)..].TrimStart();
+                    break;
+                }
+
+                // The piece is the conjunction and nothing else — "Corn, and, Wheat" produces one.
+                if (result.Equals(conjunction, StringComparison.OrdinalIgnoreCase))
+                {
+                    return string.Empty;
+                }
+            }
+
+            if (ReferenceEquals(before, result) || before == result) return result;
+        }
+    }
+
+    private static readonly string[] Conjunctions = ["and", "or"];
 }

@@ -133,4 +133,77 @@ public class OrganicCertifiedCropsTests
             ["Carryover Crops of: 2024 Soybeans", "4000 bushels and 2024 Corn", "5000 bushels"],
             OrganicCertifiedCrops.Split(CarryoverProse));
     }
+
+    // ── Leading conjunctions ─────────────────────────────────────────────────────────────────
+    //
+    // Found by the pipeline's first real run, not by us. LEHMMAD sent "Corn, Soybeans, and Wheat"
+    // (Dev, 2026-10-12) and the desk would have seen a chip reading "and Wheat". Both samples above
+    // use bare comma lists, which is why three rounds of testing never surfaced it — a reminder that
+    // certifier free text is prose written by people, not a delimited field.
+
+    [Fact]
+    public void DropsTheLeadingAndFromAProseList()
+    {
+        Assert.Equal(
+            ["Corn", "Soybeans", "Wheat"],
+            OrganicCertifiedCrops.Split("Corn, Soybeans, and Wheat"));
+    }
+
+    [Fact]
+    public void DropsTheLeadingOrToo()
+    {
+        Assert.Equal(
+            ["Spring Wheat", "Winter Wheat"],
+            OrganicCertifiedCrops.Split("Spring Wheat, or Winter Wheat"));
+    }
+
+    [Theory]
+    [InlineData("Corn, AND Wheat")]
+    [InlineData("Corn, And Wheat")]
+    [InlineData("Corn,   and   Wheat")]
+    public void TheConjunctionIsMatchedWhateverTheCasingOrSpacing(string input)
+        => Assert.Equal(["Corn", "Wheat"], OrganicCertifiedCrops.Split(input));
+
+    [Fact]
+    public void DoesNotEatCropsThatMERELYSTARTWithAndOrOr()
+    {
+        // The whole reason the match requires a following space. Without it "Andean" becomes "ean"
+        // and "Orchardgrass" becomes "chardgrass" — a mangled crop is worse than an ugly one.
+        Assert.Equal(
+            ["Andean Lupin", "Orchardgrass", "Oregano", "Orange"],
+            OrganicCertifiedCrops.Split("Andean Lupin, Orchardgrass, Oregano, Orange"));
+    }
+
+    [Fact]
+    public void LeavesAConjunctionInTheMIDDLEOfAnEntryAlone()
+    {
+        // Only a LEADING conjunction is punctuation. One inside the text is part of what the
+        // certifier wrote, and the carryover sample above depends on this.
+        Assert.Equal(
+            ["Corn and Soybean Rotation"],
+            OrganicCertifiedCrops.Split("Corn and Soybean Rotation"));
+    }
+
+    [Fact]
+    public void DropsAPieceThatIsNothingButAConjunction()
+    {
+        // "Corn, and, Wheat" — sloppy punctuation produces a piece with no crop in it at all.
+        Assert.Equal(["Corn", "Wheat"], OrganicCertifiedCrops.Split("Corn, and, Wheat"));
+    }
+
+    [Fact]
+    public void HandlesAndSlashOr()
+    {
+        // "/" is already a separator, so this arrives as "and" + "or Wheat". The first collapses to
+        // nothing and is dropped; the second loses its conjunction.
+        Assert.Equal(["Corn", "Wheat"], OrganicCertifiedCrops.Split("Corn, and/or Wheat"));
+    }
+
+    [Fact]
+    public void StillDeduplicatesAfterStripping()
+    {
+        // "and Wheat" and "Wheat" are the same crop once the conjunction is gone — they must not
+        // both render.
+        Assert.Equal(["Corn", "Wheat"], OrganicCertifiedCrops.Split("Corn, Wheat, and Wheat"));
+    }
 }
