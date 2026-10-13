@@ -4,6 +4,7 @@ import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, Harve
 import { AppStateService } from '@core/services/app-state.service';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
+import { parseServerTime } from '@shared/utils/server-time';
 
 @Component({
   selector: 'app-activity-summary',
@@ -430,9 +431,7 @@ export class ActivitySummaryComponent {
       const lastNote = pinnedNote || sorted[0];
       if (!lastNote) return '';
 
-      const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
-        ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
-      const lastDate = new Date(raw);
+      const lastDate = parseServerTime(lastNote.createdAt);
       if (isNaN(lastDate.getTime())) return '';
 
       const daysSince = Math.max(0, this._calendarDaysBetween(lastDate, new Date()));
@@ -585,9 +584,7 @@ export class ActivitySummaryComponent {
     if (ownNotes.length === 0) return null;
     let latestMs = 0;
     for (const n of ownNotes) {
-      const raw = typeof n.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(n.createdAt as any)
-        ? (n.createdAt as any) + 'Z' : n.createdAt;
-      const t = new Date(raw).getTime();
+      const t = parseServerTime(n.createdAt).getTime();
       if (!isNaN(t) && t > latestMs) latestMs = t;
     }
     if (latestMs === 0) return null;

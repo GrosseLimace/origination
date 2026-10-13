@@ -16,6 +16,24 @@ import { commodityColor, commodityChipClass, commodityRowClass } from '@shared/u
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { inSelectedTradeUnits } from '@shared/utils/planting-trade-unit-filter';
 
+/** One producer card on the Producers tab. Both views build these; the fields only the "with
+ *  intentions" view has (acres, production, trade unit, the per-crop breakdown) are optional, and
+ *  read as absent on a "without" row. */
+interface ProducerTabRow {
+  customerId: number;
+  customerName: string;
+  scoularId: string | null;
+  customer: Customer | undefined;
+  tradeUnit?: string;
+  acres?: number;
+  production?: number | null;
+  crops: string[];
+  cropCategoryKeys?: string[];
+  cropEntries?: { display: string; category: string; colorKey: string; acres: number; production: number }[];
+  plantingChips: { display: string; colorKey: string; text: string }[];
+  highlightedCrops?: Set<string> | null;
+}
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -674,10 +692,10 @@ export class DashboardComponent {
   // view's count skips it — that's why the With count doesn't move when you toggle a chip
   // while sitting on the Without view, and vice versa.
   private _applyProducerFilters(
-    rows: any[],
+    rows: ProducerTabRow[],
     view: 'with' | 'without',
     opts: { applyChipFilter: boolean } = { applyChipFilter: true }
-  ): any[] {
+  ): ProducerTabRow[] {
     const search = this.producerSearch().trim().toLowerCase();
     const cropFilter = opts.applyChipFilter ? this.producerCropFilter().trim().toLowerCase() : '';
     const topFilterSet = !!this.selectedCropFilter();
@@ -692,7 +710,7 @@ export class DashboardComponent {
     if (cropFilter) {
       result = result.filter(r => {
         if (view === 'with' && !topFilterSet) {
-          const keys = (r as any).cropCategoryKeys as string[] | undefined;
+          const keys = r.cropCategoryKeys;
           return Array.isArray(keys) && keys.some(c => c.toLowerCase() === cropFilter);
         }
         return Array.isArray(r.crops) && r.crops.some((c: string) => c.toLowerCase() === cropFilter);
@@ -785,7 +803,7 @@ export class DashboardComponent {
     const source = view === 'with'
       ? this.producersWithIntentionsRows()
       : this.producersWithoutIntentionsRows();
-    let rows: any[] = this._applyProducerFilters(source, view);
+    let rows: ProducerTabRow[] = this._applyProducerFilters(source, view);
 
     // When a chip is active on the With view, narrow each row's acres/production to the matching
     // crop(s) only, and mark which crop badges should be highlighted on the card.

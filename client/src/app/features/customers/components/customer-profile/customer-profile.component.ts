@@ -26,6 +26,14 @@ import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleM
 import { binSiteHasCoordinates } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
+/** One tab in the producer profile's tab strip, with its count badge. */
+interface ProfileTab {
+  id: string;
+  label: string;
+  shortLabel: string;
+  count: number;
+}
+
 @Component({
   selector: 'app-customer-profile',
   standalone: true,
@@ -565,7 +573,7 @@ export class CustomerProfileComponent {
     return this.plantingIntentions().filter(pi => years.has(pi.plantingYear));
   });
 
-  private _tabs: any[] = [];
+  private _tabs: ProfileTab[] = [];
   private _unappliedTicketCount = 0;
   private _effectiveCommodities: string[] = [];
 

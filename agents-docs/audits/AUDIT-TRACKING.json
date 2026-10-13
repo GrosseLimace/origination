@@ -494,7 +494,7 @@
       "id": "angular.any-type-widespread-usage",
       "audit": "angular",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "any type used in ~20+ locations against the explicit no-any rule",
       "description": "any is concentrated in Leaflet map interop (_map: any, (marker as any).customerId, (L as any).markerClusterGroup) and in dynamically-shaped HTTP/forkJoin results.",
       "files": [
@@ -510,7 +510,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed — 39 non-spec sites, concentrated in Leaflet interop. Outstanding.\n[2026-09-28] Re-checked: still 39 non-spec `: any`/`as any`/`<any>` sites, same concentration (bid-sheet Leaflet interop, customer-map, api.service.ts dailyrecapgroups payloads). No change since last pass.\n[2026-10-13] Re-checked: still 39 non-spec `: any`/`as any`/`<any>` sites app-wide, same concentration. No change since 2026-09-28. Still open."
+      "notes": "[2026-09-21] Confirmed — 39 non-spec sites, concentrated in Leaflet interop. Outstanding.\n[2026-09-28] Re-checked: still 39 non-spec `: any`/`as any`/`<any>` sites, same concentration (bid-sheet Leaflet interop, customer-map, api.service.ts dailyrecapgroups payloads). No change since last pass.\n[2026-10-13] Re-checked: still 39 non-spec `: any`/`as any`/`<any>` sites app-wide, same concentration. No change since 2026-09-28. Still open.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "No any type remains in non-spec client code (the three remaining grep hits are the word inside regexes). Leaflet interop typed through the installed @types/leaflet and @types/leaflet.markercluster (Marker, DivIcon, LeafletMouseEvent, MarkerClusterGroup); the write-only (marker as any).customerId was dead and removed. api.service: RecapGroupDto and SavedListDto wire types; the in-flight cache holds Observable<unknown>. customer-list: the saved-list prefetch result is a typed SavedListPrefetch; the two customerIds = undefined as any lose only the cast (the in-place mutation is the separate open finding code-review.customer-list-failed-search-shows-whole-roster). Dashboard: ProducerTabRow, with the fields only the with-intentions view has made optional (the template reads them only inside producerView() === 'with', so strictTemplates accepts the optional types and nothing renders differently). The three createdAt casts became a shared parseServerTime helper (5 specs, mutation-checked). msal test doubles infer their shape. Client 1613 passed, prod build clean, app tsc clean."
     },
     {
       "id": "angular.duplicate-customer-map-component",

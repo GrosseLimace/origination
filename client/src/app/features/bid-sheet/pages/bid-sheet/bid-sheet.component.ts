@@ -426,9 +426,9 @@ export class BidSheetComponent {
   private _map: Leaflet.Map | null = null;
   /** Track the currently-hovered marker so we can force-reset its icon when another marker is hovered.
    *  Fixes Leaflet's stuck-hover bug where setIcon() swaps the DOM element and a pending mouseout never fires. */
-  private _hoveredMarker: { marker: any; resetIcon: any } | null = null;
-  // markercluster's MarkerClusterGroup isn't in @types/leaflet — keep loose-typed
-  private _clusterGroup: any = null;
+  private _hoveredMarker: { marker: Leaflet.Marker; resetIcon: Leaflet.DivIcon } | null = null;
+  // Typed by @types/leaflet.markercluster, which augments the leaflet namespace.
+  private _clusterGroup: Leaflet.MarkerClusterGroup | null = null;
   // Base layers for the street/satellite toggle. _satelliteLayer is a layerGroup
   // (Esri World Imagery + road/place label overlays) for a hybrid aerial view.
   private _streetLayer: Leaflet.TileLayer | null = null;
@@ -1145,7 +1145,7 @@ export class BidSheetComponent {
     this.addLocationOrigin.set(null);
   }
 
-  private _onMapClick(e: any): void {
+  private _onMapClick(e: Leaflet.LeafletMouseEvent): void {
     if (!this.addLocationMode()) return;
 
     // Remove previous pin
@@ -2422,7 +2422,7 @@ export class BidSheetComponent {
     const oldLayer = toSatellite ? this._streetLayer : this._satelliteLayer;
     // The tile layer whose 'load' tells us the new base has painted (street layer is itself a tile
     // layer; for satellite it's the imagery layer inside the group).
-    const watch = (toSatellite ? this._satelliteImageryLayer : this._streetLayer) as any;
+    const watch = toSatellite ? this._satelliteImageryLayer : this._streetLayer;
 
     this.mapSwitching.set(true);
     this.mapView.set(toSatellite ? 'satellite' : 'street');
@@ -2438,7 +2438,7 @@ export class BidSheetComponent {
 
     // Hide the overlay once the new tiles have loaded; fall back after 2.5s in case 'load' doesn't
     // fire (e.g. fully cached tiles) so the spinner can never get stuck.
-    if (watch?.once) watch.once('load', finish);
+    watch?.once('load', finish);
     setTimeout(finish, 2500);
   }
 
@@ -2558,7 +2558,7 @@ export class BidSheetComponent {
       // Default to street; toggleMapView() swaps to satellite.
       this._streetLayer.addTo(this._map);
 
-      this._clusterGroup = (L as any).markerClusterGroup({
+      this._clusterGroup = L.markerClusterGroup({
         maxClusterRadius: 12,
         disableClusteringAtZoom: 5,
         spiderfyOnMaxZoom: true,
@@ -2582,7 +2582,7 @@ export class BidSheetComponent {
       });
 
       // Left-click to place pin in add-location mode
-      this._map.on('click', (e: any) => this._onMapClick(e));
+      this._map.on('click', (e: Leaflet.LeafletMouseEvent) => this._onMapClick(e));
 
       this._refreshMapMarkers();
     } catch { /* map init failed — will retry on next navigation */ }
@@ -2591,7 +2591,8 @@ export class BidSheetComponent {
   private _refreshMapMarkers(): void {
     if (!this._map || !this._clusterGroup || !this._L) return;
     const L = this._L;
-    this._clusterGroup.clearLayers();
+    const cluster = this._clusterGroup;
+    cluster.clearLayers();
     // Keep map clean during add-location mode
     if (this.addLocationMode()) return;
 
@@ -2694,7 +2695,7 @@ export class BidSheetComponent {
         const expandedIcon = this._buildHoverIcon(panelOpenName, bidStr, pinBg, pinBorder);
         const marker = L.marker([lat, lng], { icon: expandedIcon, zIndexOffset: 1000 });
         marker.on('click', () => this._selectMapLocation(locs[0]));
-        this._clusterGroup.addLayer(marker);
+        cluster.addLayer(marker);
         return;
       }
 
@@ -2727,7 +2728,7 @@ export class BidSheetComponent {
         m.on('click', () => this._selectMapLocation(locs[0]));
         const hoverBid2 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
         this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border);
-        this._clusterGroup.addLayer(m);
+        cluster.addLayer(m);
         return;
       }
 
@@ -2777,7 +2778,7 @@ export class BidSheetComponent {
           marker.on('click', () => this._selectMapLocation(locs[0]));
           const hoverBid3 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
           this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border);
-          this._clusterGroup.addLayer(marker);
+          cluster.addLayer(marker);
           return;
         }
       }
@@ -2810,7 +2811,7 @@ export class BidSheetComponent {
       marker.on('click', () => this._selectMapLocation(locs[0]));
       const hoverBid4 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
       this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border);
-      this._clusterGroup.addLayer(marker);
+      cluster.addLayer(marker);
     });
   }
 
@@ -2900,7 +2901,7 @@ export class BidSheetComponent {
   }
 
   /** Creates an expanded hover icon showing location name + bid value. */
-  private _buildHoverIcon(name: string, bid: string, bg: string, border: string): any {
+  private _buildHoverIcon(name: string, bid: string, bg: string, border: string): Leaflet.DivIcon {
     const L = this._L!;
     const nameHtml = `<div style="font-size:11px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.2;">${this._esc(name)}</div>`;
     const bidLabel = bid || '--';
@@ -2924,7 +2925,7 @@ export class BidSheetComponent {
   /** Binds hover expand behavior to a marker — swaps icon on mouseover/mouseout.
    *  Tracks the currently-hovered marker and force-resets it when another marker is hovered,
    *  which prevents stuck labels when markers sit close together and setIcon() eats the mouseout. */
-  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string): void {
+  private _bindHoverExpand(marker: Leaflet.Marker, originalIcon: Leaflet.DivIcon, name: string, bid: string, bg: string, border: string): void {
     const hoverIcon = this._buildHoverIcon(name, bid, bg, border);
     marker.on('mouseover', () => {
       // Reset any other marker that's still stuck on its hover icon (and its raised z-index)

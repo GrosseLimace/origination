@@ -2,10 +2,10 @@ import { Component, input, output, effect, inject, untracked, ChangeDetectionStr
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subject, of, forkJoin, takeUntil } from 'rxjs';
+import { Observable, Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap, map, tap } from 'rxjs/operators';
 import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
-import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails } from '@models';
+import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails, QueryLibraryItem } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -28,6 +28,18 @@ interface LastContactInfo {
   daysAgo: number;
   cssClass: string;
 }
+
+/** What a saved list's prefetch can bring back. Each key is present only when the query needed
+ *  that data and it was not loaded yet. */
+type SavedListPrefetch = Partial<{
+  storedGrain: StoredGrain[];
+  dpContracts: DpContract[];
+  tickets: Ticket[];
+  plantingIntentions: PlantingIntention[];
+  contracts: Contract[];
+  notes: Note[];
+  queryLibrary: QueryLibraryItem[];
+}>;
 
 @Component({
   selector: 'app-customer-list',
@@ -297,7 +309,7 @@ export class CustomerListComponent {
           this._cancelSavedList$.next();
           if (this.getVisibleSavedLists().some(l => String(l.id) === currentList)) {
             const savedList = this.savedLists().find(l => String(l.id) === currentList);
-            if (savedList) savedList.customerIds = undefined as any;
+            if (savedList) savedList.customerIds = undefined;
             this.savedListLoading.set(true);
           } else {
             this.savedListLoading.set(false);
@@ -456,7 +468,7 @@ export class CustomerListComponent {
       // an immutable swap on appState wouldn't propagate to our input, but a mutation on the
       // shared object reference is visible everywhere that holds it.
       const savedList = this.savedLists().find(l => String(l.id) === id);
-      if (savedList) savedList.customerIds = undefined as any;
+      if (savedList) savedList.customerIds = undefined;
       // Clear any active producer-search term so applyFilters() resolves the saved list through
       // the fast LOCAL NLQ path. With a term present, applyFilters() diverts to the search
       // pipeline (and the slow ODS fallback in All-Producers mode) and that path never clears
@@ -492,7 +504,7 @@ export class CustomerListComponent {
     const tuParam = selectedTU.length > 0 ? selectedTU : undefined;
 
     // Only fetch data types the query actually needs — skip unnecessary slow fetches
-    const missing: Record<string, any> = {};
+    const missing: Record<string, Observable<unknown>> = {};
     if (this.nlqFilterService.queryInvolvesStorage(query) && this.appStateService.storedGrain().length === 0) {
       missing['storedGrain'] = this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[])));
     }
@@ -541,8 +553,8 @@ export class CustomerListComponent {
 
     if (Object.keys(missing).length > 0) {
       this.savedListLoading.set(true);
-      forkJoin(missing).pipe(takeUntil(this._cancelSavedList$), takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (results: any) => {
+      (forkJoin(missing) as Observable<SavedListPrefetch>).pipe(takeUntil(this._cancelSavedList$), takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: results => {
           // Stale-response guard — ignore callbacks from a superseded selection.
           if (runId !== this._activeSavedListRunId) return;
           if (results.storedGrain) this.appStateService.setStoredGrain(results.storedGrain);

@@ -12,7 +12,7 @@ export interface FakeAccount {
  * any token/photo fetch the component kicks off short-circuits (returns EMPTY) and
  * the test stays free of outstanding HTTP. Pass an account when a test needs one.
  */
-export function makeMsalServiceMock(account: FakeAccount | null = null): any {
+export function makeMsalServiceMock(account: FakeAccount | null = null) {
   const accounts = account ? [account] : [];
   return {
     instance: {
@@ -34,7 +34,7 @@ export function makeMsalServiceMock(account: FakeAccount | null = null): any {
 
 /** A test double for `MsalBroadcastService`. `inProgress$` reports "no interaction in
  *  progress", matching the steady state the app waits for. */
-export function makeMsalBroadcastMock(): any {
+export function makeMsalBroadcastMock() {
   return {
     inProgress$: of(InteractionStatus.None),
     msalSubject$: of(),

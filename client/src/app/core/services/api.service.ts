@@ -54,6 +54,16 @@ import { ToastService } from '@core/services/toast.service';
  * ApiService provides HTTP methods for communicating with the .NET Web API backend.
  * All methods return RxJS Observables for async data handling.
  */
+/** A recap group as the server sends it: an int id, and the CC list under ccList. */
+type RecapGroupDto = import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] };
+
+/** A saved list as the server sends it: the three JSON columns arrive as strings. */
+type SavedListDto = Omit<SavedList, 'filters' | 'includedCustomerIds' | 'excludedCustomerIds'> & {
+  filters?: string | null;
+  includedCustomerIds?: string | null;
+  excludedCustomerIds?: string | null;
+};
+
 @Injectable({
   providedIn: 'root'
 })
@@ -67,7 +77,7 @@ export class ApiService {
   // slow ODS endpoint (e.g. from HomeComponent._loadAllData() and DataPreloadService).
   // When a second caller requests the same key while the first is still in-flight,
   // they share one HTTP request and both receive the same response.
-  private readonly _inFlight = new Map<string, Observable<any>>();
+  private readonly _inFlight = new Map<string, Observable<unknown>>();
 
   private _dedupe<T>(key: string, request: Observable<T>): Observable<T> {
     const cached = this._inFlight.get(key);
@@ -167,7 +177,7 @@ export class ApiService {
 
   /** Shapes a server RecapGroupDto into the frontend RecapGroup (int id -> string). */
   private mapRecapGroup(
-    dto: import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] },
+    dto: RecapGroupDto,
   ): import('@features/daily-digest/models/recap-group.model').RecapGroup {
     return {
       id: String(dto.id),
@@ -206,7 +216,7 @@ export class ApiService {
 
   /** Fetches the current user's recap groups. */
   getRecapGroups(): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/dailyrecapgroups`)
+    return this.http.get<RecapGroupDto[]>(`${this.baseUrl}/dailyrecapgroups`)
       .pipe(
         map(list => list.map(g => this.mapRecapGroup(g))),
         catchError(e => this.handleError(e)),
@@ -217,7 +227,7 @@ export class ApiService {
   createRecapGroup(
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
+    return this.http.post<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -226,7 +236,7 @@ export class ApiService {
     id: string,
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
+    return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -235,7 +245,7 @@ export class ApiService {
     id: string,
     enabled: boolean,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
+    return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -827,7 +837,7 @@ export class ApiService {
     try { return JSON.parse(val) as T; } catch { return undefined; }
   }
 
-  private static hydrateSavedList(l: any): SavedList {
+  private static hydrateSavedList(l: SavedListDto): SavedList {
     return {
       ...l,
       filters: ApiService.parseSavedListJson<RefinementFilters>(l.filters),
@@ -855,7 +865,7 @@ export class ApiService {
   /** Fetches all saved customer lists — deserializes JSON strings to objects */
   getSavedLists(): Observable<SavedList[]> {
     return this._dedupe('savedlists',
-      this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
+      this.http.get<SavedListDto[]>(`${this.baseUrl}/savedlists`).pipe(
         map(lists => lists.map(ApiService.hydrateSavedList)),
         catchError(e => this.handleError(e))
       )
@@ -865,7 +875,7 @@ export class ApiService {
   /** Manager-only: fetches all saved lists tied to the given trade unit(s) that belong to other
    *  users, each carrying the creator's display name. Same JSON deserialization as getSavedLists. */
   getTeamSavedLists(tradeUnits: string): Observable<SavedList[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
+    return this.http.get<SavedListDto[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
       map(lists => lists.map(ApiService.hydrateSavedList)),
       catchError(e => this.handleError(e))
     );

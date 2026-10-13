@@ -22,6 +22,7 @@ import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-tra
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
 import { environment } from '@env/environment';
+import { parseServerTime } from '@shared/utils/server-time';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -275,9 +276,7 @@ export class HomeComponent {
       this._parseNoteTime(note.createdAt) > this._parseNoteTime(latest.createdAt) ? note : latest,
       notes[0]
     );
-    const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
-      ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
-    const date = new Date(raw);
+    const date = parseServerTime(lastNote.createdAt);
     const todayMidnight = new Date();
     todayMidnight.setHours(0, 0, 0, 0);
     const noteMidnight = new Date(date);

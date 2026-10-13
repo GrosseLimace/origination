@@ -869,7 +869,7 @@ describe('DashboardComponent', () => {
       const rows = c.producersTabRows();
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ customerName: 'Alpha Farms', acres: 50, production: 6000 });
-      expect([...rows[0].highlightedCrops]).toEqual(['Dryland YC']);
+      expect([...(rows[0].highlightedCrops ?? [])]).toEqual(['Dryland YC']);
       expect(c.producerWithCount()).toBe(1);
       expect(c.producerWithoutCount()).toBe(1);
 
