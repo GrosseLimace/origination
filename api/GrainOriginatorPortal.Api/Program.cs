@@ -311,7 +311,6 @@ builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
 builder.Services.AddScoped<IDpContractService, DpContractService>();
 builder.Services.AddScoped<ISavedListService, SavedListService>();
 builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
-builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<IReminderService, ReminderService>();

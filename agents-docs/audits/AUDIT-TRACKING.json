@@ -2364,7 +2364,7 @@
       "id": "clean-slop.dead-farms-api-vertical",
       "audit": "clean-slop",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "Entire Farms REST API is a non-functional stub with no caller",
       "description": "FarmsController exposes GET/GET-by-id/GET-by-customer/POST endpoints backed by IFarmService -> FarmService -> IFarmRepository -> FarmRepository. FarmRepository is explicitly documented as a stub implementation since no Farms table exists in the ODS yet: every read method logs a warning and returns an empty list/null, and CreateAsync unconditionally throws NotImplementedException. Confirmed via repo-wide grep that the Angular client has zero API calls to /api/farms and no other C# caller exists beyond DI registration. This is a full dead vertical slice (controller, service, repository, interfaces, entity, mapping, DTOs) that does nothing useful and is unreachable from the real app.",
       "files": [
@@ -2379,7 +2379,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Re-verified: FarmsController.cs, FarmService.cs, IFarmService.cs, FarmRepository.cs, and IFarmRepository.cs all still exist unchanged; repo-wide grep for actual Angular API calls (not just the word \"farms\", which only matches test fixture customer names like \"Alpha Farms\") confirms zero client callers. Unchanged since 2026-09-19, still open. Keep-or-delete is a product call: it is a placeholder for an ODS table that does not exist yet. [2026-09-28] Re-verified: all five files (FarmsController.cs, FarmService.cs, IFarmService.cs, FarmRepository.cs, IFarmRepository.cs) still present unchanged; still no real callers. Still open, still a product decision. [2026-10-13] Re-verified: all five files still present unchanged, still no real callers. Still open, still a product decision."
+      "notes": "[2026-09-21] Re-verified: FarmsController.cs, FarmService.cs, IFarmService.cs, FarmRepository.cs, and IFarmRepository.cs all still exist unchanged; repo-wide grep for actual Angular API calls (not just the word \"farms\", which only matches test fixture customer names like \"Alpha Farms\") confirms zero client callers. Unchanged since 2026-09-19, still open. Keep-or-delete is a product call: it is a placeholder for an ODS table that does not exist yet. [2026-09-28] Re-verified: all five files (FarmsController.cs, FarmService.cs, IFarmService.cs, FarmRepository.cs, IFarmRepository.cs) still present unchanged; still no real callers. Still open, still a product decision. [2026-10-13] Re-verified: all five files still present unchanged, still no real callers. Still open, still a product decision.\n[2026-10-13] Owner confirmed no ODS Farms table is planned. The three pushed mobile branches move Api/Services into an Application assembly and will see this as delete-vs-move on FarmService; resolve by taking the delete.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Removed the whole vertical at the product owner's direction (no Farms table is coming): FarmsController, FarmService, IFarmService, FarmMappings, CreateFarmRequest, FarmResponse, the Farm entity, IFarmRepository, FarmRepository, FarmServiceTests, both DI registrations, the FarmsController case in ControllerAuthorizationTests, the commented-out Farm model configuration in OriginationDbContext, the README route row, and the orphaned client Farm interface (nothing imported it). The FarmId ignores on other entities stay: those are columns on other ODS views, not part of this vertical. Historical security-review documents that mention FarmsController are left as records. API suite 1378 -> 1370 (the eight stub tests went with it), client type-check and production build clean."
     },
     {
       "id": "clean-slop.stale-dbset-comments-originationdbcontext",

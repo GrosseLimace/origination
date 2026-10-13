@@ -158,7 +158,6 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 |--------|----------|-------------|
 | GET | `/commodities` | All active commodities |
 | GET | `/storedgrain/customer/{customerId}` | Stored grain (stub, no ODS table yet) |
-| GET | `/farms/customer/{customerId}` | Farms (stub, no ODS table yet) |
 
 > Trade unit and trade-unit-group catalog lookups are sourced from the **TradeUnitPreferences** database (`dbo.vw_UserTradeUnitPreferences`, see `/usertradeunits`). Managers assign users to trade units in a separate preferences application, which owns the writes; this app only reads. Replaced the Entitlements DB 2026-08-18. The app DB no longer maintains a local TU catalog.
 
