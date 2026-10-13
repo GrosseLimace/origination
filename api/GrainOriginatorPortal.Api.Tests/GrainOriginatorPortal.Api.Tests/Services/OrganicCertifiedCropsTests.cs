@@ -206,4 +206,62 @@ public class OrganicCertifiedCropsTests
         // both render.
         Assert.Equal(["Corn", "Wheat"], OrganicCertifiedCrops.Split("Corn, Wheat, and Wheat"));
     }
+
+    // ── Commas inside numbers ────────────────────────────────────────────────────────────────
+    //
+    // The first full load (Dev, 2026-10-13, 1,138 producers) turned up nine certifiers writing
+    // carryover quantities with a thousands separator. The comma was read as list punctuation, so
+    // "1,050 bushels" rendered as a chip saying "1" and another saying "050 bushels". The strings
+    // below are verbatim from that load.
+
+    [Fact]
+    public void DoesNotSplitAThousandsSeparator()
+    {
+        Assert.Equal(
+            ["Carryover Crops of: 2025 Soybeans", "1,050 bushels"],
+            OrganicCertifiedCrops.Split("Carryover Crops of: 2025 Soybeans - 1,050 bushels"));
+    }
+
+    [Fact]
+    public void HandlesSeveralNumbersInOneString()
+    {
+        // Verbatim, and the worst of the nine: two thousands separators alongside a hyphen list.
+        Assert.Equal(
+            ["Carryover Crops of: 2025 Oats", "6500 bushels", "2025 Soybeans", "2000 bushels",
+             "2025 Sunflowers", "200,000 lb"],
+            OrganicCertifiedCrops.Split(
+                "Carryover Crops of: 2025 Oats- 6500 bushels, 2025 Soybeans- 2000 bushels, "
+                + "2025 Sunflowers- 200,000 lb"));
+    }
+
+    [Fact]
+    public void StillSplitsACommaFollowedByASpace()
+    {
+        // The guard needs a digit on BOTH sides. A real list has a space after the comma, so the
+        // common case must be unaffected — it is the one most easily broken by widening this.
+        Assert.Equal(["Corn", "Soybeans", "Wheat"], OrganicCertifiedCrops.Split("Corn, Soybeans, Wheat"));
+    }
+
+    [Fact]
+    public void StillSplitsAListOfYears()
+    {
+        // Digits either side, but a space after the comma, so it stays a list break. Pinned so the
+        // guard is never widened to ignore spacing.
+        Assert.Equal(["2024", "2019 Oats"], OrganicCertifiedCrops.Split("2024, 2019 Oats"));
+    }
+
+    [Fact]
+    public void StillSplitsACommaWithNoSpaceBetweenTwoCrops()
+    {
+        // No space, but letters either side rather than digits — still list punctuation.
+        Assert.Equal(["Corn", "Soybeans"], OrganicCertifiedCrops.Split("Corn,Soybeans"));
+    }
+
+    [Fact]
+    public void ACommaAtTheVeryStartOrEndIsStillPunctuation()
+    {
+        // Guards the bounds check: index 0 and the last index have no neighbour to inspect and
+        // must not throw.
+        Assert.Equal(["Corn"], OrganicCertifiedCrops.Split(",Corn,"));
+    }
 }

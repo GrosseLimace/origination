@@ -29,6 +29,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data;
 /// <item><b>A leading "and" / "or" is dropped.</b> Certifiers write prose lists — "Corn, Soybeans,
 /// and Wheat" — which would otherwise produce a chip reading "and Wheat". See
 /// <see cref="StripLeadingConjunction"/>.</item>
+/// <item><b>A comma inside a number is not a separator.</b> "1,050 bushels" is one quantity, not a
+/// list. See <see cref="IsThousandsSeparator"/>.</item>
 /// </list>
 ///
 /// This is deliberately NOT clever. It does not try to recognise crop names, strip quantities or
@@ -70,13 +72,15 @@ public static class OrganicCertifiedCrops
         var current = new StringBuilder();
         var depth = 0;
 
-        foreach (var ch in freeText)
+        for (var i = 0; i < freeText.Length; i++)
         {
+            var ch = freeText[i];
+
             if (Openers.Contains(ch)) depth++;
             else if (Closers.Contains(ch) && depth > 0) depth--;
 
             // Inside brackets, separators are part of the text rather than between entries.
-            if (depth == 0 && Separators.Contains(ch))
+            if (depth == 0 && Separators.Contains(ch) && !IsThousandsSeparator(freeText, i))
             {
                 parts.Add(current.ToString());
                 current.Clear();
@@ -101,6 +105,27 @@ public static class OrganicCertifiedCrops
         }
 
         return crops;
+    }
+
+    /// <summary>
+    /// Whether the character at <paramref name="index"/> is a comma acting as a thousands
+    /// separator — a digit on each side — rather than as list punctuation.
+    ///
+    /// Found in the first full load (Dev, 2026-10-13): nine certifiers wrote carryover quantities
+    /// like "Carryover Crops of: 2025 Soybeans - 1,050 bushels". Splitting on that comma produced
+    /// chips reading <i>"1"</i> and <i>"050 bushels"</i>.
+    ///
+    /// Only the comma is treated this way. None of the other separators appears inside a number, and
+    /// no crop name has a digit on both sides of a comma, so this cannot swallow a real list break:
+    /// "Corn, Soybeans" has a space after the comma, and "2024, 2019 Oats" likewise — both still
+    /// split. It is deliberately narrow for that reason.
+    /// </summary>
+    private static bool IsThousandsSeparator(string text, int index)
+    {
+        if (text[index] != ',') return false;
+        if (index == 0 || index == text.Length - 1) return false;
+
+        return char.IsAsciiDigit(text[index - 1]) && char.IsAsciiDigit(text[index + 1]);
     }
 
     /// <summary>
