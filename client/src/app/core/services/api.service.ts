@@ -717,9 +717,9 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Creates or updates producer details for a customer. `contacts` array order is the display
-   *  order; omitting the property entirely preserves the customer's existing contact rows. */
-  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { commodityCode: string; bushelsOnHand?: number | null; targetBushels?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[] }): Observable<ProducerDetails> {
+  /** Creates or updates producer details for a customer. `contacts` and `binSites` array order is
+   *  the display order; omitting either property entirely preserves the customer's existing rows. */
+  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { binSiteKey?: string | null; commodityCode: string; bushelsOnHand?: number | null; bushelsSold?: number | null; targetBushels?: number | null; lastBid?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[]; binSites?: { siteKey?: string; name: string; latitude?: number | null; longitude?: number | null; capacity?: number | null }[] }): Observable<ProducerDetails> {
     return this.http.put<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`, data)
       .pipe(catchError(e => this.handleError(e)));
   }
@@ -1060,80 +1060,82 @@ export class ApiService {
   // Usage Dashboard
   // =========================================================================
 
-  private usageParams(from: string, to: string, tradeUnitKey?: string, managerId?: string, extra?: Record<string, string>): Record<string, string> {
+  // The manager filter is the dashboard's only narrowing — it is organised by reporting line, so the
+  // app-wide trade-unit selection is deliberately not sent.
+  private usageParams(from: string, to: string, managerId?: string, extra?: Record<string, string>): Record<string, string> {
     const p: Record<string, string> = { from, to };
-    if (tradeUnitKey) p['tradeUnitKey'] = tradeUnitKey;
     if (managerId) p['managerId'] = managerId;
     if (extra) Object.assign(p, extra);
     return p;
   }
 
-  getUsageDashboardSummary(from: string, to: string, tradeUnitKey?: string, managerId?: string): Observable<UsageDashboardSummary> {
-    return this.http.get<UsageDashboardSummary>(`${this.baseUrl}/usage-dashboard/summary`, { params: this.usageParams(from, to, tradeUnitKey, managerId) })
+  getUsageDashboardSummary(from: string, to: string, managerId?: string): Observable<UsageDashboardSummary> {
+    return this.http.get<UsageDashboardSummary>(`${this.baseUrl}/usage-dashboard/summary`, { params: this.usageParams(from, to, managerId) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Returns the full user universe. Status filtering stays client-side: the same list also feeds
    *  the status donut, the activity-breakdown table and the low-usage panel, so a server-filtered
    *  response could not replace it. */
-  getUsageDashboardUsers(from: string, to: string, tradeUnitKey?: string, managerId?: string): Observable<UsageDashboardUser[]> {
-    return this.http.get<UsageDashboardUser[]>(`${this.baseUrl}/usage-dashboard/users`, { params: this.usageParams(from, to, tradeUnitKey, managerId) })
+  getUsageDashboardUsers(from: string, to: string, managerId?: string): Observable<UsageDashboardUser[]> {
+    return this.http.get<UsageDashboardUser[]>(`${this.baseUrl}/usage-dashboard/users`, { params: this.usageParams(from, to, managerId) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageDailyActive(from: string, to: string, tradeUnitKey?: string, managerId?: string): Observable<DailyActive[]> {
-    return this.http.get<DailyActive[]>(`${this.baseUrl}/usage-dashboard/daily-active`, { params: this.usageParams(from, to, tradeUnitKey, managerId) })
+  getUsageDailyActive(from: string, to: string, managerId?: string): Observable<DailyActive[]> {
+    return this.http.get<DailyActive[]>(`${this.baseUrl}/usage-dashboard/daily-active`, { params: this.usageParams(from, to, managerId) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageFeatureSessions(from: string, to: string, tradeUnitKey?: string, managerId?: string, screen?: string): Observable<FeatureSessions[]> {
+  getUsageFeatureSessions(from: string, to: string, managerId?: string, screen?: string): Observable<FeatureSessions[]> {
     const extra: Record<string, string> = {};
     if (screen && screen !== 'all') extra['screen'] = screen;
-    return this.http.get<FeatureSessions[]>(`${this.baseUrl}/usage-dashboard/feature-sessions`, { params: this.usageParams(from, to, tradeUnitKey, managerId, extra) })
+    return this.http.get<FeatureSessions[]>(`${this.baseUrl}/usage-dashboard/feature-sessions`, { params: this.usageParams(from, to, managerId, extra) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Trend over whole calendar weeks. Deliberately takes no date range — it is a trend view, so it
    *  does not re-fetch when the dashboard's window changes. */
-  getUsageWeeklyTrend(tradeUnitKey?: string, managerId?: string, weeks = 8): Observable<WeeklyTrend[]> {
+  getUsageWeeklyTrend(managerId?: string, weeks = 8): Observable<WeeklyTrend[]> {
     const params: Record<string, string> = { weeks: weeks.toString() };
-    if (tradeUnitKey) params['tradeUnitKey'] = tradeUnitKey;
     if (managerId) params['managerId'] = managerId;
     return this.http.get<WeeklyTrend[]>(`${this.baseUrl}/usage-dashboard/weekly-trend`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageActivityBreakdown(from: string, to: string, tradeUnitKey?: string, managerId?: string): Observable<ActivityBreakdown[]> {
-    return this.http.get<ActivityBreakdown[]>(`${this.baseUrl}/usage-dashboard/activity-breakdown`, { params: this.usageParams(from, to, tradeUnitKey, managerId) })
+  getUsageActivityBreakdown(from: string, to: string, managerId?: string): Observable<ActivityBreakdown[]> {
+    return this.http.get<ActivityBreakdown[]>(`${this.baseUrl}/usage-dashboard/activity-breakdown`, { params: this.usageParams(from, to, managerId) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageQueryLibraryUsage(from: string, to: string, tradeUnitKey?: string, managerId?: string): Observable<QueryLibraryUsage[]> {
-    return this.http.get<QueryLibraryUsage[]>(`${this.baseUrl}/usage-dashboard/query-library-usage`, { params: this.usageParams(from, to, tradeUnitKey, managerId) })
+  getUsageQueryLibraryUsage(from: string, to: string, managerId?: string): Observable<QueryLibraryUsage[]> {
+    return this.http.get<QueryLibraryUsage[]>(`${this.baseUrl}/usage-dashboard/query-library-usage`, { params: this.usageParams(from, to, managerId) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageQuerySearchGaps(from: string, to: string, tradeUnitKey?: string, managerId?: string): Observable<QuerySearchGap[]> {
-    return this.http.get<QuerySearchGap[]>(`${this.baseUrl}/usage-dashboard/query-search-gaps`, { params: this.usageParams(from, to, tradeUnitKey, managerId) })
+  getUsageQuerySearchGaps(from: string, to: string, managerId?: string): Observable<QuerySearchGap[]> {
+    return this.http.get<QuerySearchGap[]>(`${this.baseUrl}/usage-dashboard/query-search-gaps`, { params: this.usageParams(from, to, managerId) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageUnderusedFeatures(from: string, to: string, tradeUnitKey?: string, managerId?: string): Observable<UnderusedFeature[]> {
-    return this.http.get<UnderusedFeature[]>(`${this.baseUrl}/usage-dashboard/underused-features`, { params: this.usageParams(from, to, tradeUnitKey, managerId) })
+  getUsageUnderusedFeatures(from: string, to: string, managerId?: string): Observable<UnderusedFeature[]> {
+    return this.http.get<UnderusedFeature[]>(`${this.baseUrl}/usage-dashboard/underused-features`, { params: this.usageParams(from, to, managerId) })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Active managers for the dashboard's manager filter. The server fails closed with a 503 when
-   *  the TradeUnitPreferences DB is unreachable, so the picker shows an unavailable state. */
+  /** Active managers for the dashboard's manager filter — every dashboard user gets the full roster,
+   *  which the page needs up front to default the filter to the signed-in user. The server fails
+   *  closed with a 503 when the TradeUnitPreferences DB is unreachable, so the picker shows an
+   *  unavailable state. */
   getUsageManagers(): Observable<UsageManager[]> {
     return this.http.get<UsageManager[]>(`${this.baseUrl}/usage-dashboard/managers`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUserUsageDetail(userId: string, from: string, to: string, tradeUnitKey?: string): Observable<UserUsageDetail> {
+  getUserUsageDetail(userId: string, from: string, to: string): Observable<UserUsageDetail> {
     return this.http.get<UserUsageDetail>(
       `${this.baseUrl}/usage-dashboard/users/${encodeURIComponent(userId)}/detail`,
-      { params: this.usageParams(from, to, tradeUnitKey) }
+      { params: this.usageParams(from, to) }
     ).pipe(catchError(e => this.handleError(e)));
   }
 

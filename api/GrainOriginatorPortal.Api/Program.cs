@@ -112,6 +112,12 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireRole("Admin"));
 
+    // BarChart ingestion: the data pipeline's managed identity holding the pre-existing
+    // application-only app role, or an Admin so the feed can be exercised and re-run by hand.
+    // RequireRole is OR across the listed roles.
+    options.AddPolicy("BarchartIngest", policy =>
+        policy.RequireRole("Origination.Application", "Admin"));
+
     // Usage-dashboard read surface: Super Users group membership, surfaced as the Admin role.
     // Equivalent to AdminOnly today; kept as its own named policy so the read surface stays distinct
     // from exclusion administration (a convention test pins that split), and so how much of the org
@@ -315,6 +321,7 @@ builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
+builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
@@ -324,9 +331,6 @@ builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
 // Scoped (not singleton like IAppAccessService) because it reads through the scoped
 // IUsageRepository/DbContext; the directory itself is shared via IMemoryCache.
 builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
-// Who may read the WHOLE org and pick any manager, from dbo.UsageDashboardViewAllUsers. Scoped
-// because it reads through IUsageRepository; the result is cached for a minute inside the provider.
-builder.Services.AddScoped<IUsageDashboardViewAllProvider, UsageDashboardViewAllProvider>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();

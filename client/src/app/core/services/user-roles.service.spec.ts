@@ -117,16 +117,39 @@ describe('UserRolesService', () => {
     expect(await readyWithin(svc)).toEqual(['Admin']);
   });
 
-  it('surfaces the ViewAll role separately from Admin', async () => {
-    // canViewAllUsage must NOT be implied by Admin — an Admin off the server's list is scoped.
-    httpGet.mockImplementation(() => of({ userId: 'CEgr', roles: ['Admin'] }));
+  it('exposes the short name derived from the /api/me userId', async () => {
+    // The usage dashboard defaults its manager filter to this, and the manager directory keys
+    // people by the UPN prefix — so the '@scoular.com' must come off here, once.
+    httpGet.mockImplementation(() => of({ userId: 'CEgr@scoular.com', roles: ['Admin'] }));
     const svc = TestBed.inject(UserRolesService);
 
     inProgress$.next(InteractionStatus.None);
     await readyWithin(svc);
 
-    expect(svc.canViewUsageDashboard()).toBe(true);
-    expect(svc.canViewAllUsage()).toBe(false);
+    expect(svc.userId()).toBe('CEgr@scoular.com');
+    expect(svc.userShortName()).toBe('CEgr');
+  });
+
+  it('passes an already-short userId through unchanged', async () => {
+    httpGet.mockImplementation(() => of({ userId: 'CEgr', roles: [] }));
+    const svc = TestBed.inject(UserRolesService);
+
+    inProgress$.next(InteractionStatus.None);
+    await readyWithin(svc);
+
+    expect(svc.userShortName()).toBe('CEgr');
+  });
+
+  it('leaves the short name empty when /api/me fails', async () => {
+    // Failing closed: the dashboard then falls back to "All Managers" rather than defaulting to a
+    // name it does not have.
+    httpGet.mockImplementation(() => throwError(() => new Error('boom')));
+    const svc = TestBed.inject(UserRolesService);
+
+    inProgress$.next(InteractionStatus.None);
+    await readyWithin(svc);
+
+    expect(svc.userShortName()).toBe('');
   });
 
   it('replays to a late subscriber', async () => {

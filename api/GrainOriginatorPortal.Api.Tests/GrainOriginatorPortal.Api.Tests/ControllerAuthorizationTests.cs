@@ -20,6 +20,7 @@ public class ControllerAuthorizationTests
 {
     public static IEnumerable<object[]> AllControllerTypes()
     {
+        yield return new object[] { typeof(BarchartIngestController) };
         yield return new object[] { typeof(BidSheetController) };
         yield return new object[] { typeof(CommoditiesController) };
         yield return new object[] { typeof(ContractsController) };
@@ -70,9 +71,8 @@ public class ControllerAuthorizationTests
     /// must carry an explicit policy — the class-level [Authorize] alone would only require a
     /// sign-in. Reads take the UsageDashboardViewer policy (the Admin role, granted by the Super
     /// Users group); exclusion administration must stay strictly AdminOnly. The single exception is
-    /// the telemetry endpoint, which every signed-in user posts to. Note the read policy governs
-    /// only who may OPEN a read — how much of the org it returns is scoped separately in
-    /// UsageDashboardService against the UsageDashboard:ViewAll list.
+    /// the telemetry endpoint, which every signed-in user posts to. The read policy is the whole
+    /// gate: anyone who passes it sees the entire organisation and may filter by any manager.
     /// </summary>
     [Fact]
     public void UsageDashboardController_EveryActionExceptClickEvent_CarriesADashboardPolicy()
@@ -116,5 +116,47 @@ public class ControllerAuthorizationTests
         var clickEvent = actions.Single(m => m.Name == nameof(UsageDashboardController.TrackClickEvent));
         Assert.DoesNotContain(clickEvent.GetCustomAttributes<AuthorizeAttribute>(inherit: true),
             a => a.Policy == "AdminOnly" || a.Policy == UsageDashboardAccess.PolicyName);
+    }
+
+    /// <summary>
+    /// The BarChart ingestion endpoints write vendor data straight into the app database, so a plain
+    /// signed-in user must not reach them: the controller carries the BarchartIngest policy (the data
+    /// pipeline's application role, or an Admin) and every action inherits it. A bare [Authorize] would
+    /// only require a sign-in, which is the mistake this test exists to catch.
+    /// </summary>
+    [Fact]
+    public void BarchartIngestController_RequiresTheBarchartIngestPolicy()
+    {
+        var classPolicies = typeof(BarchartIngestController)
+            .GetCustomAttributes<AuthorizeAttribute>(inherit: true)
+            .Select(a => a.Policy)
+            .ToList();
+
+        Assert.Contains("BarchartIngest", classPolicies);
+    }
+
+    /// <summary>
+    /// The class-level policy only holds if no action opts out of it, so no ingest endpoint may carry
+    /// [AllowAnonymous].
+    /// </summary>
+    [Fact]
+    public void BarchartIngestController_NoActionAllowsAnonymousAccess()
+    {
+        var actions = typeof(BarchartIngestController)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => !m.IsSpecialName)
+            .ToList();
+
+        Assert.NotEmpty(actions);
+
+        var anonymous = actions
+            .Where(m => m.GetCustomAttributes<AllowAnonymousAttribute>(inherit: true).Any())
+            .Select(m => m.Name)
+            .ToList();
+
+        Assert.True(anonymous.Count == 0,
+            $"These BarChart ingest actions allow anonymous access: {string.Join(", ", anonymous)}");
+
+        Assert.Empty(typeof(BarchartIngestController).GetCustomAttributes<AllowAnonymousAttribute>(inherit: true));
     }
 }
