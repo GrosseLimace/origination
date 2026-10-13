@@ -1648,7 +1648,7 @@
       "id": "error-handling.catalog-endpoints-fail-open-to-200-on-dependency-failure",
       "audit": "error-handling",
       "severity": "medium",
-      "status": "open",
+      "status": "accepted",
       "title": "Catalog/lookup endpoints swallow backend dependency failures into HTTP 200 with empty or partial data",
       "description": "EntitlementsController.GetCatalog and NotesController.GetMentionCatalog wrap their DB lookups in catch(Exception), log at Warning, and return Ok(...) with an empty or partially-populated response regardless -- the HTTP status never reflects the failure. This is the server-side mirror of the Angular client's inability to distinguish genuinely-empty from failed: for these two endpoints, the ambiguity originates in the API itself.",
       "files": [
@@ -1664,7 +1664,8 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed and deliberate today (the log text says \"returning empty lists\"). Whether the mention picker should 503 instead of degrading is a product call. [2026-09-28] Re-verified: EntitlementsController.cs:155-159 catch(Exception) still logs Warning and returns Ok(new EntitlementsCatalogResponse()) unconditionally. No regressions. [2026-10-13] Calibration re-run. Re-read EntitlementsController.cs:155-159 (unchanged) and all three independent catch(Exception) blocks in NotesController.GetMentionCatalog (TradeUnitPreferences DB, app groups, Teams channels) — all three still log Warning and leave the corresponding response field empty rather than signaling degradation. No regression, no fix."
+      "notes": "[2026-09-21] Confirmed and deliberate today (the log text says \"returning empty lists\"). Whether the mention picker should 503 instead of degrading is a product call. [2026-09-28] Re-verified: EntitlementsController.cs:155-159 catch(Exception) still logs Warning and returns Ok(new EntitlementsCatalogResponse()) unconditionally. No regressions. [2026-10-13] Calibration re-run. Re-read EntitlementsController.cs:155-159 (unchanged) and all three independent catch(Exception) blocks in NotesController.GetMentionCatalog (TradeUnitPreferences DB, app groups, Teams channels) — all three still log Warning and leave the corresponding response field empty rather than signaling degradation. No regression, no fix.\n[2026-10-13] Closed as accepted at the owner's direction. Do not re-raise unless a request to change the behaviour arrives.",
+      "accepted_rationale": "Deliberate fail-open, confirmed by the product owner on 2026-10-13: when the Trade Unit Preferences database is unreachable, the entitlements catalog (Daily Digest recap-group setup) and the mention catalog (the notes @-mention picker) return what they can with a 200 rather than erroring, and the server logs the failure at Warning. The pickers show empty rather than broken. Owner decision: leave as is until a user or stakeholder asks for the UI to distinguish the two cases; the degraded-flag design (one response field plus a one-line notice in the picker) is recorded here so it can be picked up without re-analysis."
     },
     {
       "id": "error-handling.traceid-never-surfaced-to-frontend",
@@ -3089,7 +3090,7 @@
     {
       "id": "code-review.harvest-pace-cutoff-anchored-to-wrong-year",
       "audit": "code-review",
-      "severity": "medium",
+      "severity": "high",
       "status": "open",
       "title": "Harvest pacing returns no answer for a producer whose latest delivery year is ahead of the current calendar year",
       "description": "computeHarvestPacePct buckets contracts by the producer's own max delivery year (maxYear and maxYear-1) but builds its same-point-last-year cutoff from the calendar clock: new Date(today.getFullYear()-1, today.getMonth(), today.getDate()). The two only line up when maxYear equals the current calendar year. For a producer booked a year ahead, the prior-year bucket is the current calendar year while the cutoff sits a full year before it, so every dated contract in that bucket fails the cutoff, lastYearBu falls to 0, and the function returns null and the card shows nothing. Demonstrated with today = 2026-09-28: a producer with max delivery year 2026 and the same data shape returns +20%, while the identical relationship with max delivery year 2027 returns null. The failure is data-dependent in a way that hides it: the cutoff is opt-in per contract (a contract with no contractDate is always included), so the same producer returns +20% if the prior-year rows happen to carry no booking date. This function exists specifically because two earlier implementations disagreed about pacing, which is why the remaining inconsistency is worth settling deliberately.",
@@ -3100,11 +3101,11 @@
       "opened_in": {
         "date": "2026-09-28"
       },
-      "last_verified": "2026-09-28",
+      "last_verified": "2026-10-13",
       "related_findings": [
         "test-gaps.contract-status-pacing-logic-untested"
       ],
-      "notes": "[2026-09-28] Found while writing contract-status.spec.ts for test-gaps.contract-status-pacing-logic-untested. NOT fixed: unlike a plain defect this changes a number users read, so it needs an owner decision first. Current behaviour is documented by a passing test rather than left implicit."
+      "notes": "[2026-09-28] Found while writing contract-status.spec.ts for test-gaps.contract-status-pacing-logic-untested. NOT fixed: unlike a plain defect this changes a number users read, so it needs an owner decision first. Current behaviour is documented by a passing test rather than left implicit.\n[2026-10-13] Raised to high after the owner asked how this behaves across commodities. The function pools every contract regardless of commodity and uses the single latest delivery year as this-year, so a producer between crops (wheat finished and booked for next year, corn still underway) has next year's wheat compared against this year's corn-plus-wheat and reads as badly behind. That is wrong independently of the cutoff bug, which only makes the figure vanish. Both callers are the Build-a-List pacing filters (nlq-filter.service), so the effect is producers wrongly appearing in or missing from those lists. The correct shape is per-commodity pacing, each crop against its own prior year; that is a design decision, now with Marc (question drafted in Projects/Code Review/pacing-question-for-marc.md)."
     },
     {
       "id": "performance.ctrm-read-ahead-ungated-on-data-source",
