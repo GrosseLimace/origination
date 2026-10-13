@@ -95,6 +95,13 @@ export class ApiService {
     return shared;
   }
 
+  /** Where the browser sends its error telemetry, or null when it is off. Swallows its own failure
+   *  without a toast: telemetry being unavailable is not something the user can act on. */
+  getClientTelemetryConfig(): Observable<{ connectionString: string | null }> {
+    return this.http.get<{ connectionString: string | null }>(`${this.baseUrl}/clienttelemetry`)
+      .pipe(catchError(() => of({ connectionString: null })));
+  }
+
   private handleError(error: unknown): Observable<never> {
     if (isDevMode()) {
       console.error('API Error:', error);

@@ -14,11 +14,40 @@ Telemetry is collected by **App Service auto-instrumentation**: the web app carr
 exceptions and `ILogger` output without code changes. Its connection string is the app setting
 `APPLICATIONINSIGHTS_CONNECTION_STRING`, set on the App Service, never in the repo.
 
-**The Angular client sends nothing.** There is no browser telemetry; a client-side failure that the
-server never sees leaves no trace in Azure. That is the open audit finding
-`logging.client-side-telemetry-missing`. The canonical pattern for adding it already exists in
-`developer-docs/CLAUDE.md` (Client-side App Insights: wrapper service, MSAL event forwarder, and
-the CSP allow-list the SDK needs).
+**The Angular client reports its errors too** (added 2026-10-13, `AppInsightsService`), to the
+same Application Insights resource as the server. After sign-in the client asks
+`GET /api/clienttelemetry` for the server's own `APPLICATIONINSIGHTS_CONNECTION_STRING` and, if
+there is one, loads the SDK and sends:
+
+- **exceptions**: every error reaching `GlobalErrorHandler` (the toast the user sees, and the
+  chunk-load errors they are spared), plus unhandled promise rejections;
+- **customEvents `MSAL.failure`**: MSAL failures such as a token refresh that did not work, with the
+  event type and error code/subcode only, never the message;
+- **pageViews**: one per route change, so an error can be read in context.
+
+API calls are not tracked from the browser; the server already records every request. Items have
+`cloud_RoleName` = `origination-spa`, and `user_AuthenticatedId` is the short name (CEgr). Not
+covered: a failure before the first sign-in completes, because the config endpoint is
+authenticated.
+
+Turning it off in one environment without a deploy: set the app setting
+`ClientTelemetry__Enabled=false`. With no connection string (local dev) it is off by itself.
+
+The CSP `connect-src` gains exactly this environment's ingestion host, worked out from the
+connection string at start-up (`SecurityHeadersMiddleware.SpaConnectHosts`). It deliberately does
+not use the `*.in.applicationinsights.azure.com` wildcard that `developer-docs/CLAUDE.md` shows:
+any App Insights resource accepts writes on those hosts, so the wildcard would let injected script
+send data to an attacker's resource. If the resource moves region, the host follows the connection
+string with no code change.
+
+A user's timeline, browser and server together:
+```kusto
+union exceptions, customEvents, pageViews, requests
+| where timestamp > ago(1d)
+| where user_AuthenticatedId == "CEgr"
+| project timestamp, itemType, cloud_RoleName, name, problemId, outerMessage
+| order by timestamp asc
+```
 
 | | Dev | QA | Production |
 |---|---|---|---|
@@ -98,5 +127,7 @@ counts, or 5xx rate. Those are visible in the workbook but nobody is paged for t
 2. **Shared workspace.** Dev's Application Insights writes to the subscription's
    `DefaultWorkspace-…-EUS` in `DefaultResourceGroup-EUS`, not a workspace owned by this app.
    Retention and access are therefore governed by that shared workspace.
-3. **Client telemetry** is missing entirely (open finding, critical).
+3. **Client telemetry** is on since 2026-10-13; after the first deploy to each environment, check that
+   `exceptions | where cloud_RoleName == "origination-spa"` receives rows (DevTools > Console shows
+   a CSP violation if the ingestion host was not allowed).
 4. **No API alerting** beyond Failure Anomalies; see the Alerts section.

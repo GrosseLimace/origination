@@ -92,6 +92,7 @@ public class FeatureNameMapperTests
     [InlineData("GET", "/api/me", "system", "identity")]
     [InlineData("GET", "/api/whats-new", "system", "whats-new")]
     [InlineData("GET", "/api/version", "system", "version")]
+    [InlineData("GET", "/api/clienttelemetry", "system", "client-telemetry")]
     // ---- Fallback -----------------------------------------------------------------
     [InlineData("GET", "/api/something-new", "other", null)]
     public void MapPathDetailed_MapsRealRoutes(string method, string path, string expectedFeature, string? expectedSubFeature)

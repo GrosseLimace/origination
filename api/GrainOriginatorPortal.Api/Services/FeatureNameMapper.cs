@@ -101,6 +101,9 @@ public static class FeatureNameMapper
             return ("system", "whats-new");
         if (p.StartsWith("/api/version"))
             return ("system", "version");
+        // Where the browser sends its error telemetry: read once per session, plumbing only.
+        if (p.StartsWith("/api/clienttelemetry"))
+            return ("system", "client-telemetry");
 
         return ("other", null);
     }

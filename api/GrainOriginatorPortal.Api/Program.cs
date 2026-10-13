@@ -342,6 +342,8 @@ builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
 builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryService>();
+// Read once: the connection string and the switch are app settings, which restart the app when changed.
+builder.Services.AddSingleton(ClientTelemetrySettings.From(builder.Configuration));
 builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
