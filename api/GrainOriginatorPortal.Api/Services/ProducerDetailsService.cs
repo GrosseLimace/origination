@@ -119,12 +119,17 @@ public class ProducerDetailsService : IProducerDetailsService
         // reverted the same day (see GetByCustomerAsync above). GET and PUT are both open and both
         // covered by the register; only the DELETE is scoped, for the reasons H-062 records.
         // The finding's audit half was valid and is fixed in the repository.
-        var grainEntries = (request.GrainOnFarm ?? [])
+        // Null grain (request didn't carry it) stays null — the repository preserves existing rows then,
+        // like contacts and bin sites.
+        var grainEntries = request.GrainOnFarm?
             .Select(g => new GrainOnFarmEntry
             {
+                BinSiteKey = g.BinSiteKey,
                 CommodityCode = g.EffectiveCommodityCode,
                 BushelsOnHand = g.BushelsOnHand,
+                BushelsSold = g.BushelsSold,
                 TargetBushels = g.TargetBushels,
+                LastBid = g.LastBid,
                 Grade = g.Grade
             })
             .ToList();
@@ -141,19 +146,32 @@ public class ProducerDetailsService : IProducerDetailsService
             })
             .ToList();
 
+        // Same null-means-preserve contract for bin sites.
+        var binSiteEntries = request.BinSites?
+            .Select((b, index) => new ProducerBinSiteEntry
+            {
+                SiteKey = b.SiteKey ?? Guid.NewGuid(),
+                Name = b.Name,
+                Latitude = b.Latitude,
+                Longitude = b.Longitude,
+                Capacity = b.Capacity,
+                SortOrder = index
+            })
+            .ToList();
+
         var saved = await _repository.UpsertAsync(new ProducerDetailsUpsertArgs
         {
             CustomerId = customerId,
             ScoularId = request.ScoularId,
             CustomerName = request.CustomerName,
             TotalAcres = request.TotalAcres,
-            BinCapacity = request.BinCapacity,
             PrimaryContact = request.PrimaryContact,
             PrimaryPhone = request.PrimaryPhone,
             Commodities = request.Commodities,
             LinkedProducerIds = request.LinkedProducerIds,
             GrainOnFarm = grainEntries,
-            Contacts = contactEntries
+            Contacts = contactEntries,
+            BinSites = binSiteEntries
         }, _requestContext.GetCurrentUser(), cancellationToken);
 
         var nameMap = await _displayNameLookup.ResolveAsync(

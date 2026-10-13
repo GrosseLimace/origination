@@ -215,6 +215,182 @@ describe('CustomerProfileComponent — address map link', () => {
   });
 });
 
+// Covers the bin-site mini-table at the bottom of the Contact column: formatted cells (dashes when
+// empty), the exact-point map link only when a site has coordinates, and that the
+// table starts collapsed and re-collapses per producer.
+describe('CustomerProfileComponent — bin site table', () => {
+  let component: CustomerProfileComponent;
+  let ref: ComponentRef<CustomerProfileComponent>;
+  let tracking: { trackBinSiteMapClick: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    localStorage.clear();
+    tracking = { trackBinSiteMapClick: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: {} },
+        { provide: ThemeService, useValue: {} },
+        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {}, ...tracking } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerProfileComponent, {
+      set: { template: '', templateUrl: undefined, imports: [] },
+    });
+    const fixture = TestBed.createComponent(CustomerProfileComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+  });
+
+  it('builds one table row per site, in saved order, with every cell formatted', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [
+        { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955, capacity: 50000, sortOrder: 0 },
+        { name: 'North Quarter', latitude: 40.5, longitude: -96, capacity: 30000, sortOrder: 1 },
+      ],
+    }));
+
+    const [first, second] = component.binSiteRows();
+    expect(first).toMatchObject({ name: 'Anderson Site', capacity: '50,000' });
+    expect(second).toMatchObject({ name: 'North Quarter', capacity: '30,000' });
+  });
+
+  it('links each site with coordinates to its exact point in Google Maps', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ name: 'Anderson Site', latitude: 41.39034548435109, longitude: -95.00754031349179 }],
+    }));
+
+    expect(component.binSiteRows()[0].url)
+      .toBe('https://www.google.com/maps/search/?api=1&query=41.39034548435109%2C-95.00754031349179');
+  });
+
+
+  it('gives a site without coordinates no map link', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Home place', capacity: 20000 }] }));
+
+    const [row] = component.binSiteRows();
+    expect(row.url).toBeNull();
+    expect(row.name).toBe('Home place');
+  });
+
+  it('has no rows when the producer has no bin sites', () => {
+    ref.setInput('customer', makeCustomer());
+
+    expect(component.binSiteRows()).toEqual([]);
+  });
+
+  it('shows a single site on its own line, with no "Bin Sites (1)" toggle', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Only one', latitude: 39.1, longitude: -95.1, capacity: 50000 }] }));
+
+    expect(component.singleBinSite()).toMatchObject({ name: 'Only one', capacity: '50,000' });
+    expect(component.singleBinSite()?.url).toContain('39.1');
+  });
+
+  it('two or more sites sit behind the toggle, which starts open, and toggles closed', () => {
+    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'A' }, { name: 'B' }] }));
+
+    expect(component.singleBinSite()).toBeNull();
+    expect(component.binSitesExpanded()).toBe(true);
+    component.toggleBinSites();
+    expect(component.binSitesExpanded()).toBe(false);
+  });
+
+  // Like the Activity Summary: open until the user closes it, and a close sticks across producers
+  // and reloads (the profile is rebuilt between producers, so a new instance stands in for both).
+  it('remembers an explicit close of Bin Sites and of Grain on Farm, and an explicit reopen', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ name: 'A' }, { name: 'B' }],
+      grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 100 }],
+    }));
+    expect(component.showGrainOnFarm()).toBe(true);
+    component.toggleBinSites();
+    component.toggleGrainOnFarm();
+
+    const again = TestBed.createComponent(CustomerProfileComponent).componentInstance;
+    expect([again.binSitesExpanded(), again.showGrainOnFarm()]).toEqual([false, false]);
+
+    component.toggleBinSites();
+    component.toggleGrainOnFarm();
+    const third = TestBed.createComponent(CustomerProfileComponent).componentInstance;
+    expect([third.binSitesExpanded(), third.showGrainOnFarm()]).toEqual([true, true]);
+  });
+
+  it('tracks a map click under its own subfeature', () => {
+    ref.setInput('customer', makeCustomer({ id: 42 }));
+
+    component.trackBinSiteMapClick();
+
+    expect(tracking.trackBinSiteMapClick).toHaveBeenCalledWith('42');
+  });
+
+  it('lists grain on farm grouped by bin site, in site order, rows without a site last', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
+      grainOnFarm: [
+        { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 90000 },
+        { binSiteKey: 'home', binSiteName: 'Home Place', commodityCode: 'YC', bushelsOnHand: 5000 },
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'SB', bushelsOnHand: 1000 },
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 },
+      ],
+    }));
+
+    expect(component.grainOnFarmRows().map(g => `${g.binSiteName ?? '—'} ${g.commodityCode}`))
+      .toEqual(['North Bins YC', 'North Bins SB', 'Home Place YC', '— WH']);
+    // The headline total still adds up every row, at every site.
+    expect(component.grainOnFarmTotal()).toBe(126000);
+  });
+
+  it('groups the table by site name, labelling rows without a site only when sites are present too', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ siteKey: 'north', name: 'North Quarter Home Place Bins by the Creek' }],
+      grainOnFarm: [
+        { binSiteKey: 'north', binSiteName: 'North Quarter Home Place Bins by the Creek', commodityCode: 'YC', bushelsOnHand: 30000 },
+        { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 100 },
+      ],
+    }));
+    expect(component.grainOnFarmGroups().map(g => [g.label, g.rows.map(r => r.commodityCode)]))
+      .toEqual([['North Quarter Home Place Bins by the Creek', ['YC']], ['Not tied to a bin site', ['WH']]]);
+
+    ref.setInput('customer', makeCustomer({ grainOnFarm: [{ commodityCode: 'WH', bushelsOnHand: 100 }] }));
+    expect(component.grainOnFarmGroups().map(g => g.label)).toEqual(['']);
+  });
+
+  it('with grain at more than one site, every site starts closed and opens on its own', () => {
+    const twoSites = (id: number) => makeCustomer({
+      id,
+      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
+      grainOnFarm: [
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 },
+        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'SB', bushelsOnHand: 5000 },
+        { binSiteKey: 'home', binSiteName: 'Home Place', commodityCode: 'YC', bushelsOnHand: 1000 },
+      ],
+    });
+    ref.setInput('customer', twoSites(1));
+
+    expect(component.grainGroupsCollapsible()).toBe(true);
+    expect([component.isGrainGroupOpen(0), component.isGrainGroupOpen(1)]).toEqual([false, false]);
+    expect(component.anyGrainGroupOpen()).toBe(false);
+    expect(component.grainGroupSummary(component.grainOnFarmGroups()[0].rows)).toBe('2 crops · 35,000 bu');
+
+    component.toggleGrainGroup(1);
+    expect([component.isGrainGroupOpen(0), component.isGrainGroupOpen(1)]).toEqual([false, true]);
+    expect(component.anyGrainGroupOpen()).toBe(true);
+
+    // Another producer starts closed again.
+    ref.setInput('customer', twoSites(2));
+    expect(component.isGrainGroupOpen(1)).toBe(false);
+  });
+
+  it('with grain at one site (or none), the table shows open as before', () => {
+    ref.setInput('customer', makeCustomer({
+      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
+      grainOnFarm: [{ binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 }],
+    }));
+    expect(component.grainGroupsCollapsible()).toBe(false);
+    expect(component.isGrainGroupOpen(0)).toBe(true);
+    expect(component.anyGrainGroupOpen()).toBe(true);
+  });
+});
+
 // Covers the organic producer badge: which producers get it, and the header-panel spacing computed
 // it introduced. The gate itself is unit-tested in @shared/utils/organic-visibility.spec.ts — these
 // assert the component wires the producer's own fields into it and nothing else.

@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin, of, catchError, timeout, tap, Subject, takeUntil } from 'rxjs';
+import { forkJoin, from, of, catchError, mergeMap, toArray, timeout, tap, Subject, takeUntil } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
@@ -28,7 +28,9 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
-import { grainOnFarmColorKey } from '@shared/utils/grain-on-farm';
+import { isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@shared/utils/grain-on-farm';
+import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
+import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -378,7 +380,7 @@ export class BuildListComponent {
       r.contactedOnlyOnce, r.contactedMoreThan5,
       r.contactedByMeOnly, r.contactedBySomeoneElse,
       r.hasPinnedNotes, r.noteKeyword?.trim(),
-      r.acresOver != null && r.acresOver > 0, r.hasBinCapacity, r.noBinCapacity,
+      r.acresOver != null && r.acresOver > 0,
       r.hasPrimaryContact, r.noPrimaryContact, r.hasEmail, r.hasPhone, r.hasLinkedProducers, r.notEsignEnrolled,
       r.hasActiveContracts, r.hasDeliveriesThisYear, r.hasPlantingIntentions, r.hasGrainInStorage,
       r.ticketQuantityOver != null && r.ticketQuantityOver > 0,
@@ -402,7 +404,7 @@ export class BuildListComponent {
       r.gradeOver != null, r.gradeUnder != null,
       r.crops && r.crops.length > 0, r.states && r.states.length > 0,
       r.deliveryLocations && r.deliveryLocations.length > 0
-    ].filter(Boolean).length;
+    ].filter(Boolean).length + activeGrainBinRefineCount(r);
   });
 
   /** Matches a commodity string against selected crop filters. Delegates to the shared matcher
@@ -423,6 +425,9 @@ export class BuildListComponent {
   // readable — each batch appears as the user scrolls to it (no new fetch). Reset to the first
   // batch whenever the result set changes (effect in the constructor).
   private static readonly _RENDER_BATCH = 40;
+  /** Query-string budget for one bin-mention notes request (ids + site names, URL-encoded) — well
+   *  under the 2,048 characters IIS allows by default. See _loadBinSiteNotes. */
+  private static readonly BIN_NOTES_QUERY_BUDGET = 1500;
   readonly renderLimit = signal(BuildListComponent._RENDER_BATCH);
   /** The slice of displayedCustomers currently rendered to the DOM. */
   readonly renderedCustomers = computed(() => this.displayedCustomers().slice(0, this.renderLimit()));
@@ -650,12 +655,6 @@ export class BuildListComponent {
     if (r.acresOver != null && r.acresOver > 0) {
       list = list.filter(c => (c.totalAcres ?? 0) > r.acresOver!);
     }
-    if (r.hasBinCapacity) {
-      list = list.filter(c => (c.binCapacity ?? 0) > 0);
-    }
-    if (r.noBinCapacity) {
-      list = list.filter(c => !c.binCapacity || c.binCapacity === 0);
-    }
 
     // Grain on farm (bushels on hand + $/bu target). Crop-scoped when crops are selected, so
     // "corn on farm over 10,000" / "corn target over $5" act on the producer's corn rows only.
@@ -686,19 +685,30 @@ export class BuildListComponent {
         list = list.filter(c => grainRowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0) > r.grainOnFarmBushelsOver!);
       }
       if (r.hasGrainTarget) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
+        list = list.filter(c => grainRowsFor(c).some(g => g.targetBushels != null));
       }
       if (r.noGrainTarget) {
         // Has grain on farm but no target price set — the actionable "needs a target" list.
         list = list.filter(c => grainRowsFor(c).some(g => (g.bushelsOnHand ?? 0) > 0)
-          && !grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
+          && !grainRowsFor(c).some(g => g.targetBushels != null));
       }
       if (r.grainTargetOver != null && r.grainTargetOver > 0) {
         list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) >= r.grainTargetOver!));
       }
       if (r.grainTargetUnder != null && r.grainTargetUnder > 0) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0 && (g.targetBushels ?? 0) <= r.grainTargetUnder!));
+        list = list.filter(c => grainRowsFor(c).some(g => g.targetBushels != null && g.targetBushels <= r.grainTargetUnder!));
       }
+    }
+
+    // Sold, Last Bid and the bin-site fields (shared with NlqFilterService — see grain-bin-refine.ts).
+    // Grain filters use the same crop-scoped rows as the block above.
+    if (activeGrainBinRefineCount(r) > 0) {
+      list = applyGrainBinRefinements(list, r, c => {
+        const rows = c.grainOnFarm ?? [];
+        return selectedCrops.isEmpty
+          ? rows
+          : rows.filter(g => !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY));
+      });
     }
 
     // Customer info
@@ -961,9 +971,10 @@ export class BuildListComponent {
           );
         });
       } else if (dim === 'Grain on Farm') {
-        // Scope crop matching to the producer's grain-on-farm rows (with bushels on hand).
+        // Scope crop matching to the crops on the producer's grain-on-farm rows — any row they entered,
+        // not their contract/ticket commodities.
         list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY) && (g.bushelsOnHand ?? 0) > 0
+          !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY)
         ));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => this._matchesCropFilter(crop, selectedCrops)));
@@ -1073,6 +1084,24 @@ export class BuildListComponent {
     if (this.nlqFilterService.isRankingQuery(this.queryText())) {
       return list;
     }
+    // Grain on Farm & Bin Sites prompts (user 2026-10-09): producers with the most recent note naming one
+    // of their bin sites first, then the most recent change to their bin sites or grain on farm, then
+    // by name. The mention notes for the whole result are loaded up front (see _loadBinSiteNotes), so
+    // this order doesn't shuffle as you scroll.
+    if (this.showGrainOnFarmFilters()) {
+      const notesByCustomer = this.binSiteNotesByCustomer();
+      const lastMention = new Map<number, number>();
+      for (const [id, found] of notesByCustomer) {
+        let max = 0;
+        for (const n of found.notes) max = Math.max(max, BuildListComponent.parseNoteTime(n.createdAt));
+        lastMention.set(id, max);
+      }
+      const changed = (c: Customer) => (c.binSitesModifiedAt ? Date.parse(c.binSitesModifiedAt) || 0 : 0);
+      return [...list].sort((a, b) =>
+        (lastMention.get(b.id) ?? 0) - (lastMention.get(a.id) ?? 0)
+        || changed(b) - changed(a)
+        || (a.name || '').localeCompare(b.name || ''));
+    }
     // Storage prompts: surface the producers with the most grain in storage first (sort by total
     // storage bushels desc), matching the inline per-commodity breakdown shown on each result.
     // Alphabetical name is the tiebreaker (e.g. producers with equal / zero storage).
@@ -1118,6 +1147,9 @@ export class BuildListComponent {
    * so the filter degrades to something usable rather than disappearing.
    */
   readonly availableCrops = computed(() => {
+    // Grain on Farm & Bin Sites prompts: the crops entered on the producers' grain-on-farm rows, not
+    // the trade-unit catalog — the chip filters those rows (user 2026-10-09).
+    if (this.showGrainOnFarmFilters()) return this._grainCropsInResults();
     const scoped = scopeCommodities(this.plantingCommodities(), {
       groupNames: this.appState.inScopeGroupNames(),
       tradeUnitCodes: this.appState.inScopeTradeUnitCodes(),
@@ -1144,17 +1176,23 @@ export class BuildListComponent {
     for (const c of this.filteredCustomers()) {
       for (const crop of (c.commodities ?? [])) add(crop);
     }
-    if (this.showGrainOnFarmFilters()) {
-      for (const c of this.filteredCustomers()) {
-        for (const g of (c.grainOnFarm ?? [])) {
-          if ((g.bushelsOnHand ?? 0) > 0) add(g.commodityCode);
-        }
-      }
-    }
     if (this.showDpFilters()) {
       const dpByCustomer = this._dpByCustomerId();
       for (const c of this.filteredCustomers()) {
         for (const d of (dpByCustomer.get(c.id) ?? [])) add(d.crop);
+      }
+    }
+    return [...codes].sort();
+  }
+
+  /** The distinct commodity codes on the current results' grain-on-farm rows (any row the user
+   *  entered, with or without bushels on hand). */
+  private _grainCropsInResults(): string[] {
+    const codes = new Set<string>();
+    for (const c of this.filteredCustomers()) {
+      for (const g of (c.grainOnFarm ?? [])) {
+        const code = (g.commodityCode || '').trim();
+        if (code) codes.add(code.toUpperCase());
       }
     }
     return [...codes].sort();
@@ -1900,6 +1938,7 @@ export class BuildListComponent {
     if (q.includes('notes mentioning'))     { hidden.add('noteKeyword'); hidden.add('neverContacted'); }
     // General
     if (q.includes('linked producer'))      hidden.add('hasLinkedProducers');
+    if (/bin\s*(?:sites?|locations?|coordinates|gps)/.test(q)) { hidden.add('hasBinSites'); hidden.add('noBinSites'); }
     if (q.includes('no primary contact'))   { hidden.add('noPrimaryContact'); hidden.add('hasPrimaryContact'); }
     if (q.includes('without esign') || q.includes('not esign')) hidden.add('notEsignEnrolled');
     if (q.includes('largest') || q.includes('by acres')) hidden.add('acresOver');
@@ -1937,7 +1976,108 @@ export class BuildListComponent {
   readonly showStorageFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Storage');
   readonly showDpFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'DP Contracts');
   readonly showPlantingFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Planting');
-  readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Grain on Farm');
+  /** The "Grain on Farm & Bin Sites" prompts (or a saved list from the pre-rename "Grain on Farm"):
+   *  grain filters plus has/no bin sites in one panel, and crop + bushel chips on each result. */
+  readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && isGrainAndBinSitesCategory(this.effectiveLibraryCategory()));
+
+  // ── Notes that mention a bin site (Grain on Farm & Bin Sites prompts, user 2026-10-09) ────────
+  // Notes are added as usual; on these prompts a result row's middle column shows the producer's
+  // notes that name one of their saved bin sites — the same column and note stack note prompts use.
+  // Loaded by its own small batch loader (not the note-prompt machinery): as rows render, one fetch
+  // per batch for those producers' notes containing any of their site names (a server superset the
+  // client re-matches exactly).
+
+  /** A bin-mention note's text split into runs, the site names marked (shown in blue). */
+  binSiteRuns(text: string, siteNames: readonly string[]) { return splitByBinSiteNames(text ?? '', siteNames); }
+  readonly binSiteNameClass = BIN_SITE_NAME_CLASS;
+
+  /** Bin-site mention notes are on screen: these prompts, unless a notes filter owns the middle column. */
+  readonly binNotesActive = computed(() => this.showGrainOnFarmFilters() && !this.noteFilterActive());
+
+  /** Notes fetched for bin-site mentions (accumulated across render batches). */
+  private readonly _binNotes = signal<Note[]>([]);
+  /** "customerId:site names" already fetched — a renamed site changes the key, so it refetches. */
+  private readonly _binNoteFetchedKeys = new Set<string>();
+  private _binNotesFetchInFlight = false;
+
+  /** Per producer: the notes naming one of their bin sites, pinned first then newest, and which sites. */
+  readonly binSiteNotesByCustomer = computed(() => {
+    const map = new Map<number, { notes: Note[]; sites: string[] }>();
+    if (!this.binNotesActive()) return map;
+    const byCustomer = new Map<number, Note[]>();
+    for (const n of this._binNotes()) {
+      const arr = byCustomer.get(n.customerId);
+      if (arr) arr.push(n); else byCustomer.set(n.customerId, [n]);
+    }
+    for (const c of this.customers()) {
+      const notes = byCustomer.get(c.id);
+      if (!notes) continue;
+      const found = notesMentioningBinSites(notes, binSiteNames(c.binSites));
+      if (found) map.set(c.id, found);
+    }
+    return map;
+  });
+
+  /**
+   * Fetches the bin-mention notes for EVERY producer in the result that has named bin sites (not just
+   * the rendered rows) — the result is ordered by the latest such note, so it needs them all up front.
+   * The ids and site names travel in the query string, and many sites could pass the 2,048-character
+   * limit IIS applies by default (a rejected request would read as "no notes"), so the work is split
+   * into requests under BIN_NOTES_QUERY_BUDGET, sent together; the rows re-order once when they land.
+   * A single producer whose names alone pass the budget is fetched by id only (the client still matches).
+   */
+  private _loadBinSiteNotes(): void {
+    if (!this.binNotesActive() || this._binNotesFetchInFlight) return;
+    type Chunk = { ids: number[]; keys: string[]; names: Set<string>; length: number };
+    const chunks: Chunk[] = [];
+    let chunk: Chunk = { ids: [], keys: [], names: new Set(), length: 0 };
+    for (const c of this.filteredCustomers()) {
+      const siteNames = binSiteNames(c.binSites);
+      if (siteNames.length === 0) continue;
+      const key = `${c.id}:${siteNames.join('|').toLowerCase()}`;
+      if (this._binNoteFetchedKeys.has(key)) continue;
+      const cost = (names: Set<string>) => String(c.id).length + 3
+        + siteNames.filter(n => !names.has(n)).reduce((sum, n) => sum + encodeURIComponent(n).length + 3, 0);
+      if (chunk.ids.length > 0 && chunk.length + cost(chunk.names) > BuildListComponent.BIN_NOTES_QUERY_BUDGET) {
+        chunks.push(chunk);
+        chunk = { ids: [], keys: [], names: new Set(), length: 0 };
+      }
+      chunk.length += cost(chunk.names);
+      chunk.ids.push(c.id);
+      chunk.keys.push(key);
+      siteNames.forEach(n => chunk.names.add(n));
+    }
+    if (chunk.ids.length > 0) chunks.push(chunk);
+    if (chunks.length === 0) return;
+
+    this._binNotesFetchInFlight = true;
+    const requests = chunks.map(ch => this.apiService.getNotes(undefined, {
+      customerIds: ch.ids,
+      contentAny: ch.length > BuildListComponent.BIN_NOTES_QUERY_BUDGET ? undefined : [...ch.names],
+    }).pipe(catchError(() => of([] as Note[]))));
+    // At most four requests in flight at once; order doesn't matter (results are flattened and deduped).
+    from(requests).pipe(mergeMap(r => r, 4), toArray(), takeUntilDestroyed(this.destroyRef)).subscribe(results => {
+      this._binNotesFetchInFlight = false;
+      // Also on a failed piece: don't retry-loop it; the rows just show no mention notes.
+      chunks.forEach(ch => ch.keys.forEach(k => this._binNoteFetchedKeys.add(k)));
+      const seen = new Set(this._binNotes().map(n => n.id));
+      const fresh: Note[] = [];
+      for (const n of results.flat()) {
+        if (seen.has(n.id)) continue;
+        seen.add(n.id);
+        fresh.push(n);
+      }
+      if (fresh.length) this._binNotes.set([...this._binNotes(), ...fresh]);
+      this._loadBinSiteNotes(); // anything that changed while these were in flight
+    });
+  }
+
+  /** Load bin-mention notes whenever the result (or the prompt) changes. */
+  private readonly _binNotesLoader = effect(() => {
+    this.binNotesActive();
+    this.filteredCustomers();
+    untracked(() => this._loadBinSiteNotes());
+  });
   readonly showGeneralFilters = computed(() => {
     if (this.isResolvingSavedListCategory()) return false;
     const cat = this.effectiveLibraryCategory();
@@ -2326,7 +2466,7 @@ export class BuildListComponent {
     });
   }
 
-  /** Merge ProducerDetails into customer objects (commodities, bin capacity, etc.). */
+  /** Merge ProducerDetails into customer objects (commodities, acres, bin sites, etc.). */
   private _mergeProducerDetails(details: ProducerDetails[]): void {
     if (details.length === 0) return;
     const detailsMap = new Map(details.map(d => [d.customerId, d]));
@@ -2338,13 +2478,15 @@ export class BuildListComponent {
         return {
           ...customer,
           totalAcres: pd.totalAcres ?? customer.totalAcres,
-          binCapacity: pd.binCapacity ?? customer.binCapacity,
+          binSitesModifiedAt: pd.binSitesModifiedAt ?? customer.binSitesModifiedAt,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
           // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.
           grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
+          // Bin sites (lat/long) — carried over so "producers with bin sites" filters client-side.
+          binSites: pd.binSites ?? customer.binSites,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
       }
@@ -3673,7 +3815,7 @@ export class BuildListComponent {
       filters.hasPinnedNotes ||
       filters.noteKeyword?.trim() ||
       (filters.acresOver != null && filters.acresOver > 0) ||
-      filters.hasBinCapacity || filters.noBinCapacity ||
+      filters.hasBinSites || filters.noBinSites ||
       filters.hasPrimaryContact || filters.noPrimaryContact ||
       filters.hasEmail || filters.hasPhone || filters.hasLinkedProducers || filters.notEsignEnrolled ||
       filters.hasActiveContracts || filters.hasDeliveriesThisYear ||
@@ -3695,7 +3837,8 @@ export class BuildListComponent {
       filters.gradeOver != null || filters.gradeUnder != null ||
       (filters.crops && filters.crops.length > 0) ||
       (filters.states && filters.states.length > 0) ||
-      (filters.deliveryLocations && filters.deliveryLocations.length > 0)
+      (filters.deliveryLocations && filters.deliveryLocations.length > 0) ||
+      activeGrainBinRefineCount(filters) > 0
     );
   }
 
@@ -4167,13 +4310,20 @@ export class BuildListComponent {
   }
 
   /**
-   * Per-crop grain-on-farm rows that actually have bushels on hand, largest first — the chips
-   * shown inline on Grain on Farm results.
+   * Per-crop grain on farm with bushels on hand, largest first — the chips shown inline on Grain on
+   * Farm results. Rows are per bin site, so one crop stored at two sites is summed into one chip.
    */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
-    return (customer.grainOnFarm ?? [])
-      .filter(g => !!g.commodityCode && (g.bushelsOnHand ?? 0) > 0)
-      .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
+    const byCrop = new Map<string, GrainOnFarmItem>();
+    for (const g of customer.grainOnFarm ?? []) {
+      if (!g.commodityCode || (g.bushelsOnHand ?? 0) <= 0) continue;
+      const key = g.commodityCode.toUpperCase();
+      const seen = byCrop.get(key);
+      byCrop.set(key, seen
+        ? { ...seen, bushelsOnHand: (seen.bushelsOnHand ?? 0) + (g.bushelsOnHand ?? 0) }
+        : { commodityCode: g.commodityCode, bushelsOnHand: g.bushelsOnHand });
+    }
+    return [...byCrop.values()].sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
   }
 
   /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
@@ -4301,7 +4451,7 @@ export class BuildListComponent {
    *
    * Numbers are formatted here rather than in the template because each chip is a single string.
    */
-  resultChips(customer: Customer): { text: string; colorKey: string }[] {
+  resultChips(customer: Customer): { text: string; colorKey: string; neutral?: boolean }[] {
     if (this.showDpFilters()) {
       return this.dpBreakdown(customer)
         .map(b => ({ text: `${b.crop} ${b.bushels.toLocaleString('en-US')}`, colorKey: b.category }));
@@ -4315,10 +4465,87 @@ export class BuildListComponent {
         .map(c => ({ text: `${c.label} · ${c.acres.toLocaleString('en-US')} ac · ${c.year}`, colorKey: c.colorKey }));
     }
     if (this.showGrainOnFarmFilters()) {
-      return this.grainOnFarmBreakdown(customer)
-        .map(g => ({ text: `${g.commodityCode} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: grainOnFarmColorKey(g.commodityCode, this._cropGroupLookup()) }));
+      // Only how many bin sites the producer has (a neutral chip — it is not a crop). The crops are in the
+      // bin-site breakdown next to the name, so no per-crop chips here (user 2026-10-12: too much at once).
+      const sites = customer.binSites?.length ?? 0;
+      return [{ text: sites > 0 ? `${sites} bin site${sites === 1 ? '' : 's'}` : 'No bin sites', colorKey: '', neutral: true }];
     }
     return [];
+  }
+
+  // ── Bin sites & grain (Grain on Farm & Bin Sites prompts, user 2026-10-09) ────────────────────
+  // Each result row shows its bin sites and the grain stored at each one in a column right after the
+  // name (the same grouping the producer profile uses); the notes column follows it.
+
+  readonly formatLastBid = formatLastBid;
+
+  /** Opens the producer from its name — unless the click ended a text selection (the user was
+   *  selecting the name to copy it). */
+  openProducerFromName(customer: Customer): void {
+    if (window.getSelection()?.toString().trim()) return;
+    this.selectCustomer(customer);
+  }
+
+  /** Bin sites listed per producer before "Show more". Each is one line until opened, so a few more fit
+   *  than when every site showed its grain. */
+  readonly binSitesVisible = 4;
+
+  /** "Show 3 more bin sites", or null when every site is listed. */
+  binSiteGrainHiddenLabel(groups: BinSiteGrainGroup[]): string | null {
+    const sites = Math.max(0, groups.length - this.binSitesVisible);
+    return sites ? `Show ${sites} more bin site${sites === 1 ? '' : 's'}` : null;
+  }
+
+  /** Open bin sites, as "customerId:index" (index into binSiteGrainBreakdown, which keeps the saved site
+   *  order). Every site starts closed — its grain shows only once the user opens it (user 2026-10-12: a
+   *  producer with many bins showed too much at once). */
+  readonly openBinSites = signal<ReadonlySet<string>>(new Set());
+
+  isBinSiteOpen(customerId: number, index: number): boolean {
+    return this.openBinSites().has(`${customerId}:${index}`);
+  }
+
+  toggleBinSite(customerId: number, index: number): void {
+    const key = `${customerId}:${index}`;
+    this.openBinSites.update(open => {
+      const next = new Set(open);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
+
+  /** Whether any of this producer's sites is open — the crop column headings show only then. */
+  anyBinSiteOpen(customerId: number): boolean {
+    const prefix = `${customerId}:`;
+    for (const key of this.openBinSites()) if (key.startsWith(prefix)) return true;
+    return false;
+  }
+
+  /** A closed site's line: "2 crops · 35,000 bu", or "No grain on farm". */
+  binSiteGrainSummary(group: BinSiteGrainGroup): string {
+    const n = group.rows.length;
+    if (n === 0) return 'No grain on farm';
+    const bushels = group.rows.reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
+    return `${n} crop${n === 1 ? '' : 's'} · ${bushels.toLocaleString('en-US')} bu`;
+  }
+  /** Producers whose full list of bin sites is showing. */
+  readonly binSitesShowAll = signal<ReadonlySet<number>>(new Set());
+
+  toggleBinSitesShowAll(customerId: number): void {
+    this.binSitesShowAll.update(open => {
+      const next = new Set(open);
+      if (!next.delete(customerId)) next.add(customerId);
+      return next;
+    });
+  }
+
+  hasBinSiteGrain(customer: Customer): boolean {
+    return (customer.binSites?.length ?? 0) > 0 || (customer.grainOnFarm?.length ?? 0) > 0;
+  }
+
+  /** The rows of a producer's breakdown — see binSiteGrainBreakdown in shared/utils/grain-on-farm. */
+  binSiteGrainBreakdown(customer: Customer): BinSiteGrainGroup[] {
+    return binSiteGrainBreakdown(customer.binSites, customer.grainOnFarm);
   }
 
   /**

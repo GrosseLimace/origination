@@ -31,6 +31,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CustomerCommodity> CustomerCommodities => Set<CustomerCommodity>();
     public DbSet<ProducerGrainOnFarm> ProducerGrainOnFarm => Set<ProducerGrainOnFarm>();
     public DbSet<ProducerContact> ProducerContacts => Set<ProducerContact>();
+    public DbSet<ProducerBinSite> ProducerBinSites => Set<ProducerBinSite>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
@@ -325,7 +326,7 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.CustomerName);
             entity.Ignore(e => e.LinkedProducerIds);
             entity.Property(e => e.TotalAcres).HasColumnName("TotalAcres").HasColumnType("decimal(18,2)").IsRequired(false);
-            entity.Property(e => e.BinCapacity).HasColumnName("BinCapacity").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.BinSitesModifiedAt).HasColumnName("BinSitesModifiedAt").IsRequired(false);
             entity.Property(e => e.PrimaryContact).HasColumnName("PrimaryContact").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.PrimaryPhone).HasColumnName("PrimaryPhone").HasMaxLength(50).IsRequired(false);
             // Commodities is composed server-side from dbo.CustomerCommodity on read
@@ -336,6 +337,8 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.GrainOnFarm);
             // Contacts is composed server-side from dbo.ProducerContact on read / rebuilt on upsert.
             entity.Ignore(e => e.Contacts);
+            // BinSites is composed server-side from dbo.ProducerBinSite on read / rebuilt on upsert.
+            entity.Ignore(e => e.BinSites);
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
@@ -413,9 +416,12 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.BinSiteId).HasColumnName("BinSiteId").IsRequired(false);
             entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(100).IsRequired();
             entity.Property(e => e.BushelsOnHand).HasColumnName("BushelsOnHand").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.BushelsSold).HasColumnName("BushelsSold").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.TargetBushels).HasColumnName("TargetBushels").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.LastBid).HasColumnName("LastBid").HasColumnType("decimal(18,4)").IsRequired(false);
             entity.Property(e => e.Grade).HasColumnName("Grade").HasMaxLength(100).IsRequired(false);
 
             entity.HasOne(e => e.Customer)
@@ -424,11 +430,23 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.NoAction)
                   .HasConstraintName("FK_ProducerGrainOnFarm_Customer");
 
-            // One row per (customer, commodity code). 100 chars, not a code-sized width, because
-            // rows saved before 2026-09-23 still hold a crop-group name.
-            entity.HasIndex(e => new { e.CustomerId, e.CommodityCode })
+            // NoAction like every producer child table: the repository removes a site's grain rows
+            // before the site, in the same SaveChanges.
+            entity.HasOne(e => e.BinSite)
+                  .WithMany()
+                  .HasForeignKey(e => e.BinSiteId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerGrainOnFarm_BinSite");
+            entity.HasIndex(e => e.BinSiteId).HasDatabaseName("IX_ProducerGrainOnFarm_BinSiteId");
+
+            // One row per (customer, bin site, commodity code). HasFilter(null) drops EF's default
+            // "BinSiteId IS NOT NULL" filter so rows without a site stay one per commodity too
+            // (SQL Server treats NULLs as equal in a unique index). 100 chars, not a code-sized
+            // width, because rows saved before 2026-09-23 still hold a crop-group name.
+            entity.HasIndex(e => new { e.CustomerId, e.BinSiteId, e.CommodityCode })
                   .IsUnique()
-                  .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Commodity");
+                  .HasFilter(null)
+                  .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Site_Commodity");
         });
 
         modelBuilder.Entity<ProducerContact>(entity =>
@@ -452,6 +470,34 @@ public class ApplicationDbContext : DbContext
             // Plain (non-unique) index — a producer can have many contacts, and names/labels can
             // legitimately repeat (Dad's cell + Dad's shop), unlike the grain table's UQ.
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerContact_CustomerId");
+        });
+
+        modelBuilder.Entity<ProducerBinSite>(entity =>
+        {
+            entity.ToTable("ProducerBinSite", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            // NEWID() default only backfills rows that existed before the column; the app always sets it.
+            entity.Property(e => e.SiteKey).HasColumnName("SiteKey").HasDefaultValueSql("NEWID()").IsRequired();
+            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(BinSiteRules.NameMaxLength).IsRequired(false);
+            // decimal(18,15): three integer digits (±180) and fifteen places, so a full Google Maps
+            // paste is stored exactly as entered. Display shortens it; storage never does.
+            entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(18,15)").IsRequired(false);
+            entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(18,15)").IsRequired(false);
+            // Bushels, decimal(18,2) — the type the dropped ProducerDetails.BinCapacity had, so the values
+            // moved onto "Bin 1" sites landed exactly.
+            entity.Property(e => e.Capacity).HasColumnName("Capacity").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
+
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerBinSite_Customer");
+
+            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerBinSite_CustomerId");
+            entity.HasIndex(e => e.SiteKey).IsUnique().HasDatabaseName("UQ_ProducerBinSite_SiteKey");
         });
 
         // -------------------------------------------------------------------------
