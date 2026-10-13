@@ -527,8 +527,9 @@ export class CustomerNotesComponent {
       this.mentionDropdownOpen.set(true);
       // The query now tolerates spaces, so it would otherwise keep matching after a completed
       // mention (e.g. "@Corn Belt and then..."). Close once nothing matches instead of leaving an
-      // empty dropdown open.
-      if (this.mentionOptions().length === 0) this.closeMentionDropdown();
+      // empty dropdown open. A degraded catalog is the exception: the dropdown then carries the
+      // "couldn't load everyone" notice, which matters most exactly when nothing matches.
+      if (this.mentionOptions().length === 0 && !this.mentionCatalogDegraded()) this.closeMentionDropdown();
     } else {
       this.closeMentionDropdown();
     }

@@ -178,3 +178,47 @@ describe('CustomerNotesComponent — degraded mention catalog', () => {
     expect(create({ degraded: true }).mentionCatalogDegraded()).toBe(true);
   });
 });
+
+// Real template: the input handler closes an empty dropdown, and the notice lives inside the
+// dropdown, so only a rendered test shows whether the notice can actually appear.
+describe('CustomerNotesComponent — degraded notice in the rendered picker', () => {
+  function render(catalog: Partial<MentionCatalog>): ComponentFixture<CustomerNotesComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
+        { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+      ],
+    });
+    const fixture = TestBed.createComponent(CustomerNotesComponent);
+    fixture.componentRef.setInput('customer', makeCustomer(100));
+    fixture.componentRef.setInput('notes', []);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  function typeInNote(fixture: ComponentFixture<CustomerNotesComponent>, text: string): void {
+    const ta = fixture.nativeElement.querySelector('textarea') as HTMLTextAreaElement;
+    ta.value = text;
+    ta.setSelectionRange(text.length, text.length);
+    ta.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  const notice = (fixture: ComponentFixture<CustomerNotesComponent>) =>
+    fixture.nativeElement.querySelector('[role="status"]') as HTMLElement | null;
+
+  it('shows the notice when the catalog is degraded and nobody matches', () => {
+    const fixture = render({ degraded: true });
+    typeInNote(fixture, 'Call @zz');
+    expect(fixture.componentInstance.mentionOptions()).toEqual([]);
+    expect(notice(fixture)?.textContent).toContain("couldn't be loaded");
+  });
+
+  it('still closes an empty dropdown when the catalog answered in full', () => {
+    const fixture = render({});
+    typeInNote(fixture, 'Call @zz');
+    expect(fixture.componentInstance.mentionDropdownOpen()).toBe(false);
+    expect(notice(fixture)).toBeNull();
+  });
+});
