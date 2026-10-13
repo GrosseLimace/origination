@@ -205,8 +205,9 @@
 
 <!-- Create / Edit Dialog -->
 <!-- closeOnBackdrop=false: this add/edit form must not close on an accidental outside click —
-     only the X or Cancel dismiss it (avoids losing in-progress group edits). -->
-<app-dialog [isOpen]="dialogOpen()" size="lg" [closeOnBackdrop]="false" [scrollBody]="true" (close)="closeDialog()">
+     only the X or Cancel dismiss it (avoids losing in-progress group edits). Escape is off for the
+     same reason. -->
+<app-dialog [isOpen]="dialogOpen()" size="lg" [closeOnBackdrop]="false" [closeOnEscape]="false" [scrollBody]="true" (close)="closeDialog()">
   <div class="shrink-0 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
     <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
       {{ isEditing() ? 'Edit Group' : 'Create Group' }}
