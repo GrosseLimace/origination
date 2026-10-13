@@ -93,8 +93,6 @@ public static class FeatureNameMapper
             return ("system", "geocode");
         if (p.StartsWith("/api/diagnostics"))
             return ("system", "diagnostics");
-        if (p.StartsWith("/api/farms"))
-            return ("system", "farms");
         if (p == "/api/me" || p.StartsWith("/api/me/"))
             return ("system", "identity");
 
