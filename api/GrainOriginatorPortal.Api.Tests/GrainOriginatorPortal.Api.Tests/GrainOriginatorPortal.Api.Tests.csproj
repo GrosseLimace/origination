@@ -11,7 +11,7 @@
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <!-- §8 DEVIATION: do NOT delete this package yet. It is BANNED for DB tests by
          style-guides/automated-testing.md §8, but .UseInMemoryDatabase is STILL IN USE by the
-         18 test files listed below. Remove it only AFTER those are migrated to the real-SQL
+         32 test files listed below. Remove it only AFTER those are migrated to the real-SQL
          WebApplicationFactory harness (plan Phase D). Deleting it now breaks the build.
 
          This list is CHECKED BY A TEST: Infrastructure/InMemoryDatabaseDeviationTests.cs reads this
@@ -37,7 +37,22 @@
            Repositories/ProducerGrainOnFarmSiteLinkTests.cs
            Repositories/ProducerGrainOnFarmTests.cs
            Repositories/ReminderRepositoryTests.cs
+           Repositories/BarchartIngestRepositoryTests.cs
+           Repositories/BidSheetRepositoryTests.cs
+           Repositories/CustomerSyncRepositoryTests.cs
+           Repositories/DashboardRepositoryTests.cs
+           Repositories/DisplayNameLookupRepositoryTests.cs
+           Repositories/DpContractRepositoryTests.cs
+           Repositories/EntitlementsRepositoryTests.cs
+           Repositories/MbpLocationSynonymRepositoryTests.cs
+           Repositories/NoteRepositoryTests.cs
+           Repositories/QueryLibraryRepositoryTests.cs
            Repositories/SavedListRepositoryTests.cs
+           Repositories/StoredGrainRepositoryTests.cs
+           Repositories/TeamsChannelRepositoryTests.cs
+           Repositories/TicketRepositoryTests.cs
+           Repositories/UsageRepositoryTests.cs
+           Repositories/UserPreferenceRepositoryTests.cs
     -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
