@@ -228,7 +228,7 @@ public sealed class CtrmContractRepository : IContractRepository
         // Registered BEFORE the read: even a first, slow walk marks the set as one worth keeping warm.
         _warmRegistry?.Touch(codes, DateTime.UtcNow);
 
-        var read = await _reader.GetForProducersAsync(codes, cancellationToken);
+        var read = await _reader.GetForProducersAsync(codes, tradeUnits, cancellationToken);
 
         // Tickets AFTER contracts, never alongside. Re-measured 2026-09-24 with the batched contract walk:
         // run together, the pair finished no sooner (84 s vs 85 s; 78 s vs 104 s), the contract walk slowed
@@ -353,7 +353,7 @@ public sealed class CtrmContractRepository : IContractRepository
             return [];
         }
 
-        var read = await _reader.GetForProducersAsync(scoped.ToList(), cancellationToken);
+        var read = await _reader.GetForProducersAsync(scoped.ToList(), tradeUnits, cancellationToken);
         if (!read.Ok)
         {
             _logger.LogError("CTRM crop-year contracts unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
