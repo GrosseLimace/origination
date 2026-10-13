@@ -1,0 +1,883 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
+import { MsalService } from '@azure/msal-angular';
+import { Observable, Subject, of, throwError } from 'rxjs';
+import { BuildListComponent } from './build-list.component';
+import { ApiService } from '@core/services/api.service';
+import { AppStateService } from '@core/services/app-state.service';
+import { DataPreloadService } from '@core/services/data-preload.service';
+import { ToastService } from '@core/services/toast.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { UserRolesService } from '@core/services/user-roles.service';
+import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
+import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
+import { Contract, Customer, NoteLastContact, QueryLibraryItem, RefinementFilters, SavedList, Ticket } from '@models';
+
+// Behaviour safety net for the Build a List page ahead of its OnPush conversion and decomposition.
+// Everything is driven through public methods / signals / computeds and the REAL rendered template,
+// so the internals (private loaders, effects, change detection strategy) can be split up without
+// touching this file. NlqFilterService is stubbed on purpose: the parser has its own specs, and a
+// stub lets these tests say exactly which producers a prompt "matched" and assert what the
+// COMPONENT does with them (sorting, counting, refinements, member overrides, empty/error states).
+//
+// Kept separate from build-list.trade-unit-reload.spec.ts, which pins the reload/parking timing.
+
+// ── Fixtures ──────────────────────────────────────────────────────────────────
+
+/** Frozen "now" (Date only — timers stay real unless a test opts in) so the last-contact badges
+ *  and not-contacted-in-N-days refinement never drift with the calendar. */
+const NOW = new Date('2026-10-13T12:00:00');
+const DAY = 24 * 60 * 60 * 1000;
+
+function makeCustomer(over: Partial<Customer> & Pick<Customer, 'id' | 'name'>): Customer {
+  return {
+    scoularId: `C${over.id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
+    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+  };
+}
+
+const ALPHA = makeCustomer({ id: 1, name: 'Alpha Acres', location: 'Pratt', stateProvince: 'KS' });
+const BRAVO = makeCustomer({ id: 2, name: 'Bravo Grain', location: 'Madrid', stateProvince: 'NE' });
+const CHARLIE = makeCustomer({ id: 3, name: 'Charlie Farms', location: 'Hays', stateProvince: 'KS' });
+const DELTA = makeCustomer({ id: 4, name: 'Delta Dairy', location: 'Salina', stateProvince: 'KS' });
+/** Deliberately NOT alphabetical, so a test can tell "sorted by the component" from "API order". */
+const ROSTER: Customer[] = [CHARLIE, ALPHA, BRAVO];
+
+function makeContract(over: Partial<Contract> = {}): Contract {
+  return {
+    id: 1, customerId: 1, ctrmCustomerId: 'C1', sourceContractId: 'PCW100', farmId: 'F1',
+    contractNumber: '100', contractPrefixType: 'P', commodityCode: 'YC', commodityDescription: 'Corn',
+    commodityGroup: 'Corn', quantity: 10000, unit: 'bushels', price: 0, openBalanceQuantity: 10000,
+    deliveryStart: new Date(NOW.getTime() - 30 * DAY), deliveryEnd: new Date(NOW.getTime() + 30 * DAY),
+    status: 'Active', signed: true, priceTypeCode: 'P', ...over,
+  };
+}
+
+const LIB_CONTRACTS: QueryLibraryItem = {
+  id: 1, category: 'Contracts', name: 'All producers with contracts', description: 'Every producer holding a purchase contract',
+  queryText: 'All producers with contracts', sortOrder: 1,
+};
+const LIB_ACTIVE: QueryLibraryItem = {
+  id: 2, category: 'Contracts', name: 'Producers with active contracts', queryText: 'Producers with active contracts', sortOrder: 2,
+};
+const LIB_DELIVERED: QueryLibraryItem = {
+  id: 3, category: 'Tickets', name: 'Producers who delivered this month', queryText: 'Producers who delivered this month',
+  sortOrder: 1, tags: 'deliveries scale',
+};
+const LIB_ALL: QueryLibraryItem = { id: 4, category: 'Producers', name: 'All producers', queryText: 'All producers', sortOrder: 1 };
+const LIB_TOP: QueryLibraryItem = { id: 5, category: 'Producers', name: 'Top 10 by acres', queryText: 'Top 10 producers by acres', sortOrder: 2 };
+const LIB_BLANK: QueryLibraryItem = { id: 6, category: 'Producers', name: 'Start with no producers', queryText: 'Start with no producers', sortOrder: 3 };
+const LIBRARY: QueryLibraryItem[] = [LIB_CONTRACTS, LIB_ACTIVE, LIB_DELIVERED, LIB_ALL, LIB_TOP, LIB_BLANK];
+
+const SAVED_KS: SavedList = {
+  id: 10, name: 'KS contract holders', query: 'All producers with contracts', tradeUnits: '1000',
+  filters: { states: ['KS'] }, excludedCustomerIds: [3], createdAt: '2026-10-01T00:00:00',
+};
+const SAVED_OTHER_TU: SavedList = {
+  id: 11, name: 'Somebody else\'s trade unit', query: 'All producers', tradeUnits: '9999', createdAt: '2026-10-01T00:00:00',
+};
+
+// ── Stubs ─────────────────────────────────────────────────────────────────────
+
+/** Every ApiService call the page makes. Defaults resolve immediately; a test swaps one for a
+ *  Subject or throwError to control timing / failure. */
+function makeApi() {
+  return {
+    getCustomers: vi.fn((_tus?: string[]): Observable<Customer[]> => of(ROSTER)),
+    getContracts: vi.fn((_tus?: string[]): Observable<Contract[]> => of([])),
+    getTickets: vi.fn((_tus?: string[]): Observable<Ticket[]> => of([])),
+    getPlantingIntentions: vi.fn(() => of([])),
+    getStoredGrain: vi.fn(() => of([])),
+    getSavedLists: vi.fn((): Observable<SavedList[]> => of([SAVED_KS, SAVED_OTHER_TU])),
+    getAllProducerDetails: vi.fn(() => of([])),
+    getQueryLibrary: vi.fn((): Observable<QueryLibraryItem[]> => of(LIBRARY)),
+    getPlantingCommodities: vi.fn(() => of([])),
+    getUserTradeUnits: vi.fn(() => of([{ groupName: 'West', tradeUnitCodes: ['1000', '2000'], tradeUnits: [] }])),
+    getTeamMembers: vi.fn(() => of([])),
+    getTeamSavedLists: vi.fn(() => of([])),
+    getNotes: vi.fn(() => of([])),
+    getDpContracts: vi.fn(() => of([])),
+    getCommodityConversions: vi.fn(() => of([])),
+    searchCustomers: vi.fn(() => of([])),
+    logQuerySearch: vi.fn(() => of(undefined)),
+    createSavedList: vi.fn((): Observable<SavedList> => of({ ...SAVED_KS, id: 99 })),
+    updateSavedList: vi.fn((): Observable<SavedList> => of(SAVED_KS)),
+    deleteSavedList: vi.fn((): Observable<void> => of(undefined)),
+    assignSavedList: vi.fn(() => of([])),
+  };
+}
+
+/** The NLQ engine, reduced to keyword checks the tests can reason about. parseAndFilter returns
+ *  whichever producers `matchIds` names (in roster order — the component owns the final order). */
+function makeNlq() {
+  const state = { matchIds: null as number[] | null, detectedState: null as string | null };
+  const lower = (q: string) => q.toLowerCase();
+  const stub = {
+    state,
+    parseAndFilter: vi.fn((_q: string, ctx: NlqFilterContext): NlqFilterResult => ({
+      customers: state.matchIds === null ? ctx.customers : ctx.customers.filter(c => state.matchIds!.includes(c.id)),
+      detectedState: state.detectedState,
+      matchedPatterns: [],
+    })),
+    queryInvolvesTickets: vi.fn((q: string) => /deliver|ticket/.test(lower(q))),
+    queryInvolvesContracts: vi.fn((q: string) => lower(q).includes('contract')),
+    queryInvolvesStorage: vi.fn((q: string) => lower(q).includes('storage')),
+    queryInvolvesDpContracts: vi.fn((q: string) => /\bdp\b/.test(lower(q))),
+    isRankingQuery: vi.fn((q: string) => /top\s*\d+/.test(lower(q))),
+    dataNeedsForCriteria: vi.fn(() => ({ tickets: false, contracts: false, storage: false, dp: false, planting: false, fullNotes: false })),
+    extractNoteSearchKeywords: vi.fn((): string[] => []),
+    getStateDisplayName: vi.fn((s: string) => (s === 'KS' ? 'Kansas' : s)),
+    resolveUserReferences: vi.fn((q: string) => q),
+    buildAuthorCandidates: vi.fn((): string[] => []),
+    matchesAuthor: vi.fn(() => false),
+    refineDimension: vi.fn(() => null),
+  };
+  return stub;
+}
+
+// ── Harness ───────────────────────────────────────────────────────────────────
+
+describe('BuildListComponent', () => {
+  let api: ReturnType<typeof makeApi>;
+  let nlq: ReturnType<typeof makeNlq>;
+  let toast: { info: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn> };
+  let usage: { postClickEvent: ReturnType<typeof vi.fn>; trackProfileOpened: ReturnType<typeof vi.fn> };
+  let isAdmin: boolean;
+  let appState: AppStateService;
+  let fixture: ComponentFixture<BuildListComponent>;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    localStorage.clear();
+    api = makeApi();
+    nlq = makeNlq();
+    toast = { info: vi.fn(), error: vi.fn(), success: vi.fn() };
+    usage = { postClickEvent: vi.fn(), trackProfileOpened: vi.fn() };
+    isAdmin = false;
+    TestBed.configureTestingModule({
+      imports: [BuildListComponent],
+      providers: [
+        provideRouter([]),
+        AppStateService,
+        { provide: ApiService, useValue: api },
+        { provide: NlqFilterService, useValue: nlq },
+        { provide: DataPreloadService, useValue: {} },
+        // The header's trade-unit picker renders for real; its own service is stubbed because the page
+        // only reacts to AppStateService.selectedTradeUnits, which these tests drive directly.
+        { provide: UserTradeUnitsService, useValue: { load: () => of([]), openPreferences: vi.fn(), computeAvailableTradeUnits: () => [] } },
+        { provide: ToastService, useValue: toast },
+        { provide: UsageTrackingService, useValue: usage },
+        { provide: UserRolesService, useValue: { isAdmin: () => isAdmin } },
+        {
+          provide: MsalService,
+          useValue: { instance: { getActiveAccount: () => ({ name: 'Pat Merchant', username: 'pat@scoular.com' }), getAllAccounts: () => [] } },
+        },
+      ],
+    });
+    appState = TestBed.inject(AppStateService);
+    appState.userGroupsLoaded.set(true);
+    appState.setTradeUnits(['1000']);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function mount(): BuildListComponent {
+    fixture = TestBed.createComponent(BuildListComponent);
+    fixture.detectChanges();
+    TestBed.tick();
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  /** Re-renders and returns the page text with whitespace collapsed. */
+  function text(): string {
+    TestBed.tick();
+    fixture.detectChanges();
+    return (fixture.nativeElement as HTMLElement).textContent!.replace(/\s+/g, ' ');
+  }
+
+  function buttonByText(label: string): HTMLButtonElement | undefined {
+    fixture.detectChanges();
+    return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'))
+      .find(b => b.textContent!.replace(/\s+/g, ' ').trim().startsWith(label));
+  }
+
+  const names = (list: Customer[]) => list.map(c => c.name);
+
+  // ── Initial load, empty and error states ──────────────────────────────────
+
+  describe('initial load', () => {
+    it('loads the selected trade unit and renders the prompt library grouped by category, clickable', () => {
+      const c = mount();
+
+      expect(api.getCustomers).toHaveBeenCalledWith(['1000']);
+      expect(c.coreDataLoaded()).toBe(true);
+      expect(c.loading()).toBe(false);
+      expect(c.customers()).toHaveLength(3);
+      expect(c.queryLibraryLoaded()).toBe(true);
+      // The shared cache is warmed so other pages can resolve a saved list's category.
+      expect(appState.queryLibrary()).toEqual(LIBRARY);
+
+      expect(c.groupedLibrary().map(g => g.category)).toEqual(['Contracts', 'Tickets', 'Producers']);
+      expect(c.libraryCategories()).toEqual(['Saved Lists', 'Contracts', 'Producers', 'Tickets']);
+      const button = buttonByText('All producers with contracts');
+      expect(button).toBeDefined();
+      expect(button!.disabled).toBe(false);
+      expect(text()).toContain('Every producer holding a purchase contract');
+    });
+
+    it('with no trade unit selected, loads nothing and disables every library prompt', () => {
+      appState.setTradeUnits([]);
+      const c = mount();
+
+      expect(api.getCustomers).not.toHaveBeenCalled();
+      expect(c.hasSelectedTradeUnit()).toBe(false);
+      expect(c.coreDataLoaded()).toBe(false);
+      expect(c.loading()).toBe(false);
+      expect(buttonByText('All producers with contracts')!.disabled).toBe(true);
+    });
+
+    it('shows the "no producers" empty state for a trade unit with an empty roster', () => {
+      api.getCustomers.mockReturnValue(of([]));
+      const c = mount();
+
+      expect(c.coreDataLoaded()).toBe(true);
+      expect(c.sourceLoadFailed()).toBe(false);
+      expect(text()).toContain('No producers found for the selected trade units');
+    });
+
+    it('a failed customers read lands as an empty roster, never a stuck spinner', () => {
+      api.getCustomers.mockReturnValue(throwError(() => new Error('500')));
+      const c = mount();
+
+      expect(c.loading()).toBe(false);
+      expect(c.coreDataLoaded()).toBe(true);
+      expect(c.customers()).toEqual([]);
+      expect(text()).toContain('No producers found for the selected trade units');
+    });
+
+    it('an empty roster caused by a CTRM contract outage says so instead of "no producers"', () => {
+      api.getCustomers.mockReturnValue(of([]));
+      api.getContracts.mockReturnValue(throwError(() => new Error('timeout')));
+      const c = mount();
+
+      expect(c.contractsLoadFailed()).toBe(true);
+      expect(c.sourceLoadFailed()).toBe(true);
+      const page = text();
+      expect(page).toContain('Contract and ticket data could not be loaded from CTRM');
+      expect(page).not.toContain('No producers found for the selected trade units');
+    });
+
+    it('a failed query-library read stops the library spinner and tells the user', () => {
+      api.getQueryLibrary.mockReturnValue(throwError(() => new Error('500')));
+      const c = mount();
+
+      expect(c.queryLibraryLoaded()).toBe(true);
+      expect(c.queryLibrary()).toEqual([]);
+      expect(toast.error).toHaveBeenCalledWith('Failed to load query library');
+      expect(text()).not.toContain('Loading queries...');
+    });
+  });
+
+  // ── Prompt selection and results ──────────────────────────────────────────
+
+  describe('prompt selection', () => {
+    it('runs the picked prompt through the NLQ engine and renders the count and producers alphabetically', () => {
+      nlq.state.matchIds = [3, 1];
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_CONTRACTS);
+
+      expect(c.queryText()).toBe(LIB_CONTRACTS.queryText);
+      expect(c.selectedLibraryQuery()).toBe(LIB_CONTRACTS);
+      expect(c.isProcessing()).toBe(false);
+      expect(c.hasGenerated()).toBe(true);
+      expect(c.queryReturnedNoMatches()).toBe(false);
+      const [query, ctx] = nlq.parseAndFilter.mock.calls.at(-1)!;
+      expect(query).toBe('All producers with contracts');
+      expect(ctx.customers).toHaveLength(3);
+      expect(ctx.currentUserUsername).toBe('pat@scoular.com');
+      expect(usage.postClickEvent).toHaveBeenCalledWith('interaction', 'build-a-list', 'library-query-selected', '1');
+
+      // The engine returned Charlie before Alpha; the page orders by name.
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Charlie Farms']);
+      const page = text();
+      expect(page).toContain('Found 2 of 3 producer(s) matching your criteria');
+      expect(page.indexOf('Alpha Acres')).toBeLessThan(page.indexOf('Charlie Farms'));
+      expect(page).not.toContain('Bravo Grain');
+    });
+
+    it('keeps the NLQ engine\'s order for ranking prompts instead of alphabetising', () => {
+      nlq.parseAndFilter.mockImplementation((): NlqFilterResult => ({ customers: [CHARLIE, BRAVO, ALPHA], detectedState: null, matchedPatterns: ['top_n'] }));
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_TOP);
+
+      expect(names(c.displayedCustomers())).toEqual(['Charlie Farms', 'Bravo Grain', 'Alpha Acres']);
+      expect(c.matchedPatternLabels()).toEqual(['Top N ranking']);
+    });
+
+    it('shows the detected state in the result summary', () => {
+      nlq.state.matchIds = [1, 3];
+      nlq.state.detectedState = 'KS';
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_ALL);
+
+      expect(c.detectedState()).toBe('KS');
+      expect(text()).toContain('Found 2 of 3 producer(s) matching your criteria in Kansas');
+    });
+
+    it('a prompt that matches nobody shows the "no producers matched" banner and empty card', () => {
+      nlq.state.matchIds = [];
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_ALL);
+
+      expect(c.queryReturnedNoMatches()).toBe(true);
+      expect(c.displayedCustomers()).toEqual([]);
+      const page = text();
+      expect(page).toContain('Your query was understood but no producers matched');
+      expect(page).toContain('No Producers Found');
+    });
+
+    it('"Start with no producers" is an intentional blank start, not a no-match', () => {
+      nlq.state.matchIds = [];
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_BLANK);
+
+      expect(c.isBlankStartQuery()).toBe(true);
+      expect(c.hasGenerated()).toBe(true);
+      expect(c.queryReturnedNoMatches()).toBe(false);
+      expect(text()).not.toContain('Your query was understood but no producers matched');
+    });
+
+    it('a ticket prompt waits for the background ticket read, then resolves', () => {
+      const tickets$ = new Subject<Ticket[]>();
+      api.getTickets.mockReturnValue(tickets$.asObservable());
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_DELIVERED);
+      expect(c.waitingForTickets()).toBe(true);
+      expect(c.hasGenerated()).toBe(false);
+      expect(text()).toContain('Loading ticket data');
+
+      tickets$.next([]);
+      tickets$.complete();
+      TestBed.tick();
+
+      expect(c.waitingForTickets()).toBe(false);
+      expect(c.isProcessing()).toBe(false);
+      expect(c.hasGenerated()).toBe(true);
+    });
+
+    it('a failed ticket read releases a ticket prompt and surfaces the ticket-outage state', () => {
+      api.getTickets.mockReturnValue(throwError(() => new Error('500')));
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_DELIVERED);
+
+      expect(c.ticketsLoadFailed()).toBe(true);
+      expect(c.ticketsUnavailableForQuery()).toBe(true);
+      expect(c.waitingForTickets()).toBe(false);
+      expect(c.isProcessing()).toBe(false);
+      expect(c.hasGenerated()).toBe(true);
+      expect(text()).toContain("Couldn't load ticket data");
+    });
+
+    it('a contract prompt after a failed contract read shows the retry panel, and retry reloads everything', () => {
+      api.getContracts.mockReturnValueOnce(throwError(() => new Error('timeout')));
+      nlq.state.matchIds = [];
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_CONTRACTS);
+      expect(c.contractsUnavailableForQuery()).toBe(true);
+      expect(c.hasGenerated()).toBe(true);
+      // The no-match banner is suppressed: an outage must not read as "nobody matched".
+      const page = text();
+      expect(page).toContain("Couldn't load contract data");
+      expect(page).not.toContain('Your query was understood but no producers matched');
+
+      api.getCustomers.mockClear();
+      nlq.state.matchIds = [1];
+      buttonByText('Retry')!.click();
+      TestBed.tick();
+
+      expect(api.getCustomers).toHaveBeenCalledWith(['1000']);
+      expect(c.contractsLoadFailed()).toBe(false);
+      expect(c.contractsUnavailableForQuery()).toBe(false);
+      expect(c.isProcessing()).toBe(false);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+      expect(text()).not.toContain("Couldn't load contract data");
+    });
+
+    it('processQuery with blank text does nothing', () => {
+      const c = mount();
+      c.queryText.set('   ');
+
+      c.processQuery();
+
+      expect(nlq.parseAndFilter).not.toHaveBeenCalled();
+      expect(c.isProcessing()).toBe(false);
+      expect(c.hasGenerated()).toBe(false);
+    });
+
+    it('clearQuery resets the results and returns the library to the prompt\'s category', () => {
+      const c = mount();
+      c.selectLibraryQuery(LIB_CONTRACTS);
+      c.togglePendingState('KS');
+      c.excludeCustomerFromList(1);
+      c.toggleRefinePanel();
+
+      c.clearQuery();
+
+      expect(c.queryText()).toBe('');
+      expect(c.hasGenerated()).toBe(false);
+      expect(c.filteredCustomers()).toEqual([]);
+      expect(c.appliedRefinements()).toEqual({});
+      expect(c.pendingRefinements()).toEqual({});
+      expect(c.manuallyExcludedCustomerIds().size).toBe(0);
+      expect(c.showRefinePanel()).toBe(false);
+      expect(c.selectedLibraryQuery()).toBeNull();
+      expect(c.selectedCategory()).toBe('Contracts');
+      expect(text()).not.toContain('Found ');
+    });
+
+    it('opening a producer navigates to their profile on the tab the prompt was about', () => {
+      const c = mount();
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      c.selectLibraryQuery(LIB_CONTRACTS);
+
+      c.selectCustomer(ALPHA);
+
+      expect(usage.trackProfileOpened).toHaveBeenCalledWith('1');
+      expect(navigate).toHaveBeenCalledWith(['/'], { queryParams: { customerId: 1, tab: 'contracts' } });
+    });
+  });
+
+  // ── Refinements ───────────────────────────────────────────────────────────
+
+  describe('refinements', () => {
+    it('a state chip narrows the displayed results and the summary switches to "Showing X of Y"', () => {
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+      expect(c.availableStates()).toEqual(['KS', 'NE']);
+
+      c.togglePendingState('KS');
+
+      expect(c.isStateSelected('KS')).toBe(true);
+      expect(c.appliedRefinements().states).toEqual(['KS']);
+      expect(c.activeRefinementCount()).toBe(1);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Charlie Farms']);
+      expect(text()).toContain('Showing 2 of 3 producer(s)');
+      expect(text()).toContain('(1 filter applied)');
+
+      c.togglePendingState('KS');
+      expect(c.appliedRefinements().states).toBeUndefined();
+      expect(c.activeRefinementCount()).toBe(0);
+      expect(c.displayedCustomers()).toHaveLength(3);
+    });
+
+    it('prefers the extended state over the merchandising one for chips and filtering', () => {
+      api.getCustomers.mockReturnValue(of([...ROSTER, makeCustomer({ id: 4, name: 'Delta Dairy', stateProvince: 'KS', extendedStateProvince: 'CO' })]));
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      expect(c.availableStates()).toEqual(['CO', 'KS', 'NE']);
+      c.togglePendingState('KS');
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Charlie Farms']);
+    });
+
+    it('a refinement that excludes everyone shows "No Producers After Refinement", and clearing restores', () => {
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      c.togglePendingState('ZZ');
+      expect(c.displayedCustomers()).toEqual([]);
+      expect(c.filteredCustomers()).toHaveLength(3);
+      expect(text()).toContain('No Producers After Refinement');
+
+      c.clearRefinements();
+      expect(c.appliedRefinements()).toEqual({});
+      expect(c.displayedCustomers()).toHaveLength(3);
+      expect(text()).not.toContain('No Producers After Refinement');
+    });
+
+    it('the unpriced-contracts refinement keeps only producers holding an open U/D contract', () => {
+      api.getContracts.mockReturnValue(of([
+        makeContract({ id: 1, ctrmCustomerId: 'C1', priceTypeCode: 'U' }),
+        makeContract({ id: 2, ctrmCustomerId: 'C2', priceTypeCode: 'P' }),
+        // Closed contracts never count toward a refinement.
+        makeContract({ id: 3, ctrmCustomerId: 'C3', priceTypeCode: 'D', closedDate: new Date(NOW.getTime() - DAY) }),
+      ]));
+      const c = mount();
+      c.selectLibraryQuery(LIB_CONTRACTS);
+
+      c.updateRefinement(r => ({ ...r, hasUnpricedContracts: true }));
+
+      expect(c.pendingRefinements().hasUnpricedContracts).toBe(true);
+      expect(c.appliedRefinements().hasUnpricedContracts).toBe(true);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+    });
+
+    it('not-contacted-in-N-days keeps never-contacted and stale producers, and the badge text follows the clock', () => {
+      const lastContacts: NoteLastContact[] = [
+        { customerId: 1, customerCode: 'C1', lastNoteAt: new Date(NOW.getTime() - 3 * DAY) },
+        { customerId: 3, customerCode: 'C3', lastNoteAt: new Date(NOW.getTime() - 45 * DAY) },
+      ];
+      appState.setNoteLastContacts(lastContacts);
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      expect(c.getLastContactInfo(1)).toEqual({ text: 'Contacted 3 days ago', colorClass: 'text-scoular-green', daysAgo: 3 });
+      expect(c.getLastContactInfo(3).colorClass).toBe('text-scoular-red');
+      expect(c.getLastContactInfo(2).text).toBe('Never contacted');
+
+      c.notContactedDaysInput.set('30');
+      c.applyNotContactedDays();
+
+      expect(c.appliedRefinements().notContactedDays).toBe(30);
+      // Batched note prompts sort by last contact, newest first; never-contacted sinks to the bottom.
+      expect(names(c.displayedCustomers())).toEqual(['Charlie Farms', 'Bravo Grain']);
+
+      c.notContactedDaysInput.set('abc');
+      c.applyNotContactedDays();
+      expect(c.appliedRefinements().notContactedDays).toBeNull();
+      expect(c.displayedCustomers()).toHaveLength(3);
+    });
+
+    it('hides refine checkboxes that just restate the prompt and shows the panel for its category', () => {
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_ACTIVE);
+
+      expect(c.effectiveLibraryCategory()).toBe('Contracts');
+      expect(c.showContractFilters()).toBe(true);
+      expect(c.showTicketFilters()).toBe(false);
+      expect(c.showGeneralFilters()).toBe(false);
+      expect(c.hiddenFilters().has('noActiveContracts')).toBe(true);
+      expect(c.hiddenFilters().has('hasActiveContracts')).toBe(true);
+      expect(c.hiddenFilters().has('hasUnpricedContracts')).toBe(false);
+    });
+
+    it('hasAnyRefinement ignores empty/zero criteria and counts real ones', () => {
+      const c = mount();
+      const empty: RefinementFilters = { crops: [], states: [], notContactedDays: 0, noteKeyword: '  ' };
+      expect(c.hasAnyRefinement(empty)).toBe(false);
+      expect(c.hasAnyRefinement({ states: ['KS'] })).toBe(true);
+      expect(c.hasAnyRefinement({ notContactedDays: 30 })).toBe(true);
+    });
+  });
+
+  // ── Manage members ────────────────────────────────────────────────────────
+
+  describe('manual member overrides', () => {
+    it('excluding and restoring a matched producer changes the displayed list and the override count', () => {
+      nlq.state.matchIds = [1, 3];
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      c.excludeCustomerFromList(3);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+      expect(names(c.excludedCustomersList())).toEqual(['Charlie Farms']);
+      expect(c.memberOverrideCount()).toBe(1);
+
+      c.restoreCustomer(3);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Charlie Farms']);
+      expect(c.memberOverrideCount()).toBe(0);
+    });
+
+    it('a hand-added producer joins the results; removing them drops the add rather than recording an exclusion', () => {
+      nlq.state.matchIds = [1];
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      c.addCustomerToList(DELTA);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Delta Dairy']);
+      expect(c.memberOverrideCount()).toBe(1);
+      expect(usage.postClickEvent).toHaveBeenCalledWith('interaction', 'build-a-list', 'member-added', '4');
+
+      c.excludeCustomerFromList(4);
+      expect(c.manuallyIncludedCustomers()).toEqual([]);
+      expect(c.manuallyExcludedCustomerIds().size).toBe(0);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+    });
+
+    it('adding back a previously excluded producer clears the exclusion', () => {
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+      c.excludeCustomerFromList(2);
+
+      c.addCustomerToList(BRAVO);
+
+      expect(c.manuallyExcludedCustomerIds().has(2)).toBe(false);
+      expect(c.displayedCustomers().filter(x => x.id === 2)).toHaveLength(1);
+    });
+  });
+
+  // ── Library search ────────────────────────────────────────────────────────
+
+  describe('library search and categories', () => {
+    it('filters prompts by name, tag and category text, and by the selected category', () => {
+      const c = mount();
+
+      c.onLibrarySearchChange('scale');
+      expect(c.filteredLibrary()).toEqual([LIB_DELIVERED]);
+      c.onLibrarySearchChange('contracts');
+      expect(c.filteredLibrary().map(q => q.id)).toEqual([1, 2]);
+
+      c.onLibrarySearchChange('');
+      c.selectedCategory.set('Producers');
+      expect(c.groupedLibrary()).toEqual([{ category: 'Producers', queries: [LIB_ALL, LIB_TOP, LIB_BLANK] }]);
+      // Saved lists are hidden under a real prompt category.
+      expect(c.librarySavedLists()).toEqual([]);
+    });
+
+    it('logs a search that matches nothing after the debounce, so admins can see the gap', () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      vi.setSystemTime(NOW);
+      const c = mount();
+
+      c.onLibrarySearchChange('organic barley');
+      expect(text()).toContain('No queries match');
+      vi.advanceTimersByTime(1999);
+      expect(api.logQuerySearch).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+
+      expect(api.logQuerySearch).toHaveBeenCalledWith('organic barley');
+      expect(usage.postClickEvent).toHaveBeenCalledWith('interaction', 'build-a-list', 'library-search-no-match', 'organic barley');
+    });
+
+    it('managers get the Team Lists pseudo-category after Saved Lists', () => {
+      isAdmin = true;
+      const c = mount();
+      expect(c.libraryCategories().slice(0, 3)).toEqual(['Saved Lists', 'Team Lists', 'Contracts']);
+      expect(api.getTeamSavedLists).toHaveBeenCalledWith('1000');
+    });
+  });
+
+  // ── Saved lists ───────────────────────────────────────────────────────────
+
+  describe('saved lists', () => {
+    it('only offers saved lists that share a trade unit with the selection, and the search narrows them', () => {
+      const c = mount();
+
+      expect(c.visibleSavedLists()).toEqual([SAVED_KS]);
+      expect(c.librarySavedLists()).toEqual([SAVED_KS]);
+      c.onLibrarySearchChange('nothing like it');
+      expect(c.librarySavedLists()).toEqual([]);
+    });
+
+    it('opening a saved list restores its refinements and exclusions and runs it against the current trade unit', () => {
+      const c = mount();
+
+      c.loadSavedList(SAVED_KS);
+
+      expect(c.activeSavedList()).toBe(SAVED_KS);
+      expect(c.queryText()).toBe(SAVED_KS.query);
+      expect(c.appliedRefinements()).toEqual({ states: ['KS'] });
+      expect(c.manuallyExcludedCustomerIds()).toEqual(new Set([3]));
+      // Not a library selection — the category is resolved by matching the list's query text.
+      expect(c.selectedLibraryQuery()).toBeNull();
+      expect(c.effectiveLibraryCategory()).toBe('Contracts');
+      expect(c.hasGenerated()).toBe(true);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+      expect(usage.postClickEvent).toHaveBeenCalledWith('interaction', 'build-a-list', 'saved-list-loaded', '10');
+      expect(text()).toContain('for KS contract holders');
+    });
+
+    it('a saved list clicked while a query is still processing is refused with a message', () => {
+      const tickets$ = new Subject<Ticket[]>();
+      api.getTickets.mockReturnValue(tickets$.asObservable());
+      const c = mount();
+      c.selectLibraryQuery(LIB_DELIVERED);
+      c.isProcessing.set(true);
+
+      c.loadSavedList(SAVED_KS);
+
+      expect(toast.info).toHaveBeenCalledWith('Still loading — please wait a moment and try again');
+      expect(c.activeSavedList()).toBeNull();
+      expect(c.queryText()).toBe(LIB_DELIVERED.queryText);
+    });
+
+    it('while the query library is still loading, an active saved list hides every refine section', () => {
+      const library$ = new Subject<QueryLibraryItem[]>();
+      api.getQueryLibrary.mockReturnValue(library$.asObservable());
+      const c = mount();
+      c.loadSavedList(SAVED_KS);
+
+      expect(c.isResolvingSavedListCategory()).toBe(true);
+      expect(c.showGeneralFilters()).toBe(false);
+      expect(c.showContractFilters()).toBe(false);
+
+      library$.next(LIBRARY);
+      expect(c.isResolvingSavedListCategory()).toBe(false);
+      expect(c.showContractFilters()).toBe(true);
+    });
+
+    it('saving a new list posts the query, trade units, refinements with the prompt category, and overrides', () => {
+      const c = mount();
+      c.selectLibraryQuery(LIB_CONTRACTS);
+      c.togglePendingState('KS');
+      c.excludeCustomerFromList(3);
+      c.openSaveDialog();
+      c.newListName.set('My KS list');
+      api.getSavedLists.mockClear();
+
+      c.saveList();
+
+      expect(api.createSavedList).toHaveBeenCalledWith({
+        name: 'My KS list',
+        query: 'All producers with contracts',
+        tradeUnits: '1000',
+        filters: { states: ['KS'], _promptCategory: 'Contracts' },
+        includedCustomerIds: undefined,
+        excludedCustomerIds: [3],
+      });
+      expect(api.updateSavedList).not.toHaveBeenCalled();
+      expect(toast.success).toHaveBeenCalledWith('List "My KS list" saved');
+      expect(api.getSavedLists).toHaveBeenCalled();
+      // The canvas is cleared immediately so a quick navigation can't cache stale results.
+      expect(c.showSaveDialog()).toBe(false);
+      expect(c.queryText()).toBe('');
+    });
+
+    it('re-saving an open saved list updates it in place', () => {
+      const c = mount();
+      c.loadSavedList(SAVED_KS);
+      c.openSaveDialog();
+      expect(c.newListName()).toBe('KS contract holders');
+
+      c.saveList();
+
+      expect(api.updateSavedList).toHaveBeenCalledWith(10, expect.objectContaining({ name: 'KS contract holders', excludedCustomerIds: [3] }));
+      expect(api.createSavedList).not.toHaveBeenCalled();
+    });
+
+    it('refuses to save without a name or with no producers, and reports a failed save', () => {
+      nlq.state.matchIds = [];
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+      c.newListName.set('Empty');
+      c.saveList();
+      expect(api.createSavedList).not.toHaveBeenCalled();
+
+      nlq.state.matchIds = null;
+      c.selectLibraryQuery(LIB_ALL);
+      c.newListName.set('   ');
+      c.saveList();
+      expect(api.createSavedList).not.toHaveBeenCalled();
+
+      api.createSavedList.mockReturnValue(throwError(() => new Error('500')));
+      c.newListName.set('Will fail');
+      c.saveList();
+      expect(toast.error).toHaveBeenCalledWith('Failed to save list');
+      expect(toast.success).not.toHaveBeenCalled();
+    });
+
+    it('deleting the open list removes it at once and drops it as the active list', () => {
+      const c = mount();
+      c.loadSavedList(SAVED_KS);
+
+      c.deleteList(10);
+      expect(c.showDeleteDialog()).toBe(true);
+      c.confirmDeleteList();
+
+      expect(api.deleteSavedList).toHaveBeenCalledWith(10);
+      expect(c.showDeleteDialog()).toBe(false);
+      expect(c.savedLists().map(l => l.id)).toEqual([11]);
+      expect(appState.savedLists().map(l => l.id)).toEqual([11]);
+      expect(c.activeSavedList()).toBeNull();
+      expect(toast.info).toHaveBeenCalledWith('List deleted');
+    });
+
+    it('a failed delete re-fetches the saved lists so the list comes back', () => {
+      api.deleteSavedList.mockReturnValue(throwError(() => new Error('500')));
+      const c = mount();
+
+      c.deleteList(10);
+      c.confirmDeleteList();
+
+      expect(toast.error).toHaveBeenCalledWith('Failed to delete list');
+      expect(c.savedLists().map(l => l.id)).toEqual([10, 11]);
+    });
+  });
+
+  // ── Trade units and page lifecycle ────────────────────────────────────────
+
+  describe('trade units and lifecycle', () => {
+    it('changing the trade unit clears the active query and reloads the roster for the new selection', () => {
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+      expect(c.hasGenerated()).toBe(true);
+      api.getCustomers.mockReturnValue(of([DELTA]));
+
+      appState.setTradeUnits(['2000']);
+      TestBed.tick();
+
+      expect(api.getCustomers).toHaveBeenLastCalledWith(['2000']);
+      expect(c.queryText()).toBe('');
+      expect(c.hasGenerated()).toBe(false);
+      expect(c.filteredCustomers()).toEqual([]);
+      expect(names(c.customers())).toEqual(['Delta Dairy']);
+      expect(c.coreDataLoaded()).toBe(true);
+    });
+
+    it('falls back to all of the user\'s trade units for scoping when only a group is selected', () => {
+      appState.setTradeUnits([]);
+      const c = mount();
+      expect(c.effectiveTradeUnits()).toEqual(['1000', '2000']);
+      expect(c.hasTradeUnits()).toBe(true);
+      expect(c.hasSelectedTradeUnit()).toBe(false);
+    });
+
+    it('leaving and coming back on the same trade unit restores the query, refinements and results', () => {
+      nlq.state.matchIds = [1, 3];
+      const first = mount();
+      first.selectLibraryQuery(LIB_CONTRACTS);
+      first.togglePendingState('KS');
+      fixture.destroy();
+
+      const saved = appState.buildListState();
+      expect(saved?.queryText).toBe(LIB_CONTRACTS.queryText);
+      expect([...saved!.filteredCustomerIds].sort()).toEqual([1, 3]);
+      expect(saved?.tradeUnits).toEqual(['1000']);
+
+      const second = mount();
+      expect(second.queryText()).toBe(LIB_CONTRACTS.queryText);
+      expect(second.selectedLibraryQuery()?.id).toBe(1);
+      expect(second.appliedRefinements()).toEqual({ states: ['KS'] });
+      expect(second.hasGenerated()).toBe(true);
+      expect(names(second.displayedCustomers())).toEqual(['Alpha Acres', 'Charlie Farms']);
+    });
+
+    it('coming back after the trade unit changed elsewhere starts blank instead of restoring the old query', () => {
+      const first = mount();
+      first.selectLibraryQuery(LIB_ALL);
+      fixture.destroy();
+      expect(appState.buildListState()?.tradeUnits).toEqual(['1000']);
+
+      appState.setTradeUnits(['2000']);
+      const second = mount();
+
+      expect(second.queryText()).toBe('');
+      expect(second.hasGenerated()).toBe(false);
+      expect(second.selectedLibraryQuery()).toBeNull();
+      expect(appState.buildListState()).toBeNull();
+    });
+
+    it('all-producers mode shows the pick-a-trade-unit gate instead of the library', () => {
+      appState.setAllProducersMode(true);
+      const c = mount();
+      expect(c.allProducersMode()).toBe(true);
+      expect(text()).toContain('Build a List works by trade unit');
+      expect(buttonByText('All producers with contracts')).toBeUndefined();
+    });
+  });
+});
