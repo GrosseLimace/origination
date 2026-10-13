@@ -65,8 +65,8 @@ export class HeaderComponent {
   // group (Origination App Dev / QA / Prod Super Users), where managers and IT/admin are both
   // added, that's assigned the Admin role on that env's API Enterprise Application, and membership
   // flows into the access token's roles claim. Route re-enforces via `usageDashboardGuard`, and
-  // every dashboard endpoint re-enforces the same policy server-side. Note this only decides
-  // whether the page opens; what the caller then SEES is scoped separately (UsageDashboard:ViewAll).
+  // every dashboard endpoint re-enforces the same policy server-side. Everyone who gets in sees the
+  // whole organisation and may filter it by any manager.
   get usageDashboardEnabled(): boolean {
     return environment.usageDashboardEnabled && this.userRoles.canViewUsageDashboard();
   }
