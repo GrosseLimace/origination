@@ -331,9 +331,6 @@ builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
 // Scoped (not singleton like IAppAccessService) because it reads through the scoped
 // IUsageRepository/DbContext; the directory itself is shared via IMemoryCache.
 builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
-// Who may read the WHOLE org and pick any manager, from dbo.UsageDashboardViewAllUsers. Scoped
-// because it reads through IUsageRepository; the result is cached for a minute inside the provider.
-builder.Services.AddScoped<IUsageDashboardViewAllProvider, UsageDashboardViewAllProvider>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();

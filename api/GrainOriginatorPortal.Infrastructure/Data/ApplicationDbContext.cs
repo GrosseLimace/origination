@@ -58,7 +58,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<DailyRecapGroupCcEmail> DailyRecapGroupCcEmails => Set<DailyRecapGroupCcEmail>();
     public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
     public DbSet<UsageDashboardExcludedUser> UsageDashboardExcludedUsers => Set<UsageDashboardExcludedUser>();
-    public DbSet<UsageDashboardViewAllUser> UsageDashboardViewAllUsers => Set<UsageDashboardViewAllUser>();
     public DbSet<MbpLocationSynonym> MbpLocationSynonyms => Set<MbpLocationSynonym>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -1041,20 +1040,6 @@ public class ApplicationDbContext : DbContext
             // Unique so the same account can't be excluded twice; SQL Server's default CI collation
             // makes it case-insensitive, matching how the dashboard keys users.
             entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardExcludedUsers_UserId");
-        });
-
-        modelBuilder.Entity<UsageDashboardViewAllUser>(entity =>
-        {
-            entity.ToTable("UsageDashboardViewAllUsers", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.Reason).HasMaxLength(500).IsRequired(false);
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired().HasDefaultValue("system");
-            // Unique so the same account can't be granted whole-org access twice; SQL Server's
-            // default CI collation makes it case-insensitive, matching how the dashboard keys users.
-            entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardViewAllUsers_UserId");
         });
 
         modelBuilder.Entity<MbpLocationSynonym>(entity =>
