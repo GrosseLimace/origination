@@ -155,6 +155,9 @@ builder.Services.AddHostedService<CustomerSyncBackgroundService>();
 
 // Keeps the trade-unit-wide CTRM caches warm for recently-used producer sets, so Build-a-List prompts
 // never pay for a cache that expired between uses. No-op unless Ctrm:Source is 'ctrm'.
+// The keep-warm cycle reads CTRM through a small seam so its per-set failure isolation is testable;
+// production wires the one adapter over the real readers.
+builder.Services.AddSingleton<ICtrmWarmReads, CtrmWarmReads>();
 builder.Services.AddHostedService<CtrmKeepWarmService>();
 
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
@@ -314,6 +317,9 @@ builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<IReminderService, ReminderService>();
+// Admin diagnostics: six services the DiagnosticsController delegates to (schema, CTRM probes, commodity
+// seed, elevator cache, usage-rollup backfill, app-access members). Registered together in one place.
+builder.Services.AddDiagnosticsServices();
 builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();

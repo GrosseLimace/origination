@@ -66,7 +66,7 @@
       "id": "dotnet.diagnostics-controller-bypasses-service-layer",
       "audit": "dotnet",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "DiagnosticsController bypasses the service layer and repeats the outbound-call anti-pattern the style guide singles out",
       "description": "Injects three DbContexts and IHttpClientFactory directly, runs raw SQL via SqlQueryRaw, hand-writes upsert/seed logic with manual SaveChangesAsync, and loops over collections making one outbound HTTP call per item inside local try/catch instead of the GlobalExceptionHandler.",
       "files": [
@@ -77,7 +77,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Partially addressed — the duplicated Nominatim geocoding is de-duplicated and moved onto the resilient named client. The wider service-layer extraction is outstanding; severity re-rated to medium (AdminOnly policy, schema endpoints are Dev/QA-only). [2026-09-28] Re-checked: DiagnosticsController.cs (1105 lines) still injects OriginationDbContext/ApplicationDbContext/TradeUnitPreferencesDbContext/IHttpClientFactory directly and still runs SqlQueryRaw for schema introspection. Still open. [2026-10-13] Re-checked after the CTRM GraphQL-default and bin-sites/grain-on-farm releases: still 1105 lines, still injects the three DbContexts plus IHttpClientFactory directly, still raw SqlQueryRaw. The dead-CancellationToken-param issue in StartElevatorGeocode on this same file was fixed separately (see dotnet.dead-cancellation-token-param). Still open."
+      "notes": "[2026-09-21] Partially addressed — the duplicated Nominatim geocoding is de-duplicated and moved onto the resilient named client. The wider service-layer extraction is outstanding; severity re-rated to medium (AdminOnly policy, schema endpoints are Dev/QA-only). [2026-09-28] Re-checked: DiagnosticsController.cs (1105 lines) still injects OriginationDbContext/ApplicationDbContext/TradeUnitPreferencesDbContext/IHttpClientFactory directly and still runs SqlQueryRaw for schema introspection. Still open. [2026-10-13] Re-checked after the CTRM GraphQL-default and bin-sites/grain-on-farm releases: still 1105 lines, still injects the three DbContexts plus IHttpClientFactory directly, still raw SqlQueryRaw. The dead-CancellationToken-param issue in StartElevatorGeocode on this same file was fixed separately (see dotnet.dead-cancellation-token-param). Still open.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Behaviour-preserving extraction on fix_AuditCleanup_2026-10-13. DiagnosticsController (1105 -> 358 lines) now injects only IWebHostEnvironment, CustomerSyncService and six new interfaces under Services/Diagnostics/: ISchemaDiagnosticsService (connections, tables, tableschema, schema), ICtrmDiagnosticsService (ctrm, ctrm/contracts, ctrm/alias-batch, ctrm/producer-timing), ICommoditySeedService (commodities/seed), IElevatorCacheDiagnosticsService (elevator-cache/refresh, geocode, geocode-status, geocode-zip), IUsageRollupBackfillService (usage-rollups/backfill), IAppAccessDiagnosticsService (app-access-group-members). Method bodies moved verbatim; the DenyIfNotDevelopment/DenyIfProduction gates, [Authorize(Policy=AdminOnly)], every route string, the 400/409/202 mappings and the anonymous response shapes (now typed records with identical property names) stay in or match the controller. The per-item swallow-and-count in the two geocoding loops is kept on purpose (documented: one bad address must not abort a 1 req/sec walk); everything else still flows to GlobalExceptionHandler. The raw INFORMATION_SCHEMA reads remain SqlQueryRaw inside SchemaDiagnosticsService (no entity exists for catalog views; the table name is identifier-validated and passed as a SQL parameter). Registered by AddDiagnosticsServices() (Services/Diagnostics/DiagnosticsServiceCollectionExtensions.cs), one line in Program.cs. Pinned by DiagnosticsControllerRouteContractTests (all 16 verb+route pairs, response-type declarations, class attributes via reflection), DiagnosticsControllerGateTests (gate matrix per environment with strict mocks, 400/409/202), DiagnosticsServiceCollectionExtensionsTests (DI resolution incl. the controller), plus unit tests for the usage backfill, CTRM probes, app-access read and the Nominatim loop. DbContext-bound code (schema reads, commodity seed, elevator refresh, zip geocode, producer-timing customer lookup) is not unit-tested: no in-memory provider by project rule."
     },
     {
       "id": "dotnet.duplicated-entitlement-catalog-logic",
@@ -200,7 +205,7 @@
       "id": "dotnet.repository-test-coverage-gap",
       "audit": "dotnet",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Repository test coverage gap - largest, most complex repositories are untested",
       "description": "15 of 21 repositories have zero direct test. TicketRepository (729 lines) and UsageRepository (915 lines) are the largest files in the folder with zero direct coverage of their query/mutation logic.",
       "files": [
@@ -215,7 +220,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed and outstanding. Partially reduced (StoredGrainService, UserEntitlementService and the JSON converters now covered), but TicketRepository and UsageRepository still have no direct tests — they need a real-SQL harness, not a unit test. [2026-09-28] Re-checked: no TicketRepositoryTests.cs or UsageRepositoryTests.cs exist. Still open. [2026-10-13] Re-checked: still no TicketRepositoryTests.cs or UsageRepositoryTests.cs, though TicketService itself gained TicketServiceTests.cs as part of the service-layer gap closeout (dotnet.service-layer-test-coverage-gap) — that covers the service layer, not TicketRepository's own query/mutation logic. Repositories/ test folder has grown substantially (CTRM, planting-intention, bin-site repo tests added), narrowing the gap elsewhere even though these two specific files remain untested. Still open."
+      "notes": "[2026-09-21] Confirmed and outstanding. Partially reduced (StoredGrainService, UserEntitlementService and the JSON converters now covered), but TicketRepository and UsageRepository still have no direct tests — they need a real-SQL harness, not a unit test. [2026-09-28] Re-checked: no TicketRepositoryTests.cs or UsageRepositoryTests.cs exist. Still open. [2026-10-13] Re-checked: still no TicketRepositoryTests.cs or UsageRepositoryTests.cs, though TicketService itself gained TicketServiceTests.cs as part of the service-layer gap closeout (dotnet.service-layer-test-coverage-gap) — that covers the service layer, not TicketRepository's own query/mutation logic. Repositories/ test folder has grown substantially (CTRM, planting-intention, bin-site repo tests added), narrowing the gap elsewhere even though these two specific files remain untested. Still open.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Same change as test-gaps.repository-layer-gap: 149 test cases across 15 new files, one per repository that had no direct test: Ticket (27), Usage (31), BidSheet (16), Note (11), Dashboard (8), Entitlements, DisplayNameLookup, BarchartIngest, StoredGrain, DpContract (7 each), TeamsChannel, MbpLocationSynonym (5), CustomerSync, UserPreference (4), QueryLibrary (3). The pre-check found 23 repositories, not 21, with 15 untested rather than 16; the two largest (Ticket 749 lines, Usage 907) had zero direct coverage, as claimed. Covered: scoping and entitlement rules, soft-delete, upsert and merge logic, session splitting, rollup aggregation, fail-soft error paths. Still owed to the real-SQL harness and recorded per file in each test class remarks: every FromSqlInterpolated/SqlQueryRaw load, the raw-SQL retention and snapshot-refresh deletes, the unique-violation race recovery branches, and the ADO batch methods in BarchartIngest. The in-memory provider list in the csproj grew from 18 to 32 files and the deviation guard passes."
     },
     {
       "id": "dotnet.dtos-inline-in-controllers",
@@ -1903,7 +1913,7 @@
       "id": "test-gaps.repository-layer-gap",
       "audit": "test-gaps",
       "severity": "critical",
-      "status": "open",
+      "status": "resolved",
       "title": "16 of 21 Infrastructure repositories have zero direct test coverage, including the two largest",
       "description": "Measured via direct-instantiation grep across the test project: only 5 of 21 repositories have any direct test evidence. TicketRepository.cs (729 lines) and UsageRepository.cs (915 lines) have no test file exercising them at all, direct or indirect -- a silent regression in ticket status filtering or usage-aggregation SQL would ship undetected since the green 535/535 dotnet test run never touches these classes. CustomerRepository.cs (843 lines) and ContractRepository.cs (444 lines) are also only covered by a single static pure-function helper each.",
       "files": [
@@ -1921,7 +1931,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed; duplicate of dotnet.repository-test-coverage-gap. Note the count is if anything understated: UsageRepository's two \"test mentions\" are Mock<IUsageRepository>, which never runs the implementation. [2026-09-28] Re-checked: still confirmed. One nuance since the CTRM GraphQL work merged: CtrmOutageEndToEndTests.cs now constructs a real TicketRepository as the fallback collaborator for CtrmTicketRepository's outage path, but only exercises it through that fallback wiring, not any assertion on TicketRepository's own filtering/status logic. No test still constructs UsageRepository at all. [2026-10-13] Re-checked after the CTRM go-live and trade-unit-contract-read merges: no TicketRepositoryTests.cs/UsageRepositoryTests.cs exist, no change from the last pass. The new CtrmContractReaderTradeUnitTests.cs (277 lines, added with feature_TradeUnitContractRead) is a well-covered exception to this gap but targets CtrmContractReader, not the Infrastructure repositories named here."
+      "notes": "[2026-09-21] Confirmed; duplicate of dotnet.repository-test-coverage-gap. Note the count is if anything understated: UsageRepository's two \"test mentions\" are Mock<IUsageRepository>, which never runs the implementation. [2026-09-28] Re-checked: still confirmed. One nuance since the CTRM GraphQL work merged: CtrmOutageEndToEndTests.cs now constructs a real TicketRepository as the fallback collaborator for CtrmTicketRepository's outage path, but only exercises it through that fallback wiring, not any assertion on TicketRepository's own filtering/status logic. No test still constructs UsageRepository at all. [2026-10-13] Re-checked after the CTRM go-live and trade-unit-contract-read merges: no TicketRepositoryTests.cs/UsageRepositoryTests.cs exist, no change from the last pass. The new CtrmContractReaderTradeUnitTests.cs (277 lines, added with feature_TradeUnitContractRead) is a well-covered exception to this gap but targets CtrmContractReader, not the Infrastructure repositories named here.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "149 test cases across 15 new files, one per repository that had no direct test: Ticket (27), Usage (31), BidSheet (16), Note (11), Dashboard (8), Entitlements, DisplayNameLookup, BarchartIngest, StoredGrain, DpContract (7 each), TeamsChannel, MbpLocationSynonym (5), CustomerSync, UserPreference (4), QueryLibrary (3). The pre-check found 23 repositories, not 21, with 15 untested rather than 16; the two largest (Ticket 749 lines, Usage 907) had zero direct coverage, as claimed. Covered: scoping and entitlement rules, soft-delete, upsert and merge logic, session splitting, rollup aggregation, fail-soft error paths. Still owed to the real-SQL harness and recorded per file in each test class remarks: every FromSqlInterpolated/SqlQueryRaw load, the raw-SQL retention and snapshot-refresh deletes, the unique-violation race recovery branches, and the ADO batch methods in BarchartIngest. The in-memory provider list in the csproj grew from 18 to 32 files and the deviation guard passes."
     },
     {
       "id": "test-gaps.entitlement-service-fail-open-path-untested",
@@ -3072,7 +3087,7 @@
       "id": "test-gaps.ctrm-keep-warm-service-untested",
       "audit": "test-gaps",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "CtrmKeepWarmService's cadence-gating and per-producer-set failure isolation logic has zero test coverage",
       "description": "WarmActiveSetsAsync/ExecuteAsync contain several independently-gated branches read fresh every cycle so App Service config overrides apply without a restart: cadence-minutes disable-at-zero, source-must-equal-ctrm gating, keep-for-hours filtering via CtrmWarmRegistry.ActiveSets, and a per-producer-set try/catch so one set's failure doesn't end the cycle or clobber another set's warm cache. This is the same shape of untested day/interval-gating logic the now-resolved usage-aggregation-background-service-untested finding covered on the usage-aggregation service -- CtrmKeepWarmService is the CTRM-surface equivalent and was added after that finding was fixed.",
       "files": [
@@ -3086,7 +3101,12 @@
         "date": "2026-09-28"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-28] New since the last test-gaps reconciliation (2026-09-22), part of the CTRM GraphQL/keep-warm work merged 2026-09-24/28.\n[2026-09-28] HALF CLOSED, left open deliberately. The cadence/source gating the suggested fix asks for first is done: ShouldWarmNow(cadenceMinutes, configuredSource, nowUtc, lastRunUtc) was extracted as a pure internal static and is covered by CtrmKeepWarmServiceTests (29 cases) pinning zero and negative cadence disabling warming, the >= boundary being inclusive, a backwards clock, first run from DateTime.MinValue, Trim + OrdinalIgnoreCase source matching as equality rather than prefix or contains, each gate blocking on its own, and a 12-tick simulation showing a 5-minute cadence holds to the clock instead of drifting a minute per cycle. Verified by mutation: loosening the cadence gate, flipping the boundary to exclusive and switching the source comparison to Ordinal failed 8 of the 29. The per-producer-set failure isolation half is NOT covered and is unreachable from a unit test as the code stands: WarmActiveSetsAsync is private, its only caller sits behind a real one-minute PeriodicTimer, and CtrmContractReader and CtrmTicketReader are sealed classes with no interface that convert transport failures into non-Ok CtrmReadResults rather than exceptions, so nothing can drive the catch arm the isolation lives in. All three were verified directly rather than taken on trust. Closing that half needs an application-source change (make the method internal and put the two readers behind interfaces), which is a design decision rather than a test gap, so it was not done unilaterally. [2026-10-13] Re-verified: no change to CtrmKeepWarmService.cs's gating/isolation structure since 2026-09-28's mutation-tested pass; status and reasoning stand."
+      "notes": "[2026-09-28] New since the last test-gaps reconciliation (2026-09-22), part of the CTRM GraphQL/keep-warm work merged 2026-09-24/28.\n[2026-09-28] HALF CLOSED, left open deliberately. The cadence/source gating the suggested fix asks for first is done: ShouldWarmNow(cadenceMinutes, configuredSource, nowUtc, lastRunUtc) was extracted as a pure internal static and is covered by CtrmKeepWarmServiceTests (29 cases) pinning zero and negative cadence disabling warming, the >= boundary being inclusive, a backwards clock, first run from DateTime.MinValue, Trim + OrdinalIgnoreCase source matching as equality rather than prefix or contains, each gate blocking on its own, and a 12-tick simulation showing a 5-minute cadence holds to the clock instead of drifting a minute per cycle. Verified by mutation: loosening the cadence gate, flipping the boundary to exclusive and switching the source comparison to Ordinal failed 8 of the 29. The per-producer-set failure isolation half is NOT covered and is unreachable from a unit test as the code stands: WarmActiveSetsAsync is private, its only caller sits behind a real one-minute PeriodicTimer, and CtrmContractReader and CtrmTicketReader are sealed classes with no interface that convert transport failures into non-Ok CtrmReadResults rather than exceptions, so nothing can drive the catch arm the isolation lives in. All three were verified directly rather than taken on trust. Closing that half needs an application-source change (make the method internal and put the two readers behind interfaces), which is a design decision rather than a test gap, so it was not done unilaterally. [2026-10-13] Re-verified: no change to CtrmKeepWarmService.cs's gating/isolation structure since 2026-09-28's mutation-tested pass; status and reasoning stand.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Both halves now covered. Gating was done on 2026-09-28 (ShouldWarmNow, 29 cases). Failure isolation needed a seam: the three CTRM reads the cycle issues now go through ICtrmWarmReads (one production adapter over the real sealed readers, registered in Program.cs), and WarmActiveSetsAsync is internal. CtrmKeepWarmCycleTests (7) pin that a set whose read throws or returns a failed status does not stop the sets after it, that a failed contract read skips that set's ticket and Spot Loads reads only, that a failed set is left alone on the next cycle while the others are warmed, that the back-off holds even if the gateway recovers inside the window, and that nothing is read with no active set. The readers themselves are unchanged; the interface is public only because the service's public constructor takes it."
     },
     {
       "id": "test-gaps.user-usage-detail-component-untested",

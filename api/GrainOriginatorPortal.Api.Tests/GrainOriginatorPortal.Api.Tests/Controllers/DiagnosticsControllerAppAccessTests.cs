@@ -13,6 +13,7 @@ using Moq;
 using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Services.Diagnostics;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -21,8 +22,12 @@ namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
 /// <summary>
 /// Covers the app-access spike endpoint (GET /api/diagnostics/app-access-group-members):
-/// config gate, propagation of categorized Graph failures, and the happy path.
-/// The other DiagnosticsController routes are environment/DB probes and aren't unit-tested.
+/// config gate, propagation of categorized Graph failures, and the happy path. Exercised THROUGH
+/// the controller with the real <see cref="AppAccessDiagnosticsService"/> behind it, so the
+/// service extraction is pinned to the same observable responses the endpoint had before.
+/// The other DiagnosticsController routes are environment/DB probes; their gates and status
+/// codes are covered by DiagnosticsControllerGateTests, and the extracted services under
+/// Services/Diagnostics*.
 /// </summary>
 public class DiagnosticsControllerAppAccessTests
 {
@@ -40,25 +45,37 @@ public class DiagnosticsControllerAppAccessTests
         var env = new Mock<IWebHostEnvironment>();
         env.Setup(e => e.EnvironmentName).Returns("Development");
 
+        // The DbContext-bound services are built the way the controller used to be, so this file
+        // stays on the csproj's §8 in-memory deviation list unchanged; none of them is exercised here.
+        var ods = new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
+            .UseInMemoryDatabase("diag-app-access-ods").Options);
+        var app = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase("diag-app-access-app").Options);
+        var ent = new TradeUnitPreferencesDbContext(new DbContextOptionsBuilder<TradeUnitPreferencesDbContext>()
+            .UseInMemoryDatabase("diag-app-access-ent").Options);
+        var httpFactory = new Mock<IHttpClientFactory>().Object;
+        var ctrmClient = new Mock<ICtrmGraphQlClient>().Object;
+
         return new DiagnosticsController(
-            new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
-                .UseInMemoryDatabase("diag-app-access-ods").Options),
-            new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-                .UseInMemoryDatabase("diag-app-access-app").Options),
-            new TradeUnitPreferencesDbContext(new DbContextOptionsBuilder<TradeUnitPreferencesDbContext>()
-                .UseInMemoryDatabase("diag-app-access-ent").Options),
-            new Mock<ILogger<DiagnosticsController>>().Object,
             env.Object,
-            new Mock<IHttpClientFactory>().Object,
             new CustomerSyncService(new Mock<IServiceScopeFactory>().Object, new Mock<ILogger<CustomerSyncService>>().Object),
-            _graphMock.Object,
-            new Mock<ICtrmGraphQlClient>().Object,
-            new Mock<IContractRepository>().Object,
-            new Mock<ITicketRepository>().Object,
-            new CtrmProvenance(),
-            new CtrmContractReader(new Mock<ICtrmGraphQlClient>().Object, config, new Mock<ILogger<CtrmContractReader>>().Object),
-            new CtrmTicketReader(new Mock<ICtrmGraphQlClient>().Object, config, new Mock<ILogger<CtrmTicketReader>>().Object),
-            config);
+            new SchemaDiagnosticsService(ods, app, ent),
+            new CtrmDiagnosticsService(
+                ctrmClient,
+                config,
+                new Mock<IContractRepository>().Object,
+                new Mock<ITicketRepository>().Object,
+                new CtrmProvenance(),
+                new CtrmContractReader(ctrmClient, config, new Mock<ILogger<CtrmContractReader>>().Object),
+                new CtrmTicketReader(ctrmClient, config, new Mock<ILogger<CtrmTicketReader>>().Object),
+                app),
+            new CommoditySeedService(ods, app),
+            new ElevatorCacheDiagnosticsService(
+                ods, app, httpFactory,
+                new Mock<IServiceScopeFactory>().Object,
+                new Mock<ILogger<ElevatorCacheDiagnosticsService>>().Object),
+            new UsageRollupBackfillService(new Mock<IUsageRepository>().Object, new Mock<ILogger<UsageRollupBackfillService>>().Object),
+            new AppAccessDiagnosticsService(_graphMock.Object, config, new Mock<ILogger<AppAccessDiagnosticsService>>().Object));
     }
 
     private static AppAccessGroupMembersResponse Body(IActionResult result)
