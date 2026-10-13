@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { Subject, of } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import { signal } from '@angular/core';
 
 import { ApiService } from '@core/services/api.service';
-import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { UsageDashboardUser } from '@models';
+import { UsageDashboardUser, UsageManager } from '@models';
 
 import { UsageDashboardComponent } from './usage-dashboard.component';
 
@@ -18,59 +17,86 @@ import { UsageDashboardComponent } from './usage-dashboard.component';
  * so every mount and every filter change issued those requests twice.
  */
 
-/** Records how many times each ApiService method was called. */
-function makeApiStub() {
+function manager(over: Partial<UsageManager> = {}): UsageManager {
+  return { userId: 'KCanning', displayName: 'Kyle Canning', directReports: 13, totalReports: 45, ...over };
+}
+
+/** Records how many times each ApiService method was called, and the managerId each data call sent. */
+function makeApiStub(roster: UsageManager[] = []) {
   const calls: Record<string, number> = {};
-  const count = (name: string) => { calls[name] = (calls[name] ?? 0) + 1; };
+  const managerIds: Record<string, (string | undefined)[]> = {};
+  const count = (name: string, managerId?: string) => {
+    calls[name] = (calls[name] ?? 0) + 1;
+    (managerIds[name] ??= []).push(managerId);
+  };
 
   return {
     calls,
+    managerIds,
     // Held open so `loading` can be asserted mid-flight.
     underusedSubject: new Subject<never[]>(),
+    /** Swap to make the roster fail or change between calls. */
+    managers$: of(roster) as Observable<UsageManager[]>,
 
+    getUsageManagers: function (this: { managers$: Observable<UsageManager[]> }) { count('managers'); return this.managers$; },
     getUsageExclusionsCanManage: function () { count('canManage'); return of({ canManage: false }); },
-    getUsageDashboardSummary: function () { count('summary'); return of(null as never); },
-    getUsageDashboardUsers: function () { count('users'); return of([] as UsageDashboardUser[]); },
-    getUsageDailyActive: function () { count('dailyActive'); return of([]); },
-    getUsageFeatureSessions: function () { count('featureSessions'); return of([]); },
-    getUsageWeeklyTrend: function () { count('weeklyTrend'); return of([]); },
-    getUsageActivityBreakdown: function () { count('activityBreakdown'); return of([]); },
-    getUsageQueryLibraryUsage: function () { count('queryLibrary'); return of([]); },
-    getUsageQuerySearchGaps: function () { count('querySearchGaps'); return of([]); },
-    getUsageUnderusedFeatures: function (this: { underusedSubject: Subject<never[]> }) {
-      count('underusedFeatures');
+    getUsageDashboardSummary: function (_f: string, _t: string, managerId?: string) { count('summary', managerId); return of(null as never); },
+    getUsageDashboardUsers: function (_f: string, _t: string, managerId?: string) { count('users', managerId); return of([] as UsageDashboardUser[]); },
+    getUsageDailyActive: function (_f: string, _t: string, managerId?: string) { count('dailyActive', managerId); return of([]); },
+    getUsageFeatureSessions: function (_f: string, _t: string, managerId?: string) { count('featureSessions', managerId); return of([]); },
+    getUsageWeeklyTrend: function (managerId?: string) { count('weeklyTrend', managerId); return of([]); },
+    getUsageActivityBreakdown: function (_f: string, _t: string, managerId?: string) { count('activityBreakdown', managerId); return of([]); },
+    getUsageQueryLibraryUsage: function (_f: string, _t: string, managerId?: string) { count('queryLibrary', managerId); return of([]); },
+    getUsageQuerySearchGaps: function (_f: string, _t: string, managerId?: string) { count('querySearchGaps', managerId); return of([]); },
+    getUsageUnderusedFeatures: function (this: { underusedSubject: Subject<never[]> }, _f: string, _t: string, managerId?: string) {
+      count('underusedFeatures', managerId);
       return this.underusedSubject.asObservable();
     },
   };
+}
+
+/** UserRolesService reaches for MsalService; the dashboard only needs the short name. */
+function rolesStub(userShortName = 'CEgr') {
+  return {
+    userShortName: signal(userShortName),
+    userId: signal(`${userShortName}@scoular.com`),
+    canViewUsageDashboard: signal(true),
+    isAdmin: signal(true),
+    roles: signal<string[]>([]),
+  };
+}
+
+function configure(api: ReturnType<typeof makeApiStub>, roles = rolesStub(), toasts?: string[]) {
+  TestBed.configureTestingModule({
+    providers: [
+      { provide: ApiService, useValue: api },
+      { provide: ToastService, useValue: { show: (m: string) => toasts?.push(m), error: () => {}, success: () => {} } },
+      { provide: Router, useValue: { navigate: () => {} } },
+      { provide: UserRolesService, useValue: roles },
+    ],
+  });
+  // happy-dom + JIT can't fetch templateUrl, and the child imports carry their own templateUrls.
+  TestBed.overrideComponent(UsageDashboardComponent, {
+    set: { template: '', templateUrl: undefined, imports: [] },
+  });
+}
+
+function build(): UsageDashboardComponent {
+  const fixture = TestBed.createComponent(UsageDashboardComponent);
+  // Effects run on the first change detection pass.
+  fixture.detectChanges();
+  return fixture.componentInstance;
 }
 
 describe('UsageDashboardComponent — fetch orchestration', () => {
   let api: ReturnType<typeof makeApiStub>;
   let component: UsageDashboardComponent;
 
-  function build(): UsageDashboardComponent {
-    const fixture = TestBed.createComponent(UsageDashboardComponent);
-    // Effects run on the first change detection pass.
-    fixture.detectChanges();
-    return fixture.componentInstance;
-  }
-
   beforeEach(() => {
-    api = makeApiStub();
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: ApiService, useValue: api },
-        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
-        { provide: Router, useValue: { navigate: () => {} } },
-        // UserRolesService reaches for MsalService; the dashboard only needs canViewAllUsage.
-        { provide: UserRolesService, useValue: { canViewAllUsage: signal(true), canViewUsageDashboard: signal(true), isAdmin: signal(true), roles: signal<string[]>([]) } },
-      ],
-    });
-    // happy-dom + JIT can't fetch templateUrl, and the child imports carry their own templateUrls.
-    TestBed.overrideComponent(UsageDashboardComponent, {
-      set: { template: '', templateUrl: undefined, imports: [] },
-    });
-    TestBed.inject(AppStateService);
+    // An empty roster: the signed-in user manages nobody, so the filter starts at "All Managers"
+    // and these tests exercise the orchestration without a default in play.
+    api = makeApiStub([]);
+    configure(api);
   });
 
   it('hides the exclusion gear unless the backend says the caller is an exclusion manager', () => {
@@ -78,6 +104,11 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
     // The stub answers canManage: false — the gear must stay hidden for ordinary admins.
     expect(api.calls['canManage']).toBe(1);
     expect(component.canManageExclusions()).toBe(false);
+  });
+
+  it('loads the manager roster exactly once on mount', () => {
+    component = build();
+    expect(api.calls['managers']).toBe(1);
   });
 
   it('requests feature sessions exactly once on mount', () => {
@@ -166,7 +197,7 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
     expect(api.calls['activityBreakdown']).toBe(2);
   });
 
-  it('clearing the manager filter returns to the unfiltered universe with one more fetch', () => {
+  it('clearing the manager filter returns to the whole organisation with one more fetch', () => {
     component = build();
     component.managerFilter.set('KCanning');
     TestBed.tick();
@@ -175,6 +206,7 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
     TestBed.tick();
 
     expect(api.calls['users']).toBe(3); // mount, filtered, cleared
+    expect(api.managerIds['users']).toEqual([undefined, 'KCanning', undefined]);
   });
 });
 
@@ -182,26 +214,12 @@ describe('UsageDashboardComponent — loading state', () => {
   let api: ReturnType<typeof makeApiStub>;
 
   beforeEach(() => {
-    api = makeApiStub();
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: ApiService, useValue: api },
-        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
-        { provide: Router, useValue: { navigate: () => {} } },
-        // UserRolesService reaches for MsalService; the dashboard only needs canViewAllUsage.
-        { provide: UserRolesService, useValue: { canViewAllUsage: signal(true), canViewUsageDashboard: signal(true), isAdmin: signal(true), roles: signal<string[]>([]) } },
-      ],
-    });
-    TestBed.overrideComponent(UsageDashboardComponent, {
-      set: { template: '', templateUrl: undefined, imports: [] },
-    });
-    TestBed.inject(AppStateService);
+    api = makeApiStub([]);
+    configure(api);
   });
 
   it('stays true while a request is outstanding and clears when it completes', () => {
-    const fixture = TestBed.createComponent(UsageDashboardComponent);
-    fixture.detectChanges();
-    const component = fixture.componentInstance;
+    const component = build();
 
     // Open the tab whose endpoint is held open by the stub.
     component.onTabChange('whos-not');
@@ -228,22 +246,8 @@ describe('UsageDashboardComponent — derived values', () => {
 
   beforeEach(() => {
     toasts = [];
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: ApiService, useValue: makeApiStub() },
-        { provide: ToastService, useValue: { show: (m: string) => toasts.push(m), error: () => {}, success: () => {} } },
-        { provide: Router, useValue: { navigate: () => {} } },
-        // UserRolesService reaches for MsalService; the dashboard only needs canViewAllUsage.
-        { provide: UserRolesService, useValue: { canViewAllUsage: signal(true), canViewUsageDashboard: signal(true), isAdmin: signal(true), roles: signal<string[]>([]) } },
-      ],
-    });
-    TestBed.overrideComponent(UsageDashboardComponent, {
-      set: { template: '', templateUrl: undefined, imports: [] },
-    });
-    TestBed.inject(AppStateService);
-    const fixture = TestBed.createComponent(UsageDashboardComponent);
-    fixture.detectChanges();
-    component = fixture.componentInstance;
+    configure(makeApiStub([]), rolesStub(), toasts);
+    component = build();
   });
 
   it('counts each recency tier separately for the donut', () => {
@@ -285,77 +289,171 @@ describe('UsageDashboardComponent — derived values', () => {
 });
 
 /**
- * Self-scoping presentation (UsageDashboard:ViewAll).
+ * The manager filter's default.
  *
- * The scope itself is enforced server-side in UsageDashboardService — see
- * UsageDashboardServiceTests. These cover only what the client decides: whether to offer the
- * manager dropdown, and whether to explain the resulting view. The template is stubbed out in this
- * suite, so they assert the signals the template binds to rather than rendered DOM.
+ * Every dashboard user gets the dropdown and may pick anyone; the server honours whatever it is
+ * sent (see UsageDashboardServiceTests). What the CLIENT decides is where the filter starts: the
+ * signed-in user when they manage someone, otherwise the whole organisation — and that decision has
+ * to be made before the first fetch so the page does not load twice.
  */
-describe('UsageDashboardComponent — manager scope', () => {
-  function build(canViewAll: boolean) {
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: ApiService, useValue: makeApiStub() },
-        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
-        { provide: Router, useValue: { navigate: () => {} } },
-        {
-          provide: UserRolesService,
-          useValue: {
-            canViewAllUsage: signal(canViewAll),
-            canViewUsageDashboard: signal(true),
-            isAdmin: signal(true),
-            roles: signal<string[]>([]),
-          },
-        },
-      ],
-    });
-    TestBed.overrideComponent(UsageDashboardComponent, {
-      set: { template: '', templateUrl: undefined, imports: [] },
-    });
-    TestBed.inject(AppStateService);
-    const fixture = TestBed.createComponent(UsageDashboardComponent);
-    fixture.detectChanges();
-    return fixture.componentInstance;
-  }
+describe('UsageDashboardComponent — manager default', () => {
+  const rosterWithMe = [manager(), manager({ userId: 'CEgr', displayName: 'Caden Egr', directReports: 2, totalReports: 2 })];
 
-  it('offers the manager dropdown and the subtitle to a view-all user', () => {
-    const component = build(true);
+  it('defaults to the signed-in user when they are in the roster, and fetches once with that manager', () => {
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub('CEgr'));
 
-    expect(component.canViewAllUsage()).toBe(true);
+    const component = build();
+
+    expect(component.managerFilter()).toBe('CEgr');
+    expect(api.calls['users']).toBe(1);
+    expect(api.managerIds['users']).toEqual(['CEgr']);
+    expect(api.managerIds['weeklyTrend']).toEqual(['CEgr']);
   });
 
-  it('hides the manager dropdown from a scoped user', () => {
-    const component = build(false);
+  it('matches the signed-in user against the roster case-insensitively, using the roster\'s casing', () => {
+    // /api/me reports the UPN as the token carries it; the directory may case it differently.
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub('cegr'));
 
-    // The template gates both <app-manager-filter> and the page subtitle on canViewAllUsage, so
-    // false removes the control — which matters because the server would discard any managerId
-    // such a user managed to send — and leaves the header with no strapline announcing the scope.
-    expect(component.canViewAllUsage()).toBe(false);
+    const component = build();
+
+    expect(component.managerFilter()).toBe('CEgr');
   });
 
-  it('explains an empty dashboard for a scoped user who manages nobody', () => {
-    const component = build(false);
+  it('starts at "All Managers" when the signed-in user manages nobody', () => {
+    // A non-manager is not in the roster: defaulting to them would select a name the dropdown
+    // cannot show and a team the server resolves to nobody.
+    const api = makeApiStub([manager()]);
+    configure(api, rolesStub('NotAManager'));
+
+    const component = build();
+
+    expect(component.managerFilter()).toBeNull();
+    expect(api.managerIds['users']).toEqual([undefined]);
+  });
+
+  it('starts at "All Managers" when the short name is unknown', () => {
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub(''));
+
+    const component = build();
+
+    expect(component.managerFilter()).toBeNull();
+  });
+
+  it('falls back to the whole organisation when the roster cannot be loaded, rather than blocking the page', () => {
+    const api = makeApiStub(rosterWithMe);
+    api.managers$ = throwError(() => ({ status: 503 }));
+    configure(api, rolesStub('CEgr'));
+
+    const component = build();
+
+    expect(component.managersLoadFailed()).toBe(true);
+    expect(component.managerFilter()).toBeNull();
+    expect(api.calls['users']).toBe(1); // the data still loads — no manager means no directory lookup
+  });
+
+  it('a retry that succeeds after a failed first load still applies the self default', () => {
+    // The first attempt settled the page on "All Managers" so it would not block; that must not
+    // use up the one chance to default once the roster actually arrives.
+    const api = makeApiStub(rosterWithMe);
+    api.managers$ = throwError(() => ({ status: 503 }));
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+    expect(component.managerFilter()).toBeNull();
+
+    api.managers$ = of(rosterWithMe);
+    component.loadManagers();
+    TestBed.tick();
+
+    expect(component.managerFilter()).toBe('CEgr');
+    expect(api.managerIds['users']).toEqual([undefined, 'CEgr']); // whole org, then the defaulted team
+  });
+
+  it('a retry after a successful load does not re-apply the default over a cleared filter', () => {
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+    expect(component.managerFilter()).toBe('CEgr');
+
+    component.managerFilter.set(null); // the user chose "All Managers"
+    TestBed.tick();
+    component.loadManagers();
+    TestBed.tick();
+
+    expect(component.managerFilter()).toBeNull();
+  });
+
+  it('a roster retry does not flip the page-level loading state', () => {
+    const api = makeApiStub(rosterWithMe);
+    api.managers$ = throwError(() => ({ status: 503 }));
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+    expect(component.loading()).toBe(false);
+
+    api.managers$ = new Subject<UsageManager[]>(); // held open
+    component.loadManagers();
+
+    expect(component.managersLoading()).toBe(true);
+    expect(component.loading()).toBe(false); // the dropdown shows its own spinner; the panels keep their data
+  });
+
+  it('does not show the empty-team message when the summary failed to load', () => {
+    // null is "not loaded", not "zero users" — the toast already reports the failure.
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+    component.summary.set(null);
+
+    expect(component.teamIsEmpty()).toBe(false);
+  });
+
+  it('a retry after a failed load restores the roster without clobbering a choice the user made', () => {
+    const api = makeApiStub(rosterWithMe);
+    api.managers$ = throwError(() => ({ status: 503 }));
+    configure(api, rolesStub('CEgr'));
+    const component = build();
+
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+    api.managers$ = of(rosterWithMe);
+    component.loadManagers();
+    TestBed.tick();
+
+    expect(component.managersLoadFailed()).toBe(false);
+    expect(component.managers().length).toBe(2);
+    expect(component.managerFilter()).toBe('KCanning'); // not reset to the default
+  });
+
+  it('explains an empty team when a selected manager resolves to nobody', () => {
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub('CEgr'));
+    const component = build();
     component.summary.set({ totalUsers: 0 } as never);
 
-    // Server-side this is a real state, not an error: a non-manager resolves to an empty universe,
-    // which would otherwise render as a wall of zeros with nothing to explain it.
-    expect(component.scopedToNobody()).toBe(true);
+    // Server-side this is a real state, not an error: a team with nobody who can sign in resolves
+    // to an empty universe, which would otherwise render as a wall of zeros with nothing to explain it.
+    expect(component.teamIsEmpty()).toBe(true);
   });
 
-  it('does not claim "nobody reports to you" when the scoped user does have reports', () => {
-    const component = build(false);
+  it('does not show the empty-team message when the team has people', () => {
+    const api = makeApiStub(rosterWithMe);
+    configure(api, rolesStub('CEgr'));
+    const component = build();
     component.summary.set({ totalUsers: 4 } as never);
 
-    expect(component.scopedToNobody()).toBe(false);
+    expect(component.teamIsEmpty()).toBe(false);
   });
 
-  it('never shows the empty-scope message to a view-all user, even with no data', () => {
-    const component = build(true);
+  it('never shows the empty-team message for the whole-organisation view', () => {
+    const api = makeApiStub([]);
+    configure(api, rolesStub('CEgr'));
+    const component = build();
     component.summary.set({ totalUsers: 0 } as never);
 
-    // A view-all user seeing zero users means the org really is empty (or filtered to nothing) —
-    // telling them nobody reports to them would be wrong.
-    expect(component.scopedToNobody()).toBe(false);
+    // Zero users with no manager selected means the org really is empty (or everyone is excluded) —
+    // telling them the team is empty would be wrong.
+    expect(component.teamIsEmpty()).toBe(false);
   });
 });

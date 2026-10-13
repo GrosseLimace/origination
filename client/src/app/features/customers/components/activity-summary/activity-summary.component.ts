@@ -109,7 +109,6 @@ export class ActivitySummaryComponent {
 
     const customerName = this.customer().name || 'This customer';
     const acres = this.customer().totalAcres || 0;
-    const binCapacity = this.customer().binCapacity || 0;
     const farm = this.customer().farm || '';
     const primaryContact = (this.customer().primaryContact || '').trim();
     const commodities = this.customer().commodities || [];
@@ -139,12 +138,6 @@ export class ActivitySummaryComponent {
     }
     if (commStr) opening += `, primarily growing ${commStr}`;
     parts.push(opening + '.');
-
-    // Bin capacity (the "primary contact is X" sentence is redundant now that the
-    // contact name is the subject of the opening sentence).
-    if (binCapacity > 0) {
-      parts.push(`${this._formatQuantity(binCapacity, 'bushels')} of on-farm bin capacity.`);
-    }
 
     // Linked producers
     if (linkedGroup.length === 1) {

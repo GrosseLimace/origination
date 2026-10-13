@@ -266,6 +266,13 @@ describe('NlqFilterService.refineDimension', () => {
     expect(svc.refineDimension({ hasGrainTarget: true } as never)).toBe('Grain on Farm');
   });
 
+  it('the "Grain on Farm & Bin Sites" category, and the pre-rename "Grain on Farm" a saved list may carry, are the grain dimension', () => {
+    expect(svc.refineDimension({} as never, 'Grain on Farm & Bin Sites')).toBe('Grain on Farm');
+    expect(svc.refineDimension({} as never, 'Grain on Farm')).toBe('Grain on Farm');
+    // A bin-site prompt in that category scopes crop chips to grain rows too.
+    expect(svc.dataNeedsForCriteria('Producers with bin sites', { _promptCategory: 'Grain on Farm & Bin Sites' } as never).tickets).toBe(false);
+  });
+
   it('downHarvestPace routes to Contracts — the "Down harvest contract pace" card (Category=General) has no explicit-category route, so a crop chip needs the flag to reach the right dimension', () => {
     expect(svc.refineDimension({ downHarvestPace: true } as never)).toBe('Contracts');
   });

@@ -28,7 +28,7 @@
         <div>
           <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Filter by Manager</h3>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Shows the manager's whole team — reports of reports included.
+            Shows the manager's whole team — reports of reports included. Clear it to see everyone.
           </p>
         </div>
         <button type="button" (click)="close()" aria-label="Close"
@@ -42,7 +42,7 @@
       } @else if (loadFailed()) {
         <div class="py-3 space-y-2">
           <p class="text-sm text-gray-500 dark:text-gray-400">Managers are temporarily unavailable.</p>
-          <button type="button" (click)="load()"
+          <button type="button" (click)="retry.emit()"
             class="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
             Retry
           </button>

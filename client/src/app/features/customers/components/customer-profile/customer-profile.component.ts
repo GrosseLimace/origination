@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener } from '@angular/core';
+import { Component, input, output, inject, effect, computed, linkedSignal, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
@@ -16,16 +16,16 @@ import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-custom
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem } from '@models';
-import { commodityChipClass } from '@shared/utils/commodity-color';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem, GrainOnFarmItem } from '@models';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
-import { grainOnFarmColorKey, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
+import { formatLastBid, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { OrganicCertificationPanelComponent } from '../organic-certification/organic-certification-panel.component';
 import { CustomerOrganicCertification } from '@models';
 import { formatPhoneDisplay } from '@shared/utils/phone';
-import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
+import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
+import { binSiteHasCoordinates } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 @Component({
@@ -66,35 +66,107 @@ export class CustomerProfileComponent {
   public customer = input.required<Customer>();
   public allCustomers = input<Customer[]>([]);
 
-  // ── Grain on Farm (per-commodity on-hand + target) ──────────────────────
-  /** Grain-on-farm rows with a positive on-hand or target, or a grade entered — sorted by on-hand desc. */
-  readonly grainOnFarmRows = computed(() =>
-    (this.customer().grainOnFarm ?? [])
-      .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.targetBushels ?? 0) > 0 || !!(g.grade ?? '').trim())
-      .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0)));
+  // ── Grain on Farm (per-commodity total + sold + target) ──────────────────────
+  /** Grain-on-farm rows with a positive total or sold, a target or last bid, or a grade entered —
+   *  grouped by bin site in the sites' order (rows not tied to a site last), total desc within a site. */
+  readonly grainOnFarmRows = computed(() => {
+    const siteOrder = new Map((this.customer().binSites ?? []).map((b, i) => [b.siteKey, i]));
+    const orderOf = (key: string | null | undefined) => (key ? siteOrder.get(key) : undefined) ?? Number.MAX_SAFE_INTEGER;
+    return (this.customer().grainOnFarm ?? [])
+      .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.bushelsSold ?? 0) > 0 || g.targetBushels != null || g.lastBid != null || !!(g.grade ?? '').trim())
+      .sort((a, b) => orderOf(a.binSiteKey) - orderOf(b.binSiteKey) || (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
+  });
+  /** The rows grouped by bin site for the table: one group per site in site order, then the rows not
+   *  tied to a site. The label is the site name; the unlinked group is labelled only when sites are
+   *  present too, so a producer with no linked grain shows a plain table as before. */
+  readonly grainOnFarmGroups = computed(() => {
+    const groups: { key: string | null; label: string; rows: GrainOnFarmItem[] }[] = [];
+    for (const g of this.grainOnFarmRows()) {
+      const key = g.binSiteKey ?? null;
+      let group = groups.find(x => x.key === key);
+      if (!group) {
+        group = { key, label: key ? (g.binSiteName?.trim() || 'Bin site') : '', rows: [] };
+        groups.push(group);
+      }
+      group.rows.push(g);
+    }
+    const unlinked = groups.find(x => x.key === null);
+    if (unlinked && groups.length > 1) unlinked.label = 'Not tied to a bin site';
+    return groups;
+  });
+  /** With grain at more than one bin site, each site is a closed line ("North Bins · 2 crops · 35,000 bu")
+   *  until the user opens it (user 2026-10-12: a producer with many bins showed too much at once). With one
+   *  site — or no sites — the table shows open, as before. */
+  readonly grainGroupsCollapsible = computed(() => this.grainOnFarmGroups().length > 1);
+  /** Open site groups, by index into grainOnFarmGroups (site order). All closed again when the producer changes. */
+  readonly openGrainGroups = linkedSignal<number, ReadonlySet<number>>({ source: () => this.customer().id, computation: () => new Set() });
+  isGrainGroupOpen(index: number): boolean {
+    return !this.grainGroupsCollapsible() || this.openGrainGroups().has(index);
+  }
+  toggleGrainGroup(index: number): void {
+    this.openGrainGroups.update(open => {
+      const next = new Set(open);
+      if (!next.delete(index)) next.add(index);
+      return next;
+    });
+  }
+  /** The crop column headings show once there is a row to label. */
+  readonly anyGrainGroupOpen = computed(() => !this.grainGroupsCollapsible() || this.openGrainGroups().size > 0);
+  /** A closed site's line: "2 crops · 35,000 bu". */
+  grainGroupSummary(rows: readonly GrainOnFarmItem[]): string {
+    const bushels = rows.reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
+    return `${rows.length} crop${rows.length === 1 ? '' : 's'} · ${bushels.toLocaleString('en-US')} bu`;
+  }
   /** Total bushels currently on the farm (sum of per-commodity on-hand). */
   readonly grainOnFarmTotal = computed(() =>
     (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
-  /** Whether the per-commodity grain-on-farm breakdown is expanded in the profile header. */
-  showGrainOnFarm = signal(false);
+  // The two dropdowns remember an explicit close in localStorage (same pattern and reasons as
+  // ActivitySummaryComponent: the profile is torn down between producers, and someone who closed a
+  // section expects it to stay closed after a reload). Open by default.
+  private static readonly GRAIN_COLLAPSED_KEY = 'origination.profile.grainOnFarm.collapsed';
+  private static readonly BIN_SITES_COLLAPSED_KEY = 'origination.profile.binSites.collapsed';
+
+  private static readCollapsed(key: string): boolean {
+    try {
+      return localStorage.getItem(key) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private static writeCollapsed(key: string, collapsed: boolean): void {
+    try {
+      localStorage.setItem(key, collapsed ? 'true' : 'false');
+    } catch {
+      // Private browsing / storage disabled — the toggle still works for this session.
+    }
+  }
+
+  /** Whether the grain-on-farm breakdown is expanded in the profile header. Open by default and left however
+   *  the user set it — across producers and reloads, like the Activity Summary (user 2026-10-12); only an
+   *  explicit close is remembered. */
+  showGrainOnFarm = signal(!CustomerProfileComponent.readCollapsed(CustomerProfileComponent.GRAIN_COLLAPSED_KEY));
+  /** The breakdown is on screen: expanded and something to show. The template also widens the grid
+   *  for it (Contact spans both rows while the table spans Farm Details + Harvest Contract Pace). */
+  readonly grainOnFarmOpen = computed(() => this.showGrainOnFarm() && this.grainOnFarmRows().length > 0);
   /** Expand/collapse the breakdown — only when there's something to show. (Editing the values
    *  lives in the Edit Producer dialog; this is a read-only summary.) */
   toggleGrainOnFarm(): void {
-    if (this.grainOnFarmRows().length > 0) this.showGrainOnFarm.update(v => !v);
+    if (this.grainOnFarmRows().length === 0) return;
+    this.showGrainOnFarm.update(v => !v);
+    CustomerProfileComponent.writeCollapsed(CustomerProfileComponent.GRAIN_COLLAPSED_KEY, !this.showGrainOnFarm());
   }
-  // Rows hold a commodity code (or a legacy crop-group name). Colour by the crop group so YC, YCNG
-  // and an old "Corn" row are all corn amber; hover shows the commodity name. Lazy computeds, so
-  // reading the `commodities` input declared further down is safe.
+
+  // Rows hold a commodity code (or a legacy crop-group name); hover on the Crop cell shows the
+  // commodity name. Lazy computeds, so reading the `commodities` input declared further down is safe.
   private readonly _grainLookup = computed(() => buildCropGroupLookup(this.commodities()));
   private readonly _grainByCode = computed(() => indexCommoditiesByCode(this.commodities()));
-  /** Tailwind chip classes for a grain-on-farm commodity — the shared per-crop color. */
-  grainChipClass(value: string): string {
-    return commodityChipClass(grainOnFarmColorKey(value, this._grainLookup()));
-  }
-  /** Hover text for a grain-on-farm chip: the commodity name, or the legacy-row note. */
+  /** Hover text for a grain-on-farm crop: the commodity name, or the legacy-row note. */
   grainChipTitle(value: string): string {
     return grainOnFarmTitle(value, this._grainByCode(), this._grainLookup());
   }
+  /** Last Bid as typed: no "$", no padded decimals. */
+  readonly formatLastBid = formatLastBid;
   public selectedTradeUnits = input<string[]>([]);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
@@ -151,7 +223,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -175,6 +247,38 @@ export class CustomerProfileComponent {
 
   trackMapClick(): void {
     this.usageTracking.trackMapClick(this.customer().id.toString());
+  }
+
+  trackBinSiteMapClick(): void {
+    this.usageTracking.trackBinSiteMapClick(this.customer().id.toString());
+  }
+
+  /** Bin sites as rows of the compact table under the "Bin Sites (N)" toggle in Contact, in saved order, every
+   *  cell already formatted ("50,000", or "—" when empty). The coordinates aren't a column: the pin
+   *  opens them in Google Maps at full precision — or there's no pin when the site has none. */
+  readonly binSiteRows = computed(() => {
+    const bushels = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-US'));
+    return (this.customer().binSites ?? []).map(site => ({
+      name: site.name?.trim() || 'Bin site',
+      capacity: bushels(site.capacity),
+      url: binSiteHasCoordinates(site) ? googleMapsCoordinatesUrl(site.latitude, site.longitude) : null,
+    }));
+  });
+
+  /** A producer with exactly one bin site: that site, shown on its own line in Contact (name · capacity ·
+   *  map pin) instead of a "Bin Sites (1)" toggle (user 2026-10-12). Null with none or several. */
+  readonly singleBinSite = computed(() => {
+    const rows = this.binSiteRows();
+    return rows.length === 1 ? rows[0] : null;
+  });
+
+  /** With two or more bin sites, the "▸ Bin Sites (N)" table — open by default and left however the user
+   *  set it, across producers and reloads (user 2026-10-12); only an explicit close is remembered. */
+  readonly binSitesExpanded = signal(!CustomerProfileComponent.readCollapsed(CustomerProfileComponent.BIN_SITES_COLLAPSED_KEY));
+
+  toggleBinSites(): void {
+    this.binSitesExpanded.update(open => !open);
+    CustomerProfileComponent.writeCollapsed(CustomerProfileComponent.BIN_SITES_COLLAPSED_KEY, !this.binSitesExpanded());
   }
 
   // Local state - signals
@@ -321,7 +425,6 @@ export class CustomerProfileComponent {
       const _customer = this.customer();
       this.showESignRecipients.set(false);
       this.showOrganicDetail.set(false);
-      this.showGrainOnFarm.set(false); // collapse the grain-on-farm breakdown — default closed per producer
       this.cancelAddToList();
       const pendingYear = this.openPlantingYear();
       if (pendingYear && pendingYear > 0) {
@@ -521,7 +624,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
@@ -779,12 +882,6 @@ export class CustomerProfileComponent {
               <div class="label">Total Acres</div>
               <div class="value">${(this.customer().totalAcres || 0).toLocaleString()} acres</div>
             </div>
-            ${(this.customer().binCapacity || 0) > 0 ? `
-            <div class="info-item">
-              <div class="label">Bin Capacity</div>
-              <div class="value">${(this.customer().binCapacity || 0).toLocaleString()} bushels</div>
-            </div>
-            ` : ''}
             <div class="info-item">
               <div class="label">eSign Status</div>
               <div class="value">${this.customer().eSignEnabled ? 'Enrolled' : 'Not Enrolled'}</div>

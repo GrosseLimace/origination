@@ -323,6 +323,59 @@
             </div>
           }
 
+          <!-- Bin Sites & Grain on Farm: a band per site (name · capacity), then the grain stored
+               there — the same grouping as the producer page. -->
+          @if (showBinSites() && binSiteGroups().length > 0) {
+            <div style="margin-bottom: 24px;">
+              <div [style.color]="accentColor()" style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">
+                Bin Sites &amp; Grain on Farm
+                @if (grainOnFarmTotal() > 0) {
+                  <span style="font-weight: 500; letter-spacing: 0; text-transform: none; color: #6b7280;">· {{ grainOnFarmTotal().toLocaleString() }} bu on farm</span>
+                }
+              </div>
+              <div style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                  <thead>
+                    <tr [style.background]="accentLight()">
+                      <th style="text-align: left; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Crop</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">On Farm</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Sold</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Grade</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Target</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Last Bid</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (site of binSiteGroups(); track $index) {
+                      <tr style="background: #f9fafb;">
+                        <td colspan="6" style="padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">
+                          {{ site.name }}
+                          @if (site.capacity != null) {
+                            <span style="font-weight: 400; color: #6b7280;">· {{ site.capacity.toLocaleString() }} bu capacity</span>
+                          }
+                        </td>
+                      </tr>
+                      @for (g of site.rows; track $index) {
+                        <tr [style.background]="grainBandColor(g.commodityCode)">
+                          <td style="padding: 4px 8px; text-align: left; font-weight: 500; border: 1px solid #e5e7eb;">{{ g.commodityCode }}</td>
+                          <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ (g.bushelsOnHand ?? 0).toLocaleString() }} bu</td>
+                          <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ (g.bushelsSold ?? 0) > 0 ? (g.bushelsSold ?? 0).toLocaleString() + ' bu' : '—' }}</td>
+                          <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.grade?.trim() || '—' }}</td>
+                          <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.targetBushels != null ? formatCurrency(g.targetBushels) : '—' }}</td>
+                          <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ formatLastBid(g.lastBid) }}</td>
+                        </tr>
+                      } @empty {
+                        <tr>
+                          <td colspan="6" style="padding: 4px 8px; color: #9ca3af; font-style: italic; border: 1px solid #e5e7eb;">No grain on farm recorded</td>
+                        </tr>
+                      }
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+
           <!-- Footer -->
           <div [style.border-top]="'2px solid ' + accentColor()" style="padding-top: 14px; margin-top: 24px; display: flex; justify-content: space-between; align-items: flex-end;">
             <div style="font-size: 10px; color: #6b7280;">
@@ -391,11 +444,6 @@
                 class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
               <span class="text-sm text-gray-700 dark:text-gray-300">Total Contracted</span>
             </label>
-            <label class="flex items-center gap-2.5 cursor-pointer">
-              <input type="checkbox" [checked]="showBinCapacity()" (change)="showBinCapacity.set($any($event.target).checked)"
-                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
-              <span class="text-sm text-gray-700 dark:text-gray-300">Bin Capacity</span>
-            </label>
           </div>
         </div>
 
@@ -458,6 +506,11 @@
               <input type="checkbox" [checked]="showStorage()" (change)="showStorage.set($any($event.target).checked)"
                 class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
               <span class="text-sm text-gray-700 dark:text-gray-300">Grain in Storage ({{ storageGroups().length }})</span>
+            </label>
+            <label class="flex items-center gap-2.5 cursor-pointer">
+              <input type="checkbox" [checked]="showBinSites()" (change)="showBinSites.set($any($event.target).checked)"
+                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+              <span class="text-sm text-gray-700 dark:text-gray-300">Bin Sites &amp; Grain on Farm ({{ binSiteGroups().length }})</span>
             </label>
             <label class="flex items-center gap-2.5 cursor-pointer">
               <input type="checkbox" [checked]="showPricingLines()" (change)="showPricingLines.set($any($event.target).checked)"

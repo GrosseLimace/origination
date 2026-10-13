@@ -1,6 +1,6 @@
 <div class="p-6 max-w-7xl mx-auto">
 
-  <!-- Top: back link + Trade Unit Selector + date range -->
+  <!-- Top: back link + date range -->
   <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
     <div class="flex items-center gap-3">
       <button type="button" (click)="goBack()"
@@ -10,7 +10,6 @@
       </button>
     </div>
     <div class="flex flex-wrap items-center gap-3">
-      <app-trade-unit-selector />
       <div class="flex items-center gap-1.5">
         <button type="button" (click)="setRange('7d')"
           [class]="activeRange() === '7d'

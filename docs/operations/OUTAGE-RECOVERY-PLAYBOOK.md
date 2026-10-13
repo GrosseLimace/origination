@@ -323,6 +323,7 @@ There's **no button** for these, and Swagger is Dev-only. You need the **Admin**
 ### A4. Read app logs
 - **Live:** Portal → `app-origination-eus` → **Log stream**. You can also use Kudu, or the `/azure-log` skill.
 - **History:** Portal → App Insights `appi-origination-eus` (name unverified) → **Logs**, then use [Appendix B](#appendix-b--app-insights-queries).
+- **Job history at a glance:** Azure Monitor → Workbooks → **Origination Workbench — Operations**. Its CustomerSync panel shows each run's inserted / updated / deactivated counts, so a mass deactivation is visible without writing the query (see `infra/workbooks/README.md`).
 - Two caveats:
   - The `/azure-insights` CLI has been blocked by the corporate proxy from laptops, so use the portal.
   - App Insights here comes from App Service auto-instrumentation, so **Information-level** lines like `CustomerSync completed` may not be captured. If a query comes back empty, use the log stream.

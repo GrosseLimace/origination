@@ -6,16 +6,14 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Observable, finalize } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
-import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import {
   TableComponent, TableHeaderComponent, TableBodyComponent,
   TableRowComponent, TableHeadComponent, TableCellComponent
 } from '@shared/components/table/table.component';
 import {
-  UsageDashboardSummary, UsageDashboardUser, DailyActive,
+  UsageDashboardSummary, UsageDashboardUser, UsageManager, DailyActive,
   FeatureSessions, WeeklyTrend, ActivityBreakdown, UnderusedFeature,
   QueryLibraryUsage, QuerySearchGap
 } from '@models';
@@ -24,7 +22,6 @@ import { SortIconComponent } from '../../components/sort-icon/sort-icon.componen
 import { ExcludedUsersPanelComponent } from '../../components/excluded-users-panel/excluded-users-panel.component';
 import { ManagerFilterComponent } from '../../components/manager-filter/manager-filter.component';
 import { createTableSort } from '../../utils/table-sort';
-import { tradeUnitKeySignal } from '../../utils/trade-unit-key';
 import {
   formatDayLabel, formatLastActive, formatSessionDuration, formatTimeSpent,
   getInitials, getStatusClasses, localIsoDateDaysAgo, toLocalIsoDate, windowDays
@@ -37,7 +34,6 @@ type DashboardTabId = 'whos-using-it' | 'whats-doing' | 'whos-not';
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    TradeUnitSelectorComponent,
     SortIconComponent, ExcludedUsersPanelComponent, ManagerFilterComponent,
     TableComponent, TableHeaderComponent, TableBodyComponent,
     TableRowComponent, TableHeadComponent, TableCellComponent
@@ -48,7 +44,6 @@ type DashboardTabId = 'whos-using-it' | 'whats-doing' | 'whos-not';
 export class UsageDashboardComponent {
   readonly Math = Math;
   private readonly apiService = inject(ApiService);
-  readonly appState = inject(AppStateService);
   private readonly toastService = inject(ToastService);
   private readonly userRoles = inject(UserRolesService);
   private readonly destroyRef = inject(DestroyRef);
@@ -65,11 +60,27 @@ export class UsageDashboardComponent {
   readonly activeTab = signal<DashboardTabId>('whos-using-it');
   readonly statusFilter = signal<string>('all');
 
-  readonly tradeUnitKey = tradeUnitKeySignal(this.appState);
+  // ── Manager filter ──
+  // The dashboard's only filter. It is organised by reporting line, not by trade unit, so the
+  // app-wide trade-unit selection is deliberately not an input here.
 
-  /** Selected manager's short name, or null for everyone. Narrows every panel to that manager's
-   *  entire org subtree (server-side, via the managerId query param). */
+  /** Selected manager's short name, or null for the whole organisation. Narrows every panel to that
+   *  manager's entire org subtree (server-side, via the managerId query param). */
   readonly managerFilter = signal<string | null>(null);
+
+  readonly managers = signal<UsageManager[]>([]);
+  readonly managersLoading = signal(false);
+  readonly managersLoadFailed = signal(false);
+
+  /** The data effects wait on this, so the first fetch already carries the defaulted manager instead
+   *  of loading the whole organisation and then reloading once the default is known. Set once the
+   *  first roster attempt has settled either way — a failed roster must not block the page. */
+  private readonly managerFilterReady = signal(false);
+
+  /** Whether the self default has been applied from a successful roster load. Kept apart from
+   *  managerFilterReady so a Retry that succeeds after a failed first load still gets its one
+   *  chance to default, while a Retry after a successful load never re-applies it. */
+  private defaultManagerApplied = false;
 
   /** Bumped to force a reload — e.g. after the exclusion list changes, which moves every number. */
   private readonly refreshTick = signal(0);
@@ -77,10 +88,6 @@ export class UsageDashboardComponent {
   /** True only for the configured exclusion managers (IT) — hides the exclusion gear for everyone
    *  else. Display-only convenience: the server enforces the same allowlist on the endpoints. */
   readonly canManageExclusions = signal(false);
-
-  /** Whether to show the manager dropdown, the page subtitle, and the whole org. False means the
-   *  server has scoped this session to the user's own subtree; see UserRolesService.canViewAllUsage. */
-  readonly canViewAllUsage = this.userRoles.canViewAllUsage;
 
   // ── Data ──
   readonly summary = signal<UsageDashboardSummary | null>(null);
@@ -102,12 +109,16 @@ export class UsageDashboardComponent {
    * response happens to arrive last.
    */
   private readonly pendingCount = signal(0);
-  readonly loading = computed(() => this.pendingCount() > 0);
+  /** Also true until the roster has settled the default manager — the data effects have not fired
+   *  yet at that point, so pendingCount alone would read as "nothing to wait for". */
+  readonly loading = computed(() => this.pendingCount() > 0 || !this.managerFilterReady());
 
-  /** A scoped user who manages nobody resolves to an empty universe server-side, which would
-   *  otherwise render as a wall of zeros with no explanation. Real state, not an error. */
-  readonly scopedToNobody = computed(() =>
-    !this.canViewAllUsage() && !this.loading() && (this.summary()?.totalUsers ?? 0) === 0);
+  /** A selected manager whose team includes nobody who can sign in to the app resolves to an empty
+   *  universe server-side, which would otherwise render as a wall of zeros with no explanation.
+   *  Real state, not an error. Never shown for the whole-org view — zero users there would mean
+   *  something else entirely — and never when the summary simply failed to load (null, not zero). */
+  readonly teamIsEmpty = computed(() =>
+    !!this.managerFilter() && !this.loading() && this.summary()?.totalUsers === 0);
 
   // ── Formatters (shared with the per-user drill-down) ──
   readonly formatTimeSpent = formatTimeSpent;
@@ -336,47 +347,51 @@ export class UsageDashboardComponent {
         error: () => this.canManageExclusions.set(false)
       });
 
+    // The roster decides the default manager, so it has to be known before anything else loads.
+    this.loadManagers();
+
     // Four effects with disjoint dependencies. Previously the last three loaders were *also* called
-    // from loadData, so every date or trade-unit change fetched them twice.
+    // from loadData, so every date or manager change fetched them twice. Each waits on
+    // managerFilterReady for the same reason: one fetch with the right manager, not two.
 
     // Always-visible data: the KPI row, the donut, and the default tab's chart.
     effect(() => {
+      if (!this.managerFilterReady()) return;
       const from = this.dateFrom();
       const to = this.dateTo();
-      const tuKey = this.tradeUnitKey();
       const managerId = this.managerFilter() ?? undefined;
       this.refreshTick();
-      if (from && to) this.loadCoreData(from, to, tuKey, managerId);
+      if (from && to) this.loadCoreData(from, to, managerId);
     });
 
     // Feature sessions also depend on the selected screen.
     effect(() => {
+      if (!this.managerFilterReady()) return;
       const screen = this.selectedScreen();
       const from = this.dateFrom();
       const to = this.dateTo();
-      const tuKey = this.tradeUnitKey();
       const managerId = this.managerFilter() ?? undefined;
       this.refreshTick();
-      if (from && to) this.loadFeatureSessions(from, to, tuKey, managerId, screen);
+      if (from && to) this.loadFeatureSessions(from, to, managerId, screen);
     });
 
     // The weekly trend covers whole calendar weeks, so the date filter is not a dependency.
     effect(() => {
-      const tuKey = this.tradeUnitKey();
+      if (!this.managerFilterReady()) return;
       const managerId = this.managerFilter() ?? undefined;
       this.refreshTick();
-      this.loadWeeklyTrend(tuKey, managerId);
+      this.loadWeeklyTrend(managerId);
     });
 
     // Per-tab data loads when its tab is first shown for the current filters.
     effect(() => {
+      if (!this.managerFilterReady()) return;
       const tab = this.activeTab();
       const from = this.dateFrom();
       const to = this.dateTo();
-      const tuKey = this.tradeUnitKey();
       const managerId = this.managerFilter() ?? undefined;
       const tick = this.refreshTick();
-      if (from && to) this.loadTabData(tab, from, to, tuKey, managerId, `${from}|${to}|${tuKey ?? ''}|${managerId ?? ''}|${tick}`);
+      if (from && to) this.loadTabData(tab, from, to, managerId, `${from}|${to}|${managerId ?? ''}|${tick}`);
     });
   }
 
@@ -387,22 +402,66 @@ export class UsageDashboardComponent {
     return source.pipe(finalize(() => this.pendingCount.update(n => Math.max(0, n - 1))));
   }
 
-  private loadCoreData(from: string, to: string, tradeUnitKey?: string, managerId?: string): void {
-    this.track(this.apiService.getUsageDashboardSummary(from, to, tradeUnitKey, managerId))
+  /** Loads the manager roster. Also the filter's Retry handler after a failed load. Deliberately
+   *  not run through track(): the page-level spinner covers the first attempt via
+   *  managerFilterReady, and a Retry from inside the dropdown must not blank every panel. */
+  loadManagers(): void {
+    this.managersLoading.set(true);
+    this.managersLoadFailed.set(false);
+    this.apiService.getUsageManagers()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: rows => {
+          this.managers.set(rows);
+          this.managersLoading.set(false);
+          this.applyDefaultManager(rows);
+          this.managerFilterReady.set(true);
+        },
+        error: () => {
+          this.managersLoadFailed.set(true);
+          this.managersLoading.set(false);
+          // No roster, no default: show the whole organisation rather than block the page. The
+          // data endpoints don't need the directory when no manager is selected.
+          this.managerFilterReady.set(true);
+        }
+      });
+  }
+
+  /**
+   * Defaults the filter to the signed-in user — when they manage someone. The roster only lists
+   * people who appear as someone's manager, so a non-manager is not in it; defaulting to them
+   * would select a name the dropdown cannot display and a team the server resolves to nobody.
+   * They start at "All Managers" instead.
+   *
+   * Applied once, from the first SUCCESSFUL roster load — so a Retry that finally succeeds after a
+   * failed first attempt still defaults, but a later Retry never re-applies it. Also skipped when
+   * the user has already picked a manager during an outage; their choice wins.
+   */
+  private applyDefaultManager(roster: UsageManager[]): void {
+    if (this.defaultManagerApplied) return;
+    this.defaultManagerApplied = true;
+    if (this.managerFilter() !== null) return;
+    const me = this.userRoles.userShortName().toLowerCase();
+    const self = me ? roster.find(m => m.userId.toLowerCase() === me) : undefined;
+    if (self) this.managerFilter.set(self.userId);
+  }
+
+  private loadCoreData(from: string, to: string, managerId?: string): void {
+    this.track(this.apiService.getUsageDashboardSummary(from, to, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => this.summary.set(data),
         error: () => this.toastService.show('Failed to load summary', 'error')
       });
 
-    this.track(this.apiService.getUsageDashboardUsers(from, to, tradeUnitKey, managerId))
+    this.track(this.apiService.getUsageDashboardUsers(from, to, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => this.users.set(data),
         error: () => this.toastService.show('Failed to load users', 'error')
       });
 
-    this.track(this.apiService.getUsageDailyActive(from, to, tradeUnitKey, managerId))
+    this.track(this.apiService.getUsageDailyActive(from, to, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: data => this.dailyActive.set(data), error: () => {} });
   }
@@ -411,34 +470,34 @@ export class UsageDashboardComponent {
    *  forth doesn't refetch. */
   private readonly loadedTabKeys = new Map<DashboardTabId, string>();
 
-  private loadTabData(tab: DashboardTabId, from: string, to: string, tradeUnitKey: string | undefined, managerId: string | undefined, key: string): void {
+  private loadTabData(tab: DashboardTabId, from: string, to: string, managerId: string | undefined, key: string): void {
     if (this.loadedTabKeys.get(tab) === key) return;
     this.loadedTabKeys.set(tab, key);
 
     if (tab === 'whats-doing') {
-      this.track(this.apiService.getUsageActivityBreakdown(from, to, tradeUnitKey, managerId))
+      this.track(this.apiService.getUsageActivityBreakdown(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.activityBreakdown.set(data), error: () => {} });
 
-      this.track(this.apiService.getUsageQueryLibraryUsage(from, to, tradeUnitKey, managerId))
+      this.track(this.apiService.getUsageQueryLibraryUsage(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.queryLibraryUsage.set(data), error: () => {} });
 
-      this.track(this.apiService.getUsageQuerySearchGaps(from, to, tradeUnitKey, managerId))
+      this.track(this.apiService.getUsageQuerySearchGaps(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.querySearchGaps.set(data), error: () => {} });
     }
 
     if (tab === 'whos-not') {
-      this.track(this.apiService.getUsageUnderusedFeatures(from, to, tradeUnitKey, managerId))
+      this.track(this.apiService.getUsageUnderusedFeatures(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.underusedFeatures.set(data), error: () => {} });
     }
   }
 
-  loadFeatureSessions(from: string, to: string, tradeUnitKey?: string, managerId?: string, screen?: string): void {
+  loadFeatureSessions(from: string, to: string, managerId?: string, screen?: string): void {
     this.featureSessionsLoading.set(true);
-    this.track(this.apiService.getUsageFeatureSessions(from, to, tradeUnitKey, managerId, screen))
+    this.track(this.apiService.getUsageFeatureSessions(from, to, managerId, screen))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => { this.featureSessions.set(data); this.featureSessionsLoading.set(false); },
@@ -446,8 +505,8 @@ export class UsageDashboardComponent {
       });
   }
 
-  loadWeeklyTrend(tradeUnitKey?: string, managerId?: string): void {
-    this.track(this.apiService.getUsageWeeklyTrend(tradeUnitKey, managerId))
+  loadWeeklyTrend(managerId?: string): void {
+    this.track(this.apiService.getUsageWeeklyTrend(managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: data => this.weeklyTrend.set(data), error: () => {} });
   }
@@ -476,15 +535,14 @@ export class UsageDashboardComponent {
     this.activeTab.set(tabId);
   }
 
-  /** Navigate to the per-user drill-down page, propagating the active date range
-   *  and trade-unit context as query params so the detail view opens with the
-   *  same window the admin was viewing. */
+  /** Navigate to the per-user drill-down page, propagating the active date range as query params
+   *  so the detail view opens with the same window the admin was viewing. The manager filter is
+   *  not propagated — it narrows who is listed, not one person's numbers. */
   selectUser(userId: string): void {
     this.router.navigate(['/usage-dashboard/users', userId], {
       queryParams: {
         from: this.dateFrom(),
         to: this.dateTo(),
-        tradeUnitKey: this.tradeUnitKey() ?? null,
       },
     });
   }
