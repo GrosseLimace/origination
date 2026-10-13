@@ -1,6 +1,6 @@
 # Security Architecture Specification: Burdi Design Pattern
 
-> **Repository copy.** Source document: `SEC-ARCH-BURDI-001` v1.0, 2026-03-25, IT Security / Architecture, classification Confidential. Copied verbatim into the Origination repo on 2026-09-23 so the mobile planning documents can link to it. If IT Security publishes a newer version, replace this file and update [MOBILE-ARCHITECTURE-PLAN.md](../MOBILE-ARCHITECTURE-PLAN.md) and [ADR-001](../../adr/ADR-001-mobile-surface-topology.md). The Scoular-specific mechanics that implement this spec are in [developer-docs/EXTERNAL-SPA-GUIDE.md](../../../developer-docs/EXTERNAL-SPA-GUIDE.md).
+> **Repository copy.** Source document: `SEC-ARCH-BURDI-001` v1.0, 2026-03-25, IT Security / Architecture, classification Confidential. Copied verbatim into the Origination repo on 2026-09-23 so the mobile planning documents can link to it. If IT Security publishes a newer version, replace this file and update [MOBILE-ARCHITECTURE-PLAN.md](../MOBILE-ARCHITECTURE-PLAN.md) and [ADR-001](../../adr/ADR-001-mobile-surface-topology.md). The Scoular-specific mechanics that implement this spec are in [developer-docs/EXTERNAL-SPA-GUIDE.md](EXTERNAL-SPA-GUIDE.md).
 
 **Document:** SEC-ARCH-BURDI-001
 **Version:** 1.0

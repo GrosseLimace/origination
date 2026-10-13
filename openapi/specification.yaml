@@ -1,801 +1,450 @@
 openapi: 3.0.3
+
 info:
-  title: Origination External API
-  version: '1.0'
+  title: Origination — BarChart Ingestion API
+  version: "1.0.0"
   description: |
-    External-facing (mobile) endpoints for the Origination Workbench.
-    Produced per developer-docs/EXTERNAL-SPA-GUIDE.md. Paths are relative to the APIM
-    path prefix; the backend serves them under /api/mobile/v1. Only endpoints listed here
-    are reachable from the mobile client.
+    Endpoints the Scoular integration pipeline (Azure Data Factory) calls to deliver BarChart grain-bid
+    data into the Origination application.
 
-    Scope source: GitHub cards #641-#648 (Phase 1), created 2026-09-23. Phase 2 cards
-    (#649 prospects, #650 directions, #651 dictated notes) add no endpoints except
-    prospects, which will be a later revision of this file.
+    The pipeline fetches from BarChart and forwards each response here; **it needs no database access**,
+    which keeps the Origination application the only writer to its own database.
 
-    Conventions:
-      - operationId in camelCase, unique; it becomes the generated TypeScript method name.
-      - Every operation requires the environment's mobile scope (see securitySchemes).
-      - Mutations carry a clientRequestId (uuid). Replaying the same id returns the
-        original result (200/201 with the existing row) so offline queues can retry safely.
-      - Producer contact phone/email ARE returned (card #642, meeting Q9 = yes). The client
-        must never persist them to cache.
-      - Every customer-scoped path is checked against the caller's trade-unit entitlement;
-        a customer outside it returns 404, never 403, to prevent enumeration.
-  contact:
-    name: Origination app team
+    **Every endpoint is safe to retry.** Loads upsert rather than duplicate, and the daily price-history
+    row is replaced per business date, so a failed step or an entire failed run can simply be run again
+    with no cleanup and no idempotency key.
+
+    Full narrative contract, including the daily call sequence:
+    `docs/application-context/Barchart Ingestion API Contract.md`
+
 servers:
-  - url: http://localhost:5000/api/mobile/v1
-    description: Local development (direct to the .NET API)
-  - url: https://origination-dev.scoular.com/api/mobile/v1
-    description: Dev (direct to App Service; no APIM in dev)
-  - url: https://apiqa.scoular.com/{apimPathPrefix}
-    description: QA (through APIM)
-    variables:
-      apimPathPrefix:
-        default: external/origination/v1
-        description: Assigned by Data Integrations
-  - url: https://api.scoular.com/{apimPathPrefix}
-    description: Prod (through APIM)
-    variables:
-      apimPathPrefix:
-        default: external/origination/v1
-        description: Assigned by Data Integrations
+  - url: https://app-origination-dev-eus.azurewebsites.net
+    description: |
+      Dev. Token audience `api://00078a10-3f3f-4d17-9350-fe90401125ae`.
+      Alternate accepted host: `origination-dev.scoular.com`.
+  - url: https://app-origination-qa-eus.azurewebsites.net
+    description: |
+      QA — also the target for the integration side's UAT.
+      Token audience `api://f3fcab2b-98c8-4622-86bd-c874d281b22a`.
+      Alternate accepted host: `origination-qa.scoular.com`.
+  - url: https://app-origination-eus.azurewebsites.net
+    description: |
+      Production. Token audience `api://e1458bcd-7212-4ea0-a836-7e08d03b5bbf`.
+      Alternate accepted host: `origination.scoular.com`.
+
 security:
-  - entraId: []
+  - azureAd: []
+
 tags:
-  - name: session
-    description: Caller identity and entitled trade units
-  - name: customers
-    description: Producer search and detail (cards #641, #642)
-  - name: producer-details
-    description: On-farm details (card #643)
-  - name: notes
-    description: Producer notes (card #644)
-  - name: contracts
-    description: Contract cards (card #645)
-  - name: tickets
-    description: Rolled-up ticket summary (card #646)
-  - name: planting-intentions
-    description: Planting intentions (card #647)
-  - name: storage
-    description: Storage and DP contract cards (card #648)
-  - name: reference
-    description: Commodity reference data
+  - name: BarChart Ingestion
+    description: Machine-to-machine delivery of vendor grain-bid data.
 
 paths:
-  /me:
+  /api/barchart-ingest/quote-batches:
     get:
-      tags: [session]
-      operationId: getSession
-      summary: Current user and entitled trade units
-      description: >
-        Returns the caller's display name and the trade units they are entitled to. The
-        offersStorage flag drives whether the Storage tab is shown at all (card #648).
-        NOTE: no per-trade-unit "offers storage" fact exists in the system today; this flag
-        needs a data owner before Phase 2 backend work starts.
+      tags: [BarChart Ingestion]
+      summary: Get the symbols to request quotes for
+      description: |
+        Returns every active, non-test instrument symbol, already grouped into request-sized batches.
+        Call this first in a quote run — the pipeline never has to track which instruments exist, and
+        vendor test entries are excluded here rather than needing to be filtered downstream.
+      operationId: getQuoteBatches
+      parameters:
+        - name: batchSize
+          in: query
+          required: false
+          description: Symbols per batch. Values below 1 are treated as 100.
+          schema: { type: integer, default: 100, minimum: 1, maximum: 1000 }
       responses:
-        '200':
-          description: Session
+        "200":
+          description: Batches to request, in symbol order.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Session'
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+                type: array
+                items: { $ref: "#/components/schemas/QuoteBatch" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
 
-  /customers:
-    get:
-      tags: [customers]
-      operationId: searchCustomers
-      summary: Search producers by name within the caller's trade units
-      description: Card #641. No bulk list building; search only. Results are capped server-side.
+  /api/barchart-ingest/instruments:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Load a vendor instrument (catalog) payload
+      description: |
+        Files the locations and bids BarChart publishes. Send the vendor's `getGrainInstruments`
+        response **verbatim** — do not reshape, rename, or filter it.
+
+        New symbols are inserted and existing ones updated. Symbols absent from the payload are left
+        untouched, so a partial page or a failed run can never strip the catalog; retiring entries is
+        the separate, deliberate `deactivate-instruments` call.
+
+        Run this often enough to keep forward delivery months current — new months arrive as new
+        symbols, so a catalog that is never refreshed will slowly empty out as months roll off.
+      operationId: loadInstruments
+      requestBody:
+        required: true
+        description: The vendor response body, unmodified and uncompressed. 10 MB maximum.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorPayload" }
+      responses:
+        "200":
+          description: Payload filed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InstrumentLoadResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413":
+          description: Body exceeds the 10 MB limit. Send smaller pages.
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/quotes:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Load a vendor quote payload
+      description: |
+        Files current prices and the day's price history. Send the vendor's `getQuote` response
+        **verbatim**.
+
+        Quotes for symbols not present in the catalog are skipped and counted in
+        `unknownSymbolCount` — a value that stays non-zero means the catalog is behind the quote feed
+        and an `instruments` load is due.
+      operationId: loadQuotes
       parameters:
-        - name: q
+        - name: snapshotDate
+          in: query
+          required: false
+          description: |
+            Business date to record the day's history under. Omit to use today in US Central time.
+            Supply it explicitly when back-filling, or when a run could straddle midnight.
+          schema: { type: string, format: date, example: "2026-08-11" }
+      requestBody:
+        required: true
+        description: The vendor response body, unmodified and uncompressed. 10 MB maximum.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorPayload" }
+      responses:
+        "200":
+          description: Payload filed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuoteLoadResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413":
+          description: Body exceeds the 10 MB limit. Send smaller batches.
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/apply-bids:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Publish loaded prices onto the Bid Sheet
+      description: |
+        Copies current feed prices onto the Bid Sheet for every location an originator has linked to
+        the feed. Call this once after the quote batches for a run are loaded.
+
+        Manually entered bids are never modified, and the call is deterministic — running it twice
+        changes nothing.
+
+        Safe to schedule in every environment. Where publishing is switched off (an environment loading
+        the catalog ahead of the Bid Sheet that shows it), the call still returns 200, with
+        `enabled: false` and `rowsAffected: 0`. Nothing to change on the caller's side when it is
+        switched on.
+      operationId: applyBids
+      parameters:
+        - name: locationId
+          in: query
+          required: false
+          description: Limit to a single Bid Sheet location. Omit to process every linked location.
+          schema: { type: integer }
+        - name: instrumentType
+          in: query
+          required: false
+          description: Vendor price type to publish. Omit or pass an empty value to publish any type.
+          schema: { type: string, default: bidCash, enum: [bidCash, bidBasis] }
+      responses:
+        "200":
+          description: Publish complete.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplyBidsResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/barchart-ingest/deactivate-instruments:
+    post:
+      tags: [BarChart Ingestion]
+      summary: Retire catalog entries the vendor has stopped publishing
+      description: |
+        Marks instruments not seen since `lastSeenBefore` as inactive. Rows are never deleted, so
+        history and any linked location survive.
+
+        **Call this only after a complete catalog cycle.** The sweep is sharded across 7 daily runs
+        (confirmed 2026-08-18), so "complete" means the whole 7-day rotation, not last night's run — on
+        any one day only part of the catalog is re-seen. A cutoff of yesterday would retire most of the
+        book and blank every linked Bid Sheet location. Pass a time older than one full cycle.
+
+        Skipping this entirely is harmless — the catalog simply keeps entries the vendor has dropped.
+
+        As a backstop, a call that would retire more than `maxSharePercent` of the active catalog is
+        refused with a 400 and changes nothing.
+      operationId: deactivateInstruments
+      parameters:
+        - name: lastSeenBefore
           in: query
           required: true
-          description: Name fragment, minimum 2 characters
-          schema: { type: string, minLength: 2, maxLength: 100 }
-        - name: tradeUnits
+          description: UTC timestamp older than one full catalog cycle.
+          schema: { type: string, format: date-time, example: "2026-08-01T05:00:00Z" }
+        - name: maxSharePercent
           in: query
           required: false
-          description: Restrict to these trade-unit codes (must all be entitled, else 403)
-          schema:
-            type: array
-            items: { type: string, maxLength: 10 }
-            maxItems: 20
-          style: form
-          explode: true
-        - name: limit
-          in: query
-          required: false
-          schema: { type: integer, minimum: 1, maximum: 50, default: 25 }
-        - $ref: '#/components/parameters/CorrelationId'
+          description: >
+            Safety limit on how much of the active catalog one call may retire. Raise it only when a
+            large retirement is genuinely intended.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
       responses:
-        '200':
-          description: Matching producers
+        "200":
+          description: Retirement complete.
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/CustomerSummary' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+              schema: { $ref: "#/components/schemas/DeactivateResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
 
-  /customers/{customerId}:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-    get:
-      tags: [customers]
-      operationId: getCustomer
-      summary: Producer header with contacts
-      description: >
-        Cards #641 and #642. Includes contact phone/email for tap-to-call and tap-to-email
-        via the device's native dialer and mail app. The client must not cache this response.
-      responses:
-        '200':
-          description: Producer detail
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/CustomerDetail' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-
-  /customers/{customerId}/details:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-    get:
-      tags: [producer-details]
-      operationId: getProducerDetails
-      summary: On-farm details (acres, bin capacity, grain on farm)
-      description: Card #643.
-      responses:
-        '200':
-          description: On-farm details
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ProducerDetails' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-    put:
-      tags: [producer-details]
-      operationId: updateProducerDetails
-      summary: Update on-farm details
-      description: >
-        Card #643. Whole-record upsert of the editable on-farm fields only. Contacts and
-        linked producers are NOT editable from mobile. Audited with before/after values.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ProducerDetailsUpdate' }
-      responses:
-        '200':
-          description: Updated details (also returned on idempotent replay)
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ProducerDetails' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-
-  /customers/{customerId}/notes:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-    get:
-      tags: [notes]
-      operationId: getRecentNotes
-      summary: Pinned note plus the most recent notes
-      description: >
-        Card #644. Returns the pinned note (if any) first, then the newest notes up to the
-        limit. Deleted notes are excluded. No full-history paging on mobile.
-      parameters:
-        - name: limit
-          in: query
-          required: false
-          schema: { type: integer, minimum: 1, maximum: 10, default: 10 }
-      responses:
-        '200':
-          description: Notes
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/RecentNotes' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/barchart-ingest/purge-history:
     post:
-      tags: [notes]
-      operationId: createNote
-      summary: Add a note
-      description: >
-        Card #644 (and #651 in Phase 2: dictated text arrives as a normal note). Offline-queued
-        on the client; the clientRequestId makes replay safe. No @mentions on mobile in v1.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/NoteCreate' }
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Note' }
-        '200':
-          description: Idempotent replay; the previously created note
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Note' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+      tags: [BarChart Ingestion]
+      summary: Trim the audit and price-history tables to their retention windows
+      description: |
+        Optional housekeeping. Removes call-audit rows and daily price-history rows older than the
+        given windows, deleting in batches so a long-deferred purge trims steadily instead of locking
+        the tables.
 
-  /customers/{customerId}/contracts:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-    get:
-      tags: [contracts]
-      operationId: getContractCards
-      summary: Contract cards (collapsed view)
-      description: >
-        Card #645. Only the at-a-glance fields. Contract value is deliberately omitted.
-        Read from the ODS view; may be slow on a cold serverless database.
+        Safe to call at the end of a run or on any schedule; skipping it entirely only means the two
+        tables keep growing. Minimums are enforced (30 days audit, 90 days history) because the price
+        history cannot be rebuilt from the vendor API.
+      operationId: purgeHistory
       parameters:
-        - name: includeClosed
+        - name: auditRetentionDays
           in: query
           required: false
-          schema: { type: boolean, default: false }
-      responses:
-        '200':
-          description: Contract cards
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/ContractCard' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
-
-  /customers/{customerId}/contracts/{contractId}:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-      - name: contractId
-        in: path
-        required: true
-        schema: { type: integer, format: int64 }
-    get:
-      tags: [contracts]
-      operationId: getContractDetail
-      summary: Expanded contract detail
-      description: Card #645, the expanded card. Pricing lines included; still no dollar value.
-      responses:
-        '200':
-          description: Contract detail
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ContractDetail' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
-
-  /customers/{customerId}/tickets/summary:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-    get:
-      tags: [tickets]
-      operationId: getTicketSummary
-      summary: Tickets rolled up to count and bushels
-      description: >
-        Card #646. One group per contract the tickets applied to, plus one "unapplied" group.
-        No line items, no weights, no crop/location columns.
-      parameters:
-        - name: cropYear
+          schema: { type: integer, default: 400, minimum: 30 }
+        - name: snapshotRetentionDays
           in: query
           required: false
-          schema: { type: integer, minimum: 2000, maximum: 2100 }
+          schema: { type: integer, default: 730, minimum: 90 }
       responses:
-        '200':
-          description: Ticket summary
+        "200":
+          description: Purge complete.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/TicketSummary' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+              schema: { $ref: "#/components/schemas/PurgeResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
 
-  /customers/{customerId}/planting-intentions:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
+  /api/barchart-ingest/budget:
     get:
-      tags: [planting-intentions]
-      operationId: getPlantingIntentions
-      summary: Planting intentions as cards
-      description: Card #647. Crop, acres and year only.
-      responses:
-        '200':
-          description: Planting intentions
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/PlantingIntention' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-    post:
-      tags: [planting-intentions]
-      operationId: createPlantingIntention
-      summary: Add a planting intention
-      description: Card #647. Year-level granularity only; no calendar date.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PlantingIntentionCreate' }
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PlantingIntention' }
-        '200':
-          description: Idempotent replay
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PlantingIntention' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+      tags: [BarChart Ingestion]
+      summary: Month-to-date ingest usage against the vendor call cap
+      description: |
+        Counts the ingest calls we have received this calendar month. Because the vendor calls happen
+        in the pipeline, this is a close proxy for vendor usage and a cross-check against the
+        pipeline's own monitoring — the authoritative count is on the pipeline side.
 
-  /customers/{customerId}/planting-intentions/{intentionId}:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-      - name: intentionId
-        in: path
-        required: true
-        schema: { type: integer }
-    put:
-      tags: [planting-intentions]
-      operationId: updatePlantingIntention
-      summary: Update acres or crop on an existing planting intention
-      description: Card #647 ("view, add, and update"). Audited with before/after values.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PlantingIntentionUpdate' }
+        The vendor cap is shared by every environment (one API key), so non-production testing
+        consumes production allowance.
+      operationId: getBudget
+      parameters:
+        - name: monthlyCap
+          in: query
+          required: false
+          description: Cap to measure against.
+          schema: { type: integer, default: 250000, minimum: 1 }
       responses:
-        '200':
-          description: Updated
+        "200":
+          description: Current usage.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PlantingIntention' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-
-  /customers/{customerId}/storage:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-    get:
-      tags: [storage]
-      operationId: getStorageCards
-      summary: Storage (warehouse receipt) positions as cards
-      description: >
-        Card #648. Hidden by the client when the producer's trade unit has offersStorage = false.
-        Read from the ODS view.
-      responses:
-        '200':
-          description: Storage cards
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/StorageCard' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
-
-  /customers/{customerId}/dp-contracts:
-    parameters:
-      - $ref: '#/components/parameters/CustomerId'
-    get:
-      tags: [storage]
-      operationId: getDpContractCards
-      summary: Deferred-payment contract balances as cards
-      description: >
-        Card #648. Total count and bushels are sufficient; ticket-level detail is not required.
-        DP data exists only in production ODS; Dev and QA return an empty array by design.
-      responses:
-        '200':
-          description: DP contract cards
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/DpContractCard' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
-
-  /reference/commodities:
-    get:
-      tags: [reference]
-      operationId: getPlantingCommodities
-      summary: Crops selectable when adding a planting intention
-      description: Card #647. Scoped to the caller's trade units (trade-unit and trade-group scoped commodities apply).
-      responses:
-        '200':
-          description: Commodities
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Commodity' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+              schema: { $ref: "#/components/schemas/BudgetResult" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
 
 components:
   securitySchemes:
-    entraId:
+    azureAd:
       type: oauth2
-      description: >
-        Entra ID (tenant 1521f999-f722-4a4f-9747-166f93e9b0d1). Audience is the Origination API
-        app registration; the mobile client requests the environment-specific scope below.
-        APIM validates the token and passes it through unchanged.
+      description: |
+        Microsoft Entra ID, application-only (client credentials). The caller's managed identity must
+        be assigned the **`Origination.Application`** app role on the Origination API app registration
+        for the target environment. Enterprise applications require assignment, so an unassigned
+        identity receives `401` even with a structurally valid token.
+
+        Request the token for the environment's audience with the `/.default` scope, and send it as
+        `Authorization: Bearer <token>`. No client secret is involved.
       flows:
-        authorizationCode:
-          authorizationUrl: https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1/oauth2/v2.0/authorize
+        clientCredentials:
           tokenUrl: https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1/oauth2/v2.0/token
           scopes:
-            api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Mobile.Dev: Mobile access (Dev)
-            api://f3fcab2b-98c8-4622-86bd-c874d281b22a/Origination.Mobile.QA: Mobile access (QA)
-            api://e1458bcd-7212-4ea0-a836-7e08d03b5bbf/Origination.Mobile.Prod: Mobile access (Prod)
-
-  parameters:
-    CustomerId:
-      name: customerId
-      in: path
-      required: true
-      description: Origination customer id (dbo.Customer.Id)
-      schema: { type: integer, format: int64 }
-    CorrelationId:
-      name: X-Correlation-Id
-      in: header
-      required: false
-      description: Client-supplied correlation id; echoed on the response and propagated by APIM.
-      schema: { type: string, maxLength: 64 }
+            api://00078a10-3f3f-4d17-9350-fe90401125ae/.default: "Dev — application-only access"
 
   schemas:
-    Session:
-      type: object
-      required: [displayName, tradeUnits]
-      properties:
-        displayName: { type: string }
-        tradeUnits:
-          type: array
-          items: { $ref: '#/components/schemas/TradeUnit' }
-
-    TradeUnit:
-      type: object
-      required: [code, name, offersStorage]
-      properties:
-        code: { type: string }
-        name: { type: string }
-        offersStorage:
-          type: boolean
-          description: "Drives Storage tab visibility (card #648). Data source TBD."
-
-    CustomerSummary:
-      type: object
-      required: [id, name]
-      properties:
-        id: { type: integer, format: int64 }
-        scoularId: { type: string, nullable: true }
-        name: { type: string }
-        location: { type: string, nullable: true, description: City/state line for disambiguation }
-        tradeUnit: { type: string, nullable: true }
-
-    CustomerDetail:
-      type: object
-      required: [id, name, contacts]
-      properties:
-        id: { type: integer, format: int64 }
-        scoularId: { type: string, nullable: true }
-        name: { type: string }
-        farm: { type: string, nullable: true }
-        addressLine1: { type: string, nullable: true }
-        city: { type: string, nullable: true }
-        stateProvince: { type: string, nullable: true }
-        postalCode: { type: string, nullable: true }
-        tradeUnit: { type: string, nullable: true }
-        eSignEnabled: { type: boolean }
-        contacts:
-          type: array
-          description: Primary first. Phone/email are PII; never cache.
-          items: { $ref: '#/components/schemas/Contact' }
-
-    Contact:
-      type: object
-      required: [name, isPrimary]
-      properties:
-        name: { type: string }
-        phone: { type: string, nullable: true, description: "As stored (national or E.164); the client normalises it for tel: links" }
-        email: { type: string, nullable: true, format: email }
-        isPrimary: { type: boolean }
-
-    ProducerDetails:
-      type: object
-      required: [customerId, grainOnFarm]
-      properties:
-        customerId: { type: integer, format: int64 }
-        totalAcres: { type: number, nullable: true }
-        binCapacity: { type: number, nullable: true, description: Bushels }
-        grainOnFarm:
-          type: array
-          items: { $ref: '#/components/schemas/GrainOnFarmItem' }
-        modifiedBy: { type: string, nullable: true }
-        modifiedAt: { type: string, format: date-time, nullable: true }
-
-    GrainOnFarmItem:
-      type: object
-      required: [commodityCode]
-      properties:
-        commodityCode: { type: string }
-        bushelsOnHand: { type: number, nullable: true }
-        targetBushels: { type: number, nullable: true }
-        grade: { type: string, nullable: true, maxLength: 20 }
-
-    ProducerDetailsUpdate:
-      type: object
-      required: [clientRequestId, grainOnFarm]
-      properties:
-        clientRequestId: { type: string, format: uuid }
-        totalAcres: { type: number, nullable: true, minimum: 0, maximum: 10000000 }
-        binCapacity: { type: number, nullable: true, minimum: 0, maximum: 100000000 }
-        grainOnFarm:
-          type: array
-          maxItems: 50
-          items: { $ref: '#/components/schemas/GrainOnFarmItem' }
-        expectedModifiedAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: Optimistic concurrency; 409 if the record changed since the client read it.
-
-    RecentNotes:
-      type: object
-      required: [notes, hasMore]
-      properties:
-        pinned: { $ref: '#/components/schemas/Note' }
-        notes:
-          type: array
-          items: { $ref: '#/components/schemas/Note' }
-        hasMore: { type: boolean, description: True when older notes exist beyond the cap }
-
-    Note:
-      type: object
-      required: [id, customerId, content, createdBy, createdAt, isPinned]
-      properties:
-        id: { type: integer }
-        customerId: { type: integer, format: int64 }
-        subject: { type: string, nullable: true }
-        content: { type: string }
-        createdBy: { type: string, description: Short user name }
-        createdAt: { type: string, format: date-time }
-        isPinned: { type: boolean }
-
-    NoteCreate:
-      type: object
-      required: [clientRequestId, content]
-      properties:
-        clientRequestId: { type: string, format: uuid }
-        subject: { type: string, nullable: true, maxLength: 200 }
-        content: { type: string, minLength: 1, maxLength: 4000 }
-        capturedAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: When the note was written on the device (may predate sync)
-
-    ContractCard:
-      type: object
-      required: [id, contractNumber]
-      properties:
-        id: { type: integer, format: int64 }
-        contractNumber: { type: string }
-        commodityCode: { type: string, nullable: true }
-        commodityDescription: { type: string, nullable: true }
-        quantity: { type: number, nullable: true }
-        unit: { type: string, nullable: true }
-        price: { type: number, nullable: true }
-        priceTypeCode: { type: string, nullable: true, description: "P = priced, U = unpriced, D = deferred" }
-        deliveryStart: { type: string, format: date-time, nullable: true }
-        deliveryEnd: { type: string, format: date-time, nullable: true }
-        specialType: { type: string, nullable: true }
-        status: { type: string }
-
-    ContractDetail:
-      allOf:
-        - $ref: '#/components/schemas/ContractCard'
+    VendorPayload:
+      description: |
+        A BarChart response, forwarded exactly as received. Either the vendor envelope (an object with
+        a `results` array) or a bare array of result objects is accepted. Fields are selected on our
+        side, so unrecognised vendor fields are ignored rather than rejected — no transformation is
+        needed or wanted in the pipeline.
+      oneOf:
         - type: object
-          properties:
-            cropYear: { type: integer, nullable: true }
-            openBalanceQuantity: { type: number, nullable: true }
-            settledQuantity: { type: number, nullable: true }
-            pricedQuantity: { type: number, nullable: true }
-            signed: { type: boolean }
-            customerConfirmStatus: { type: string, nullable: true }
-            basisLocation: { type: string, nullable: true }
-            marketZone: { type: string, nullable: true }
-            contractDate: { type: string, format: date-time, nullable: true }
-            pricingLines:
-              type: array
-              items: { $ref: '#/components/schemas/PricingLine' }
+          additionalProperties: true
+          example:
+            status: { code: 200 }
+            results:
+              - symbol: "ZCPQ26-27300-6916.CM"
+                lastPrice: "4.41"
+                tradeTimestamp: "2026-07-22T12:13:57-05:00"
+        - type: array
+          items:
+            type: object
+            additionalProperties: true
 
-    PricingLine:
+    QuoteBatch:
       type: object
+      required: [batchNumber, symbolCount, symbolsCsv]
       properties:
-        quantity: { type: number, nullable: true }
-        price: { type: number, nullable: true }
-        status: { type: string, nullable: true }
-        marketMonth: { type: string, nullable: true }
+        batchNumber: { type: integer, description: 1-based batch number., example: 1 }
+        symbolCount: { type: integer, description: Symbols in this batch., example: 100 }
+        symbolsCsv:
+          type: string
+          description: Comma-separated symbols, ready to pass to the vendor's quote endpoint.
+          example: "ZCPQ26-27300-6916.CM,ZCPQ26F-82259-15194.CM"
 
-    TicketSummary:
+    InstrumentLoadResult:
       type: object
-      required: [groups, totalTickets, totalBushels]
+      required: [rowsLoaded]
       properties:
-        totalTickets: { type: integer }
-        totalBushels: { type: number }
-        groups:
-          type: array
-          items: { $ref: '#/components/schemas/TicketGroup' }
+        rowsLoaded:
+          type: integer
+          description: Catalog rows inserted or updated. Zero across a whole run is worth alerting on.
+          example: 387
 
-    TicketGroup:
+    QuoteLoadResult:
       type: object
-      required: [key, ticketCount, bushels]
+      required: [quotesUpserted, unknownSymbolCount, snapshotDate]
       properties:
-        key: { type: string, description: "Contract number, or the literal 'unapplied'" }
-        contractId: { type: integer, format: int64, nullable: true }
-        commodityCode: { type: string, nullable: true }
-        ticketCount: { type: integer }
-        bushels: { type: number }
-        lastTicketDate: { type: string, format: date-time, nullable: true }
+        quotesUpserted:
+          type: integer
+          description: Current-price rows written.
+          example: 100
+        unknownSymbolCount:
+          type: integer
+          description: Quotes skipped because the symbol is absent from the catalog.
+          example: 0
+        snapshotDate:
+          type: string
+          format: date
+          description: Business date the day's history was recorded under.
+          example: "2026-08-11"
 
-    PlantingIntention:
+    ApplyBidsResult:
       type: object
-      required: [id, customerId, plantingYear, crop, acres]
+      required: [rowsAffected]
       properties:
-        id: { type: integer }
-        customerId: { type: integer, format: int64 }
-        plantingYear: { type: integer }
-        crop: { type: string }
-        acres: { type: integer }
-        tradeUnit: { type: string }
-        modifiedAt: { type: string, format: date-time, nullable: true }
+        rowsAffected:
+          type: integer
+          description: Bid cells written or pruned. Zero is normal on a run where nothing changed.
+          example: 42
+        enabled:
+          type: boolean
+          description: False when publishing is switched off in this environment; the call succeeded and wrote nothing.
+          example: true
 
-    PlantingIntentionCreate:
+    DeactivateResult:
       type: object
-      required: [clientRequestId, plantingYear, crop, acres]
+      required: [rowsDeactivated]
       properties:
-        clientRequestId: { type: string, format: uuid }
-        plantingYear: { type: integer, minimum: 2000, maximum: 2100 }
-        crop: { type: string, maxLength: 20, description: Commodity code from /reference/commodities }
-        acres: { type: integer, minimum: 0, maximum: 10000000 }
+        rowsDeactivated: { type: integer, example: 12 }
 
-    PlantingIntentionUpdate:
+    PurgeResult:
       type: object
-      required: [clientRequestId, acres]
+      required: [rowsRemoved]
       properties:
-        clientRequestId: { type: string, format: uuid }
-        crop: { type: string, maxLength: 20, nullable: true }
-        acres: { type: integer, minimum: 0, maximum: 10000000 }
-        expectedModifiedAt: { type: string, format: date-time, nullable: true }
+        rowsRemoved:
+          type: integer
+          description: Rows removed across the audit and price-history tables.
+          example: 1500
 
-    StorageCard:
+    BudgetResult:
       type: object
-      required: [id, receiptNumber, crop, bushels]
+      required: [monthToDateCalls, remainingCalls, abortRecommended]
       properties:
-        id: { type: string }
-        receiptNumber: { type: string }
-        crop: { type: string }
-        bushels: { type: number }
-        locationCity: { type: string, nullable: true }
-        locationState: { type: string, nullable: true }
-        storageStartDate: { type: string, format: date-time, nullable: true }
-        storageRate: { type: number, nullable: true }
-        receivableAmount: { type: number, nullable: true }
-
-    DpContractCard:
-      type: object
-      required: [id, contractNumber, crop]
-      properties:
-        id: { type: string }
-        contractNumber: { type: string }
-        crop: { type: string }
-        bushels: { type: number, nullable: true }
-        quantity: { type: number }
-        quantityUom: { type: string }
-        statusDescription: { type: string }
-        storageStartDate: { type: string, format: date-time, nullable: true }
-        paidThruDate: { type: string, format: date-time, nullable: true }
-        receivableAmount: { type: number }
-
-    Commodity:
-      type: object
-      required: [code, name]
-      properties:
-        code: { type: string }
-        name: { type: string }
-        plantingCategory: { type: string, nullable: true }
+        monthToDateCalls: { type: integer, example: 4820 }
+        remainingCalls:
+          type: integer
+          description: Negative once the cap has been passed.
+          example: 245180
+        abortRecommended:
+          type: boolean
+          description: True at 80% of the cap — a signal to stop non-essential loads.
+          example: false
 
     ApiError:
       type: object
-      description: Matches the backend ApiErrorResponse produced by GlobalExceptionHandler.
-      required: [code, message, traceId, timestamp]
+      description: Standard error envelope used across the Origination API.
       properties:
-        code: { type: string }
-        message: { type: string }
-        traceId: { type: string }
-        timestamp: { type: string, format: date-time }
+        error:
+          type: object
+          properties:
+            code: { type: string, example: VALIDATION_ERROR }
+            message: { type: string, example: "One or more validation errors occurred." }
+            traceId:
+              type: string
+              description: Quote this when reporting a problem — it ties directly to our logs.
+            timestamp: { type: string, format: date-time }
+            instance: { type: string, example: /api/barchart-ingest/quotes }
 
   responses:
-    BadRequest:
-      description: Validation failed
+    ValidationError:
+      description: |
+        The request was rejected — an empty body, a body that isn't JSON, or a parameter out of range.
+        **Do not retry**; it will fail identically.
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
+          schema: { $ref: "#/components/schemas/ApiError" }
     Unauthorized:
-      description: Missing or invalid token
+      description: |
+        No token, an expired or malformed token, or the caller's identity has not been assigned the
+        `Origination.Application` app role. Do not retry until the cause is fixed.
     Forbidden:
-      description: Token lacks the mobile scope, wrong client, or trade unit not entitled
+      description: Authenticated, but the token lacks the role this endpoint requires. Do not retry.
+    RateLimited:
+      description: Too many requests. Honour the `Retry-After` header, then retry.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema: { type: integer }
+    ServerError:
+      description: Our side failed. Safe to retry with backoff — every endpoint is idempotent.
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
-    NotFound:
-      description: Not found, or outside the caller's entitlement
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
-    Conflict:
-      description: Record changed since the client read it (expectedModifiedAt mismatch)
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
-    TooManyRequests:
-      description: Rate limit exceeded (APIM or backend)
-    UpstreamUnavailable:
-      description: ODS database unavailable or waking from auto-pause; retry shortly
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
+          schema: { $ref: "#/components/schemas/ApiError" }

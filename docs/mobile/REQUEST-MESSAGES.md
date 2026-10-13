@@ -7,14 +7,14 @@ Every message cites the same two documents so each team can see which requiremen
 | Short name used below | Document |
 |---|---|
 | **the Spec** | `SEC-ARCH-BURDI-001` v1.0, *Security Architecture Specification: Burdi Design Pattern* (IT Security / Architecture, 2026-03-25). Repo copy: [reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md](reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md). Section numbers below (§3.3, §4.2, etc.) refer to it |
-| **the Guide** | [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) v1.7, Infrastructure's implementation of the Spec for Scoular: Static Web App → APIM (App Gateway + WAF in front) → private App Service |
+| **the Guide** | [developer-docs/EXTERNAL-SPA-GUIDE.md](reference/EXTERNAL-SPA-GUIDE.md) v1.7, Infrastructure's implementation of the Spec for Scoular: Static Web App → APIM (App Gateway + WAF in front) → private App Service |
 
 Links assume the branch `docs_MobileArchitecturePlan`; update them once merged to `main`.
 
 - Spec (repo copy): https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/mobile/reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md
-- Guide: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/developer-docs/EXTERNAL-SPA-GUIDE.md
-- OpenAPI contract: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/openapi/specification.yaml
-- Workflow/offline summary: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/openapi/README.md
+- Guide: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/mobile/reference/EXTERNAL-SPA-GUIDE.md
+- OpenAPI contract: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/openapi/mobile/specification.yaml
+- Workflow/offline summary: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/openapi/mobile/README.md
 - Architecture plan: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/mobile/MOBILE-ARCHITECTURE-PLAN.md
 - ADR-001 (topology decision + exceptions): https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/adr/ADR-001-mobile-surface-topology.md
 
@@ -32,7 +32,7 @@ Originator's phone (Entra ID, Conditional Access: compliant device)
   → Azure SQL over private endpoint, managed identity              Spec Layer 6
 ```
 
-The App Service is never exposed to the internet. The only internet-reachable API component is APIM, and it exposes only the 16 operations in `openapi/specification.yaml`. Each message below explains what we need from your team and which Spec requirement it satisfies.
+The App Service is never exposed to the internet. The only internet-reachable API component is APIM, and it exposes only the 16 operations in `openapi/mobile/specification.yaml`. Each message below explains what we need from your team and which Spec requirement it satisfies.
 
 ---
 
@@ -57,7 +57,7 @@ Why it matters: the Spec requires the business layer to *re-validate caller perm
 
 | Item | What to do | Why (Spec reference) |
 |---|---|---|
-| Import | Import `openapi/specification.yaml` via APIOps under a path prefix you assign (we assumed `/external/origination/v1`; tell us the real one and we update the spec's `servers`) | §3.3 API versioning: versioned endpoints are mandatory; the Guide's request process step 4 |
+| Import | Import `openapi/mobile/specification.yaml` via APIOps under a path prefix you assign (we assumed `/external/origination/v1`; tell us the real one and we update the spec's `servers`) | §3.3 API versioning: versioned endpoints are mandatory; the Guide's request process step 4 |
 | Backend URL | `https://app-origination-qa-eus.azurewebsites.net/api/mobile/v1` and `https://app-origination-eus.azurewebsites.net/api/mobile/v1`, including the `/api/mobile/v1` suffix so operation templates map 1:1 with no rewrite policy | §3.3 backend routing via private endpoint only; a 1:1 mapping lets our CI drift test prove the APIM allow-list equals the mobile surface |
 | `validate-jwt` | Issuer: tenant `1521f999-f722-4a4f-9747-166f93e9b0d1`; audience: the Origination API app registration for that environment (QA `f3fcab2b-98c8-4622-86bd-c874d281b22a`, Prod `e1458bcd-7212-4ea0-a836-7e08d03b5bbf`); required scope `Origination.Mobile.QA` / `Origination.Mobile.Prod` | §3.3 mandatory policy "validate-jwt on every inbound request"; §3.2 per-client identity and scoped claims |
 | `rate-limit-by-key` | Keyed on the token's `oid` claim; start at 120 calls/minute per user, we will tune | §3.3 mandatory policy; §3.2 rate limiting on the external surface |

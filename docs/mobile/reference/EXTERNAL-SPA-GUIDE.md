@@ -1,3 +1,11 @@
+> **Repository copy.** `developer-docs/EXTERNAL-SPA-GUIDE.md` v1.7 (2026-04-21), owned by the
+> Infrastructure team and synced from IT/infrastructure-as-code. The sync of 2026-10-08 (commit
+> `ddd8dbf6`) removed it from `developer-docs/` while `START-HERE.md` and `developer-docs/CLAUDE.md`
+> still reference it and still prescribe the same pattern. Restored verbatim from git history so the
+> mobile plan links resolve. Replace with the Infrastructure team's current version once they confirm
+> where it now lives. One local edit: the openapi paths below now read `openapi/mobile/` because the
+> root `openapi/` folder is used by the BarChart ingestion contract.
+
 # Origination - External SPA Guide
 
 This guide covers external SPA accessibility for the Origination application. External apps are delivered as separate Angular SPAs on Azure Static Web Apps, with API traffic routed through Azure API Management (APIM) -- the App Service remains fully private.
@@ -64,7 +72,7 @@ When you decide to add external SPA support, produce an **OpenAPI specification*
 
 ### What to Produce
 
-Create an `openapi/` directory in your repo root:
+Create an `openapi/mobile/` directory in your repo root:
 
 ```
 openapi/
@@ -136,7 +144,7 @@ components:
 
 ### README.md (Workflow and Offline Summary)
 
-Include a README in the `openapi/` directory summarizing workflows and offline behavior — information that doesn't fit in the OpenAPI spec:
+Include a README in the `openapi/mobile/` directory summarizing workflows and offline behavior — information that doesn't fit in the OpenAPI spec:
 
 | Workflow | Description | Offline Behavior |
 |----------|-------------|------------------|
@@ -160,9 +168,9 @@ Include a README in the `openapi/` directory summarizing workflows and offline b
 ### Key Guidelines
 
 - **Separate build**: Create a separate Angular project or use a build configuration that only includes external routes/components. Do NOT serve the full desktop app.
-- **MSAL authentication**: Same Entra ID tenant (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Uses a dedicated External SPA app registration (`Origination External - {Env}`). Use the same `provideAppInitializer` bootstrap pattern documented in the main [CLAUDE.md](CLAUDE.md) **Angular MSAL Setup** section — it applies here identically. The only practical difference: because external SPAs typically have **no public routes**, nearly every cold start lands in Case C1 (`ssoSilent`) or Case C2 (`loginRedirect`) rather than Case B (cached account). That's expected — filter App Insights `customEvents` on `name startswith "MSAL.Bootstrap"` to see the distribution for your app.
+- **MSAL authentication**: Same Entra ID tenant (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Uses a dedicated External SPA app registration (`Origination External - {Env}`). Use the same `provideAppInitializer` bootstrap pattern documented in the main [CLAUDE.md](../../../developer-docs/CLAUDE.md) **Angular MSAL Setup** section — it applies here identically. The only practical difference: because external SPAs typically have **no public routes**, nearly every cold start lands in Case C1 (`ssoSilent`) or Case C2 (`loginRedirect`) rather than Case B (cached account). That's expected — filter App Insights `customEvents` on `name startswith "MSAL.Bootstrap"` to see the distribution for your app.
 - **API base URL**: Varies by environment (see table below). The Angular app stores the base URL and appends each endpoint path (e.g., `${environment.apiBaseUrl}/transactions/transfer`).
-- **App Insights**: Use the `AppInsightsService` wrapper + `forwardMsalEventsToAppInsights` helper documented in [CLAUDE.md](CLAUDE.md) (sections **Angular (Client-Side)** and **CSP Allow-List for MSAL and App Insights**). The external SPA writes to the same App Insights instance as the desktop app — tag-via-`ai.cloud.role` distinguishes the two in queries (e.g., `cloud_RoleName startswith "origination-external-spa"`).
+- **App Insights**: Use the `AppInsightsService` wrapper + `forwardMsalEventsToAppInsights` helper documented in [CLAUDE.md](../../../developer-docs/CLAUDE.md) (sections **Angular (Client-Side)** and **CSP Allow-List for MSAL and App Insights**). The external SPA writes to the same App Insights instance as the desktop app — tag-via-`ai.cloud.role` distinguishes the two in queries (e.g., `cloud_RoleName startswith "origination-external-spa"`).
 - **Offline support**: Consider IndexedDB for queueing write operations and service workers for caching read-heavy data.
 
 ### API Base URL by Environment
@@ -290,7 +298,7 @@ Deployment uses GitHub Actions with the SWA CLI and OIDC workload identity (same
 
 Steps to request external access for Origination:
 
-1. **Create the `openapi/` directory** with your OpenAPI spec and commit to your repo
+1. **Create the `openapi/mobile/` directory** with your OpenAPI spec and commit to your repo
 2. **Notify the Infrastructure team** (they will add `externalApp` config to app-config.json)
 3. **Infrastructure creates**: SWA resource, External SPA app registration, WAF policy
 4. **Data Integrations creates**: APIM operations from your endpoint spec

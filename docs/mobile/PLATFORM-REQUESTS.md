@@ -1,6 +1,6 @@
 # Mobile Component — Platform and Team Requests
 
-Requests the Origination app team must make to other teams, grouped by owner, with the artifact each team needs from us. Start the Data Integrations and Identity items first; they are the longest lead times. Source: [MOBILE-ARCHITECTURE-PLAN.md](MOBILE-ARCHITECTURE-PLAN.md) §5–§6 and [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) "Request Process".
+Requests the Origination app team must make to other teams, grouped by owner, with the artifact each team needs from us. Start the Data Integrations and Identity items first; they are the longest lead times. Source: [MOBILE-ARCHITECTURE-PLAN.md](MOBILE-ARCHITECTURE-PLAN.md) §5–§6 and [developer-docs/EXTERNAL-SPA-GUIDE.md](reference/EXTERNAL-SPA-GUIDE.md) "Request Process".
 
 Already provisionable per [START-HERE.md](../../developer-docs/START-HERE.md): `swa-origination-dev-eus`, `swa-origination-qa-eus`, `swa-origination-eus` and the `ext-origination-*` domains exist "if enabled". The ask is to enable them, not design new resources.
 
@@ -8,7 +8,7 @@ Already provisionable per [START-HERE.md](../../developer-docs/START-HERE.md): `
 
 | # | Request | We provide | Status |
 |---|---|---|---|
-| E1 | Set `externalApp.enabled` for Origination in app-config.json; create the three Static Web Apps with custom domains: dev `ext-origination-dev.scoular.com`; QA and Prod split-horizon on `origination-qa.scoular.com` / `origination.scoular.com` | `openapi/specification.yaml`, `openapi/README.md`, link to ADR-001 | |
+| E1 | Set `externalApp.enabled` for Origination in app-config.json; create the three Static Web Apps with custom domains: dev `ext-origination-dev.scoular.com`; QA and Prod split-horizon on `origination-qa.scoular.com` / `origination.scoular.com` | `openapi/mobile/specification.yaml`, `openapi/mobile/README.md`, link to ADR-001 | |
 | E2 | WAF policy on Application Gateway for the APIM path prefix | The spec (for the prefix) | |
 | E3 | **Dedicated** SPA app registration `Origination External - {Env}` per environment: SPA platform, redirect URIs = SWA custom domain plus `http://localhost:4200`, pre-authorised for scope `Origination.Mobile.{Env}`. Resolve the conflict between EXTERNAL-SPA-GUIDE.md (dedicated) and APP-REGISTRATIONS.md "External SPA" section (reuse) and correct the losing document | Redirect URI list | |
 | E4 | Dev App Service `app-origination-dev-eus`: add `https://ext-origination-dev.scoular.com` to the `AllowedOrigins` app setting (dev only; QA/Prod go through APIM) | Setting name `AllowedOrigins` | |
@@ -21,7 +21,7 @@ Already provisionable per [START-HERE.md](../../developer-docs/START-HERE.md): `
 
 | # | Request | We provide | Status |
 |---|---|---|---|
-| E7 | Import `openapi/specification.yaml` via APIOps. Backend web-service URL `https://app-origination-{env}-eus.azurewebsites.net/api/mobile/v1` so operation templates map 1:1 with no rewrite policy. Policies: `validate-jwt` (audience = Origination API app registration, required scope `Origination.Mobile.{Env}`), `rate-limit-by-key` keyed on the `oid` claim, `quota-by-key`, `set-header X-Correlation-Id` (pass through the client's value if present), strip server and `X-Forwarded-*` headers outbound, CORS for the SWA origin, no response caching on operations returning producer data | Spec + README | |
+| E7 | Import `openapi/mobile/specification.yaml` via APIOps. Backend web-service URL `https://app-origination-{env}-eus.azurewebsites.net/api/mobile/v1` so operation templates map 1:1 with no rewrite policy. Policies: `validate-jwt` (audience = Origination API app registration, required scope `Origination.Mobile.{Env}`), `rate-limit-by-key` keyed on the `oid` claim, `quota-by-key`, `set-header X-Correlation-Id` (pass through the client's value if present), strip server and `X-Forwarded-*` headers outbound, CORS for the SWA origin, no response caching on operations returning producer data | Spec + README | |
 | E8 | Confirm **token pass-through**: the user's token (audience = Origination API app registration) is forwarded unchanged. No token exchange. | — | |
 
 ## Identity / Security

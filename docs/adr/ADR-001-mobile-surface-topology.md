@@ -5,7 +5,7 @@
 | **Status** | Proposed (awaiting Phase 0 decisions and Solutions Architect / IT Security countersign) |
 | **Date** | 2026-09-15 |
 | **Deciders** | Origination app team; IT Security; Solutions Architect (countersign) |
-| **Related** | [docs/mobile/MOBILE-ARCHITECTURE-PLAN.md](../mobile/MOBILE-ARCHITECTURE-PLAN.md) · [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) · [SEC-ARCH-BURDI-001 v1.0](../mobile/reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md) (repo copy) · [SECURITY-REVIEWS/ACCEPTED-RISKS.md](../../SECURITY-REVIEWS/ACCEPTED-RISKS.md) |
+| **Related** | [docs/mobile/MOBILE-ARCHITECTURE-PLAN.md](../mobile/MOBILE-ARCHITECTURE-PLAN.md) · [developer-docs/EXTERNAL-SPA-GUIDE.md](../mobile/reference/EXTERNAL-SPA-GUIDE.md) · [SEC-ARCH-BURDI-001 v1.0](../mobile/reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md) (repo copy) · [SECURITY-REVIEWS/ACCEPTED-RISKS.md](../../SECURITY-REVIEWS/ACCEPTED-RISKS.md) |
 
 ## Context
 
@@ -16,7 +16,7 @@ Facts about the codebase that constrain the decision:
 - `GrainOriginatorPortal.Api` is a single ASP.NET Core Web host containing 25 controllers (128 endpoints), all 21 application services, DTOs, mappers, filters and middleware. `GrainOriginatorPortal.Infrastructure` (DbContexts, repositories, entities) is a clean leaf with no dependency on the host. There is no separate business-logic assembly.
 - The desktop Angular SPA builds into the API's `wwwroot` and is served by the same App Service, which is private-only (VPN/LAN).
 - Authorization today is coarse: JWT validation plus `Admin`/`User` roles; no scope (`scp`) check; trade-unit entitlements are documented as a UX filter, not an access boundary (`docs/application-context/SECURITY-MODEL.md`, accepted risks AR-01…AR-05, each with an "exposed to external users" re-evaluation trigger).
-- The infrastructure team's implemented pattern (EXTERNAL-SPA-GUIDE.md) is: external Angular SPA on a Static Web App → APIM (App Gateway + WAF in front) → private endpoint → the **existing** App Service. The minimal external surface is the APIM operation allowlist imported from `openapi/specification.yaml`. The infrastructure template does not model two App Services for one application.
+- The infrastructure team's implemented pattern (EXTERNAL-SPA-GUIDE.md) is: external Angular SPA on a Static Web App → APIM (App Gateway + WAF in front) → private endpoint → the **existing** App Service. The minimal external surface is the APIM operation allowlist imported from `openapi/mobile/specification.yaml`. The infrastructure template does not model two App Services for one application.
 - Burdi, the app the spec is named after, did **not** implement the spec's separate external service or APIM inbound; its driver PWA is served from the same App Service. There is no working reference in the org.
 
 ## Options considered
@@ -36,7 +36,7 @@ New Web host, own App Service per environment, own user-assigned managed identit
 ### Option 3 — Hybrid: separate assembly in the existing host, structured for a later host split (chosen)
 1. Extract business logic into a new class library `GrainOriginatorPortal.Application` (services, DTOs, mappers, exceptions, pure authorization helpers), moved mechanically with namespaces preserved so the existing 376 tests compile unchanged.
 2. Add `GrainOriginatorPortal.Mobile`, a class library holding only the mobile controllers, mobile DTOs, `MobileAccess` policy, deny-not-filter trade-unit entitlement attribute, audit filter and rate-limit registration. It references `Application` only; a test asserts it never references `Infrastructure`.
-3. The existing host loads the Mobile assembly with `AddApplicationPart`; APIM exposes only the operations listed in `openapi/specification.yaml`; a drift test keeps the two equal.
+3. The existing host loads the Mobile assembly with `AddApplicationPart`; APIM exposes only the operations listed in `openapi/mobile/specification.yaml`; a drift test keeps the two equal.
 4. A later host split becomes a new `Mobile.Host/Program.cs` plus removing the `AddApplicationPart` line, with no controller changes.
 
 ## Decision
@@ -62,7 +62,7 @@ The four exceptions are submitted to asksecurity@scoular.com in one package toge
 
 - The mobile subset becomes the first surface in Origination with real object-level authorization: scope and client-id checks, trade-unit entitlement as a deny boundary, author-only mutations, and audited writes. AR-01 and AR-02 are narrowed for that subset; the desktop model is unchanged.
 - The `Application` extraction is a repository-wide mechanical change and must be scheduled ahead of feature work and merged in isolation (no behavioural refactors in the same PR).
-- `openapi/specification.yaml` becomes a source of truth: it drives APIM configuration, the generated mobile TypeScript client, and a CI drift test against the live `api/mobile/v1` routes.
+- `openapi/mobile/specification.yaml` becomes a source of truth: it drives APIM configuration, the generated mobile TypeScript client, and a CI drift test against the live `api/mobile/v1` routes.
 - EF migrations continue to run only from the desktop deploy workflow. If the host split happens, this stays true and must be re-stated in that ADR.
 - Two open platform questions can still change this decision and are tracked in the plan: whether APIM passes the user token through unchanged (required), and whether a dedicated external SPA app registration is created (EXTERNAL-SPA-GUIDE.md) or the desktop one reused (APP-REGISTRATIONS.md). The `azp` isolation depends on the dedicated registration.
 

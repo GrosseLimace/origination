@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": "origination/infra — authored by hand",
+    "description": "Origination Workbench operations workbook (Azure Monitor Workbook). One shared workbook that spans Dev, QA and Production through an Environment picker. The workbook body lives in origination-workbench.workbook.json and is passed in as the serializedData parameter by the deploy workflow."
+  },
+  "parameters": {
+    "workbookDisplayName": {
+      "type": "string",
+      "defaultValue": "Origination Workbench — Operations",
+      "metadata": {
+        "description": "Name shown in Azure Monitor > Workbooks."
+      }
+    },
+    "serializedData": {
+      "type": "string",
+      "metadata": {
+        "description": "The workbook content (Notebook/1.0 JSON) as a single string. The deploy workflow reads origination-workbench.workbook.json and injects it here — do not hand-maintain this value."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region. Defaults to the target resource group location."
+      }
+    },
+    "environmentTag": {
+      "type": "string",
+      "defaultValue": "Dev",
+      "allowedValues": [
+        "Dev",
+        "QA",
+        "Prod"
+      ],
+      "metadata": {
+        "description": "Value for the Environment resource tag. The workbook is hosted in one resource group but reads every environment the viewer can see."
+      }
+    }
+  },
+  "variables": {
+    "workbookId": "[guid(resourceGroup().id, 'origination-workbench-operations')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/workbooks",
+      "apiVersion": "2023-06-01",
+      "name": "[variables('workbookId')]",
+      "location": "[parameters('location')]",
+      "kind": "shared",
+      "tags": {
+        "Application": "Origination",
+        "CreatedBy": "CEgr",
+        "Environment": "[parameters('environmentTag')]",
+        "IaC": "True",
+        "Team": "Full Stack Development"
+      },
+      "properties": {
+        "displayName": "[parameters('workbookDisplayName')]",
+        "serializedData": "[parameters('serializedData')]",
+        "version": "1.0",
+        "category": "workbook",
+        "sourceId": "azure monitor",
+        "description": "Cross-environment operations view for the Origination Workbench: deployments, Logic App runs, background jobs, open alerts, integration health, and links into App Insights and the in-app Usage Dashboard."
+      }
+    }
+  ],
+  "outputs": {
+    "workbookResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/workbooks', variables('workbookId'))]"
+    }
+  }
+}

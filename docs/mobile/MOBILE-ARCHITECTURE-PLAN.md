@@ -5,8 +5,8 @@
 | **Status** | Phase 1 (Contract) — scope fixed by cards #641–#651 on 2026-09-23; OpenAPI draft written |
 | **Date** | 2026-09-15, updated 2026-09-23 |
 | **Owner** | Origination app team |
-| **Governing docs** | [SEC-ARCH-BURDI-001 v1.0](reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md) (Security Architecture Specification: Burdi Design Pattern, IT Security, 2026-03-25; repo copy); [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md) v1.7 |
-| **Companion docs** | [MEETING-QUESTIONS.md](MEETING-QUESTIONS.md) · [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) · [REQUEST-MESSAGES.md](REQUEST-MESSAGES.md) · [ADR-001](../adr/ADR-001-mobile-surface-topology.md) · [openapi/](../../openapi/README.md) |
+| **Governing docs** | [SEC-ARCH-BURDI-001 v1.0](reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md) (Security Architecture Specification: Burdi Design Pattern, IT Security, 2026-03-25; repo copy); [developer-docs/EXTERNAL-SPA-GUIDE.md](reference/EXTERNAL-SPA-GUIDE.md) v1.7 |
+| **Companion docs** | [MEETING-QUESTIONS.md](MEETING-QUESTIONS.md) · [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) · [REQUEST-MESSAGES.md](REQUEST-MESSAGES.md) · [ADR-001](../adr/ADR-001-mobile-surface-topology.md) · [openapi/mobile/](../../openapi/mobile/README.md) |
 
 ## 1. Purpose
 
@@ -27,9 +27,9 @@ External user (company-managed device)
   → App Service (fully private, never internet-exposed)
 ```
 
-Scoular's edge is **App Gateway + WAF**, not Front Door. The spec's "External API Service" layer is realised by **APIM's operation allowlist**, imported from the app team's `openapi/specification.yaml`: the only internet-reachable API component is the APIM gateway, which has no DB access and exposes only the listed operations. That interpretation is recorded in [ADR-001](../adr/ADR-001-mobile-surface-topology.md) and needs a Solutions Architect countersign.
+Scoular's edge is **App Gateway + WAF**, not Front Door. The spec's "External API Service" layer is realised by **APIM's operation allowlist**, imported from the app team's `openapi/mobile/specification.yaml`: the only internet-reachable API component is the APIM gateway, which has no DB access and exposes only the listed operations. That interpretation is recorded in [ADR-001](../adr/ADR-001-mobile-surface-topology.md) and needs a Solutions Architect countersign.
 
-The app team's deliverables under the guide are `openapi/specification.yaml` (OpenAPI 3.0, external endpoints only, paths relative to the APIM prefix) and `openapi/README.md` (workflow table with an *Offline Behavior* column). Dev has no APIM: the dev SWA calls the App Service directly and needs CORS.
+The app team's deliverables under the guide are `openapi/mobile/specification.yaml` (OpenAPI 3.0, external endpoints only, paths relative to the APIM prefix) and `openapi/mobile/README.md` (workflow table with an *Offline Behavior* column). Dev has no APIM: the dev SWA calls the App Service directly and needs CORS.
 
 ### 2.1 Burdi is not a precedent for the spec
 
@@ -90,7 +90,7 @@ What this changes versus the original assumptions:
 - **ODS reads are in scope** for four of eight screens, so the serverless cold-start risk applies to the core experience. The contract returns 503 with a retry hint and the client serves cache first.
 - **Reminders and bid view are out.** They were candidates in the first draft and are not on any card.
 - **A new data fact is required:** which trade units offer storage (card #648). Nothing in the system records this today; meeting question 13.
-- **Contract:** [openapi/specification.yaml](../../openapi/specification.yaml), 16 operations, and the workflow/offline table in [openapi/README.md](../../openapi/README.md).
+- **Contract:** [openapi/mobile/specification.yaml](../../openapi/mobile/specification.yaml), 16 operations, and the workflow/offline table in [openapi/mobile/README.md](../../openapi/mobile/README.md).
 
 ## 4. Target topology (ADR-001, Option 3: hybrid, split-ready)
 
@@ -141,7 +141,7 @@ The mobile surface is the first place where "entitlement is a UX filter" is unac
 - **Ownership on mutations.** Mobile note edit and delete are author-only via a new Application method. The desktop path is untouched (AR-01 explicitly rejects author-only for desktop; see meeting question 10).
 - **Audit filter.** `MobileAuditActionFilter` on every mobile mutation emits `AUDIT_{CREATE|UPDATE|DELETE}` with user `oid`, `azp`, correlation id (from the existing `CorrelationIdMiddleware`), entity type and id, and before/after values captured through a scoped `IAuditScope`. PII fields are hashed.
 - **Rate limit and request size.** A "mobile" sliding-window partition keyed by `oid`, applied by convention; `[RequestSizeLimit]`, `[Consumes("application/json")]`, DTO `[MaxLength]`/`[Range]`. APIM is the primary control; this is defence in depth.
-- **Convention tests.** Convert `ControllerAuthorizationTests.cs` from a hand-maintained list to reflection over both assemblies. Add: every Mobile controller has `MobileAccess`, an `api/mobile/v1` route, the audit filter on non-GET actions, and the trade-unit attribute wherever `customerId` or `tradeUnits` appear; the Mobile assembly does not reference Infrastructure; every non-mobile controller ends up with `DesktopAccess`; an **OpenAPI drift test** diffs `{method, template}` pairs under `api/mobile/v1` against `openapi/specification.yaml` in both directions (`Microsoft.OpenApi` is already referenced).
+- **Convention tests.** Convert `ControllerAuthorizationTests.cs` from a hand-maintained list to reflection over both assemblies. Add: every Mobile controller has `MobileAccess`, an `api/mobile/v1` route, the audit filter on non-GET actions, and the trade-unit attribute wherever `customerId` or `tradeUnits` appear; the Mobile assembly does not reference Infrastructure; every non-mobile controller ends up with `DesktopAccess`; an **OpenAPI drift test** diffs `{method, template}` pairs under `api/mobile/v1` against `openapi/mobile/specification.yaml` in both directions (`Microsoft.OpenApi` is already referenced).
 
 ### 5.2 Identity and tokens
 
@@ -155,7 +155,7 @@ The mobile surface is the first place where "entitlement is a UX filter" is unac
 
 - **Second project in `client/angular.json`** (`newProjectRoot` is already `projects`): `origination-mobile`, root `client/projects/mobile`, prefix `mob`, output `dist/mobile` — never `wwwroot`. Rejected: a sibling folder (duplicate toolchain and `@it/design-system` registry install) and Nx (overkill at two apps).
 - **Shared layer by moving, not copying:** `src/app/models` → `client/libs/models`; `src/app/shared/utils` and the dumb components → `client/libs/shared`; `src/testing` → `client/libs/testing`. Remap `@models`, `@shared/*` and `@testing/*` in `client/tsconfig.json` so the desktop app compiles unchanged. Split the Tailwind `@theme` brand tokens out of `client/src/styles.css` into `client/libs/styles/tokens.css`. ESLint `no-restricted-imports` boundaries: mobile imports `@libs/*` and `@mobile/*` only; desktop may not import `@mobile/*`.
-- **Generated API client** from `openapi/specification.yaml` via `ng-openapi-gen` into `projects/mobile/src/app/api/generated/` (committed; CI regenerates and fails on diff). The mobile app has no `ApiService`, so it cannot call anything outside the allowlist.
+- **Generated API client** from `openapi/mobile/specification.yaml` via `ng-openapi-gen` into `projects/mobile/src/app/api/generated/` (committed; CI regenerates and fails on diff). The mobile app has no `ApiService`, so it cannot call anything outside the allowlist.
 - **State.** Do not use `AppStateService` or `DataPreloadService`; bulk-loading a trade unit is hostile to LTE and needs the wide surface. Use per-route `resource()`/`httpResource()` loaders and a small `MobileSessionStore` (user, selected trade unit, online flag, queue length).
 - **Environments** in `projects/mobile/src/environments/`: local → `http://localhost:5000/api/mobile/v1` with the app's own scope; dev → `https://origination-dev.scoular.com/api/mobile/v1` (no APIM in dev); qa/prod → `https://api{qa}.scoular.com/{apimPathPrefix}` with the APIM-provided scope. A Vitest spec asserts deployed environment files contain no localhost URLs. Budgets around 450 kB warn / 550 kB error; no Leaflet; self-hosted or system font.
 - **Tests.** Own Vitest target reusing the moved MSAL mocks. Playwright projects for `Pixel 7` and `iPhone 14`, including an offline scenario via `context.setOffline(true)`.
@@ -207,6 +207,6 @@ Roughly 10–14 calendar weeks for a modest feature set. Platform waits dominate
 ## 8. References
 
 - SEC-ARCH-BURDI-001 — Security Architecture Specification: Burdi Design Pattern v1.0 (IT Security / Architecture)
-- [developer-docs/EXTERNAL-SPA-GUIDE.md](../../developer-docs/EXTERNAL-SPA-GUIDE.md), [NETWORK-DIAGRAM.md](../../developer-docs/NETWORK-DIAGRAM.md), [START-HERE.md](../../developer-docs/START-HERE.md), [APP-REGISTRATIONS.md](../../developer-docs/APP-REGISTRATIONS.md)
+- [developer-docs/EXTERNAL-SPA-GUIDE.md](reference/EXTERNAL-SPA-GUIDE.md), [NETWORK-DIAGRAM.md](../../developer-docs/NETWORK-DIAGRAM.md), [START-HERE.md](../../developer-docs/START-HERE.md), [APP-REGISTRATIONS.md](../../developer-docs/APP-REGISTRATIONS.md)
 - [docs/application-context/SECURITY-MODEL.md](../application-context/SECURITY-MODEL.md), [SECURITY-REVIEWS/ACCEPTED-RISKS.md](../../SECURITY-REVIEWS/ACCEPTED-RISKS.md)
 - Burdi repository: `https://scoular.ghe.com/IT/burdi` — `Burdi.DriverApp/`, `app-context/KEY-DECISIONS.md`, `Burdi_Security_Review_V3_2026-02-13.md`

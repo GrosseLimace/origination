@@ -10,6 +10,13 @@ public class BidSheetLocation
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
     public string? ElevatorCode { get; set; }
+
+    /// <summary>
+    /// BarChart location listing this row is linked to (barchart.Instrument.LocationKey).
+    /// NULL = a normal manually managed location. The same key may appear in multiple trade
+    /// units — one row per trade-unit placement.
+    /// </summary>
+    public string? BarchartLocationKey { get; set; }
     public string TradeUnitCode { get; set; } = string.Empty;
     public string? GroupName { get; set; }
     public bool IsScoularFacility { get; set; }
