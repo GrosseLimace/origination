@@ -1653,7 +1653,7 @@
       "id": "error-handling.catalog-endpoints-fail-open-to-200-on-dependency-failure",
       "audit": "error-handling",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Catalog/lookup endpoints swallow backend dependency failures into HTTP 200 with empty or partial data",
       "description": "EntitlementsController.GetCatalog and NotesController.GetMentionCatalog wrap their DB lookups in catch(Exception), log at Warning, and return Ok(...) with an empty or partially-populated response regardless -- the HTTP status never reflects the failure. This is the server-side mirror of the Angular client's inability to distinguish genuinely-empty from failed: for these two endpoints, the ambiguity originates in the API itself.",
       "files": [
@@ -1669,7 +1669,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed and deliberate today (the log text says \"returning empty lists\"). Whether the mention picker should 503 instead of degrading is a product call. [2026-09-28] Re-verified: EntitlementsController.cs:155-159 catch(Exception) still logs Warning and returns Ok(new EntitlementsCatalogResponse()) unconditionally. No regressions. [2026-10-13] Calibration re-run. Re-read EntitlementsController.cs:155-159 (unchanged) and all three independent catch(Exception) blocks in NotesController.GetMentionCatalog (TradeUnitPreferences DB, app groups, Teams channels) — all three still log Warning and leave the corresponding response field empty rather than signaling degradation. No regression, no fix.\n[2026-10-13] Closed as accepted at the owner's direction. Do not re-raise unless a request to change the behaviour arrives.\n[2026-10-13] Reopened: the acceptance recorded earlier today was a misreading of an owner decision that concerned harvest pacing, not this finding. Still a product call: add a degraded flag so the picker can say some options failed to load, return 503, or accept the silent empty list."
+      "notes": "[2026-09-21] Confirmed and deliberate today (the log text says \"returning empty lists\"). Whether the mention picker should 503 instead of degrading is a product call. [2026-09-28] Re-verified: EntitlementsController.cs:155-159 catch(Exception) still logs Warning and returns Ok(new EntitlementsCatalogResponse()) unconditionally. No regressions. [2026-10-13] Calibration re-run. Re-read EntitlementsController.cs:155-159 (unchanged) and all three independent catch(Exception) blocks in NotesController.GetMentionCatalog (TradeUnitPreferences DB, app groups, Teams channels) — all three still log Warning and leave the corresponding response field empty rather than signaling degradation. No regression, no fix.\n[2026-10-13] Closed as accepted at the owner's direction. Do not re-raise unless a request to change the behaviour arrives.\n[2026-10-13] Reopened: the acceptance recorded earlier today was a misreading of an owner decision that concerned harvest pacing, not this finding. Still a product call: add a degraded flag so the picker can say some options failed to load, return 503, or accept the silent empty list.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Owner chose the degraded flag. Both responses now carry Degraded (bool): EntitlementsCatalogResponse sets it in its catch, MentionCatalogResponse sets it in each of its three per-source catches, so one source failing still returns the others and the flag says the picture is incomplete. The endpoints still answer 200 and the fail-open behaviour is unchanged. Client: the mention picker shows an amber line inside the dropdown (Some people or trade units could not be loaded) and opens for that line even with no matches; the recap-group editor shows an amber notice beside its existing red error block. Tests: three server tests on the mention catalog (not degraded when every source answers; groups source failing flags it but keeps people; trade-unit source failing flags it but keeps groups), two on the entitlements catalog (a caller with no entitlements is NOT degraded; an unreadable directory answers 200 with Degraded), and two client tests each for the notes component and the digest page."
     },
     {
       "id": "error-handling.traceid-never-surfaced-to-frontend",

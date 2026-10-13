@@ -99,6 +99,10 @@ export class CustomerNotesComponent {
    *  above matches that only hit a SECONDARY field (TU description, person email). So "@1084"
    *  surfaces that trade unit, and "@Corn Belt" surfaces the group above trade units whose
    *  location name merely contains "corn" (e.g. "ABI WET BREW CORN"). */
+  /** The API answers 200 even when one of the picker's sources was unreachable; this is the only
+   *  way the user learns the list is incomplete rather than genuinely empty. */
+  readonly mentionCatalogDegraded = computed(() => this.mentionCatalog().degraded === true);
+
   mentionOptions = computed<MentionOption[]>(() => {
     if (!this.mentionDropdownOpen()) return [];
     const q = this.mentionQuery().trim().toLowerCase();

@@ -58,6 +58,9 @@ export class DailyDigestComponent implements OnInit {
   protected readonly availableTradeUnitGroups = signal<RecapMember[]>([]);
   protected readonly catalogLoading = signal(false);
   protected readonly catalogError = signal<string | null>(null);
+  /** The API answers 200 with empty lists when the entitlements directory is unreachable; this is
+   *  how the editor tells "nobody to offer" from "the lookup failed". */
+  protected readonly catalogDegraded = signal(false);
 
   // Lookups for cascade-select: group → its TU codes, person → their TU codes.
   private readonly _groupTuCodes = signal<Map<string, string[]>>(new Map());
@@ -71,6 +74,7 @@ export class DailyDigestComponent implements OnInit {
   private _loadCatalog(): void {
     this.catalogLoading.set(true);
     this.catalogError.set(null);
+    this.catalogDegraded.set(false);
     this.apiService.getEntitlementsCatalog()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -96,6 +100,7 @@ export class DailyDigestComponent implements OnInit {
           // Build cascade lookups.
           this._groupTuCodes.set(new Map(catalog.groups.map(g => [String(g.groupId), g.tradeUnitCodes])));
           this._personTuCodes.set(new Map(catalog.people.map(p => [p.userId, p.tradeUnitCodes])));
+          this.catalogDegraded.set(catalog.degraded === true);
           this.catalogLoading.set(false);
         },
         error: () => {

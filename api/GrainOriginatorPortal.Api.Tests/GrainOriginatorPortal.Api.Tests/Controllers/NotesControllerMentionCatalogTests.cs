@@ -205,4 +205,58 @@ public class NotesControllerMentionCatalogTests
         Assert.False(group.PostsToChannel);
         Assert.Equal(3, group.MemberCount);
     }
+
+    // ── Degraded flag ─────────────────────────────────────────────────────────────────────────────
+    // Each source fails open on its own so one database being down cannot empty the others. That is
+    // right, but it left the client unable to tell "nobody to offer" from "the lookup failed". The
+    // flag is that distinction; the lists themselves are unchanged.
+
+    [Fact]
+    public async Task GetMentionCatalog_IsNotDegradedWhenEverySourceAnswers()
+    {
+        using var db = Db(nameof(GetMentionCatalog_IsNotDegradedWhenEverySourceAnswers));
+        Seed(db, assignments: [("CEgr", "1084")], roster: [("CEgr", true)]);
+
+        var catalog = Body(await CreateSut(db).GetMentionCatalog());
+
+        Assert.False(catalog.Degraded);
+        Assert.Contains(catalog.People, p => p.UserId == "CEgr");
+    }
+
+    [Fact]
+    public async Task GetMentionCatalog_FlagsDegradedButKeepsPeopleWhenTheGroupsSourceFails()
+    {
+        using var db = Db(nameof(GetMentionCatalog_FlagsDegradedButKeepsPeopleWhenTheGroupsSourceFails));
+        Seed(db, assignments: [("CEgr", "1084"), ("SFletcher", "1084")], roster: [("CEgr", true), ("SFletcher", true)]);
+        var groups = new Mock<IDailyRecapGroupService>();
+        groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Origination DB down"));
+        var identity = new ClaimsIdentity([new Claim("preferred_username", "CEgr@scoular.com")], "test");
+        var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
+        var sut = new NotesController(new Mock<INoteService>().Object, db, groups.Object,
+            MentionTestDoubles.TeamsChannelStub([]), new RequestContextService(new HttpContextAccessor { HttpContext = httpContext }),
+            new Mock<ILogger<NotesController>>().Object)
+        { ControllerContext = new ControllerContext { HttpContext = httpContext } };
+
+        var catalog = Body(await sut.GetMentionCatalog());
+
+        Assert.True(catalog.Degraded);
+        Assert.Empty(catalog.AppGroups);                                   // the failed source is empty…
+        Assert.Contains(catalog.People, p => p.UserId == "SFletcher");    // …and the others are not
+    }
+
+    [Fact]
+    public async Task GetMentionCatalog_FlagsDegradedButKeepsGroupsWhenTheTradeUnitSourceFails()
+    {
+        // A disposed context throws on first use, which is the closest in-memory stand-in for the
+        // TradeUnitPreferences database being unreachable.
+        var db = Db(nameof(GetMentionCatalog_FlagsDegradedButKeepsGroupsWhenTheTradeUnitSourceFails));
+        db.Dispose();
+        var group = new RecapGroupDto { Id = 7, Name = "Corn Belt", DeliveryMethod = "email", Members = [new RecapGroupMemberDto()] };
+
+        var catalog = Body(await CreateSut(db, "CEgr@scoular.com", group).GetMentionCatalog());
+
+        Assert.True(catalog.Degraded);
+        Assert.Empty(catalog.People);
+        Assert.Contains(catalog.AppGroups, g => g.GroupId == 7);
+    }
 }

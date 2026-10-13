@@ -155,13 +155,20 @@ public class EntitlementsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Entitlements catalog unavailable for {UserId} — returning empty lists", userId);
-            return Ok(new EntitlementsCatalogResponse());
+            return Ok(new EntitlementsCatalogResponse { Degraded = true });
         }
     }
 }
 
 public class EntitlementsCatalogResponse
 {
+    /// <summary>
+    /// True when the catalog could not be read and the lists below are empty because of that, not
+    /// because the caller has nothing. The endpoint still answers 200 so the recap-group editor keeps
+    /// working; this flag is how the client tells "nobody to offer" from "the lookup failed".
+    /// </summary>
+    public bool Degraded { get; set; }
+
     public List<EntitlementPerson> People { get; set; } = [];
     public List<EntitlementTradeUnit> TradeUnits { get; set; } = [];
     public List<EntitlementTradeUnitGroup> Groups { get; set; } = [];

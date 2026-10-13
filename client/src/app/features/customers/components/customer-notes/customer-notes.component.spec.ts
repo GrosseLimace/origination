@@ -5,7 +5,7 @@ import { of } from 'rxjs';
 import { CustomerNotesComponent } from './customer-notes.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { Customer, Note, NoteMention } from '@models';
+import { Customer, MentionCatalog, Note, NoteMention } from '@models';
 import { TeamsDirectoryService } from '@core/services/teams-directory.service';
 
 // Covers the note search filter (content + author + created/modified date, ALL typed words required)
@@ -148,5 +148,33 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
     // Clearing overflow (e.g. after expand removes the clamp) drops it from the set.
     component.setNoteOverflow(1, false);
     expect(component.isNoteOverflowing(1)).toBe(false);
+  });
+});
+
+describe('CustomerNotesComponent — degraded mention catalog', () => {
+  function create(catalog: Partial<MentionCatalog>): CustomerNotesComponent {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
+        { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerNotesComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    const fixture = TestBed.createComponent(CustomerNotesComponent);
+    fixture.componentRef.setInput('customer', makeCustomer(100));
+    fixture.componentRef.setInput('notes', []);
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  it('is not degraded when the API answered in full', () => {
+    expect(create({}).mentionCatalogDegraded()).toBe(false);
+  });
+
+  it('is degraded when the API says a source could not be read, so the picker can say so', () => {
+    // The API still answers 200 with whatever it gathered; without this flag an outage looks like
+    // "nobody to mention".
+    expect(create({ degraded: true }).mentionCatalogDegraded()).toBe(true);
   });
 });

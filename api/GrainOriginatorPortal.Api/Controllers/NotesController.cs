@@ -176,6 +176,7 @@ public class NotesController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Mention catalog: TradeUnitPreferences DB unavailable for user {UserId} — omitting people and trade units", userId);
+                response.Degraded = true;
             }
         }
 
@@ -209,6 +210,7 @@ public class NotesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Mention catalog: groups unavailable for user {UserId} — omitting them", userId);
+            response.Degraded = true;
         }
 
         // ── Source 3: registered Teams channels ───────────────────────────────────────────────
@@ -229,6 +231,7 @@ public class NotesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Mention catalog: Teams channels unavailable — omitting them");
+            response.Degraded = true;
         }
 
         return Ok(response);

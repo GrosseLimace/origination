@@ -414,6 +414,11 @@
                 {{ catalogError() }}
               </div>
             }
+            @if (catalogDegraded() && !catalogLoading()) {
+              <div role="status" class="m-3 py-3 px-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200">
+                The directory couldn't be loaded, so these lists are empty for now. Close and reopen the editor to try again.
+              </div>
+            }
 
             <!-- People -->
             @if (!catalogLoading() && memberPickerTab() === 'people') {
