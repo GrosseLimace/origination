@@ -2,8 +2,8 @@
   {
     "version": "2026.10.2",
     "releasedOn": "2026-10-14",
-    "title": "Bin sites with grain on farm, more organic detail, and search by email",
-    "summary": "Record a producer's bin sites and the grain stored at each one, find producers by email, and see more about organic producers.",
+    "title": "Bin sites with grain on farm, and a usage dashboard for every manager",
+    "summary": "Record a producer's bin sites and the grain stored at each one, pick any manager on the usage dashboard, and load contract-based lists faster.",
     "items": [
       {
         "group": "Bin sites",
@@ -29,16 +29,6 @@
         "group": "Notes",
         "kind": "added",
         "text": "When a note mentions one of the producer's bin sites by name, the name shows in blue, and the note appears with that producer in Build a List."
-      },
-      {
-        "group": "Organic producers",
-        "kind": "added",
-        "text": "More certification information is now pulled in and shown for organic producers."
-      },
-      {
-        "group": "Producer search",
-        "kind": "added",
-        "text": "You can now find a producer by their email address."
       },
       {
         "group": "Usage dashboard",
