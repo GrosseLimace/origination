@@ -71,6 +71,12 @@ export class UsageTrackingService {
     this.postClickEvent('interaction', 'customers', 'map-click', customerId);
   }
 
+  /** Bin site opened in Google Maps. Same 'interaction' event type as the address link, for the
+   *  same reason; the subfeature keeps the two distinguishable. */
+  trackBinSiteMapClick(customerId: string): void {
+    this.postClickEvent('interaction', 'customers', 'bin-site-map-click', customerId);
+  }
+
   trackTicketDropdownOpen(customerId?: string): void {
     this.postClickEvent('interaction', 'customers', 'tickets', customerId);
   }

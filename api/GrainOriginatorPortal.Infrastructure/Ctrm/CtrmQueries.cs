@@ -326,6 +326,34 @@ public static class CtrmQueries
         """;
 
     /// <summary>
+    /// Every purchase contract TAGGED TO one trade unit, dated inside a window - the read behind the
+    /// <c>tradeUnit</c> strategy (<see cref="CtrmContractReader.TradeUnitStrategy"/>).
+    /// Variables: <c>$tradeUnit</c>, <c>$prefix</c> (String), <c>$from</c>, <c>$to</c> (Date, yyyy-MM-dd),
+    /// <c>$skip</c>, <c>$take</c> (Int).
+    /// </summary>
+    /// <remarks>
+    /// <para>The server requires the date range on this filter (only the singular <c>customerId</c> waives
+    /// it). The cost is per PAGE, not per producer: measured 2026-10-12 on the nonprod gateway in a slow
+    /// phase, a 587-producer unit was 6 pages in 7-10 s against 59 batched per-producer requests in 52-70 s,
+    /// and a 1,271-producer unit 21 pages in 18-21 s against 128 requests in 60 s.</para>
+    ///
+    /// <para>It answers a different question from the per-producer reads: a producer's contracts tagged to
+    /// ANOTHER unit are not here (12.7% of a unit's roster contracts on the measured unit), and producers not
+    /// on our roster for the unit are - the reader filters those out. See <c>CtrmContractReader.FetchByTradeUnitsAsync</c>.</para>
+    /// </remarks>
+    public const string ContractsByTradeUnit = """
+        query ($tradeUnit: String, $prefix: String, $from: Date, $to: Date, $skip: Int, $take: Int) {
+          contracts(skip: $skip, take: $take, tradeUnit: $tradeUnit, contractPrefixType: $prefix, contractDateFrom: $from, contractDateTo: $to) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+        """ + ContractCoreProjection + """
+            }
+          }
+        }
+        """;
+
+    /// <summary>
     /// Tickets for a batch of producers over one bill-of-lading window.
     /// Variables: <c>$customerIds</c> ([String!]), <c>$from</c>/<c>$to</c> (Date), <c>$skip</c>, <c>$take</c> (Int).
     /// </summary>
