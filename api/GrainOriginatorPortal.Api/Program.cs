@@ -341,6 +341,7 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
+builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryService>();
 builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.

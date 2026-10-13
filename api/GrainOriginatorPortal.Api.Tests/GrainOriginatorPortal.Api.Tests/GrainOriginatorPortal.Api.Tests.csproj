@@ -11,7 +11,7 @@
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <!-- §8 DEVIATION: do NOT delete this package yet. It is BANNED for DB tests by
          style-guides/automated-testing.md §8, but .UseInMemoryDatabase is STILL IN USE by the
-         33 test files listed below. Remove it only AFTER those are migrated to the real-SQL
+         32 test files listed below. Remove it only AFTER those are migrated to the real-SQL
          WebApplicationFactory harness (plan Phase D). Deleting it now breaks the build.
 
          This list is CHECKED BY A TEST: Infrastructure/InMemoryDatabaseDeviationTests.cs reads this
@@ -21,8 +21,7 @@
 
          Files (one per line, path relative to this project):
            Controllers/DiagnosticsControllerAppAccessTests.cs
-           Controllers/EntitlementsControllerCatalogTests.cs
-           Controllers/NotesControllerMentionCatalogTests.cs
+           EntitlementsTestDb.cs
            Repositories/CommodityTradeGroupScopeTests.cs
            Repositories/ContractRepositorySwitchTests.cs
            Repositories/CtrmOutageEndToEndTests.cs

@@ -4,9 +4,7 @@ using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
-using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -17,7 +15,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class NotesController : ControllerBase
 {
     private readonly INoteService _service;
-    private readonly TradeUnitPreferencesDbContext _entitlementsDb;
+    private readonly IEntitlementsDirectoryService _directory;
     private readonly IDailyRecapGroupService _recapGroups;
     private readonly ITeamsChannelService _teamsChannels;
     private readonly IRequestContextService _requestContext;
@@ -25,14 +23,14 @@ public class NotesController : ControllerBase
 
     public NotesController(
         INoteService service,
-        TradeUnitPreferencesDbContext entitlementsDb,
+        IEntitlementsDirectoryService directory,
         IDailyRecapGroupService recapGroups,
         ITeamsChannelService teamsChannels,
         IRequestContextService requestContext,
         ILogger<NotesController> logger)
     {
         _service = service;
-        _entitlementsDb = entitlementsDb;
+        _directory = directory;
         _recapGroups = recapGroups;
         _teamsChannels = teamsChannels;
         _requestContext = requestContext;
@@ -117,10 +115,7 @@ public class NotesController : ControllerBase
             try
             {
                 // The caller's own trade-unit assignments (gives their TU codes + group memberships).
-                var callerRows = await _entitlementsDb.UserTradeUnitPreferences
-                    .Where(u => u.UserId == userId)
-                    .Select(u => new { u.TradeUnitCode, u.Description, u.GroupId, u.GroupName })
-                    .ToListAsync(cancellationToken);
+                var callerRows = await _directory.GetAssignmentsAsync(userId, cancellationToken);
 
                 var callerTuCodes = callerRows.Select(r => r.TradeUnitCode).Distinct().ToList();
                 // No trade units → nothing to offer from this source. Falls through rather than
@@ -137,12 +132,7 @@ public class NotesController : ControllerBase
                     // name in the picker that the save then refuses; and even before that check
                     // existed, the Logic App skipped inactive recipients at send time, so mentioning
                     // one produced a note the author believed was shared with nobody notified.
-                    var peopleRows = await _entitlementsDb.UserTradeUnitPreferences
-                        .Where(u => callerTuCodes.Contains(u.TradeUnitCode))
-                        .Where(u => _entitlementsDb.Users.Any(a => a.UserId == u.UserId && a.IsActive))
-                        .Select(u => new { u.UserId, u.DisplayName })
-                        .Distinct()
-                        .ToListAsync(cancellationToken);
+                    var peopleRows = await _directory.GetColleaguesAsync(callerTuCodes, activeOnly: true, cancellationToken);
 
                     response.People = peopleRows
                         .GroupBy(p => p.UserId)

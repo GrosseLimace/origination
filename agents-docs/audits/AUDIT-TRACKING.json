@@ -88,7 +88,7 @@
       "id": "dotnet.duplicated-entitlement-catalog-logic",
       "audit": "dotnet",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "Duplicated, ad hoc entitlement-catalog logic embedded in two controllers",
       "description": "NotesController.GetMentionCatalog and EntitlementsController.GetCatalog both inject TradeUnitPreferencesDbContext directly and implement near-identical LINQ-heavy trade-unit/group expansion inline, each with its own try/catch(Exception) fail-open behavior.",
       "files": [
@@ -100,7 +100,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed. Deliberately deferred: extracting IEntitlementsCatalogService touches NotesController, which several concurrently-active branches also touch, so it was the worst merge-conflict surface for the least value while fix_AuditPhase1Findings was in flight. Now unblocked. [2026-09-28] Re-checked: both controllers still inject TradeUnitPreferencesDbContext directly and NotesController.cs:109 still comments that the catalog logic is duplicated with EntitlementsController.GetCatalog. Still open, now further deferred behind the CTRM GraphQL spike work. [2026-10-13] Re-checked post-CTRM-default-on release: both controllers still inject TradeUnitPreferencesDbContext directly with near-identical inline expansion logic. Still open."
+      "notes": "[2026-09-21] Confirmed. Deliberately deferred: extracting IEntitlementsCatalogService touches NotesController, which several concurrently-active branches also touch, so it was the worst merge-conflict surface for the least value while fix_AuditPhase1Findings was in flight. Now unblocked. [2026-09-28] Re-checked: both controllers still inject TradeUnitPreferencesDbContext directly and NotesController.cs:109 still comments that the catalog logic is duplicated with EntitlementsController.GetCatalog. Still open, now further deferred behind the CTRM GraphQL spike work. [2026-10-13] Re-checked post-CTRM-default-on release: both controllers still inject TradeUnitPreferencesDbContext directly with near-identical inline expansion logic. Still open.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "The directory reads moved into IEntitlementsDirectoryService (GetAssignmentsAsync, GetColleaguesAsync with activeOnly, GetGroupAssignmentsAsync); neither controller injects TradeUnitPreferencesDbContext any more. Each controller keeps its own shaping and fail-open handling, because the two catalogs differ ON PURPOSE or by history: the mention catalog leaves out deactivated users (H-056), the recap-group catalog never has; the recap catalog lists each person's and group's trade units, the mention catalog does not. Both outputs were pinned by a full-shape test BEFORE the move (EntitlementsTestDb.SeedDirectory), and the pins pass unchanged after it. Mutation-checked: flipping activeOnly in either controller, and dropping the group read, each fail a test. OPEN QUESTION for the owner: the recap-group picker still offers deactivated users; the Logic App skips them at send, so a leaver can be added to a group and silently get nothing. Switching it to activeOnly is a one-word change, deliberately not made here."
     },
     {
       "id": "dotnet.inconsistent-trade-unit-entitlement-filtering",

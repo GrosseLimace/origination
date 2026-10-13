@@ -13,7 +13,6 @@ using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using System.Security.Claims;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
@@ -45,7 +44,7 @@ public class NotesControllerMentionCatalogTests
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
         var accessor = new HttpContextAccessor { HttpContext = httpContext };
 
-        var sut = new NotesController(new Mock<INoteService>().Object, db, groups.Object,
+        var sut = new NotesController(new Mock<INoteService>().Object, new EntitlementsDirectoryService(db), groups.Object,
             MentionTestDoubles.TeamsChannelStub(registeredChannels),
             new RequestContextService(accessor),
             new Mock<ILogger<NotesController>>().Object);
@@ -54,50 +53,14 @@ public class NotesControllerMentionCatalogTests
         return sut;
     }
 
-    /// <summary>The real context maps both entities keyless and read-only (it never writes), which
-    /// the in-memory provider can't seed. This subclass adds keys purely so a test can arrange rows;
-    /// the query under test is inherited unchanged.</summary>
-    private sealed class SeedableContext(DbContextOptions<TradeUnitPreferencesDbContext> options)
-        : TradeUnitPreferencesDbContext(options)
-    {
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
-            modelBuilder.Entity<UserTradeUnitPreference>(e =>
-            {
-                e.ToTable("UserTradeUnitPreferences");
-                e.HasKey(x => new { x.UserId, x.TradeUnitCode });
-            });
-            modelBuilder.Entity<TradeUnitPreferencesUser>(e =>
-            {
-                e.ToTable("Users");
-                e.HasKey(x => x.UserId);
-            });
-        }
-    }
-
-    private static TradeUnitPreferencesDbContext Db(string name)
-        => new SeedableContext(new DbContextOptionsBuilder<TradeUnitPreferencesDbContext>()
-            .UseInMemoryDatabase(name).Options);
+    private static TradeUnitPreferencesDbContext Db(string name) => EntitlementsTestDb.Create(name);
 
     private static void Seed(TradeUnitPreferencesDbContext db,
         (string UserId, string TradeUnit)[] assignments,
         (string UserId, bool IsActive)[] roster)
-    {
-        db.UserTradeUnitPreferences.AddRange(assignments.Select(a => new UserTradeUnitPreference
-        {
-            UserId = a.UserId,
-            DisplayName = a.UserId,
-            TradeUnitCode = a.TradeUnit,
-        }));
-        db.Users.AddRange(roster.Select(u => new TradeUnitPreferencesUser
-        {
-            UserId = u.UserId,
-            DisplayName = u.UserId,
-            IsActive = u.IsActive,
-        }));
-        db.SaveChanges();
-    }
+        => EntitlementsTestDb.Seed(db,
+            assignments.Select(a => new EntitlementsTestDb.Assignment(a.UserId, a.UserId, a.TradeUnit)).ToArray(),
+            roster);
 
     private static MentionCatalogResponse Body(ActionResult<MentionCatalogResponse> result)
     {
@@ -232,7 +195,7 @@ public class NotesControllerMentionCatalogTests
         groups.Setup(g => g.GetAllAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Origination DB down"));
         var identity = new ClaimsIdentity([new Claim("preferred_username", "CEgr@scoular.com")], "test");
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
-        var sut = new NotesController(new Mock<INoteService>().Object, db, groups.Object,
+        var sut = new NotesController(new Mock<INoteService>().Object, new EntitlementsDirectoryService(db), groups.Object,
             MentionTestDoubles.TeamsChannelStub([]), new RequestContextService(new HttpContextAccessor { HttpContext = httpContext }),
             new Mock<ILogger<NotesController>>().Object)
         { ControllerContext = new ControllerContext { HttpContext = httpContext } };
@@ -259,4 +222,31 @@ public class NotesControllerMentionCatalogTests
         Assert.Empty(catalog.People);
         Assert.Contains(catalog.AppGroups, g => g.GroupId == 7);
     }
+
+    // ── The full shape, pinned ────────────────────────────────────────────────
+    // Pinned before the directory reads moved out of this controller.
+
+    [Fact]
+    public async Task GetMentionCatalog_ReturnsActivePeopleAndTheCallersTradeUnitsAndGroups()
+    {
+        using var db = EntitlementsTestDb.Create(nameof(GetMentionCatalog_ReturnsActivePeopleAndTheCallersTradeUnitsAndGroups));
+        EntitlementsTestDb.SeedDirectory(db);
+
+        var catalog = Body(await CreateSut(db).GetMentionCatalog());
+
+        Assert.False(catalog.Degraded);
+        Assert.Equal(
+            [
+                ("alice", "Alice Adams", "alice@scoular.com"),
+                ("bob", "bob Brown", "bob@scoular.com"),
+                ("CEgr", "Caden Egr", "CEgr@scoular.com"),
+            ],
+            catalog.People.Select(p => (p.UserId, p.DisplayName, p.Email)));
+        Assert.Equal(
+            [("1084", "Kansas"), ("2001", "Nebraska")],
+            catalog.TradeUnits.Select(t => (t.Code, t.Description)));
+        var group = Assert.Single(catalog.TradeUnitGroups);
+        Assert.Equal((7, "North Group"), (group.GroupId, group.Name));
+    }
+
 }
