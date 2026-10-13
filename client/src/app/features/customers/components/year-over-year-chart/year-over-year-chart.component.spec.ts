@@ -14,10 +14,9 @@ import { Contract } from '@models';
 // exactly what an OnPush conversion can break; every test therefore asserts on the rendered DOM
 // after a setInput, including one that changes the input a second time.
 //
-// Revenue assertions match on the END of the text ("…$1K") on purpose: the template writes
-// `\${{ … }}` (an escape carried over from an inline backtick template), so today the page renders a
-// literal backslash — "\$1K". That's a display bug to fix in the template, and these tests must not
-// block that fix.
+// Revenue assertions match the WHOLE text. The template once wrote `\${{ … }}` (an escape carried
+// over from an inline backtick template), so the page rendered a literal backslash, "\$1K". Fixed
+// 2026-10-13; the exact match is what keeps it fixed.
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -117,7 +116,7 @@ describe('YearOverYearChartComponent', () => {
       { year: '2026', volumeHeight: '75%', revenueHeight: '70%' },
     ]);
     expect(summary().bushels).toBe('3,500');
-    expect(summary().revenue).toMatch(/\$17K$/);
+    expect(summary().revenue).toMatch(/^\$17K$/);
   });
 
   it('floors a short bar at 5% so a small year stays visible', () => {
@@ -145,16 +144,16 @@ describe('YearOverYearChartComponent', () => {
 
   it('totals revenue as quantity × price, abbreviated to whole thousands (floored) or one-decimal millions', () => {
     setContracts([makeContract({ quantity: 999, price: 1 })]);
-    expect(summary().revenue).toMatch(/\$999$/);
+    expect(summary().revenue).toMatch(/^\$999$/);
 
     setContracts([makeContract({ quantity: 1000, price: 1.999 })]);   // 1,999 → floored, not rounded
-    expect(summary().revenue).toMatch(/\$1K$/);
+    expect(summary().revenue).toMatch(/^\$1K$/);
 
     setContracts([
       makeContract({ id: 1, quantity: 300000, price: 4.5, deliveryStart: on(2025, 4, 1) }), // 1,350,000
       makeContract({ id: 2, quantity: 250000, price: 4, deliveryStart: on(2026, 4, 1) }),   // 1,000,000
     ]);
-    expect(summary().revenue).toMatch(/\$2\.4M$/);                    // 2,350,000 → toFixed(1)
+    expect(summary().revenue).toMatch(/^\$2\.4M$/);                    // 2,350,000 → toFixed(1)
   });
 
   it('shows a single zero column for the current year, with floor-height bars, when there are no contracts', () => {
@@ -162,7 +161,7 @@ describe('YearOverYearChartComponent', () => {
 
     expect(columns()).toEqual([{ year: '2026', volumeHeight: '5%', revenueHeight: '5%' }]);
     expect(summary().bushels).toBe('0');
-    expect(summary().revenue).toMatch(/\$0$/);
+    expect(summary().revenue).toMatch(/^\$0$/);
   });
 
   it('re-aggregates and re-renders when the contracts input is replaced', () => {

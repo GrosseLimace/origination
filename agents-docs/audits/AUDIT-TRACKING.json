@@ -3228,6 +3228,182 @@
         "detected_by": "manual"
       },
       "resolution_notes": "AR-10 closing line rewritten. It no longer claims AR-01/02/07/08 were routed for countersignature; it points at the 2026-09-21 banner (AR-01/02/08 closed as declined, AR-07 open) and states plainly that whether AR-10 and AR-07 go to IT Security is the project owner's call and has not been done as of 2026-10-13. No decision was invented or changed; the contradiction introduced by commit 8d91ae7a is removed."
+    },
+    {
+      "status": "open",
+      "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
+      "id": "code-review.dashboard-sales-opportunities-raw-quantity-as-bushels",
+      "audit": "code-review",
+      "severity": "medium",
+      "title": "Dashboard sales opportunities show a contract's raw quantity labelled as bushels",
+      "description": "salesOpportunityRows uses contract.quantity unconverted, so a 30 short-ton contract shows as \"30 bu\", while the contract-coverage figure on the same page converts the same contract to 1,000 bu. Two numbers for one contract on one screen.",
+      "files": [
+        "client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts"
+      ],
+      "suggested_fix": "Convert through the same commodity conversion the coverage figure uses before labelling as bushels.",
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "open",
+      "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
+      "id": "code-review.producer-insights-average-includes-unconvertible-contracts",
+      "audit": "code-review",
+      "severity": "medium",
+      "title": "Producer insights average contract size counts contracts whose unit cannot be converted to bushels",
+      "description": "Contracts with no bushel conversion contribute 0 to the total but still count in the divisor, so the average reads low for any producer with such a contract.",
+      "files": [
+        "client/src/app/features/customers/components/producer-insights/producer-insights.component.ts"
+      ],
+      "suggested_fix": "Exclude unconvertible contracts from both numerator and denominator, or show the average as unavailable.",
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "open",
+      "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
+      "id": "code-review.tickets-table-conversion-map-stale-on-same-length-update",
+      "audit": "code-review",
+      "severity": "medium",
+      "title": "Tickets table rebuilds its unit-conversion map only when the list length changes",
+      "description": "A same-length replacement of the conversion data keeps the old factors, so converted quantities can be wrong until something changes the length.",
+      "files": [
+        "client/src/app/features/customers/components/tickets-table/tickets-table.component.ts"
+      ],
+      "suggested_fix": "Derive the map with computed() from the conversions signal instead of caching on length.",
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "open",
+      "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
+      "id": "code-review.print-report-preview-and-print-disagree",
+      "audit": "code-review",
+      "severity": "medium",
+      "title": "Customer print report: the printed output differs from its own preview",
+      "description": "Bin sites show in the preview but never in the printed HTML; pricing-line columns differ in order, precision and date format between preview and print; the grainBandColor lookup never matches by commodity name because of a case mismatch; section defaults ignore data that arrives after the dialog opens.",
+      "files": [
+        "client/src/app/features/customers/components/customer-print-report/customer-print-report.component.ts",
+        "client/src/app/features/customers/components/customer-print-report/customer-print-report.component.html"
+      ],
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "open",
+      "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
+      "id": "code-review.customer-list-failed-search-shows-whole-roster",
+      "audit": "code-review",
+      "severity": "medium",
+      "title": "Customer list: a failed producer search silently shows the whole roster, and saved-list inputs are mutated in place",
+      "description": "A search request that errors falls back to the full roster with no message, so the user sees everyone and assumes the search matched them. Separately, the component mutates the savedLists input objects in place, which an OnPush parent will not see and which leaks state back to the caller.",
+      "files": [
+        "client/src/app/features/customers/components/customer-list/customer-list.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "open",
+      "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
+      "id": "angular.unshipped-bushels-alias-filter-misses-producers",
+      "audit": "angular",
+      "severity": "low",
+      "title": "Unshipped bushels: commodity aliases filter contract rows but not producers",
+      "description": "Searching \"milo\" matches Sorghum contract rows through the alias map, but the producer-level filter does not apply aliases, so a producer whose only contract is Sorghum is hidden.",
+      "files": [
+        "client/src/app/features/unshipped-bushels/pages/unshipped-bushels/unshipped-bushels.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "open",
+      "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
+      "id": "angular.stored-grain-table-search-and-sort-gaps",
+      "audit": "angular",
+      "severity": "low",
+      "title": "Stored grain table: location mode unsorted, a group change clears the search, the Since date ignores the search",
+      "description": "Three small behaviour gaps pinned by the new spec, plus several unused members.",
+      "files": [
+        "client/src/app/features/customers/components/stored-grain-table/stored-grain-table.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "open",
+      "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
+      "id": "code-review.contract-delivery-zero-quantity-counts-complete",
+      "audit": "code-review",
+      "severity": "low",
+      "title": "contract-delivery: a zero-quantity contract with no balance counts as complete, contrary to its own comment",
+      "description": "The comment says the 0.01 floor stops quantity-0 contracts counting as complete; it does the opposite, returning isEffectivelyComplete true. Related: Contract.openBalanceQuantity is typed number | undefined but the API sends null.",
+      "files": [
+        "client/src/app/shared/utils/contract-delivery.ts",
+        "client/src/app/models/contract.model.ts"
+      ],
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "resolved",
+      "notes": "[2026-10-13] Found by the new spec and fixed the same day.",
+      "id": "angular.year-over-year-chart-literal-backslash",
+      "audit": "angular",
+      "severity": "low",
+      "title": "Year-over-year chart rendered revenue with a stray backslash (\"\\$1K\")",
+      "description": "The template wrote \\${{ }}, an escape carried over from an inline backtick template, so the backslash showed on screen.",
+      "files": [
+        "client/src/app/features/customers/components/year-over-year-chart/year-over-year-chart.component.html"
+      ],
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Backslash removed. The spec's five revenue assertions now anchor at the start of the text; putting the backslash back fails three of them.",
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
+    },
+    {
+      "status": "resolved",
+      "notes": "[2026-10-13] Found while writing specs and deleted the same day.",
+      "id": "clean-slop.dead-confirm-dialog",
+      "audit": "clean-slop",
+      "severity": "low",
+      "title": "Dead confirm-dialog component and service with unresolvable imports",
+      "description": "components/ui/confirm-dialog imported three paths that do not exist, and nothing referenced it or core/services/confirm-dialog.service.",
+      "files": [
+        "client/src/app/components/ui/confirm-dialog/confirm-dialog.component.ts",
+        "client/src/app/core/services/confirm-dialog.service.ts"
+      ],
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Both files deleted. Type-check, the full client suite and the production build pass without them.",
+      "opened_in": {
+        "date": "2026-10-13"
+      },
+      "last_verified": "2026-10-13"
     }
   ]
 }
