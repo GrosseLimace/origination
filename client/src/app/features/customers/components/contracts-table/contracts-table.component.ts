@@ -592,40 +592,6 @@ export class ContractsTableComponent {
     return Math.max(0, unpriced);
   }
 
-  // --- PREVIOUS logic (kept for reference) ---
-  // getPricingInfo_old(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'CASH' | 'LOADING'; cashPrice?: number } {
-  //   const key = contract.sourceContractId;
-  //   const lines = key ? this.pricingLinesMap().get(key) : undefined;
-  //
-  //   if (lines !== undefined) {
-  //     if (lines.length === 0) return { status: 'UNPRICED' };
-  //
-  //     // Single line — check PriceTypeCode: "U" means unpriced (will be priced later)
-  //     if (lines.length === 1 && lines[0].cashPrice != null) {
-  //       const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
-  //       if (ptc === 'U') return { status: 'UNPRICED' };
-  //       return { status: 'CASH', cashPrice: lines[0].cashPrice };
-  //     }
-  //
-  //     const totalPricedQty = lines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
-  //     const contractQty = contract.quantity ?? 0;
-  //
-  //     if (totalPricedQty === 0) return { status: 'UNPRICED' };
-  //     if (totalPricedQty < contractQty) return { status: 'PARTIAL' };
-  //     return { status: 'PRICED' };
-  //   }
-  //
-  //   // Fallback: use contract fields before lines are loaded
-  //   if (contract.price != null) return { status: 'CASH', cashPrice: contract.price };
-  //
-  //   const pricedQty = contract.pricedQuantity ?? 0;
-  //   const totalQty = contract.quantity ?? 0;
-  //
-  //   if (pricedQty === 0) return { status: 'UNPRICED' };
-  //   if (pricedQty < totalQty) return { status: 'PARTIAL' };
-  //   return { status: 'PRICED' };
-  // }
-
   /** Bushels that have been delivered/applied to this contract but not yet settled (paid).
    *  Math: (quantity − openBalanceQuantity) gives total delivered; subtracting settledQuantity
    *  leaves what's been delivered but not paid out yet. Pulled straight from base.Contract

@@ -406,22 +406,6 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Per-producer unapplied tickets — the fast, narrowly-scoped fetch the home page fires on
-   *  producer select. Applied tickets are loaded lazily per-contract via {@link getAppliedTicketsByContract}. */
-  getUnappliedTicketsByCustomer(customerId: number, scoularId?: string): Observable<Ticket[]> {
-    let params = new HttpParams();
-    if (scoularId) params = params.set('scoularId', scoularId);
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}/unapplied`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Lazy per-contract applied-tickets fetch — fires when the contracts table expands a row.
-   *  Contract numbers may contain spaces (e.g. "PC  13042") so the id must be URL-encoded. */
-  getAppliedTicketsByContract(sourceContractId: string): Observable<Ticket[]> {
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/contract/${encodeURIComponent(sourceContractId)}/applied`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
   // ==========================================================================
   // Planting Intention Operations
   // ==========================================================================
@@ -721,12 +705,6 @@ export class ApiService {
    *  the display order; omitting either property entirely preserves the customer's existing rows. */
   saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; primaryContact?: string | null; primaryPhone?: string | null; commodities?: string | null; linkedProducerIds?: string | null; grainOnFarm?: { binSiteKey?: string | null; commodityCode: string; bushelsOnHand?: number | null; bushelsSold?: number | null; targetBushels?: number | null; lastBid?: number | null; grade?: string | null }[]; contacts?: { name: string; phone?: string | null; email?: string | null; isPrimary?: boolean }[]; binSites?: { siteKey?: string; name: string; latitude?: number | null; longitude?: number | null; capacity?: number | null }[] }): Observable<ProducerDetails> {
     return this.http.put<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`, data)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Deletes producer details for a customer */
-  deleteProducerDetails(customerId: number): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/producerdetails/customer/${customerId}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -1044,16 +1022,6 @@ export class ApiService {
   setBidSheetPreference(tradeUnitKey: string, cropCode: string | null, month: number | null, cropYear: number | null, cropOrder?: string | null, hiddenCrops?: string | null, selectedMonths?: string | null, printLayout?: string | null): Observable<void> {
     return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, { tradeUnitKey, cropCode, month, cropYear, cropOrder, hiddenCrops, selectedMonths, printLayout })
       .pipe(catchError(e => this.handleError(e)));
-  }
-
-  // =========================================================================
-  // Geocoding
-  // =========================================================================
-
-  /** Free-text geocode search via backend proxy */
-  geocodeSearch(query: string): Observable<Array<{ lat: number; lng: number }>> {
-    return this.http.get<Array<{ lat: number; lng: number }>>(`${this.baseUrl}/geocode/search`, { params: { q: query, limit: '1' } })
-      .pipe(catchError(() => of([])));
   }
 
   // =========================================================================
