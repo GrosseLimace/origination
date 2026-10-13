@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, input, output, DestroyRef, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, input, output, DestroyRef, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { DecimalPipe } from '@angular/common';
@@ -56,6 +56,7 @@ function blankCommodity(): CheckForm {
 @Component({
   selector: 'app-check-calculator',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, DecimalPipe, AccountingCurrencyPipe, InputComponent, SelectComponent, ButtonComponent],
   templateUrl: './check-calculator.component.html',
 })

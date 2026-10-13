@@ -1,9 +1,10 @@
-import { Component, input, signal, forwardRef, ViewChild, ElementRef } from '@angular/core';
+import { Component, input, signal, forwardRef, ViewChild, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/forms';
 
 @Component({
   selector: 'app-input',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule],
   providers: [
     {
@@ -57,6 +58,9 @@ export class InputComponent implements ControlValueAccessor {
   public clearable = input<boolean>(false);
 
   public disabled = signal<boolean>(false);
+  // OnPush: writeValue/setDisabledState are called by the forms API, not by a DOM event, so the
+  // view must be marked by hand or a programmatic form write never reaches the native control.
+  private readonly cdr = inject(ChangeDetectorRef);
 
   public value = '';
   public onChange: (value: string) => void = () => {};
@@ -88,6 +92,7 @@ export class InputComponent implements ControlValueAccessor {
 
   public writeValue(value: string): void {
     this.value = value || '';
+    this.cdr.markForCheck();
   }
 
   public registerOnChange(fn: (value: string) => void): void {
@@ -99,6 +104,7 @@ export class InputComponent implements ControlValueAccessor {
   }
 
   public setDisabledState(isDisabled: boolean): void {
+    this.cdr.markForCheck();
     this.disabled.set(isDisabled);
   }
 }

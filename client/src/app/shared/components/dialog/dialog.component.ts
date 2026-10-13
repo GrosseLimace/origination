@@ -1,8 +1,9 @@
-import { Component, input, output, inject, DestroyRef, effect, computed } from '@angular/core';
+import { Component, input, output, inject, DestroyRef, effect, computed, ChangeDetectionStrategy } from '@angular/core';
 
 @Component({
   selector: 'app-dialog',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   // Document-level so Escape works wherever focus sits: inside the dialog, or still on the
   // trigger button, which is where it usually is at the moment the dialog opens.
   host: { '(document:keydown.escape)': 'onEscape()' },
@@ -112,6 +113,7 @@ export class DialogComponent {
 @Component({
   selector: 'app-dialog-header',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   // Inert unless the dialog scrolls its body, where this keeps the title from
   // being squeezed by a tall body.
   host: { 'class': 'shrink-0' },
@@ -126,6 +128,7 @@ export class DialogHeaderComponent {}
 @Component({
   selector: 'app-dialog-title',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
       <ng-content></ng-content>
@@ -137,6 +140,7 @@ export class DialogTitleComponent {}
 @Component({
   selector: 'app-dialog-description',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <p class="text-sm text-gray-500 dark:text-gray-400">
       <ng-content></ng-content>
@@ -148,6 +152,7 @@ export class DialogDescriptionComponent {}
 @Component({
   selector: 'app-dialog-content',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   // display:contents makes the inner div a direct flex item of the dialog panel,
   // which is what lets it take the leftover height when the body scrolls.
   host: { '[style.display]': "scrolls() ? 'contents' : null" },
@@ -167,6 +172,7 @@ export class DialogContentComponent {
 @Component({
   selector: 'app-dialog-footer',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   // Keeps the action buttons anchored when the dialog scrolls its body.
   host: { 'class': 'shrink-0' },
   template: `

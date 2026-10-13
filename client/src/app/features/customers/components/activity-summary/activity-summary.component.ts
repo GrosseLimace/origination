@@ -1,4 +1,4 @@
-import { Component, input, effect, inject, signal } from '@angular/core';
+import { Component, input, effect, inject, signal, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
@@ -8,12 +8,16 @@ import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/u
 @Component({
   selector: 'app-activity-summary',
   standalone: true,
+  // Inputs and signals only, except summaryText, which the effect below writes and then marks the
+  // view for. An input change already marks an OnPush view; the explicit call removes the dependency.
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   host: { class: 'block' },
   templateUrl: './activity-summary.component.html'
 })
 export class ActivitySummaryComponent {
   private readonly appState = inject(AppStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
   private _conversionMap: Map<string, number> | null = null;
 
   public customer = input.required<Customer>();
@@ -76,6 +80,7 @@ export class ActivitySummaryComponent {
       // Harvest windows drive _generateHarvestPaceSummary's year-over-year comparison.
       const _hw = this.appState.harvestWindows();
       this.summaryText = this._generateSummaryParagraph();
+      this.cdr.markForCheck();
     });
   }
 
