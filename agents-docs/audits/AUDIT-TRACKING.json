@@ -742,7 +742,7 @@
       "id": "sql.ambiguous-displayname-join-createdby-backfill",
       "audit": "sql",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Ambiguous DisplayName join can mis-assign UPN during CreatedBy backfill",
       "description": "The remediation script joins Notes.CreatedBy to UserTradeUnitSnapshot.DisplayName to resolve a UPN, but DisplayName is not unique in that table, so rows with duplicate DisplayNames can get an arbitrary/wrong UserId.",
       "files": [
@@ -753,7 +753,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed. Blocked on a fact nobody recorded: has B4_migrate_createdby.sql run in each environment? If PROD is still pending, the non-unique DisplayName join must be fixed first; if it has run, the script should be archived.\n[2026-09-28] Re-verified: script and its ambiguous DisplayName joins are unchanged. Same operational blind spot -- no record in-repo of whether this has run per environment.\n[2026-10-13] Re-verified: script unchanged, still joins Notes/ProducerPlantingIntentions/ProducerDetails/SavedLists/Dashboard* CreatedBy/ModifiedBy to UserTradeUnitSnapshot.DisplayName with no COUNT(DISTINCT UserId) guard. Same operational blind spot."
+      "notes": "[2026-09-21] Confirmed. Blocked on a fact nobody recorded: has B4_migrate_createdby.sql run in each environment? If PROD is still pending, the non-unique DisplayName join must be fixed first; if it has run, the script should be archived.\n[2026-09-28] Re-verified: script and its ambiguous DisplayName joins are unchanged. Same operational blind spot -- no record in-repo of whether this has run per environment.\n[2026-10-13] Re-verified: script unchanged, still joins Notes/ProducerPlantingIntentions/ProducerDetails/SavedLists/Dashboard* CreatedBy/ModifiedBy to UserTradeUnitSnapshot.DisplayName with no COUNT(DISTINCT UserId) guard. Same operational blind spot.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Checked in production on 2026-10-13: no DisplayName in dbo.UserTradeUnitSnapshot maps to more than one UserId, so the one-time backfill could not have attributed a note to the wrong login. Closed on that evidence. The script (SECURITY-REVIEWS/scripts/B4_migrate_createdby.sql) is nonetheless hardened: every join now excludes display names shared by more than one login, so a future run against different data leaves ambiguous rows for a human rather than guessing. Side observation, not a defect of this finding: 23,522 of 67,131 production notes still hold a non-UPN CreatedBy (names the snapshot never had, or older system values); ModifiedBy has none."
     },
     {
       "id": "sql.orphaned-stale-script-nonexistent-column",
@@ -799,7 +804,7 @@
       "id": "sql.customertradeunit-cascade-delete-breaks-pattern",
       "audit": "sql",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "CustomerTradeUnit->Customer cascade delete breaks the codebase's own documented pattern, and manual rows now exist",
       "description": "Every other FK to Customer in this file is explicitly NoAction with a comment explaining it's deliberate. CustomerTradeUnit's Customer FK is Cascade with no comment. The prior pass called this 'inert today, decide before the manual-curation feature ships' -- that premise is now false: PUT /api/customers/{id}/trade-units (CustomersController.AssignTradeUnits -> CustomerService.AssignTradeUnitsAsync -> CustomerRepository.AssignTradeUnitsAsync, api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs:553-651) is live, [Authorize]-only (no admin gate, per accepted risk AR-03 in SECURITY-REVIEWS/ACCEPTED-RISKS.md), and inserts CustomerTradeUnit rows with IsManual = true today. Real hand-curated membership data now sits behind the Cascade FK. The specific trigger (a hard DELETE of a Customer row) does not exist yet -- CustomerSyncService.SyncAsync is upsert + soft-delete only (IsActive = false), never a hard delete/rebuild -- so nothing destroys this data today. But the only thing preventing loss is that no code path currently issues a hard Customer delete, which is a fragile invariant to rely on for protecting manually-entered data.",
       "files": [
@@ -811,7 +816,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed and TIME-SENSITIVE. Inert today (all rows come from the ODS sync) but feature_NewCustomerTradeUnits introduces manually curated rows, after which a Customer rebuild silently destroys hand-entered membership. Decide before that feature starts.\n[2026-09-28] Re-verified via a sub-agent trace of the write path: the manual-onboarding feature this finding warned about is already live (AssignTradeUnitsAsync sets IsManual = true on real requests), so this is no longer a future risk gated on a feature landing -- manually-curated rows exist in the table now. Severity raised medium -> high on that basis. Confirmed there is still no hard-delete/rebuild path for Customer (soft-delete only), so no data has actually been destroyed by this misconfiguration yet; the gap is the FK shape, not an observed incident.\n[2026-10-13] Re-verified: ApplicationDbContext.cs:588-591 still configures CustomerTradeUnit's Customer FK as OnDelete(DeleteBehavior.Cascade), uncommented, while every sibling FK to Customer remains explicit NoAction with a rationale comment. No new migration or code change touches this FK since the last pass."
+      "notes": "[2026-09-21] Confirmed and TIME-SENSITIVE. Inert today (all rows come from the ODS sync) but feature_NewCustomerTradeUnits introduces manually curated rows, after which a Customer rebuild silently destroys hand-entered membership. Decide before that feature starts.\n[2026-09-28] Re-verified via a sub-agent trace of the write path: the manual-onboarding feature this finding warned about is already live (AssignTradeUnitsAsync sets IsManual = true on real requests), so this is no longer a future risk gated on a feature landing -- manually-curated rows exist in the table now. Severity raised medium -> high on that basis. Confirmed there is still no hard-delete/rebuild path for Customer (soft-delete only), so no data has actually been destroyed by this misconfiguration yet; the gap is the FK shape, not an observed incident.\n[2026-10-13] Re-verified: ApplicationDbContext.cs:588-591 still configures CustomerTradeUnit's Customer FK as OnDelete(DeleteBehavior.Cascade), uncommented, while every sibling FK to Customer remains explicit NoAction with a rationale comment. No new migration or code change touches this FK since the last pass.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Confirmed in production on 2026-10-13 by a read-only query against sys.foreign_keys: FK_CustomerTradeUnit_Customer_CustomerId was the only CASCADE among the ten FKs into dbo.Customer (the other nine NO_ACTION), with 22,491 CustomerTradeUnit rows behind it. Model changed to DeleteBehavior.NoAction with the reason recorded beside it; migration 20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks drops and re-adds the FK without the cascade. docs/application-context/STYLE-DEVIATIONS.md updated from open decision to resolved. Applies on the next deploy that carries this branch; nothing deletes customers today, so no row was ever lost."
     },
     {
       "id": "sql.unjustified-string-primary-keys",
@@ -851,7 +861,7 @@
       "id": "sql.nocheck-foreign-keys-never-revalidated",
       "audit": "sql",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Foreign keys added WITH NOCHECK are never revalidated",
       "description": "Three FKs were added WITH NOCHECK to skip validating pre-existing orphan rows, with a comment noting they should be revalidated later via WITH CHECK CHECK CONSTRAINT -- no later migration ever does this.",
       "files": [
@@ -862,7 +872,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed — three FKs added WITH NOCHECK and never revalidated; the only occurrence of WITH CHECK CHECK CONSTRAINT in the repo is the comment saying to do it. Next step is a read-only orphan count per environment, not a code change.\n[2026-09-28] Re-verified: migration file unchanged, no later migration revalidates these three FKs.\n[2026-10-13] Re-verified: migration file unchanged; grepped the full api/ tree for \"WITH CHECK CHECK CONSTRAINT\" and the only hit is still the comment in this same file. None of the 15 migrations added since 09-28 touch these three FKs."
+      "notes": "[2026-09-21] Confirmed — three FKs added WITH NOCHECK and never revalidated; the only occurrence of WITH CHECK CHECK CONSTRAINT in the repo is the comment saying to do it. Next step is a read-only orphan count per environment, not a code change.\n[2026-09-28] Re-verified: migration file unchanged, no later migration revalidates these three FKs.\n[2026-10-13] Re-verified: migration file unchanged; grepped the full api/ tree for \"WITH CHECK CHECK CONSTRAINT\" and the only hit is still the comment in this same file. None of the 15 migrations added since 09-28 touch these three FKs.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Confirmed in production on 2026-10-13: all three FKs (Notes, ProducerDetails, ProducerPlantingIntentions -> Customer) still carried is_not_trusted = 1, and a read-only orphan count found ZERO rows behind any of them, so whatever orphans existed in May have since gone. Migration 20261013163045 runs WITH CHECK CHECK CONSTRAINT on all three, turning them trusted with nothing to clean up. Down deliberately does not un-validate them."
     },
     {
       "id": "sql.non-idempotent-alter-scripts",
