@@ -1117,7 +1117,7 @@
       "id": "logging.sampling-and-dashboards-undocumented",
       "audit": "logging",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "No documented sampling settings, KQL queries, dashboards, or alert rules for this app",
       "description": "No file under developer-docs/ documents an App Insights sampling percentage/overrides, saved KQL queries, an operational dashboard/workbook, or alert-to-on-call mapping for this specific app. START-HERE.md mentions only generic platform-level Smart Detection alerting with no app-specific threshold or ownership detail, though the style guide requires these to be explicit, documented decisions rather than defaults inherited silently from the platform.",
       "files": [
@@ -1128,7 +1128,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Re-verified: developer-docs/START-HERE.md still only mentions generic platform-level Smart Detection; no file documents an app-specific sampling percentage, saved KQL queries, a dashboard/workbook, or alert-to-on-call mapping. Unchanged since 2026-09-19, still outstanding.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.\n[2026-10-13] Re-verified during logging reconciliation pass (release_2026-10-13 merge: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, CTRM trade-unit contract read made default). Unchanged. Also reviewed the new BarchartIngestService/BarchartIngestController subsystem and the new LogSanitizer middleware (added to fix a QA-flagged CWE-117 log-forging finding via CRLF-stripping on request-supplied values before they reach RequestContextMiddleware/SecurityAuditMiddleware) — both are well-instrumented per the style guide (structured DurationMs-equivalent fields, payload size logged instead of payload body, audit table for vendor-call accounting, sanitized inputs) and introduced no new logging gaps."
+      "notes": "[2026-09-21] Re-verified: developer-docs/START-HERE.md still only mentions generic platform-level Smart Detection; no file documents an app-specific sampling percentage, saved KQL queries, a dashboard/workbook, or alert-to-on-call mapping. Unchanged since 2026-09-19, still outstanding.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.\n[2026-10-13] Re-verified during logging reconciliation pass (release_2026-10-13 merge: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, CTRM trade-unit contract read made default). Unchanged. Also reviewed the new BarchartIngestService/BarchartIngestController subsystem and the new LogSanitizer middleware (added to fix a QA-flagged CWE-117 log-forging finding via CRLF-stripping on request-supplied values before they reach RequestContextMiddleware/SecurityAuditMiddleware) — both are well-instrumented per the style guide (structured DurationMs-equivalent fields, payload size logged instead of payload body, audit table for vendor-call accounting, sanitized inputs) and introduced no new logging gaps.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Added docs/operations/OBSERVABILITY.md, linked from developer-docs/START-HERE.md, written only from verified facts: the repo plus a read-only check of the Dev and QA Azure resources on 2026-10-13. Records that the API has no Application Insights SDK and telemetry comes from App Service auto-instrumentation (ApplicationInsightsAgent_EXTENSION_VERSION present); both environments use workspace-based Application Insights with 90-day retention and no ingestion sampling, and no agent sampling override is set, with a KQL query to measure effective retention rather than assume it; the Origination Workbench (source, regeneration, deploy workflow, six tabs) as the home of the team's saved KQL; and every alert: Failure Anomalies per environment, plus the two Logic App runs-failed metric alerts (sev 2, any failure in 5 minutes, emailed to CEgr and HCollins). Gaps recorded explicitly: production values unconfirmed (standard account cannot read them; the exact az command is in the doc), the shared DefaultWorkspace, no client telemetry, and no API alerting beyond Failure Anomalies."
     },
     {
       "id": "logging.background-job-runs-lack-correlation-id",
@@ -1264,7 +1269,7 @@
       "id": "performance.usage-dashboard-duplicate-scope-resolution-per-widget",
       "audit": "performance",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "Every usage-dashboard widget endpoint independently re-resolves the same user-scope set",
       "description": "UsageDashboardService.GetUserIdSetAsync (called once per public method: GetSummaryAsync, GetUsersAsync, GetDailyActiveAsync, GetFeatureSessionsAsync, GetWeeklyTrendAsync, GetActivityBreakdownAsync, GetUnderusedFeaturesAsync, GetQueryLibraryUsageAsync, GetQuerySearchGapsAsync) re-runs GetSnapshotUserIdsAsync/GetSubtreeUserIdsAsync and GetExcludedUserIdsAsync from scratch for the same (tradeUnitKey, managerId) pair. The usage-dashboard page fires roughly nine of these as separate parallel HTTP requests on load, so the same small reference tables (UserTradeUnitSnapshots, UsageDashboardExcludedUsers) are queried up to 9x per page view instead of once. AppAccessService.GetAccessSetAsync (the more expensive external call in the same chain) is already IMemoryCache-backed, so this is the one piece of that resolution chain still uncached.",
       "files": [
@@ -1276,7 +1281,12 @@
         "date": "2026-09-28"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-28] New finding opened during reconciliation pass while reviewing the UsageDashboard feature added since 2026-09-21. Each underlying query is on a small table (no join fan-out), so this is a minor, inferred optimization opportunity rather than a proven bottleneck — flagged low severity, not measured.\n[2026-10-13] Re-verified: GetUserIdSetAsync still called independently from 10 call sites in UsageDashboardService.cs with no caching. No regression, no fix."
+      "notes": "[2026-09-28] New finding opened during reconciliation pass while reviewing the UsageDashboard feature added since 2026-09-21. Each underlying query is on a small table (no join fan-out), so this is a minor, inferred optimization opportunity rather than a proven bottleneck — flagged low severity, not measured.\n[2026-10-13] Re-verified: GetUserIdSetAsync still called independently from 10 call sites in UsageDashboardService.cs with no caching. No regression, no fix.\n[2026-10-13] Closed as a false positive after checking the code, not the finding text. The two previous re-verifications that called it uncached were wrong; worth weighting future re-verifications of this finding accordingly.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "False positive: the fix the finding asks for has existed since commit 7c8454ae (2026-08-04), before the first audit ran. UsageDashboardService.GetUserIdSetAsync caches the resolved user-id set in IMemoryCache for 60 seconds, keyed per manager plus a UsageUniverseCacheState generation that an excluded-user edit bumps, and the cached set already has the exclusions applied, so the snapshot, subtree and exclusion reads happen once per manager per minute, not once per widget. The finding's (tradeUnitKey, managerId) key is also stale: trade-unit scoping was removed from the dashboard by the usage-for-all change. UsageDashboardServiceTests already pins the behaviour (several widget calls share one universe; the snapshot and exclusion reads verified Times.Once). Verified by mutation on 2026-10-13: bypassing the cache lookup fails that test."
     },
     {
       "id": "performance.bidsheet-reconcile-n-plus-one",
