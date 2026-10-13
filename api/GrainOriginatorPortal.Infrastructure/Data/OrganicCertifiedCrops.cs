@@ -40,11 +40,32 @@ namespace GrainOriginatorPortal.Infrastructure.Data;
 public static class OrganicCertifiedCrops
 {
     /// <summary>
-    /// Separators the desk considers list punctuation. The hyphen is the riskiest of these — it
-    /// appears inside quantities ("2024 Soybeans - 4000 bushels") as well as between crops — so if
-    /// prose entries start reading badly, it is the first one to reconsider.
+    /// Separators the desk considers list punctuation.
+    ///
+    /// 🔑 <b>The hyphen is deliberately NOT here, as of 2026-10-13.</b> It was, on the desk's
+    /// original instruction to treat "any sort of delimiter" as one — a reasonable call made before
+    /// anyone had seen real certifier data. The first full load (1,138 producers, 660 distinct
+    /// free-text strings) settled it with evidence:
+    ///
+    /// <list type="bullet">
+    /// <item><b>83 strings carry an unbracketed hyphen. Exactly ONE of them — "Alfalfa-Oats" — is a
+    /// genuine crop pairing.</b></item>
+    /// <item>The rest are compound names the split destroyed: "Black-eyed peas" became "Black" and
+    /// "eyed peas"; "single-ingredient" became two words; "Pullet Pre-Starter" lost its prefix; the
+    /// product code "MSSE Lay 21 P-2" became "MSSE Lay 21 P" and a stray "2".</item>
+    /// <item>Several that LOOK like pairings are single items: "Sorghum-Sudan" is one hybrid,
+    /// "Maize-Corn" is one crop named twice, "Non-Production Land" and "Processed Items-Other" are
+    /// labels.</item>
+    /// </list>
+    ///
+    /// So the trade is one combined chip ("Alfalfa-Oats" renders whole) against roughly eighty
+    /// strings that stop being mangled. Bailey Cozart, 2026-10-13: <i>"we can only do so much data
+    /// cleanup with the free form fields that we are getting from the USDA, and I would rather have
+    /// a combined chip than mangle a bunch of others."</i>
+    ///
+    /// Do not add it back without re-running that measurement.
     /// </summary>
-    private static readonly char[] Separators = [',', ';', '/', '&', '-', '+'];
+    private static readonly char[] Separators = [',', ';', '/', '&', '+'];
 
     /// <summary>Opening and closing brackets inside which separators are ignored.</summary>
     private const string Openers = "([{";

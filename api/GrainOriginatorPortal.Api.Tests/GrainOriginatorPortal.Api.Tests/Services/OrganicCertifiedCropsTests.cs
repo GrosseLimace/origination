@@ -111,12 +111,15 @@ public class OrganicCertifiedCropsTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(",,,")]
-    [InlineData(" - / & ")]
+    [InlineData(" , / & ")]
     public void NothingUsableYieldsAnEmptyList(string? input)
     {
-        // Separators with no content between them must not produce blank chips.
+        // Separators with no content between them must not produce blank chips. The hyphen left the
+        // separator list on 2026-10-13, so " - " is content now rather than punctuation — which is
+        // why this case reads " , / & " and no longer " - / & ".
         Assert.Empty(OrganicCertifiedCrops.Split(input));
     }
+
     [Fact]
     public void ExactOutputForReview()
     {
@@ -129,8 +132,12 @@ public class OrganicCertifiedCropsTests
              "Dairy Replacements (all eligible for organic slaughter)"],
             OrganicCertifiedCrops.Split(LivestockList));
 
+        // Now ONE chip. With the hyphen gone there is no punctuation in this string at all, so the
+        // carryover note renders exactly as the certifier wrote it. That is the intended outcome —
+        // it was never a crop list, and splitting it produced "4000 bushels and 2024 Corn", which
+        // is not a crop either.
         Assert.Equal(
-            ["Carryover Crops of: 2024 Soybeans", "4000 bushels and 2024 Corn", "5000 bushels"],
+            ["Carryover Crops of: 2024 Soybeans - 4000 bushels and 2024 Corn - 5000 bushels"],
             OrganicCertifiedCrops.Split(CarryoverProse));
     }
 
@@ -217,21 +224,62 @@ public class OrganicCertifiedCropsTests
     [Fact]
     public void DoesNotSplitAThousandsSeparator()
     {
+        // The hyphen no longer splits either, so this verbatim string is one chip — and the point
+        // still stands: the comma inside "1,050" did not break it into "1" and "050 bushels".
         Assert.Equal(
-            ["Carryover Crops of: 2025 Soybeans", "1,050 bushels"],
+            ["Carryover Crops of: 2025 Soybeans - 1,050 bushels"],
             OrganicCertifiedCrops.Split("Carryover Crops of: 2025 Soybeans - 1,050 bushels"));
     }
 
     [Fact]
     public void HandlesSeveralNumbersInOneString()
     {
-        // Verbatim, and the worst of the nine: two thousands separators alongside a hyphen list.
+        // Verbatim from the load, and the case that proves the comma rule on its own: the commas
+        // BETWEEN entries still split, while the ones inside "200,000" do not.
         Assert.Equal(
-            ["Carryover Crops of: 2025 Oats", "6500 bushels", "2025 Soybeans", "2000 bushels",
-             "2025 Sunflowers", "200,000 lb"],
+            ["Carryover Crops of: 2025 Oats- 6500 bushels", "2025 Soybeans- 2000 bushels",
+             "2025 Sunflowers- 200,000 lb"],
             OrganicCertifiedCrops.Split(
                 "Carryover Crops of: 2025 Oats- 6500 bushels, 2025 Soybeans- 2000 bushels, "
                 + "2025 Sunflowers- 200,000 lb"));
+    }
+
+    // ── The hyphen is NOT a separator ────────────────────────────────────────────────────────
+    //
+    // Removed 2026-10-13 on the evidence of the first full load. Of 83 strings carrying an
+    // unbracketed hyphen, exactly one ("Alfalfa-Oats") was a genuine crop pairing; the rest were
+    // compound names the split destroyed. The desk accepted one combined chip over eighty mangled
+    // ones. These pin both sides of that trade.
+
+    [Fact]
+    public void DoesNotBreakACompoundCropName()
+    {
+        Assert.Equal(["Black-eyed peas"], OrganicCertifiedCrops.Split("Black-eyed peas"));
+    }
+
+    [Fact]
+    public void DoesNotBreakAProductCode()
+    {
+        // "MSSE Lay 21 P-2" used to become "MSSE Lay 21 P" and a stray "2", and the dedup then
+        // collapsed the P-2 / P-3 variants into one.
+        Assert.Equal(
+            ["Complete poultry blends: MSSE Lay 21 P-2", "MSSE Lay 22 P-2"],
+            OrganicCertifiedCrops.Split("Complete poultry blends: MSSE Lay 21 P-2, MSSE Lay 22 P-2"));
+    }
+
+    [Fact]
+    public void DoesNotBreakAHyphenatedLabel()
+    {
+        // Several that LOOK like pairings are single items: a sorghum-sudangrass hybrid is one crop.
+        Assert.Equal(["Sorghum-Sudan"], OrganicCertifiedCrops.Split("Sorghum-Sudan"));
+        Assert.Equal(["Non-Production Land"], OrganicCertifiedCrops.Split("Non-Production Land"));
+    }
+
+    [Fact]
+    public void TheOneGenuinePairingNowRendersAsOneChip()
+    {
+        // The accepted cost. "Alfalfa-Oats" was the single string in 660 where splitting was right.
+        Assert.Equal(["Alfalfa-Oats"], OrganicCertifiedCrops.Split("Alfalfa-Oats"));
     }
 
     [Fact]
