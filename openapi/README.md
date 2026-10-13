@@ -83,6 +83,13 @@ scheduled.
 | `logic-origination-apply-bids` | DEV | Dev | `eb563a48-0f79-45c1-bdbc-5d4dbcfadcae` | requested 2026-09-17 |
 | `logic-origination-apply-bids` | QA | QA | `a54f2187-9dd0-40fc-b8c3-9e1d64f3b219` | requested 2026-09-17 |
 | `logic-origination-apply-bids` | UAT | QA | `c9f3891e-5af3-4783-8972-e8ff10eafd8f` | requested 2026-09-17 |
+| `logic-barchart-instruments` | DEV | Dev | `65624fec-b61e-4650-826f-09538f8e10da` | added after the list above; granted (verified 2026-10-08) |
+| `logic-barchart-instruments` | QA | QA | `02fe35bf-fa2d-4822-bcd5-0fb87ca2fc2c` | added after the list above; granted (verified 2026-10-08) |
+| `logic-barchart-instruments` | UAT | QA | `2e7e75de-90f1-48f3-9392-c8ad385fd8b6` | added after the list above; granted (verified 2026-10-08) |
+
+Despite "nothing further coming", a fourth calling workflow, `logic-barchart-instruments`, appeared
+later and holds the role in all three non-prod environments (checked against the API registrations'
+`appRoleAssignedTo`, 2026-10-08). So it is **twelve** non-prod grants, and **four per environment**.
 
 **DEV still runs on iPaaS today** and keeps working until the integration team enables the DEV Logic
 Apps, which they will not do before the grants are in. The three DEV grants go in the same pass so that
@@ -202,15 +209,34 @@ cutover is confirmed):
 ]
 ```
 
-Prod identities follow when prod is scheduled.
+**PROD — three grants, identities not yet supplied (AB#34913, 2026-10-09).** The integration team
+needs the role on three PROD workflows only: `logic-barchart-instruments` (POST /instruments),
+`logic-barchart-quotes` (GET /quote-batches, POST /quotes) and `logic-origination-apply-bids`
+(POST /apply-bids). `logic-barchart-instr-page` and `logic-barchart-audit-rollup` do not call us in PROD,
+although instr-page holds the role in the non-prod environments. The identities are created when the
+apps deploy to PROD (subscription `scoular-iaa-prod`, resource group
+`scoiaap-rg-use-integration-logicapps`); the apps deploy disabled, and the integration team's admin
+applies the three assignments under their CR and pastes the object ids in the thread. Add one entry per
+id here with `"environments": ["prod"]` so the grant is on record (see the next paragraph for why that
+still matters). The PROD API registration (`e1458bcd-7212-4ea0-a836-7e08d03b5bbf`) holds only the iPaaS
+identity until then. Agreed start for the PROD load: Tuesday 2026-10-13, after our PROD deploy of the
+ingest endpoints is confirmed in the thread.
+
+PROD can load before it publishes: `apply-bids` answers 200 and writes nothing while
+`Barchart:ApplyBidsEnabled` is off, so all three workflows can run on schedule from the start.
 
 No new app roles are needed — `Origination.Application` already exists in every environment as a
 convention-based default. This is assignment only, which also avoids the trap where declaring a custom
 `appRoles` array drops the roles that aren't re-listed.
 
-**Assign through this config, not by hand in the portal.** A manual Enterprise Application assignment
-works until the next app-registration sync reconciles it away, which would break the integration at an
-unpredictable moment.
+**Record every assignment in this config, even one applied by hand in the portal.** The sync is add-only
+for service principals (`Deploy-AppService.psm1`, checked 2026-10-09: it creates missing assignments and
+skips existing ones; its only removal re-homes a *group* that sits on the wrong role), so a manual
+Enterprise Application assignment is not undone by the next deployment. The integration team's admin
+has applied grants that way for QA/UAT and will for PROD. The config entry is what keeps the grant
+visible and reproducible; without it, a rebuilt registration would silently lose the integration —
+which is already the case for `logic-barchart-instruments` in Dev, QA and UAT (granted by hand, not in
+`app-config.json` as of 2026-10-09).
 
 **To verify** after it deploys: the caller's token should carry `"roles": ["Origination.Application"]`,
 and a call should return anything other than `401`. Every attempt — success or failure — lands a row in

@@ -36,6 +36,12 @@ public record BarchartApplyBidsResponse
 {
     /// <summary>Bid cells written or pruned.</summary>
     public int RowsAffected { get; init; }
+
+    /// <summary>
+    /// False when this environment has apply-bids switched off (<c>Barchart:ApplyBidsEnabled</c>): the
+    /// call succeeded and deliberately wrote nothing.
+    /// </summary>
+    public bool Enabled { get; init; }
 }
 
 /// <summary>Result of deactivating catalog entries the vendor has stopped publishing.</summary>
