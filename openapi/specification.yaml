@@ -154,6 +154,11 @@ paths:
 
         Manually entered bids are never modified, and the call is deterministic — running it twice
         changes nothing.
+
+        Safe to schedule in every environment. Where publishing is switched off (an environment loading
+        the catalog ahead of the Bid Sheet that shows it), the call still returns 200, with
+        `enabled: false` and `rowsAffected: 0`. Nothing to change on the caller's side when it is
+        switched on.
       operationId: applyBids
       parameters:
         - name: locationId
@@ -369,6 +374,10 @@ components:
           type: integer
           description: Bid cells written or pruned. Zero is normal on a run where nothing changed.
           example: 42
+        enabled:
+          type: boolean
+          description: False when publishing is switched off in this environment; the call succeeded and wrote nothing.
+          example: true
 
     DeactivateResult:
       type: object

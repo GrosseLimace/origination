@@ -173,4 +173,12 @@ describe('InsightsComponent — organic certification status changes', () => {
     expect(organic()).toEqual([]);
     expect(component.allInsights().some(i => i.category === 'UnconfirmedContracts')).toBe(true);
   });
+
+  it('has a loading skeleton for every category, organic included', () => {
+    // The skeletons were once a positional array one entry short of the category list, so the
+    // organic card threw "reading 'headerClass'" on every render until contracts arrived.
+    for (const category of component.categories) {
+      expect(component.skeletonCategories[category]?.headerClass, category).toBeTruthy();
+    }
+  });
 });
