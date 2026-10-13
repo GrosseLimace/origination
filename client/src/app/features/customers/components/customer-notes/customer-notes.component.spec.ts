@@ -215,6 +215,22 @@ describe('CustomerNotesComponent — degraded notice in the rendered picker', ()
     expect(notice(fixture)?.textContent).toContain("couldn't be loaded");
   });
 
+  it('Escape dismisses a dropdown that shows only the degraded notice, and claims the keypress', () => {
+    const fixture = render({ degraded: true });
+    typeInNote(fixture, 'Call @zz');
+    expect(fixture.componentInstance.mentionDropdownOpen()).toBe(true);
+
+    const ta = fixture.nativeElement.querySelector('textarea') as HTMLTextAreaElement;
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    ta.dispatchEvent(esc);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.mentionDropdownOpen()).toBe(false);
+    expect(notice(fixture)).toBeNull();
+    // Claimed, so a dialog wrapping the composer would not also close on it.
+    expect(esc.defaultPrevented).toBe(true);
+  });
+
   it('still closes an empty dropdown when the catalog answered in full', () => {
     const fixture = render({});
     typeInNote(fixture, 'Call @zz');

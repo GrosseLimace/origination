@@ -2896,7 +2896,7 @@
         "date": "2026-10-13",
         "detected_by": "manual"
       },
-      "resolution_notes": "DialogComponent now listens for Escape at document level and emits close when open, gated by a new closeOnEscape input (default true) for the rare dialog where abandoning part-way would lose work. Three specs added: closes on Escape, ignores it when closeOnEscape is false, ignores it while closed. Verified by mutation: removing the isOpen guard failed the while-closed test."
+      "resolution_notes": "DialogComponent now listens for Escape at document level and emits close when open, gated by a new closeOnEscape input (default true) for the rare dialog where abandoning part-way would lose work. Three specs added: closes on Escape, ignores it when closeOnEscape is false, ignores it while closed. Verified by mutation: removing the isOpen guard failed the while-closed test.\n[2026-10-13] Follow-up: Escape-to-close lost work when Escape was pressed to dismiss a picker inside a dialog. app-dialog now skips an Escape that an inner handler already claimed with preventDefault; the planting crop search boxes and the notes mention picker claim it while their list is open; What's New dropped its duplicate listener (it closed twice per keypress). Five specs added, each mutation-checked."
     },
     {
       "id": "angular.icon-only-buttons-lack-accessible-names",

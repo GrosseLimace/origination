@@ -455,6 +455,17 @@ export class PlantingIntentionsTableComponent {
     this.showAddCropSuggestions = false;
   }
 
+  /** Escape in a crop search box closes its suggestion list and stops there. Without this the
+   *  keypress reached the dialog, which closed and took the whole add or edit form with it. When
+   *  no list is open the Escape is left alone, so it still closes the dialog as usual. */
+  onCropSearchEscape(event: Event, which: 'add' | 'edit'): void {
+    const open = which === 'add' ? this.showAddCropSuggestions : this.showEditCropSuggestions;
+    if (!open) return;
+    event.preventDefault();
+    if (which === 'add') this.showAddCropSuggestions = false;
+    else this.showEditCropSuggestions = false;
+  }
+
   hideAddCropSuggestionsDelayed(): void {
     setTimeout(() => { this.showAddCropSuggestions = false; }, 150);
   }

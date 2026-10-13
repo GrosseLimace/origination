@@ -73,6 +73,31 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     ref.setInput('customer', makeCustomer());
   });
 
+  // ── Escape in the crop search boxes ───────────────────────────────────────
+  // The add and edit forms live in an app-dialog that closes on Escape. Escape pressed to dismiss
+  // the crop suggestion list must close the list and stop there, or the whole form is lost.
+  it('Escape in a crop search box with suggestions open closes the list and claims the keypress', () => {
+    for (const which of ['add', 'edit'] as const) {
+      if (which === 'add') component.showAddCropSuggestions = true;
+      else component.showEditCropSuggestions = true;
+      const esc = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+
+      component.onCropSearchEscape(esc, which);
+
+      expect(which === 'add' ? component.showAddCropSuggestions : component.showEditCropSuggestions).toBe(false);
+      expect(esc.defaultPrevented).toBe(true);
+    }
+  });
+
+  it('Escape in a crop search box with no suggestions open is left for the dialog', () => {
+    component.showAddCropSuggestions = false;
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+
+    component.onCropSearchEscape(esc, 'add');
+
+    expect(esc.defaultPrevented).toBe(false);
+  });
+
   // ── Add dialog defaults ────────────────────────────────────────────────────
 
   it('offers the PRODUCER\'s trade units, not the header selection', () => {

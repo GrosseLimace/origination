@@ -6,7 +6,7 @@ import { Component, input, output, inject, DestroyRef, effect, computed, ChangeD
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Document-level so Escape works wherever focus sits: inside the dialog, or still on the
   // trigger button, which is where it usually is at the moment the dialog opens.
-  host: { '(document:keydown.escape)': 'onEscape()' },
+  host: { '(document:keydown.escape)': 'onEscape($event)' },
   template: `
     @if (isOpen()) {
       <!-- Backdrop -->
@@ -97,7 +97,11 @@ export class DialogComponent {
     return `${this.sizeClass} ${maxHeight} ${overflow}`;
   }
 
-  public onEscape(): void {
+  public onEscape(event?: Event): void {
+    // Something inside the dialog already used this Escape, e.g. to close a suggestion list or a
+    // mention picker. The keypress meant "close that", not "close the whole dialog", so leave it.
+    // Inner handlers run first because the event reaches the document last.
+    if (event?.defaultPrevented) return;
     if (this.isOpen() && this.closeOnEscape()) {
       this.close.emit();
     }

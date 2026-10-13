@@ -539,6 +539,14 @@ export class CustomerNotesComponent {
   onNoteKeydown(event: KeyboardEvent): void {
     if (!this.mentionDropdownOpen()) return;
     const opts = this.mentionOptions();
+    // Escape always dismisses an open dropdown, including one showing only the degraded-catalog
+    // notice with nothing to pick. preventDefault also stops an enclosing dialog treating the same
+    // keypress as "close the dialog".
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeMentionDropdown();
+      return;
+    }
     if (opts.length === 0) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -549,9 +557,6 @@ export class CustomerNotesComponent {
     } else if (event.key === 'Enter') {
       event.preventDefault();
       this.selectMention(opts[this.mentionActiveIndex()]);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      this.closeMentionDropdown();
     }
   }
 

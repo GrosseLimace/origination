@@ -112,6 +112,40 @@ describe('DialogComponent', () => {
     expect(close).not.toHaveBeenCalled();
   });
 
+  it('should leave Escape alone when something inside the dialog already handled it', async () => {
+    // e.g. a search box closing its own suggestion list: that Escape means "close the list",
+    // not "throw away the whole form".
+    const close = vi.fn();
+    await render(
+      `<app-dialog [isOpen]="true" (close)="close()">
+        <app-dialog-content>
+          <input aria-label="search" (keydown.escape)="$event.preventDefault()" />
+        </app-dialog-content>
+      </app-dialog>`,
+      { imports: DIALOG_PARTS, componentProperties: { close } },
+    );
+
+    await userEvent.click(screen.getByRole('textbox', { name: 'search' }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('should still close on Escape from an inner element that did not handle it', async () => {
+    const close = vi.fn();
+    await render(
+      `<app-dialog [isOpen]="true" (close)="close()">
+        <app-dialog-content><input aria-label="plain" /></app-dialog-content>
+      </app-dialog>`,
+      { imports: DIALOG_PARTS, componentProperties: { close } },
+    );
+
+    await userEvent.click(screen.getByRole('textbox', { name: 'plain' }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('should hide the X button when showCloseButton is false', async () => {
     await renderDialog('[showCloseButton]="false"');
 
