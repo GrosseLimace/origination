@@ -1167,7 +1167,7 @@
       "id": "performance.contracts-table-missing-onpush-uncached-bindings",
       "audit": "performance",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "Primary contracts table has no OnPush and repeats uncached per-row lookups in template bindings",
       "description": "contracts-table.component.ts declares no changeDetection (defaults to Default strategy), so it re-runs full change detection on every app-wide tick. Its template calls getAppliedTickets(contract) (a .filter() over the full tickets() input with no memoization) and getPricingInfo(contract) up to 3 times per row, plus getPricingLinesForContract(contract) 4-5 times per expanded row. This is the table rendered on every customer-profile Contracts tab view, one of the most frequently opened screens.",
       "files": [
@@ -1182,7 +1182,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed; part of the deferred OnPush work. [2026-09-28] Re-verified against current contracts-table.component.ts: still no changeDetection declared, getAppliedTickets() is still an unmemoized filter+sort over the full tickets() input, getPricingInfo()/getPricingLinesForContract() still called repeatedly per row via pricingLinesMap() lookups. No regression, no fix; still open.\n[2026-10-13] Re-verified: still no changeDetection declared, getAppliedTickets() still unmemoized. No regression, no fix."
+      "notes": "[2026-09-21] Confirmed; part of the deferred OnPush work. [2026-09-28] Re-verified against current contracts-table.component.ts: still no changeDetection declared, getAppliedTickets() is still an unmemoized filter+sort over the full tickets() input, getPricingInfo()/getPricingLinesForContract() still called repeatedly per row via pricingLinesMap() lookups. No regression, no fix; still open.\n[2026-10-13] Re-verified: still no changeDetection declared, getAppliedTickets() still unmemoized. No regression, no fix.",
+      "resolved_in": {
+        "date": "2026-10-13",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Two changes, behaviour unchanged. (1) getAppliedTickets and getPricingInfo are now lookups into computed Maps built once per data change (contracts, tickets, pricing lines) instead of a filter over every ticket and a recomputation per call; the template asked for each up to four times per row on every render. The applied-ticket matching rule is preserved exactly, including the asymmetric fallback (a contract with a sourceContractId still collects tickets that have no CTRM number but match by id). (2) ChangeDetectionStrategy.OnPush, after checking what the template reads: signals, inputs, and three expansion Sets. The Sets are mutated only from click handlers and the input-driven customer-change effect; both paths now also call markForCheck explicitly, so the component is correct for any caller rather than relying on who invoked the toggle. A 30-test behaviour spec was written FIRST against the old implementation and the refactor had to pass it unchanged; it caught the one gap (direct toggle calls under OnPush) which was fixed in the component, not the spec. Verified by mutation: dropping the isApplied gate from the index and removing the id fallback for numbered contracts each failed the spec."
     },
     {
       "id": "performance.angular-template-function-calls",
