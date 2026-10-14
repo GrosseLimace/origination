@@ -806,6 +806,57 @@ describe('BidSheetComponent', () => {
     });
   });
 
+  // ── Add-location crop search ──────────────────────────────────────────────
+
+  describe('crop search (filteredCommodities)', () => {
+    const commodity = (id: number, code: string, name: string, category: string, over: Partial<Commodity> = {}): Commodity =>
+      ({ id, code, name, category, isActive: true, ...over });
+    const CURATED: Commodity[] = [
+      commodity(1, 'YC', 'Yellow Corn', 'Corn'),
+      commodity(2, 'WC', 'White Corn', 'Corn'),
+      commodity(3, 'CORNX', 'Corn Exotic', 'Corn'),
+      commodity(4, 'YSB', 'Yellow Soybeans', 'Soybeans'),
+      commodity(5, 'YC', 'Duplicate Yellow Corn', 'Corn'),
+      commodity(6, 'FRT', 'Freight', 'Transportation'),
+      commodity(7, 'MEAL', 'Corn Meal', 'FEED & FERT INGREDIENTS'),
+      commodity(8, 'OC', 'Organic Corn', 'Corn', { tradeGroupScope: 'Organics' }),
+      commodity(9, '', 'No Code Corn', 'Corn'),
+      commodity(10, 'NN', '', 'Corn'),
+    ];
+
+    it('matches every word against code or name, ranks code hits first and labels NAME (CODE)', () => {
+      api.getPlantingCommodities.mockImplementation(() => of(CURATED));
+      build(['2040']);
+
+      expect(c.filteredCommodities('')).toEqual([]);
+      expect(c.filteredCommodities('   ')).toEqual([]);
+      expect(c.filteredCommodities('corn')).toEqual([
+        { code: 'CORNX', name: 'CORN EXOTIC (CORNX)' }, // code starts-with
+        { code: 'WC', name: 'WHITE CORN (WC)' },        // contains, by name
+        { code: 'YC', name: 'YELLOW CORN (YC)' },       // first YC wins; Meal excluded; organics out of scope
+      ]);
+      expect(c.filteredCommodities('yellow corn')).toEqual([{ code: 'YC', name: 'YELLOW CORN (YC)' }]);
+      expect(c.filteredCommodities('YC')).toEqual([{ code: 'YC', name: 'YELLOW CORN (YC)' }]);
+      expect(c.filteredCommodities('yellow').map(x => x.code)).toEqual(['YC', 'YSB']);
+      expect(c.filteredCommodities('nn')).toEqual([{ code: 'NN', name: 'CORN (NN)' }]); // no name → category
+      expect(c.filteredCommodities('freight')).toEqual([]);
+
+      appState.inScopeGroupNames.set(['Organics & IP']);
+      expect(c.filteredCommodities('organic')).toEqual([{ code: 'OC', name: 'ORGANIC CORN (OC)' }]);
+    });
+
+    it('caps the list at 20 and falls back to the full list when the curated one is empty', () => {
+      const many = Array.from({ length: 30 }, (_, i) => commodity(100 + i, `W${String(i).padStart(2, '0')}`, `Wheat ${i}`, 'Wheat'));
+      api.getCommodities.mockImplementation(() => of(many));
+      build(['2040']);
+      const hits = c.filteredCommodities('wheat');
+      expect(hits).toHaveLength(20);
+      expect(hits.slice(0, 3)).toEqual([
+        { code: 'W00', name: 'WHEAT 0 (W00)' }, { code: 'W01', name: 'WHEAT 1 (W01)' }, { code: 'W10', name: 'WHEAT 10 (W10)' },
+      ]);
+    });
+  });
+
   // ── Print dialog ──────────────────────────────────────────────────────────
 
   describe('print dialog', () => {
