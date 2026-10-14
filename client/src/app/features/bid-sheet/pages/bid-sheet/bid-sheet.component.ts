@@ -22,6 +22,9 @@ import { planMarkers } from '../../utils/marker-plan';
 import { CommoditySearchResult, searchCommodities } from '../../utils/commodity-search';
 import { locationUpdate, withoutCropBids, withoutLocation, withScoularFlag } from '../../utils/location-edits';
 import {
+  GLOBAL_PREF_KEY, mergeTradeUnitLoads, parseHiddenCrops, pickSelectedYear, preferredSelection, TradeUnitLoad, yearOffsetFor
+} from '../../utils/bid-sheet-load';
+import {
   BidSheetPanelItem, buildBidLookup, buildPanelItems, buildPanelLocationBids, deriveAllProducersFilters,
   flattenBidEntries, formatMonthYear, lookupBid
 } from '../../utils/bid-math';
@@ -392,12 +395,12 @@ export class BidSheetComponent {
           else this.toastService.error('Failed to load bid data');
           return;
         }
-        const results = perTu as NonNullable<(typeof perTu)[number]>[];
-        const allLocations = results.flatMap(r => r.locations);
-        let cropYears = [...new Set(results.flatMap(r => r.cropYears))].sort((a, b) => a - b);
-        const bidCommodities = [...new Set(results.flatMap(r => r.bidCommodities))].sort();
+        const currentYear = new Date().getFullYear();
+        const merged = mergeTradeUnitLoads(perTu as TradeUnitLoad[], currentYear);
+        const bidCommodities = merged.crops;
+        const cropYears = merged.cropYears;
 
-        this.bidLocations.set(allLocations);
+        this.bidLocations.set(merged.locations);
         this.crops.set(bidCommodities);
 
         // Always ensure a crop is selected (first available if current is invalid)
@@ -405,19 +408,14 @@ export class BidSheetComponent {
           this.selectedCrop.set(bidCommodities[0]);
         }
 
-        const currentYear = new Date().getFullYear();
-        if (cropYears.length === 0) cropYears = [currentYear];
         this.cropYears.set(cropYears);
-        if (!cropYears.includes(this.selectedYear())) {
-          this.selectedYear.set(cropYears.includes(currentYear) ? currentYear : cropYears[cropYears.length - 1]);
-        }
+        this.selectedYear.set(pickSelectedYear(cropYears, this.selectedYear(), currentYear));
         // Anchor the old/new comparison window to the SELECTED year so the panel's "prior" column is
         // always selectedYear-1 — not the second-latest year. Previously this reset yearOffset to 0
         // (= latest two years); when the selected year wasn't the latest (e.g. 2026 with 2027 bids
         // present), the "prior" column collided with the selected year and both showed the same year
         // with the same bid after a refresh/Done.
-        const selIdx = cropYears.indexOf(this.selectedYear());
-        this.yearOffset.set(selIdx >= 0 ? selIdx - (cropYears.length - 1) : 0);
+        this.yearOffset.set(yearOffsetFor(cropYears, this.selectedYear()) ?? 0);
 
         this.isLoading.set(false);
         this.filterBids();
@@ -551,21 +549,16 @@ export class BidSheetComponent {
     });
   }
 
-  /** Special key used to store the user's global (cross-TU) crop preference. */
-  private static readonly GLOBAL_PREF_KEY = '__global__';
-
   /** Loads saved preferences (crop, month, year) for the current TU combo, falling back to global if no per-key entry. */
   private _loadPreference(tus: string[]): void {
     if (tus.length === 0) return;
     const key = [...tus].sort().join(',');
     forkJoin({
       perKey: this.apiService.getBidSheetPreference(key),
-      global: this.apiService.getBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY)
+      global: this.apiService.getBidSheetPreference(GLOBAL_PREF_KEY)
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ perKey, global }) => {
       // Per-key takes priority; fall back to global if per-key is missing the field
-      const desiredCrop = perKey?.cropCode ?? global?.cropCode ?? null;
-      const desiredMonth = perKey?.month ?? global?.month ?? null;
-      const desiredYear = perKey?.cropYear ?? global?.cropYear ?? null;
+      const { crop: desiredCrop, month: desiredMonth, year: desiredYear } = preferredSelection(perKey, global);
 
       let changed = false;
 
@@ -584,21 +577,14 @@ export class BidSheetComponent {
 
       // Apply year if available in current cropYears
       if (desiredYear != null && this.cropYears().includes(desiredYear) && this.selectedYear() !== desiredYear) {
-        const years = this.cropYears();
-        const idx = years.indexOf(desiredYear);
+        const offset = yearOffsetFor(this.cropYears(), desiredYear);
         this.selectedYear.set(desiredYear);
-        if (idx >= 0) this.yearOffset.set(idx - (years.length - 1));
+        if (offset !== null) this.yearOffset.set(offset);
         changed = true;
       }
 
       // Apply hidden crops if available
-      const hiddenCropsJson = perKey?.hiddenCrops ?? null;
-      if (hiddenCropsJson) {
-        try { this.hiddenCrops.set(new Set(JSON.parse(hiddenCropsJson))); }
-        catch { this.hiddenCrops.set(new Set()); }
-      } else {
-        this.hiddenCrops.set(new Set());
-      }
+      this.hiddenCrops.set(parseHiddenCrops(perKey?.hiddenCrops ?? null));
 
       // Apply selected months if available
       const selectedMonthsJson = perKey?.selectedMonths ?? null;
@@ -648,7 +634,7 @@ export class BidSheetComponent {
         .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save per-TU bid sheet preference', err); } });
     }
     // Always save globally so choices carry over to new TU/group selections
-    this.apiService.setBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear)
+    this.apiService.setBidSheetPreference(GLOBAL_PREF_KEY, cropCode, month, cropYear)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save global bid sheet preference', err); } });
   }
@@ -723,11 +709,8 @@ export class BidSheetComponent {
   onYearDropdownChange(year: number): void {
     this.selectedYear.set(year);
     // Sync yearOffset so newYear() matches the dropdown selection
-    const years = this.cropYears();
-    const idx = years.indexOf(year);
-    if (idx >= 0) {
-      this.yearOffset.set(idx - (years.length - 1));
-    }
+    const offset = yearOffsetFor(this.cropYears(), year);
+    if (offset !== null) this.yearOffset.set(offset);
     this.onFilterChange();
     this._savePreference();
   }
@@ -1589,7 +1572,7 @@ export class BidSheetComponent {
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save per-TU print layout', err); } });
     }
-    this.apiService.setBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, undefined, undefined, undefined, layout)
+    this.apiService.setBidSheetPreference(GLOBAL_PREF_KEY, cropCode, month, cropYear, undefined, undefined, undefined, layout)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save global print layout', err); } });
   }

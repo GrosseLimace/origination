@@ -295,6 +295,24 @@ describe('BidSheetComponent', () => {
       expect(c.selectedYear()).toBe(2024); // 2026 has no bids and is not current-year data
     });
 
+    it('anchors the old/new window on the selected year, falling back to the current year, else the latest', () => {
+      api.getBidCropYears.mockImplementation(() => of([2026, 2027]));
+      build(['2040']);
+      expect([c.selectedYear(), c.yearOffset(), c.newYear()]).toEqual([2026, -1, 2026]);
+      expect(c.oldDisplay()).toEqual({ month: 0, year: 2025 });
+
+      api.getBidCropYears.mockImplementation((tu: string) => of(tu === '2050' ? [2024, 2027] : [2025, 2026]));
+      appState.selectedTradeUnits.set(['2050']);
+      flush();
+      expect([c.cropYears(), c.selectedYear(), c.yearOffset()]).toEqual([[2024, 2027], 2027, 0]);
+    });
+
+    it('a trade unit with no crop years yet falls back to the current year', () => {
+      api.getBidCropYears.mockImplementation(() => of([]));
+      build(['2040']);
+      expect([c.cropYears(), c.selectedYear(), c.yearOffset()]).toEqual([[2026], 2026, 0]);
+    });
+
     it('clearing the trade unit drops to read-only All Producers and derives filters from every location', () => {
       build(['2040']);
       c.selectedBasis.set('beating');
@@ -490,6 +508,41 @@ describe('BidSheetComponent', () => {
 
       c.hiddenCrops.set(new Set(['YC']));
       expect(c.editGridColumns().map(col => col.key)).toEqual(['SB#0', 'SB#5']);
+    });
+
+    it('applies the month preference, falls back to Yearly on corrupt months, and clears hidden crops when a preference has none', () => {
+      api.getBidSheetPreference.mockImplementation((key: string) => of(
+        key === '2040' ? makePref({ month: 4, selectedMonths: '{bad', hiddenCrops: '["SB"]' }) : null,
+      ));
+      build(['2040']);
+      expect(c.selectedMonth()).toBe(4);
+      expect(c.editBidsMonths()).toEqual([0]);
+      expect([...c.hiddenCrops()]).toEqual(['SB']);
+
+      appState.selectedTradeUnits.set([]);
+      flush();
+      api.getBidSheetPreference.mockImplementation(() => of(null));
+      appState.selectedTradeUnits.set(['2040']);
+      flush();
+      expect(c.hiddenCrops().size).toBe(0);
+      expect(c.selectedMonth()).toBe(4); // nothing saved → keep
+    });
+
+    it('picking a year from the dropdown re-anchors the old/new window and saves the preference', () => {
+      build([], ['Kansas']); // crop years 2024..2026
+      api.setBidSheetPreference.mockClear();
+      c.onYearDropdownChange(2024);
+      expect([c.selectedYear(), c.yearOffset(), c.newYear()]).toEqual([2024, -2, 2024]);
+      expect(api.setBidSheetPreference).toHaveBeenCalledWith('__global__', 'SB', 0, 2024);
+
+      c.onYearDropdownChange(2030); // no data: offset untouched
+      expect([c.selectedYear(), c.yearOffset()]).toEqual([2030, -2]);
+    });
+
+    it('a saved year outside the loaded crop years is ignored', () => {
+      api.getBidSheetPreference.mockImplementation(() => of(makePref({ cropYear: 2019, cropCode: 'ZZ' })));
+      build(['2040']);
+      expect([c.selectedYear(), c.selectedCrop(), c.yearOffset()]).toEqual([2026, 'SB', 0]);
     });
 
     it('hidden crops from the preference are excluded; corrupt JSON degrades to all visible', () => {
