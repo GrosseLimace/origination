@@ -2002,7 +2002,7 @@
       }
 
       <!-- Save / Update List Dialog -->
-      <app-dialog [isOpen]="showSaveDialog()" (close)="closeSaveDialog()" size="sm">
+      <app-dialog [isOpen]="showSaveDialog()" (close)="closeSaveDialog()" [closeOnEscape]="false" size="sm">
         <app-dialog-header>
           <app-dialog-title>{{ activeSavedList() ? 'Update List' : 'Save List' }}</app-dialog-title>
           <app-dialog-description>{{ activeSavedList() ? 'Update the name or keep it the same' : 'Give this list a name so you can easily access it later' }}</app-dialog-description>
@@ -2026,7 +2026,7 @@
       </app-dialog>
 
       <!-- Step 1: pick the member(s) to build a list for (member-first flow) -->
-      <app-dialog [isOpen]="showBuildForDialog()" (close)="closeBuildForDialog()" size="sm">
+      <app-dialog [isOpen]="showBuildForDialog()" (close)="closeBuildForDialog()" [closeOnEscape]="false" size="sm">
         <app-dialog-header>
           <app-dialog-title>Who is this list for?</app-dialog-title>
           <app-dialog-description>Pick the team member(s), then build the list — each gets their own copy.</app-dialog-description>
@@ -2062,7 +2062,7 @@
 
       <!-- Step 3: name + confirm the assignment (manager-only). Members pre-selected from step 1
            in the build-for flow, or chosen here when assigning an existing list from a row. -->
-      <app-dialog [isOpen]="showAssignDialog()" (close)="closeAssignDialog()" size="sm">
+      <app-dialog [isOpen]="showAssignDialog()" (close)="closeAssignDialog()" [closeOnEscape]="false" size="sm">
         <app-dialog-header>
           <app-dialog-title>Assign list to team member(s)</app-dialog-title>
           <app-dialog-description>Each selected member gets their own copy in their Saved Lists.</app-dialog-description>

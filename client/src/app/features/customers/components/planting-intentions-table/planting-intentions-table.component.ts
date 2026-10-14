@@ -705,6 +705,8 @@ export class PlantingIntentionsTableComponent {
 
   closeEditDialog(): void {
     this.showEditDialog.set(false);
+    // The delete prompt belongs to this dialog. Left up, it would reappear over the next row opened.
+    this.showDeleteConfirm.set(false);
     this.selectedIntention = null;
     document.body.style.overflow = '';
   }

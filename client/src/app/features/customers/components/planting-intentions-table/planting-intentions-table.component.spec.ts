@@ -75,8 +75,8 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   });
 
   // ── Escape in the crop search boxes ───────────────────────────────────────
-  // The add and edit forms live in an app-dialog that closes on Escape. Escape pressed to dismiss
-  // the crop suggestion list must close the list and stop there, or the whole form is lost.
+  // Escape pressed to dismiss the crop suggestion list must close the list and claim the keypress.
+  // The add and edit dialogs themselves do not close on Escape: a half-filled form would be lost.
   it('Escape in a crop search box with suggestions open closes the list and claims the keypress', () => {
     for (const which of ['add', 'edit'] as const) {
       if (which === 'add') component.showAddCropSuggestions.set(true);
@@ -430,5 +430,36 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
     fixture.detectChanges();
 
     expect(suggestions()).toEqual([]);
+  });
+
+  // ── Escape and the delete prompt ──────────────────────────────────────────
+
+  it('keeps the Add and Edit dialogs open on Escape, so a half-filled form is not lost', () => {
+    component.openAddDialog();
+    fixture.detectChanges();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(openDialogTitles()).toContain('Add Planting Intention');
+    component.closeAddDialog();
+
+    component.openEditDialog(makeIntention({ id: 1 }));
+    fixture.detectChanges();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(openDialogTitles()).toContain('Edit Planting Intention');
+  });
+
+  it('does not carry an open delete prompt over to the next row edited', () => {
+    component.openEditDialog(makeIntention({ id: 1 }));
+    component.openDeleteConfirm();
+    fixture.detectChanges();
+    expect(text()).toContain('Delete Planting Intention?');
+
+    component.closeEditDialog();
+    component.openEditDialog(makeIntention({ id: 2 }));
+    fixture.detectChanges();
+
+    expect(component.showDeleteConfirm()).toBe(false);
+    expect(text()).not.toContain('Delete Planting Intention?');
   });
 });
