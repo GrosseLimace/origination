@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal, computed, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal, computed, OnInit } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
@@ -44,7 +44,11 @@ function matchesCommodity(c: Contract, terms: string[]): boolean {
   selector: 'app-unshipped-bushels',
   standalone: true,
   imports: [CommonModule, FormsModule, CardComponent, BadgeComponent],
-  templateUrl: './unshipped-bushels.component.html'
+  templateUrl: './unshipped-bushels.component.html',
+  // The template reads signals, computeds and a getter over the search signals. The API fallback's
+  // callbacks write signals; group.expanded is mutated only from a click, which then replaces the
+  // _groups array.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class UnshippedBushelsComponent implements OnInit {
   private readonly appState = inject(AppStateService);

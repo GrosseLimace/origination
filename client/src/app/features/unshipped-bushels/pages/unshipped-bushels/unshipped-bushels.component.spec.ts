@@ -221,6 +221,23 @@ describe('UnshippedBushelsComponent', () => {
     expect(setContracts).not.toHaveBeenCalled();
   });
 
+  it('drops the spinner for the empty state when a pending load fails after the first render', () => {
+    // throwError above fails inside the first render; a real request fails later, when only the
+    // loading flag changes.
+    const response = new Subject<Contract[]>();
+    getContracts.mockReturnValue(response);
+
+    createPage();
+    expect(hasText('Loading contracts...')).toBe(true);
+
+    response.error(new Error('boom'));
+    fixture.detectChanges();
+
+    expect(toastError).toHaveBeenCalledWith('Failed to load contracts');
+    expect(hasText('Loading contracts...')).toBe(false);
+    expect(hasText('No unshipped bushels found')).toBe(true);
+  });
+
   // ── Expand / collapse ─────────────────────────────────────────────────────
 
   it('expands a producer to its contracts, soonest delivery end first, and logs only the expand', () => {
