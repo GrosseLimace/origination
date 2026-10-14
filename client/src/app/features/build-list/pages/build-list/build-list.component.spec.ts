@@ -994,5 +994,172 @@ describe('BuildListComponent', () => {
       expect(c.hiddenFilters().has('noActiveContracts')).toBe(true);
       expect(c.hiddenFilters().has('hasUnpricedContracts')).toBe(false);
     });
+
+    // ── Refinement filtering (displayedCustomers) ──
+
+    it('storage refinements total each producer\'s receipts, and a crop chip scopes them to the Storage dimension', () => {
+      api.getStoredGrain.mockReturnValue(of([
+        { customerId: 1, crop: 'YC', quantity: 6000, receivableAmount: 10 },
+        { customerId: 1, crop: 'SB', quantity: 100, receivableAmount: 10 },
+        { customerId: 3, crop: 'SB', quantity: 9000, receivableAmount: 900 },
+      ] as never));
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      c.updateRefinement(r => ({ ...r, storageQuantityOver: 5000 }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Charlie Farms']);
+
+      c.updateRefinement(r => ({ ...r, storageReceivableOver: 100 }));
+      expect(names(c.displayedCustomers())).toEqual(['Charlie Farms']);
+
+      c.updateRefinement(r => ({ ...r, storageReceivableOver: null }));
+      nlq.refineDimension.mockReturnValue('Storage' as never);
+      c.togglePendingCrop('YC');
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+      expect(text()).toContain('Showing 1 of 3 producer(s)');
+    });
+
+    it('ticket refinements: deliveries this year (UTC year), recent tickets and delivery locations', () => {
+      api.getTickets.mockReturnValue(of([
+        { id: 1, customerCode: 'C1', date: '2026-10-10', elevatorCity: 'Madrid, NE', productCode: 'YC' },
+        { id: 2, customerCode: 'C2', date: '2026-01-01', elevatorCity: 'Pratt, KS', productCode: 'SB' },
+        { id: 3, customerCode: 'C3', date: '2025-12-31', elevatorCity: 'Madrid, NE', productCode: 'YC' },
+      ] as never));
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+      expect(c.availableDeliveryLocations()).toEqual(['Madrid, NE', 'Pratt, KS']);
+
+      c.updateRefinement(r => ({ ...r, hasDeliveriesThisYear: true }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Bravo Grain']);
+
+      c.updateRefinement(r => ({ ...r, hasDeliveriesThisYear: false, ticketsInLastDays: 30 }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+
+      c.updateRefinement(r => ({ ...r, ticketsInLastDays: null }));
+      c.togglePendingDeliveryLocation('Madrid, NE');
+      expect(c.isDeliveryLocationSelected('Madrid, NE')).toBe(true);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Charlie Farms']);
+    });
+
+    it('contract refinements read open contracts only: none active, overdue, expiring, multi-commodity and bushel totals', () => {
+      api.getContracts.mockReturnValue(of([
+        makeContract({ id: 1, ctrmCustomerId: 'C1', commodityCode: 'YC', quantity: 4000, openBalanceQuantity: 4000,
+          deliveryEnd: new Date(NOW.getTime() - 5 * DAY) }),
+        makeContract({ id: 2, ctrmCustomerId: 'C1', commodityCode: 'SB', commodityDescription: 'Soybeans', commodityGroup: 'Soybeans', quantity: 3000 }),
+        makeContract({ id: 3, ctrmCustomerId: 'C2', status: 'Fulfilled', quantity: 50000, deliveryEnd: new Date('2026-10-20T12:00:00') }),
+        makeContract({ id: 4, ctrmCustomerId: 'C3', quantity: 90000, closedDate: new Date(NOW.getTime() - DAY) }),
+      ]));
+      const c = mount();
+      c.selectLibraryQuery(LIB_CONTRACTS);
+
+      c.updateRefinement(r => ({ ...r, noActiveContracts: true }));
+      expect(names(c.displayedCustomers())).toEqual(['Bravo Grain', 'Charlie Farms']);
+
+      c.updateRefinement(r => ({ ...r, noActiveContracts: false, noContractsAtAll: true }));
+      expect(names(c.displayedCustomers())).toEqual(['Charlie Farms']);
+
+      c.updateRefinement(r => ({ ...r, noContractsAtAll: false, hasOverdueContracts: true }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+
+      c.updateRefinement(r => ({ ...r, hasOverdueContracts: false, contractsExpiringThisMonth: true }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Bravo Grain']);
+
+      c.updateRefinement(r => ({ ...r, contractsExpiringThisMonth: false, multipleCommoditiesContracted: true }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+
+      c.updateRefinement(r => ({ ...r, multipleCommoditiesContracted: false, contractQuantityOver: 6000 }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Bravo Grain']);
+
+      c.updateRefinement(r => ({ ...r, contractQuantityOver: null, hasActiveContracts: true }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+    });
+
+    it('producer-level refinements: acres, contact details, linked producers, eSign and grain on farm', () => {
+      api.getCustomers.mockReturnValue(of([
+        makeCustomer({ id: 1, name: 'Alpha Acres', totalAcres: 900, email: 'a@x.com', linkedProducerIds: ['C2'],
+          grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 8000, targetBushels: 4.5, grade: '15.5%' }] }),
+        makeCustomer({ id: 2, name: 'Bravo Grain', totalAcres: 200, contacts: [{ name: 'Son', phone: '(555) 555-5555' }] as never,
+          eSignEnabled: true, grainOnFarm: [{ commodityCode: 'SB', bushelsOnHand: 500 }] }),
+        makeCustomer({ id: 3, name: 'Charlie Farms', totalAcres: 600, primaryContact: 'Chuck' }),
+      ]));
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      const only = (patch: RefinementFilters) => { c.clearRefinements(); c.updateRefinement(r => ({ ...r, ...patch })); return names(c.displayedCustomers()); };
+      expect(only({ acresOver: 500 })).toEqual(['Alpha Acres', 'Charlie Farms']);
+      expect(only({ hasEmail: true })).toEqual(['Alpha Acres']);
+      expect(only({ hasPhone: true })).toEqual(['Bravo Grain']);
+      expect(only({ hasPrimaryContact: true })).toEqual(['Charlie Farms']);
+      expect(only({ noPrimaryContact: true })).toEqual(['Alpha Acres', 'Bravo Grain']);
+      expect(only({ hasLinkedProducers: true })).toEqual(['Alpha Acres']);
+      expect(only({ notEsignEnrolled: true })).toEqual(['Alpha Acres', 'Charlie Farms']);
+      expect(only({ grainOnFarmBushelsOver: 1000 })).toEqual(['Alpha Acres']);
+      expect(only({ noGrainTarget: true })).toEqual(['Bravo Grain']);
+      expect(only({ grainTargetOver: 4 })).toEqual(['Alpha Acres']);
+      expect(only({ gradeOver: 15 })).toEqual(['Alpha Acres']);
+    });
+
+    it('planting and DP refinements', () => {
+      api.getPlantingIntentions.mockReturnValue(of([
+        { id: 1, customerId: 1, crop: 'YC', acres: 400, plantingYear: 2026, type: 'Irrigated' },
+        { id: 2, customerId: 3, crop: 'SB', acres: 900, plantingYear: 2027, type: 'Dryland' },
+      ] as never));
+      appState.setDpContracts([
+        { id: 'a', ticketKey: 't1', customerId: 2, crop: 'YC', quantity: 7000, bushels: 7000, storageDays: 120, receivableAmount: 300 },
+        { id: 'b', ticketKey: 't2', customerId: 3, crop: 'SB', quantity: 100, bushels: 100, storageDays: 10, receivableAmount: 5 },
+      ] as never);
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      const only = (patch: RefinementFilters) => { c.clearRefinements(); c.updateRefinement(r => ({ ...r, ...patch })); return names(c.displayedCustomers()); };
+      expect(only({ hasPlantingIntentions: true })).toEqual(['Alpha Acres', 'Charlie Farms']);
+      expect(only({ plantingYear: 2027 })).toEqual(['Charlie Farms']);
+      expect(only({ irrigatedOnly: true })).toEqual(['Alpha Acres']);
+      expect(only({ plantingAcresOver: 500 })).toEqual(['Charlie Farms']);
+      expect(only({ hasDpContracts: true })).toEqual(['Bravo Grain', 'Charlie Farms']);
+      expect(only({ dpBushelsOver: 1000 })).toEqual(['Bravo Grain']);
+      expect(only({ dpDaysOver: 90 })).toEqual(['Bravo Grain']);
+      expect(only({ dpChargesOver: 10 })).toEqual(['Bravo Grain']);
+    });
+
+    it('note refinements aggregate a linked producer\'s notes and collapse the pair into one row', () => {
+      api.getCustomers.mockReturnValue(of([
+        makeCustomer({ id: 1, name: 'Alpha Acres', linkedProducerIds: ['C2'] }),
+        makeCustomer({ id: 2, name: 'Bravo Grain' }),
+        makeCustomer({ id: 3, name: 'Charlie Farms' }),
+      ]));
+      api.getNotes.mockReturnValue(of([
+        { id: 1, customerId: 2, customerCode: 'C2', customerName: 'Bravo Grain', content: 'Drought hit the beans', isPinned: false,
+          createdBy: 'Pat Merchant', createdAt: '2026-10-12T10:00:00' },
+        { id: 2, customerId: 3, customerCode: 'C3', customerName: 'Charlie Farms', content: 'All good here', isPinned: true,
+          createdBy: 'Someone Else', createdAt: '2026-10-11T10:00:00' },
+      ] as never));
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      c.updateRefinement(r => ({ ...r, noteKeyword: 'drought' }));
+      TestBed.tick();
+      expect(c.noteFilterActive()).toBe(true);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+      const page = text();
+      expect(page).toContain('Drought hit the beans');
+      expect(page).toContain('Bravo Grain (C2)');
+      expect(page).not.toContain('All good here');
+
+      c.clearRefinements();
+      c.updateRefinement(r => ({ ...r, hasPinnedNotes: true }));
+      TestBed.tick();
+      expect(names(c.displayedCustomers())).toEqual(['Charlie Farms']);
+
+      c.clearRefinements();
+      c.updateRefinement(r => ({ ...r, contactedBySomeoneElse: true }));
+      TestBed.tick();
+      expect(names(c.displayedCustomers())).toEqual(['Charlie Farms']);
+
+      c.clearRefinements();
+      c.updateRefinement(r => ({ ...r, contactedByMeOnly: true }));
+      TestBed.tick();
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+    });
   });
 });
