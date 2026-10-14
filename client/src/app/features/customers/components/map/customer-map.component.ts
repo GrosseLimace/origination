@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, input, output, effect, afterNextRender } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, input, output, effect, afterNextRender, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -32,7 +32,11 @@ interface StateInfo {
   selector: 'app-customer-map',
   standalone: true,
   imports: [CommonModule, BadgeComponent],
-  templateUrl: './customer-map.component.html'
+  templateUrl: './customer-map.component.html',
+  // The template reads two inputs and the isGeocoding signal. Leaflet draws the map and its popups
+  // outside Angular's view, so this strategy does not affect them; the popup's "View Customer" link
+  // only emits selectCustomer.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CustomerMapComponent {
   private readonly appState = inject(AppStateService);
@@ -47,7 +51,9 @@ export class CustomerMapComponent {
   public close = output<void>();
   public selectCustomer = output<Customer>();
 
-  isGeocoding = false;
+  /** A signal: it is written after the first render and after the geocode request settles, neither
+   *  of which is a template event. */
+  readonly isGeocoding = signal(false);
 
   private _map: L.Map | null = null;
   private _markers: L.Marker[] = [];
@@ -323,7 +329,7 @@ export class CustomerMapComponent {
 
     if (toGeocode.length === 0) return;
 
-    this.isGeocoding = true;
+    this.isGeocoding.set(true);
 
     // Batch geocode all uncached addresses in a single server request.
     // The server processes them sequentially (1/sec Nominatim rate limit) and returns once done.
@@ -371,7 +377,7 @@ export class CustomerMapComponent {
       // API unavailable — markers remain at approximate positions
     }
 
-    this.isGeocoding = false;
+    this.isGeocoding.set(false);
   }
 
   /**
