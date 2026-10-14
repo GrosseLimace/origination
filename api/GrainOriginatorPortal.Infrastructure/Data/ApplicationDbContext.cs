@@ -453,15 +453,24 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.UnmatchedCustomer).HasColumnName("UnmatchedCustomer").HasDefaultValue(0).IsRequired();
             entity.Property(e => e.Message).HasColumnName("Message").HasMaxLength(1000).IsRequired(false);
             entity.Property(e => e.FeedRunId).HasColumnName("FeedRunId").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.RunPosition).HasColumnName("RunPosition").IsRequired(false);
+            entity.Property(e => e.RunTotal).HasColumnName("RunTotal").IsRequired(false);
+            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.SkipReason).HasColumnName("SkipReason").HasMaxLength(50).IsRequired(false);
 
             // Did the feed arrive last night? — the question this table exists to answer, so the
             // index is on arrival time rather than on the batch id.
             entity.HasIndex(e => e.ReceivedOn).HasDatabaseName("IX_OrganicCertificationLoad_ReceivedOn");
 
-            // "Show me everything from run X" — the point of storing the sender's run id at all.
-            // Filtered: every row predating 2026-10-07 has a null here and none of them can ever
-            // be the subject of that question, so they are kept out of the index entirely.
-            entity.HasIndex(e => e.FeedRunId)
+            // "Show me everything from run X", and the completeness check on top of it:
+            // COUNT(DISTINCT RunPosition) WHERE FeedRunId = @run. RunPosition is in the key rather
+            // than left to a lookup so that query is covered — it is the one this table exists to
+            // answer quickly, and it runs for every run we assess.
+            //
+            // Filtered: every row predating 2026-10-07 has a null run id, as does every intraday
+            // one-off edit. None of them can ever be the subject of that question, so they stay out
+            // of the index entirely.
+            entity.HasIndex(e => new { e.FeedRunId, e.RunPosition })
                   .HasDatabaseName("IX_OrganicCertificationLoad_FeedRunId")
                   .HasFilter("[FeedRunId] IS NOT NULL");
         });

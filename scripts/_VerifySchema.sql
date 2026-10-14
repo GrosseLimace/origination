@@ -559,6 +559,10 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertificationLoad', 'Accepted',          'int',            0),
 ('dbo', 'OrganicCertificationLoad', 'BatchId',           'uniqueidentifier', 0),
 ('dbo', 'OrganicCertificationLoad', 'FeedRunId',         'nvarchar(100)',  1),
+('dbo', 'OrganicCertificationLoad', 'RunPosition',       'int',            1),
+('dbo', 'OrganicCertificationLoad', 'RunTotal',          'int',            1),
+('dbo', 'OrganicCertificationLoad', 'ScoularId',         'nvarchar(50)',   1),
+('dbo', 'OrganicCertificationLoad', 'SkipReason',        'nvarchar(50)',   1),
 ('dbo', 'OrganicCertificationLoad', 'Message',           'nvarchar(1000)', 1),
 ('dbo', 'OrganicCertificationLoad', 'Nopid',             'nvarchar(50)',   1),
 ('dbo', 'OrganicCertificationLoad', 'ReceivedOn',        'datetime2',      0),
@@ -780,7 +784,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (83)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (84)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -867,7 +871,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261007145119_AddProducerBinSite'),
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
 ('20261007162014_AddBinSiteQueryLibraryItems'),
-('20261007180000_AddOrganicCertificationFeedRunId');
+('20261007180000_AddOrganicCertificationFeedRunId'),
+('20261014090000_AddOrganicCertificationRunPosition');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
