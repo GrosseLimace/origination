@@ -45,6 +45,8 @@ security:
 tags:
   - name: session
     description: Caller identity and entitled trade units
+  - name: saved-lists
+    description: Saved Build-A-List lists visible for the selected trade units (metadata + manual members)
   - name: customers
     description: Producer search and detail (cards #641, #642)
   - name: producer-details
@@ -84,17 +86,88 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
+  /saved-lists:
+    get:
+      tags: [saved-lists]
+      operationId: getSavedLists
+      summary: Saved lists visible for the selected trade units
+      description: >
+        Own and team Build-A-List saved lists whose trade units overlap the selection (a list with no
+        trade units is never offered). A saved list's query criteria are evaluated on the desktop;
+        the phone exposes metadata and manually added members only.
+      parameters:
+        - name: tradeUnits
+          in: query
+          required: true
+          schema:
+            type: array
+            items: { type: string, maxLength: 10 }
+            minItems: 1
+            maxItems: 20
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: Saved lists
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SavedListSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /saved-lists/{listId}/members:
+    parameters:
+      - name: listId
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [saved-lists]
+      operationId: getSavedListMembers
+      summary: Manually added producers of a saved list, within the selected trade units
+      parameters:
+        - name: tradeUnits
+          in: query
+          required: true
+          schema:
+            type: array
+            items: { type: string, maxLength: 10 }
+            minItems: 1
+            maxItems: 20
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: Producers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CustomerSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
   /customers:
     get:
       tags: [customers]
       operationId: searchCustomers
       summary: Search producers by name within the caller's trade units
-      description: Card #641. No bulk list building; search only. Results are capped server-side.
+      description: >
+        Card #641. With q, a name search. Without q, the producers in the selected (or all entitled)
+        trade units ordered by name, so the first screen is never empty. Capped by limit either way;
+        this is a browse list, not the desktop's list-building surface.
       parameters:
         - name: q
           in: query
-          required: true
-          description: Name fragment, minimum 2 characters
+          required: false
+          description: Name fragment, minimum 2 characters when present
           schema: { type: string, minLength: 2, maxLength: 100 }
         - name: tradeUnits
           in: query
@@ -168,8 +241,9 @@ paths:
       operationId: updateProducerDetails
       summary: Update on-farm details
       description: >
-        Card #643. Whole-record upsert of the editable on-farm fields only. Contacts and
-        linked producers are NOT editable from mobile. Audited with before/after values.
+        Card #643. Updates total acres. Contacts, linked producers, bin sites and grain on farm are
+        preserved, not re-sent; bin sites and grain on farm are read-only on mobile until a site-aware
+        mobile editor exists. Audited with before/after values.
       requestBody:
         required: true
         content:
@@ -499,12 +573,41 @@ components:
   schemas:
     Session:
       type: object
-      required: [displayName, tradeUnits]
+      required: [displayName, tradeUnits, groups]
       properties:
         displayName: { type: string }
         tradeUnits:
           type: array
           items: { $ref: '#/components/schemas/TradeUnit' }
+        groups:
+          type: array
+          description: The caller's Trade Unit Preferences groups; the first screen of the producer flow.
+          items: { $ref: '#/components/schemas/TradeUnitGroup' }
+
+    TradeUnitGroup:
+      type: object
+      required: [name, tradeUnitCodes]
+      properties:
+        name: { type: string }
+        tradeUnitCodes:
+          type: array
+          items: { type: string }
+
+    SavedListSummary:
+      type: object
+      required: [id, name, query, tradeUnits, manualMemberCount, hasQueryCriteria, createdBy, isTeamList]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        query: { type: string, description: "The natural-language query as saved; evaluated on the desktop only" }
+        tradeUnits:
+          type: array
+          items: { type: string }
+        manualMemberCount: { type: integer }
+        hasQueryCriteria: { type: boolean }
+        createdBy: { type: string }
+        assignedToName: { type: string, nullable: true }
+        isTeamList: { type: boolean }
 
     TradeUnit:
       type: object
@@ -556,37 +659,49 @@ components:
 
     ProducerDetails:
       type: object
-      required: [customerId, grainOnFarm]
+      description: >
+        Since the 2026-10-13 release storage capacity is recorded per bin site and grain on farm is tied
+        to a site. Bin sites and grain on farm are read-only on mobile for now.
+      required: [customerId, binSites, grainOnFarm]
       properties:
         customerId: { type: integer, format: int64 }
         totalAcres: { type: number, nullable: true }
-        binCapacity: { type: number, nullable: true, description: Bushels }
+        totalBinCapacity: { type: number, nullable: true, description: "Bushels; sum of the sites' capacities" }
+        binSites:
+          type: array
+          items: { $ref: '#/components/schemas/BinSite' }
         grainOnFarm:
           type: array
           items: { $ref: '#/components/schemas/GrainOnFarmItem' }
         modifiedBy: { type: string, nullable: true }
         modifiedAt: { type: string, format: date-time, nullable: true }
 
+    BinSite:
+      type: object
+      properties:
+        name: { type: string, nullable: true }
+        capacity: { type: number, nullable: true, description: Bushels }
+
     GrainOnFarmItem:
       type: object
       required: [commodityCode]
       properties:
         commodityCode: { type: string }
+        binSiteName: { type: string, nullable: true }
         bushelsOnHand: { type: number, nullable: true }
+        bushelsSold: { type: number, nullable: true }
         targetBushels: { type: number, nullable: true }
         grade: { type: string, nullable: true, maxLength: 20 }
 
     ProducerDetailsUpdate:
       type: object
-      required: [clientRequestId, grainOnFarm]
+      description: >
+        Total acres only. Bin sites and grain on farm are preserved server-side, never overwritten from
+        the phone (the mobile shape cannot carry site links, bushels sold or last bid).
+      required: [clientRequestId]
       properties:
         clientRequestId: { type: string, format: uuid }
         totalAcres: { type: number, nullable: true, minimum: 0, maximum: 10000000 }
-        binCapacity: { type: number, nullable: true, minimum: 0, maximum: 100000000 }
-        grainOnFarm:
-          type: array
-          maxItems: 50
-          items: { $ref: '#/components/schemas/GrainOnFarmItem' }
         expectedModifiedAt:
           type: string
           format: date-time
@@ -620,7 +735,6 @@ components:
       required: [clientRequestId, content]
       properties:
         clientRequestId: { type: string, format: uuid }
-        subject: { type: string, nullable: true, maxLength: 200 }
         content: { type: string, minLength: 1, maxLength: 4000 }
         capturedAt:
           type: string

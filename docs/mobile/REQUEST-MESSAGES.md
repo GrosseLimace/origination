@@ -7,7 +7,7 @@ Every message cites the same two documents so each team can see which requiremen
 | Short name used below | Document |
 |---|---|
 | **the Spec** | `SEC-ARCH-BURDI-001` v1.0, *Security Architecture Specification: Burdi Design Pattern* (IT Security / Architecture, 2026-03-25). Repo copy: [reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md](reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md). Section numbers below (§3.3, §4.2, etc.) refer to it |
-| **the Guide** | [developer-docs/EXTERNAL-SPA-GUIDE.md](reference/EXTERNAL-SPA-GUIDE.md) v1.7, Infrastructure's implementation of the Spec for Scoular: Static Web App → APIM (App Gateway + WAF in front) → private App Service |
+| **the Guide** | [EXTERNAL-SPA-GUIDE.md](reference/EXTERNAL-SPA-GUIDE.md) v1.7 (repo copy; the original in `developer-docs/` was removed by the 2026-10 infra docs sync), Infrastructure's implementation of the Spec for Scoular: Static Web App → APIM (App Gateway + WAF in front) → private App Service |
 
 Links assume the branch `docs_MobileArchitecturePlan`; update them once merged to `main`.
 
@@ -28,11 +28,11 @@ Originator's phone (Entra ID, Conditional Access: compliant device)
   → Application Gateway + WAF                                      Spec Layer 1
   → Azure API Management  (validate-jwt, rate limit, quota)        Spec Layer 3
   → private endpoint → existing Origination App Service            Spec Layers 4–5
-      mobile surface: api/mobile/v1, 16 operations, scope + client-id + trade-unit checks
+      mobile surface: api/mobile/v1, 18 operations, scope + client-id + trade-unit checks
   → Azure SQL over private endpoint, managed identity              Spec Layer 6
 ```
 
-The App Service is never exposed to the internet. The only internet-reachable API component is APIM, and it exposes only the 16 operations in `openapi/mobile/specification.yaml`. Each message below explains what we need from your team and which Spec requirement it satisfies.
+The App Service is never exposed to the internet. The only internet-reachable API component is APIM, and it exposes only the 18 operations in `openapi/mobile/specification.yaml`. Each message below explains what we need from your team and which Spec requirement it satisfies.
 
 ---
 
@@ -45,9 +45,9 @@ Hi team,
 
 _(shared background)_
 
-**Why you are involved.** The Spec makes APIM mandatory for all external traffic (Core Invariant 4) and lists the gateway policies every external API must have (§3.3). The Guide says Data Integrations owns those APIM operations and imports them from the app team's OpenAPI spec via APIOps. Our contract is committed at the link above: 16 operations, OpenAPI 3.0.3, Redocly-valid.
+**Why you are involved.** The Spec makes APIM mandatory for all external traffic (Core Invariant 4) and lists the gateway policies every external API must have (§3.3). The Guide says Data Integrations owns those APIM operations and imports them from the app team's OpenAPI spec via APIOps. Our contract is committed at the link above: 18 operations, OpenAPI 3.0.3, Redocly-valid, and a CI test fails the build if the API and the contract ever disagree.
 
-**Please answer this first; it blocks our backend build.**
+**Please answer this first; it decides how we configure token validation.** The mobile backend is built and tested against our Dev environment; this answer sets its production audience and scope settings.
 
 Will APIM validate the user's Entra token and **forward it to the backend unchanged**, with audience = the Origination API app registration and a scope we define (`Origination.Mobile.{Env}`)?
 
@@ -97,6 +97,7 @@ _(shared background)_
 | 6 | **Deploy permission:** grant the existing GitHub Actions OIDC service principal Contributor on the three SWAs so the workflow can `swa deploy` | Spec §6: no secrets in CI/CD (OIDC, no deployment tokens). Guide "Deploying to Static Web App" |
 | 7 | Confirm the **inbound path APIM → App Service private endpoint** is allowed in QA and Prod, and that the App Service's access restrictions do not need a change for APIM's subnet | Spec §5.2 allowed flows "APIM → BLL layer"; §3.3 backend routing via private endpoints only |
 | 8 | Confirm the platform already satisfies the Spec's Layer 6 and IaC items for Origination so we can cite it in the review: `publicNetworkAccess: Disabled` on SQL, Entra-only SQL auth, TDE, Azure SQL auditing to Log Analytics, mandatory tags (§3.6, §9.1) | Spec §3.6, §9.1; Spec §12 architecture review needs evidence per checklist item |
+| 9 | **Was removing EXTERNAL-SPA-GUIDE.md intentional?** The October infra docs sync deleted `developer-docs/EXTERNAL-SPA-GUIDE.md` from our repo, while `developer-docs/START-HERE.md` and `developer-docs/CLAUDE.md` still point to it. We kept a verbatim copy of v1.7 (linked above) because this whole request follows it. Is there a newer version or a replacement we should follow instead? | The Guide is the source for every row above |
 
 Nothing here touches production traffic until our QA wiring phase; the App Service stays private throughout (Guide "Security Notes": *the App Service is never exposed to the internet*).
 
@@ -133,7 +134,7 @@ ADR-001 (link above) records how we meet each Core Invariant and names four Spec
 
 | Spec requirement we miss | What we do instead |
 |---|---|
-| Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and an APIM allow-list of 16 operations; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
+| Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and an APIM allow-list of 18 operations; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
 | Core Invariant 6 / §3.5: same managed identity for both tiers | As above; the mobile surface excludes ODS producer-master search, admin, reporting and bulk operations (§3.2 "what this layer must NOT contain"), and ODS is read-only regardless |
 | §4.3 device-bound tokens, certificate pinning | Conditional Access compliant device, Continuous Access Evaluation, client-id check on every request. A native wrapper (Capacitor) is kept as the fallback if you require pinning |
 | §4.2 token storage in Keychain/Keystore: browser storage is not app-encrypted | Intune device encryption via Conditional Access; contact phone/email never cached; short cache lifetimes; wipe on sign-out and on authentication failure |

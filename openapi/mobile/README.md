@@ -8,7 +8,7 @@ This directory is the contract for the Origination Workbench **mobile** surface,
 | Data Integrations | Imports `specification.yaml` into APIM via APIOps; configures policies (JWT validation, rate limiting, quotas, header handling) |
 | Origination app team | Builds the mobile Angular app against these endpoints; generates the TypeScript client from the spec; a CI drift test keeps the spec equal to the `api/mobile/v1/*` controllers |
 
-**Status: Phase 1 contract, draft for review.** Scope comes from GitHub cards #641–#648 (Phase 1) created 2026-09-23. 16 operations. Two open decisions still affect the *Offline behaviour* column and are marked below.
+**Status: Phase 1 contract, draft for review.** Scope comes from GitHub cards #641–#648 (Phase 1) created 2026-09-23, plus the group → trade units → producers flow and saved-list read-back agreed in the 2026-09-23 preview. 18 operations. Two open decisions still affect the *Offline behaviour* column and are marked below.
 
 ## Routing
 
@@ -29,10 +29,11 @@ Entra ID, same tenant as the desktop app (`1521f999-f722-4a4f-9747-166f93e9b0d1`
 
 | Card | Workflow | Operations | Source | Offline behaviour |
 |---|---|---|---|---|
-| — | Sign in, load entitled trade units | `getSession` | Origination DB + entitlements | Served from cache after first load (1 day). Drives Storage tab visibility |
-| #641 | Search for a producer, open detail | `searchCustomers`, `getCustomer` | Origination DB | Search requires connectivity. Recently opened producers are served from cache (1 hour) **excluding contact phone/email, which are never cached** |
+| — | Sign in; pick a group, then trade units (flow agreed 2026-09-23) | `getSession` (trade units + groups) | Origination DB + entitlements | Served from cache after first load (1 day). Drives Storage tab visibility and the first screen |
+| #641 | Browse producers in the selected trade units, search to narrow, open detail | `searchCustomers` (q optional), `getCustomer` | Origination DB | Search requires connectivity. Recently opened producers are served from cache (1 hour) **excluding contact phone/email, which are never cached** |
+| — | Open a saved list for the selected trade units | `getSavedLists`, `getSavedListMembers` | Origination DB | **Limitation:** a saved list's query criteria are evaluated in the desktop browser; the phone shows only its manually added members. Running a list server-side is a scoped follow-up (see plan) |
 | #642 | Call or email a contact | `getCustomer` (contacts) | Origination DB | Native `tel:` / `mailto:` links; work offline if the detail is already on screen |
-| #643 | Edit on-farm details | `getProducerDetails`, `updateProducerDetails` | Origination DB | **DECISION PENDING (meeting Q3).** Default: save fails gracefully with a retry prompt. If "hours offline" is required: queue in IndexedDB with `clientRequestId`, last-write-wins with `expectedModifiedAt` conflict surfaced to the user |
+| #643 | Edit on-farm details | `getProducerDetails`, `updateProducerDetails` | Origination DB | **Scope:** total acres is editable; bin sites (name, capacity) and grain on farm (per site) are read-only, because since the 2026-10-13 release grain is tied to a site and the phone cannot carry site links, bushels sold or last bid. The update preserves everything it does not carry. **Offline: DECISION PENDING (meeting Q3).** Default: save fails gracefully with a retry prompt. If "hours offline" is required: queue in IndexedDB with `clientRequestId`, last-write-wins with `expectedModifiedAt` conflict surfaced to the user |
 | #644 | Add a note; see pinned + recent | `getRecentNotes`, `createNote` | Origination DB | Read served from cache (15 min). **Create is queued** in IndexedDB with `clientRequestId`; replay returns the same note. Capped to 10 notes so the payload stays small on poor signal |
 | #645 | Contract cards, expand for detail | `getContractCards`, `getContractDetail` | ODS view (read-only) | Served from cache (1 hour, 3 s network timeout). Cold ODS may take up to 60 s; client shows "refreshing" rather than blocking |
 | #646 | Ticket roll-up | `getTicketSummary` | ODS view (read-only) | Served from cache (1 hour). No line items |

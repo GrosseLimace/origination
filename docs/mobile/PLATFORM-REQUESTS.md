@@ -16,6 +16,7 @@ Already provisionable per [START-HERE.md](../../developer-docs/START-HERE.md): `
 | E6 | Confirm the inbound path APIM → App Service private endpoint is allowed in QA and Prod | — | |
 | E12 | Application Insights: agree `cloud_RoleName = origination-mobile-spa`; alert rules for 401/403 spikes on `api/mobile/*`, sustained 429s, APIM 5xx spikes, SWA certificate expiry | KQL based on `SecurityAuditMiddleware` fields | |
 | E13 | APIM diagnostic logs into the same Log Analytics workspace with correlation id; confirm Azure SQL audit retention meets the spec | — | |
+| E14 | **Enable GitHub Advanced Security (code scanning) on `IT/origination`** so CodeQL can run on pull requests. The Spec (§9.3) requires SAST on every PR; today the GHE API returns "Advanced Security must be enabled for this repository". Interim control already in place: the Roslyn security analyzers are enforced as build errors (`api/.editorconfig`) and NuGet/npm vulnerability scans gate `ci.yml` | Repo name; the `ci.yml` steps to point at | |
 
 ## Data Integrations (APIM)
 
