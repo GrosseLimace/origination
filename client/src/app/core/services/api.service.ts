@@ -49,6 +49,7 @@ import {
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
+import { ApiError } from '@core/errors/api-error';
 
 /**
  * ApiService provides HTTP methods for communicating with the .NET Web API backend.
@@ -117,27 +118,14 @@ export class ApiService {
         // re-auth; this only makes sure they're told why the screen stopped working.
         this.toastService.error('Your session has expired — please refresh the page to sign in again.');
       }
-      // Surface the server's real message (falling back through the common shapes) + status, so
-      // callers can show something useful instead of a generic "Server error". For validation
-      // errors, prefer the first field-level detail (e.g. "A location named X already exists in
-      // this trade unit") over the generic top-level "One or more fields failed validation." text.
-      const errObj = (error.error as {
-        error?: { message?: string; traceId?: string; details?: Array<{ message?: string }> }
-      } | null)?.error;
-      const detailMsg = errObj?.details?.find(d => !!d?.message)?.message;
-      const serverMsg = detailMsg ?? errObj?.message ?? (error.error as { message?: string } | null)?.message ?? error.message;
-      const wrapped = new Error(serverMsg || 'Server error');
-      (wrapped as Error & { status?: number }).status = error.status;
-      // Carry the server's correlation id through to call sites. The API populates it on every
-      // error and builds a "(Ref: …)" message around it specifically so a user can quote it to
-      // support, but it was being dropped here, so no surface in the app ever showed one.
-      if (errObj?.traceId) {
-        (wrapped as Error & { traceId?: string }).traceId = errObj.traceId;
-      }
-      return throwError(() => wrapped);
+      // One typed error for every HTTP failure: the server's real message (fallback order in
+      // ApiError.fromHttpErrorResponse), status, code, field details and correlation id. The API
+      // builds a "(Ref: …)" message around that id so a user can quote it to support, so it has to
+      // survive the trip to the call site.
+      return throwError(() => ApiError.fromHttpErrorResponse(error));
     }
 
-    return throwError(() => error instanceof Error ? error : new Error('Server error'));
+    return throwError(() => ApiError.fromUnknown(error));
   }
 
   // ==========================================================================
