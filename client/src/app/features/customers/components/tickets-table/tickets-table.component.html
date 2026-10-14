@@ -34,12 +34,12 @@
             </svg>
             <input
               type="text"
-              [(ngModel)]="searchQuery"
+              [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)"
               placeholder="Search tickets..."
               class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
             />
-            @if (searchQuery) {
-              <button (click)="searchQuery = ''" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
+            @if (searchQuery()) {
+              <button (click)="searchQuery.set('')" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
@@ -161,8 +161,8 @@
                         <app-table-head [sortable]="true" (click)="handleSort('id')">
                           <span class="flex items-center justify-center gap-1">Ticket #
                             <svg class="w-3.5 h-3.5" [class]="getSortIconClass('id')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              @if (currentSortColumn === 'id' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                              @else if (currentSortColumn === 'id' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @if (currentSortColumn() === 'id' && currentSortDirection() === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn() === 'id' && currentSortDirection() === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
                               @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
                             </svg>
                           </span>
@@ -170,8 +170,8 @@
                         <app-table-head [sortable]="true" (click)="handleSort('date')">
                           <span class="flex items-center justify-center gap-1">Date
                             <svg class="w-3.5 h-3.5" [class]="getSortIconClass('date')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              @if (currentSortColumn === 'date' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                              @else if (currentSortColumn === 'date' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @if (currentSortColumn() === 'date' && currentSortDirection() === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn() === 'date' && currentSortDirection() === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
                               @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
                             </svg>
                           </span>
@@ -180,8 +180,8 @@
                         <app-table-head [sortable]="true" (click)="handleSort('location')">
                           <span class="flex items-center justify-center gap-1">Location
                             <svg class="w-3.5 h-3.5" [class]="getSortIconClass('location')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              @if (currentSortColumn === 'location' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                              @else if (currentSortColumn === 'location' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @if (currentSortColumn() === 'location' && currentSortDirection() === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn() === 'location' && currentSortDirection() === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
                               @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
                             </svg>
                           </span>
@@ -189,8 +189,8 @@
                         <app-table-head [sortable]="true" (click)="handleSort('appliedDockQuantity')">
                           <span class="flex items-center justify-center gap-1">Net Bu
                             <svg class="w-3.5 h-3.5" [class]="getSortIconClass('appliedDockQuantity')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              @if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                              @else if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @if (currentSortColumn() === 'appliedDockQuantity' && currentSortDirection() === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn() === 'appliedDockQuantity' && currentSortDirection() === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
                               @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
                             </svg>
                           </span>
@@ -198,8 +198,8 @@
                         <app-table-head [sortable]="true" (click)="handleSort('moisture')">
                           <span class="flex items-center justify-center gap-1">Moisture %
                             <svg class="w-3.5 h-3.5" [class]="getSortIconClass('moisture')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              @if (currentSortColumn === 'moisture' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                              @else if (currentSortColumn === 'moisture' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @if (currentSortColumn() === 'moisture' && currentSortDirection() === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn() === 'moisture' && currentSortDirection() === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
                               @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
                             </svg>
                           </span>
@@ -207,8 +207,8 @@
                         <app-table-head [sortable]="true" (click)="handleSort('testWeight')" >
                           <span class="flex items-center justify-center gap-1">Test Wt (lb/bu)
                             <svg class="w-3.5 h-3.5" [class]="getSortIconClass('testWeight')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              @if (currentSortColumn === 'testWeight' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                              @else if (currentSortColumn === 'testWeight' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @if (currentSortColumn() === 'testWeight' && currentSortDirection() === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn() === 'testWeight' && currentSortDirection() === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
                               @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
                             </svg>
                           </span>
@@ -217,8 +217,8 @@
                           <app-table-head [sortable]="true" (click)="handleSort('protein')" >
                             <span class="flex items-center justify-center gap-1">Protein %
                               <svg class="w-3.5 h-3.5" [class]="getSortIconClass('protein')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                @if (currentSortColumn === 'protein' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                                @else if (currentSortColumn === 'protein' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                                @if (currentSortColumn() === 'protein' && currentSortDirection() === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                                @else if (currentSortColumn() === 'protein' && currentSortDirection() === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
                                 @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
                               </svg>
                             </span>
@@ -259,9 +259,9 @@
             </div>
           }
 
-          @if (ticketGroups.length === 0 && searchQuery.trim()) {
+          @if (ticketGroups.length === 0 && searchQuery().trim()) {
             <div class="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
-              No tickets match "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery }}</span>"
+              No tickets match "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery() }}</span>"
             </div>
           }
         </div>

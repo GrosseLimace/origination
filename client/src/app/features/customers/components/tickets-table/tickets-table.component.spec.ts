@@ -504,7 +504,7 @@ describe('TicketsTableComponent', () => {
 
       setInputs({ customer: makeCustomer({ id: 43 }) });
 
-      expect(component.searchQuery).toBe('');
+      expect(component.searchQuery()).toBe('');
       expect(groups()).toHaveLength(2);
       expect(groups().every(g => rows(g).length === 0)).toBe(true);
       groupHeader(groupByTitle('YC · PRT')).click();
