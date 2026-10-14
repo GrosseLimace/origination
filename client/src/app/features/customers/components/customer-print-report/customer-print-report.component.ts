@@ -394,10 +394,10 @@ export class CustomerPrintReportComponent {
   private readonly _commodityByCode = computed(() => indexCommoditiesByCode(this.commodities()));
   /** Band tint for a grain-on-farm row. The rows hold commodity CODES (YC, HRWW), which the keyword
    *  matcher in commodityBandColor cannot read, so resolve the code to its crop group first (YC → Corn →
-   *  yellow), then fall back to the commodity name, then the code. */
+   *  yellow), then fall back to the commodity name, then the code. The index is keyed by LOWER-cased code. */
   grainBandColor(code: string | null | undefined): string {
     const group = grainOnFarmColorKey(code, this._cropGroupLookup());
-    const name = this._commodityByCode().get((code || '').trim().toUpperCase())?.name;
+    const name = this._commodityByCode().get((code || '').trim().toLowerCase())?.name;
     return this.commodityBandColor(group !== (code || '').trim() ? group : (name || group));
   }
 

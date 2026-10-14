@@ -495,6 +495,15 @@ describe('CustomerPrintReportComponent', () => {
     ]);
   });
 
+  it('tints a grain row by its commodity name when the code has no crop group, whatever the code casing', () => {
+    open({ commodities: [makeCommodity({ id: 9, code: 'GFL2', name: 'Flax Grade 2', category: undefined })] });
+
+    expect(component.grainBandColor('GFL2')).toBe(component.commodityBandColor('flax'));
+    expect(component.grainBandColor('gfl2')).toBe(component.commodityBandColor('flax'));
+    expect(component.grainBandColor('YC')).toBe(component.commodityBandColor('corn'));      // a known crop group still wins
+    expect(component.grainBandColor('ZZZ')).toBe(component.commodityBandColor('ZZZ'));      // unknown code: hashed tint off the code
+  });
+
   // ── Print / close ─────────────────────────────────────────────────────────
 
   it('hands the print window an escaped report with only the enabled sections', () => {
