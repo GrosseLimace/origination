@@ -104,6 +104,14 @@ export class CustomerListComponent {
   );
   /** "All Producers" mode — search spans every producer (our table + ODS onboarding fallback). */
   readonly allProducersMode = computed(() => this.appStateService.allProducersMode());
+  /** The trade-unit producer read failed and nothing has replaced it, so an empty list is an outage,
+   *  not "no producers". */
+  readonly customersLoadFailed = computed(() =>
+    this.appStateService.customersLoadFailed() && this.customers().length === 0);
+  /** The last-contact aggregate failed to load and nothing replaced it, so "no contact on record" is
+   *  unknown rather than "Never contacted". */
+  readonly contactHistoryUnavailable = computed(() =>
+    this.appStateService.noteLastContactsLoadFailed() && this.noteLastContacts().length === 0);
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.

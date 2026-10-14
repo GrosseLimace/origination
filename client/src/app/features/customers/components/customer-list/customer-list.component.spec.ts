@@ -222,6 +222,27 @@ describe('CustomerListComponent', () => {
       expect(text()).toContain('No producers found');
       expect(rows()).toHaveLength(0);
     });
+
+    it('says the producer list failed to load instead of "No producers found"', () => {
+      appState.setTradeUnits(['2190']);
+      appState.setCustomersLoadFailed(true);
+      create({ customers: [] });
+
+      expect(text()).toContain("Couldn't load producers");
+      expect(text()).not.toContain('No producers found');
+    });
+
+    it('drops the failure message once producers arrive (e.g. the page\'s own retry succeeded)', () => {
+      appState.setTradeUnits(['2190']);
+      appState.setCustomersLoadFailed(true);
+      create({ customers: [] });
+
+      ref.setInput('customers', [makeCustomer({ id: 1, scoularId: 'C1' })]);
+      fixture.detectChanges();
+
+      expect(text()).not.toContain("Couldn't load producers");
+      expect(rows()).toHaveLength(1);
+    });
   });
 
   // ── Row content ───────────────────────────────────────────────────────────
@@ -294,6 +315,23 @@ describe('CustomerListComponent', () => {
   // ── Last-contacted badge ──────────────────────────────────────────────────
 
   describe('last contacted badge', () => {
+    it('says the date is unavailable, not "Never contacted", when the last-contact load failed', () => {
+      appState.setTradeUnits(['2190']);
+      appState.setNoteLastContactsLoadFailed(true);
+      create({ customers: [makeCustomer({ id: 1, scoularId: 'C1' })], noteLastContacts: [] });
+
+      expect(rowText(1)).toContain('Last contact unavailable');
+      expect(rowText(1)).not.toContain('Never contacted');
+    });
+
+    it('still says "Never contacted" when the load succeeded and the producer has no notes', () => {
+      appState.setTradeUnits(['2190']);
+      create({ customers: [makeCustomer({ id: 1, scoularId: 'C1' })], noteLastContacts: [] });
+
+      expect(rowText(1)).toContain('Never contacted');
+      expect(rowText(1)).not.toContain('Last contact unavailable');
+    });
+
     it('words the most recent note by day / month / year and colours it by recency', () => {
       appState.setTradeUnits(['2190']);
       create({

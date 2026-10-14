@@ -296,4 +296,84 @@ describe('DataPreloadService', () => {
     expect(appState.dpContractsLoaded()).toBe(true);
     expect(appState.dataLoading()).toBe(false);
   });
+
+  // Each of these used to resolve a failure to [] with nothing recorded, so the screens showed
+  // "no producers", "Never contacted", "No saved lists yet" and the like for an outage.
+  describe('records which trade-unit reads failed, so an empty result is not shown as "none"', () => {
+    const cases: [string, keyof Api, () => boolean][] = [
+      ['customers', 'getCustomers', () => appState.customersLoadFailed()],
+      ['DP contracts', 'getDpContracts', () => appState.dpContractsLoadFailed()],
+      ['last-contact dates', 'getNotesLastContact', () => appState.noteLastContactsLoadFailed()],
+      ['follow-ups', 'getMyReminders', () => appState.myRemindersLoadFailed()],
+      ['saved lists', 'getSavedLists', () => appState.savedListsLoadFailed()],
+      ['planting intentions', 'getPlantingIntentions', () => appState.plantingIntentionsLoadFailed()],
+      ['harvest windows', 'getHarvestWindows', () => appState.harvestWindowsLoadFailed()],
+    ];
+
+    it.each(cases)('%s: set on failure, still resolving to [] so the page loads', (_name, call, failed) => {
+      api[call].mockReturnValue(throwError(() => new Error('500')));
+      create();
+      selectTradeUnits(['1085']);
+      signIn();
+
+      expect(failed()).toBe(true);
+      expect(appState.dataLoading()).toBe(false);
+    });
+
+    it.each(cases)('%s: cleared when the next load succeeds, even if it is empty', (_name, call, failed) => {
+      api[call].mockReturnValueOnce(throwError(() => new Error('500'))).mockReturnValue(of([]));
+      const service = create();
+      selectTradeUnits(['1085']);
+      signIn();
+      expect(failed()).toBe(true);
+
+      service.forceReload();
+
+      expect(failed()).toBe(false);
+    });
+
+    it.each(cases)('%s: a trade-unit change starts clean even before the new read lands', (_name, call, failed) => {
+      api[call].mockReturnValueOnce(throwError(() => new Error('500'))).mockReturnValue(NEVER);
+      create();
+      selectTradeUnits(['1085']);
+      signIn();
+      expect(failed()).toBe(true);
+
+      selectTradeUnits(['2190']);
+
+      expect(failed()).toBe(false);
+    });
+
+    it('nothing is flagged when every read succeeds', () => {
+      create();
+      selectTradeUnits(['1085']);
+      signIn();
+
+      for (const [, , failed] of cases) expect(failed()).toBe(false);
+      expect(appState.commodityConversionsLoadFailed()).toBe(false);
+    });
+  });
+
+  it('records a failed commodity-conversion load, and a trade-unit change does not clear it (it is not reloaded)', () => {
+    api.getCommodityConversions.mockReturnValue(throwError(() => new Error('500')));
+    create();
+    selectTradeUnits(['1085']);
+    signIn();
+    expect(appState.commodityConversionsLoadFailed()).toBe(true);
+    expect(appState.commodityConversions()).toEqual([]);
+
+    selectTradeUnits(['2190']);
+
+    expect(appState.commodityConversionsLoadFailed()).toBe(true);
+  });
+
+  it('a failed dashboard-summary prefetch is left unset, so the dashboard fetches its own instead of showing an empty season', () => {
+    api.getDashboardSummary.mockReturnValue(throwError(() => new Error('500')));
+    create();
+    selectTradeUnits(['1085']);
+    signIn();
+
+    expect(appState.preloadedDashboardSummary()).toBeNull();
+    expect(appState.dataLoading()).toBe(false);
+  });
 });

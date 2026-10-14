@@ -250,6 +250,14 @@ function makeAppState() {
     setPricingLines: vi.fn((v: ContractPricingLine[]) => s.pricingLines.set(v)),
     setSavedLists: vi.fn((v: SavedList[]) => s.savedLists.set(v)),
     setQueryLibrary: vi.fn((v: QueryLibraryItem[]) => s.queryLibrary.set(v)),
+    customersLoadFailed: signal(false),
+    noteLastContactsLoadFailed: signal(false),
+    savedListsLoadFailed: signal(false),
+    plantingIntentionsLoadFailed: signal(false),
+    setCustomersLoadFailed: vi.fn((v: boolean) => s.customersLoadFailed.set(v)),
+    setNoteLastContactsLoadFailed: vi.fn((v: boolean) => s.noteLastContactsLoadFailed.set(v)),
+    setSavedListsLoadFailed: vi.fn((v: boolean) => s.savedListsLoadFailed.set(v)),
+    setPlantingIntentionsLoadFailed: vi.fn((v: boolean) => s.plantingIntentionsLoadFailed.set(v)),
   };
   return s;
 }
@@ -1003,6 +1011,39 @@ describe('HomeComponent', () => {
       expect(h.api.setReminderCompleted).toHaveBeenCalledWith(5, true);
       expect(h.c.customerReminders()[0].isCompleted).toBe(true);
       expect(h.c.myReminders()).toEqual([]);
+    });
+  });
+
+  // These reads used to fail silently into an empty list; the shared flags are what the producer
+  // list and Build-a-List read to say "couldn't load" instead of "none".
+  describe('trade-unit read failures', () => {
+    const fail = () => throwError(() => new Error('500'));
+
+    it('records a failed producer read, and clears it when the read succeeds', () => {
+      const failed = setup({ arrange: api => api.getCustomers.mockReturnValue(fail()) });
+      expect(failed.app.customersLoadFailed()).toBe(true);
+      TestBed.resetTestingModule();
+
+      const ok = setup();
+      expect(ok.app.setCustomersLoadFailed).toHaveBeenCalledWith(false);
+      expect(ok.app.customersLoadFailed()).toBe(false);
+    });
+
+    it('records a failed last-contact read (and still toasts it)', () => {
+      const h = setup({ arrange: api => api.getNotesLastContact.mockReturnValue(fail()) });
+      expect(h.app.noteLastContactsLoadFailed()).toBe(true);
+      expect(h.toast.error).toHaveBeenCalled();
+    });
+
+    it('records a failed saved-list read', () => {
+      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(fail()) });
+      expect(h.app.savedListsLoadFailed()).toBe(true);
+    });
+
+    it('records a failed planting read', () => {
+      const h = setup({ arrange: api => api.getPlantingIntentions.mockReturnValue(fail()) });
+      expect(h.app.plantingIntentionsLoadFailed()).toBe(true);
+      expect(h.c.isLoadingPlanting()).toBe(false);
     });
   });
 });

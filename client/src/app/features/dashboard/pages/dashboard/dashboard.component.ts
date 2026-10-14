@@ -167,8 +167,12 @@ export class DashboardComponent {
 
   /** Last-contact display for a customer — shown only on the "without intentions" producer view. */
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
+    // Reads only the last-contact aggregate; if that failed to load, "no row" means unknown.
+    const unknown = this.appStateService.noteLastContactsLoadFailed() && this.appStateService.noteLastContacts().length === 0;
     return this._lastContactByCustomer().get(customerId)
-      ?? { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity };
+      ?? (unknown
+        ? { text: 'Last contact unavailable', colorClass: 'text-gray-400 dark:text-gray-500', daysAgo: Infinity }
+        : { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity });
   }
 
   getInitials(name: string): string {

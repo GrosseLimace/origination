@@ -124,6 +124,8 @@ function makeNlq() {
     queryInvolvesContracts: vi.fn((q: string) => lower(q).includes('contract')),
     queryInvolvesStorage: vi.fn((q: string) => lower(q).includes('storage')),
     queryInvolvesDpContracts: vi.fn((q: string) => /\bdp\b/.test(lower(q))),
+    queryInvolvesPlanting: vi.fn((q: string) => lower(q).includes('planting')),
+    queryInvolvesContact: vi.fn((q: string) => /contacted|follow.?up/.test(lower(q))),
     isRankingQuery: vi.fn((q: string) => /top\s*\d+/.test(lower(q))),
     dataNeedsForCriteria: vi.fn(() => ({ tickets: false, contracts: false, storage: false, dp: false, planting: false, fullNotes: false })),
     extractNoteSearchKeywords: vi.fn((): string[] => []),
@@ -250,14 +252,24 @@ describe('BuildListComponent', () => {
       expect(text()).toContain('No producers found for the selected trade units');
     });
 
-    it('a failed customers read lands as an empty roster, never a stuck spinner', () => {
+    it('a failed customers read lands as an empty roster, never a stuck spinner — and says it failed', () => {
       api.getCustomers.mockReturnValue(throwError(() => new Error('500')));
       const c = mount();
 
       expect(c.loading()).toBe(false);
       expect(c.coreDataLoaded()).toBe(true);
       expect(c.customers()).toEqual([]);
+      // An outage must not read as an empty trade unit.
+      expect(text()).toContain('Producers for the selected trade units could not be loaded');
+      expect(text()).not.toContain('No producers found for the selected trade units');
+    });
+
+    it('a genuinely empty trade unit still says "no producers found"', () => {
+      api.getCustomers.mockReturnValue(of([]));
+      mount();
+
       expect(text()).toContain('No producers found for the selected trade units');
+      expect(text()).not.toContain('could not be loaded');
     });
 
     it('an empty roster caused by a CTRM contract outage says so instead of "no producers"', () => {
@@ -414,6 +426,54 @@ describe('BuildListComponent', () => {
       expect(c.isProcessing()).toBe(false);
       expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
       expect(text()).not.toContain("Couldn't load contract data");
+    });
+
+    it('a DP prompt after a failed DP read says the DP data is missing instead of "no producers matched"', () => {
+      api.getDpContracts.mockReturnValue(throwError(() => new Error('500')));
+      nlq.state.matchIds = [];
+      const c = mount();
+
+      c.queryText.set('Producers with DP contracts');
+      c.processQuery();
+      TestBed.tick();
+
+      expect(appState.dpContractsLoadFailed()).toBe(true);
+      expect(c.unavailableDataForQuery()).toEqual(['DP contracts']);
+      const page = text();
+      expect(page).toContain("Couldn't load DP contracts, so results below may be incomplete");
+      expect(page).not.toContain('Your query was understood but no producers matched');
+    });
+
+    it('a contact prompt names the failed last-contact and follow-up loads', () => {
+      appState.setNoteLastContactsLoadFailed(true);
+      appState.setMyRemindersLoadFailed(true);
+      const c = mount();
+
+      c.queryText.set('Producers not contacted in 30 days');
+      c.processQuery();
+      TestBed.tick();
+
+      expect(text()).toContain("Couldn't load last-contacted dates and follow-ups");
+    });
+
+    it('shows no missing-data panel when the prompt does not depend on the failed data', () => {
+      appState.setNoteLastContactsLoadFailed(true);
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_CONTRACTS);
+
+      expect(c.unavailableDataForQuery()).toEqual([]);
+      expect(text()).not.toContain("Couldn't load last-contacted dates");
+    });
+
+    it('row badges say "Last contact unavailable", not "Never contacted", when that load failed', () => {
+      appState.setNoteLastContactsLoadFailed(true);
+      const c = mount();
+
+      c.selectLibraryQuery(LIB_ALL);
+
+      expect(c.getLastContactInfo(1).text).toBe('Last contact unavailable');
+      expect(text()).not.toContain('Never contacted');
     });
 
     it('processQuery with blank text does nothing', () => {
@@ -665,6 +725,25 @@ describe('BuildListComponent', () => {
   // ── Saved lists ───────────────────────────────────────────────────────────
 
   describe('saved lists', () => {
+    it('says the lists failed to load instead of "No saved lists yet"', () => {
+      api.getSavedLists.mockReturnValue(throwError(() => new Error('500')));
+      const c = mount();
+      c.selectedCategory.set('Saved Lists');
+
+      expect(appState.savedListsLoadFailed()).toBe(true);
+      expect(text()).toContain("Couldn't load your saved lists");
+      expect(text()).not.toContain('No saved lists yet');
+    });
+
+    it('still says "No saved lists yet" when the user genuinely has none', () => {
+      api.getSavedLists.mockReturnValue(of([]));
+      const c = mount();
+      c.selectedCategory.set('Saved Lists');
+
+      expect(text()).toContain('No saved lists yet');
+      expect(text()).not.toContain("Couldn't load your saved lists");
+    });
+
     it('only offers saved lists that share a trade unit with the selection, and the search narrows them', () => {
       const c = mount();
 

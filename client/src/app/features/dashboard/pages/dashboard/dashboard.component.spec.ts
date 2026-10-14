@@ -161,6 +161,7 @@ function makeAppState() {
     commodities,
     commodityConversions: signal<CommodityConversion[]>(CONVERSIONS),
     noteLastContacts: signal<NoteLastContact[]>([]),
+    noteLastContactsLoadFailed: signal(false),
     producerDetails: signal<ProducerDetails[]>([]),
     customersLoading: signal(false),
     contractsLoading: signal(false),
@@ -987,6 +988,12 @@ describe('DashboardComponent', () => {
       expect(c.getLastContactInfo(3)).toEqual({ text: 'Contacted 3 days ago', colorClass: 'text-scoular-green', daysAgo: 3 });
       expect(c.getLastContactInfo(1)).toEqual({ text: 'Contacted 12 days ago', colorClass: 'text-yellow-500', daysAgo: 12 });
       expect(c.getLastContactInfo(2)).toEqual({ text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity });
+    });
+
+    it('says last contact is unavailable, not "Never contacted", when the last-contact load failed', async () => {
+      await build(() => appState.noteLastContactsLoadFailed.set(true));
+
+      expect(c.getLastContactInfo(2)).toEqual({ text: 'Last contact unavailable', colorClass: 'text-gray-400 dark:text-gray-500', daysAgo: Infinity });
     });
 
     it('tracks tab clicks and opens the producer on the planting tab for the selected year', async () => {

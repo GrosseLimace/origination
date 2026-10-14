@@ -6,7 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
-import { Customer, Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardSummary } from '@models';
+import { Customer, Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 import { environment } from '@env/environment';
 
@@ -42,7 +42,10 @@ export class DataPreloadService {
       filter(s => s === InteractionStatus.None && msalService.instance.getAllAccounts().length > 0),
       take(1),
       switchMap(() => this.apiService.getCommodityConversions().pipe(
-        catchError(() => of([] as CommodityConversion[]))
+        // Loaded once per sign-in, so a failure lasts the session: record it rather than let every
+        // non-bushel contract silently drop out of the bushel totals.
+        tap(() => this.appState.setCommodityConversionsLoadFailed(false)),
+        catchError(() => { this.appState.setCommodityConversionsLoadFailed(true); return of([] as CommodityConversion[]); }),
       )),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(data => this.appState.setCommodityConversions(data));
@@ -87,7 +90,10 @@ export class DataPreloadService {
         let coreArrived = { customers: false, contracts: false, todaysTickets: false };
 
         const customers$ = this.apiService.getCustomers(tradeUnits).pipe(
-          catchError(() => of([] as Customer[])),
+          // Same arrangement as contracts below: an empty producer list otherwise reads as "no
+          // producers in these trade units" on the producer list and Build-a-List.
+          tap(() => this.appState.setCustomersLoadFailed(false)),
+          catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); }),
           tap(data => {
             this.appState.setCustomers(data);
             this.appState.setCustomersLoading(false);
@@ -137,7 +143,9 @@ export class DataPreloadService {
         // customer with notes, all trade units) that feed the list badges. Full note
         // bodies load per-producer on selection or lazily for NLQ.
         const notes$ = this.apiService.getNotesLastContact().pipe(
-          catchError(() => of([] as NoteLastContact[])),
+          // Recorded, not just emptied: with no rows every producer reads "Never contacted".
+          tap(() => this.appState.setNoteLastContactsLoadFailed(false)),
+          catchError(() => { this.appState.setNoteLastContactsLoadFailed(true); return of([] as NoteLastContact[]); }),
           tap(data => {
             this.appState.setNoteLastContacts(data);
           })
@@ -149,7 +157,8 @@ export class DataPreloadService {
         // without calendar consent makes no reminder calls at all.
         const reminders$ = environment.remindersEnabled
           ? this.apiService.getMyReminders().pipe(
-              catchError(() => of([] as ReminderDue[])),
+              tap(() => this.appState.setMyRemindersLoadFailed(false)),
+              catchError(() => { this.appState.setMyRemindersLoadFailed(true); return of([] as ReminderDue[]); }),
               tap(data => {
                 this.appState.setMyReminders(data);
               })
@@ -160,7 +169,8 @@ export class DataPreloadService {
         // Using merge (not forkJoin) so fast calls like getCommodities don't wait
         // for slower calls like getPlantingIntentions to complete.
         const plantingIntentions$ = this.apiService.getPlantingIntentions(tradeUnits).pipe(
-          catchError(() => of([] as PlantingIntention[])),
+          tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
+          catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); }),
           tap(data => {
             this.appState.setPlantingIntentions(data);
           })
@@ -172,13 +182,17 @@ export class DataPreloadService {
           })
         );
         const dpContracts$ = this.apiService.getDpContracts(tradeUnits).pipe(
-          catchError(() => of([] as DpContract[])),
+          // The [] fallback still marks DP loaded (so no DP prompt waits forever), which makes a failure
+          // read as "no producers hold DP" unless it is recorded here.
+          tap(() => this.appState.setDpContractsLoadFailed(false)),
+          catchError(() => { this.appState.setDpContractsLoadFailed(true); return of([] as DpContract[]); }),
           tap(data => {
             this.appState.setDpContracts(data);
           })
         );
         const savedLists$ = this.apiService.getSavedLists().pipe(
-          catchError(() => of([] as SavedList[])),
+          tap(() => this.appState.setSavedListsLoadFailed(false)),
+          catchError(() => { this.appState.setSavedListsLoadFailed(true); return of([] as SavedList[]); }),
           tap(data => {
             this.appState.setSavedLists(data);
           })
@@ -190,7 +204,8 @@ export class DataPreloadService {
           })
         );
         const harvestWindows$ = this.apiService.getHarvestWindows().pipe(
-          catchError(() => of([] as HarvestWindow[])),
+          tap(() => this.appState.setHarvestWindowsLoadFailed(false)),
+          catchError(() => { this.appState.setHarvestWindowsLoadFailed(true); return of([] as HarvestWindow[]); }),
           tap(data => {
             this.appState.setHarvestWindows(data);
           })
@@ -206,12 +221,14 @@ export class DataPreloadService {
         // renders immediately when the user navigates to it (no extra API round-trip).
         const tuKey = [...tradeUnits].sort().join(',');
         const currentYear = new Date().getFullYear();
-        const emptySummary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
+        // A failed prefetch is left unset rather than stored as an empty summary. The dashboard adopts a
+        // preloaded summary without fetching its own, so an empty one showed a season with no
+        // estimates, market shares or harvest, and kept showing it for the rest of the session.
         const dashboardSummary$ = this.apiService.getDashboardSummary(tuKey, currentYear).pipe(
-          catchError(() => of(emptySummary)),
           tap(summary => {
             this.appState.setPreloadedDashboardSummary(tuKey, currentYear, summary);
-          })
+          }),
+          catchError(() => of(null))
         );
 
         return merge(customers$, contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);

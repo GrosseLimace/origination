@@ -354,6 +354,31 @@ export class BuildListComponent {
   readonly ticketsUnavailableForQuery = computed(() =>
     this.ticketsLoadFailed() && this.nlqFilterService.queryInvolvesTickets(this.queryText()));
 
+  /**
+   * The other data a prompt can lean on whose last load FAILED, named for the panel that says so.
+   * Each failed read resolves to an empty array, so without this a DP, planting or contact prompt
+   * answers "no producers" (or, for "not contacted in N days", every producer) during an outage.
+   * Contracts and tickets keep their own panels above, with Retry.
+   */
+  readonly unavailableDataForQuery = computed(() => {
+    const q = this.queryText();
+    const missing: string[] = [];
+    if (this.appState.dpContractsLoadFailed() && this.nlqFilterService.queryInvolvesDpContracts(q)) missing.push('DP contracts');
+    if (this.appState.plantingIntentionsLoadFailed() && this.nlqFilterService.queryInvolvesPlanting(q)) missing.push('planting intentions');
+    if (this.nlqFilterService.queryInvolvesContact(q)) {
+      if (this.appState.noteLastContactsLoadFailed()) missing.push('last-contacted dates');
+      if (this.appState.myRemindersLoadFailed()) missing.push('follow-ups');
+    }
+    return missing;
+  });
+
+  /** The trade-unit producer read failed, so an empty trade unit is an outage, not an answer. */
+  readonly customersLoadFailed = this.appState.customersLoadFailed;
+
+  /** The saved-list read failed and nothing replaced it, so an empty library is not "none yet". */
+  readonly savedListsLoadFailed = computed(() =>
+    this.appState.savedListsLoadFailed() && this.savedLists().length === 0);
+
   /** The "Start with no producers" blank-start card — the deliberate opposite of "All
    *  producers". It always resolves to zero (see filterCustomers' early return), so the
    *  results area shows a friendly "build this list manually" prompt instead of the generic
@@ -2112,9 +2137,11 @@ export class BuildListComponent {
         next: (lists) => {
           this.savedLists.set(lists);
           this.appState.setSavedLists(lists);
+          this.appState.setSavedListsLoadFailed(false);
           this.loadingSavedLists.set(false);
         },
-        error: () => { this.loadingSavedLists.set(false); }
+        // The library panel says "Couldn't load your saved lists" from this, not "No saved lists yet".
+        error: () => { this.appState.setSavedListsLoadFailed(true); this.loadingSavedLists.set(false); }
       });
     }
 
@@ -2352,13 +2379,19 @@ export class BuildListComponent {
     // background; the full note set is lazily fetched by _fetchAndFilter the first time a
     // query runs while it's missing, so page load never waits on the note download)
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
+      customers: this.apiService.getCustomers(tuParam).pipe(
+        tap(() => this.appState.setCustomersLoadFailed(false)),
+        catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); })),
       contracts: this.apiService.getContracts(tuParam).pipe(
         tap(() => this.appState.setContractsLoadFailed(false)),
         catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
+        tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
-      savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
+      savedLists: this.apiService.getSavedLists().pipe(
+        tap(() => this.appState.setSavedListsLoadFailed(false)),
+        catchError(() => { this.appState.setSavedListsLoadFailed(true); return of([] as SavedList[]); })),
       producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntil(this._cancelLoad$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
@@ -2866,6 +2899,7 @@ export class BuildListComponent {
         if (isStale()) return;
         this.dpContracts.set(data ?? []);
         this.appState.setDpContracts(data ?? []);  // also flips dpContractsLoaded
+        this.appState.setDpContractsLoadFailed(false);
         this._dpReady.set(true);                   // re-triggers _dataReadyEffect to run the query
       },
       error: () => {
@@ -2873,6 +2907,7 @@ export class BuildListComponent {
         if (isStale()) return;
         this.dpContracts.set([]);
         this.appState.setDpContracts([]);          // loaded-but-empty, not "still loading"
+        this.appState.setDpContractsLoadFailed(true); // ...and says so, or a DP prompt answers "none"
         this._dpReady.set(true);
       }
     });
@@ -3028,19 +3063,25 @@ export class BuildListComponent {
     const fetchingNotes = needsNotes && !this.appState.notesLoaded();
     let ticketFetchFailed = false;
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
+      customers: this.apiService.getCustomers(tuParam).pipe(
+        tap(() => this.appState.setCustomersLoadFailed(false)),
+        catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); })),
       contracts: this.apiService.getContracts(tuParam).pipe(
         tap(() => this.appState.setContractsLoadFailed(false)),
         catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
       tickets: this.apiService.getTickets(tuParam).pipe(
         tap(() => this.appState.setTicketsLoadFailed(false)),
         catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); })),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
+        tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
       notes: fetchingNotes
         ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
         : of(this.appState.notes()),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
-      dpContracts: this.apiService.getDpContracts(tuParam).pipe(catchError(() => of([] as DpContract[]))),
+      dpContracts: this.apiService.getDpContracts(tuParam).pipe(
+        tap(() => this.appState.setDpContractsLoadFailed(false)),
+        catchError(() => { this.appState.setDpContractsLoadFailed(true); return of([] as DpContract[]); })),
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
@@ -4301,8 +4342,12 @@ export class BuildListComponent {
   }
 
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
+    // The badges read only the last-contact aggregate; if that failed to load, "no row" means unknown.
+    const unknown = this.appState.noteLastContactsLoadFailed() && this.appState.noteLastContacts().length === 0;
     return this.lastContactByCustomer().get(customerId)
-      ?? { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity };
+      ?? (unknown
+        ? { text: 'Last contact unavailable', colorClass: 'text-gray-400 dark:text-gray-500', daysAgo: Infinity }
+        : { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity });
   }
 
   getCustomerCrops(customerId: number): string[] {

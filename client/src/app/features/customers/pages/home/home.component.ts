@@ -478,6 +478,7 @@ export class HomeComponent {
         const list = data ?? [];
         this.customers.set(list);
         this.appState.setCustomers(list);
+        this.appState.setCustomersLoadFailed(false);
         this.loading.set(false);
         this._isLoading = false;
         this._enrichSavedLists();
@@ -492,6 +493,8 @@ export class HomeComponent {
       },
       error: () => {
         if (requestId !== this._customerRequestId) return;
+        // The producer list shows "Couldn't load producers" from this rather than "No producers found".
+        this.appState.setCustomersLoadFailed(true);
         this.loading.set(false);
         this._isLoading = false;
       }
@@ -520,9 +523,10 @@ export class HomeComponent {
         const list = data ?? [];
         this.plantingIntentions.set(list);
         this.appState.setPlantingIntentions(list);
+        this.appState.setPlantingIntentionsLoadFailed(false);
         this.isLoadingPlanting.set(false);
       },
-      error: () => { this.isLoadingPlanting.set(false); }
+      error: () => { this.appState.setPlantingIntentionsLoadFailed(true); this.isLoadingPlanting.set(false); }
     });
 
     // Last-contact aggregate instead of the full note download — the selected producer's
@@ -567,6 +571,7 @@ export class HomeComponent {
         const list = data ?? [];
         this.savedLists.set(list);
         this.appState.setSavedLists(list);
+        this.appState.setSavedListsLoadFailed(false);
         // Always ensure the query library is in appState so customer-list (which renders the
         // saved list dropdown on this page) can resolve a saved list's prompt category by
         // queryText match. Cached after first fetch — both home and build-list reuse it.
@@ -583,7 +588,10 @@ export class HomeComponent {
           this._enrichSavedLists();
         }
       },
-      error: (err) => this._reportBackgroundFailure('load saved lists', err)
+      error: (err) => {
+        this.appState.setSavedListsLoadFailed(true);
+        this._reportBackgroundFailure('load saved lists', err);
+      }
     });
   }
 
@@ -953,8 +961,13 @@ export class HomeComponent {
         const list = rows ?? [];
         this.noteLastContacts.set(list);
         this.appState.setNoteLastContacts(list);
+        this.appState.setNoteLastContactsLoadFailed(false);
       },
-      error: (err) => this._reportBackgroundFailure('load last-contacted dates', err)
+      error: (err) => {
+        // The list then shows "Last contact unavailable" rather than "Never contacted" on every row.
+        this.appState.setNoteLastContactsLoadFailed(true);
+        this._reportBackgroundFailure('load last-contacted dates', err);
+      }
     });
   }
 

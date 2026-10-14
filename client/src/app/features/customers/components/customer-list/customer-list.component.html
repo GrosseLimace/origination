@@ -123,6 +123,17 @@
               <p class="font-medium">Search failed</p>
               <p class="text-sm mt-2">Couldn't search producers. Check your connection and try again.</p>
             </div>
+          } @else if (customersLoadFailed() && !searchInputValue) {
+            <!-- An outage must not read as an empty trade unit. -->
+            <div class="p-8 text-center text-gray-500" role="alert">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" x2="12" y1="8" y2="12"/>
+                <line x1="12" x2="12.01" y1="16" y2="16"/>
+              </svg>
+              <p class="font-medium">Couldn't load producers</p>
+              <p class="text-sm mt-2">The producer list for these trade units failed to load. Refresh the page to try again.</p>
+            </div>
           } @else if (filteredCustomers().length === 0) {
             <div class="p-8 text-center text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
@@ -185,14 +196,15 @@
                       <span class="truncate">{{ customer.email }}</span>
                     </div>
                   }
-                  <div class="flex items-center gap-2 text-[length:var(--text-fluid-sm)]" [class]="lastContactCache().get(customer.id)?.cssClass || 'text-red-500'">
+                  <div class="flex items-center gap-2 text-[length:var(--text-fluid-sm)]" [class]="contactHistoryUnavailable() ? 'text-gray-400 dark:text-gray-500' : (lastContactCache().get(customer.id)?.cssClass || 'text-red-500')">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
                       <line x1="16" x2="16" y1="2" y2="6"/>
                       <line x1="8" x2="8" y1="2" y2="6"/>
                       <line x1="3" x2="21" y1="10" y2="10"/>
                     </svg>
-                    <span>{{ lastContactCache().get(customer.id)?.text || 'Never contacted' }}</span>
+                    <!-- A failed last-contact load must not brand every producer "Never contacted". -->
+                    <span>{{ contactHistoryUnavailable() ? 'Last contact unavailable' : (lastContactCache().get(customer.id)?.text || 'Never contacted') }}</span>
                   </div>
                   <!-- Follow-up badge — only the signed-in user's own reminders, and only shown
                        when they actually have one scheduled for this producer. -->

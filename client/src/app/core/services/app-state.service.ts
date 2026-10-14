@@ -89,6 +89,14 @@ export class AppStateService {
   private readonly _todaysTicketsLoading = signal(false);
   private readonly _contractsLoadFailed = signal(false);
   private readonly _ticketsLoadFailed = signal(false);
+  private readonly _customersLoadFailed = signal(false);
+  private readonly _dpContractsLoadFailed = signal(false);
+  private readonly _noteLastContactsLoadFailed = signal(false);
+  private readonly _myRemindersLoadFailed = signal(false);
+  private readonly _savedListsLoadFailed = signal(false);
+  private readonly _plantingIntentionsLoadFailed = signal(false);
+  private readonly _harvestWindowsLoadFailed = signal(false);
+  private readonly _commodityConversionsLoadFailed = signal(false);
   private readonly _sourceLoadPending = signal(false);
   private readonly _dashboardCache = signal<DashboardCacheEntry | null>(null);
   private readonly _preloadedDashboardSummary = signal<(DashboardSummary & { tradeUnitsKey: string; year: number }) | null>(null);
@@ -489,10 +497,54 @@ export class AppStateService {
   /** Same for the trade-unit-wide ticket reads. See setContractsLoadFailed. */
   setTicketsLoadFailed(failed: boolean): void { this._ticketsLoadFailed.set(failed); }
 
+  /** Same, for the trade-unit-wide PRODUCER read: an empty producer list otherwise reads as "no
+   *  producers in these trade units". Same tap-before-catchError rule as setContractsLoadFailed. */
+  readonly customersLoadFailed = this._customersLoadFailed.asReadonly();
+  setCustomersLoadFailed(failed: boolean): void { this._customersLoadFailed.set(failed); }
+
+  /** Same, for the trade-unit-wide DP read. The [] fallback still flips dpContractsLoaded (so a DP
+   *  prompt never waits forever), so without this a failure answers "no producers hold DP". */
+  readonly dpContractsLoadFailed = this._dpContractsLoadFailed.asReadonly();
+  setDpContractsLoadFailed(failed: boolean): void { this._dpContractsLoadFailed.set(failed); }
+
+  /** Same, for the last-contact aggregate. Without it every producer reads "Never contacted" and the
+   *  recency prompts ("not contacted in 30 days") match everyone. */
+  readonly noteLastContactsLoadFailed = this._noteLastContactsLoadFailed.asReadonly();
+  setNoteLastContactsLoadFailed(failed: boolean): void { this._noteLastContactsLoadFailed.set(failed); }
+
+  /** Same, for the signed-in user's follow-ups: follow-up badges vanish and follow-up prompts match no one. */
+  readonly myRemindersLoadFailed = this._myRemindersLoadFailed.asReadonly();
+  setMyRemindersLoadFailed(failed: boolean): void { this._myRemindersLoadFailed.set(failed); }
+
+  /** Same, for the user's saved lists, which otherwise read as "No saved lists yet". */
+  readonly savedListsLoadFailed = this._savedListsLoadFailed.asReadonly();
+  setSavedListsLoadFailed(failed: boolean): void { this._savedListsLoadFailed.set(failed); }
+
+  /** Same, for the trade-unit planting intentions behind the dashboard and planting prompts. */
+  readonly plantingIntentionsLoadFailed = this._plantingIntentionsLoadFailed.asReadonly();
+  setPlantingIntentionsLoadFailed(failed: boolean): void { this._plantingIntentionsLoadFailed.set(failed); }
+
+  /** Same, for the harvest windows behind contract pacing, which otherwise reads "No contract data available". */
+  readonly harvestWindowsLoadFailed = this._harvestWindowsLoadFailed.asReadonly();
+  setHarvestWindowsLoadFailed(failed: boolean): void { this._harvestWindowsLoadFailed.set(failed); }
+
+  /** Same, for the commodity unit conversions. Without them every non-bushel contract drops out of
+   *  bushel totals, and the exclusion notes blame the contract's unit. Loaded once per sign-in, so
+   *  clearLoadFailures (a trade-unit change) does not reset it. */
+  readonly commodityConversionsLoadFailed = this._commodityConversionsLoadFailed.asReadonly();
+  setCommodityConversionsLoadFailed(failed: boolean): void { this._commodityConversionsLoadFailed.set(failed); }
+
   /** A new trade-unit load is starting: the previous load's failures no longer describe anything. */
   clearLoadFailures(): void {
     this._contractsLoadFailed.set(false);
     this._ticketsLoadFailed.set(false);
+    this._customersLoadFailed.set(false);
+    this._dpContractsLoadFailed.set(false);
+    this._noteLastContactsLoadFailed.set(false);
+    this._myRemindersLoadFailed.set(false);
+    this._savedListsLoadFailed.set(false);
+    this._plantingIntentionsLoadFailed.set(false);
+    this._harvestWindowsLoadFailed.set(false);
   }
 
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
