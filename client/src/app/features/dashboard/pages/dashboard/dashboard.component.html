@@ -481,7 +481,7 @@
                                 @for (chip of row.plantingChips; track chip.text) {
                                   <span
                                     class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium"
-                                    [ngClass]="commodityChipClass(chip.colorKey)"
+                                    [ngClass]="chip.colorKey | commodityChipClass"
                                     [class.ring-2]="row.highlightedCrops?.has(chip.display)"
                                     [class.ring-scoular-green-accessible]="row.highlightedCrops?.has(chip.display)">
                                     {{ chip.text }}

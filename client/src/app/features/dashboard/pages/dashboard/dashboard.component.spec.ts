@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Component, computed, signal } from '@angular/core';
+import { ChangeDetectorRef, Component, computed, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { MsalService } from '@azure/msal-angular';
 import { Observable, Subject, of, throwError } from 'rxjs';
@@ -11,6 +11,7 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { commodityChipClass } from '@shared/utils/commodity-color';
+import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe';
 import { makeMsalServiceMock } from '@testing/msal.mocks';
 import {
   Commodity, CommodityConversion, Contract, Customer, DashboardActualHarvest, DashboardMarketShare,
@@ -918,15 +919,63 @@ describe('DashboardComponent', () => {
       expect(text()).toContain('Never contacted');
     });
 
-    it('maps chip classes by crop name, folding specialty variants into the base crop', async () => {
+    it('renders planting chips coloured by plain crop for producers with intentions', async () => {
       await build();
+      c.selectDashboardTab('producers');
+      await settle();
 
-      expect(c.commodityChipClass('Corn')).toContain('bg-amber-100');
-      expect(c.commodityChipClass('SOYBEANS')).toContain('bg-blue-100');
-      expect(c.commodityChipClass('Organic Soybeans')).toBe(commodityChipClass('Soybeans'));
-      expect(c.commodityChipClass('Waxy Corn')).toBe(commodityChipClass('Corn'));
+      const chips = Array.from(host().querySelectorAll('span.rounded-md')).map(el => ({
+        text: (el.textContent ?? '').replace(/\s+/g, ' ').trim(), className: el.className,
+      }));
+      const classOf = (prefix: string): string => chips.find(ch => ch.text.startsWith(prefix))?.className ?? '';
+      expect(chips.map(ch => ch.text)).toEqual(['SB · 200 ac', 'Irrigated YC · 100 ac', 'Dryland YC · 50 ac']);
+      expect(classOf('SB')).toContain('bg-blue-100');
+      expect(classOf('Irrigated YC')).toContain('bg-amber-100');
+      expect(classOf('Dryland YC')).toContain('bg-amber-100');
+    });
+
+    it('recolours a chip in place when its crop category changes', async () => {
+      await build();
+      c.selectDashboardTab('producers');
+      c.producerView.set('without');
+      await settle();
+      const classOf = (code: string): string =>
+        Array.from(host().querySelectorAll('span.rounded-md')).find(el => el.textContent?.trim() === code)?.className ?? '';
+      expect(classOf('YC')).toContain('bg-amber-100');
+
+      // Same chip text, new colour key: the chip's view is kept (tracked by text), its class must follow.
+      c.allCommodities.set(COMMODITIES.map(m => m.code === 'YC' ? { ...m, plantingCategory: 'Organic Soybeans' } : m));
+      await settle();
+
+      expect(classOf('YC')).toContain('bg-blue-100');
+      expect(classOf('YC')).not.toContain('bg-amber-100');
+    });
+
+    it('resolves each chip\'s classes once, not on every change-detection pass', async () => {
+      await build();
+      c.selectDashboardTab('producers');
+      await settle();
+      const transform = vi.spyOn(CommodityChipClassPipe.prototype, 'transform');
+      // A pass that re-checks this OnPush view without changing any input.
+      const rerender = () => { fixture.debugElement.injector.get(ChangeDetectorRef).markForCheck(); fixture.detectChanges(); };
+
+      rerender(); rerender(); rerender();
+
+      expect(transform).not.toHaveBeenCalled();
+      expect(Array.from(host().querySelectorAll('span.rounded-md'))).toHaveLength(3);
+      transform.mockRestore();
+    });
+
+    it('maps chip classes by crop name, folding specialty variants into the base crop', () => {
+      // The pipe the chip template binds through.
+      const chipClass = (crop: string) => new CommodityChipClassPipe().transform(crop);
+
+      expect(chipClass('Corn')).toContain('bg-amber-100');
+      expect(chipClass('SOYBEANS')).toContain('bg-blue-100');
+      expect(chipClass('Organic Soybeans')).toBe(commodityChipClass('Soybeans'));
+      expect(chipClass('Waxy Corn')).toBe(commodityChipClass('Corn'));
       // Unknown crops get a stable, case-insensitive pick from the fallback palette.
-      expect(c.commodityChipClass('Sunflowers')).toBe(c.commodityChipClass('sunflowers'));
+      expect(chipClass('Sunflowers')).toBe(chipClass('sunflowers'));
     });
 
     it('describes last contact by recency, including never', async () => {

@@ -12,7 +12,8 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
-import { commodityColor, commodityChipClass, commodityRowClass } from '@shared/utils/commodity-color';
+import { commodityColor, commodityRowClass } from '@shared/utils/commodity-color';
+import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { inSelectedTradeUnits } from '@shared/utils/planting-trade-unit-filter';
 
@@ -37,7 +38,7 @@ interface ProducerTabRow {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, CommodityChipClassPipe],
   templateUrl: './dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -163,9 +164,6 @@ export class DashboardComponent {
     this.producerSearch.set('');
     this.producerCropFilter.set('');
   }
-
-  /** Shared per-crop chip classes (pastel bg+text), same palette as Build-A-List planting chips. */
-  readonly commodityChipClass = commodityChipClass;
 
   /** Last-contact display for a customer — shown only on the "without intentions" producer view. */
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
