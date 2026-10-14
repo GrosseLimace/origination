@@ -12,11 +12,9 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { buildLbsPerBushelMap } from '@shared/utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
-import { commodityColor, commodityRowClass } from '@shared/utils/commodity-color';
+import { commodityRowClass } from '@shared/utils/commodity-color';
 import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe';
-import { plantingCategory } from '@shared/utils/planting-category';
-import { inSelectedTradeUnits } from '@shared/utils/planting-trade-unit-filter';
-import { dashboardCropKey, formatAcres, formatK, getFormattedLocation, getInitials, toTitleCase } from '../../utils/dashboard-format';
+import { formatAcres, formatK, getFormattedLocation, getInitials } from '../../utils/dashboard-format';
 import {
   buildContractCommodityLegend, buildContractCoverageRows, buildContractStatus, buildCropDistribution, buildHarvestTimeline,
   buildSalesOpportunities, contractedBushelsByCategory, filterContractsForYear,
@@ -26,6 +24,12 @@ import {
   buildProducersWithoutIntentionsRows, narrowProducerRowsToChip, sortProducerRows, withIntentionsChipOptions,
   withoutIntentionsChipOptions,
 } from '../../utils/dashboard-producers';
+import {
+  CategoryRow, YieldRow, availableHarvestCropCategories, buildActualHarvestRows, buildActualMarketShareRows, buildAvailableCrops,
+  buildCategoryRows, buildCropBreakdown, buildCropDetailsRows, buildYieldEstimateMap, buildYieldRows, cropDistributionGradient,
+  filterIntentionsForYear, groupIntentionsByCropKey, inPlantingScope, inScopeAcresForYear, intentionProductionPairs,
+  plantingYearsDescending, projectedProduction, weightedAverageYield,
+} from '../../utils/dashboard-planting';
 
 @Component({
   selector: 'app-dashboard',
@@ -59,7 +63,7 @@ export class DashboardComponent {
   readonly cropYearLoadFailed = signal(false);
   private readonly _customerIdSet = computed(() => new Set(this.customers().map(c => c.id)));
   // Planting rows are tagged with the trade unit they were recorded for, and every acre figure on
-  // this page counts a row only under that trade unit (see inSelectedTradeUnits). A producer on
+  // this page counts a row only under that trade unit (see inPlantingScope). A producer on
   // Pratt and Tribune therefore contributes only Pratt acres to the Pratt view. In "All Producers"
   // mode there is no territory, so the set is empty and no row is filtered out.
   private readonly _scopedTradeUnitSet = computed(() =>
@@ -67,9 +71,6 @@ export class DashboardComponent {
       ? new Set<string>()
       : new Set(this.appStateService.inScopeTradeUnitCodes())
   );
-  private _inScope(p: PlantingIntention, customerIdSet: Set<number>, tradeUnitSet: Set<string>): boolean {
-    return customerIdSet.has(p.customerId) && inSelectedTradeUnits(p, tradeUnitSet);
-  }
   readonly storedGrain = computed(() => {
     const customerIds = new Set(this.appStateService.customers().map(c => c.id));
     return this.appStateService.storedGrain().filter(s => customerIds.has(s.customerId));
@@ -110,10 +111,10 @@ export class DashboardComponent {
   confirmDeleteHarvestRow = signal<{ id: number; cropCategory: string } | null>(null);
 
   // Table 1: Yield rows (crop code level)
-  yieldRows = signal<{ cropCode: string; cropName: string; category: string; totalAcres: number; yieldEstimate: number | null }[]>([]);
+  yieldRows = signal<YieldRow[]>([]);
 
   // Tables 2-4: Category rows
-  categoryRows = signal<{ category: string; totalEstimatedProduction: number; marketSharePct: number | null; estimatedHarvestHandle: number }[]>([]);
+  categoryRows = signal<CategoryRow[]>([]);
 
   availablePlantingYears = signal<number[]>([]);
   selectedPlantingYear = signal<number>(new Date().getFullYear());
@@ -200,19 +201,8 @@ export class DashboardComponent {
   readonly tradeUnitKey = computed(() => [...this.appStateService.selectedTradeUnits()].sort().join(','));
 
   // Pre-indexed intentions by crop key — O(n) lookup instead of O(n²) in cropDetailsRows
-  private readonly _intentionsByCropKey = computed(() => {
-    const map = new Map<string, PlantingIntention[]>();
-    for (const p of this.filteredIntentionsForYear()) {
-      const commodity = this._commodityByCode().get(p.crop);
-      const category = plantingCategory(p, commodity);
-      const key = this.selectedCropFilter()
-        ? dashboardCropKey(p.type, category)
-        : category;
-      const arr = map.get(key);
-      if (arr) arr.push(p); else map.set(key, [p]);
-    }
-    return map;
-  });
+  private readonly _intentionsByCropKey = computed(() =>
+    groupIntentionsByCropKey(this.filteredIntentionsForYear(), !!this.selectedCropFilter(), this._commodityByCode()));
 
   // Pre-indexed contracted quantity by resolved category — uses Commodities table lookup
   // so contracts group by the same category name as planting intentions.
@@ -239,203 +229,67 @@ export class DashboardComponent {
 
   // Actual harvest rows (Table 5)
   readonly actualHarvestRows = computed(() =>
-    [...this.savedActualHarvest()]
-      .filter(h => h.tradeUnitKey === this.tradeUnitKey() && h.plantingYear === this.selectedPlantingYear() - 1)
-      .sort((a, b) => a.cropCategory.localeCompare(b.cropCategory))
-      .map(h => ({ id: h.id, cropCategory: h.cropCategory, bushels: h.bushels }))
-  );
+    buildActualHarvestRows(this.savedActualHarvest(), this.tradeUnitKey(), this.selectedPlantingYear() - 1));
 
   readonly usedHarvestCrops = computed(() =>
     new Set(this.actualHarvestRows().map(r => r.cropCategory))
   );
 
-  private static readonly _HARVEST_EXCLUDED_CATEGORIES = ['transportation', 'currency', 'feed & fert ingredients'];
+  readonly availableHarvestCropCategories = computed(() =>
+    availableHarvestCropCategories(this.allCommodities(), this.usedHarvestCrops()));
 
-  readonly availableHarvestCropCategories = computed(() => {
-    const all = [...new Set(this.allCommodities().map(c => c.category).filter(Boolean) as string[])].sort();
-    return all.filter(cat =>
-      !this.usedHarvestCrops().has(cat) &&
-      !DashboardComponent._HARVEST_EXCLUDED_CATEGORIES.includes(cat.toLowerCase())
-    );
-  });
+  readonly actualMarketShareRows = computed(() =>
+    buildActualMarketShareRows(this.actualHarvestRows(), this.categoryRows()));
 
-  readonly actualMarketShareRows = computed(() => {
-    const allCrops = new Set<string>();
-    for (const r of this.actualHarvestRows()) allCrops.add(r.cropCategory);
-    for (const r of this.categoryRows()) allCrops.add(r.category);
-
-    return [...allCrops].sort().map(crop => {
-      const harvestRow = this.actualHarvestRows().find(r => r.cropCategory === crop);
-      const prodRow = this.categoryRows().find(r => r.category === crop);
-      const harvestBushels = harvestRow?.bushels ?? 0;
-      const totalEstimatedProduction = prodRow?.totalEstimatedProduction ?? 0;
-      const pct = totalEstimatedProduction > 0
-        ? (harvestBushels / totalEstimatedProduction) * 100
-        : null;
-      return { cropCategory: crop, harvestBushels, totalEstimatedProduction, pct };
-    });
-  });
-
-  readonly filteredIntentionsForYear = computed(() => {
-    const customerIdSet = this._customerIdSet();
-    const tradeUnitSet = this._scopedTradeUnitSet();
-    return this.plantingIntentions().filter(p => {
-      if (+p.plantingYear !== +this.selectedPlantingYear()) return false;
-      if (!this._inScope(p, customerIdSet, tradeUnitSet)) return false;
-      if (this.selectedCropFilter()) {
-        const commodity = this._commodityByCode().get(p.crop);
-        const category = plantingCategory(p, commodity);
-        if (category !== this.selectedCropFilter()) return false;
-      }
-      return true;
-    });
-  });
+  readonly filteredIntentionsForYear = computed(() =>
+    filterIntentionsForYear(
+      this.plantingIntentions(),
+      this.selectedPlantingYear(),
+      this._customerIdSet(),
+      this._scopedTradeUnitSet(),
+      this.selectedCropFilter(),
+      this._commodityByCode()));
 
   readonly totalAcresForYear = computed(() =>
     this.filteredIntentionsForYear().reduce((sum, p) => sum + p.acres, 0)
   );
 
   readonly acresTrend = computed(() => {
-    const prevYear = this.selectedPlantingYear() - 1;
-    const customerIdSet = this._customerIdSet();
-    const tradeUnitSet = this._scopedTradeUnitSet();
-    const prevAcres = this.plantingIntentions()
-      .filter(p => +p.plantingYear === prevYear && this._inScope(p, customerIdSet, tradeUnitSet))
-      .reduce((sum, p) => sum + p.acres, 0);
+    const prevAcres = inScopeAcresForYear(
+      this.plantingIntentions(), this.selectedPlantingYear() - 1, this._customerIdSet(), this._scopedTradeUnitSet());
     if (prevAcres === 0) return null;
     return ((this.totalAcresForYear() - prevAcres) / prevAcres) * 100;
   });
 
-  private readonly _yieldEstimateMap = computed(() => {
-    const map = new Map<string, number | null>();
-    for (const e of this.savedYieldEstimates()) {
-      map.set(e.crop, e.yieldEstimate ?? null);
-    }
-    return map;
-  });
+  private readonly _yieldEstimateMap = computed(() => buildYieldEstimateMap(this.savedYieldEstimates()));
 
-  private readonly intentionProductionPairs = computed(() => {
-    const yieldMap = this._yieldEstimateMap();
-    return this.filteredIntentionsForYear().map(p => {
-      const commodity = this._commodityByCode().get(p.crop);
-      const category = plantingCategory(p, commodity);
-      const cropKey = dashboardCropKey(p.type, category);
-      return { acres: p.acres, yieldEst: yieldMap.get(cropKey) ?? null };
-    });
-  });
+  private readonly intentionProductionPairs = computed(() =>
+    intentionProductionPairs(this.filteredIntentionsForYear(), this._yieldEstimateMap(), this._commodityByCode()));
 
-  readonly projectedProductionFormatted = computed(() => {
-    const total = this.intentionProductionPairs()
-      .filter(p => p.yieldEst != null)
-      .reduce((sum, p) => sum + p.acres * p.yieldEst!, 0);
-    return this.formatK(Math.round(total));
-  });
+  readonly projectedProductionFormatted = computed(() =>
+    this.formatK(Math.round(projectedProduction(this.intentionProductionPairs()))));
 
-  readonly averageYield = computed(() => {
-    const pairs = this.intentionProductionPairs().filter(p => p.yieldEst != null);
-    const totalAcres = pairs.reduce((sum, p) => sum + p.acres, 0);
-    const totalProd = pairs.reduce((sum, p) => sum + p.acres * p.yieldEst!, 0);
-    return totalAcres > 0 ? Math.round(totalProd / totalAcres) : 0;
-  });
+  readonly averageYield = computed(() => weightedAverageYield(this.intentionProductionPairs()));
 
   readonly activeGrowers = computed(() =>
     new Set(this.filteredIntentionsForYear().map(p => p.customerId)).size
   );
 
-  readonly availableCrops = computed(() => {
-    const customerIdSet = this._customerIdSet();
-    const tradeUnitSet = this._scopedTradeUnitSet();
-    const crops = new Set<string>();
+  readonly availableCrops = computed(() =>
+    buildAvailableCrops(
+      this.plantingIntentions(), this._customerIdSet(), this._scopedTradeUnitSet(), this._commodityByCode(), this.contracts()));
 
-    for (const p of this.plantingIntentions()) {
-      if (!this._inScope(p, customerIdSet, tradeUnitSet)) continue;
-      const commodity = this._commodityByCode().get(p.crop);
-      const category = plantingCategory(p, commodity);
-      if (category) crops.add(toTitleCase(category));
-    }
-
-    // Contracts come from ODS, where strings are stored ALL-CAPS ("WHEAT",
-    // "HARD RED WINTER WHEAT"). Title-case them on the way into the dropdown
-    // so they merge with the already-Title-Cased planting-intention categories
-    // instead of appearing as duplicate "WHEAT" / "Wheat" options.
-    for (const c of this.contracts()) {
-      const group = c.commodityGroup || c.commodityDescription;
-      if (group) crops.add(toTitleCase(group));
-    }
-
-    return [...crops].sort();
-  });
-
-  readonly cropBreakdown = computed(() => {
-    // Track the underlying crop CATEGORY per row so color is by crop, not sort position —
-    // e.g. "Irrigated Corn" and "Dryland Corn" stay as separate rows but both color as Corn.
-    const cropMap = new Map<string, { acres: number; category: string }>();
-    for (const p of this.filteredIntentionsForYear()) {
-      const commodity = this._commodityByCode().get(p.crop);
-      const category = plantingCategory(p, commodity);
-      const key = this.selectedCropFilter()
-        ? dashboardCropKey(p.type, category)
-        : category;
-      const entry = cropMap.get(key);
-      if (entry) entry.acres += p.acres;
-      else cropMap.set(key, { acres: p.acres, category });
-    }
-    const total = [...cropMap.values()].reduce((a, b) => a + b.acres, 0);
-    return [...cropMap.entries()]
-      .sort((a, b) => b[1].acres - a[1].acres)
-      .map(([name, { acres, category }]) => {
-        const color = commodityColor(category); // shared per-crop color (same everywhere)
-        return {
-          name,
-          acres,
-          pct: total > 0 ? Math.round((acres / total) * 100) : 0,
-          barColor: color.bar,
-          dotColor: color.bar,
-          hex: color.hex
-        };
-      });
-  });
+  readonly cropBreakdown = computed(() =>
+    buildCropBreakdown(this.filteredIntentionsForYear(), !!this.selectedCropFilter(), this._commodityByCode()));
 
   readonly maxCropAcres = computed(() =>
     Math.max(...this.cropBreakdown().map(c => c.acres), 1)
   );
 
-  readonly cropDistributionGradient = computed(() => {
-    if (this.cropBreakdown().length === 0) return 'conic-gradient(#e5e7eb 0deg 360deg)';
-    let deg = 0;
-    const stops: string[] = [];
-    for (const c of this.cropBreakdown()) {
-      const end = deg + (c.pct / 100) * 360;
-      stops.push(`${c.hex} ${deg}deg ${end}deg`);
-      deg = end;
-    }
-    if (deg < 360) stops.push(`${this.cropBreakdown()[0].hex} ${deg}deg 360deg`);
-    return `conic-gradient(${stops.join(', ')})`;
-  });
+  readonly cropDistributionGradient = computed(() => cropDistributionGradient(this.cropBreakdown()));
 
-  readonly cropDetailsRows = computed(() => {
-    const yieldMap = this._yieldEstimateMap();
-    const intentionsMap = this._intentionsByCropKey();
-    return this.cropBreakdown().map(c => {
-      const matching = intentionsMap.get(c.name) || [];
-      let totalProd = 0;
-      let totalAcresWeighted = 0;
-      for (const p of matching) {
-        const commodity = this._commodityByCode().get(p.crop);
-        const category = plantingCategory(p, commodity);
-        const cropKey = dashboardCropKey(p.type, category);
-        const yieldEst = yieldMap.get(cropKey);
-        if (yieldEst != null) {
-          totalProd += p.acres * yieldEst;
-          totalAcresWeighted += p.acres;
-        }
-      }
-      const avgYield = totalAcresWeighted > 0 ? Math.round(totalProd / totalAcresWeighted) : null;
-      const production = totalProd > 0 ? Math.round(totalProd) : null;
-      const growers = new Set(matching.map(p => p.customerId)).size;
-      return { name: c.name, acres: c.acres, avgYield, production, growers, dotColor: c.dotColor };
-    });
-  });
+  readonly cropDetailsRows = computed(() =>
+    buildCropDetailsRows(this.cropBreakdown(), this._intentionsByCropKey(), this._yieldEstimateMap(), this._commodityByCode()));
 
   private readonly _customerById = computed(() => {
     const map = new Map<number, Customer>();
@@ -891,72 +745,20 @@ export class DashboardComponent {
     const tradeUnitSet = this._scopedTradeUnitSet();
 
     const forGlobalTUs = this.plantingIntentions().filter(p =>
-      this._inScope(p, customerIdSet, tradeUnitSet)
+      inPlantingScope(p, customerIdSet, tradeUnitSet)
     );
 
-    // Available years
-    const years = [...new Set(forGlobalTUs.map(p => p.plantingYear))].sort((a, b) => b - a);
-    this.availablePlantingYears.set(years);
+    this.availablePlantingYears.set(plantingYearsDescending(forGlobalTUs));
 
     // Filter by selected year
     const filtered = forGlobalTUs.filter(p => +p.plantingYear === +this.selectedPlantingYear());
-
-    // Group acres by combined type+category key (e.g. "Dryland Wheat", "Irrigated Corn")
-    const cropAcresMap = new Map<string, number>();
-    const cropCategoryMap = new Map<string, string>();
-    for (const p of filtered) {
-      const commodity = this._commodityByCode().get(p.crop);
-      const category = plantingCategory(p, commodity);
-      const cropKey = dashboardCropKey(p.type, category);
-      cropAcresMap.set(cropKey, (cropAcresMap.get(cropKey) || 0) + p.acres);
-      cropCategoryMap.set(cropKey, category);
-    }
-
-    // Use crop keys from planting intentions only
-    const allCropCodes = new Set<string>(cropAcresMap.keys());
-    const yieldMap = this._yieldEstimateMap();
-
-    this.yieldRows.set(
-      [...allCropCodes]
-        .map(cropCode => ({
-          cropCode,
-          cropName: cropCode,
-          category: cropCategoryMap.get(cropCode) || 'Unknown',
-          totalAcres: cropAcresMap.get(cropCode) || 0,
-          yieldEstimate: yieldMap.get(cropCode) ?? null
-        }))
-        // Group rows by commodity (all Corn variants together, then Soybeans, etc.), then by the
-        // crop label within a commodity — instead of a flat alphabetical sort that splits e.g.
-        // "Dryland Corn" and "Irrigated Corn" apart.
-        .sort((a, b) => a.category.localeCompare(b.category) || a.cropName.localeCompare(b.cropName))
-    );
+    this.yieldRows.set(buildYieldRows(filtered, this._commodityByCode(), this._yieldEstimateMap()));
 
     this._calculateCategoryRows();
   }
 
   private _calculateCategoryRows(): void {
-    // Group yield rows by category, sum production
-    const categoryMap = new Map<string, number>();
-    for (const row of this.yieldRows()) {
-      const production = (row.yieldEstimate != null && row.totalAcres > 0)
-        ? row.totalAcres * row.yieldEstimate
-        : 0;
-      const current = categoryMap.get(row.category) || 0;
-      categoryMap.set(row.category, current + production);
-    }
-
-    this.categoryRows.set(
-      [...categoryMap.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([category, totalEstimatedProduction]) => {
-          const savedShare = this.savedMarketShares().find(s => s.cropCategory === category);
-          const marketSharePct = savedShare?.marketSharePct ?? null;
-          const estimatedHarvestHandle = (marketSharePct != null && totalEstimatedProduction > 0)
-            ? totalEstimatedProduction * (marketSharePct / 100)
-            : 0;
-          return { category, totalEstimatedProduction, marketSharePct, estimatedHarvestHandle };
-        })
-    );
+    this.categoryRows.set(buildCategoryRows(this.yieldRows(), this.savedMarketShares()));
   }
 
   loadDashboardEstimates(): void {
