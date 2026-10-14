@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, signal, computed, untracked, DestroyRef } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, effect, inject, signal, computed, untracked, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -58,13 +58,19 @@ const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
     DialogContentComponent,
     DialogFooterComponent
   ],
-  templateUrl: './edit-customer-dialog.component.html'
+  templateUrl: './edit-customer-dialog.component.html',
+  // View state is signals and computeds, apart from editAcres (a plain field behind ngModel) and the
+  // private change snapshots hasChanges() reads. Those are written from template events, from the
+  // open effect (inside the refresh the isOpen input schedules), and from the details re-read, which
+  // marks the view itself.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EditCustomerDialogComponent {
   private readonly apiService = inject(ApiService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly toast = inject(ToastService);
   private readonly appState = inject(AppStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   public isOpen = input(false);
   public customer = input<Customer | null>(null);
@@ -643,6 +649,9 @@ export class EditCustomerDialogComponent {
           this.editLinkedProducerIds.set([...(fresh.linkedProducerIds || [])]);
           this._originalLinkedProducerIds = [...(fresh.linkedProducerIds || [])];
         }
+        // editAcres and the change snapshots are plain fields, and this is a response, not a
+        // template event: when only the acres changed, nothing above has marked the view.
+        this.cdr.markForCheck();
       },
       error: () => { /* keep the page's copy */ },
     });
@@ -668,8 +677,9 @@ export class EditCustomerDialogComponent {
   }
 
   // Producer search
-  // _allProducersForSearch caches the full cross-trade-unit list (only loaded when no trade units selected)
-  private _allProducersForSearch: Customer[] = [];
+  // _allProducersForSearch caches the full cross-trade-unit list (only loaded when no trade units selected).
+  // A signal: it arrives in the background, and linked producers are named from it.
+  private readonly _allProducersForSearch = signal<Customer[]>([]);
   newProducerSearch = signal('');
   filteredProducers = signal<Customer[]>([]);
   showProducerSuggestions = signal(false);
@@ -711,7 +721,7 @@ export class EditCustomerDialogComponent {
       const tradeUnits = this.selectedTradeUnits();
       // Eagerly load all producers whenever selectedTradeUnits becomes empty so the cache is
       // ready before the user opens the link search. Cached — only fetches once per session.
-      if (tradeUnits.length === 0 && this._allProducersForSearch.length === 0 && !this.isLoadingProducers()) {
+      if (tradeUnits.length === 0 && untracked(this._allProducersForSearch).length === 0 && !this.isLoadingProducers()) {
         this._loadAllProducersForSearch();
       }
     });
@@ -752,7 +762,7 @@ export class EditCustomerDialogComponent {
 
         // If no trade units and the cache still isn't loaded (edge case: first open before effect
         // on selectedTradeUnits fired), kick off the load now.
-        if (this.selectedTradeUnits().length === 0 && this._allProducersForSearch.length === 0 && !this.isLoadingProducers()) {
+        if (this.selectedTradeUnits().length === 0 && untracked(this._allProducersForSearch).length === 0 && !this.isLoadingProducers()) {
           this._loadAllProducersForSearch();
         }
 
@@ -1164,7 +1174,7 @@ export class EditCustomerDialogComponent {
     // dead weight once the local TU catalog was retired.
     this.apiService.getCustomers().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (customers) => {
-        this._allProducersForSearch = customers;
+        this._allProducersForSearch.set(customers);
         this.isLoadingProducers.set(false);
         // If the user already typed in the search box, refresh results now that data is loaded
         if (this.newProducerSearch().trim()) {
@@ -1181,7 +1191,7 @@ export class EditCustomerDialogComponent {
     // No trade units selected → use the full cross-trade-unit cache
     // Trade units selected → use the already-loaded filtered list (instant, no extra API call)
     return this.selectedTradeUnits().length === 0
-      ? this._allProducersForSearch
+      ? this._allProducersForSearch()
       : this.allCustomers();
   }
 
