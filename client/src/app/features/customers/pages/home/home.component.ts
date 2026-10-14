@@ -22,7 +22,10 @@ import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-tra
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
 import { environment } from '@env/environment';
-import { parseServerTime } from '@shared/utils/server-time';
+import {
+  commodityCodesFrom, describeLastContacted, lastContactFromNotes, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,
+  producerContractsAndTickets, readFailureMessage, sortNotes, sortReminders, yieldEstimateYears
+} from './home-derivations';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -267,26 +270,7 @@ export class HomeComponent {
   readonly isMobile = signal(false);
   readonly loading = signal(false);
 
-  readonly lastContactedDate = computed(() => {
-    const notes = this.customerNotes();
-    if (notes.length === 0) return 'Never';
-    // Find the most recently CREATED note — don't use notes[0] since pinned notes sort
-    // to the top but may have an old createdAt. modifiedAt reflects edits/pins, not contact.
-    const lastNote = notes.reduce((latest, note) =>
-      this._parseNoteTime(note.createdAt) > this._parseNoteTime(latest.createdAt) ? note : latest,
-      notes[0]
-    );
-    const date = parseServerTime(lastNote.createdAt);
-    const todayMidnight = new Date();
-    todayMidnight.setHours(0, 0, 0, 0);
-    const noteMidnight = new Date(date);
-    noteMidnight.setHours(0, 0, 0, 0);
-    const days = Math.max(0, Math.round((todayMidnight.getTime() - noteMidnight.getTime()) / (1000 * 60 * 60 * 24)));
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days} days ago`;
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  });
+  readonly lastContactedDate = computed(() => describeLastContacted(this.customerNotes()));
 
 
   private _pendingProducerDetails: ProducerDetails[] | null = null;
@@ -535,10 +519,7 @@ export class HomeComponent {
 
     this.apiService.getStoredGrain(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        const incoming = data ?? [];
-        const existing = this.storedGrain();
-        const seen = new Set(incoming.map(s => s.id));
-        const merged = [...incoming, ...existing.filter(s => !seen.has(s.id))];
+        const merged = mergeIncomingById(data ?? [], this.storedGrain());
         this.storedGrain.set(merged);
         this.appState.setStoredGrain(merged);
         const sel = this.selectedCustomer();
@@ -552,10 +533,7 @@ export class HomeComponent {
     // selected producer.
     this.apiService.getDpContracts(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        const incoming = data ?? [];
-        const existing = this.dpContracts();
-        const seen = new Set(incoming.map(d => d.id));
-        const merged = [...incoming, ...existing.filter(d => !seen.has(d.id))];
+        const merged = mergeIncomingById(data ?? [], this.dpContracts());
         this.dpContracts.set(merged);
         this.appState.setDpContracts(merged);
         const sel = this.selectedCustomer();
@@ -662,31 +640,15 @@ export class HomeComponent {
 
     // Gather all unique planting years from intentions + contracts so we fetch
     // yield estimates for every year the user might select.
-    const yearSet = new Set<number>();
-    const currentYear = new Date().getFullYear();
-    yearSet.add(currentYear);
-    yearSet.add(currentYear - 1);
-    for (const pi of this.plantingIntentions()) {
-      if (pi.plantingYear) yearSet.add(pi.plantingYear);
-    }
-    for (const c of this.contracts()) {
-      if (c.cropYear) yearSet.add(c.cropYear);
-    }
+    const years = yieldEstimateYears(new Date().getFullYear(), this.plantingIntentions(), this.contracts());
 
-    const yearCalls = [...yearSet].map(y =>
+    const yearCalls = years.map(y =>
       this.apiService.getDashboardPlantingEstimates(key, y).pipe(catchError(() => of([] as DashboardPlantingEstimate[])))
     );
     forkJoin(yearCalls).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (results) => {
         // Merge all years — later years overwrite earlier for same crop key
-        const map = new Map<string, DashboardPlantingEstimate>();
-        for (const batch of results) {
-          for (const est of batch) {
-            // Key by crop + year to keep per-year estimates separate
-            map.set(`${est.crop}|${est.plantingYear}`, est);
-          }
-        }
-        this.yieldEstimates.set([...map.values()]);
+        this.yieldEstimates.set(mergeYieldEstimates(results));
         done();
       },
       error: () => done()
@@ -1067,7 +1029,7 @@ export class HomeComponent {
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (created) => {
-            this.customerReminders.update(list => this._sortReminders([...list, created]));
+            this.customerReminders.update(list => sortReminders([...list, created]));
             this._addMyReminder(created);
             this.isSavingReminder.set(false);
             this.reminderSaveSucceededCounter.update(n => n + 1);
@@ -1085,7 +1047,7 @@ export class HomeComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (updated) => {
-          this.customerReminders.update(list => this._sortReminders(list.map(r => r.id === id ? updated : r)));
+          this.customerReminders.update(list => sortReminders(list.map(r => r.id === id ? updated : r)));
           this._addMyReminder(updated);
           this.isSavingReminder.set(false);
           this.reminderSaveSucceededCounter.update(n => n + 1);
@@ -1113,7 +1075,7 @@ export class HomeComponent {
       .subscribe(updated => {
         // A completed reminder stays on the calendar on purpose: deleting the event makes Outlook
         // render it as "Canceled", which reads as "this never happened" rather than "done".
-        this.customerReminders.update(list => this._sortReminders(list.map(r => r.id === reminder.id ? updated : r)));
+        this.customerReminders.update(list => sortReminders(list.map(r => r.id === reminder.id ? updated : r)));
         if (next) {
           this._removeMyReminder(reminder.id);
         } else {
@@ -1166,13 +1128,6 @@ export class HomeComponent {
         this.customerReminders.update(list => list.map(r => r.id === updated.id ? updated : r));
         if (userInitiated) this.toastService.success('Added to your Outlook calendar');
       });
-  }
-
-  private _sortReminders(list: Reminder[]): Reminder[] {
-    return [...list].sort((a, b) => {
-      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
-      return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
-    });
   }
 
   /** Keeps the badge feed in step locally so the list updates without a round trip. */
@@ -1511,7 +1466,7 @@ export class HomeComponent {
         error: (err) => {
           this.customerPricingLines.set([]);
           this.isLoadingPricingLines.set(false);
-          this.pricingLinesLoadError.set(this._readFailureMessage(err));
+          this.pricingLinesLoadError.set(readFailureMessage(err));
         }
       });
   }
@@ -1612,7 +1567,7 @@ export class HomeComponent {
         },
         error: (err) => {
           this.isLoadingContracts.set(false);
-          this.contractsLoadError.set(this._readFailureMessage(err));
+          this.contractsLoadError.set(readFailureMessage(err));
         }
       });
     }
@@ -1756,27 +1711,6 @@ export class HomeComponent {
     this._customerRowIds.set(customerId, entry);
   }
 
-  /** Loads one producer's tickets (applied + unapplied) into the LOCAL ticket signal and re-filters
-   *  the per-customer views. Used on producer select and on navigation-restore. Deliberately does
-   *  NOT write to appState.tickets — that signal is the TU-wide cache for list/NLQ queries only;
-   *  polluting it with one producer's tickets would make the customer-list/build-list NLQ guard
-   *  think the full TU set is loaded. Applied tickets are matched server-side by the customer's open
-   *  contract numbers, so split / cross-CustomerCode applied tickets are included. */
-  /**
-   * Turns a failed HTTP response into something an originator can act on.
-   *
-   * The API answers a failed CTRM read with a 503 and ProblemDetails carrying
-   * INFRASTRUCTURE_CTRM_UNAVAILABLE, which is the case worth naming: the data exists, we could not reach
-   * it, and retrying is the right move. Anything else gets a generic line rather than a raw status.
-   */
-  private _readFailureMessage(err: unknown): string {
-    const e = err as { status?: number; error?: { code?: string; message?: string } } | null;
-    if (e?.error?.code === 'INFRASTRUCTURE_CTRM_UNAVAILABLE')
-      return e.error.message ?? 'CTRM is temporarily unavailable. Please retry shortly.';
-    if (e?.status === 503) return 'The data source is temporarily unavailable. Please retry shortly.';
-    return 'Something went wrong loading this data. Please retry.';
-  }
-
   /** Retries the producer's contract read after a failure, from the table's Retry button. */
   retryCustomerContracts(): void {
     const customer = this.selectedCustomer();
@@ -1789,7 +1723,7 @@ export class HomeComponent {
         next: (contracts) => this._applyCustomerContracts(customer.id, contracts),
         error: (err) => {
           this.isLoadingContracts.set(false);
-          this.contractsLoadError.set(this._readFailureMessage(err));
+          this.contractsLoadError.set(readFailureMessage(err));
         }
       });
   }
@@ -1803,6 +1737,12 @@ export class HomeComponent {
     this._loadCustomerTickets(customer.id, customer.scoularId);
   }
 
+  /** Loads one producer's tickets (applied + unapplied) into the LOCAL ticket signal and re-filters
+   *  the per-customer views. Used on producer select and on navigation-restore. Deliberately does
+   *  NOT write to appState.tickets — that signal is the TU-wide cache for list/NLQ queries only;
+   *  polluting it with one producer's tickets would make the customer-list/build-list NLQ guard
+   *  think the full TU set is loaded. Applied tickets are matched server-side by the customer's open
+   *  contract numbers, so split / cross-CustomerCode applied tickets are included. */
   private _loadCustomerTickets(customerId: number, scoularId: string | undefined, onDone?: () => void): void {
     this.apiService.getTicketsByCustomer(customerId, scoularId)
       .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
@@ -1813,7 +1753,7 @@ export class HomeComponent {
         },
         error: (err) => {
           this.isLoadingUnappliedTickets.set(false);
-          this.ticketsLoadError.set(this._readFailureMessage(err));
+          this.ticketsLoadError.set(readFailureMessage(err));
         }
       });
   }
@@ -1822,18 +1762,8 @@ export class HomeComponent {
     const currentCustomer = customer || this.selectedCustomer();
     if (!currentCustomer) return;
 
-    const allContracts = this.contracts().filter(c => c.ctrmCustomerId === currentCustomer.scoularId);
-    // Include tickets whose CustomerCode matches the customer (covers unapplied + same-customer
-    // applied) AND tickets whose CtrmContractNumber is on one of this customer's contracts
-    // (covers cross-entity / split-load tickets where the ticket's CustomerCode differs from
-    // the contract's CtrmCustomerId — the backend now returns these; this filter must let them through).
-    const customerContractIds = new Set(
-      allContracts.map(c => c.sourceContractId).filter((s): s is string => !!s)
-    );
-    const allTickets = this.tickets().filter(t =>
-      t.customerCode === currentCustomer.scoularId
-      || (!!t.ctrmContractNumber && customerContractIds.has(t.ctrmContractNumber))
-    );
+    const { contracts: allContracts, tickets: allTickets } =
+      producerContractsAndTickets(currentCustomer, this.contracts(), this.tickets());
     this.allCustomerContracts.set([...allContracts]);
     this.allCustomerTickets.set([...allTickets]);
     this.customerContracts.set([...allContracts]);
@@ -1854,7 +1784,7 @@ export class HomeComponent {
     this.customerCodeMap.set(codeMap);
     // Pure recompute from the per-customer notes cache (hydrated by _ensureCustomerNotes) —
     // safe to call from every data-arrival callback, exactly like the filters above.
-    this.customerNotes.set(this._sortNotes(
+    this.customerNotes.set(sortNotes(
       [...linkedIds].flatMap(id => this._customerNotesCache.get(id) ?? [])
     ));
   }
@@ -1865,11 +1795,7 @@ export class HomeComponent {
   private readonly _autoSavePending = new Set<number>();
 
   private _autoSaveCommodities(customer: Customer, customerTickets: Ticket[]): void {
-    const ticketCommodities = [...new Set(customerTickets.map(t => t.productCode || '').filter(Boolean))];
-    const contractCommodities = [...new Set(
-      this.allCustomerContracts().map(c => c.commodityCode || '').filter(Boolean)
-    )];
-    const sourceCommodities = [...new Set([...ticketCommodities, ...contractCommodities])];
+    const sourceCommodities = commodityCodesFrom(customerTickets, this.allCustomerContracts());
     if (sourceCommodities.length === 0) return;
 
     const storedCommodities = customer.commodities || [];
@@ -2012,9 +1938,9 @@ export class HomeComponent {
       || (sel?.id === data.customerId ? sel : null);
     if (!customer) return;
 
-    const ticketCommodities = [...new Set(this.allCustomerTickets().map(t => t.productCode || '').filter(Boolean))];
-    const contractCommodities = [...new Set(this.allCustomerContracts().map(c => c.commodityCode || '').filter(Boolean))];
-    const allCommodities = [...new Set([...ticketCommodities, ...contractCommodities, ...data.commodities])].sort();
+    const allCommodities = [...new Set([
+      ...commodityCodesFrom(this.allCustomerTickets(), this.allCustomerContracts()), ...data.commodities
+    ])].sort();
 
     const optimisticContacts = data.contacts.map((c, i) => ({ ...c, sortOrder: i }));
     const optimisticBinSites = data.binSites.map((b, i) => ({ ...b, sortOrder: i }));
@@ -2180,53 +2106,13 @@ export class HomeComponent {
   }
 
   /**
-   * Returns every producer transitively linked to `customer` — both forward (customers
-   * in `customer.linkedProducerIds`) and reverse (customers whose own `linkedProducerIds`
-   * includes `customer.scoularId`) — walked until the connected component is
-   * exhausted. Prevents infinite loops with a visited set. Caps at 50 members to avoid
-   * worst-case fanout. Relies on `_fetchMissingLinkedProducers` having populated the
-   * cache; if a transitively-linked producer isn't loaded yet, it's silently excluded
+   * Every producer transitively linked to `customer`, forward and reverse (see linkedGroupOf), among
+   * the roster and the cross-trade-unit cache. Relies on `_fetchMissingLinkedProducers` having
+   * populated the cache; if a transitively-linked producer isn't loaded yet, it's silently excluded
    * until its fetch completes and triggers a re-render.
    */
   getLinkedGroup(customer: Customer): Customer[] {
-    const MAX_GROUP_SIZE = 50;
-    const all = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
-    const bySourceId = new Map<string, Customer>();
-    for (const c of all) {
-      if (c.scoularId) bySourceId.set(c.scoularId, c);
-    }
-
-    const visited = new Set<number>([customer.id]);
-    const result = new Map<number, Customer>();
-    const queue: Customer[] = [customer];
-
-    while (queue.length > 0 && visited.size < MAX_GROUP_SIZE) {
-      const cur = queue.shift()!;
-
-      // Forward: follow each id in the current customer's linkedProducerIds
-      for (const sourceId of cur.linkedProducerIds || []) {
-        const neighbor = bySourceId.get(sourceId);
-        if (neighbor && !visited.has(neighbor.id)) {
-          visited.add(neighbor.id);
-          result.set(neighbor.id, neighbor);
-          queue.push(neighbor);
-        }
-      }
-
-      // Reverse: find anyone whose linkedProducerIds mentions the current customer
-      const curSource = cur.scoularId || '';
-      if (curSource) {
-        for (const other of all) {
-          if (visited.has(other.id)) continue;
-          if ((other.linkedProducerIds || []).includes(curSource)) {
-            visited.add(other.id);
-            result.set(other.id, other);
-            queue.push(other);
-          }
-        }
-      }
-    }
-    return [...result.values()];
+    return linkedGroupOf(customer, [...this.customers(), ...this._crossTradeUnitCustomers().values()]);
   }
 
   handleSelectLinkedCustomer(customerId: number): void {
@@ -2443,7 +2329,7 @@ export class HomeComponent {
     this.apiService.createNote(sel.id, content, tradeUnit, mentions).subscribe({
       next: (note) => {
         this._applyNoteToCache(note);
-        this.customerNotes.update(arr => this._sortNotes([...arr, note]));
+        this.customerNotes.update(arr => sortNotes([...arr, note]));
         this._recomputeLastContactFor(note.customerId);
         this.toastService.success('Note added');
         // Increment FIRST so the child clears its textarea, then drop the flag.
@@ -2496,33 +2382,10 @@ export class HomeComponent {
     const cached = this._customerNotesCache.get(customerId) ?? [];
     this.noteLastContacts.update(rows => {
       const rest = rows.filter(r => r.customerId !== customerId);
-      if (cached.length === 0) return rest;
-      const lastMs = cached.reduce((m, n) => Math.max(m, this._parseNoteTime(n.createdAt)), 0);
-      const row: NoteLastContact = {
-        customerId,
-        customerCode: cached[0].customerCode,
-        lastNoteAt: new Date(lastMs)
-      };
-      return [...rest, row];
+      const row = lastContactFromNotes(customerId, cached);
+      return row ? [...rest, row] : rest;
     });
     this.appState.setNoteLastContacts(this.noteLastContacts());
-  }
-
-  private _parseNoteTime(ts: string | Date): number {
-    if (!ts) return 0;
-    // API returns bare ISO strings without Z suffix — treat as UTC consistently
-    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
-    return new Date(raw).getTime();
-  }
-
-  private _sortNotes(notes: Note[]): Note[] {
-    return notes.sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      const aTime = this._parseNoteTime(a.modifiedAt || a.createdAt);
-      const bTime = this._parseNoteTime(b.modifiedAt || b.createdAt);
-      return bTime - aTime;
-    });
   }
 
   toggleNotePin(note: Note): void {
@@ -2531,7 +2394,7 @@ export class HomeComponent {
         // Pin/unpin doesn't change createdAt, so the last-contact aggregate is untouched.
         this._applyNoteToCache(updated);
         this.customerNotes.update(arr =>
-          this._sortNotes(arr.map(n => n.id === updated.id ? updated : n))
+          sortNotes(arr.map(n => n.id === updated.id ? updated : n))
         );
         this.toastService.success(updated.isPinned ? 'Note pinned' : 'Note unpinned');
       },
@@ -2545,7 +2408,7 @@ export class HomeComponent {
         // Content edits don't change createdAt, so the last-contact aggregate is untouched.
         this._applyNoteToCache(updated);
         this.customerNotes.update(arr =>
-          this._sortNotes(arr.map(n => n.id === updated.id ? updated : n))
+          sortNotes(arr.map(n => n.id === updated.id ? updated : n))
         );
         this.toastService.success('Note updated');
       },
