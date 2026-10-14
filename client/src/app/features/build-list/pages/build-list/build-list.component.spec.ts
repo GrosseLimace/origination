@@ -177,7 +177,7 @@ describe('BuildListComponent', () => {
       ],
     });
     appState = TestBed.inject(AppStateService);
-    appState.userGroupsLoaded.set(true);
+    appState.setUserGroups([]); // groups "loaded" (none needed here), so the header does not block on them
     appState.setTradeUnits(['1000']);
   });
 

@@ -45,7 +45,7 @@ export class DataPreloadService {
         catchError(() => of([] as CommodityConversion[]))
       )),
       takeUntilDestroyed(this.destroyRef)
-    ).subscribe(data => this.appState.commodityConversions.set(data));
+    ).subscribe(data => this.appState.setCommodityConversions(data));
 
     msalBroadcast.inProgress$.pipe(
       filter(s => s === InteractionStatus.None && msalService.instance.getAllAccounts().length > 0),
@@ -54,20 +54,19 @@ export class DataPreloadService {
       switchMap(tradeUnits => {
         if (tradeUnits.length === 0) {
           this.appState.setDataLoading(false);
-          this.appState.customersLoading.set(false);
-          this.appState.contractsLoading.set(false);
-          this.appState.todaysTicketsLoading.set(false);
+          this.appState.setCustomersLoading(false);
+          this.appState.setContractsLoading(false);
+          this.appState.setTodaysTicketsLoading(false);
           return of(null);
         }
 
         this.appState.setDataLoading(true);
         // Per-dataset flags — each flips false in its own tap below, so screens/categories
         // render as soon as their data lands rather than waiting on the slowest core query.
-        this.appState.customersLoading.set(true);
-        this.appState.contractsLoading.set(true);
-        this.appState.contractsLoadFailed.set(false);
-        this.appState.ticketsLoadFailed.set(false);
-        this.appState.todaysTicketsLoading.set(true);
+        this.appState.setCustomersLoading(true);
+        this.appState.setContractsLoading(true);
+        this.appState.clearLoadFailures();
+        this.appState.setTodaysTicketsLoading(true);
         this.appState.clearDashboardCache();
         this.appState.clearPreloadedDashboardSummary();
         // The TU-wide ticket set is no longer eagerly bulk-loaded — it's lazily fetched by the
@@ -91,7 +90,7 @@ export class DataPreloadService {
           catchError(() => of([] as Customer[])),
           tap(data => {
             this.appState.setCustomers(data);
-            this.appState.customersLoading.set(false);
+            this.appState.setCustomersLoading(false);
             coreArrived.customers = true;
             if (coreArrived.contracts && coreArrived.todaysTickets) this.appState.setDataLoading(false);
           })
@@ -105,7 +104,7 @@ export class DataPreloadService {
           catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); }),
           tap(data => {
             this.appState.setContracts(data);
-            this.appState.contractsLoading.set(false);
+            this.appState.setContractsLoading(false);
             coreArrived.contracts = true;
             if (coreArrived.customers && coreArrived.todaysTickets) this.appState.setDataLoading(false);
           })
@@ -129,7 +128,7 @@ export class DataPreloadService {
           }),
           tap(data => {
             this.appState.setTodaysTickets(data);
-            this.appState.todaysTicketsLoading.set(false);
+            this.appState.setTodaysTicketsLoading(false);
             coreArrived.todaysTickets = true;
             if (coreArrived.customers && coreArrived.contracts) this.appState.setDataLoading(false);
           })
@@ -193,7 +192,7 @@ export class DataPreloadService {
         const harvestWindows$ = this.apiService.getHarvestWindows().pipe(
           catchError(() => of([] as HarvestWindow[])),
           tap(data => {
-            this.appState.harvestWindows.set(data);
+            this.appState.setHarvestWindows(data);
           })
         );
         const producerDetails$ = this.apiService.getAllProducerDetails().pipe(

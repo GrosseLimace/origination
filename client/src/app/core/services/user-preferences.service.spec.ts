@@ -38,6 +38,8 @@ describe('UserPreferencesService', () => {
     selectedGroupNames: ReturnType<typeof signal<string[]>>;
     selectedTradeUnits: ReturnType<typeof signal<string[]>>;
     allProducersMode: ReturnType<typeof signal<boolean>>;
+    setSelectedGroupNames: (names: string[]) => void;
+    setTradeUnits: (units: string[]) => void;
     savePrefsToLocalStorage: ReturnType<typeof vi.fn>;
   };
 
@@ -80,6 +82,8 @@ describe('UserPreferencesService', () => {
       selectedGroupNames: signal<string[]>([]),
       selectedTradeUnits: signal<string[]>([]),
       allProducersMode: signal(false),
+      setSelectedGroupNames(names: string[]) { this.selectedGroupNames.set(names); },
+      setTradeUnits(units: string[]) { this.selectedTradeUnits.set(units); },
       savePrefsToLocalStorage: vi.fn(),
     };
     TestBed.configureTestingModule({

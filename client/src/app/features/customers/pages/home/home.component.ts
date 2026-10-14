@@ -573,7 +573,7 @@ export class HomeComponent {
         if (this.appState.queryLibrary().length === 0) {
           this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: (items) => {
-              this.appState.queryLibrary.set(items);
+              this.appState.setQueryLibrary(items);
               // Re-evaluate saved lists with the now-available category fallback.
               this._enrichSavedLists(true);
             },

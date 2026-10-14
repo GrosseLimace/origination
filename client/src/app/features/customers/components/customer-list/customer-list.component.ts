@@ -576,7 +576,7 @@ export class CustomerListComponent {
           if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
           if (results.contracts) this.appStateService.setContracts(results.contracts);
           if (results.notes) this.appStateService.setNotes(results.notes);
-          if (results.queryLibrary) this.appStateService.queryLibrary.set(results.queryLibrary);
+          if (results.queryLibrary) this.appStateService.setQueryLibrary(results.queryLibrary);
           this._executeNlq(savedList);
           this.savedListLoading.set(false);
           this.applyFilters();

@@ -2129,7 +2129,7 @@ export class BuildListComponent {
       this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (items) => {
           this.queryLibrary.set(items);
-          this.appState.queryLibrary.set(items);
+          this.appState.setQueryLibrary(items);
           this.queryLibraryLoaded.set(true);
         },
         error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }

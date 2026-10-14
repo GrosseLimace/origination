@@ -249,6 +249,7 @@ function makeAppState() {
       s.dpContracts.update(e => [...e.filter(d => d.customerId !== customerId), ...rows])),
     setPricingLines: vi.fn((v: ContractPricingLine[]) => s.pricingLines.set(v)),
     setSavedLists: vi.fn((v: SavedList[]) => s.savedLists.set(v)),
+    setQueryLibrary: vi.fn((v: QueryLibraryItem[]) => s.queryLibrary.set(v)),
   };
   return s;
 }

@@ -28,7 +28,7 @@ describe('CTRM failure visibility', () => {
     });
 
     it('records a contract-read failure independently of the ticket read', () => {
-      appState.contractsLoadFailed.set(true);
+      appState.setContractsLoadFailed(true);
 
       expect(appState.contractsLoadFailed()).toBe(true);
       expect(appState.ticketsLoadFailed()).toBe(false);

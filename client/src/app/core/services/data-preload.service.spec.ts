@@ -69,7 +69,7 @@ describe('DataPreloadService', () => {
   }
 
   function selectTradeUnits(units: string[]): void {
-    appState.selectedTradeUnits.set(units);
+    appState.setTradeUnits(units);
     TestBed.tick();
   }
 
@@ -133,9 +133,9 @@ describe('DataPreloadService', () => {
   it('with no trade units, drops every loading flag and makes no trade-unit-scoped call', () => {
     create();
     appState.setDataLoading(true);
-    appState.customersLoading.set(true);
-    appState.contractsLoading.set(true);
-    appState.todaysTicketsLoading.set(true);
+    appState.setCustomersLoading(true);
+    appState.setContractsLoading(true);
+    appState.setTodaysTicketsLoading(true);
     signIn();
 
     expect(appState.dataLoading()).toBe(false);

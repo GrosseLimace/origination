@@ -527,7 +527,7 @@ describe('CustomerPrintReportComponent', () => {
   });
 
   it('summarises unapplied tickets per product: bushels when convertible, quality averages, wheat-only protein', () => {
-    appState.commodityConversions.set([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
+    appState.setCommodityConversions([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
     open({
       tickets: [
         makeTicket({ id: 1, productCode: 'YC', appliedDockQuantity: 56000, moisture: 15, testWeight: 56, date: '2026-09-01' }),
