@@ -1161,5 +1161,71 @@ describe('BuildListComponent', () => {
       TestBed.tick();
       expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
     });
+
+    // ── Note prompts: scope of the note fetch, inline notes, order ──
+
+    it('a "contacted in the last N days" prompt fetches a windowed slice, shows only notes inside it, newest producer first', () => {
+      api.getNotes.mockReturnValue(of([
+        { id: 1, customerId: 1, customerCode: 'C1', customerName: 'Alpha Acres', content: 'Called about basis', isPinned: false,
+          createdBy: 'Someone', createdAt: '2026-10-08T10:00:00' },
+        { id: 2, customerId: 3, customerCode: 'C3', customerName: 'Charlie Farms', content: 'Pinned earlier chat', isPinned: true,
+          createdBy: 'Someone', createdAt: '2026-10-12T09:00:00' },
+        { id: 3, customerId: 3, customerCode: 'C3', customerName: 'Charlie Farms', content: 'Old visit', isPinned: false,
+          createdBy: 'Someone', createdAt: '2026-09-20T10:00:00' },
+      ] as never));
+      nlq.state.matchIds = [1, 3];
+      const c = mount();
+
+      c.queryText.set('Producers contacted in the last 7 days');
+      c.processQuery();
+      TestBed.tick();
+
+      expect(api.getNotes).toHaveBeenCalledWith(['1000'], { sinceDays: 8 });
+      expect(c.noteFilterActive()).toBe(true);
+      expect(names(c.displayedCustomers())).toEqual(['Charlie Farms', 'Alpha Acres']);
+      expect(c.matchingNotesByCustomer().get(3)!.map(n => n.id)).toEqual([2]);
+      const page = text();
+      expect(page).toContain('Called about basis');
+      expect(page).toContain('Pinned earlier chat');
+      expect(page).not.toContain('Old visit');
+    });
+
+    it('a "producers I have contacted" prompt fetches the current user\'s notes across trade units', () => {
+      nlq.buildAuthorCandidates.mockReturnValue(['pat@scoular.com', 'pat merchant']);
+      const c = mount();
+
+      c.queryText.set('Producers I have contacted');
+      c.processQuery();
+      TestBed.tick();
+
+      expect(api.getNotes).toHaveBeenCalledWith(undefined, { authorAny: ['pat merchant', 'pat@scoular.com'] });
+    });
+
+    it('a "producers with notes" prompt loads note bodies per rendered batch, sorted by last contact', () => {
+      appState.setNoteLastContacts([
+        { customerId: 1, customerCode: 'C1', lastNoteAt: new Date(NOW.getTime() - 9 * DAY) },
+        { customerId: 2, customerCode: 'C2', lastNoteAt: new Date(NOW.getTime() - 2 * DAY) },
+      ]);
+      const c = mount();
+
+      c.queryText.set('Producers with notes');
+      c.processQuery();
+      TestBed.tick();
+
+      expect(api.getNotes).toHaveBeenCalledWith(undefined, { customerIds: [2, 1, 3] });
+      expect(names(c.displayedCustomers())).toEqual(['Bravo Grain', 'Alpha Acres', 'Charlie Farms']);
+      expect(c.getLastContactInfo(1)).toEqual({ text: 'Contacted 9 days ago', colorClass: 'text-yellow-500', daysAgo: 9 });
+    });
+
+    it('note-count prompts load the full note set', () => {
+      const c = mount();
+
+      c.queryText.set('Producers with notes, most notes first');
+      c.processQuery();
+      TestBed.tick();
+
+      expect(api.getNotes).toHaveBeenCalledWith();
+      expect(appState.notesLoaded()).toBe(true);
+    });
   });
 });
