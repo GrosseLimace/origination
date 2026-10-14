@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { COMMODITY_ALIAS_MAP, expandCommodityAliases, expandSearchWithAliases } from './commodity-aliases';
+import { CROP_CODE_MAP } from './crop-group-match';
 
 /**
  * Commodity search treats crop synonyms as equivalent ("milo" finds sorghum, "beans" finds soybeans).
@@ -22,14 +23,41 @@ describe('COMMODITY_ALIAS_MAP', () => {
 });
 
 describe('expandCommodityAliases', () => {
-  it('expands an aliased term to its full synonym set', () => {
-    expect(expandCommodityAliases('milo')).toEqual(['milo', 'sorghum', 'sor', 'sg']);
-    expect(expandCommodityAliases('sorghum')).toEqual(['milo', 'sorghum', 'sor', 'sg']);
-    expect(expandCommodityAliases('corn')).toEqual(['yc', 'corn', 'yellow corn']);
+  it('expands an aliased term to its words first, then the crop codes', () => {
+    expect(expandCommodityAliases('milo')).toEqual(['milo', 'sorghum', 'sor', 'sg', 'soro', 'csor', 'ro98']);
+    expect(expandCommodityAliases('sorghum')).toEqual(expandCommodityAliases('milo'));
+    expect(expandCommodityAliases('corn')).toEqual(['yc', 'corn', 'yellow corn', 'yco', 'ycng', 'ckyc', 'ycck', 'dmgc']);
   });
 
   it('normalises case and surrounding whitespace before lookup', () => {
-    expect(expandCommodityAliases('  BeAnS ')).toEqual(['beans', 'soybeans', 'soy', 'sb']);
+    expect(expandCommodityAliases('  BeAnS ')).toEqual(expandCommodityAliases('beans'));
+    expect(expandCommodityAliases('beans').slice(0, 4)).toEqual(['beans', 'soybeans', 'soy', 'sb']);
+  });
+
+  // The Tickets table searches the product code only, so a crop word has to expand to every code
+  // Build a List knows for that crop, or those tickets cannot be found by crop at all.
+  it.each([
+    ['wheat', 'wheat'], ['corn', 'corn'], ['beans', 'soybeans'], ['milo', 'sorghum'],
+  ] as const)('%s reaches every %s code Build a List knows', (word, group) => {
+    const terms = expandCommodityAliases(word);
+    for (const code of CROP_CODE_MAP[group]) expect(terms).toContain(code);
+  });
+
+  it('finds the wheat tickets it used to miss', () => {
+    const terms = expandCommodityAliases('wheat');
+    for (const code of ['SRWW', 'SWW', 'HADW', 'DNSW', 'CWRS', 'FDWT', 'WHTO', 'WHFG']) {
+      expect(terms.some(t => code.toLowerCase().includes(t))).toBe(true);
+    }
+  });
+
+  it('keeps the hard-red-winter keys specific to that class', () => {
+    expect(expandCommodityAliases('hrw')).toEqual(['hrw', 'wheat', 'hard red winter', 'hw']);
+    expect(expandCommodityAliases('hrw')).not.toContain('srww');
+  });
+
+  it('leaves barley, canola, oats and sunflower unaliased, whose short codes would match unrelated text', () => {
+    expect(expandCommodityAliases('barley')).toEqual(['barley']);
+    expect(expandCommodityAliases('oats')).toEqual(['oats']);
   });
 
   it('returns a non-aliased term on its own, normalised', () => {
@@ -43,13 +71,13 @@ describe('expandCommodityAliases', () => {
 
 describe('expandSearchWithAliases', () => {
   it('returns the alias set for an exact key hit, case-insensitively', () => {
-    expect(expandSearchWithAliases('Soy')).toEqual(['beans', 'soybeans', 'soy', 'sb']);
+    expect(expandSearchWithAliases('Soy')).toEqual(expandCommodityAliases('soy'));
   });
 
   it('expands a prefix of an alias key into that whole synonym set, keeping the typed text first', () => {
     const terms = expandSearchWithAliases('mi');
     expect(terms[0]).toBe('mi');
-    expect(new Set(terms)).toEqual(new Set(['mi', 'milo', 'sorghum', 'sor', 'sg']));
+    expect(new Set(terms)).toEqual(new Set(['mi', ...expandCommodityAliases('milo')]));
   });
 
   it('merges every synonym set whose key starts with the prefix, deduplicated', () => {

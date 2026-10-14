@@ -105,7 +105,7 @@
         "date": "2026-10-13",
         "detected_by": "manual"
       },
-      "resolution_notes": "The directory reads moved into IEntitlementsDirectoryService (GetAssignmentsAsync, GetColleaguesAsync with activeOnly, GetGroupAssignmentsAsync); neither controller injects TradeUnitPreferencesDbContext any more. Each controller keeps its own shaping and fail-open handling, because the two catalogs differ ON PURPOSE or by history: the mention catalog leaves out deactivated users (H-056), the recap-group catalog never has; the recap catalog lists each person's and group's trade units, the mention catalog does not. Both outputs were pinned by a full-shape test BEFORE the move (EntitlementsTestDb.SeedDirectory), and the pins pass unchanged after it. Mutation-checked: flipping activeOnly in either controller, and dropping the group read, each fail a test. OPEN QUESTION for the owner: the recap-group picker still offers deactivated users; the Logic App skips them at send, so a leaver can be added to a group and silently get nothing. Switching it to activeOnly is a one-word change, deliberately not made here."
+      "resolution_notes": "The directory reads moved into IEntitlementsDirectoryService (GetAssignmentsAsync, GetColleaguesAsync with activeOnly, GetGroupAssignmentsAsync); neither controller injects TradeUnitPreferencesDbContext any more. Each controller keeps its own shaping and fail-open handling, because the two catalogs differ ON PURPOSE or by history: the mention catalog leaves out deactivated users (H-056), the recap-group catalog never has; the recap catalog lists each person's and group's trade units, the mention catalog does not. Both outputs were pinned by a full-shape test BEFORE the move (EntitlementsTestDb.SeedDirectory), and the pins pass unchanged after it. Mutation-checked: flipping activeOnly in either controller, and dropping the group read, each fail a test. OPEN QUESTION for the owner: the recap-group picker still offers deactivated users; the Logic App skips them at send, so a leaver can be added to a group and silently get nothing. Switching it to activeOnly is a one-word change, deliberately not made here. FOLLOW-UP 2026-10-14 (owner approved): the recap-group catalog now uses activeOnly as well, since the daily-recap Logic App filters dbo.Users on IsActive eq 1."
     },
     {
       "id": "dotnet.inconsistent-trade-unit-entitlement-filtering",
@@ -659,7 +659,7 @@
       "id": "angular.duplicated-commodity-taxonomy-logic",
       "audit": "angular",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "Duplicated crop/commodity taxonomy logic across multiple utils",
       "description": "Several utils independently build overlapping commodity-code lookup/conversion maps rather than sharing one source; the codebase's own comments reference a past bug caused by exactly this kind of duplication.",
       "files": [
@@ -675,8 +675,13 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed; duplicate of clean-slop.duplicated-commodity-taxonomy. Same reasoning.\n[2026-10-13] Re-checked: all four util files still exist and still each build their own commodity-code lookup/conversion map. No consolidation since last pass. Still open."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed; duplicate of clean-slop.duplicated-commodity-taxonomy. Same reasoning.\n[2026-10-13] Re-checked: all four util files still exist and still each build their own commodity-code lookup/conversion map. No consolidation since last pass. Still open.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "The table/Insights alias list (commodity-aliases.ts) now takes its corn, wheat, soybean and sorghum codes FROM CROP_CODE_MAP (crop-group-match.ts, Build a List), so the two can no longer disagree on codes; the extra search words (yellow corn, soy, sg, ...) stay. Searches only gain matches. Real gap closed: the Tickets table matches the product code only, so \"wheat\" missed SRWW/SWW/HADW/DNSW/CWRS/FDWT/WHTO/WHFG tickets, \"corn\" DMGC, \"beans\" DNGS, \"milo\" RO98. Deliberately NOT aliased: barley, canola, oats, sunflower (codes BASE/BLY/OAT would substring-match unrelated text, including producer names on Insights); hard-red-winter keys stay class-specific. Owner approved 2026-10-14. Spec covers every code per group, mutation-checked; 483 consumer-screen tests pass."
     },
     {
       "id": "sql.inconsistent-table-definitions-producerdetails-savedlists",
@@ -937,7 +942,7 @@
       "id": "sql.hardcoded-location-data-duplicated",
       "audit": "sql",
       "severity": "low",
-      "status": "open",
+      "status": "accepted",
       "title": "Location master data hardcoded independently in two scripts",
       "description": "Both scripts embed roughly a thousand-plus literal location rows independently rather than one sourcing from the other's target table, guaranteeing drift over time.",
       "files": [
@@ -950,8 +955,9 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Half addressed: CheckMbpLocationCoverage.sql was deleted as a spent one-off. PopulateMbpLocationSynonym.sql stays (it is the live QA/PROD load path) and gained a row-count guard on its MERGE.\n[2026-09-28] Re-verified: CheckMbpLocationCoverage.sql confirmed still absent (deleted); dropped it from files since the finding is now solely about PopulateMbpLocationSynonym.sql's ~1,000+ embedded literal rows. No functional change to that script this pass.\n[2026-10-13] Re-verified: script unchanged, still embeds literal rows and still has the @maxDeletePct ROLLBACK/RAISERROR guard on the MERGE."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Half addressed: CheckMbpLocationCoverage.sql was deleted as a spent one-off. PopulateMbpLocationSynonym.sql stays (it is the live QA/PROD load path) and gained a row-count guard on its MERGE.\n[2026-09-28] Re-verified: CheckMbpLocationCoverage.sql confirmed still absent (deleted); dropped it from files since the finding is now solely about PopulateMbpLocationSynonym.sql's ~1,000+ embedded literal rows. No functional change to that script this pass.\n[2026-10-13] Re-verified: script unchanged, still embeds literal rows and still has the @maxDeletePct ROLLBACK/RAISERROR guard on the MERGE.",
+      "resolution_notes": "Accepted by the owner 2026-10-14. The duplication half is gone (CheckMbpLocationCoverage.sql deleted 2026-09-21). PopulateMbpLocationSynonym.sql is a pasted export of TSCPRDLIB.MBPLOCSYN (2026-07-30) and the live load path for QA/PROD, guarded by @maxDeletePct. The remaining risk is staleness, not security; the real fix is a scheduled load from the source system (needs the data team), worth revisiting when code starts reading dbo.MbpLocationSynonym."
     },
     {
       "id": "sql.yn-flags-as-nvarchar-not-bit",
@@ -1425,7 +1431,7 @@
       "id": "clean-slop.duplicated-commodity-taxonomy",
       "audit": "clean-slop",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Independently-maintained commodity taxonomy/alias maps overlap but disagree",
       "description": "commodity-aliases.ts (COMMODITY_ALIAS_MAP, used by insights/tickets-table/contracts-table/dp-contracts-table/stored-grain-table) and crop-group-match.ts (CROP_CODE_MAP, used by build-list/nlq-filter) independently hardcode overlapping but non-identical synonym lists for milo/sorghum, corn, wheat, and soybeans -- e.g. commodity-aliases' corn group is ['yc','corn','yellow corn'] vs crop-group-match's corn group ['corn','yc','yco','ycng','ckyc','ycck','dmgc']. Two independently-maintained taxonomies for the same domain concept, confirmed via full read of all four referenced util files.",
       "files": [
@@ -1441,8 +1447,13 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Re-verified: both commodity-aliases.ts and crop-group-match.ts still exist as separate files with independently-maintained synonym lists. Deliberately NOT unified: they overlap but DISAGREE (corn/wheat/milo synonyms differ), so reconciling them changes query results. That is a product decision, not a cleanup. Unchanged since 2026-09-19, still open. [2026-09-28] Re-verified: commodity-aliases.ts, crop-group-match.ts, contract-status.ts, production-coverage.ts remain separate, still disagree. Still open. [2026-10-13] Re-verified: all four files still present and still separate. Still open, still a product decision."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Re-verified: both commodity-aliases.ts and crop-group-match.ts still exist as separate files with independently-maintained synonym lists. Deliberately NOT unified: they overlap but DISAGREE (corn/wheat/milo synonyms differ), so reconciling them changes query results. That is a product decision, not a cleanup. Unchanged since 2026-09-19, still open. [2026-09-28] Re-verified: commodity-aliases.ts, crop-group-match.ts, contract-status.ts, production-coverage.ts remain separate, still disagree. Still open. [2026-10-13] Re-verified: all four files still present and still separate. Still open, still a product decision.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "The table/Insights alias list (commodity-aliases.ts) now takes its corn, wheat, soybean and sorghum codes FROM CROP_CODE_MAP (crop-group-match.ts, Build a List), so the two can no longer disagree on codes; the extra search words (yellow corn, soy, sg, ...) stay. Searches only gain matches. Real gap closed: the Tickets table matches the product code only, so \"wheat\" missed SRWW/SWW/HADW/DNSW/CWRS/FDWT/WHTO/WHFG tickets, \"corn\" DMGC, \"beans\" DNGS, \"milo\" RO98. Deliberately NOT aliased: barley, canola, oats, sunflower (codes BASE/BLY/OAT would substring-match unrelated text, including producer names on Insights); hard-red-winter keys stay class-specific. Owner approved 2026-10-14. Spec covers every code per group, mutation-checked; 483 consumer-screen tests pass."
     },
     {
       "id": "clean-slop.duplicate-conversion-map-builder",
