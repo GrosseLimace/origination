@@ -288,6 +288,16 @@ describe('TicketsTableComponent', () => {
       expect(stat(groupByTitle('PRT'), 'Total Net Bu')).toBe('2,866.67');
       expect(stat(groupByTitle('HAY'), 'Avg Protein')).toBeUndefined();
     });
+
+    it('converts with the new factors when the conversion list is replaced by one of the same length', () => {
+      setInputs({ tickets: [makeTicket({ id: 1, appliedDockQuantity: 56000 })] });
+      expect(stat(groupByTitle('YC · PRT'), 'Total Net Bu')).toBe('1,000.00');  // 56,000 / 56
+
+      // The lookup map used to be cached until the list's LENGTH changed, so this kept dividing by 56.
+      commodityConversions.set(CONVERSIONS.map(c => c.commodityCode === 'YC' ? { ...c, lbsPerUnit: 50 } : c));
+      render();
+      expect(stat(groupByTitle('YC · PRT'), 'Total Net Bu')).toBe('1,120.00');  // 56,000 / 50
+    });
   });
 
   // ── Expand / collapse ─────────────────────────────────────────────────────
