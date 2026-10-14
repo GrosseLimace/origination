@@ -25,3 +25,4 @@ export * from './harvest-window.model';
 export * from './usage-dashboard.model';
 export * from './query-library.model';
 export * from './whats-new.model';
+export * from './help.model';

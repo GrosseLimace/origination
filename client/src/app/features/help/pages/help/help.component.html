@@ -1,0 +1,134 @@
+<div class="w-full max-w-5xl mx-auto">
+  <div>
+    <h2 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Help</h2>
+    <p class="mt-1 text-[length:var(--text-fluid-sm)] text-gray-500 dark:text-gray-400">
+      Answers to common questions about the Origination Workbench.
+    </p>
+  </div>
+
+  <!-- Search -->
+  <div class="mt-5 relative">
+    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><app-help-icon name="search" [size]="18" /></span>
+    <label for="help-search" class="sr-only">Search help</label>
+    <input id="help-search" type="search" autocomplete="off" [value]="query()" (input)="onQuery($event)"
+      placeholder="Search help, e.g. trade units, saved list, season targets"
+      class="w-full h-12 pl-10 pr-10 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-base text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-blue" />
+    @if (searching()) {
+      <button type="button" (click)="clearQuery()" aria-label="Clear search"
+        class="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 inline-flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
+        <app-help-icon name="x" />
+      </button>
+    }
+  </div>
+
+  @if (help.failed()) {
+    <p class="mt-10 text-center text-sm text-scoular-red-accessible" role="alert">Help could not be loaded. Refresh to try again.</p>
+  } @else if (!help.content()) {
+    <p class="mt-10 text-center text-sm text-gray-500 dark:text-gray-400">Loading help…</p>
+  } @else if (searching()) {
+    <!-- Search results -->
+    <p class="mt-6 text-sm text-gray-500 dark:text-gray-400" aria-live="polite">{{ results().length }} {{ results().length === 1 ? 'result' : 'results' }}</p>
+    @if (results().length === 0) {
+      <div class="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 text-center">
+        <p class="text-base font-semibold text-gray-900 dark:text-white">No help topics match "{{ query() }}"</p>
+        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Try fewer or different words, or ask in the Help panel.</p>
+        <button type="button" (click)="askInPanel()"
+          class="mt-4 h-9 px-4 rounded-md text-sm font-medium text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">
+          Ask in the Help panel
+        </button>
+      </div>
+    } @else {
+      <ul class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+        @for (r of results(); track r.faq.id) {
+          <li>
+            <ng-container [ngTemplateOutlet]="item" [ngTemplateOutletContext]="{ $implicit: r.faq, category: r.category }" />
+          </li>
+        }
+      </ul>
+    }
+  } @else {
+    <!-- Category tiles -->
+    <div class="mt-6 grid grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
+      @for (c of tiles(); track c.id) {
+        <button type="button" (click)="toggleCategory(c.id)" [attr.aria-pressed]="category() === c.id"
+          [class]="category() === c.id
+            ? 'flex items-center gap-3 p-4 rounded-lg border border-scoular-blue bg-scoular-blue/5 dark:bg-scoular-blue/20 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue'
+            : 'flex items-center gap-3 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-left hover:border-scoular-blue/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue'">
+          <span class="flex items-center justify-center w-9 h-9 rounded-lg bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC]"><app-help-icon [name]="c.icon" [size]="18" /></span>
+          <span class="min-w-0">
+            <span class="block text-sm font-semibold text-gray-900 dark:text-white">{{ c.name }}</span>
+            <span class="block text-xs text-gray-500 dark:text-gray-400">{{ c.faqIds.length }} {{ c.faqIds.length === 1 ? 'question' : 'questions' }}</span>
+          </span>
+        </button>
+      }
+    </div>
+    @if (category()) {
+      <button type="button" (click)="category.set(null)" class="mt-3 text-sm font-medium text-scoular-blue-medium dark:text-[#7CC4EC] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">Show all categories</button>
+    }
+
+    <!-- Questions by category -->
+    @for (section of sections(); track section.id) {
+      <section class="mt-8" [attr.aria-labelledby]="'help-cat-' + section.id">
+        <h3 [id]="'help-cat-' + section.id" class="text-lg font-semibold text-gray-900 dark:text-white">{{ section.name }}</h3>
+        <ul class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+          @for (faq of section.faqs; track faq.id) {
+            <li>
+              <ng-container [ngTemplateOutlet]="item" [ngTemplateOutletContext]="{ $implicit: faq, category: null }" />
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  }
+</div>
+
+<!-- One question in the accordion. Shared by browsing and search results. -->
+<ng-template #item let-faq let-category="category">
+  <div [id]="'help-q-' + faq.id" [class]="openId() === faq.id ? 'bg-scoular-blue/5 dark:bg-scoular-blue/15' : ''">
+    <button type="button" (click)="toggle(faq.id)" [attr.aria-expanded]="openId() === faq.id" [attr.aria-controls]="'help-a-' + faq.id"
+      class="w-full flex items-center justify-between gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-scoular-blue">
+      <span class="min-w-0">
+        @if (category) { <span class="block text-xs text-gray-500 dark:text-gray-400">{{ category }}</span> }
+        <span [class]="openId() === faq.id ? 'block text-sm font-semibold text-gray-900 dark:text-white' : 'block text-sm text-gray-900 dark:text-white'">{{ faq.question }}</span>
+      </span>
+      <span class="text-gray-400"><app-help-icon [name]="openId() === faq.id ? 'chevron-up' : 'chevron-down'" /></span>
+    </button>
+    @if (openId() === faq.id) {
+      <div [id]="'help-a-' + faq.id" class="px-4 pb-4 flex flex-col gap-3">
+        <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+          @for (s of text(faq.answer); track $index) {
+            @if (s.bold) { <strong class="font-semibold text-gray-900 dark:text-white">{{ s.text }}</strong> } @else { {{ s.text }} }
+          }
+        </p>
+        @if (faq.steps?.length) {
+          <ol class="ml-5 list-decimal space-y-1.5 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+            @for (step of faq.steps; track $index) {
+              <li>
+                @for (s of text(step); track $index) {
+                  @if (s.bold) { <strong class="font-semibold text-gray-900 dark:text-white">{{ s.text }}</strong> } @else { {{ s.text }} }
+                }
+              </li>
+            }
+          </ol>
+        }
+        @if (faq.actions?.length || faq.link) {
+          <div class="flex flex-wrap gap-2">
+            @for (a of faq.actions ?? []; track $index) {
+              <button type="button" (click)="run(a)"
+                class="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm font-medium border border-scoular-blue/40 text-scoular-blue-medium dark:text-[#7CC4EC] hover:bg-scoular-blue/5 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
+                {{ a.label }}
+                @if (a.kind === 'tup') { <span class="sr-only">(opens in a new window)</span> }
+              </button>
+            }
+            @if (faq.link; as link) {
+              <button type="button" (click)="run(link)"
+                class="inline-flex items-center gap-1 h-8 px-1 text-sm font-medium text-scoular-blue-medium dark:text-[#7CC4EC] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">
+                {{ link.label }} <app-help-icon name="arrow-right" [size]="14" />
+              </button>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+</ng-template>

@@ -4,12 +4,14 @@ import { RouterOutlet } from '@angular/router';
 import { HeaderComponent } from '@shared/components/header/header.component';
 import { ToastContainerComponent } from '@shared/components/toast-container/toast-container.component';
 import { WhatsNewDialogComponent } from '@features/whats-new/components/whats-new-dialog/whats-new-dialog.component';
+import { HelpPanelComponent } from '@shared/components/help-panel/help-panel.component';
 import { IdleTimeoutService } from '@core/services/idle-timeout.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { UserPreferencesService } from '@core/services/user-preferences.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { AppInsightsService } from '@core/services/app-insights.service';
+import { HelpPanelService } from '@core/services/help-panel.service';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { filter } from 'rxjs';
@@ -17,7 +19,7 @@ import { filter } from 'rxjs';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent],
+  imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent, HelpPanelComponent],
   templateUrl: './app.component.html',
   // The template reads signals only (isAuthenticated, showWhatsNew, whatsNew.unseenReleases), and
   // the MSAL subscription and the release-notes promise write signals. Every routed page is OnPush
@@ -30,6 +32,8 @@ export class AppComponent {
   /** Public: the template reads unseenReleases() straight off it. */
   readonly whatsNew = inject(WhatsNewService);
   readonly showWhatsNew = signal(false);
+  /** Public: the template pads the page while the Help panel is open, and defers the panel until then. */
+  readonly helpPanel = inject(HelpPanelService);
 
   private readonly msalService = inject(MsalService);
   private readonly broadcastService = inject(MsalBroadcastService);
