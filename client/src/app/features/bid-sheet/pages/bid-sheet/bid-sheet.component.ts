@@ -21,6 +21,10 @@ import {
   addLocationPinIcon, bidPillFill, bidPillsIcon, BidPillItem, dotIcon, EXPANDED_PIN_GREY, hoverIcon, nameLabelIcon, pinFill
 } from '../../utils/map-markers';
 import { spreadOverlappingPins } from '../../utils/pin-spread';
+import {
+  BidSheetPanelItem, BidStatus, buildBidLookup, buildPanelItems, buildPanelLocationBids, computeItemStatus, deriveAllProducersFilters,
+  flattenBidEntries, formatMonthYear, lookupBid, parseBid
+} from '../../utils/bid-math';
 
 interface EditBidsRow {
   name: string;
@@ -40,24 +44,6 @@ interface PrintYearRow {
   enabled: boolean;
   offset: number;            // -2..+2 relative to the viewed year
   oldNew: '' | 'old' | 'new';
-}
-
-/** Status for a bid value vs the session reference. */
-type BidStatus = 'reference' | 'beating' | 'matching' | 'none';
-
-/** Row in the panel list view (`filteredBidItems`). */
-interface BidSheetPanelItem {
-  type: 'entry';
-  name: string;
-  isScoular: boolean;
-  isRef: boolean;
-  latitude: number | null;
-  longitude: number | null;
-  oldBid: string;
-  newBid: string;
-  oldStatus?: BidStatus;
-  newStatus?: BidStatus;
-  status: BidStatus;
 }
 
 /** Width threshold (px) below which the filter bar wraps the search/clear group to a centered second row. */
@@ -121,46 +107,10 @@ export class BidSheetComponent {
     return this.allMapLocations().some(l => l.name === name && l.isScoularFacility);
   });
   /** Flattened view of locations — uses TU-filtered bidLocations when a TU is active, otherwise allMapLocations. */
-  readonly bidEntries = computed<BidSheetEntry[]>(() => {
-    const source = this.activeTradeUnits().length > 0 ? this.bidLocations() : this.allMapLocations();
-    return source.flatMap(loc =>
-      (loc.bids ?? []).map(bid => ({
-        id: bid.id,
-        locationId: loc.id,
-        name: loc.name,
-        address: loc.address,
-        city: loc.city,
-        state: loc.state,
-        latitude: loc.latitude,
-        longitude: loc.longitude,
-        elevatorCode: loc.elevatorCode,
-        tradeUnitCode: loc.tradeUnitCode,
-        groupName: loc.groupName,
-        commodityCode: bid.commodityCode,
-        commodityName: bid.commodityName,
-        commodityCategory: bid.commodityCategory,
-        cropYear: bid.cropYear,
-        month: bid.month,
-        bid: bid.bid,
-        createdBy: bid.createdBy,
-        createdAt: bid.createdAt,
-        modifiedBy: bid.modifiedBy,
-        modifiedAt: bid.modifiedAt
-      }))
-    );
-  });
+  readonly bidEntries = computed<BidSheetEntry[]>(() =>
+    flattenBidEntries(this.activeTradeUnits().length > 0 ? this.bidLocations() : this.allMapLocations()));
   /** Pre-computed lookup: "name|commodityCode|cropYear|month" → latest BidSheetEntry (by modifiedAt then createdAt). O(1) lookups instead of repeated filter+sort. */
-  private readonly bidLookup = computed(() => {
-    const lookup = new Map<string, BidSheetEntry>();
-    for (const e of this.bidEntries()) {
-      const key = `${e.name}|${e.commodityCode}|${e.cropYear}|${e.month}`;
-      const existing = lookup.get(key);
-      if (!existing || new Date(e.modifiedAt || e.createdAt).getTime() > new Date(existing.modifiedAt || existing.createdAt).getTime()) {
-        lookup.set(key, e);
-      }
-    }
-    return lookup;
-  });
+  private readonly bidLookup = computed(() => buildBidLookup(this.bidEntries()));
   cropYears = signal<number[]>([]);
   crops = signal<string[]>([]);
   isLoading = signal<boolean>(false);
@@ -208,10 +158,7 @@ export class BidSheetComponent {
   });
   /** Returns "Mar 26" / "Apr 26" / "2025" / "2026" depending on month context. */
   formatMonthYear(month: number, year: number | null): string {
-    if (year == null) return '';
-    if (month === 0) return year.toString();
-    const names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${names[month]} ${year.toString().slice(-2)}`;
+    return formatMonthYear(month, year);
   }
 
   // --- Location order (per trade unit, persisted to DB) ---
@@ -249,29 +196,7 @@ export class BidSheetComponent {
   readonly panelLocationBids = computed(() => {
     const name = this.panelSelectedLocation();
     if (!name) return [];
-    const oldD = this.oldDisplay();
-    const newD = this.newDisplay();
-    const entries = this.bidEntries().filter(e => e.name === name);
-    let cropSet = [...new Set(entries.map(e => e.commodityCode).filter(Boolean))].sort();
-    // Only show crops that have bids for the displayed old/new periods
-    cropSet = cropSet.filter(crop =>
-      this._getLatestBid(name, newD.year, crop!, newD.month) ||
-      this._getLatestBid(name, oldD.year, crop!, oldD.month));
-
-    // Reference comparison — color-code each crop row vs the session reference (selectedLocationName)
-    const refName = this.selectedLocationName();
-    const isRef = refName === name;
-
-    return cropSet.map(crop => {
-      const oldBid = this._getLatestBid(name, oldD.year, crop!, oldD.month);
-      const newBid = this._getLatestBid(name, newD.year, crop!, newD.month);
-      // Get reference bid for this crop (if any). If reference doesn't have this crop → leave white (status 'none').
-      const oldRefBid = refName && !isRef ? this._parseBid(this._getLatestBid(refName, oldD.year, crop!, oldD.month)) : null;
-      const newRefBid = refName && !isRef ? this._parseBid(this._getLatestBid(refName, newD.year, crop!, newD.month)) : null;
-      const oldStatus = isRef ? 'reference' : this._computeItemStatus(oldBid, false, oldRefBid);
-      const newStatus = isRef ? 'reference' : this._computeItemStatus(newBid, false, newRefBid);
-      return { crop: crop!, oldBid, newBid, oldStatus, newStatus };
-    });
+    return buildPanelLocationBids(name, this.bidEntries(), this.bidLookup(), this.oldDisplay(), this.newDisplay(), this.selectedLocationName());
   });
 
   // --- Edit Bids ---
@@ -635,9 +560,7 @@ export class BidSheetComponent {
    * Defaults the selected crop/year to a valid value so the comparison shows bids.
    */
   private _applyAllProducersFilters(): void {
-    const bids = this.allMapLocations().flatMap(l => l.bids ?? []);
-    const crops = [...new Set(bids.map(b => b.commodityCode).filter((c): c is string => !!c))].sort();
-    const years = [...new Set(bids.map(b => b.cropYear).filter((y): y is number => y != null))].sort((a, b) => a - b);
+    const { crops, years } = deriveAllProducersFilters(this.allMapLocations());
     this.crops.set(crops);
     this.cropYears.set(years);
     if (!this.selectedCrop() || !crops.includes(this.selectedCrop())) {
@@ -962,149 +885,24 @@ export class BidSheetComponent {
   }
 
   filterBids(): void {
-    const hasTu = this.activeTradeUnits().length > 0;
-    // Comparison/status applies for a single TU AND for All Producers (view-only) — both derive
-    // crop-year data, so the reference/beating/matching logic runs identically; only editing differs.
-    const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
-    const basis = this.selectedBasis();
-
-    let items: BidSheetPanelItem[] = [];
-
-    // Show the bid comparison whenever we have crop-year data — for a single TU, or for
-    // All Producers (where crops/years are derived from every location's bids). Only fall back
-    // to the name-only list when there's no bid data to compare yet.
-    const canCompare = hasTu || this.cropYears().length > 0;
-
-    if (!canCompare) {
-      // No data yet — show all locations by name, no bid values
-      const seen = new Set<string>();
-      for (const loc of this.allMapLocations()) {
-        if (seen.has(loc.name)) continue;
-        seen.add(loc.name);
-        items.push({
-          type: 'entry',
-          name: loc.name,
-          isScoular: !!loc.isScoularFacility,
-          isRef: false,
-          latitude: loc.latitude ?? null,
-          longitude: loc.longitude ?? null,
-          oldBid: '',
-          newBid: '',
-          status: 'none'
-        });
-      }
-    } else {
-      const crop = this.selectedCrop();
-      const oldD = this.oldDisplay();
-      const newD = this.newDisplay();
-
-      // Compute reference bids per period for status comparison
-      const refName = this.selectedLocationName();
-      const selectedYr = this.selectedYear();
-      const month = this.selectedMonth();
-      let oldRefBid: number | null = null;
-      let newRefBid: number | null = null;
-      let selectedRefBid: number | null = null;
-      if (hasIndividualTu && refName) {
-        oldRefBid = this._parseBid(this._getLatestBid(refName, oldD.year, crop, oldD.month));
-        newRefBid = this._parseBid(this._getLatestBid(refName, newD.year, crop, newD.month));
-        selectedRefBid = this._parseBid(this._getLatestBid(refName, selectedYr, crop, month));
-      }
-
-      // Add location entries — filter by crop if one is selected
-      const entries = crop
-        ? this.bidEntries().filter(e => e.commodityCode === crop)
-        : this.bidEntries();
-      const uniqueNames = new Set(entries.map(e => e.name));
-
-      // Ensure reference location always appears even if it has no bid for the selected crop
-      if (hasIndividualTu && refName && !uniqueNames.has(refName)) {
-        uniqueNames.add(refName);
-      }
-
-      for (const name of uniqueNames) {
-        const oldBid = this._getLatestBid(name, oldD.year, crop, oldD.month);
-        const newBid = this._getLatestBid(name, newD.year, crop, newD.month);
-        const selectedBid = this._getLatestBid(name, selectedYr, crop, month);
-        const entryWithCoords = this.bidEntries().find(e => e.name === name);
-        const isRef = hasIndividualTu && name === refName;
-
-        const locForScoular = this.allMapLocations().find(l => l.name === name);
-        items.push({
-          type: 'entry',
-          name,
-          isScoular: !!locForScoular?.isScoularFacility,
-          isRef,
-          latitude: entryWithCoords?.latitude ?? null,
-          longitude: entryWithCoords?.longitude ?? null,
-          oldBid,
-          newBid,
-          oldStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(oldBid, false, oldRefBid) : 'none'),
-          newStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(newBid, false, newRefBid) : 'none'),
-          status: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(selectedBid, false, selectedRefBid) : 'none')
-        });
-      }
-
-      // Include locations with no bids yet (only when no crop filter is active)
-      if (!crop) {
-        for (const loc of this.bidLocations()) {
-          if (uniqueNames.has(loc.name)) continue;
-          const isRef = hasIndividualTu && loc.name === refName;
-          items.push({
-            type: 'entry',
-            name: loc.name,
-            isScoular: !!loc.isScoularFacility,
-            isRef,
-            latitude: loc.latitude ?? null,
-            longitude: loc.longitude ?? null,
-            oldBid: '',
-            newBid: '',
-            oldStatus: 'none',
-            newStatus: 'none',
-            status: isRef ? 'reference' : 'none'
-          });
-        }
-      }
-    }
-
-    // Status (basis) filter — always keep the reference item
-    if (basis !== 'all') {
-      items = items.filter(item => item.status === 'reference' || item.status === basis);
-    }
-
-    // Sort: reference first, then alphabetical
-    items.sort((a, b) => {
-      if (a.isRef) return -1;
-      if (b.isRef) return 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    this.filteredBidItems.set(items);
+    this.filteredBidItems.set(buildPanelItems({
+      hasTu: this.activeTradeUnits().length > 0,
+      hasCropYears: this.cropYears().length > 0,
+      basis: this.selectedBasis(),
+      crop: this.selectedCrop(),
+      oldD: this.oldDisplay(),
+      newD: this.newDisplay(),
+      selected: { month: this.selectedMonth(), year: this.selectedYear() },
+      refName: this.selectedLocationName(),
+      entries: this.bidEntries(),
+      lookup: this.bidLookup(),
+      allMapLocations: this.allMapLocations(),
+      bidLocations: this.bidLocations()
+    }));
   }
 
   private _getLatestBid(name: string, year: number | null, commodityCode: string, month: number): string {
-    if (!year || !commodityCode) return '';
-    return this.bidLookup().get(`${name}|${commodityCode}|${year}|${month}`)?.bid ?? '';
-  }
-
-  private _getLatestEntry(name: string, year: number | null, commodityCode: string, month: number): BidSheetEntry | null {
-    if (!year || !commodityCode) return null;
-    return this.bidLookup().get(`${name}|${commodityCode}|${year}|${month}`) ?? null;
-  }
-
-  private _parseBid(bid: string): number | null {
-    const n = parseFloat(bid);
-    return isNaN(n) ? null : n;
-  }
-
-  private _computeItemStatus(bidStr: string, isRef: boolean, refBid: number | null): BidStatus {
-    if (isRef) return 'reference';
-    const num = this._parseBid(bidStr);
-    if (refBid !== null && num !== null) {
-      if (num > refBid) return 'beating';
-      if (num === refBid) return 'matching';
-    }
-    return 'none';
+    return lookupBid(this.bidLookup(), name, year, commodityCode, month);
   }
 
   // =========================================================================
@@ -2609,7 +2407,7 @@ export class BidSheetComponent {
 
     // Reference bid for status comparison — use selectedYear (same year used for bid pill lookups)
     const refName = this.selectedLocationName();
-    const refBid = this._parseBid(refName ? this._getLatestBid(refName, year, crop, month) : '');
+    const refBid = parseBid(refName ? this._getLatestBid(refName, year, crop, month) : '');
 
     // Search query — only filter map pins, panel stays full
     const searchQ = this.searchQuery().toLowerCase();
@@ -2646,7 +2444,7 @@ export class BidSheetComponent {
     const compareStatus = (name: string): BidStatus | null => {
       if (!(hasIndividualTu && refName && crop)) return null;
       const bidVal = this._getLatestBid(name, year, crop, month);
-      return bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
+      return bidVal ? computeItemStatus(bidVal, false, refBid) : 'none';
     };
 
     // Pass 1: decide which coordinate groups actually render a marker (apply the skip filters once)
@@ -2687,7 +2485,7 @@ export class BidSheetComponent {
         // This pin represents panelOpenName specifically, so key it to that name rather than to
         // "any location at this coordinate".
         const panelIsScoular = scoularNames.has(panelOpenName);
-        const status = hasIndividualTu && refName && bidStr ? this._computeItemStatus(bidStr, false, refBid) : null;
+        const status = hasIndividualTu && refName && bidStr ? computeItemStatus(bidStr, false, refBid) : null;
         const { bg: pinBg, border: pinBorder } = pinFill(isRef, status, panelIsScoular, EXPANDED_PIN_GREY);
         const expandedIcon = L.divIcon(hoverIcon(panelOpenName, bidStr, pinBg, pinBorder, scoularNames));
         const marker = L.marker([lat, lng], { icon: expandedIcon, zIndexOffset: 1000 });
@@ -2721,7 +2519,7 @@ export class BidSheetComponent {
             const bidVal = this._getLatestBid(n, year, crop, month);
             const nameIsScoular = scoularNames.has(n);
             if (!isNameRef && !bidVal) return null;
-            const status = isNameRef ? 'reference' : this._computeItemStatus(bidVal, false, refBid);
+            const status = isNameRef ? 'reference' : computeItemStatus(bidVal, false, refBid);
             const { bg, border } = bidPillFill(isNameRef, status, nameIsScoular, comparingToRef);
             return { label: isNameRef ? bidVal || '--' : bidVal, bg, border, isScoular: nameIsScoular };
           })

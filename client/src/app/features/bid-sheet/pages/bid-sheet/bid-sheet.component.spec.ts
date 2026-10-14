@@ -385,6 +385,49 @@ describe('BidSheetComponent', () => {
       expect(c.filteredBidItems().every(i => !i.isRef)).toBe(true);
     });
 
+    it('with no bid data anywhere it lists every location once by name, with no values or status', () => {
+      api.getAllBidSheetLocations.mockImplementation(() => of([
+        charlie(),
+        makeLocation({ id: 5, name: 'Able Mill', latitude: 40, longitude: -97 }),
+        makeLocation({ id: 6, name: 'Charlie Elevator', tradeUnitCode: '2050' }),
+      ]));
+      build([], []);
+
+      expect(c.cropYears()).toEqual([]);
+      expect(c.filteredBidItems()).toEqual([
+        { type: 'entry', name: 'Able Mill', isScoular: false, isRef: false, latitude: 40, longitude: -97, oldBid: '', newBid: '', status: 'none' },
+        { type: 'entry', name: 'Charlie Elevator', isScoular: true, isRef: false, latitude: 38.2, longitude: -98.4, oldBid: '', newBid: '', status: 'none' },
+      ]);
+    });
+
+    it('the reference is listed (first) even when it has no bid for the selected crop', () => {
+      build(['2040']);
+      c.selectedCrop.set('SB');
+      c.selectedLocationName.set('Bravo Grain');
+      c.filterBids();
+
+      expect(c.filteredBidItems()).toEqual([
+        { type: 'entry', name: 'Bravo Grain', isScoular: false, isRef: true, latitude: 37.9, longitude: -98.2, oldBid: '', newBid: '', oldStatus: 'reference', newStatus: 'reference', status: 'reference' },
+        { type: 'entry', name: 'Alpha Coop', isScoular: false, isRef: false, latitude: 37.6, longitude: -98.7, oldBid: '', newBid: '10.00', oldStatus: 'none', newStatus: 'none', status: 'none' },
+      ]);
+    });
+
+    it('yearly navigation shifts the old/new window one crop year at a time within the data', () => {
+      build([], ['Kansas']); // crop years 2024..2026
+      expect([c.oldYear(), c.newYear(), c.canShiftYearsBack(), c.canShiftYearsForward()]).toEqual([2025, 2026, true, false]);
+
+      c.shiftYearsBack();
+      expect([c.oldYear(), c.newYear(), c.selectedYear()]).toEqual([2024, 2025, 2025]);
+      expect(c.oldDisplay()).toEqual({ month: 0, year: 2024 });
+      expect(c.canShiftYearsBack()).toBe(false);
+      expect(c.formatMonthYear(c.oldDisplay().month, c.oldDisplay().year)).toBe('2024');
+
+      c.shiftYearsForward();
+      expect([c.newYear(), c.selectedYear()]).toEqual([2026, 2026]);
+      expect(c.formatMonthYear(3, 2026)).toBe('Mar 26');
+      expect(c.formatMonthYear(3, null)).toBe('');
+    });
+
     it('panelLocationBids lists the open location\'s crops with statuses relative to the reference', () => {
       build(['2040']);
       c.panelSelectedLocation.set('Bravo Grain');
