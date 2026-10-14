@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin, of, Subject, timer } from 'rxjs';
+import { forkJoin, of, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { catchError, map, takeUntil } from 'rxjs/operators';
@@ -12,21 +12,22 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, Reminder, ReminderDue, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, Reminder, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
 import { CustomerRemindersComponent, ReminderDraft } from '../../components/customer-reminders/customer-reminders.component';
-import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
 import { environment } from '@env/environment';
 import {
   commodityCodesFrom, describeLastContacted, lastContactFromNotes, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,
-  producerContractsAndTickets, readFailureMessage, sortNotes, sortReminders, yieldEstimateYears
+  producerContractsAndTickets, readFailureMessage, sortNotes, yieldEstimateYears
 } from './home-derivations';
 import { HomeBackgroundFailures } from './home-background-failures';
+import { HomePageState } from './home-page.state';
+import { HomeRemindersStore } from './home-reminders.store';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -43,7 +44,7 @@ import { HomeBackgroundFailures } from './home-background-failures';
   ],
   templateUrl: './home.component.html',
   // Page-scoped state and behaviour, one instance per visit to the page.
-  providers: [HomeBackgroundFailures],
+  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore],
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
@@ -57,17 +58,18 @@ export class HomeComponent {
 
   /** Throttled toast + dev log for background loads that fail (see HomeBackgroundFailures). */
   private readonly backgroundFailures = inject(HomeBackgroundFailures);
+  /** Signals shared with the page-scoped stores (see HomePageState). */
+  private readonly page = inject(HomePageState);
+  /** Personal follow-up reminders (see HomeRemindersStore). */
+  private readonly reminders = inject(HomeRemindersStore);
 
   /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Enables the
    *  "Team Lists" tab in the Add-to-List dropdown. */
   readonly isManager = this.userRoles.isAdmin;
   /** Gates the floating calculator launcher (Profitability calc + future calculators). */
   readonly calculatorEnabled = environment.calculatorEnabled;
-  /** Gates the personal follow-up reminders card and the producer-list reminder badge. Off until
-   *  the API app registration has delegated Calendars.ReadWrite with admin consent — the API calls
-   *  Graph on-behalf-of the user, so the permission lives there rather than on the SPA. */
-  readonly remindersEnabled = environment.remindersEnabled;
-  private readonly outlookCalendar = inject(OutlookCalendarService);
+  /** Gates the personal follow-up reminders card and the producer-list reminder badge. */
+  readonly remindersEnabled = this.reminders.remindersEnabled;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -75,12 +77,8 @@ export class HomeComponent {
   private _isLoading = false;
   private _customerRequestId = 0;
   private _piRequestId = 0;
-  /** Emits whenever the user picks a new customer. Every async call kicked off by
-   *  handleSelectCustomer is piped through takeUntil(this) so the prior selection's
-   *  in-flight HTTP requests are cancelled the moment a new producer is clicked —
-   *  stops stale linked-producer / notes / planting calls from clogging the browser's
-   *  connection pool while the newly-selected customer waits for free sockets. */
-  private readonly _cancelSelection$ = new Subject<void>();
+  /** Cancels the prior selection's in-flight requests (see HomePageState.cancelSelection$). */
+  private readonly _cancelSelection$ = this.page.cancelSelection$;
   /** Customers whose linked-producer BFS has already completed in this session.
    *  Re-clicking a producer that's in this set skips the entire BFS — the cache
    *  is already correct, so there's nothing new to fetch. */
@@ -164,9 +162,8 @@ export class HomeComponent {
    *  unselected TUs are represented without downloading any note bodies. Full notes are
    *  fetched per-producer on selection into _customerNotesCache. */
   readonly noteLastContacts = signal<NoteLastContact[]>([]);
-  /** The signed-in user's own OPEN follow-ups across all producers — feeds the list badge.
-   *  Private per user: the API only ever returns the caller's own. */
-  readonly myReminders = signal<ReminderDue[]>([]);
+  /** The signed-in user's own open follow-ups across all producers (see HomeRemindersStore). */
+  readonly myReminders = this.reminders.myReminders;
   readonly storedGrain = signal<StoredGrain[]>([]);
   readonly dpContracts = signal<DpContract[]>([]);
   readonly savedLists = signal<SavedList[]>([]);
@@ -175,7 +172,7 @@ export class HomeComponent {
   readonly teamSavedLists = signal<SavedList[]>([]);
   readonly producerDetailsMap = signal<Map<number, ProducerDetails>>(new Map());
 
-  readonly selectedCustomer = signal<Customer | null>(null);
+  readonly selectedCustomer = this.page.selectedCustomer;
   /** True when the open-contracts table has its extra columns expanded — drops the Notes
    *  sidebar below the profile so the table gets the full page width. */
   readonly contractsWide = signal(false);
@@ -197,14 +194,11 @@ export class HomeComponent {
   readonly customerTickets = signal<Ticket[]>([]);
   readonly customerPricingLines = signal<ContractPricingLine[]>([]);
   readonly customerNotes = signal<Note[]>([]);
-  /** The signed-in user's open follow-ups for the SELECTED producer only. Unlike notes this is
-   *  not walked across the linked-producer group: a follow-up is about the one producer it was
-   *  set on, and showing a linked producer's reminders here would make "complete" ambiguous. */
-  readonly customerReminders = signal<Reminder[]>([]);
-  readonly isLoadingReminders = signal(false);
-  readonly isSavingReminder = signal(false);
-  /** Incremented on each successful reminder save so the card closes and resets its form. */
-  readonly reminderSaveSucceededCounter = signal(0);
+  /** The selected producer's follow-ups and the reminder card's state (see HomeRemindersStore). */
+  readonly customerReminders = this.reminders.customerReminders;
+  readonly isLoadingReminders = this.reminders.isLoadingReminders;
+  readonly isSavingReminder = this.reminders.isSavingReminder;
+  readonly reminderSaveSucceededCounter = this.reminders.reminderSaveSucceededCounter;
   readonly customerCodeMap = signal<Map<number, string>>(new Map());
   readonly customerPlantingIntentions = signal<PlantingIntention[]>([]);
   readonly customerStoredGrain = signal<StoredGrain[]>([]);
@@ -969,162 +963,25 @@ export class HomeComponent {
   }
 
   // ==========================================================================
-  // Personal follow-up reminders
+  // Personal follow-up reminders — delegated to HomeRemindersStore
   // ==========================================================================
-  // Every reminder here belongs to the signed-in user — the API returns nobody else's. The
-  // running theme in these handlers: the DATABASE is the source of truth and the Outlook event
-  // is a best-effort mirror. A calendar failure never blocks or rolls back the reminder; it just
-  // leaves outlookEventId null, which surfaces as an "Add to Outlook" retry on the row.
-
-  /** Loads the caller's reminders for one producer. No cache: the list is small, and a stale
-   *  due date is worse than a re-fetch. */
-  private _loadCustomerReminders(customerId: number): void {
-    if (!this.remindersEnabled) return;
-
-    this.customerReminders.set([]);
-    this.isLoadingReminders.set(true);
-    this.apiService.getRemindersByCustomer(customerId)
-      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (reminders) => {
-          if (this.selectedCustomer()?.id !== customerId) return;
-          this.customerReminders.set(reminders);
-          this.isLoadingReminders.set(false);
-        },
-        error: () => this.isLoadingReminders.set(false)
-      });
-  }
 
   /** Create or edit, depending on whether the draft carries an id. */
   saveReminder(draft: ReminderDraft): void {
-    const customer = this.selectedCustomer();
-    if (!customer) return;
-
-    this.isSavingReminder.set(true);
-
-    if (draft.id === undefined) {
-      this.apiService.createReminder(customer.id, draft.dueAt, draft.subject || undefined, draft.notes)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (created) => {
-            this.customerReminders.update(list => sortReminders([...list, created]));
-            this._addMyReminder(created);
-            this.isSavingReminder.set(false);
-            this.reminderSaveSucceededCounter.update(n => n + 1);
-            this.toastService.success('Follow-up added');
-            this._syncReminderToOutlook(created);
-          },
-          error: () => this.isSavingReminder.set(false)
-        });
-      return;
-    }
-
-    const id = draft.id;
-    this.apiService.updateReminder(id, draft.dueAt, draft.subject || undefined, draft.notes,
-      OutlookCalendarService.currentTimeZone())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (updated) => {
-          this.customerReminders.update(list => sortReminders(list.map(r => r.id === id ? updated : r)));
-          this._addMyReminder(updated);
-          this.isSavingReminder.set(false);
-          this.reminderSaveSucceededCounter.update(n => n + 1);
-          this.toastService.success('Follow-up updated');
-
-          // The API moved the calendar event in the same call — it patches the window rather than
-          // recreating the event, because a delete-and-recreate shows the original slot as
-          // "Canceled". All that is left here is to report a move that did not take.
-          if (updated.outlookEventId) {
-            if (updated.outlookEventMoved === false) {
-              this.toastService.info('Saved, but the Outlook event could not be moved.');
-            }
-          } else {
-            this._syncReminderToOutlook(updated);
-          }
-        },
-        error: () => this.isSavingReminder.set(false)
-      });
+    this.reminders.saveReminder(draft);
   }
 
   toggleReminderComplete(reminder: Reminder): void {
-    const next = !reminder.isCompleted;
-    this.apiService.setReminderCompleted(reminder.id, next)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(updated => {
-        // A completed reminder stays on the calendar on purpose: deleting the event makes Outlook
-        // render it as "Canceled", which reads as "this never happened" rather than "done".
-        this.customerReminders.update(list => sortReminders(list.map(r => r.id === reminder.id ? updated : r)));
-        if (next) {
-          this._removeMyReminder(reminder.id);
-        } else {
-          this._addMyReminder(updated);
-        }
-      });
+    this.reminders.toggleReminderComplete(reminder);
   }
 
   deleteReminder(reminder: Reminder): void {
-    this.apiService.deleteReminder(reminder.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.customerReminders.update(list => list.filter(r => r.id !== reminder.id));
-        this._removeMyReminder(reminder.id);
-        this.toastService.success('Follow-up deleted');
-        // The API removes the calendar event in the same call. Deleting is the only path that does
-        // so: completing a reminder deliberately leaves the event, because removing it makes Outlook
-        // render the slot as "Canceled", which reads as "this never happened" rather than "done".
-      });
+    this.reminders.deleteReminder(reminder);
   }
 
   /** Retry path for a reminder saved while Outlook was unavailable or consent was declined. */
   addReminderToOutlook(reminder: Reminder): void {
-    this._syncReminderToOutlook(reminder, true);
-  }
-
-  /**
-   * Writes the reminder to the user's own calendar and records the event id. Silent on failure
-   * during an automatic save (the row already offers a retry); explicit about it when the user
-   * pressed "Add to Outlook" and is waiting for an answer.
-   */
-  private _syncReminderToOutlook(reminder: Reminder, userInitiated = false): void {
-    const link = `${window.location.origin}/?customerId=${reminder.customerId}`;
-
-    // One call now: the API writes the event on-behalf-of the user AND records the id, so there is
-    // no window where the event exists but the row does not know about it.
-    this.outlookCalendar.addToOutlook(reminder, link)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(updated => {
-        // A null event id means the calendar could not be written; the row keeps its retry button.
-        if (!updated?.outlookEventId) {
-          this.toastService.info(
-            userInitiated
-              ? 'Could not add this to Outlook. Your follow-up is still saved here.'
-              : 'Follow-up saved. It could not be added to Outlook — use "Add to Outlook" to retry.'
-          );
-          return;
-        }
-
-        this.customerReminders.update(list => list.map(r => r.id === updated.id ? updated : r));
-        if (userInitiated) this.toastService.success('Added to your Outlook calendar');
-      });
-  }
-
-  /** Keeps the badge feed in step locally so the list updates without a round trip. */
-  private _addMyReminder(reminder: Reminder): void {
-    const row: ReminderDue = {
-      id: reminder.id,
-      customerId: reminder.customerId,
-      customerCode: reminder.customerCode,
-      dueAt: reminder.dueAt,
-    };
-    const next = [...this.myReminders().filter(r => r.id !== reminder.id), ...(reminder.isCompleted ? [] : [row])];
-    this.myReminders.set(next);
-    this.appState.setMyReminders(next);
-  }
-
-  private _removeMyReminder(reminderId: number): void {
-    const next = this.myReminders().filter(r => r.id !== reminderId);
-    this.myReminders.set(next);
-    this.appState.setMyReminders(next);
+    this.reminders.addReminderToOutlook(reminder);
   }
 
   handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
@@ -1182,7 +1039,7 @@ export class HomeComponent {
     // Fetch this producer's (and known linked group's) full notes — notes are no longer
     // bulk-downloaded, so selection is what hydrates the notes panel. Cache-hit = instant.
     this._ensureCustomerNotes(customer);
-    this._loadCustomerReminders(customer.id);
+    this.reminders.loadCustomerReminders(customer.id);
 
     // Fetch planting intentions exactly once per customer selection.
     // _loadCustomerData is called multiple times (contracts, tickets, storedGrain callbacks),
