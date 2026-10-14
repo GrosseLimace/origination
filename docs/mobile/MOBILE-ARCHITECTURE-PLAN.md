@@ -8,6 +8,8 @@
 | **Governing docs** | [SEC-ARCH-BURDI-001 v1.0](reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md) (Security Architecture Specification: Burdi Design Pattern, IT Security, 2026-03-25; repo copy); [developer-docs/EXTERNAL-SPA-GUIDE.md](reference/EXTERNAL-SPA-GUIDE.md) v1.7 |
 | **Companion docs** | [MEETING-QUESTIONS.md](MEETING-QUESTIONS.md) · [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) · [REQUEST-MESSAGES.md](REQUEST-MESSAGES.md) · [ADR-001](../adr/ADR-001-mobile-surface-topology.md) · [openapi/mobile/](../../openapi/mobile/README.md) |
 
+> **Decided 2026-10-14 (application owner):** originators use their **own, unmanaged phones** (no company phones, no Intune/Company Portal), and the mobile piece stays a **website (PWA)**, with no app-store app. So the "compliant device" Conditional Access control and the Capacitor/native fallback below are **off the table**. The compensating controls are MFA, sign-in frequency, Continuous Access Evaluation, the client-id check, and keeping as little producer data on the phone as possible. IT Security decides whether the phone may hold producer data briefly (§5.4).
+
 ## 1. Purpose
 
 Add a mobile component to the Origination Workbench (Angular 21 + .NET 10, internal grain-originator app) that conforms to Scoular's mixed-trust-zone security architecture. Feature scope is decided at the Phase 0 stakeholder meeting; this document fixes the **architecture, the platform asks, and the delivery phases** so implementation can start as soon as scope is known.
@@ -95,7 +97,7 @@ What this changes versus the original assumptions:
 ## 4. Target topology (ADR-001, Option 3: hybrid, split-ready)
 
 ```
-Phone (Entra CA: compliant device) ──MSAL──▶ Static Web App  swa-origination-{env}-eus  (origination-mobile PWA)
+Personal phone (Entra MFA)  ──MSAL──▶ Static Web App  swa-origination-{env}-eus  (origination-mobile PWA)
         │  HTTPS bearer: aud = Origination API app reg, scp = Origination.Mobile.{Env}
         ▼
 FortiGate → App Gateway + WAF → APIM  api{qa}.scoular.com/external/origination/v1
@@ -147,7 +149,7 @@ The mobile surface is the first place where "entitlement is a UX filter" is unac
 
 **Employees (recommended v1).** MSAL v5 redirect flow, `BrowserCacheLocation.SessionStorage`, `provideAppInitializer` bootstrap per the guide, `clientCapabilities: ['CP1']` to opt into Continuous Access Evaluation as the compensating control for browser token lifetime. Dedicated SPA app registration `Origination External - {Env}`. New delegated scope `Origination.Mobile.{Env}` on the existing API app registration; the desktop SPA is not granted it. The spec's 15-minute access token is a tenant-owned `tokenLifetimePolicy` applied by Identity; if it lands on the shared API resource it also shortens desktop tokens (more silent renewals). Refresh tokens for SPAs are already 24-hour, single-use and rotated by Entra. Conditional Access "require compliant device" targets the mobile client; pilot iOS Safari (needs the Authenticator SSO extension) and Android Chrome early.
 
-**Device binding and pinning.** Not achievable in a PWA (token protection is Windows-only). Document an exception with Conditional Access, CAE and the `azp` check as compensation. Keep the Capacitor path open by putting authentication behind a `MobileAuthPort` interface: a native wrapper (MSAL broker, Keychain/Keystore, native HTTP with pinning, jailbreak detection) can be swapped in without touching features. Recommendation: **PWA on SWA first**; escalate to Capacitor only if BYOD without Intune, or if Security refuses the exception.
+**Device binding and pinning.** Not achievable in a PWA (token protection is Windows-only). Document an exception with MFA, sign-in frequency, CAE and the `azp` check as compensation. **No native app (decided 2026-10-14)**, so there is no escalation path to pinning or device binding; the `MobileAuthPort` seam stays, now only for testability.
 
 **Producers / customers (if ever).** Entra External ID tenant, second JWT bearer scheme, a `ProducerAccess` policy on a separate controller subset, a `ProducerIdentityLink` table, re-cut DTOs. Conditional Access does not apply to external identities, so device binding becomes mandatory and forces Capacitor. This is a separate later programme; Option 3 makes it addable without redesign.
 
@@ -167,7 +169,7 @@ The mobile surface is the first place where "entitlement is a UX filter" is unac
 - Writes: note creation is queued, with a client-generated `clientRequestId` and a server unique index so a duplicate returns the existing row. On-farm detail edits (#643) and planting-intention add/update (#647) **default to graceful failure with a retry prompt** until meeting Q3 is answered; if "hours offline" is required they join the same queue, with `expectedModifiedAt` conflicts surfaced to the user rather than silently overwritten.
 - Port Burdi's guard, storage and sync patterns into `projects/mobile/src/app/core/offline/` on top of the `idb` package.
 - sessionStorage reality: iOS kills backgrounded PWAs and each relaunch is a new session, so offline-after-relaunch is impossible under `SessionStorage`. v1 offline means "survive a signal drop mid-session" unless Security grants a `LocalStorage` exception for the mobile client (meeting question 3).
-- M-030 response: Conditional Access implies Intune-enforced device encryption; DTOs exclude PII; cache TTLs are short; logout and bootstrap failure paths wipe IndexedDB and Cache Storage. Documented as an exception. The Capacitor branch closes it with secure storage.
+- M-030 response: phones are personal and unmanaged (decided 2026-10-14), so device encryption cannot be assumed. Today the service worker keeps producer reads up to 1 hour and notes up to 15 minutes, and IndexedDB holds queued notes; contacts and search are never cached; sign-out and bootstrap failure wipe IndexedDB and Cache Storage. **IT Security decides** whether that brief cache is acceptable or the phone must keep no producer data at all (a change to `ngsw-config.json`; offline then shrinks to what is on screen). The Capacitor branch closes it with secure storage.
 
 ### 5.5 CI/CD
 
@@ -195,7 +197,7 @@ Roughly 10–14 calendar weeks for a modest feature set. Platform waits dominate
 1. **APIM token model unknown.** If APIM expects an APIM-owned audience or exchanges tokens, the backend rejects everything or loses user identity. Resolve with Data Integrations in Phase 1; `Mobile:AdditionalAudiences` is the configuration escape hatch.
 2. **App registration documentation conflict.** The `azp` isolation depends on a dedicated client id.
 3. **AR-01…05 reopen plus the countersign backlog.** Package everything once, in Phase 1, not at Phase 5.
-4. **Conditional Access device compliance versus iOS browsers.** Pilot early; may force Intune plus Authenticator, or Capacitor.
+4. **Unmanaged personal phones (decided 2026-10-14).** No device-compliance control is available and no native app will be built; Security must accept MFA + sign-in frequency + CAE + minimal on-phone data as the control set.
 5. **sessionStorage cold-open on phones** (2–5 s on LTE; no offline after relaunch). Decide v1 offline scope at the meeting.
 6. **ODS serverless auto-pause** (up to 60 s cold start). Four of eight Phase 1 screens read ODS (contracts, tickets, storage, DP), so this cannot be avoided; the contract returns 503 with a retry hint and the client is cache-first with a visible "refreshing" state. DP data exists only in Prod, so Dev/QA cannot exercise that screen with real data.
 7. **Producer PII on devices.** Card #642 requires contact phone and email on the phone. Return them, never cache them, and say so in the storage exception.

@@ -53,8 +53,8 @@ Adopt **Option 3**. Deliver the mobile surface as its own assembly hosted in the
 | All external traffic via APIM | QA/Prod through APIM; Dev direct by the guide's own design | Met |
 | No credentials on devices or bundles | Bundle contains only client id and authority | Met |
 | No shared service accounts between tiers | Same process, same managed identity | **Exception 2** — compensations: dedicated mobile client app registration and scope, `azp` check, APIM subscription, surface excludes ODS producer-master, PII and admin operations; ODS and TradeUnitPreferences contexts are read-only regardless |
-| Device binding / certificate pinning (mobile) | Not achievable in a PWA | **Exception 3** — compensations: Conditional Access compliant-device policy, Continuous Access Evaluation, client-id check; Capacitor path kept open behind an auth interface |
-| Encrypted storage on device | Browser IndexedDB / Cache Storage are not app-encrypted | **Exception 4** — compensations: Intune device encryption via Conditional Access, PII-free DTOs, short cache TTLs, wipe on logout and bootstrap failure |
+| Device binding / certificate pinning (mobile) | Not achievable in a PWA | **Exception 3** — compensations: MFA and a sign-in frequency set by Identity, Continuous Access Evaluation, client-id check. Phones are personal and unmanaged and no native app will be built (decided 2026-10-14), so there is no compliant-device control and no pinning path |
+| Encrypted storage on device | Browser IndexedDB / Cache Storage are not app-encrypted | **Exception 4** — compensations: contacts and search never cached, other producer reads cached at most 1 hour (notes 15 minutes), wipe on logout and bootstrap failure. Device encryption cannot be assumed on personal phones (decided 2026-10-14); IT Security may require no on-phone producer data at all |
 
 The four exceptions are submitted to asksecurity@scoular.com in one package together with the pending countersigns for AR-01, AR-02 and AR-08, and recorded via ServiceNow risk acceptance per the spec.
 
@@ -70,5 +70,5 @@ The four exceptions are submitted to asksecurity@scoular.com in one package toge
 
 - Producers or other non-Scoular identities are onboarded (Entra External ID) — device binding becomes mandatory; re-evaluate Options 2 and Capacitor.
 - IT Security declines Exception 1 or 2 — move to Option 2.
-- IT Security declines Exception 3 or 4 — move to a Capacitor native wrapper.
+- IT Security declines Exception 3 or 4 — a native wrapper was ruled out by the business (2026-10-14), so the response is tighter sign-in rules and/or no on-phone producer data; revisit only if the business reverses that decision.
 - The mobile surface grows beyond roughly a dozen operations or gains write paths beyond note creation.

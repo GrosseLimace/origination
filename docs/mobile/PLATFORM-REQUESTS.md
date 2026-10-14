@@ -30,7 +30,7 @@ Already provisionable per [START-HERE.md](../../developer-docs/START-HERE.md): `
 | # | Request | We provide | Status |
 |---|---|---|---|
 | E9 | Create delegated scope `Origination.Mobile.{Env}` on the existing Origination API app registrations (dev `00078a10-3f3f-4d17-9350-fe90401125ae`, QA `f3fcab2b-98c8-4622-86bd-c874d281b22a`, prod `e1458bcd-7212-4ea0-a836-7e08d03b5bbf`). Do **not** grant it to the desktop SPA registrations | Scope names | |
-| E10 | `tokenLifetimePolicy` with a 15-minute access token for the mobile client (or a documented 60-minute exception); Continuous Access Evaluation enabled; Conditional Access "require compliant device" targeting the mobile client; pilot on iOS Safari (Authenticator SSO extension) and Android Chrome | Mobile client app ids | |
+| E10 | `tokenLifetimePolicy` with a 15-minute access token for the mobile client (or a documented 60-minute exception); Continuous Access Evaluation enabled; Conditional Access for the mobile client suited to **personal, unmanaged phones** (decided 2026-10-14; no compliant-device rule possible): require MFA and a sign-in frequency Identity chooses; pilot on iOS Safari and Android Chrome | Mobile client app ids | |
 | — | Security pre-review package (Phase 1): ADR-001, the four exceptions (shared host, shared identity, no device binding in PWA, browser storage), and the pending countersigns for AR-01, AR-02 and AR-08 — sent together to asksecurity@scoular.com | Package | |
 
 ## Infrastructure / DBA (deferred — only for the later host split)

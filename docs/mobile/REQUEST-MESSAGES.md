@@ -23,7 +23,7 @@ Links assume the branch `docs_MobileArchitecturePlan`; update them once merged t
 Origination is adding a mobile web app for Scoular originators, who work in the field and need producer information on their phones. It is the first Scoular app to implement **SEC-ARCH-BURDI-001** through the mechanics in **EXTERNAL-SPA-GUIDE.md**:
 
 ```
-Originator's phone (Entra ID, Conditional Access: compliant device)
+Originator's own phone (Entra ID sign-in with MFA)
   → Azure Static Web App  (separate mobile Angular app)          Spec Layer 2 client
   → Application Gateway + WAF                                      Spec Layer 1
   → Azure API Management  (validate-jwt, rate limit, quota)        Spec Layer 3
@@ -126,7 +126,7 @@ Users are Scoular originators only; no producers or external identities. The Spe
 | 1 | Create a delegated scope **`Origination.Mobile.{Env}`** on the existing Origination API app registrations (Dev `00078a10-3f3f-4d17-9350-fe90401125ae`, QA `f3fcab2b-98c8-4622-86bd-c874d281b22a`, Prod `e1458bcd-7212-4ea0-a836-7e08d03b5bbf`). Grant it only to the new `Origination External - {Env}` client registrations Infrastructure is creating; **not** to the desktop SPA registrations | §3.2 "Authorization: scoped claims, only the operations this client needs". The scope is how APIM and our backend tell a mobile token from a desktop token |
 | 2 | Apply a **token lifetime policy of 15 minutes** for access tokens issued to the mobile client. If the policy can only attach to the API resource (which would also shorten desktop tokens), tell us and we will document a 60-minute exception with Continuous Access Evaluation as compensation | §4.2 token table: external API JWT 15 minutes max, refresh 24 h single-use rotated. Entra SPA refresh tokens already meet the refresh line |
 | 3 | Enable **Continuous Access Evaluation** for the mobile client; our app opts in with the `CP1` client capability | Compensating control for §4.2 and §4.3 in a browser: near-real-time revocation on sign-out, password change or risk |
-| 4 | A **Conditional Access policy requiring a compliant (Intune) device**, targeting the mobile client registrations, and a short **pilot on iOS Safari and Android Chrome** with us before QA wiring. On iOS, compliance signals reach Safari only through the Authenticator SSO extension, so we want to see the real behaviour early | §4.3 device binding: the Spec wants tokens bound to a device; a PWA cannot do that, so device-level compliance is the nearest achievable control. Guide "Security Notes": *Entra ID Conditional Access enforces device compliance (company-managed devices only)* |
+| 4 | A **Conditional Access policy for the mobile client that fits personal phones.** Originators use their own phones, which are not managed (no company phones, no Company Portal), so a "compliant device" rule cannot apply. We propose MFA plus a sign-in frequency you choose, and a short **pilot on iOS Safari and Android Chrome** with us before QA wiring. Tell us if you require something else | §4.3 device binding: the Spec wants tokens bound to a device; a website on a personal phone cannot do that, so strong sign-in and short sessions are the nearest achievable control |
 
 **Security pre-review (for scheduling and an early read, not sign-off yet)**
 
@@ -136,12 +136,12 @@ ADR-001 (link above) records how we meet each Core Invariant and names four Spec
 |---|---|
 | Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and an APIM allow-list of 17 operations; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
 | Core Invariant 6 / §3.5: same managed identity for both tiers | As above; the mobile surface excludes ODS producer-master search, admin, reporting and bulk operations (§3.2 "what this layer must NOT contain"), and ODS is read-only regardless |
-| §4.3 device-bound tokens, certificate pinning | Conditional Access compliant device, Continuous Access Evaluation, client-id check on every request. A native wrapper (Capacitor) is kept as the fallback if you require pinning |
-| §4.2 token storage in Keychain/Keystore: browser storage is not app-encrypted | Intune device encryption via Conditional Access; contact phone/email never cached; short cache lifetimes; wipe on sign-out and on authentication failure |
+| §4.3 device-bound tokens, certificate pinning | MFA, sign-in frequency, Continuous Access Evaluation, client-id check on every request. The business has decided against an app-store app, so pinning is not available |
+| §4.2 token storage in Keychain/Keystore: browser storage is not app-encrypted, and the phones are personal and unmanaged | Sign-in kept per browser tab (session storage); contact phone/email and search never cached; other producer reads cached at most 1 hour (notes 15 minutes) to ride out dropped signal; everything wiped on sign-out and on authentication failure. **If you prefer, we keep no producer data on the phone at all** (offline then covers only what is on screen) |
 
 Two things we would value from you now:
 
-1. An early answer on whether any of the four exceptions is a non-starter. A "no" on the first two moves us to a separate App Service and managed identity immediately; a "no" on the last two moves us to a native wrapper. Both are cheaper to decide now than after the Dev build.
+1. An early answer on whether any of the four exceptions is a non-starter. A "no" on the first two moves us to a separate App Service and managed identity immediately; for the last two, tell us what you need instead (an app-store app has been ruled out by the business). Both are cheaper to decide now than after the Dev build.
 2. A slot for the §12 architecture review (IT Security + Solutions Architect) roughly six to eight weeks out, once the Dev build exists, with ADR-001 and the §11 developer checklist as the artifacts.
 
 For the record: the accepted-risk entries AR-01, AR-02 and AR-08 were closed by the application owner on 2026-09-21. The mobile surface narrows them for its subset (trade-unit entitlement becomes a hard 404 boundary; notes are add-and-view only), and we will update `SECURITY-REVIEWS/ACCEPTED-RISKS.md` to say so rather than reopen them.
@@ -151,25 +151,18 @@ Caden
 
 ---
 
-## 4. Hope and Travis — the three product questions the cards left open
+## 4. Hope and Travis — the one product question left
+
+Decided 2026-10-14 and not asked: phones are personal and unmanaged, and there will be no app-store app; storage visibility is derived from the data.
 
 **To:** Hope, Travis (cc Marc)
-**Subject:** Origination mobile: three quick decisions before we build
+**Subject:** Origination mobile – 1 quick question
 
 Hi Hope, Travis,
 
-Thanks for the scope session; Marc's eleven cards gave us everything we needed to write the API contract. Three things the cards do not settle change what we build, so a quick answer on each would help:
+The mobile cards gave us almost everything we need. One answer would settle the rest:
 
-1. **How much offline?** Card #644 caps note history because of poor signal, and #643 and #647 have originators editing on-farm details and planting intentions while standing at the farm. Which do you need?
-   - **(a)** Survive a dropped connection during a visit: the app keeps working on what it has loaded, and a note you type while offline is saved and sent when signal returns. Edits to on-farm details or planting intentions made offline show a "couldn't save, retry" message.
-   - **(b)** Work for hours with no signal at all: every add and edit is stored on the phone and sent later, including on-farm and planting changes, with a conflict message if someone else changed the same record in the meantime.
-   Option (a) is simpler and safer; (b) is more work and needs a security exception for how long the phone keeps a login. Which matches how originators actually work?
-
-2. **Which trade units offer storage?** Card #648 hides the Storage tab for trade units with no storage programme. Nothing records that directly, so we plan to treat a trade unit as offering storage when any of its producers has a storage or DP contract. Does that match reality, or are there trade units that offer storage but have no contracts yet?
-
-3. **What phones will originators use?** Company-issued phones enrolled in Intune, personal phones with the company portal, or personal phones with nothing installed? IT Security's rules for an internet-facing app depend on this: an enrolled or portal-managed phone lets us use the browser app we are planning; unmanaged personal phones would push us to an app-store install and a longer timeline.
-
-Everything else on the cards is unambiguous and we are proceeding.
+Offline: Is it enough that the app keeps working through a dropped signal during a visit, with notes sent once signal returns? Or do originators need to work for hours with no signal at all?
 
 Thanks,
 Caden
@@ -181,4 +174,4 @@ Caden
 - Record the send date and the named contact per team in [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) `Status` column.
 - Data Integrations' answers on token pass-through and subscription keys close meeting Q6 and unblock the `MobileAccess` policy configuration.
 - Infrastructure's answer on the app-registration model closes Q8.
-- Identity's answers close Q7 and inform Q2 (device posture). Pair them with the Hope/Travis questions in step 3.
+- Identity's answers close Q7. Device posture (Q2) was answered 2026-10-14: personal, unmanaged phones, no app-store app.
