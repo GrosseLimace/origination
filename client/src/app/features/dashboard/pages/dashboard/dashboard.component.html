@@ -82,6 +82,13 @@
     </div>
   } @else {
 
+    @if (plantingIntentionsUnavailable()) {
+      <!-- All four cards are planting figures: zeros here are an outage, not an empty season. -->
+      <div class="mb-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+        Planting intentions for {{ selectedPlantingYear() }} could not be loaded, so the acres, production, yield and grower figures below are empty. Refresh the page to try again.
+      </div>
+    }
+
     <!-- 4 Stat Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
@@ -394,7 +401,8 @@
                 <div class="flex items-center justify-center py-16 px-5 text-sm text-amber-700 dark:text-amber-300 text-center">
                   Producers for the selected trade units could not be loaded. Refresh the page to try again.
                 </div>
-              } @else if (producersTabRows().length === 0 && producerView() === 'with' && plantingIntentionsUnavailable()) {
+              } @else if (plantingIntentionsUnavailable() && (producerView() === 'without' || producersTabRows().length === 0)) {
+                <!-- With no intentions loaded, "without intentions" would list the whole roster. -->
                 <div class="flex items-center justify-center py-16 px-5 text-sm text-amber-700 dark:text-amber-300 text-center">
                   Planting intentions for {{ selectedPlantingYear() }} could not be loaded. Refresh the page to try again.
                 </div>
@@ -649,6 +657,12 @@
                           <span>{{ formatK(row.estimatedBu) }} bu est.</span>
                         </div>
                       </div>
+                    }
+                    @if (salesOpportunityExcluded() > 0 && conversionsUnavailable()) {
+                      <!-- Contracted bushels are short by these contracts; same set Sales Opportunities counts. -->
+                      <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ salesOpportunityExcluded() }} contract{{ salesOpportunityExcluded() !== 1 ? 's' : '' }} not counted: the bushel conversions couldn't be loaded. Refresh the page to try again.
+                      </p>
                     }
                   }
                 </div>

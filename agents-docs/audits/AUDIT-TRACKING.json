@@ -3544,7 +3544,7 @@
       "id": "angular.home-notes-spinner-flash",
       "audit": "angular",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "Home: notes spinner can switch off while the first notes read is still in flight",
       "description": "When the linked-producer walk runs during a selection, a second notes check in the same selection turns the notes spinner off while the first read is in flight, which can flash \"No notes yet\".",
       "files": [
@@ -3555,13 +3555,18 @@
         "date": "2026-10-14"
       },
       "last_verified": "2026-10-14",
-      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked."
+      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "home-notes.store counts notes reads in flight per selection (generation-guarded) and drops the spinner only when none remain or notes are on screen; a later call with nothing new to fetch no longer drops it. Owner approved 2026-10-14; new tests failed on the old code."
     },
     {
       "id": "angular.build-list-refined-marker-ignores-dp",
       "audit": "angular",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "Build a List: \"Refined\" marker ignores the DP refinements",
       "description": "hasAnyRefinement ignores the four DP refinements, so a saved list filtered only on DP shows no \"Refined\" marker, unlike activeRefinementCount.",
       "files": [
@@ -3572,13 +3577,18 @@
         "date": "2026-10-14"
       },
       "last_verified": "2026-10-14",
-      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked."
+      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "hasAnyRefinement now includes hasDpContracts, dpBushelsOver, dpDaysOver, dpChargesOver (used only for the saved-list Refined marker). Owner approved 2026-10-14; new tests failed on the old code."
     },
     {
       "id": "angular.build-list-producer-details-merge-diverges",
       "audit": "angular",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "Build a List merges producer details differently from the shared helper",
       "description": "Build a List's private _mergeProducerDetails does not carry contacts (the shared applyProducerDetails does) and does carry binSitesModifiedAt. If producer details are the only source of contact rows, the has-email / has-phone refinements could miss producers. Needs an owner decision.",
       "files": [
@@ -3590,13 +3600,18 @@
         "date": "2026-10-14"
       },
       "last_verified": "2026-10-14",
-      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked."
+      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Decided from the code: contact rows exist only on producer details (CustomerResponse carries none), and the has-email/has-phone refinements were written to read them. Build a List merge now carries contacts, as applyProducerDetails does; binSitesModifiedAt kept (Build a List only). Test feeds contacts through producer details; without the fix has-email found nobody. Owner approved 2026-10-14; new tests failed on the old code."
     },
     {
       "id": "angular.dashboard-remaining-failure-misreports",
       "audit": "angular",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "Dashboard: a few places still read a failed load as \"none\"",
       "description": "Headline stat cards show 0 acres / \"No prior year data\" when planting failed; the without-intentions list lists everyone when planting failed; Contract Coverage silently undercounts when conversions failed; reloadPlantingIntentions catches its own fetch error into [] without setting the app-state flag.",
       "files": [
@@ -3608,7 +3623,12 @@
         "date": "2026-10-14"
       },
       "last_verified": "2026-10-14",
-      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked."
+      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Amber notice above the four headline cards when planting failed; the without-intentions view shows the planting failure instead of listing the whole roster; Contract Coverage notes contracts not counted when conversions failed; reloadPlantingIntentions sets/clears the planting load-failed flag like the preload. Owner approved 2026-10-14; new tests failed on the old code."
     }
   ]
 }

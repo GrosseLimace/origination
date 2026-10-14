@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, tap } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -548,8 +548,12 @@ export class DashboardComponent {
     // PI not yet loaded — fetch PI and combined dashboard summary in parallel
     const emptySummary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
     forkJoin({
-      pi: this.apiService.getPlantingIntentions(this.selectedTradeUnits)
-        .pipe(catchError(() => of([] as PlantingIntention[]))),
+      // The same trade-unit-wide read the preload does, so it records the same flag: a failure
+      // here must not read as "no planting intentions" on this page or any other.
+      pi: this.apiService.getPlantingIntentions(this.selectedTradeUnits).pipe(
+        tap(() => this.appStateService.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.appStateService.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); }),
+      ),
       summary: key ? this.apiService.getDashboardSummary(key, year)
         .pipe(catchError(() => of(emptySummary))) : of(emptySummary),
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({

@@ -176,6 +176,7 @@ function makeAppState() {
     preloadedDashboardSummary: signal<(DashboardSummary & { tradeUnitsKey: string; year: number }) | null>(null),
     setCommodities: vi.fn((c: Commodity[]) => commodities.set(c)),
     setPlantingIntentions: vi.fn((p: PlantingIntention[]) => plantingIntentions.set(p)),
+    setPlantingIntentionsLoadFailed: vi.fn((_failed: boolean) => undefined),
     setDashboardCache: vi.fn((e: DashboardCacheEntry) => dashboardCache.set(e)),
   };
 }
@@ -844,6 +845,69 @@ describe('DashboardComponent', () => {
       await settle();
       expect(text()).toContain('Every producer in this trade unit has planting intentions for 2026.');
       expect(text()).not.toContain('could not be loaded');
+    });
+
+    const HEADLINE_FAILED =
+      'Planting intentions for 2026 could not be loaded, so the acres, production, yield and grower figures below are empty. Refresh the page to try again.';
+
+    it('says the headline figures are empty because planting intentions failed, not because the season is', async () => {
+      await build(() => {
+        appState.plantingIntentions.set([]);
+        appState.plantingIntentionsLoadFailed.set(true);
+      });
+      expect(text()).toContain(HEADLINE_FAILED);
+
+      appState.plantingIntentionsLoadFailed.set(false);
+      await settle();
+      expect(text()).not.toContain(HEADLINE_FAILED);
+      expect(text()).toContain('No prior year data');
+    });
+
+    it('does not list every producer as "without intentions" when the intentions failed to load', async () => {
+      await build(() => {
+        appState.plantingIntentions.set([]);
+        appState.plantingIntentionsLoadFailed.set(true);
+      });
+      c.selectDashboardTab('producers');
+      c.producerView.set('without');
+      await settle();
+      // Every producer lacks intentions only because none loaded: the list would be the whole roster.
+      expect(c.producersTabRows().length).toBeGreaterThan(0);
+      expect(text()).toContain('Planting intentions for 2026 could not be loaded. Refresh the page to try again.');
+
+      appState.plantingIntentionsLoadFailed.set(false);
+      await settle();
+      expect(text()).not.toContain('could not be loaded');
+    });
+
+    it('says Contract Coverage leaves contracts out because the conversions failed, and stays quiet otherwise', async () => {
+      const COVERAGE_NOTE = "1 contract not counted: the bushel conversions couldn't be loaded. Refresh the page to try again.";
+      await build(() => {
+        appState.commodityConversions.set([]);
+        appState.commodityConversionsLoadFailed.set(true);
+      });
+      c.selectDashboardTab('harvestContracts');
+      await settle();
+      expect(c.contractCoverageRows().length).toBeGreaterThan(0);
+      expect(text()).toContain(COVERAGE_NOTE);
+
+      appState.commodityConversionsLoadFailed.set(false);
+      await settle();
+      expect(text()).not.toContain('not counted');
+    });
+
+    it("records the dashboard's own planting read failing, and clears it when the read succeeds", async () => {
+      await build(() => appState.plantingIntentions.set([]));
+      api.getPlantingIntentions.mockReturnValue(fail());
+      c.reloadPlantingIntentions();
+      await settle();
+      expect(appState.setPlantingIntentionsLoadFailed).toHaveBeenLastCalledWith(true);
+
+      api.getPlantingIntentions.mockReturnValue(of(INTENTIONS));
+      appState.plantingIntentions.set([]);
+      c.reloadPlantingIntentions();
+      await settle();
+      expect(appState.setPlantingIntentionsLoadFailed).toHaveBeenLastCalledWith(false);
     });
 
     it('says planting intentions could not be loaded on an empty "with intentions" view when they failed', async () => {
