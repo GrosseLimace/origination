@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { Subject } from 'rxjs';
-import type { Contract, Customer, DpContract, PlantingIntention, StoredGrain, Ticket } from '@models';
+import type { Contract, Customer, DpContract, PlantingIntention, ProducerDetails, StoredGrain, Ticket } from '@models';
 
 /**
  * The producer page's shared state: the signals more than one part of the page reads or writes.
@@ -25,6 +25,9 @@ export class HomePageState {
   readonly plantingIntentions = signal<PlantingIntention[]>([]);
   readonly storedGrain = signal<StoredGrain[]>([]);
   readonly dpContracts = signal<DpContract[]>([]);
+
+  /** Producer-entered details (acres, contacts, links, grain on farm) by customer id. */
+  readonly producerDetailsMap = signal<Map<number, ProducerDetails>>(new Map());
 
   /** Emits whenever the user picks a new customer. Every async call kicked off by
    *  handleSelectCustomer is piped through takeUntil(this) so the prior selection's

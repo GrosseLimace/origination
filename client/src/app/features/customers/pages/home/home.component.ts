@@ -26,6 +26,7 @@ import { HomePageState } from './home-page.state';
 import { HomeRemindersStore } from './home-reminders.store';
 import { HomeNotesStore } from './home-notes.store';
 import { HomeSavedListsStore } from './home-saved-lists.store';
+import { HomeLinkedProducersStore } from './home-linked-producers.store';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -42,7 +43,7 @@ import { HomeSavedListsStore } from './home-saved-lists.store';
   ],
   templateUrl: './home.component.html',
   // Page-scoped state and behaviour, one instance per visit to the page.
-  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore],
+  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore],
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
@@ -61,6 +62,8 @@ export class HomeComponent {
   private readonly notes = inject(HomeNotesStore);
   /** Own and team saved lists, their resolution and Add-to-List saves (see HomeSavedListsStore). */
   private readonly lists = inject(HomeSavedListsStore);
+  /** Cross-trade-unit linked producers and the walk that fetches them (see HomeLinkedProducersStore). */
+  private readonly linked = inject(HomeLinkedProducersStore);
 
   /** Manager = holds the "Admin" app role. Enables the "Team Lists" tab in the Add-to-List dropdown. */
   readonly isManager = this.lists.isManager;
@@ -77,10 +80,6 @@ export class HomeComponent {
   private _piRequestId = 0;
   /** Cancels the prior selection's in-flight requests (see HomePageState.cancelSelection$). */
   private readonly _cancelSelection$ = this.page.cancelSelection$;
-  /** Customers whose linked-producer BFS has already completed in this session.
-   *  Re-clicking a producer that's in this set skips the entire BFS — the cache
-   *  is already correct, so there's nothing new to fetch. */
-  private readonly _linkedFetchDone = new Set<number>();
   /** Customers whose contracts / tickets / pricing-lines / stored-grain have
    *  already been fetched, and WHEN.
    *
@@ -151,7 +150,7 @@ export class HomeComponent {
   /** The user's own lists and a manager's team lists, resolved (see HomeSavedListsStore). */
   readonly savedLists = this.lists.savedLists;
   readonly teamSavedLists = this.lists.teamSavedLists;
-  readonly producerDetailsMap = signal<Map<number, ProducerDetails>>(new Map());
+  readonly producerDetailsMap = this.page.producerDetailsMap;
 
   readonly selectedCustomer = this.page.selectedCustomer;
   /** True when the open-contracts table has its extra columns expanded — drops the Notes
@@ -222,11 +221,9 @@ export class HomeComponent {
 
   private _pendingProducerDetails: ProducerDetails[] | null = null;
   // Customers fetched from outside the current trade unit filter (e.g. linked producers in other TUs)
-  private readonly _crossTradeUnitCustomers = signal<Map<number, Customer>>(new Map());
-  /** Flat array of cross-TU/linked producers fetched for the selected customer. Exposed so the
-   *  customer list can resolve last-contacted dates through incoming linked producers when no TU
-   *  is selected and the main customer roster is empty. */
-  readonly crossTradeUnitCustomers = computed<Customer[]>(() => [...this._crossTradeUnitCustomers().values()]);
+  private readonly _crossTradeUnitCustomers = this.linked.crossTradeUnitCustomersById;
+  /** Flat array of the cross-TU/linked producers (see HomeLinkedProducersStore). */
+  readonly crossTradeUnitCustomers = this.linked.crossTradeUnitCustomers;
 
   // Track last trade unit key to avoid duplicate loads triggered by the effect
   private _lastTradeUnitKey = '';
@@ -620,7 +617,7 @@ export class HomeComponent {
     this._customerPricingLoadedAt.clear();
     this._customerPlantingCache.clear();
     this.notes.forgetAll();
-    this._linkedFetchDone.clear();
+    this.linked.forgetWalks();
     // Cancel any in-flight per-customer requests (pricing lines, contracts, tickets,
     // grain, planting, notes, linked-producers) tied to the prior customer so they
     // don't write into signals after the new TU has loaded. Also clears the loading
@@ -772,12 +769,6 @@ export class HomeComponent {
     // fetch above, and the badge aggregate spans all trade units — both are TU-independent.)
   }
 
-  /** Applies ProducerDetails enrichment onto a freshly-fetched Customer. */
-  private _enrichCustomer(fetched: Customer): Customer {
-    const pd = this.producerDetailsMap().get(fetched.id);
-    return pd ? applyProducerDetails(fetched, pd) : fetched;
-  }
-
   /**
    * Re-reads the clicked producer's details in the background and applies them if they changed since
    * the page loaded them — e.g. a teammate added grain on farm (QA, RUNDMAP, 2026-10-12: the list showed
@@ -807,79 +798,11 @@ export class HomeComponent {
   }
 
   /**
-   * Fetches every producer transitively linked to `customer` (forward + reverse) and
-   * populates `_crossTradeUnitCustomers` with the full group so `getLinkedGroup()` can
-   * surface the whole chain — e.g. if A→B and A→C, viewing B still shows C via A.
-   *
-   * BFS walks the graph one hop at a time; each newly discovered customer's own links
-   * are fetched recursively. `visited` guards against cycles. `MAX_GROUP_SIZE` is a
-   * safety cap in case a customer is part of an unexpectedly large link web.
+   * Fetches every producer transitively linked to `customer` that isn't loaded yet (see
+   * HomeLinkedProducersStore), topping up the selected producer's notes as each level lands.
    */
-  private _fetchMissingLinkedProducers(customer: Customer, visited: Set<number> = new Set()): void {
-    const MAX_GROUP_SIZE = 25;
-    if (visited.has(customer.id) || visited.size >= MAX_GROUP_SIZE) return;
-    // Already fetched this producer's linked group earlier in the session — the
-    // cache is correct, so skip the network round-trip entirely. This is what
-    // makes re-clicking a producer (or hopping back and forth in a saved list)
-    // instant after the first visit.
-    if (this._linkedFetchDone.has(customer.id)) return;
-    visited.add(customer.id);
-
-    const linkedIds = customer.linkedProducerIds || [];
-    const allCustomers = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
-    const missing = linkedIds.filter(sourceId =>
-      !allCustomers.some(c => c.scoularId === sourceId)
-    );
-
-    // Outgoing: fetch each linked producer id this customer points to.
-    const outgoingRequests = missing.map(sourceId =>
-      this.apiService.getCustomerBySourceId(sourceId).pipe(catchError(() => of(null as Customer | null)))
-    );
-
-    // Incoming: fetch customers that link TO this one (reverse links). Needed so non-
-    // loaded producers who reverse-link to this customer still appear in the dropdown.
-    const incoming$ = customer.scoularId
-      ? this.apiService.getCustomersLinkedTo(customer.scoularId)
-      : of([] as Customer[]);
-
-    // Nothing to fetch — skip network entirely.
-    if (outgoingRequests.length === 0 && !customer.scoularId) return;
-
-    forkJoin({
-      outgoing: outgoingRequests.length > 0 ? forkJoin(outgoingRequests) : of([] as (Customer | null)[]),
-      incoming: incoming$
-    }).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe(({ outgoing, incoming }) => {
-      // BFS finished for this customer — mark done so re-selecting skips the network.
-      this._linkedFetchDone.add(customer.id);
-      // Merge new fetches into the cache. Use .update() so concurrent BFS branches
-      // from different customers don't clobber each other's additions.
-      this._crossTradeUnitCustomers.update(current => {
-        const next = new Map(current);
-        for (const fetched of outgoing) {
-          if (!fetched) continue;
-          if (!next.has(fetched.id)) next.set(fetched.id, this._enrichCustomer(fetched));
-        }
-        for (const fetched of incoming) {
-          if (!fetched || fetched.id === customer.id) continue;
-          if (!next.has(fetched.id)) next.set(fetched.id, this._enrichCustomer(fetched));
-        }
-        return next;
-      });
-
-      const discovered = [...outgoing, ...incoming]
-        .filter((c): c is Customer => !!c && !visited.has(c.id));
-
-      // Recurse into each newly-discovered customer so their own links (both
-      // directions) get fetched too — completes the transitive closure.
-      for (const next of discovered) {
-        this._fetchMissingLinkedProducers(next, visited);
-      }
-
-      // The selected producer's linked group may have just expanded — top up the
-      // per-customer notes cache for any newly-known members (the per-customer
-      // endpoint has no TU filter, so linked producers in unselected trade units
-      // are fully covered) and recompute the panel. Cache hits skip the network,
-      // so BFS levels with no new members cost nothing.
+  private _fetchMissingLinkedProducers(customer: Customer): void {
+    this.linked.fetchMissingLinkedProducers(customer, () => {
       const sel = this.selectedCustomer();
       if (sel) this._ensureCustomerNotes(sel);
     });
@@ -1514,7 +1437,7 @@ export class HomeComponent {
     // next visit to the affected customers re-walks the graph. We don't know the
     // full transitive set without re-walking, so the safest cheap fix is to clear
     // everything; the cache will rebuild lazily as the user clicks through.
-    this._linkedFetchDone.clear();
+    this.linked.forgetWalks();
 
     this.apiService.saveProducerDetails(data.customerId, savePayload).subscribe({
       next: (pd) => {
