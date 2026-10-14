@@ -1,7 +1,7 @@
 import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
-import { catchError, takeUntil } from 'rxjs/operators';
+import { catchError, finalize, takeUntil } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -39,6 +39,11 @@ export class HomeNotesStore {
    *  once per selection (so notes added by other reps show on re-click — stale-while-revalidate)
    *  without the several internal calls per selection (details-arrival, BFS) re-fetching. */
   private readonly _notesRefreshedThisSelection = new Set<number>();
+  /** Notes reads still outstanding for the current selection, and which selection that is. A
+   *  selection can ask for notes several times (details arriving, the linked walk finishing); the
+   *  spinner may only drop once nothing is left in flight, or once there is something to show. */
+  private _notesInFlight = 0;
+  private _selectionGeneration = 0;
 
   /** Per-customer "last contacted" aggregate — the badge feed for the customer list.
    *  Covers ALL trade units (entitlement-filtered server-side) so linked producers in
@@ -64,6 +69,8 @@ export class HomeNotesStore {
    *  reps' adds show. */
   startSelection(): void {
     this._notesRefreshedThisSelection.clear();
+    this._selectionGeneration++;
+    this._notesInFlight = 0;
   }
 
   /** Trade units changed: drop every cached note so the next selection re-fetches (freshness
@@ -71,6 +78,8 @@ export class HomeNotesStore {
   forgetAll(): void {
     this._customerNotesCache.clear();
     this._notesRefreshedThisSelection.clear();
+    this._selectionGeneration++;
+    this._notesInFlight = 0;
   }
 
   /** Pure recompute of the notes panel from the cache for the given producers — safe to call from
@@ -124,7 +133,8 @@ export class HomeNotesStore {
     // Refresh each group member at most once per selection.
     const toFetch = groupIds.filter(id => !this._notesRefreshedThisSelection.has(id));
     if (toFetch.length === 0) {
-      this.isLoadingNotes.set(false);
+      // An earlier read of this selection may still be on its way with nothing shown yet.
+      if (this._notesInFlight === 0) this.isLoadingNotes.set(false);
       return;
     }
     toFetch.forEach(id => this._notesRefreshedThisSelection.add(id));
@@ -132,9 +142,28 @@ export class HomeNotesStore {
     // Only show the spinner on a cold selection (nothing cached to display meanwhile).
     if (!haveAnyCached) this.isLoadingNotes.set(true);
 
+    const generation = this._selectionGeneration;
+    this._notesInFlight++;
+    let settled = false;
+    // Drop the spinner once this selection has notes to show or nothing left in flight. Runs once
+    // per read: on its answer, or on cancellation. Reads from an earlier selection never touch the
+    // current one's count.
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      if (generation !== this._selectionGeneration) return;
+      this._notesInFlight = Math.max(0, this._notesInFlight - 1);
+      const showing = groupIds.some(id => (this._customerNotesCache.get(id)?.length ?? 0) > 0);
+      if (this._notesInFlight === 0 || showing) this.isLoadingNotes.set(false);
+    };
+
     forkJoin(toFetch.map(id =>
       this.apiService.getNotesByCustomer(id).pipe(catchError(() => of(null as Note[] | null)))
-    )).pipe(takeUntil(this.page.cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
+    )).pipe(
+      finalize(settle),
+      takeUntil(this.page.cancelSelection$),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: (lists) => {
         lists.forEach((list, i) => {
           if (!list) {
@@ -147,10 +176,9 @@ export class HomeNotesStore {
           // adds/deletes for this producer, consistent with the panel).
           this._recomputeLastContactFor(toFetch[i]);
         });
-        this.isLoadingNotes.set(false);
+        settle(); // before the panel refresh, so it sees the spinner already settled
         refreshPanel();
       },
-      error: () => this.isLoadingNotes.set(false)
     });
   }
 

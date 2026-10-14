@@ -92,6 +92,50 @@ describe('HomeNotesStore', () => {
       expect(appState.setNoteLastContacts).toHaveBeenCalled();
     });
 
+    // A selection can ask for notes more than once (producer details arriving, the linked-producer
+    // walk finishing). A later call must not drop the spinner while an earlier read is still in
+    // flight with nothing on screen yet — that flashed "No notes yet" before the notes arrived.
+    it('keeps the spinner up while an earlier read of the same selection is still in flight', () => {
+      const first = new Subject<Note[]>();
+      api.getNotesByCustomer.mockReturnValue(first.asObservable());
+      store.ensureCustomerNotes([1], refreshPanel);
+      expect(store.isLoadingNotes()).toBe(true);
+
+      store.ensureCustomerNotes([1], refreshPanel); // nothing new to fetch this selection
+      expect(store.isLoadingNotes()).toBe(true);
+
+      first.next([note(1, 1, '2026-10-01T00:00:00')]);
+      first.complete();
+      expect(store.isLoadingNotes()).toBe(false);
+    });
+
+    it('keeps the spinner up until the last of two overlapping cold reads answers', () => {
+      const forOne = new Subject<Note[]>();
+      const forTwo = new Subject<Note[]>();
+      api.getNotesByCustomer.mockImplementation((id: number) => (id === 1 ? forOne : forTwo).asObservable());
+      store.ensureCustomerNotes([1], refreshPanel);
+      store.ensureCustomerNotes([1, 2], refreshPanel); // the walk found producer 2
+
+      forTwo.next([]);
+      forTwo.complete();
+      // Producer 2 has no notes and producer 1 is still loading: still nothing to show.
+      expect(store.isLoadingNotes()).toBe(true);
+
+      forOne.next([note(1, 1, '2026-10-01T00:00:00')]);
+      forOne.complete();
+      expect(store.isLoadingNotes()).toBe(false);
+    });
+
+    it('a new selection is not held up by reads left over from the previous one', () => {
+      api.getNotesByCustomer.mockReturnValue(NEVER);
+      store.ensureCustomerNotes([1], refreshPanel);
+      store.startSelection();
+
+      api.getNotesByCustomer.mockReturnValue(of([note(2, 2, '2026-10-01T00:00:00')]));
+      store.ensureCustomerNotes([2], refreshPanel);
+      expect(store.isLoadingNotes()).toBe(false);
+    });
+
     it('keeps the spinner up while a cold read is in flight', () => {
       api.getNotesByCustomer.mockReturnValue(NEVER);
       store.ensureCustomerNotes([1], refreshPanel);
