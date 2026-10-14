@@ -7,7 +7,8 @@ import { CustomerProfileComponent } from './customer-profile.component';
 import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Contract, Customer, PlantingIntention, SavedList } from '@models';
+import { AppStateService } from '@core/services/app-state.service';
+import { Contract, Customer, HarvestWindow, PlantingIntention, SavedList } from '@models';
 
 // Covers the Add-to-List "Team Lists" manager extension: the dropdown stages membership across
 // BOTH the user's own saved lists and (for managers) team lists, and the toggle is manager-gated.
@@ -613,5 +614,109 @@ describe('CustomerProfileComponent — contacts and ScoularView recipients (rend
 
     expect(recipientChips()).toEqual(['Bea 402-555-0002', 'Cy 402-555-0003']);
     expect(parse).toHaveBeenCalledTimes(2);
+  });
+});
+
+// A failed background load used to leave these two places reading as genuinely empty: the pace card
+// said "No contract data available" and the Add to List menu said no saved lists match. Rendered
+// through the real template, children dropped as above.
+describe('CustomerProfileComponent — failed background loads (rendered)', () => {
+  let fixture: ComponentFixture<CustomerProfileComponent>;
+  let component: CustomerProfileComponent;
+  let ref: ComponentRef<CustomerProfileComponent>;
+  let state: AppStateService;
+
+  const text = (): string => ((fixture.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ');
+
+  beforeEach(() => {
+    localStorage.clear();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: { getHistoricalContractsForPacing: () => of([]) } },
+        { provide: ThemeService, useValue: {} },
+        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerProfileComponent, {
+      set: { imports: [CommonModule], schemas: [NO_ERRORS_SCHEMA] },
+    });
+    state = TestBed.inject(AppStateService);
+    fixture = TestBed.createComponent(CustomerProfileComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+    ref.setInput('customer', makeCustomer({ id: 42 }));
+  });
+
+  describe('Harvest Contract Pace', () => {
+    it('says the harvest windows could not be loaded instead of "No contract data available"', () => {
+      state.setHarvestWindowsLoadFailed(true);
+      fixture.detectChanges();
+
+      expect(text()).toContain("Harvest windows couldn't be loaded — pace cannot be shown.");
+      expect(text()).not.toContain('No contract data available.');
+    });
+
+    it('still says "No contract data available" when nothing failed', () => {
+      fixture.detectChanges();
+
+      expect(text()).toContain('No contract data available.');
+      expect(text()).not.toContain("Harvest windows couldn't be loaded");
+    });
+
+    it('shows the pace as normal once harvest windows are present, whatever the flag says', () => {
+      state.setHarvestWindowsLoadFailed(true);
+      state.setHarvestWindows([{ id: 1, commodity: 'CORN', deliveryStartMonth: 1, deliveryStartDay: 1, deliveryEndMonth: 12, deliveryEndDay: 31 } as HarvestWindow]);
+      const year = new Date().getFullYear();
+      ref.setInput('contracts', [{ id: 7, commodityGroup: 'CORN', quantity: 1000, deliveryStart: `${year}-06-01`, deliveryEnd: `${year}-06-30` } as Contract]);
+      fixture.detectChanges();
+
+      expect(text()).not.toContain("Harvest windows couldn't be loaded");
+      expect(text()).not.toContain('No contract data available.');
+      expect(text()).toContain(`${year - 1} vs ${year}`);
+    });
+  });
+
+  describe('Add to List menu', () => {
+    it('says the saved lists could not be loaded instead of "No saved lists match"', () => {
+      state.setSavedListsLoadFailed(true);
+      fixture.detectChanges();   // settle the customer effects first: a customer change closes the menu
+      component.toggleAddToListMenu();
+      fixture.detectChanges();
+
+      expect(text()).toContain("Couldn't load your saved lists. Refresh the page to try again.");
+      expect(text()).not.toContain('No saved lists match the selected trade unit(s).');
+    });
+
+    it('still says "No saved lists match" when nothing failed', () => {
+      fixture.detectChanges();
+      component.toggleAddToListMenu();
+      fixture.detectChanges();
+
+      expect(text()).toContain('No saved lists match the selected trade unit(s).');
+      expect(text()).not.toContain("Couldn't load your saved lists");
+    });
+
+    it('lists the saved lists it has, whatever the flag says', () => {
+      state.setSavedListsLoadFailed(true);
+      ref.setInput('savedListsForCustomer', [makeList({ id: 1, name: 'My List' })]);
+      fixture.detectChanges();
+      component.toggleAddToListMenu();
+      fixture.detectChanges();
+
+      expect(text()).toContain('My List');
+      expect(text()).not.toContain("Couldn't load your saved lists");
+    });
+
+    it("leaves a manager's Team Lists tab as it was — the flag is about the user's own lists", () => {
+      state.setSavedListsLoadFailed(true);
+      ref.setInput('isManager', true);
+      fixture.detectChanges();
+      component.toggleAddToListMenu();
+      component.addToListTab.set('team');
+      fixture.detectChanges();
+
+      expect(text()).toContain('No team lists tied to the selected trade unit(s).');
+      expect(text()).not.toContain("Couldn't load your saved lists");
+    });
   });
 });

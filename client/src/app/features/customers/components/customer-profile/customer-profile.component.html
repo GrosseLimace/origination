@@ -177,6 +177,9 @@
                       <div class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
                         @if (addToListTab() === 'team') {
                           No team lists tied to the selected trade unit(s).
+                        } @else if (savedListsLoadFailed()) {
+                          <!-- A failed load must not read as "none match". -->
+                          Couldn't load your saved lists. Refresh the page to try again.
                         } @else {
                           No saved lists match the selected trade unit(s).
                         }
@@ -458,6 +461,8 @@
                 <!-- Pace compares this year against last. With either read missing, "no contract data"
                      would read as a producer who has contracted nothing. -->
                 <p class="text-sm text-amber-700 dark:text-amber-300 py-2">Contract data unavailable — pace cannot be shown.</p>
+              } @else if (harvestWindowsUnavailable()) {
+                <p class="text-sm text-amber-700 dark:text-amber-300 py-2">Harvest windows couldn't be loaded — pace cannot be shown.</p>
               } @else if (harvestPacingSummary().direction === 'none') {
                 <p class="text-sm text-gray-400 dark:text-gray-500 py-2">No contract data available.</p>
               } @else {

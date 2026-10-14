@@ -61,6 +61,14 @@ export class CustomerProfileComponent {
   /** Harvest windows from app state — exposed for pacing card template binding. */
   readonly harvestWindows = this.appState.harvestWindows;
 
+  /** The harvest windows failed to load. Pace is measured inside them, so with none the card would
+   *  say "No contract data available" about a producer who may well have contracts. */
+  readonly harvestWindowsUnavailable = computed(() =>
+    this.appState.harvestWindowsLoadFailed() && this.harvestWindows().length === 0);
+
+  /** The saved lists failed to load, so an empty Add to List menu does not mean none match. */
+  readonly savedListsLoadFailed = this.appState.savedListsLoadFailed;
+
   /**
    * Historical closed contracts from base.Contract for this customer.
    * Fetched ONCE per customer (api.service dedupes anyway) and shared across
