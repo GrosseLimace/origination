@@ -1014,6 +1014,72 @@ describe('HomeComponent', () => {
     });
   });
 
+  // ── Linked producers, more (characterisation, written against the pre-extraction page) ──
+  describe('linked producers (cache lifetime and enrichment)', () => {
+    const a = customer(1, { linkedProducerIds: ['S-90'] });
+    const arrangeLinks = (api: ApiStub) => {
+      api.getCustomerBySourceId.mockImplementation(src => of(src === 'S-90' ? customer(90) : null));
+      api.getCustomersLinkedTo.mockReturnValue(of([]));
+    };
+
+    it('applies known producer details to a linked producer fetched from another trade unit', () => {
+      const h = setup({
+        customers: [a, B],
+        arrange: api => {
+          arrangeLinks(api);
+          api.getAllProducerDetails.mockReturnValue(of([details(90, { totalAcres: 640 })]));
+        },
+      });
+      h.c.handleSelectCustomer(a);
+      expect(h.c.crossTradeUnitCustomers().find(x => x.id === 90)?.totalAcres).toBe(640);
+    });
+
+    it('loads the notes of a linked producer the walk discovers', () => {
+      const h = setup({ customers: [a, B], arrange: arrangeLinks });
+      h.c.handleSelectCustomer(a);
+      expect(h.api.getNotesByCustomer).toHaveBeenCalledWith(90);
+    });
+
+    it('makes no linked-producer calls for a producer with no scoularId and no links', () => {
+      const lone = customer(5, { scoularId: undefined });
+      const h = setup({ customers: [lone, B] });
+      h.c.handleSelectCustomer(lone);
+      expect(h.api.getCustomersLinkedTo).not.toHaveBeenCalled();
+      expect(h.api.getCustomerBySourceId).not.toHaveBeenCalled();
+    });
+
+    it('a trade-unit change empties the cross-trade-unit cache and the next visit walks again', () => {
+      const h = setup({ customers: [a, B], arrange: arrangeLinks });
+      h.c.handleSelectCustomer(a);
+      expect(h.c.crossTradeUnitCustomers().map(x => x.id)).toEqual([90]);
+      const walks = h.api.getCustomersLinkedTo.mock.calls.filter(args => args[0] === 'S-1').length;
+
+      h.api.getCustomers.mockReturnValue(of([a, B]));
+      h.app.selectedTradeUnits.set(['TU2']);
+      h.flush();
+      expect(h.c.crossTradeUnitCustomers()).toEqual([]);
+
+      h.c.handleSelectCustomer(a);
+      expect(h.api.getCustomersLinkedTo.mock.calls.filter(args => args[0] === 'S-1').length).toBe(walks + 1);
+    });
+
+    it('saving a producer\'s links makes the next visit walk the graph again', () => {
+      const h = setup({ customers: [a, B], arrange: arrangeLinks });
+      h.c.handleSelectCustomer(a);
+      h.c.handleSelectCustomer(B);
+      const walks = h.api.getCustomersLinkedTo.mock.calls.filter(args => args[0] === 'S-1').length;
+
+      h.c.handleSaveCustomer({
+        customerId: 2, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
+        linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: [], reconcileTradeUnits: false,
+        grainOnFarm: [],
+      });
+      h.c.handleSelectCustomer(a);
+
+      expect(h.api.getCustomersLinkedTo.mock.calls.filter(args => args[0] === 'S-1').length).toBe(walks + 1);
+    });
+  });
+
   // ── Saved lists, more (characterisation, written against the pre-extraction page) ──
   describe('saved lists (membership edge cases and enrichment inputs)', () => {
     const matchFirstTwo = (nlq: ReturnType<typeof makeNlq>) => nlq.parseAndFilter.mockImplementation((_q, ctx) => ({
