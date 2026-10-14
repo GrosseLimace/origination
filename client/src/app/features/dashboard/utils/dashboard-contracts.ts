@@ -67,8 +67,13 @@ export function filterContractsForYear(
   });
 }
 
-/** Purchase-contract quantity by delivery-start month, stacked by commodity. */
-export function buildHarvestTimeline(contracts: Contract[]): HarvestTimelineMonth[] {
+/** Purchase-contract quantity by delivery-start month, stacked by commodity, in BUSHELS like
+ *  Contract Coverage and Sales Opportunities on the same tab. A contract whose unit cannot be
+ *  expressed in bushels is left out; Sales Opportunities counts those in its footnote. */
+export function buildHarvestTimeline(
+  contracts: Contract[],
+  lbsPerBushelByCode: Map<string, number>,
+): HarvestTimelineMonth[] {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const commodityColorMap = new Map<string, string>();
   let colorIdx = 0;
@@ -78,6 +83,8 @@ export function buildHarvestTimeline(contracts: Contract[]): HarvestTimelineMont
   for (const c of contracts) {
     if (!c.deliveryStart) continue;
     if (!c.sourceContractId?.startsWith('P')) continue; // Purchase contracts only
+    const bushels = quantityInBushels(c, c.quantity || 0, lbsPerBushelByCode);
+    if (bushels == null) continue;
     const d = new Date(c.deliveryStart);
     const monthIdx = d.getMonth();
     const commodity = c.commodityDescription || c.commodityGroup || c.commodityCode || 'Other';
@@ -85,7 +92,7 @@ export function buildHarvestTimeline(contracts: Contract[]): HarvestTimelineMont
       commodityColorMap.set(commodity, DASHBOARD_CHART_COLORS[colorIdx++ % DASHBOARD_CHART_COLORS.length].hex);
     }
     const m = monthData.get(monthIdx)!;
-    m.set(commodity, (m.get(commodity) || 0) + (c.quantity || 0));
+    m.set(commodity, (m.get(commodity) || 0) + bushels);
   }
 
   const raw = MONTHS.map((month, i) => {

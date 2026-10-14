@@ -512,7 +512,7 @@ describe('DashboardComponent', () => {
       const months = c.harvestTimelineMonths();
       expect(months[9].total).toBe(13000);
       expect(months[9].barHeightPct).toBe(100);
-      expect(months[10].total).toBe(30);
+      expect(months[10].total).toBe(1000); // 30 short tons of soybeans, in bushels like the tables beside it
       expect(months.filter(m => m.total === 0)).toHaveLength(10);
       expect(c.harvestTimelineMax()).toBe(13000);
       expect(c.harvestTimelineMidpoint()).toBe(6500);

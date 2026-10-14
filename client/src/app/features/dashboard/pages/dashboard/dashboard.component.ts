@@ -400,7 +400,8 @@ export class DashboardComponent {
     return filterContractsForYear(source, this.selectedPlantingYear(), this.selectedCropFilter(), this._commodityByCode());
   });
 
-  readonly harvestTimelineMonths = computed(() => buildHarvestTimeline(this.contractsForYear()));
+  readonly harvestTimelineMonths = computed(() =>
+    buildHarvestTimeline(this.contractsForYear(), buildLbsPerBushelMap(this.appStateService.commodityConversions())));
 
   readonly harvestTimelineMax = computed(() =>
     Math.max(...this.harvestTimelineMonths().map(m => m.total), 1)

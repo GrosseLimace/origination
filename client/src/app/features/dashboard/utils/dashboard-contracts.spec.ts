@@ -56,20 +56,20 @@ describe('filterContractsForYear', () => {
 });
 
 describe('buildHarvestTimeline / buildContractCommodityLegend', () => {
-  it('buckets purchase-contract quantity by delivery month, scaled to the busiest month', () => {
+  it('buckets purchase-contract bushels by delivery month, scaled to the busiest month', () => {
     const months = buildHarvestTimeline([
       contract({ id: 1, sourceContractId: 'P1', quantity: 4000 }), // Oct
       contract({ id: 2, sourceContractId: 'P2', quantity: 6000, deliveryStart: new Date(2026, 9, 1, 12) }), // Oct
-      soy({ id: 3, sourceContractId: 'P3', quantity: 30, deliveryStart: new Date(2026, 10, 2, 12) }), // Nov, raw quantity
+      soy({ id: 3, sourceContractId: 'P3', quantity: 30, unit: 'ST', deliveryStart: new Date(2026, 10, 2, 12) }), // Nov, 30 ST = 1,000 bu
       contract({ id: 4, sourceContractId: 'S4', quantity: 99999 }), // sale — excluded
       contract({ id: 5, sourceContractId: 'P5', quantity: 5, deliveryStart: undefined as unknown as Date }), // no date — excluded
-    ]);
+    ], LBS);
 
     expect(months).toHaveLength(12);
     expect(months.map(m => m.month)).toEqual(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']);
     expect(months[9]).toMatchObject({ monthIndex: 9, total: 10000, barHeightPct: 100 });
     expect(months[9].segments).toEqual([{ commodity: 'Corn', bushels: 10000, hex: DASHBOARD_CHART_COLORS[0].hex }]);
-    expect(months[10]).toMatchObject({ total: 30, barHeightPct: 0.3 });
+    expect(months[10]).toMatchObject({ total: 1000, barHeightPct: 10 });
     expect(months[10].segments[0].hex).toBe(DASHBOARD_CHART_COLORS[1].hex);
     expect(months.filter(m => m.total === 0).every(m => m.barHeightPct === 0 && m.segments.length === 0)).toBe(true);
 
@@ -82,9 +82,19 @@ describe('buildHarvestTimeline / buildContractCommodityLegend', () => {
   it('labels a contract with no commodity text as Other, and an empty year as all-zero bars', () => {
     const months = buildHarvestTimeline([
       contract({ commodityDescription: '', commodityGroup: '', commodityCode: '', quantity: 7 }),
-    ]);
+    ], LBS);
     expect(months[9].segments[0].commodity).toBe('Other');
-    expect(buildHarvestTimeline([]).every(m => m.total === 0 && m.barHeightPct === 0)).toBe(true);
+    expect(buildHarvestTimeline([], LBS).every(m => m.total === 0 && m.barHeightPct === 0)).toBe(true);
+  });
+
+  it('leaves out a contract whose unit cannot be expressed in bushels', () => {
+    const months = buildHarvestTimeline([
+      contract({ id: 1, sourceContractId: 'P1', quantity: 4000 }),
+      contract({ id: 2, sourceContractId: 'P2', quantity: 12, unit: 'EA' }), // each: no bushel equivalent
+      soy({ id: 3, sourceContractId: 'P3', quantity: 30, unit: 'ST' }), // no factor without conversions
+    ], new Map());
+    expect(months[9].total).toBe(4000);
+    expect(months[9].segments.map(s => s.commodity)).toEqual(['Corn']);
   });
 });
 
