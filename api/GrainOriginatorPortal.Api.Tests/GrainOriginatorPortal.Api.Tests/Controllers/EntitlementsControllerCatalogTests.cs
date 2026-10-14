@@ -102,4 +102,21 @@ public class EntitlementsControllerCatalogTests
         Assert.Equal((7, "North Group", "1084,3003"), (group.GroupId, group.Name, string.Join(",", group.TradeUnitCodes)));
     }
 
+    [Fact]
+    public async Task GetCatalog_ListsTheCallersOwnTradeUnitsEvenWhenNoActiveUserSharesThem()
+    {
+        // People is active-only, but Trade Units is the caller's own list. A caller missing from
+        // dbo.Users (or inactive there), alone on a trade unit, must still see that trade unit.
+        using var db = EntitlementsTestDb.Create(nameof(GetCatalog_ListsTheCallersOwnTradeUnitsEvenWhenNoActiveUserSharesThem));
+        EntitlementsTestDb.Seed(db,
+            assignments: [new("CEgr", "Caden Egr", "5005", "Missouri")],
+            roster: [("CEgr", false)]);
+
+        var catalog = Body(await CreateSut(db).GetCatalog());
+
+        Assert.False(catalog.Degraded);
+        Assert.Empty(catalog.People);
+        Assert.Equal([("5005", "Missouri")], catalog.TradeUnits.Select(t => (t.Code, t.Description)));
+    }
+
 }

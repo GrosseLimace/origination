@@ -111,8 +111,10 @@ public class EntitlementsController : ControllerBase
                 .OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // Trade Units = the caller's own TUs (deduped + ordered).
-            var tradeUnits = colleagueRows
+            // Trade Units = the caller's own TUs (deduped + ordered). Read from the caller's rows, not
+            // the active-only colleague rows: a caller not (or no longer) active in dbo.Users, alone
+            // on a trade unit, would otherwise see their own trade units vanish from the picker.
+            var tradeUnits = callerRows
                 .Where(r => callerTuCodes.Contains(r.TradeUnitCode))
                 .GroupBy(r => r.TradeUnitCode, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new EntitlementTradeUnit
