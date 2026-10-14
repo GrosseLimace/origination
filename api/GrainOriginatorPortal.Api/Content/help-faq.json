@@ -1592,11 +1592,13 @@
         "ticket",
         "servicenow",
         "broken",
-        "error"
+        "error",
+        "desk",
+        "submit"
       ],
       "routes": [],
       "feature": "system",
-      "answer": "Use **Still need help?** below to copy the details support needs, then send them to the Origination team. Include:",
+      "answer": "Use **Still need help?** below to open a ServiceNow ticket. It walks you through the form and copies in the details support needs. If you're writing it up yourself, include:",
       "steps": [
         "The release and build line from the bottom of the profile menu",
         "The producer's Scoular ID, if it's about a producer",
@@ -1610,7 +1612,7 @@
         "find-version"
       ],
       "uiLabels": [],
-      "lastVerified": "2026-10-13"
+      "lastVerified": "2026-10-14"
     },
     {
       "id": "slow-first-load",

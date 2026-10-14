@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 
 import { AppStateService } from '@core/services/app-state.service';
 import { HelpPanelService } from '@core/services/help-panel.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
 import { environment } from '../../../../environments/environment';
@@ -19,14 +20,21 @@ const PAGE_NAMES: Record<string, string> = {
   '/help': 'Help'
 };
 
+/** ServiceNow's short description field; kept well inside its limit. Matches the input's maxlength. */
+const SHORT_MAX = 100;
+
+type CopyTarget = 'short' | 'details';
+
 /**
  * "Still need help?": the details support asks for first, captured from the app so the user doesn't
- * have to find them, plus a copy button and the help desk link.
+ * have to find them, and — when environment.helpDeskUrl is set — a step-by-step walk through the
+ * ServiceNow form: open it, pick the topic, then copy the short description and the additional
+ * information into its two required boxes.
  *
  * Deliberately excluded: tokens, anything from storage, and producer data. The selected producer's
  * Scoular ID goes in only when the user ticks the box. The help desk link is a plain link with
- * nothing in its URL — the details travel by the user's clipboard, never by query string — and it
- * only appears once environment.helpDeskUrl is set.
+ * nothing added to its URL — the details travel by the user's clipboard, never by query string —
+ * which also means a ServiceNow sign-in redirect can't lose them.
  */
 @Component({
   selector: 'app-help-escalation',
@@ -39,16 +47,26 @@ const PAGE_NAMES: Record<string, string> = {
 export class HelpEscalationComponent {
   private readonly appState = inject(AppStateService);
   private readonly panel = inject(HelpPanelService);
+  private readonly usageTracking = inject(UsageTrackingService);
   private readonly whatsNew = inject(WhatsNewService);
   private readonly datePipe = inject(DatePipe);
 
   readonly helpDeskUrl = environment.helpDeskUrl;
+  readonly helpDeskTopic = environment.helpDeskTopic;
+
   readonly includeProducer = signal(false);
-  readonly copied = signal(false);
+  readonly summary = signal('');
+  /** Which field was copied last; the clipboard holds one thing at a time. */
+  readonly copied = signal<CopyTarget | null>(null);
   readonly copyFailed = signal(false);
 
   /** The selected producer's Scoular ID, offered as an opt-in. */
   readonly producerId = computed(() => this.appState.selectedCustomer()?.scoularId ?? null);
+
+  readonly pageName = computed(() => {
+    const route = this.panel.route();
+    return PAGE_NAMES[route] ?? route;
+  });
 
   readonly rows = computed(() => {
     const v = this.whatsNew.version();
@@ -60,7 +78,7 @@ export class HelpEscalationComponent {
     const rows = [
       { label: 'Release', value: v ? `${v.releaseVersion ? 'Release ' + v.releaseVersion : 'Unreleased'} · Build ${v.shortSha}` : 'Unknown' },
       { label: 'Environment', value: environment.envName },
-      { label: 'Page', value: `${PAGE_NAMES[route] ?? route} (${route})` },
+      { label: 'Page', value: `${this.pageName()} (${route})` },
       { label: 'Trade units', value: units },
       { label: 'Last error', value: error ? `${error.message} · ${this.datePipe.transform(error.at, 'shortTime')}` : 'None' },
       { label: 'Browser', value: browserName() }
@@ -71,21 +89,45 @@ export class HelpEscalationComponent {
     return rows;
   });
 
-  async copy(): Promise<void> {
-    const text = this.rows().map(r => `${r.label}: ${r.value}`).join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      this.copied.set(true);
-      this.copyFailed.set(false);
-    } catch {
-      // Clipboard can be blocked by browser policy. The rows are on screen to copy by hand.
-      this.copyFailed.set(true);
-    }
+  /** For ServiceNow's "Short Description of your issue". */
+  readonly shortDescription = computed(() => {
+    const typed = this.summary().trim();
+    return `Origination Workbench: ${typed || `help needed on ${this.pageName()}`}`.slice(0, SHORT_MAX + 25);
+  });
+
+  /** For ServiceNow's "Additional information": the details, then room for the user's own account. */
+  readonly additionalInformation = computed(() =>
+    ['Origination Workbench support details', ...this.rows().map(r => `${r.label}: ${r.value}`), '', 'What I was doing / what went wrong:', ''].join('\n')
+  );
+
+  onSummary(event: Event): void {
+    this.summary.set((event.target as HTMLInputElement).value);
+    if (this.copied() === 'short') this.copied.set(null);
   }
 
   toggleProducer(event: Event): void {
     this.includeProducer.set((event.target as HTMLInputElement).checked);
-    this.copied.set(false);
+    if (this.copied() === 'details') this.copied.set(null);
+  }
+
+  /** Without a help desk configured, "Copy details" copies the same block as Additional information. */
+  copy(target: CopyTarget): Promise<void> {
+    return this.write(target, target === 'short' ? this.shortDescription() : this.additionalInformation());
+  }
+
+  openedHelpDesk(): void {
+    this.usageTracking.trackHelpTicketOpened();
+  }
+
+  private async write(target: CopyTarget, text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      this.copied.set(target);
+      this.copyFailed.set(false);
+    } catch {
+      // Clipboard can be blocked by browser policy. The details are on screen to copy by hand.
+      this.copyFailed.set(true);
+    }
   }
 }
 

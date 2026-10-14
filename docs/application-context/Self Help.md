@@ -52,9 +52,17 @@ Trade units are a UX filter, not an access boundary ([SECURITY-MODEL.md](./SECUR
 
 `help-escalation.component.ts` shows the details support asks for, captured from the app: release/build, environment, page, trade units, the last error toast, browser, and help topics viewed. **The selected producer's Scoular ID is included only if the user ticks the box**; the producer's name never is. Nothing from storage or tokens.
 
-**Copy details** puts them on the clipboard. The **Open a help desk ticket** link appears only when `environment.helpDeskUrl` is set, and it is a plain link — the details travel by clipboard, never in the URL. Until it is set the card says "Send these details to the Origination team."
+With `environment.helpDeskUrl` set (ServiceNow, since 2026-10-14), the card walks the user through the ServiceNow form:
 
-> **Open item:** the help desk URL. ServiceNow is being replaced by SIMS (go-live end of November 2026) and an Origination support group has to be set up first. When the URL is known, set `helpDeskUrl` in `client/src/environments/environment.{dev,qa,prod}.ts` (and `environment.ts` for local). Nothing else changes.
+1. **Open ServiceNow**: a plain link to the catalog item in a new tab. It uses Scoular SSO. If sign-in lands on the portal home instead of the form, the user clicks the button again.
+2. **Please choose a topic**: pick `environment.helpDeskTopic` ("Something Else" until the Help Desk adds an Origination Workbench topic).
+3. **Short Description**: an optional one-line box, then **Copy short description**, which copies `Origination Workbench: <their text>`, or `… help needed on <page>` if they typed nothing.
+4. **Additional information**: **Copy additional information** copies the details plus a "What I was doing / what went wrong:" line for the user to finish.
+5. Attach a screenshot and submit.
+
+The form is never prefilled. Nothing is added to the URL (no PII in query strings), and the copies survive a sign-in redirect. There are two copy buttons because the clipboard holds one thing at a time. Clicking **Open ServiceNow** records a `help-ticket-opened` usage event. With an empty `helpDeskUrl`, the card offers **Copy details** and "Send these details to the Origination team."
+
+> **SIMS cutover (end of November 2026):** change `helpDeskUrl` and `helpDeskTopic` in `client/src/environments/environment*.ts`, and update the step labels in `help-escalation.component.html` if the SIMS form's fields are named differently. Ask the Help Desk team for an "Origination Workbench" topic, and assignment to the Origination support group (Hope, Caden, Bailey), at the same time.
 
 ## Editing the help
 
@@ -161,4 +169,4 @@ Hooks in existing code (each exists only for help): the header button and menu/d
 | CI fails in `help-faq.drift.spec.ts` | Someone renamed a label, route or anchor the help mentions | The failure message lists the exact question and label — update `help-faq.json` |
 | "Show me on screen" does nothing | The anchor isn't on screen (feature flag off, nothing selected); it gives up after 4 seconds | `HELP_ANCHOR_TIPS`, `ANCHOR_HOME`, and that the element has the attribute |
 | "Try an example" opens Build a List without running a query | The Query Library entry was renamed or removed; the page pre-fills the library search instead | Update `examples` to the current Query Library name |
-| No help desk button on the support card | `environment.helpDeskUrl` is empty — expected until the help desk group exists | See the open item above |
+| No ServiceNow steps on the support card | `environment.helpDeskUrl` is empty in that environment | Set it (see Still need help? above) |
