@@ -17,7 +17,7 @@ import { Customer, NoteLastContact, ProducerDetails, ReminderDue, SavedList } fr
 //   - the "last contacted" badge (day/month/year wording, colour tiers, linked-producer chains);
 //   - the follow-up badge (soonest reminder wins, overdue/today/tomorrow/in-N wording);
 //   - the debounced API search (TU / group scoping, ODS onboarding fallback and its 3-char floor,
-//     producer-details overlay, error fallback, clearing, restore on remount, reset on TU change);
+//     producer-details overlay, "Search failed" state, clearing, restore on remount, reset on TU change);
 //   - the saved-list dropdown (trade-unit overlap visibility, NLQ filtering + manual overrides,
 //     falling back to All Producers when the list disappears);
 //   - Reset, and the dwell-gated prefetch output.
@@ -430,14 +430,55 @@ describe('CustomerListComponent', () => {
       expect(rowText(70)).not.toContain('acres');
     });
 
-    it('shows the loaded roster when the search request fails', () => {
+    // Changed deliberately: a failed search used to fall back to the whole loaded roster, which
+    // read as "everyone matched". It now shows no rows and an inline "Search failed" state.
+    it('shows a "Search failed" state, not the loaded roster, when the search request fails', () => {
       appState.setTradeUnits(['2190']);
       api.searchCustomers.mockReturnValue(throwError(() => new Error('boom')));
       create({ customers: [makeCustomer({ id: 1, name: 'Alpha Ag' }), makeCustomer({ id: 2, name: 'Bravo Bros' })] });
 
       typeSearch('smith');
 
-      expect(rowNames()).toEqual(['Alpha Ag', 'Bravo Bros']);
+      expect(rows()).toHaveLength(0);
+      expect(text()).toContain('Search failed');
+      expect(text()).not.toContain('No producers found');
+      expect(host().querySelector('[role="alert"]')).not.toBeNull();
+    });
+
+    it('clears the failed state on the next successful search, and on clearing the search', () => {
+      appState.setTradeUnits(['2190']);
+      api.searchCustomers.mockReturnValue(throwError(() => new Error('boom')));
+      create({ customers: [makeCustomer({ id: 1, name: 'Alpha Ag' })] });
+      typeSearch('smith');
+      expect(text()).toContain('Search failed');
+
+      // Retry succeeds — results replace the failed state.
+      api.searchCustomers.mockReturnValue(of([makeCustomer({ id: 5, name: 'Smith Farms' })]));
+      typeSearch('smith');
+      expect(text()).not.toContain('Search failed');
+      expect(rowNames()).toEqual(['Smith Farms']);
+
+      // Fails again, then the user clears the box with X — back to the roster, no failed state.
+      api.searchCustomers.mockReturnValue(throwError(() => new Error('boom')));
+      typeSearch('smithy');
+      expect(text()).toContain('Search failed');
+      host().querySelector<HTMLButtonElement>('button[aria-label="Clear search"]')!.click();
+      fixture.detectChanges();
+      expect(text()).not.toContain('Search failed');
+      expect(rowNames()).toEqual(['Alpha Ag']);
+    });
+
+    it('still shows "No producers found" (not "Search failed") when the ODS onboarding lookup errors', () => {
+      // The ODS fallback is a best-effort extra lookup after a successful empty search; its own
+      // failure is swallowed to an empty result, unchanged by the search-failure fix.
+      api.searchOdsCustomers.mockReturnValue(throwError(() => new Error('ods down')));
+      create({ customers: [] });
+
+      typeSearch('zed');
+
+      expect(api.searchOdsCustomers).toHaveBeenCalledWith('zed');
+      expect(text()).toContain('No producers found');
+      expect(text()).not.toContain('Search failed');
     });
 
     it('returns to the roster when the search is cleared with X or the trade-unit selection changes', () => {

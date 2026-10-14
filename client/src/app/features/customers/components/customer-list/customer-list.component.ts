@@ -90,6 +90,10 @@ export class CustomerListComponent {
   selectedListId = signal('all');
   savedListLoading = signal(false);
   searchLoading = signal(false);
+  /** The last producer search errored. The list shows a "search failed" state instead of rows —
+   *  never the loaded roster, which would read as everyone matching the term. Cleared by the next
+   *  successful search or by leaving search. */
+  searchFailed = signal(false);
   filteredCustomers = signal<Customer[]>([]);
 
   /** Roster size when the active saved list's customerIds were last resolved. Guards the
@@ -156,12 +160,20 @@ export class CustomerListComponent {
             }
             return of(results);
           }),
-          catchError(() => of([...this.customers()]))
+          // null marks a failed search. ApiService already toasts 401/403, so the failure is
+          // shown inline in the list rather than with a second toast.
+          catchError(() => of(null))
         );
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(customers => {
       this.searchLoading.set(false);
+      if (customers === null) {
+        this.searchFailed.set(true);
+        this.filteredCustomers.set([]);
+        return;
+      }
+      this.searchFailed.set(false);
       let result = customers.map(c => {
         const pd = this.producerDetailsMap().get(c.id);
         if (pd) {
@@ -408,6 +420,7 @@ export class CustomerListComponent {
     }
 
     // No search term — client-side filter on loaded customers
+    this.searchFailed.set(false);
     let result = [...this.customers()];
 
     // Apply saved list filter (skip for "all" which means show all customers).
@@ -658,6 +671,7 @@ export class CustomerListComponent {
     this.appStateService.setSelectedSavedListId('all');
     this.appStateService.setTradeUnits([]);
     this.appStateService.setSelectedGroupNames([]);
+    this.searchFailed.set(false);
     this.filteredCustomers.set([]);
     this.clearSelection.emit();
   }

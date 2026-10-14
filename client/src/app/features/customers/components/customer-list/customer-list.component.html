@@ -113,6 +113,16 @@
               <p class="font-medium">Select Trade Units</p>
               <p class="text-sm mt-2">Choose one or more trade units from the dropdown above to view producers, or use the search box to search all trade units</p>
             </div>
+          } @else if (searchFailed() && searchInputValue) {
+            <div class="p-8 text-center text-gray-500" role="alert">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" x2="12" y1="8" y2="12"/>
+                <line x1="12" x2="12.01" y1="16" y2="16"/>
+              </svg>
+              <p class="font-medium">Search failed</p>
+              <p class="text-sm mt-2">Couldn't search producers. Check your connection and try again.</p>
+            </div>
           } @else if (filteredCustomers().length === 0) {
             <div class="p-8 text-center text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
