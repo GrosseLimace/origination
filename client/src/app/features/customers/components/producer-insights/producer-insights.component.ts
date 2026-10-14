@@ -161,6 +161,13 @@ export class ProducerInsightsComponent {
     );
   }
 
+  /** Contracts left out of Total Volume and Avg Contract because the conversions failed to load —
+   *  not because of their unit. Zero unless the load failed. */
+  get contractsMissingConversions(): number {
+    if (!this.appState.commodityConversionsLoadFailed() || this.appState.commodityConversions().length > 0) return 0;
+    return this.currentYearBushels.excludedContracts;
+  }
+
   get totalInteractions(): number {
     return this.notes().length;
   }

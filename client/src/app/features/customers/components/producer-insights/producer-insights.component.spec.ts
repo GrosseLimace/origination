@@ -86,7 +86,7 @@ describe('ProducerInsightsComponent', () => {
       imports: [ProducerInsightsComponent],
       providers: [
         { provide: ThemeService, useValue: { isDarkMode } },
-        { provide: AppStateService, useValue: { commodityConversions } },
+        { provide: AppStateService, useValue: { commodityConversions, commodityConversionsLoadFailed: signal(false) } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(ProducerInsightsComponent);
@@ -274,5 +274,75 @@ describe('ProducerInsightsComponent', () => {
     isDarkMode.set(false);
     fixture.detectChanges();
     expect(card()).toContain('#22c55e');
+  });
+});
+
+// When the conversions fail to load, every tonnage contract drops out of Total Volume and Avg
+// Contract and the cards read low with nothing to say why. Real AppStateService, set through its
+// setters.
+describe('ProducerInsightsComponent — bushel conversions failed to load', () => {
+  let fixture: ComponentFixture<ProducerInsightsComponent>;
+  let state: AppStateService;
+
+  const text = (): string => ((fixture.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim();
+  const tons = makeContract({ id: 2, contractNumber: '200', commodityCode: 'SB', unit: 'ST', quantity: 30 });
+
+  function render(contracts: Contract[]): void {
+    fixture = TestBed.createComponent(ProducerInsightsComponent);
+    fixture.componentRef.setInput('customer', makeCustomer());
+    fixture.componentRef.setInput('contracts', contracts);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    await TestBed.configureTestingModule({
+      imports: [ProducerInsightsComponent],
+      providers: [{ provide: ThemeService, useValue: { isDarkMode: signal(false) } }],
+    }).compileComponents();
+    state = TestBed.inject(AppStateService);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('counts the contracts left out of the bushel figures when the conversions failed to load', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    render([makeContract(), tons]);
+
+    expect(text()).toContain("1 contract left out of the bushel figures — the bushel conversions couldn't be loaded. Refresh the page to try again.");
+    expect(text()).toContain('10,000');
+  });
+
+  it('adds nothing when the conversions loaded', () => {
+    state.setCommodityConversions([{ commodityCode: 'SB', lbsPerUnit: 60 }]);
+    render([makeContract(), tons]);
+
+    expect(text()).not.toContain('left out of the bushel figures');
+    expect(text()).toContain('11,000');   // 10,000 bu + 30 short tons at 60 lb/bu
+  });
+
+  it('adds nothing when nothing failed, even with no conversions in hand', () => {
+    render([makeContract(), tons]);
+
+    expect(text()).not.toContain('left out of the bushel figures');
+  });
+
+  it('adds nothing once conversions are present, whatever the flag says', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    state.setCommodityConversions([{ commodityCode: 'SB', lbsPerUnit: 60 }]);
+    // Gallons never convert, so this one is left out for its unit — not something to blame on the load.
+    render([makeContract(), tons, makeContract({ id: 3, contractNumber: '300', commodityCode: 'BOIL', unit: 'GL', quantity: 500 })]);
+
+    expect(text()).not.toContain('left out of the bushel figures');
+  });
+
+  it('adds nothing when every current-year contract is already in bushels', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    render([makeContract()]);
+
+    expect(text()).not.toContain('left out of the bushel figures');
   });
 });
