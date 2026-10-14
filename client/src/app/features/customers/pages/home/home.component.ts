@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, timer } from 'rxjs';
@@ -45,6 +45,10 @@ import { HomePlantingStore } from './home-planting.store';
   templateUrl: './home.component.html',
   // Page-scoped state and behaviour, one instance per visit to the page.
   providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore, HomePlantingStore],
+  // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
+  // constant flags, and every async writer (API callbacks, effects, the resize listener, the
+  // deep-link poll) writes signals - home.component.render.spec.ts renders each of those paths.
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
