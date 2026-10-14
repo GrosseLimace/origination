@@ -158,7 +158,7 @@ describe('TicketsTableComponent', () => {
     await TestBed.configureTestingModule({
       imports: [TicketsTableComponent],
       providers: [
-        { provide: AppStateService, useValue: { commodityConversions } },
+        { provide: AppStateService, useValue: { commodityConversions, commodityConversionsLoadFailed: signal(false) } },
         { provide: UsageTrackingService, useValue: { trackTicketDropdownOpen } },
       ],
     }).compileComponents();
@@ -516,5 +516,67 @@ describe('TicketsTableComponent', () => {
       setInputs({ customer: makeCustomer({ id: 44 }) });
       expect(groupTitles()).toEqual(['PRT']);
     });
+  });
+});
+
+// When the conversions fail to load, every Net Bushels figure reads "—", which looks like nothing was
+// delivered. Real AppStateService, set through its setters.
+describe('TicketsTableComponent — bushel conversions failed to load', () => {
+  let fixture: ComponentFixture<TicketsTableComponent>;
+  let state: AppStateService;
+
+  const note = "Net bushels can't be shown — the bushel conversions couldn't be loaded. Refresh the page to try again.";
+  const text = (): string => ((fixture.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  function render(tickets: Ticket[]): void {
+    fixture = TestBed.createComponent(TicketsTableComponent);
+    fixture.componentRef.setInput('customer', makeCustomer());
+    fixture.componentRef.setInput('tickets', tickets);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [TicketsTableComponent],
+      providers: [{ provide: UsageTrackingService, useValue: { trackTicketDropdownOpen: vi.fn() } }],
+    }).compileComponents();
+    state = TestBed.inject(AppStateService);
+  });
+
+  it('says the bushels could not be shown when the conversions failed to load', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    render([makeTicket()]);
+
+    expect(text()).toContain(note);
+  });
+
+  it('adds nothing when the conversions loaded', () => {
+    state.setCommodityConversions(CONVERSIONS);
+    render([makeTicket()]);
+
+    expect(text()).not.toContain("Net bushels can't be shown");
+    expect(text()).toContain('1,000.00');
+  });
+
+  it('adds nothing when nothing failed, even with no conversions in hand', () => {
+    render([makeTicket()]);
+
+    expect(text()).not.toContain("Net bushels can't be shown");
+  });
+
+  it('adds nothing once conversions are present, whatever the flag says', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    state.setCommodityConversions(CONVERSIONS);
+    render([makeTicket()]);
+
+    expect(text()).not.toContain("Net bushels can't be shown");
+  });
+
+  it('keeps the plain empty state when the producer has no unapplied tickets', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    render([]);
+
+    expect(text()).toContain('No unapplied delivery tickets found for this producer');
+    expect(text()).not.toContain("Net bushels can't be shown");
   });
 });

@@ -73,6 +73,11 @@ export class TicketsTableComponent {
   private readonly _conversionMap = computed(() =>
     new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
+  /** The unit conversions failed to load, so every bushel figure is missing for that reason rather
+   *  than because of the ticket's commodity. */
+  readonly conversionsUnavailable = computed(() =>
+    this.appState.commodityConversionsLoadFailed() && this.appState.commodityConversions().length === 0);
+
   readonly currentSortColumn = signal<SortColumn | null>(null);
   readonly currentSortDirection = signal<SortDirection>('none');
   readonly cropSortActive = signal(false);
