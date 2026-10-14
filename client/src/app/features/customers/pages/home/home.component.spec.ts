@@ -1014,6 +1014,122 @@ describe('HomeComponent', () => {
     });
   });
 
+  // ── Planting intentions (characterisation, written against the pre-extraction page) ──
+  describe('planting intentions', () => {
+    /** The planting write calls are not in the shared API stub; add them to the same object the page holds. */
+    function withPlantingApi(h: Harness) {
+      return Object.assign(h.api, {
+        createPlantingIntention: vi.fn((d: { customerId: number; crop: string }): Observable<PlantingIntention> =>
+          of({ ...intention(700, d.customerId), crop: d.crop })),
+        updatePlantingIntention: vi.fn((id: number, d: { crop: string; acres: number }): Observable<PlantingIntention> =>
+          of({ ...intention(id, 1), crop: d.crop, acres: d.acres })),
+        deletePlantingIntention: vi.fn((_id: number): Observable<void> => of(undefined)),
+        retagPlantingIntentions: vi.fn((_c: number, _f: string, _t: string): Observable<{ moved: number }> => of({ moved: 2 })),
+        assignTradeUnits: vi.fn((id: number, _codes: string[]): Observable<Customer> => of(customer(id))),
+      });
+    }
+    const add = { crop: 'SOYBEANS', acres: 80, plantingYear: 2027, tradeUnit: 'TU1' };
+
+    it('adding updates the producer\'s views, the trade-unit list and the cache, and records the crop on the producer', () => {
+      const h = setup({ arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1)])) });
+      const api = withPlantingApi(h);
+      h.c.handleSelectCustomer(A);
+
+      h.c.addPlantingIntention(add);
+
+      expect(api.createPlantingIntention).toHaveBeenCalledWith(expect.objectContaining({ customerId: 1, customerCode: 'S-1', crop: 'SOYBEANS' }));
+      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([30, 700]);
+      expect(h.c.allCustomerPlantingIntentions().map(p => p.id)).toEqual([30, 700]);
+      expect(h.app.plantingIntentions().map(p => p.id)).toContain(700);
+      expect(h.toast.success).toHaveBeenCalledWith('Planting intention added');
+      expect(h.api.saveProducerDetails).toHaveBeenCalledWith(1, expect.objectContaining({ commodities: 'SOYBEANS' }));
+      expect(h.c.selectedCustomer()?.commodities).toEqual(['SOYBEANS']);
+
+      // The cache was updated too: a re-click shows the added row without another read.
+      h.c.handleSelectCustomer(B);
+      h.c.handleSelectCustomer(A);
+      expect(callsFor(h.api.getPlantingIntentionsByCustomer, 1)).toBe(1);
+      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([30, 700]);
+    });
+
+    it('refuses an add with no producer selected', () => {
+      const h = setup();
+      const api = withPlantingApi(h);
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      h.c.addPlantingIntention(add);
+      expect(api.createPlantingIntention).not.toHaveBeenCalled();
+      expect(h.toast.error).toHaveBeenCalledWith('Select a producer before adding a planting intention.');
+    });
+
+    it('editing and deleting update every view and the cache; a crop already on the producer is not re-saved', () => {
+      const h = setup({ arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1), intention(31, 1)])) });
+      withPlantingApi(h);
+      const corn = customer(1, { commodities: ['corn'] });
+      h.c.handleSelectCustomer(corn);
+
+      h.c.editPlantingIntention({ intentionId: 30, crop: 'CORN', acres: 55, plantingYear: 2027 });
+      expect(h.c.customerPlantingIntentions().find(p => p.id === 30)?.acres).toBe(55);
+      expect(h.api.saveProducerDetails).not.toHaveBeenCalledWith(1, expect.objectContaining({ commodities: expect.any(String) }));
+
+      h.c.deletePlantingIntention(31);
+      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([30]);
+      expect(h.c.allCustomerPlantingIntentions().map(p => p.id)).toEqual([30]);
+      expect(h.toast.success).toHaveBeenCalledWith('Planting intention deleted');
+
+      h.c.handleSelectCustomer(B);
+      h.c.handleSelectCustomer(corn);
+      expect(h.c.customerPlantingIntentions().map(p => [p.id, p.acres])).toEqual([[30, 55]]);
+    });
+
+    it('a cached re-click is not overwritten by an older read landing late', () => {
+      const late = new Subject<PlantingIntention[]>();
+      const h = setup({ arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1)])) });
+      h.c.handleSelectCustomer(A);                 // A cached
+      h.api.getPlantingIntentionsByCustomer.mockReturnValue(late.asObservable());
+      h.c.handleSelectLinkedCustomer(2);            // B read in flight, not cancelled by a selection
+      h.c.handleSelectCustomer(A);                 // A restored from cache
+
+      late.next([intention(200, 2)]);
+
+      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([30]);
+    });
+
+    it('moving intentions off a removed trade unit says so and reloads the producer\'s rows everywhere', () => {
+      const h = setup({ arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1)])) });
+      const api = withPlantingApi(h);
+      h.c.handleSelectCustomer(A);
+      h.api.getPlantingIntentionsByCustomer.mockReturnValue(of([{ ...intention(30, 1), tradeUnit: 'TU2' }]));
+
+      h.c.handleSaveCustomer({
+        customerId: 1, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
+        linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: ['TU2'], reconcileTradeUnits: true,
+        grainOnFarm: [], intentionMoves: [{ from: 'TU1', to: 'TU2' }],
+      });
+
+      expect(api.assignTradeUnits).toHaveBeenCalledWith(1, ['TU2']);
+      expect(api.retagPlantingIntentions).toHaveBeenCalledWith(1, 'TU1', 'TU2');
+      expect(h.toast.success).toHaveBeenCalledWith('Moved 2 planting intentions to TU2.');
+      expect(h.c.customerPlantingIntentions()[0].tradeUnit).toBe('TU2');
+      expect(h.app.plantingIntentions().find(p => p.id === 30)?.tradeUnit).toBe('TU2');
+    });
+
+    it('a failed move names the trade units and moves nothing', () => {
+      const h = setup();
+      const api = withPlantingApi(h);
+      api.retagPlantingIntentions.mockReturnValue(throwError(() => new Error('500')));
+      h.c.handleSelectCustomer(A);
+
+      h.c.handleSaveCustomer({
+        customerId: 1, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
+        linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: [], reconcileTradeUnits: false,
+        grainOnFarm: [], intentionMoves: [{ from: 'TU1', to: 'TU2' }],
+      });
+
+      expect(h.toast.error).toHaveBeenCalledWith('Couldn\'t move planting intentions from TU1 to TU2 — they\'re still recorded against TU1.');
+      expect(h.toast.success).not.toHaveBeenCalledWith(expect.stringContaining('Moved'));
+    });
+  });
+
   // ── Linked producers, more (characterisation, written against the pre-extraction page) ──
   describe('linked producers (cache lifetime and enrichment)', () => {
     const a = customer(1, { linkedProducerIds: ['S-90'] });
