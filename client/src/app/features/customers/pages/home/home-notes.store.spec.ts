@@ -31,13 +31,13 @@ describe('HomeNotesStore', () => {
   let appState: {
     notes: ReturnType<typeof signal<Note[]>>;
     notesLoaded: ReturnType<typeof signal<boolean>>;
-    setNotes: ReturnType<typeof vi.fn>;
+    setNotes: ReturnType<typeof vi.fn<(v: Note[]) => void>>;
     setNoteLastContacts: ReturnType<typeof vi.fn>;
     setNoteLastContactsLoadFailed: ReturnType<typeof vi.fn>;
   };
   let toast: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
   let failures: { report: ReturnType<typeof vi.fn> };
-  let refreshPanel: ReturnType<typeof vi.fn>;
+  let refreshPanel: ReturnType<typeof vi.fn<() => void>>;
 
   beforeEach(() => {
     api = {
@@ -72,7 +72,7 @@ describe('HomeNotesStore', () => {
     page = TestBed.inject(HomePageState);
     page.selectedCustomer.set({ id: 1, scoularId: 'S-1', name: 'P1' } as Customer);
     page.selectedTradeUnits.set(['TU1']);
-    refreshPanel = vi.fn();
+    refreshPanel = vi.fn<() => void>();
   });
 
   describe('ensureCustomerNotes', () => {
