@@ -15,9 +15,7 @@ import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.se
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
 import { dpTotalBushels, dpBreakdownByCrop } from '@shared/utils/dp-aggregate';
 import { commodityChipClass } from '@shared/utils/commodity-color';
-import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 import { plantingChips, plantingQueryScope, PlantingChip } from '@shared/utils/planting-chips';
-import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -34,6 +32,7 @@ import { countActiveRefinements, hasAnyRefinement, hiddenRefineFilters } from '.
 import { filterByRefinements, applyMemberOverrides, collapseLinkedComponents, RefinementFilterSources } from '../../utils/refinement-filters';
 import { aggregateMatchingNotes, buildNoteFilterPredicate, indexMatchingNotesByCode, isNoteFilterActive, lastContactBadges, lastContactTimeByCustomer, MatchedNote, noteScope, NoteScope, parseNoteTime } from '../../utils/note-filters';
 import { customerPacingDirection } from '../../utils/contract-pacing';
+import { evaluatePlantingCoverage } from '../../utils/planting-coverage';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
@@ -2718,150 +2717,18 @@ export class BuildListComponent {
           )))
         : of([] as DashboardPlantingEstimate[][]),
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ contracts: results, estimates: estimateBatches }) => {
-      // Merge all fetched contracts
-      const allContracts: Contract[] = [];
-      for (const batch of results) allContracts.push(...batch);
-
-      // Every year's estimates in one list; findYieldEstimate scopes by year internally.
-      const allEstimates: DashboardPlantingEstimate[] = [];
-      for (const batch of estimateBatches) allEstimates.push(...batch);
-
-      // Commodity CODE → planting category, the key season targets are actually stored under
-      // ("Corn" / "Dryland Corn" / "Organic Soybeans"), never the code. Looking up by code returned
-      // undefined every time, which made both coverage prompts below return an empty list no matter
-      // the data. Resolved through the same planting-category rule as the dashboard, so an organic
-      // planting row finds its own season target and is covered by organic contracts only.
-      const codeToCategory = new Map<string, string>();
-      const commodityByCode = new Map<string, Commodity>();
-      for (const cm of this.appState.commodities()) {
-        if (!cm.code) continue;
-        commodityByCode.set(cm.code.trim().toUpperCase(), cm);
-        const label = commodityPlantingCategory(cm);
-        if (label) codeToCategory.set(cm.code.trim().toUpperCase(), label);
-      }
-
-      // Index contracts by customer + year + commodity
-      const contractsByCustomer = new Map<string, Contract[]>();
-      for (const c of allContracts) {
-        if (!c.ctrmCustomerId) continue;
-        const arr = contractsByCustomer.get(c.ctrmCustomerId);
-        if (arr) arr.push(c); else contractsByCustomer.set(c.ctrmCustomerId, [c]);
-      }
-
-      // Group planting by customer. `crop` stays the CODE (contract matching uses it); `category`
-      // and `type` are carried alongside because that pair is what a season target is keyed by.
-      const plantingByCustomer = new Map<number, { year: number; crop: string; category: string; type?: string; acres: number }[]>();
-      for (const p of intentions) {
-        const crop = (p.crop || '').trim().toUpperCase();
-        if (!crop || !p.plantingYear) continue;
-        const arr = plantingByCustomer.get(p.customerId);
-        const entry = {
-          year: p.plantingYear,
-          crop,
-          category: plantingCategory(p, commodityByCode.get(crop)),
-          type: p.type,
-          acres: p.acres,
-        };
-        if (arr) arr.push(entry); else plantingByCustomer.set(p.customerId, [entry]);
-      }
-
-      const allCustomers = this.customers();
-
-      // Same conversion table the producer page uses, so contracted bushels agree across screens.
-      const lbsPerBushelByCode = buildLbsPerBushelMap(this.appState.commodityConversions());
-
-      /**
-       * Does this contract cover the planting crop? Matched on the resolved commodity CATEGORY, the
-       * same join the producer page's Growth Opportunity panel uses.
-       *
-       * It used to match on substrings in either direction, which quietly pulled in different
-       * products: planting crop "YC" matched commodity code "CKYC" (cracked corn) and "SOR" matched
-       * "CSOR", because one string contains the other.
-       */
-      const contractMatchesCrop = (ct: Contract, cropCategory: string): boolean => {
-        const target = cropCategory.trim().toUpperCase();
-        if (!target) return false;
-        const code = (ct.commodityCode || '').trim().toUpperCase();
-        // Exact code match covers the case where the planting crop isn't in dbo.Commodities either,
-        // so its "category" fell back to the raw code — otherwise that producer would match nothing.
-        if (code && code === target) return true;
-        const category = (codeToCategory.get(code) || ct.commodityGroup || ct.commodityDescription || code || '')
-          .trim().toUpperCase();
-        return category === target;
-      };
-
-      // Tracks whether the "under X% contracted" / "uncontracted" branches below could find a
-      // saved season yield target for ANY planting row they evaluated. Coverage can't be computed
-      // without one (estimatedProduction = acres × yield), so if every row lacks a target the
-      // result is an empty list that looks IDENTICAL to "everyone is well-contracted" — this
-      // distinguishes the two so the UI can point at the real cause instead of "No Producers Found".
-      let plantingRowsEvaluated = 0;
-      let plantingRowsWithEstimate = 0;
-
-      if (lq.includes('planting') && (lq.includes('no contract') || lq.includes('no active contract'))) {
-        // 0% coverage: any planting crop+year with zero matching contracts
-        this.filteredCustomers.set(allCustomers.filter(c => {
-          const plantings = plantingByCustomer.get(c.id);
-          if (!plantings) return false;
-          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
-          return plantings.some(p =>
-            !custContracts.some(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category))
-          );
-        }));
-      } else if (lq.includes('under') && lq.includes('percent contracted')) {
-        // Under X% coverage: planting bushels vs contracted bushels per crop+year
-        const pctMatch = lq.match(/under\s+(\d+)\s*percent/);
-        const threshold = pctMatch ? parseInt(pctMatch[1]) / 100 : 0.5;
-
-        this.filteredCustomers.set(allCustomers.filter(c => {
-          const plantings = plantingByCustomer.get(c.id);
-          if (!plantings) return false;
-          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
-          // Check each planting crop: estimated production vs contracted bushels
-          return plantings.some(p => {
-            // Same rule as the producer page: the estimate must belong to THIS crop and THIS year.
-            plantingRowsEvaluated++;
-            const yieldEst = findYieldEstimate(allEstimates, p.type, p.category, p.year);
-            if (!yieldEst) return false; // can't calculate without a season target
-            plantingRowsWithEstimate++;
-            const estimatedProduction = p.acres * yieldEst;
-            // Bushels, not raw quantity: contracts for meal / oil / popcorn sit in the same
-            // commodity group but are priced by weight, and adding them in would overstate coverage
-            // and drop this producer off the very list that should surface them.
-            const { contracted: contractedBu } = sumInBushels(
-              custContracts.filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category)),
-              lbsPerBushelByCode);
-            const coverage = estimatedProduction > 0 ? contractedBu / estimatedProduction : 0;
-            return coverage < threshold;
-          });
-        }));
-      } else if (lq.includes('uncontracted')) {
-        // Highest uncontracted bushels — top 10 by gap
-        const customerGaps: { customer: Customer; gap: number }[] = [];
-        for (const c of allCustomers) {
-          const plantings = plantingByCustomer.get(c.id);
-          if (!plantings) continue;
-          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
-          let totalGap = 0;
-          for (const p of plantings) {
-            plantingRowsEvaluated++;
-            const yieldEst = findYieldEstimate(allEstimates, p.type, p.category, p.year);
-            if (!yieldEst) continue;
-            plantingRowsWithEstimate++;
-            const estimatedProduction = p.acres * yieldEst;
-            const { contracted: contractedBu } = sumInBushels(
-              custContracts.filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category)),
-              lbsPerBushelByCode);
-            totalGap += Math.max(0, estimatedProduction - contractedBu);
-          }
-          if (totalGap > 0) customerGaps.push({ customer: c, gap: totalGap });
-        }
-        customerGaps.sort((a, b) => b.gap - a.gap);
-        this.filteredCustomers.set(customerGaps.slice(0, 10).map(g => g.customer));
-      }
+      const coverage = evaluatePlantingCoverage(lq, {
+        intentions,
+        customers: this.customers(),
+        contractBatches: results,
+        estimateBatches,
+        commodities: this.appState.commodities(),
+        commodityConversions: this.appState.commodityConversions(),
+      });
+      if (coverage.customers) this.filteredCustomers.set(coverage.customers);
 
       const noResults = this.filteredCustomers().length === 0;
-      const missingYieldTargets = noResults && plantingRowsEvaluated > 0 && plantingRowsWithEstimate === 0;
+      const missingYieldTargets = noResults && coverage.plantingRowsEvaluated > 0 && coverage.plantingRowsWithEstimate === 0;
       this.coverageNeedsYieldTargets.set(missingYieldTargets);
       // Suppress the generic "no match" banner in favor of the yield-target-specific one —
       // same pattern as contractsUnavailableForQuery/ticketsUnavailableForQuery suppressing it
