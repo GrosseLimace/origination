@@ -5,19 +5,15 @@ import { forkJoin, of, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { catchError, map, takeUntil } from 'rxjs/operators';
-import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
-import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, Reminder, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, Reminder, StoredGrain, DpContract, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
 import { CustomerRemindersComponent, ReminderDraft } from '../../components/customer-reminders/customer-reminders.component';
-import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
 import { environment } from '@env/environment';
@@ -29,6 +25,7 @@ import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
 import { HomeRemindersStore } from './home-reminders.store';
 import { HomeNotesStore } from './home-notes.store';
+import { HomeSavedListsStore } from './home-saved-lists.store';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -45,16 +42,13 @@ import { HomeNotesStore } from './home-notes.store';
   ],
   templateUrl: './home.component.html',
   // Page-scoped state and behaviour, one instance per visit to the page.
-  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore],
+  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore],
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
-  private readonly msalService = inject(MsalService);
   private readonly toastService = inject(ToastService);
-  private readonly nlqFilterService = inject(NlqFilterService);
   private readonly usageTracking = inject(UsageTrackingService);
-  private readonly userRoles = inject(UserRolesService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Throttled toast + dev log for background loads that fail (see HomeBackgroundFailures). */
@@ -65,10 +59,11 @@ export class HomeComponent {
   private readonly reminders = inject(HomeRemindersStore);
   /** Notes cache, notes panel and last-contact badge feed (see HomeNotesStore). */
   private readonly notes = inject(HomeNotesStore);
+  /** Own and team saved lists, their resolution and Add-to-List saves (see HomeSavedListsStore). */
+  private readonly lists = inject(HomeSavedListsStore);
 
-  /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Enables the
-   *  "Team Lists" tab in the Add-to-List dropdown. */
-  readonly isManager = this.userRoles.isAdmin;
+  /** Manager = holds the "Admin" app role. Enables the "Team Lists" tab in the Add-to-List dropdown. */
+  readonly isManager = this.lists.isManager;
   /** Gates the floating calculator launcher (Profitability calc + future calculators). */
   readonly calculatorEnabled = environment.calculatorEnabled;
   /** Gates the personal follow-up reminders card and the producer-list reminder badge. */
@@ -141,24 +136,21 @@ export class HomeComponent {
    *  age, a contract priced after the first click kept its UNPRICED badge for the rest of the session,
    *  which is a wrong number on screen rather than merely an old one. */
   private readonly _customerPricingLoadedAt = new Map<string, number>();
-  /** Guards the one-per-session background full-notes fetch used by saved-list enrichment. */
-  private _notesFetchInFlight = false;
 
   // Public signals — template binds directly to these
-  readonly customers = signal<Customer[]>([]);
-  readonly contracts = signal<Contract[]>([]);
-  readonly tickets = signal<Ticket[]>([]);
-  readonly plantingIntentions = signal<PlantingIntention[]>([]);
+  readonly customers = this.page.customers;
+  readonly contracts = this.page.contracts;
+  readonly tickets = this.page.tickets;
+  readonly plantingIntentions = this.page.plantingIntentions;
   /** Per-customer "last contacted" aggregate, all trade units — the list's badge feed (see HomeNotesStore). */
   readonly noteLastContacts = this.notes.noteLastContacts;
   /** The signed-in user's own open follow-ups across all producers (see HomeRemindersStore). */
   readonly myReminders = this.reminders.myReminders;
-  readonly storedGrain = signal<StoredGrain[]>([]);
-  readonly dpContracts = signal<DpContract[]>([]);
-  readonly savedLists = signal<SavedList[]>([]);
-  /** Manager-only: saved lists tied to the selected TU(s) created by other users (overlap-matched
-   *  server-side, enriched locally). Powers the Add-to-List "Team Lists" tab. */
-  readonly teamSavedLists = signal<SavedList[]>([]);
+  readonly storedGrain = this.page.storedGrain;
+  readonly dpContracts = this.page.dpContracts;
+  /** The user's own lists and a manager's team lists, resolved (see HomeSavedListsStore). */
+  readonly savedLists = this.lists.savedLists;
+  readonly teamSavedLists = this.lists.teamSavedLists;
   readonly producerDetailsMap = signal<Map<number, ProducerDetails>>(new Map());
 
   readonly selectedCustomer = this.page.selectedCustomer;
@@ -170,15 +162,9 @@ export class HomeComponent {
   readonly pendingPlantingYear = signal<number | null>(null);
   readonly pendingTicketCrop = signal<string | null>(null);
   readonly selectedTradeUnits = this.page.selectedTradeUnits;
-  /** Saved lists sharing at least one trade unit with the current selection — the lists a producer
-   *  can be quick-added to from the profile header. Reads the enriched savedLists() so the
-   *  Add-to-List checkboxes stay reactive after a toggle. */
-  readonly savedListsForSelectedCustomer = computed<SavedList[]>(() =>
-    filterSavedListsByTradeUnitOverlap(this.savedLists(), this.selectedTradeUnits()));
-  /** Manager-only team lists the producer can be quick-added to. Already TU-scoped (overlap) by the
-   *  server; enriched locally so the checkboxes reflect query-derived membership too. */
-  readonly teamListsForSelectedCustomer = computed<SavedList[]>(() =>
-    this.selectedTradeUnits().length === 0 ? [] : this.teamSavedLists());
+  /** The own and team lists the selected producer can be quick-added to from the profile header. */
+  readonly savedListsForSelectedCustomer = this.lists.savedListsForSelectedCustomer;
+  readonly teamListsForSelectedCustomer = this.lists.teamListsForSelectedCustomer;
   readonly customerContracts = signal<Contract[]>([]);
   readonly customerTickets = signal<Ticket[]>([]);
   readonly customerPricingLines = signal<ContractPricingLine[]>([]);
@@ -287,11 +273,11 @@ export class HomeComponent {
     });
 
     // (Re)load the manager team lists whenever admin status resolves (/api/me) or the TU selection
-    // changes. Guarded inside _loadTeamLists so non-managers / empty selections clear the set.
+    // changes. Guarded inside loadTeamLists so non-managers / empty selections clear the set.
     effect(() => {
       this.isManager();
       this.selectedTradeUnits();
-      untracked(() => this._loadTeamLists());
+      untracked(() => this.lists.loadTeamLists());
     });
 
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
@@ -327,7 +313,7 @@ export class HomeComponent {
       this.storedGrain.set(this.appState.storedGrain());
       this.dpContracts.set(this.appState.dpContracts());
       this.savedLists.set(this.appState.savedLists());
-      this._enrichSavedLists();
+      this.lists.enrichSavedLists();
 
       // Stored grain may not have been preloaded yet — fetch if empty
       if (this.appState.storedGrain().length === 0) {
@@ -426,7 +412,7 @@ export class HomeComponent {
         this.appState.setCustomersLoadFailed(false);
         this.loading.set(false);
         this._isLoading = false;
-        this._enrichSavedLists();
+        this.lists.enrichSavedLists();
 
         const pdMap = this.producerDetailsMap();
         if (this._pendingProducerDetails) {
@@ -454,7 +440,7 @@ export class HomeComponent {
         this.appState.setContracts(this.contracts());
         // Re-enrich saved lists now that contracts are loaded — the initial enrichment
         // may have run before contracts arrived, producing wrong customerIds.
-        this._enrichSavedLists(true);
+        this.lists.enrichSavedLists(true);
       },
       error: (err) => this.backgroundFailures.report('load contracts', err)
     });
@@ -505,33 +491,7 @@ export class HomeComponent {
 
     this._loadYieldData();
 
-    this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        const list = data ?? [];
-        this.savedLists.set(list);
-        this.appState.setSavedLists(list);
-        this.appState.setSavedListsLoadFailed(false);
-        // Always ensure the query library is in appState so customer-list (which renders the
-        // saved list dropdown on this page) can resolve a saved list's prompt category by
-        // queryText match. Cached after first fetch — both home and build-list reuse it.
-        if (this.appState.queryLibrary().length === 0) {
-          this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-            next: (items) => {
-              this.appState.setQueryLibrary(items);
-              // Re-evaluate saved lists with the now-available category fallback.
-              this._enrichSavedLists(true);
-            },
-            error: () => this._enrichSavedLists()
-          });
-        } else {
-          this._enrichSavedLists();
-        }
-      },
-      error: (err) => {
-        this.appState.setSavedListsLoadFailed(true);
-        this.backgroundFailures.report('load saved lists', err);
-      }
-    });
+    this.lists.loadSavedLists();
   }
 
   private _loadProducerDetails(): void {
@@ -621,200 +581,10 @@ export class HomeComponent {
     });
   }
 
-  private _enrichSavedLists(forceRefresh = false): void {
-    if (!this.customers().length) return;
-    // Own lists: skip if all already have cached customerIds — unless forceRefresh (e.g. when
-    // contracts/tickets/stored grain arrive after initial enrichment).
-    const ownNeeds = forceRefresh || this.savedLists().some(l => !l.customerIds?.length);
-    if (this.savedLists().length && ownNeeds) {
-      this.savedLists.set(this._enrichLists(this.savedLists(), forceRefresh));
-    }
-    // Team lists (manager) follow the same enrichment so their checkboxes reflect query membership.
-    const teamNeeds = forceRefresh || this.teamSavedLists().some(l => !l.customerIds?.length);
-    if (this.teamSavedLists().length && teamNeeds) {
-      this.teamSavedLists.set(this._enrichLists(this.teamSavedLists(), forceRefresh));
-    }
-    // The full note set (bodies/authors) is only needed for saved lists whose query or refine
-    // filters actually read note CONTENT/authors/pinned/counts — recency lists ("not contacted…")
-    // and every non-note list resolve from the last-contact aggregate. Only kick off the
-    // background full-notes fetch when at least one UNRESOLVED list genuinely needs it, so a user
-    // whose lists are all contracts/tickets/etc. never pays the notes download on home load.
-    const listNeedsFullNotes = (l: SavedList) =>
-      (forceRefresh || !l.customerIds?.length)
-      && (this.nlqFilterService.queryNeedsFullNotes(l.query)
-          || this.nlqFilterService.refineFiltersNeedFullNotes(l.filters));
-    const anyNeedsFullNotes =
-      this.savedLists().some(listNeedsFullNotes) || this.teamSavedLists().some(listNeedsFullNotes);
-    if (anyNeedsFullNotes && !this.appState.notesLoaded()) {
-      this._loadFullNotesForEnrichment();
-    }
-  }
-
-  /** Background one-shot fetch of the full note set for saved-list NLQ enrichment. */
-  private _loadFullNotesForEnrichment(): void {
-    if (this._notesFetchInFlight || this.appState.notesLoaded()) return;
-    this._notesFetchInFlight = true;
-    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        this._notesFetchInFlight = false;
-        this.appState.setNotes(data ?? []);
-        // Re-evaluate saved lists now that note-based queries have their data.
-        this._enrichSavedLists(true);
-      },
-      error: () => { this._notesFetchInFlight = false; }
-    });
-  }
-
-  /** Resolve each list's NLQ query + filters + included/excluded overrides into a cached
-   *  `customerIds` array, using the page's currently-loaded data. Returns a new array. */
-  private _enrichLists(lists: SavedList[], forceRefresh: boolean): SavedList[] {
-    if (!lists.length || !this.customers().length) return lists;
-    const account = this.msalService.instance.getActiveAccount()
-      ?? this.msalService.instance.getAllAccounts()[0];
-    const context: NlqFilterContext = {
-      customers: this.customers(),
-      contracts: this.contracts(),
-      tickets: this.tickets(),
-      // Full note set from the lazy NLQ cache — empty until a note-based list triggers
-      // _loadFullNotesForEnrichment, which re-enriches once it lands.
-      notes: this.appState.notes(),
-      // Last-contact aggregate (always loaded) — powers recency/"never contacted" resolution
-      // without the full note set.
-      noteLastContacts: this.appState.noteLastContacts(),
-      myReminders: this.appState.myReminders(),
-      plantingIntentions: this.plantingIntentions(),
-      storedGrain: this.storedGrain(),
-      dpContracts: this.dpContracts(),
-      commodities: this.appState.commodities(),
-      commodityConversions: this.appState.commodityConversions(),
-      // Thread identity through so saved-list "by me" filters work even when notes' CreatedBy
-      // wasn't resolved to a display name on the API side.
-      currentUserDisplayName: account?.name ?? '',
-      currentUserUsername: account?.username ?? ''
-    };
-    const queryLibrary = this.appState.queryLibrary();
-    return lists.map(list => {
-      if (!forceRefresh && list.customerIds?.length) return list; // Already resolved
-      // Resolve "I"/"me"/"my" to the user's name so author-based queries work
-      const resolvedQuery = this.nlqFilterService.resolveUserReferences(list.query, account?.name ?? '', account?.username ?? '');
-      const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
-      // If no patterns matched, the NLQ returned all customers — don't cache that as valid
-      if (result.matchedPatterns.length === 0) return list;
-      // Backfill _promptCategory if the saved list pre-dates the hint AND the query library
-      // has a match for its queryText. Lets the dimension-aware crops filter in the service
-      // still find the right category for older saved lists without requiring a re-save.
-      let listFilters = list.filters;
-      if (listFilters && !listFilters._promptCategory && queryLibrary.length > 0) {
-        const qLower = list.query.trim().toLowerCase();
-        const matched = queryLibrary.find(q => q.queryText.trim().toLowerCase() === qLower);
-        if (matched?.category) listFilters = { ...listFilters, _promptCategory: matched.category };
-      }
-      const refined = listFilters
-        ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.contracts(), this.appState.notes(), {
-            tickets: this.tickets(),
-            storedGrain: this.storedGrain(),
-            dpContracts: this.dpContracts(),
-            plantingIntentions: this.plantingIntentions(),
-            commodityConversions: this.appState.commodityConversions(),
-            noteLastContacts: this.appState.noteLastContacts(),
-            commodities: this.appState.commodities()
-          })
-        : result.customers;
-      const ids = this.nlqFilterService.applyCustomerOverrides(
-        refined.map(c => c.id), list.includedCustomerIds, list.excludedCustomerIds
-      );
-      return { ...list, customerIds: ids };
-    });
-  }
-
-  /** Manager-only: fetch the team lists tied to the selected TU(s) and enrich them. Clears the set
-   *  for non-managers or when no TU is selected. */
-  private _loadTeamLists(): void {
-    const tus = this.selectedTradeUnits();
-    if (!this.isManager() || tus.length === 0) {
-      this.teamSavedLists.set([]);
-      return;
-    }
-    this.apiService.getTeamSavedLists(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => this.teamSavedLists.set(this._enrichLists(data ?? [], true)),
-      error: () => { /* supplementary view — leave the prior set in place */ }
-    });
-  }
-
-  /**
-   * Apply staged saved-list membership changes for the selected producer (from the profile
-   * header's Save). Membership lives in each list's included/excluded arrays; we mutate those
-   * (build-list rules), optimistically update + re-enrich locally, then persist each changed list
-   * via a full PUT (updateSavedList blanks omitted fields, so every field is sent). One success
-   * notification when all succeed; reverts everything on any error.
-   */
+  /** Applies the profile header's staged Add-to-List changes for the selected producer
+   *  (see HomeSavedListsStore.saveMembership). */
   handleSaveSavedListMembership(changes: { listId: number; add: boolean }[]): void {
-    const customer = this.selectedCustomer();
-    if (!customer || changes.length === 0) return;
-    const cid = customer.id;
-    // A change may target the user's own list OR (for a manager) a team list — snapshot both for
-    // revert and resolve each change against whichever set owns the id.
-    const ownOriginals = this.savedLists();
-    const teamOriginals = this.teamSavedLists();
-    const ownWorking = [...ownOriginals];
-    const teamWorking = [...teamOriginals];
-    let ownChanged = false;
-    let teamChanged = false;
-    const updates$ = [];
-
-    for (const ch of changes) {
-      let working = ownWorking;
-      let idx = ownWorking.findIndex(l => l.id === ch.listId);
-      let isTeam = false;
-      if (idx === -1) {
-        idx = teamWorking.findIndex(l => l.id === ch.listId);
-        working = teamWorking;
-        isTeam = true;
-      }
-      if (idx === -1) continue;
-      const list = working[idx];
-      const included = new Set(list.includedCustomerIds ?? []);
-      const excluded = new Set(list.excludedCustomerIds ?? []);
-      if (ch.add) {
-        excluded.delete(cid);
-        included.add(cid);
-      } else {
-        // Mirror build-list: drop a manual add if present, else exclude a query-matched member.
-        if (included.has(cid)) included.delete(cid);
-        else excluded.add(cid);
-      }
-      const newIncluded = [...included];
-      const newExcluded = [...excluded];
-      // Drop cached customerIds so _enrichSavedLists rebuilds this list's membership.
-      working[idx] = { ...list, includedCustomerIds: newIncluded, excludedCustomerIds: newExcluded, customerIds: undefined };
-      if (isTeam) teamChanged = true; else ownChanged = true;
-      updates$.push(this.apiService.updateSavedList(list.id, {
-        name: list.name,
-        query: list.query,
-        tradeUnits: list.tradeUnits,
-        filters: list.filters,
-        includedCustomerIds: newIncluded,
-        excludedCustomerIds: newExcluded,
-      }));
-    }
-    if (updates$.length === 0) return;
-
-    // Optimistic local apply, then persist all changed lists together.
-    if (ownChanged) { this.savedLists.set(ownWorking); this.appState.setSavedLists(ownWorking); }
-    if (teamChanged) { this.teamSavedLists.set(teamWorking); }
-    this._enrichSavedLists(true);
-
-    forkJoin(updates$).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => this.toastService.success(
-        updates$.length === 1 ? 'Saved list updated' : `${updates$.length} saved lists updated`
-      ),
-      error: () => {
-        if (ownChanged) { this.savedLists.set(ownOriginals); this.appState.setSavedLists(ownOriginals); }
-        if (teamChanged) { this.teamSavedLists.set(teamOriginals); }
-        this._enrichSavedLists(true);
-        this.toastService.error('Failed to save list changes');
-      }
-    });
+    this.lists.saveMembership(changes);
   }
 
   handleClearSelection(): void {
