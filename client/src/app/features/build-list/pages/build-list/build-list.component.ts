@@ -37,6 +37,9 @@ import {
   binSiteGrainHiddenLabel, binSiteGrainSummary, commodityCategoryByKey, contractsByCustomerCode, CropBushels, cropsByCustomer, dpBreakdown,
   formattedLocation, grainOnFarmBreakdown, groupByCustomerId, hasBinSiteGrain, initials, linkedProducerInfo, storageBreakdown, storageTotalBushels,
 } from '../../utils/result-rows';
+import {
+  filterLibrary, groupLibrary, libraryCategories, libraryCategoryForQuery, matchedPatternLabels, searchSavedLists, searchTeamLists,
+} from '../../utils/query-library';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
@@ -784,40 +787,7 @@ export class BuildListComponent {
     return ids.map(id => customerMap.get(id)).filter((c): c is Customer => !!c);
   });
 
-  // ── Pattern display name map for user-facing feedback ────────────────────
-  private readonly _patternDisplayNames: { [key: string]: string } = {
-    state_filter: 'State', acres_more: 'Acres (min)', acres_less: 'Acres (max)', acres_between: 'Acres (range)',
-    large_farm: 'Large operations', small_farm: 'Small operations', not_contacted: 'Not contacted',
-    recently_contacted: 'Recently contacted', storage: 'Has storage', no_storage: 'No storage',
-    storage_duration: 'Storage duration', planting: 'Planting', no_planting: 'No planting',
-    planting_year: 'Crop year', planting_type: 'Planting type',
-    active_contract: 'Active contracts', no_contract: 'No contracts',
-    unsigned_contract: 'Unconfirmed contracts', negative_pacing: 'Behind on pacing',
-    positive_pacing: 'Ahead on pacing', contract_unconfirmed: 'Unconfirmed contracts',
-    contract_confirmed: 'Confirmed contracts', contract_priced: 'Pricing status',
-    contract_quantity: 'Contract quantity', contract_value: 'Contract value',
-    contract_open_balance: 'Open balance', fulfillment_ratio: 'Fulfillment %',
-    commodity_contract: 'Commodity contracts', has_deliveries: 'Has deliveries',
-    no_deliveries: 'No deliveries', delivery_commodity: 'Delivery commodity',
-    delivery_quantity: 'Delivery quantity', ticket_unapplied: 'Unapplied tickets',
-    ticket_unsettled: 'Unsettled tickets', has_phone: 'Has phone', no_phone: 'No phone',
-    has_email: 'Has email', no_email: 'No email', commodities_match: 'Commodity match', crop_count: 'Crop count',
-    top_n: 'Top N ranking', customer_search: 'Name search', region_filter: 'Region',
-    multi_commodity: 'Multiple crops (AND)', multi_commodity_or: 'Multiple crops (OR)',
-    cross_contract_no_delivery: 'Contracted, not delivered',
-    cross_planting_no_contract: 'Planting, no contracts',
-    cross_delivery_no_contract: 'Delivered, no contracts',
-    note_contains: 'Notes containing',
-    grain_on_farm: 'Grain on farm', grain_target: 'Target price', grain_grade: 'Grade',
-  };
-
-  readonly matchedPatternLabels = computed(() =>
-    this.matchedPatterns()
-      .map(p => this._patternDisplayNames[p] || null)
-      .filter((label): label is string => label !== null)
-      // Deduplicate labels
-      .filter((v, i, a) => a.indexOf(v) === i)
-  );
+  readonly matchedPatternLabels = computed(() => matchedPatternLabels(this.matchedPatterns()));
 
   // ── Pre-indexed computed signals for O(1) lookups ────────────────────────
 
@@ -945,39 +915,12 @@ export class BuildListComponent {
   showRequestForm = signal(false);
   requestQueryText = signal('');
 
-  readonly filteredLibrary = computed(() => {
-    const search = this.librarySearchText().toLowerCase().trim();
-    const category = this.selectedCategory();
-    let items = this.queryLibrary();
-    // Prompt cards are database rows, so they appear the moment the migration runs — including in
-    // environments where the reminders feature is still switched off. There the follow-up card
-    // would resolve to nobody, every time, so hide it rather than leave a dead end on the page.
-    if (!environment.remindersEnabled) {
-      items = items.filter(q => !(q.tags || '').toLowerCase().includes('reminders'));
-    }
-    if (category) items = items.filter(q => q.category === category);
-    if (search) {
-      items = items.filter(q =>
-        q.name.toLowerCase().includes(search) ||
-        (q.description || '').toLowerCase().includes(search) ||
-        (q.tags || '').toLowerCase().includes(search) ||
-        q.category.toLowerCase().includes(search) ||
-        q.queryText.toLowerCase().includes(search)
-      );
-    }
-    return items;
-  });
+  /** Prompt cards for the selected category and search text. Cards tagged "reminders" are hidden while
+   *  the reminders feature is off — see filterLibrary. */
+  readonly filteredLibrary = computed(() =>
+    filterLibrary(this.queryLibrary(), this.librarySearchText().toLowerCase().trim(), this.selectedCategory(), environment.remindersEnabled));
 
-  readonly libraryCategories = computed(() => {
-    const cats = new Set(this.queryLibrary().map(q => q.category));
-    const sorted = [...cats].sort();
-    // Prepend pseudo-categories so they sit right after "All" (rendered separately, before this loop).
-    // 'Team Lists' (managers only) goes between 'Saved Lists' and the first real category. unshift in
-    // reverse order so the final order is: Saved Lists, Team Lists, <alphabetical categories>.
-    if (this.isManager()) sorted.unshift('Team Lists');
-    sorted.unshift('Saved Lists');
-    return sorted;
-  });
+  readonly libraryCategories = computed(() => libraryCategories(this.queryLibrary(), this.isManager()));
 
   /** Team lists shown in the library — manager-only, scoped to the current TU (overlap match done
    *  server-side), and matched against the library search text. Hidden when a non-'Team Lists'
@@ -987,15 +930,7 @@ export class BuildListComponent {
     const cat = this.selectedCategory();
     if (cat && cat !== 'Team Lists') return [];
     const search = this.librarySearchText().toLowerCase().trim();
-    let lists = this.teamSavedLists();
-    if (search) {
-      lists = lists.filter(l =>
-        l.name.toLowerCase().includes(search) ||
-        l.query.toLowerCase().includes(search) ||
-        (l.createdBy ?? '').toLowerCase().includes(search)
-      );
-    }
-    return lists;
+    return searchTeamLists(this.teamSavedLists(), search);
   });
 
   /** Saved lists shown in the library — user-owned (API filters by createdBy already), overlap-
@@ -1005,14 +940,7 @@ export class BuildListComponent {
     const cat = this.selectedCategory();
     if (cat && cat !== 'Saved Lists') return [];
     const search = this.librarySearchText().toLowerCase().trim();
-    let lists = this.visibleSavedLists();
-    if (search) {
-      lists = lists.filter(l =>
-        l.name.toLowerCase().includes(search) ||
-        l.query.toLowerCase().includes(search)
-      );
-    }
-    return lists;
+    return searchSavedLists(this.visibleSavedLists(), search);
   });
 
   /** The library category driving refine-panel visibility. Prefers the explicitly selected
@@ -1024,9 +952,7 @@ export class BuildListComponent {
     if (explicit) return explicit;
     const active = this.activeSavedList();
     if (!active) return null;
-    const qLower = active.query.trim().toLowerCase();
-    const matched = this.queryLibrary().find(q => q.queryText.trim().toLowerCase() === qLower);
-    return matched?.category ?? null;
+    return libraryCategoryForQuery(this.queryLibrary(), active.query);
   });
 
   /** True when we have an active saved list whose category we can't resolve yet because the
@@ -1179,15 +1105,7 @@ export class BuildListComponent {
     return !cat || cat === 'General' || cat === 'Producers';
   });
 
-  readonly groupedLibrary = computed(() => {
-    const items = this.filteredLibrary();
-    const map = new Map<string, QueryLibraryItem[]>();
-    for (const item of items) {
-      const arr = map.get(item.category);
-      if (arr) arr.push(item); else map.set(item.category, [item]);
-    }
-    return [...map.entries()].map(([category, queries]) => ({ category, queries }));
-  });
+  readonly groupedLibrary = computed(() => groupLibrary(this.filteredLibrary()));
 
 
   constructor() {

@@ -1417,6 +1417,51 @@ describe('BuildListComponent', () => {
       expect(c.dpBu(BRAVO)).toBe(7000);
     });
 
+    // ── Prompt library ──
+
+    it('library search also matches descriptions and prompt text', () => {
+      const c = mount();
+      c.onLibrarySearchChange('PURCHASE contract');
+      expect(c.filteredLibrary().map(q => q.id)).toEqual([1]);
+      c.onLibrarySearchChange('top 10 producers');
+      expect(c.filteredLibrary().map(q => q.id)).toEqual([5]);
+      c.onLibrarySearchChange('');
+      c.selectedCategory.set('Tickets');
+      expect(c.groupedLibrary()).toEqual([{ category: 'Tickets', queries: [LIB_DELIVERED] }]);
+    });
+
+    it('managers\' team lists match the search on name, prompt or owner and hide under a prompt category', () => {
+      isAdmin = true;
+      const TEAM: SavedList[] = [
+        { id: 20, name: 'Corn growers', query: 'All producers', createdBy: 'Lee Smith', createdAt: '2026-10-01T00:00:00' },
+        { id: 21, name: 'Beans', query: 'Producers with active contracts', createdBy: 'Pat Jones', createdAt: '2026-10-01T00:00:00' },
+      ];
+      api.getTeamSavedLists.mockReturnValue(of(TEAM) as never);
+      const c = mount();
+
+      expect(c.libraryTeamLists()).toEqual(TEAM);
+      c.onLibrarySearchChange('smith');
+      expect(c.libraryTeamLists().map(l => l.id)).toEqual([20]);
+      c.onLibrarySearchChange('active');
+      expect(c.libraryTeamLists().map(l => l.id)).toEqual([21]);
+      c.onLibrarySearchChange('');
+      c.selectedCategory.set('Team Lists');
+      expect(c.libraryTeamLists()).toHaveLength(2);
+      expect(c.librarySavedLists()).toEqual([]);
+      c.selectedCategory.set('Contracts');
+      expect(c.libraryTeamLists()).toEqual([]);
+    });
+
+    it('matched-pattern labels are de-duplicated and unknown patterns dropped', () => {
+      nlq.parseAndFilter.mockImplementation((_q: string, ctx: NlqFilterContext): NlqFilterResult => ({
+        customers: ctx.customers, detectedState: null,
+        matchedPatterns: ['unsigned_contract', 'mystery_pattern', 'contract_unconfirmed', 'state_filter'],
+      }));
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+      expect(c.matchedPatternLabels()).toEqual(['Unconfirmed contracts', 'State']);
+    });
+
     it('the linked-records prompt folds linked producers into one row with a linked panel', () => {
       api.getCustomers.mockReturnValue(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', linkedProducerIds: ['C2'] }),
