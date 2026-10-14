@@ -3283,7 +3283,7 @@
       "resolution_notes": "Confirmed real with PROD data on 2026-10-14: of ~196k purchase contracts in base.vw_CurrentContracts, BU 160,289; ST 28,397; LB 2,802; RC 2,034; MT 1,606; GL 366; NULL 363 (treated as BU); KG 44; CW 11; EA 5. Sales Opportunities now converts total, open and priced quantity with quantityInBushels, the helper Contract Coverage uses, so the two cards agree; Avg Price is total value per bushel. Contracts that cannot be converted (RC, GL, EA, or no lb/bu factor) are left out and the card says how many. Spec updated (30 ST = 1,000 bu at $12/bu) plus an exclusion test; mutation-checked."
     },
     {
-      "status": "open",
+      "status": "resolved",
       "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
       "id": "code-review.producer-insights-average-includes-unconvertible-contracts",
       "audit": "code-review",
@@ -3297,10 +3297,15 @@
       "opened_in": {
         "date": "2026-10-13"
       },
-      "last_verified": "2026-10-13"
+      "last_verified": "2026-10-14",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Avg Contract divides by the contracts that made it into Total Volume (sumInBushels excludedContracts subtracted); 0 when none convert, never NaN. Pinned example now 9,000 instead of 4,500. Real in PROD: 18% of purchase contracts are non-bushel. Owner approved 2026-10-14 (\"fix them, make sure the fix is needed\"); verified real before fixing, mutation-checked."
     },
     {
-      "status": "open",
+      "status": "resolved",
       "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
       "id": "code-review.tickets-table-conversion-map-stale-on-same-length-update",
       "audit": "code-review",
@@ -3314,10 +3319,15 @@
       "opened_in": {
         "date": "2026-10-13"
       },
-      "last_verified": "2026-10-13"
+      "last_verified": "2026-10-14",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Map is now a computed() over commodityConversions. Latent only: today the list is loaded once (DataPreloadService, take(1)), so it never changes after empty->loaded; fixed to remove the trap. Same pattern remains in three other files, tracked as angular.length-cached-conversion-maps. Owner approved 2026-10-14 (\"fix them, make sure the fix is needed\"); verified real before fixing, mutation-checked."
     },
     {
-      "status": "open",
+      "status": "resolved",
       "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
       "id": "code-review.print-report-preview-and-print-disagree",
       "audit": "code-review",
@@ -3331,10 +3341,15 @@
       "opened_in": {
         "date": "2026-10-13"
       },
-      "last_verified": "2026-10-13"
+      "last_verified": "2026-10-14",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "All four real (five tests written first, all failed on the old code): (1) grain-row tint looked up an upper-cased code in a lower-cased index; (2) Bin Sites section never printed, now printed like the preview, every value via _esc; (3) pricing lines print with the preview columns/precision/dates (old print showed 2026-10-01 as Sep 30 and rounded -0.3525 to $-0.35); (4) section defaults follow data that arrives after the dialog opens, never overriding a box the user set by hand. Band colours come only from fixed hex values. Owner approved 2026-10-14 (\"fix them, make sure the fix is needed\"); verified real before fixing, mutation-checked."
     },
     {
-      "status": "open",
+      "status": "resolved",
       "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
       "id": "code-review.customer-list-failed-search-shows-whole-roster",
       "audit": "code-review",
@@ -3347,10 +3362,15 @@
       "opened_in": {
         "date": "2026-10-13"
       },
-      "last_verified": "2026-10-13"
+      "last_verified": "2026-10-14",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Part 1 fixed: a failed search shows an inline \"Search failed\" state (role=alert) instead of the roster; cleared by the next success, clearing the box, or Reset; no double toast (ApiService toasts 401/403 only). Part 2 deliberately NOT changed: the in-place customerIds mutation is relied on by home (_enrichSavedLists skips resolved lists) and the producer profile Add-to-List (isInList reads list.customerIds); now pinned by a test so a cleanup cannot remove it unknowingly. Owner approved 2026-10-14 (\"fix them, make sure the fix is needed\"); verified real before fixing, mutation-checked."
     },
     {
-      "status": "open",
+      "status": "resolved",
       "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
       "id": "angular.unshipped-bushels-alias-filter-misses-producers",
       "audit": "angular",
@@ -3363,10 +3383,15 @@
       "opened_in": {
         "date": "2026-10-13"
       },
-      "last_verified": "2026-10-13"
+      "last_verified": "2026-10-14",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Producer filter and row filter share commodityTerms()/matchesCommodity(), so a producer shows exactly when one of its rows matches (milo finds Sorghum-only producers, and the reverse). Kept the page's own small alias map rather than the shared one, which would also widen the rows. Owner approved 2026-10-14 (\"fix them, make sure the fix is needed\"); verified real before fixing, mutation-checked."
     },
     {
-      "status": "open",
+      "status": "resolved",
       "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
       "id": "angular.stored-grain-table-search-and-sort-gaps",
       "audit": "angular",
@@ -3379,10 +3404,15 @@
       "opened_in": {
         "date": "2026-10-13"
       },
-      "last_verified": "2026-10-13"
+      "last_verified": "2026-10-14",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "All real: Location mode now alphabetical by location; changing group mode keeps the typed search (reset now only when another producer's receipts load); \"Since\" follows the filtered receipts like the other figures; removed unused showSearch/clearSearch/totalStorageCost (kept the customer input, bound by the parent). Owner approved 2026-10-14 (\"fix them, make sure the fix is needed\"); verified real before fixing, mutation-checked."
     },
     {
-      "status": "open",
+      "status": "resolved",
       "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
       "id": "code-review.contract-delivery-zero-quantity-counts-complete",
       "audit": "code-review",
@@ -3396,7 +3426,12 @@
       "opened_in": {
         "date": "2026-10-13"
       },
-      "last_verified": "2026-10-13"
+      "last_verified": "2026-10-14",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Comment was wrong, code was right: the 0.01 floor is what lets a quantity-0 contract with no open balance count as complete; without it such a contract would stay open at 0% forever, appear on Unshipped Bushels, raise Activity Summary overdue counts and match Build-a-List/NLQ past-due filters. Comment corrected, no behaviour change. Contract.openBalanceQuantity typed number | null (the API sends null). Owner approved 2026-10-14 (\"fix them, make sure the fix is needed\"); verified real before fixing, mutation-checked."
     },
     {
       "status": "resolved",
@@ -3440,6 +3475,25 @@
         "date": "2026-10-13"
       },
       "last_verified": "2026-10-13"
+    },
+    {
+      "id": "angular.length-cached-conversion-maps",
+      "audit": "angular",
+      "severity": "low",
+      "status": "open",
+      "title": "Three components cache the lbs-per-bushel map until the conversion list length changes",
+      "description": "contracts-table.component.ts (~line 680), activity-summary.component.ts (~line 602) and customer-print-report.component.ts (~line 476) rebuild their conversion map only when commodityConversions().length changes, the pattern fixed in tickets-table on 2026-10-14. Latent: the list is loaded once per session today, so it cannot go stale in practice.",
+      "files": [
+        "client/src/app/features/customers/components/contracts-table/contracts-table.component.ts",
+        "client/src/app/features/customers/components/activity-summary/activity-summary.component.ts",
+        "client/src/app/features/customers/components/customer-print-report/customer-print-report.component.ts"
+      ],
+      "suggested_fix": "Derive each map with computed() over the conversions signal, as tickets-table now does.",
+      "opened_in": {
+        "date": "2026-10-14"
+      },
+      "last_verified": "2026-10-14",
+      "notes": "[2026-10-14] Spotted while fixing the tickets-table instance; not changed because it cannot happen with today's load-once behaviour."
     }
   ]
 }
