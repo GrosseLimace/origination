@@ -184,6 +184,26 @@ describe('CustomerPrintReportComponent', () => {
     fixture.detectChanges();
   }
 
+  /** Clicks Print Report and returns the page handed to the (stubbed) print window, parsed. */
+  function printed(): Document {
+    const frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    const printWindow = frame.contentWindow!;
+    printWindow.print = vi.fn();
+    let written = '';
+    vi.spyOn(printWindow.document, 'write').mockImplementation((...chunks: string[]) => { written += chunks.join(''); });
+    vi.spyOn(printWindow.document, 'close').mockImplementation(() => undefined);
+    vi.spyOn(window, 'open').mockReturnValue(printWindow);
+    click(Array.from(host().querySelectorAll('app-button button')).find(b => squash(b.textContent) === 'Print Report'));
+    frame.remove();
+    return new DOMParser().parseFromString(written, 'text/html');
+  }
+  /** A printed section by its title (the title's own text, ignoring any trailing sub-label). */
+  function printedSection(doc: Document, title: string): HTMLElement | undefined {
+    return Array.from(doc.querySelectorAll<HTMLElement>('.section-title'))
+      .find(d => squash(d.childNodes[0]?.textContent) === title)?.parentElement ?? undefined;
+  }
+
   /** Builds the component with its data inputs, then opens the dialog (the defaults effect fires on open). */
   function open(inputs: {
     customer?: Customer; contracts?: Contract[]; tickets?: Ticket[]; plantingIntentions?: PlantingIntention[];
@@ -493,6 +513,39 @@ describe('CustomerPrintReportComponent', () => {
       ['Not tied to a bin site'],
       ['YSB', '3,000 bu', '1,000 bu', 'TW 58', '—', '—'],
     ]);
+  });
+
+  // The section was preview-only: _buildPrintHtml had no bin-site block, so it never reached paper.
+  it('prints the Bin Sites & Grain on Farm section as previewed, escaped, and leaves it off when unchecked', () => {
+    open({
+      commodities: [makeCommodity()],
+      customer: makeCustomer({
+        binSites: [
+          { siteKey: 's1', name: 'North <b>bins</b>', capacity: 30000 },
+          { siteKey: 's2', name: 'Empty site' },
+        ],
+        grainOnFarm: [
+          { binSiteKey: 's1', commodityCode: 'YC', bushelsOnHand: 12000, bushelsSold: 500, targetBushels: 4.5, lastBid: -0.3525, grade: '<i>#2</i>' },
+          { binSiteKey: null, commodityCode: 'YSB', bushelsOnHand: 3000 },
+        ],
+      }),
+    });
+    const doc = printed();
+    const printedBins = printedSection(doc, 'Bin Sites & Grain on Farm');
+
+    expect(printedBins).toBeDefined();
+    expect(squash(printedBins!.querySelector('.section-title')!.textContent)).toBe('Bin Sites & Grain on Farm · 15,000 bu on farm');
+    const rowsOf = (root: ParentNode) => Array.from(root.querySelectorAll('tbody tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => squash(td.textContent)));
+    expect(rowsOf(printedBins!)).toEqual(sectionRows('Bin Sites & Grain on Farm'));
+    expect(rowsOf(printedBins!)[0]).toEqual(['North <b>bins</b> · 30,000 bu capacity']);   // markup printed as text
+    expect(printedBins!.querySelector('b, i')).toBeNull();
+    // Grain rows carry the same crop tint as the preview (YC → corn yellow).
+    const tints = (root: ParentNode) => Array.from(root.querySelectorAll<HTMLElement>('tbody tr')).map(tr => tr.style.backgroundColor);
+    expect(tints(printedBins!)).toEqual(tints(section('Bin Sites & Grain on Farm')));
+    expect(tints(printedBins!)[1]).toBe(component.commodityBandColor('corn'));
+
+    setChecked(/^Bin Sites & Grain on Farm \(/, false);
+    expect(printedSection(printed(), 'Bin Sites & Grain on Farm')).toBeUndefined();
   });
 
   it('tints a grain row by its commodity name when the code has no crop group, whatever the code casing', () => {

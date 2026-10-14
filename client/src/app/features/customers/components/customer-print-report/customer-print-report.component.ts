@@ -893,6 +893,35 @@ export class CustomerPrintReportComponent {
       </div>`;
     }
 
+    // Bin Sites & Grain on Farm (a band per site, then the grain stored there — mirrors the preview)
+    const binSites = this.binSiteGroups();
+    if (this.showBinSites() && binSites.length > 0) {
+      const onFarm = this.grainOnFarmTotal();
+      const cell = 'padding:4px 8px;text-align:center;border:1px solid #e5e7eb;';
+      html += `<div class="section">
+        <div class="section-title">Bin Sites &amp; Grain on Farm${onFarm > 0 ? `<span style="font-weight:500;letter-spacing:0;text-transform:none;color:#6b7280;"> · ${this._esc(onFarm.toLocaleString())} bu on farm</span>` : ''}</div>
+        <div class="table-wrap"><table>
+          <thead><tr class="table-header">
+            <th style="text-align:left;padding:5px 8px;border:1px solid #e5e7eb;">Crop</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">On Farm</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Sold</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Grade</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Target</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Last Bid</th>
+          </tr></thead>
+          <tbody>
+            ${binSites.map(site => `<tr style="background:#f9fafb;">
+              <td colspan="6" style="padding:5px 8px;text-align:left;font-weight:600;color:#374151;border:1px solid #e5e7eb;">${this._esc(site.name)}${site.capacity != null ? `<span style="font-weight:400;color:#6b7280;"> · ${this._esc(site.capacity.toLocaleString())} bu capacity</span>` : ''}</td>
+            </tr>${site.rows.length > 0
+              ? site.rows.map(g => `<tr style="background:${this.grainBandColor(g.commodityCode)};">
+                <td style="${cell}text-align:left;font-weight:500;">${this._esc(g.commodityCode)}</td>
+                <td style="${cell}">${this._esc((g.bushelsOnHand ?? 0).toLocaleString())} bu</td>
+                <td style="${cell}">${(g.bushelsSold ?? 0) > 0 ? `${this._esc((g.bushelsSold ?? 0).toLocaleString())} bu` : '—'}</td>
+                <td style="${cell}">${this._esc(g.grade?.trim() || '—')}</td>
+                <td style="${cell}">${g.targetBushels != null ? this._esc(this.formatCurrency(g.targetBushels)) : '—'}</td>
+                <td style="${cell}">${this._esc(this.formatLastBid(g.lastBid))}</td>
+              </tr>`).join('')
+              : `<tr><td colspan="6" style="padding:4px 8px;text-align:left;color:#9ca3af;font-style:italic;border:1px solid #e5e7eb;">No grain on farm recorded</td></tr>`}`).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
+    }
+
     // Footer
     html += `<div style="border-top: 2px solid ${accent}; padding-top: 16px; margin-top: 32px; display: flex; justify-content: space-between; align-items: flex-end;">
       <div style="font-size: 11px; color: #6b7280;">
