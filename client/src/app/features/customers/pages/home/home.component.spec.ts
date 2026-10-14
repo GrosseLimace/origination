@@ -1014,6 +1014,165 @@ describe('HomeComponent', () => {
     });
   });
 
+  // ── Notes (characterisation, written against the pre-extraction page) ────────
+  describe('notes', () => {
+    /** The note CRUD calls are not in the shared API stub; add them to the same object the page holds. */
+    function withNoteApi(h: Harness) {
+      return Object.assign(h.api, {
+        createNote: vi.fn((customerId: number, content: string, _tu?: string, _m?: unknown): Observable<Note> =>
+          of({ ...note(500, customerId, NOW), content })),
+        toggleNotePin: vi.fn((id: number): Observable<Note> => of({ ...note(id, 1, new Date('2026-09-01T00:00:00Z')), isPinned: true })),
+        updateNote: vi.fn((id: number, content: string, _m?: unknown): Observable<Note> =>
+          of({ ...note(id, 1, new Date('2026-10-01T12:00:00Z')), content })),
+        deleteNote: vi.fn((_id: number): Observable<void> => of(undefined)),
+      });
+    }
+
+    const older = note(1, 1, new Date('2026-09-01T00:00:00Z'));
+    const newer = note(2, 1, new Date('2026-10-01T12:00:00Z'));
+
+    it('adding a note puts it in the panel and the badge feed, and clears the form', () => {
+      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
+      const api = withNoteApi(h);
+      h.c.handleSelectCustomer(A);
+
+      h.c.addNote({ content: 'called', mentions: [] });
+
+      expect(api.createNote).toHaveBeenCalledWith(1, 'called', 'TU1', []);
+      expect(h.c.customerNotes().map(n => n.id)).toEqual([500, 1]);
+      expect(h.c.lastContactedDate()).toBe('Today');
+      expect(h.c.noteLastContacts()).toEqual([{ customerId: 1, customerCode: undefined, lastNoteAt: NOW }]);
+      expect(h.app.setNoteLastContacts).toHaveBeenLastCalledWith(h.c.noteLastContacts());
+      expect(h.c.noteSaveSucceededCounter()).toBe(1);
+      expect(h.c.isSavingNote()).toBe(false);
+      expect(h.toast.success).toHaveBeenCalledWith('Note added');
+    });
+
+    it('a failed add keeps the typed text (no counter bump) and shows the server\'s reason', () => {
+      const h = setup();
+      const api = withNoteApi(h);
+      api.createNote.mockReturnValue(throwError(() => new Error('That group is no longer available.')));
+      h.c.handleSelectCustomer(A);
+
+      h.c.addNote({ content: 'x', mentions: [] });
+
+      expect(h.toast.error).toHaveBeenCalledWith('That group is no longer available.');
+      expect(h.c.noteSaveSucceededCounter()).toBe(0);
+      expect(h.c.isSavingNote()).toBe(false);
+    });
+
+    it('ignores a second add while one is saving, and refuses an onboarding candidate', () => {
+      const h = setup();
+      const api = withNoteApi(h);
+      api.createNote.mockReturnValue(NEVER);
+      h.c.handleSelectCustomer(A);
+
+      h.c.addNote({ content: 'one', mentions: [] });
+      h.c.addNote({ content: 'two', mentions: [] });
+      expect(api.createNote).toHaveBeenCalledTimes(1);
+      expect(h.c.isSavingNote()).toBe(true);
+
+      h.c.handleSelectCustomer(customer(4, { isOnboardCandidate: true }));
+      api.createNote.mockClear();
+      h.c.isSavingNote.set(false);
+      h.c.addNote({ content: 'three', mentions: [] });
+      expect(api.createNote).not.toHaveBeenCalled();
+      expect(h.toast.error).toHaveBeenCalledWith('Assign a trade unit and save this producer before adding notes.');
+    });
+
+    it('pinning moves a note to the top; editing replaces its text', () => {
+      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older, newer])) });
+      withNoteApi(h);
+      h.c.handleSelectCustomer(A);
+      expect(h.c.customerNotes().map(n => n.id)).toEqual([2, 1]);
+
+      h.c.toggleNotePin(older);
+      expect(h.c.customerNotes().map(n => n.id)).toEqual([1, 2]);
+      expect(h.toast.success).toHaveBeenCalledWith('Note pinned');
+
+      h.c.editNote({ noteId: 2, content: 'edited', mentions: [] });
+      expect(h.c.customerNotes().find(n => n.id === 2)?.content).toBe('edited');
+      expect(h.toast.success).toHaveBeenCalledWith('Note updated');
+    });
+
+    it('deleting the last note drops the producer back to "Never" and mirrors into the loaded NLQ cache', () => {
+      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
+      withNoteApi(h);
+      h.app.setNotes([older, note(9, 3, NOW)]);
+      h.c.handleSelectCustomer(A);
+      expect(h.c.noteLastContacts().map(r => r.customerId)).toEqual([1]);
+
+      h.c.deleteNote(1);
+
+      expect(h.c.customerNotes()).toEqual([]);
+      expect(h.c.lastContactedDate()).toBe('Never');
+      expect(h.c.noteLastContacts()).toEqual([]);
+      expect(h.app.notes().map(n => n.id)).toEqual([9]);
+      expect(h.toast.success).toHaveBeenCalledWith('Note deleted');
+    });
+
+    it('a re-click shows cached notes at once with no spinner, then re-reads them once', () => {
+      const second = new Subject<Note[]>();
+      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
+      h.c.handleSelectCustomer(A);
+      h.c.handleSelectCustomer(B);
+      h.api.getNotesByCustomer.mockReturnValue(second.asObservable());
+
+      h.c.handleSelectCustomer(A);
+      expect(h.c.customerNotes().map(n => n.id)).toEqual([1]);
+      expect(h.c.isLoadingNotes()).toBe(false);
+      expect(callsFor(h.api.getNotesByCustomer, 1)).toBe(2);
+
+      second.next([older, newer]);
+      second.complete(); // forkJoin answers on completion
+      expect(h.c.customerNotes().map(n => n.id)).toEqual([2, 1]);
+    });
+
+    it('a failed notes read is not cached as "no notes": the next selection shows the spinner and retries', () => {
+      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(throwError(() => httpError(500))) });
+      h.c.handleSelectCustomer(A);
+      expect(h.c.isLoadingNotes()).toBe(false);
+      expect(h.c.customerNotes()).toEqual([]);
+      const reads = callsFor(h.api.getNotesByCustomer, 1);
+
+      h.api.getNotesByCustomer.mockReturnValue(NEVER);
+      h.c.handleSelectCustomer(B);
+      h.c.handleSelectCustomer(A);
+
+      expect(h.c.isLoadingNotes()).toBe(true);
+      expect(callsFor(h.api.getNotesByCustomer, 1)).toBe(reads + 1);
+    });
+
+    it('a trade-unit change forgets cached notes, so the next selection re-reads them with nothing cached to show', () => {
+      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
+      h.c.handleSelectCustomer(A);
+      h.api.getNotesByCustomer.mockReturnValue(NEVER);
+      const reads = callsFor(h.api.getNotesByCustomer, 1);
+
+      h.app.selectedTradeUnits.set(['TU2']);
+      h.flush();
+      expect(h.c.isLoadingNotes()).toBe(false);
+      h.c.handleSelectCustomer(A);
+
+      expect(callsFor(h.api.getNotesByCustomer, 1)).toBe(reads + 1);
+      expect(h.c.customerNotes()).toEqual([]);
+    });
+
+    it('keeps the badge feed in step with what a producer\'s fresh notes say', () => {
+      const h = setup({
+        arrange: (api, _nlq, app) => {
+          app.noteLastContacts.set([{ customerId: 1, lastNoteAt: new Date('2026-01-01T00:00:00Z') }]);
+          api.getNotesByCustomer.mockReturnValue(of([newer]));
+        },
+      });
+      h.flush();
+
+      h.c.handleSelectCustomer(A);
+
+      expect(h.c.noteLastContacts()).toEqual([{ customerId: 1, customerCode: undefined, lastNoteAt: new Date('2026-10-01T12:00:00Z') }]);
+    });
+  });
+
   // These reads used to fail silently into an empty list; the shared flags are what the producer
   // list and Build-a-List read to say "couldn't load" instead of "none".
   describe('trade-unit read failures', () => {
