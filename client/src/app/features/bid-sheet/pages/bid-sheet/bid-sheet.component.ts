@@ -25,17 +25,10 @@ import {
   BidSheetPanelItem, BidStatus, buildBidLookup, buildPanelItems, buildPanelLocationBids, computeItemStatus, deriveAllProducersFilters,
   flattenBidEntries, formatMonthYear, lookupBid, parseBid
 } from '../../utils/bid-math';
-
-interface EditBidsRow {
-  name: string;
-  type: 'elevator' | 'entry';
-  elevatorCode?: string;
-  tradeUnitCode?: string;
-  latitude?: number;
-  longitude?: number;
-  bids: Record<string, string>;
-  originalBids: Record<string, string>;
-}
+import {
+  applyBidsToLocations, arrowKeyTarget, buildDirtyBids, buildEditGridColumns, buildEditGridRows, clearDirtyForSaved, defaultMonthOrder,
+  DirtyBid, EditBidsRow, editBidsMonthsLabel, orderEditBidsCrops, reorderCropsByColumnDrop, savedBidKey, setRowBid, toggleMonth, withHiddenCropsLast
+} from '../../utils/edit-grid';
 
 /** One row in the Yearly print columns builder. The resolved crop year = editBidsYear() + offset
  *  (relative, so it rolls over). oldNew picks the header style: '' = just the year, 'old'/'new' = "Old/New Crop (YYYY)". */
@@ -208,14 +201,7 @@ export class BidSheetComponent {
 
   /** Label shown on the month-selector button.
    *  Year-only → "Year". Months only → "N Months". Mixed → "N Months + Year". */
-  readonly editBidsMonthsLabel = computed(() => {
-    const months = this.editBidsMonths();
-    const hasYearly = months.includes(0);
-    const specificCount = months.filter(m => m !== 0).length;
-    if (specificCount === 0) return 'Year';
-    const base = `${specificCount} Month${specificCount === 1 ? '' : 's'}`;
-    return hasYearly ? `${base} + Year` : base;
-  });
+  readonly editBidsMonthsLabel = computed(() => editBidsMonthsLabel(this.editBidsMonths()));
   showMonthDropdown = signal(false);
   /** Crop code currently being dragged (for group highlight). Empty when not dragging. */
   draggingCrop = signal<string>('');
@@ -238,41 +224,13 @@ export class BidSheetComponent {
   // can report the session total. Keyed by name|commodity|cropYear|month; reset when the grid opens.
   private _editBidsSavedKeys = new Set<string>();
 
-  readonly editBidsCrops = computed(() => {
-    const hidden = this.hiddenCrops();
-    let result = [...this.crops()].filter(c => !hidden.has(c));
-    // Apply saved crop column order (unknown crops go to end)
-    const savedOrder = this.cropOrderByTu().get(this.activeTradeUnitKey());
-    if (savedOrder && savedOrder.length > 0) {
-      const orderMap = new Map(savedOrder.map((code, idx) => [code, idx]));
-      result.sort((a, b) => {
-        const ai = orderMap.get(a) ?? Number.MAX_SAFE_INTEGER;
-        const bi = orderMap.get(b) ?? Number.MAX_SAFE_INTEGER;
-        return ai - bi;
-      });
-    }
-    return result;
-  });
-
-  /** Month name abbreviations for column labels. */
-  private static readonly MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  /** Visible crops (hidden removed) in the saved crop column order (unknown crops go to end). */
+  readonly editBidsCrops = computed(() =>
+    orderEditBidsCrops(this.crops(), this.hiddenCrops(), this.cropOrderByTu().get(this.activeTradeUnitKey())));
 
   /** Grid column definitions: in yearly mode columns = crops, in monthly mode columns = crop x month pairs. */
-  readonly editGridColumns = computed(() => {
-    const months = this.editBidsMonths();
-    const crops = this.editBidsCrops();
-    const year = this.editBidsYear();
-    // Cross-product of crops × selected months, in the user's chosen month order (editBidsMonths is the
-    // canonical order — defaults to Yearly first, reorderable via the print dialog's Months list).
-    return crops.flatMap(crop =>
-      months.map(m => ({
-        key: `${crop}#${m}`,
-        crop,
-        month: m,
-        label: m === 0 ? `${crop} ${year}` : `${crop} ${BidSheetComponent.MONTH_NAMES[m]}`
-      }))
-    );
-  });
+  readonly editGridColumns = computed(() =>
+    buildEditGridColumns(this.editBidsCrops(), this.editBidsMonths(), this.editBidsYear()));
 
   // --- Commodities lookup ---
   allCommodities = signal<Commodity[]>([]);
@@ -1099,44 +1057,9 @@ export class BidSheetComponent {
   }
 
   private _buildEditGrid(year: number): void {
-    const lookup = this.bidLookup();
-    const columns = this.editGridColumns();
-    const rows: EditBidsRow[] = [];
-    const addedNames = new Set<string>();
-
-    // Add locations that have bid entries
-    const uniqueNames = [...new Set(this.bidEntries().map(e => e.name))];
-    for (const name of uniqueNames) {
-      addedNames.add(name);
-      const rep = this.bidEntries().find(e => e.name === name);
-      const bids: Record<string, string> = {};
-      for (const col of columns) {
-        bids[col.key] = lookup.get(`${name}|${col.crop}|${year}|${col.month}`)?.bid ?? '';
-      }
-      rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids } });
-    }
-
-    // Also include locations with no bids yet (e.g. just added from Edit Bids)
-    for (const loc of this.bidLocations()) {
-      if (addedNames.has(loc.name)) continue;
-      addedNames.add(loc.name);
-      const bids: Record<string, string> = {};
-      for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids } });
-    }
-
-    // Apply saved location order (unknown names go to end)
-    const savedOrder = this.locationOrderByTu().get(this.activeTradeUnitKey());
-    if (savedOrder && savedOrder.length > 0) {
-      const orderMap = new Map(savedOrder.map((name, idx) => [name, idx]));
-      rows.sort((a, b) => {
-        const ai = orderMap.get(a.name) ?? Number.MAX_SAFE_INTEGER;
-        const bi = orderMap.get(b.name) ?? Number.MAX_SAFE_INTEGER;
-        return ai - bi;
-      });
-    }
-
-    this.editBidsRows.set(rows);
+    this.editBidsRows.set(buildEditGridRows(
+      this.bidEntries(), this.bidLocations(), this.editGridColumns(), this.bidLookup(), year,
+      this.locationOrderByTu().get(this.activeTradeUnitKey())));
   }
 
   onRowDrop(event: CdkDragDrop<EditBidsRow[]>): void {
@@ -1169,21 +1092,11 @@ export class BidSheetComponent {
   onCropColumnDrop(event: CdkDragDrop<string[]>): void {
     if (event.previousIndex === event.currentIndex) return;
 
-    const columns = this.editGridColumns();
-    const draggedCrop = columns[event.previousIndex]?.crop;
-    const targetCrop = columns[event.currentIndex]?.crop;
-    if (!draggedCrop || !targetCrop || draggedCrop === targetCrop) return;
-
     // Reorder at the CROP level (not individual columns) so all months for a crop move together
-    const visible = [...this.editBidsCrops()];
-    const fromIdx = visible.indexOf(draggedCrop);
-    const toIdx = visible.indexOf(targetCrop);
-    if (fromIdx === -1 || toIdx === -1) return;
-    moveItemInArray(visible, fromIdx, toIdx);
-
-    // Rebuild the full crops list: visible crops in new order, then hidden crops at the end
-    const hidden = this.crops().filter(c => this.hiddenCrops().has(c));
-    this.crops.set([...visible, ...hidden]);
+    const reordered = reorderCropsByColumnDrop(
+      this.editGridColumns(), this.editBidsCrops(), this.crops(), this.hiddenCrops(), event.previousIndex, event.currentIndex);
+    if (!reordered) return;
+    this.crops.set(reordered);
 
     // Persist the new order
     const key = this.activeTradeUnitKey();
@@ -1286,21 +1199,7 @@ export class BidSheetComponent {
 
   /** Toggles a month in the pending selection (not yet applied). Yearly (0) can be selected alongside specific months. */
   toggleEditMonth(month: number): void {
-    this.pendingMonths.update(arr => {
-      let updated = [...arr];
-      if (updated.includes(month)) {
-        updated = updated.filter(m => m !== month);
-      } else {
-        updated.push(month);
-      }
-      // If nothing selected, fall back to yearly
-      return updated.length === 0 ? [0] : updated;
-    });
-  }
-
-  /** Default month ordering: Yearly (0) first, then months in calendar order. Custom order comes from drag. */
-  private _defaultMonthOrder(months: number[]): number[] {
-    return [...new Set(months)].sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : a - b));
+    this.pendingMonths.update(arr => toggleMonth(arr, month));
   }
 
   /** Applies the pending month selection and closes the dropdown. */
@@ -1309,7 +1208,7 @@ export class BidSheetComponent {
     // Save edits against the CURRENT columns before editBidsMonths changes (which reshapes editGridColumns).
     this._saveDirtyBids(() => {
       // Selecting months (re)applies the default order (Yearly first); drag in the print dialog customizes it.
-      this.editBidsMonths.set(this._defaultMonthOrder(this.pendingMonths()));
+      this.editBidsMonths.set(defaultMonthOrder(this.pendingMonths()));
       this.showMonthDropdown.set(false);
       this._buildEditGrid(this.editBidsYear());
       if (changed) {
@@ -1338,8 +1237,7 @@ export class BidSheetComponent {
     if (event.previousIndex === event.currentIndex) return;
     const visible = [...this.editBidsCrops()];
     moveItemInArray(visible, event.previousIndex, event.currentIndex);
-    const hidden = this.crops().filter(c => this.hiddenCrops().has(c));
-    const orderedCrops = [...visible, ...hidden]; // keep hidden crops parked at the end
+    const orderedCrops = withHiddenCropsLast(visible, this.crops(), this.hiddenCrops()); // keep hidden crops parked at the end
     this.crops.set(orderedCrops);
     this._saveCropOrder(orderedCrops);
   }
@@ -1373,66 +1271,28 @@ export class BidSheetComponent {
   /** Pushes editBidsYear/editBidsMonths back to the panel/map state (selectedYear, selectedMonth, yearOffset) and saves preference. */
   /** Handles arrow key navigation between bid input cells in the edit grid. */
   onBidKeyDown(event: KeyboardEvent, rowIdx: number, colIdx: number): void {
-    const key = event.key;
-    if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
     const columns = this.editGridColumns();
-    const rowCount = this.editBidsRows().length;
-    let targetRow = rowIdx;
-    let targetCol = colIdx;
-    if (key === 'ArrowUp') targetRow = Math.max(0, rowIdx - 1);
-    else if (key === 'ArrowDown') targetRow = Math.min(rowCount - 1, rowIdx + 1);
-    else if (key === 'ArrowLeft') targetCol = Math.max(0, colIdx - 1);
-    else if (key === 'ArrowRight') targetCol = Math.min(columns.length - 1, colIdx + 1);
-    if (targetRow === rowIdx && targetCol === colIdx) return;
+    const target = arrowKeyTarget(event.key, rowIdx, colIdx, this.editBidsRows().length, columns.length);
+    if (!target) return;
     event.preventDefault();
-    const targetKey = columns[targetCol]?.key;
+    const targetKey = columns[target.col]?.key;
     if (!targetKey) return;
-    const el = document.getElementById(`bid-${targetRow}-${targetKey}`) as HTMLInputElement | null;
+    const el = document.getElementById(`bid-${target.row}-${targetKey}`) as HTMLInputElement | null;
     if (el) { el.focus(); el.select(); }
   }
 
   updateBid(rowIndex: number, crop: string, value: string): void {
     if (this.editBidsReadOnly()) return; // All Producers grid is view-only
-    this.editBidsRows.update(rows => {
-      const updated = [...rows];
-      updated[rowIndex] = { ...updated[rowIndex], bids: { ...updated[rowIndex].bids, [crop]: value } };
-      return updated;
-    });
+    this.editBidsRows.update(rows => setRowBid(rows, rowIndex, crop, value));
   }
 
   /** Diff the current grid against the snapshot and build the upsert payload for changed cells.
    *  Reads editBidsYear() and editGridColumns() at CALL TIME — callers that navigate (year/month/crop
    *  change) must invoke a save BEFORE mutating those, so the payload reflects the cells the user edited. */
-  private _buildDirtyBids(): Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }> {
-    const year = this.editBidsYear();
-    const tu = this.activeTradeUnit();
-    const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
-    const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }> = [];
-
-    for (const row of this.editBidsRows()) {
-      for (const col of this.editGridColumns()) {
-        const current = (row.bids[col.key] ?? '').trim();
-        const original = (row.originalBids[col.key] ?? '').trim();
-        if (current !== original) {
-          const commodity = commodityLookup.get(col.crop);
-          toCreate.push({
-            name: row.name,
-            latitude: row.latitude,
-            longitude: row.longitude,
-            elevatorCode: row.elevatorCode,
-            tradeUnitCode: row.tradeUnitCode || tu,
-            groupName: this._getGroupNameForTu(row.tradeUnitCode || tu) || undefined,
-            commodityCode: col.crop,
-            commodityName: commodity?.name,
-            commodityCategory: commodity?.category ?? undefined,
-            cropYear: year,
-            bid: current,
-            month: col.month
-          });
-        }
-      }
-    }
-    return toCreate;
+  private _buildDirtyBids(): DirtyBid[] {
+    return buildDirtyBids(
+      this.editBidsRows(), this.editGridColumns(), this.editBidsYear(), this.activeTradeUnit(),
+      this.allCommodities(), tu => this._getGroupNameForTu(tu));
   }
 
   /** Silently persists any changed cells (no toast, no reload, no close). Fired on input blur and
@@ -1484,58 +1344,20 @@ export class BidSheetComponent {
       });
   }
 
-  /** Marks the saved cells clean so the "changed" highlight clears — by setting originalBids to the
-   *  value that was actually SAVED (not the current input). If the user kept editing the same cell while
-   *  the save was in flight, current ≠ saved, so the cell stays dirty and the re-run / next blur catches it. */
-  private _clearDirtyForSaved(dirty: Array<{ name?: string; commodityCode: string; month?: number; bid: string }>): void {
-    const savedByName = new Map<string, Map<string, string>>();
-    for (const b of dirty) {
-      if (!b.name) continue;
-      const colKey = `${b.commodityCode}#${b.month ?? 0}`;
-      const m = savedByName.get(b.name) ?? new Map<string, string>();
-      m.set(colKey, b.bid);
-      savedByName.set(b.name, m);
-    }
-    this.editBidsRows.update(rows => rows.map(row => {
-      const saved = savedByName.get(row.name);
-      if (!saved) return row;
-      const originalBids = { ...row.originalBids };
-      for (const [colKey, val] of saved) originalBids[colKey] = val;
-      return { ...row, originalBids };
-    }));
+  /** Marks the saved cells clean so the "changed" highlight clears (see clearDirtyForSaved). */
+  private _clearDirtyForSaved(dirty: DirtyBid[]): void {
+    this.editBidsRows.update(rows => clearDirtyForSaved(rows, dirty));
   }
 
   /** Optimistically writes saved bids into the local location cache (bidLocations / allMapLocations),
    *  which feed the computed bidEntries → bidLookup that _buildEditGrid reads. Without this, navigating
    *  to another year and back rebuilds the grid from the stale cache and shows the pre-edit value until
    *  a full server refresh. Mirrors the optimistic update confirmAddLocation does for a new location. */
-  private _applyBidsToLocalCache(dirty: Array<{ name?: string; tradeUnitCode?: string; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }>): void {
+  private _applyBidsToLocalCache(dirty: DirtyBid[]): void {
     if (dirty.length === 0) return;
     const now = new Date().toISOString();
-
-    const upsertInto = (locs: BidSheetLocation[]): BidSheetLocation[] => {
-      let changed = false;
-      const next = locs.map(loc => {
-        const forLoc = dirty.filter(d => d.name === loc.name && (!d.tradeUnitCode || d.tradeUnitCode === loc.tradeUnitCode));
-        if (forLoc.length === 0) return loc;
-        changed = true;
-        const bids = [...loc.bids];
-        for (const d of forLoc) {
-          const month = d.month ?? 0;
-          const idx = bids.findIndex(b => b.commodityCode === d.commodityCode && b.cropYear === d.cropYear && b.month === month);
-          if (idx >= 0) {
-            bids[idx] = { ...bids[idx], bid: d.bid, commodityName: d.commodityName ?? bids[idx].commodityName, commodityCategory: d.commodityCategory ?? bids[idx].commodityCategory, modifiedAt: now };
-          } else {
-            bids.push({ id: 0, locationId: loc.id, commodityCode: d.commodityCode, commodityName: d.commodityName, commodityCategory: d.commodityCategory, cropYear: d.cropYear, month, bid: d.bid, createdBy: '', createdAt: now, modifiedAt: now });
-          }
-        }
-        return { ...loc, bids };
-      });
-      return changed ? next : locs; // preserve reference when untouched so dependent computeds don't churn
-    };
-
-    this.bidLocations.update(upsertInto);
-    this.allMapLocations.update(upsertInto);
+    this.bidLocations.update(locs => applyBidsToLocations(locs, dirty, now));
+    this.allMapLocations.update(locs => applyBidsToLocations(locs, dirty, now));
 
     // Surface any brand-new crop year to the panel / old-new navigation as well.
     for (const d of dirty) {
@@ -1546,10 +1368,10 @@ export class BidSheetComponent {
   }
 
   /** Records the distinct cells saved this session so "Done" can report the running total. */
-  private _recordSaved(dirty: Array<{ name?: string; commodityCode: string; cropYear: number; month?: number }>): void {
+  private _recordSaved(dirty: DirtyBid[]): void {
     for (const b of dirty) {
       if (!b.name) continue;
-      this._editBidsSavedKeys.add(`${b.name}|${b.commodityCode}|${b.cropYear}|${b.month ?? 0}`);
+      this._editBidsSavedKeys.add(savedBidKey(b));
     }
   }
 

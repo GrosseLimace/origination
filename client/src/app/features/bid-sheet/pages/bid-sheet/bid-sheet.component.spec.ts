@@ -596,6 +596,73 @@ describe('BidSheetComponent', () => {
       expect(Object.keys(c.editBidsRows()[0].bids)).toEqual(['SB#0', 'SB#3', 'SB#6', 'YC#0', 'YC#3', 'YC#6']);
     });
 
+    it('arrow keys move focus between grid inputs, clamped to the grid edges', () => {
+      build(['2040']);
+      c.openEditBids(); // 3 rows × columns SB#0, YC#0
+      const inputs = new Map<string, HTMLInputElement>();
+      for (let r = 0; r < 3; r++) {
+        for (const key of ['SB#0', 'YC#0']) {
+          const el = document.createElement('input');
+          el.id = `bid-${r}-${key}`;
+          document.body.appendChild(el);
+          inputs.set(el.id, el);
+        }
+      }
+      const press = (key: string, row: number, col: number) => {
+        const event = new KeyboardEvent('keydown', { key, cancelable: true });
+        c.onBidKeyDown(event, row, col);
+        return event;
+      };
+      try {
+        expect(press('ArrowRight', 0, 0).defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe(inputs.get('bid-0-YC#0'));
+        press('ArrowDown', 0, 1);
+        expect(document.activeElement).toBe(inputs.get('bid-1-YC#0'));
+        press('ArrowLeft', 1, 1);
+        expect(document.activeElement).toBe(inputs.get('bid-1-SB#0'));
+        press('ArrowUp', 1, 0);
+        expect(document.activeElement).toBe(inputs.get('bid-0-SB#0'));
+
+        // At an edge the key does nothing (and doesn't swallow the default); other keys are ignored.
+        expect(press('ArrowUp', 0, 0).defaultPrevented).toBe(false);
+        expect(press('ArrowRight', 2, 1).defaultPrevented).toBe(false);
+        expect(press('Enter', 1, 1).defaultPrevented).toBe(false);
+        expect(document.activeElement).toBe(inputs.get('bid-0-SB#0'));
+      } finally {
+        inputs.forEach(el => el.remove());
+      }
+    });
+
+    it('a saved bid updates both location caches in place, adding new cells and new crop years', async () => {
+      build(['2040']);
+      c.openEditBids();
+      c.updateBid(rowOf('Alpha Coop'), 'YC#0', '4.30');
+      c.onBidBlur();
+
+      const alphaYc2026 = (locs: BidSheetLocation[]) => locs.find(l => l.name === 'Alpha Coop')!.bids.find(b => b.commodityCode === 'YC' && b.cropYear === 2026)!;
+      expect(alphaYc2026(c.bidLocations())).toMatchObject({ bid: '4.30', commodityName: 'Yellow Corn', commodityCategory: 'Corn', modifiedAt: NOW.toISOString() });
+      expect(alphaYc2026(c.allMapLocations()).bid).toBe('4.30');
+      expect(c.bidLocations().find(l => l.name === 'Bravo Grain')!.bids.map(b => b.bid)).toEqual(['4.25', '3.90']); // untouched
+
+      c.nextEditYear();
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      expect(c.editBidsYear()).toBe(2027);
+      expect(c.editBidsRows()[rowOf('Alpha Coop')].bids).toEqual({ 'SB#0': '', 'YC#0': '' });
+
+      c.updateBid(rowOf('Charlie Elevator'), 'SB#0', '9.75');
+      c.onBidBlur();
+      expect(c.cropYears()).toEqual([2025, 2026, 2027]);
+      expect(c.bidLocations().find(l => l.name === 'Charlie Elevator')!.bids).toEqual([{
+        id: 0, locationId: 3, commodityCode: 'SB', commodityName: 'Soybeans', commodityCategory: 'Soybeans',
+        cropYear: 2027, month: 0, bid: '9.75', createdBy: '', createdAt: NOW.toISOString(), modifiedAt: NOW.toISOString(),
+      }]);
+
+      // Back to 2026: the grid is rebuilt from the updated cache, not the stale server copy.
+      c.prevEditYear();
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      expect(c.editBidsRows()[rowOf('Alpha Coop')].bids['YC#0']).toBe('4.30');
+    });
+
     it('un-ticking every month falls back to Yearly', () => {
       build(['2040']);
       c.openMonthDropdown();
