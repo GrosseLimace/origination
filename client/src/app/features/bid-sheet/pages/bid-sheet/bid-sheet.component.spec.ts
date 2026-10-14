@@ -140,6 +140,62 @@ function drop<T>(previousIndex: number, currentIndex: number): CdkDragDrop<T> {
   return { previousIndex, currentIndex } as CdkDragDrop<T>;
 }
 
+// ── Map harness ───────────────────────────────────────────────────────────────
+// Leaflet never loads in these tests (see the mock above). For the marker tests a tiny fake stands in:
+// divIcon returns its options, markers record their handlers, and the map projects lat/lng linearly
+// (256px tiles × 2^zoom per 360°) so the pin-spread maths runs on predictable pixels.
+
+interface FakeIcon { className: string; html: string; iconSize: [number, number]; iconAnchor: [number, number] }
+
+class FakeMarker {
+  readonly handlers: Record<string, () => void> = {};
+  icon: FakeIcon;
+  zIndex = 0;
+  constructor(readonly latlng: [number, number], readonly opts: { icon: FakeIcon; zIndexOffset?: number }) { this.icon = opts.icon; }
+  on(event: string, fn: () => void): this { this.handlers[event] = fn; return this; }
+  setIcon(icon: FakeIcon): this { this.icon = icon; return this; }
+  setZIndexOffset(z: number): this { this.zIndex = z; return this; }
+  addTo(): this { return this; }
+}
+
+type FakeLatLng = { lat: number; lng: number };
+
+/** Hooks a fake Leaflet map onto the component's private map fields and returns the drawn markers. */
+function attachFakeMap(component: BidSheetComponent, zoom: number) {
+  const scale = (z: number) => (256 * 2 ** z) / 360;
+  const toLatLng = (p: FakeLatLng | [number, number]): FakeLatLng => Array.isArray(p) ? { lat: p[0], lng: p[1] } : p;
+  const markers: FakeMarker[] = [];
+  const L = {
+    divIcon: (o: FakeIcon) => o,
+    marker: (ll: [number, number], o: { icon: FakeIcon; zIndexOffset?: number }) => new FakeMarker(ll, o),
+    latLng: (lat: number, lng: number): FakeLatLng => ({ lat, lng }),
+    point: (x: number, y: number) => ({ x, y }),
+  };
+  const map = {
+    getZoom: () => zoom,
+    project: (p: FakeLatLng | [number, number], z: number) => {
+      const { lat, lng } = toLatLng(p);
+      const s = scale(z);
+      return { x: lng * s, y: -lat * s, add: ([dx, dy]: [number, number]) => ({ x: lng * s + dx, y: -lat * s + dy }) };
+    },
+    unproject: (pt: { x: number; y: number }, z: number): FakeLatLng => ({ lat: -pt.y / scale(z), lng: pt.x / scale(z) }),
+    flyTo: vi.fn(), closePopup: vi.fn(), setView: vi.fn(), fitBounds: vi.fn(), removeLayer: vi.fn(), remove: vi.fn(),
+  };
+  const cluster = { clearLayers: () => { markers.length = 0; }, addLayer: (m: FakeMarker) => { markers.push(m); } };
+  const internals = component as unknown as {
+    _L: unknown; _map: unknown; _clusterGroup: unknown;
+    _refreshMapMarkers(): void; _onMapClick(e: { latlng: FakeLatLng }): void;
+  };
+  internals._L = L;
+  internals._map = map;
+  internals._clusterGroup = cluster;
+  return {
+    markers, map, scale,
+    refresh: () => internals._refreshMapMarkers(),
+    click: (lat: number, lng: number) => internals._onMapClick({ latlng: { lat, lng } }),
+  };
+}
+
 // ── Harness ───────────────────────────────────────────────────────────────────
 
 describe('BidSheetComponent', () => {
@@ -763,6 +819,200 @@ describe('BidSheetComponent', () => {
       expect(api.bulkUpsertBidSheetBids).not.toHaveBeenCalled();
       expect(api.updateBidSheetLocation).not.toHaveBeenCalled();
       expect(api.deleteBidSheetLocation).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Map markers (fake Leaflet) ────────────────────────────────────────────
+
+  describe('map markers', () => {
+    const html = (m: FakeMarker): string => m.icon.html;
+    const at = (m: FakeMarker): [number, number] => m.latlng;
+
+    it('a selected crop draws one bid pill per bidding location, grey with no reference', () => {
+      build(['2040']);
+      c.selectedCrop.set('YC');
+      c.filterBids();
+      const map = attachFakeMap(c, 10);
+      map.refresh();
+
+      // Charlie has no corn bid; Delta is outside the trade unit — neither gets a pin.
+      expect(map.markers.map(at)).toEqual([[37.6, -98.7], [37.9, -98.2]]);
+      expect(html(map.markers[0])).toContain('>4.10</div>');
+      expect(html(map.markers[1])).toContain('>4.25</div>');
+      expect(html(map.markers[0])).toContain('background:#6b7280;border:2px solid #4b5563');
+      expect(map.markers[0].icon.iconSize).toEqual([58, 44]);
+      expect(map.markers[0].icon.iconAnchor).toEqual([29, 44]);
+      expect(map.markers[0].icon.className).toBe('custom-marker');
+    });
+
+    it('a reference location turns its pill blue and grades the others (beating = red)', () => {
+      build(['2040']);
+      c.selectedCrop.set('YC');
+      c.selectedLocationName.set('Alpha Coop');
+      c.filterBids();
+      const map = attachFakeMap(c, 10);
+      map.refresh();
+
+      expect(html(map.markers[0])).toContain('background:#2563eb;border:2px solid #1d4ed8');
+      expect(html(map.markers[0])).toContain('border-top:8px solid #2563eb');
+      expect(html(map.markers[1])).toContain('background:#dc2626;border:2px solid #991b1b');
+    });
+
+    it('name labels: a Scoular facility is filled green with no reference, ringed green once one is set', () => {
+      build(['2040']);
+      c.selectedCrop.set('');
+      c.filterBids();
+      const map = attachFakeMap(c, 10);
+      map.refresh();
+
+      const charlie = () => map.markers.find(m => html(m).includes('Charlie Elevator'))!;
+      expect(map.markers).toHaveLength(3);
+      expect(html(charlie())).toContain('background:#00875F;border:2px solid #006B4C');
+      expect(html(charlie())).not.toContain('#00A36F');
+      const alphaLabel = map.markers.find(m => html(m).includes('Alpha Coop'))!;
+      expect(html(alphaLabel)).toContain('background:#6b7280;border:2px solid #4b5563'); // grey #9ca3af maps to the darker label grey
+      expect(alphaLabel.icon.iconSize).toEqual([80, 34]);
+
+      c.selectedLocationName.set('Alpha Coop');
+      c.filterBids();
+      map.refresh();
+      expect(html(charlie())).toContain('box-shadow:0 0 0 4px #00A36F;');
+      expect(html(map.markers.find(m => html(m).includes('Alpha Coop'))!)).toContain('background:#2563eb');
+    });
+
+    it('below zoom 6 locations are dots, spread apart when they would overlap on screen', () => {
+      build(['2040']);
+      c.selectedCrop.set('');
+      c.filterBids();
+      const map = attachFakeMap(c, 5);
+      map.refresh();
+
+      expect(map.markers).toHaveLength(3);
+      expect(map.markers.map(m => m.icon.iconSize)).toEqual([[14, 14], [14, 14], [14, 14]]);
+      expect(html(map.markers[0])).toContain('background:#9ca3af;border:2px solid #6b7280');
+      expect(html(map.markers[2])).toContain('background:#00875F;border:2px solid #006B4C'); // Charlie (Scoular)
+      expect(html(map.markers[2])).toContain('box-shadow:0 1px 3px'); // no ring without a reference
+
+      // All three sit within 48px of each other at zoom 5, so each is pushed 24px out from their centroid.
+      const s = map.scale(5);
+      const raw = [[37.6, -98.7], [37.9, -98.2], [38.2, -98.4]].map(([lat, lng]) => ({ x: lng * s, y: -lat * s }));
+      const cx = raw.reduce((a, p) => a + p.x, 0) / 3, cy = raw.reduce((a, p) => a + p.y, 0) / 3;
+      for (const m of map.markers) {
+        const [lat, lng] = at(m);
+        expect(Math.hypot(lng * s - cx, -lat * s - cy)).toBeCloseTo(24, 6);
+      }
+    });
+
+    it('hovering swaps in the expanded name + bid icon, raises it, and resets the previously hovered pin', () => {
+      build(['2040']);
+      c.selectedCrop.set('YC');
+      c.filterBids();
+      const map = attachFakeMap(c, 5);
+      map.refresh();
+      const [a, b] = map.markers;
+      const original = a.icon;
+
+      a.handlers['mouseover']();
+      expect(html(a)).toContain('>Alpha Coop</div>');
+      expect(html(a)).toContain('>4.10</div>');
+      expect(a.icon.iconSize).toEqual([100, 50]);
+      expect(a.zIndex).toBe(2000);
+
+      b.handlers['mouseover'](); // a's mouseout never fired — it must still be reset
+      expect(a.icon).toBe(original);
+      expect(a.zIndex).toBe(0);
+
+      b.handlers['mouseout']();
+      expect(b.zIndex).toBe(0);
+      expect(html(b)).not.toContain('Bravo Grain');
+    });
+
+    it('the location open in the panel is drawn expanded with its status colour', () => {
+      build(['2040']);
+      c.selectedCrop.set('YC');
+      c.selectedLocationName.set('Alpha Coop');
+      c.panelSelectedLocation.set('Bravo Grain');
+      c.filterBids();
+      const map = attachFakeMap(c, 10);
+      map.refresh();
+
+      const open = map.markers.find(m => m.opts.zIndexOffset === 1000)!;
+      expect(html(open)).toContain('>Bravo Grain</div>');
+      expect(html(open)).toContain('>4.25</div>');
+      expect(html(open)).toContain('background:#dc2626;border:2px solid #991b1b');
+    });
+
+    it('a search filters the pins and forces labels even below zoom 6', () => {
+      build(['2040']);
+      c.selectedCrop.set('YC');
+      c.filterBids();
+      c.searchQuery.set('BRAV');
+      const map = attachFakeMap(c, 5);
+      map.refresh();
+
+      expect(map.markers).toHaveLength(1);
+      expect(html(map.markers[0])).toContain('>4.25</div>');
+      expect(at(map.markers[0])).toEqual([37.9, -98.2]);
+    });
+
+    it('clicking a pin sets it as the reference and opens the panel; clicking again clears it', () => {
+      build(['2040']);
+      c.selectedCrop.set('YC');
+      c.filterBids();
+      const map = attachFakeMap(c, 10);
+      map.refresh();
+
+      map.markers[1].handlers['click']();
+      expect(c.selectedLocationName()).toBe('Bravo Grain');
+      expect(c.showPanel()).toBe(true);
+      expect(map.map.flyTo).toHaveBeenCalled();
+
+      map.markers.find(m => html(m).includes('4.25'))!.handlers['click']();
+      expect(c.selectedLocationName()).toBe('');
+    });
+
+    it('stacked labels colour and escape each name on its own line', () => {
+      const shared = { latitude: 40.1, longitude: -97.5, tradeUnitCode: '2040', groupName: 'Kansas' };
+      api.getAllBidSheetLocations.mockImplementation(() => of([
+        makeLocation({ id: 10, name: `O'Neil <Grain> & Co "East"`, ...shared }),
+        makeLocation({ id: 11, name: 'Scoular Plant', isScoularFacility: true, ...shared }),
+      ]));
+      build([], []);
+      c.selectedCrop.set('');
+      c.filterBids();
+      const map = attachFakeMap(c, 10);
+      map.refresh();
+
+      expect(map.markers).toHaveLength(1);
+      const label = html(map.markers[0]);
+      expect(label).toContain('O&#039;Neil &lt;Grain&gt; &amp; Co &quot;East&quot;');
+      expect(label).not.toContain('<Grain>');
+      expect(label).toContain('background:#6b7280;border:2px solid #4b5563;border-radius:5px'); // competitor line
+      expect(label).toContain('background:#00875F;border:2px solid #006B4C;border-radius:5px'); // Scoular line
+      expect(map.markers[0].icon.iconSize).toEqual([176, 60]);
+
+      // The hover icon escapes too.
+      map.markers[0].handlers['mouseover']();
+      expect(html(map.markers[0])).toContain('>O&#039;Neil &lt;Grain&gt; &amp; Co &quot;East&quot;</div>');
+    });
+
+    it('add-location mode clears the pins; a map click drops the placement pin and opens the form', () => {
+      build(['2040']);
+      const map = attachFakeMap(c, 10);
+      map.refresh();
+      expect(map.markers.length).toBeGreaterThan(0);
+
+      c.enterAddLocationMode();
+      expect(map.markers).toHaveLength(0);
+      map.click(39.5, -97.25);
+
+      expect([c.newLocationLat(), c.newLocationLng()]).toEqual([39.5, -97.25]);
+      expect(c.newLocationTu()).toBe('2040');
+      expect(c.showAddLocationForm()).toBe(true);
+
+      c.exitAddLocationMode();
+      expect(map.map.removeLayer).toHaveBeenCalledTimes(1);
+      expect(c.newLocationLat()).toBeNull();
     });
   });
 
