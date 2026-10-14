@@ -25,7 +25,7 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore | 10.0.3 | MIT | EF Core health check endpoint |
 | Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
 | Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
-| System.Security.Cryptography.Xml | 10.0.10 | MIT | XML crypto |
+| System.Security.Cryptography.Xml | 10.0.13 | MIT | XML crypto |
 
 ### Frontend Dependencies (Angular 21 / TypeScript)
 
