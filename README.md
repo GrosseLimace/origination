@@ -238,7 +238,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-10-06
+Last Updated: 2026-10-13
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -253,7 +253,7 @@ Last Updated: 2026-10-06
 | Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore | 10.0.3 | MIT | EF Core health check endpoint |
 | Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
 | Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
-| System.Security.Cryptography.Xml | 10.0.10 | MIT | XML crypto — transitive (via Microsoft.Identity.Web), pinned to clear EncryptedXml advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 & CVE-2026-50648 DoS, CVE-2026-47304 feature-bypass) |
+| System.Security.Cryptography.Xml | 10.0.13 | MIT | XML crypto — transitive (via Microsoft.Identity.Web), pinned to clear EncryptedXml advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 & CVE-2026-50648 DoS, CVE-2026-47304 feature-bypass); raised 2026-10-13 to 10.0.13 for CVE-2026-96958/-96959/-96960 (SignedXml/C14N/EncryptedXml DoS, <= 10.0.12) — the old 10.0.10 pin had fallen inside that range. Pulls System.Security.Cryptography.Pkcs to the matching 10.0.13. Pin covers Infrastructure + tests only: .NET 10 package pruning drops it from the web app, which loads it from the App Service ASP.NET Core runtime |
 
 ### Frontend Dependencies (Angular 21 / TypeScript)
 
