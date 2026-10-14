@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -10,7 +10,11 @@ import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-cov
   standalone: true,
   imports: [CommonModule],
   host: { class: 'block' },
-  templateUrl: './producer-insights.component.html'
+  templateUrl: './producer-insights.component.html',
+  // Every getter the template reads is computed from signals: the inputs, the theme's isDarkMode and
+  // the app state's commodityConversions. Reading them during render tracks them, so a theme switch
+  // or late-arriving conversion factors re-render the card without an input change.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ProducerInsightsComponent {
   public customer = input.required<Customer>();

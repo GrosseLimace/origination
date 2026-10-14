@@ -54,6 +54,7 @@ describe('ProducerInsightsComponent', () => {
   let fixture: ComponentFixture<ProducerInsightsComponent>;
   let ref: ComponentRef<ProducerInsightsComponent>;
   const commodityConversions = signal<CommodityConversion[]>([]);
+  const isDarkMode = signal(false);
 
   function setInputs(inputs: {
     customer?: Customer; contracts?: Contract[]; historicalContracts?: Contract[]; notes?: Note[];
@@ -80,10 +81,11 @@ describe('ProducerInsightsComponent', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
     commodityConversions.set([]);
+    isDarkMode.set(false);
     await TestBed.configureTestingModule({
       imports: [ProducerInsightsComponent],
       providers: [
-        { provide: ThemeService, useValue: { isDarkMode: signal(false) } },
+        { provide: ThemeService, useValue: { isDarkMode } },
         { provide: AppStateService, useValue: { commodityConversions } },
       ],
     }).compileComponents();
@@ -242,5 +244,35 @@ describe('ProducerInsightsComponent', () => {
 
     setInputs({ notes: [makeNote({ id: 1 }), makeNote({ id: 2 }), makeNote({ id: 3, isPinned: true })] });
     expect(stat('Engagement').value).toBe('3');
+  });
+
+  // ── Non-input updates ─────────────────────────────────────────────────────
+  // Two things the card shows change without any input changing: the conversion factors load
+  // after the page does, and the theme toggles. Both must reach the rendered card.
+
+  it('re-totals when the lb-per-bushel factors arrive after the card has rendered', () => {
+    setInputs({ contracts: [makeContract({ id: 1, quantity: 30, unit: 'ST', commodityCode: 'SB' })] });
+    expect(stat('Total Volume').value).toBe('0'); // no factor yet → left out
+
+    commodityConversions.set([{ commodityCode: 'SB', lbsPerUnit: 60 }]);
+    fixture.detectChanges();
+
+    expect(stat('Total Volume').value).toBe('1,000');
+    expect(stat('Avg Contract').value).toBe('1,000');
+  });
+
+  it('restyles the card when the theme switches to dark and back', () => {
+    setInputs({});
+    const card = (): string => host().querySelector<HTMLElement>('.rounded-xl.overflow-hidden')!.getAttribute('style') ?? '';
+    expect(card()).toContain('#22c55e');
+
+    isDarkMode.set(true);
+    fixture.detectChanges();
+    expect(card()).toContain('#052e16');
+    expect(card()).not.toContain('#22c55e');
+
+    isDarkMode.set(false);
+    fixture.detectChanges();
+    expect(card()).toContain('#22c55e');
   });
 });
