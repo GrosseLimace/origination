@@ -1014,6 +1014,105 @@ describe('HomeComponent', () => {
     });
   });
 
+  // ── Saved lists, more (characterisation, written against the pre-extraction page) ──
+  describe('saved lists (membership edge cases and enrichment inputs)', () => {
+    const matchFirstTwo = (nlq: ReturnType<typeof makeNlq>) => nlq.parseAndFilter.mockImplementation((_q, ctx) => ({
+      customers: ctx.customers.filter(x => x.id <= 2), detectedState: null, matchedPatterns: ['crop'],
+    }));
+
+    it('removing a manually added producer drops the manual add; removing a query member excludes it', () => {
+      const h = setup({
+        arrange: (api, nlq) => {
+          api.getSavedLists.mockReturnValue(of([savedList(7, { includedCustomerIds: [3] }), savedList(8)]));
+          matchFirstTwo(nlq);
+        },
+      });
+      h.c.handleSelectCustomer(C);
+      h.c.handleSaveSavedListMembership([{ listId: 7, add: false }]);
+      expect(h.c.savedLists()[0].includedCustomerIds).toEqual([]);
+      expect(h.c.savedLists()[0].excludedCustomerIds).toEqual([]);
+
+      h.c.handleSelectCustomer(A);
+      h.c.handleSaveSavedListMembership([{ listId: 8, add: false }]);
+      expect(h.c.savedLists()[1].excludedCustomerIds).toEqual([1]);
+      expect(h.c.savedLists()[1].customerIds).toEqual([2]);
+    });
+
+    it('saves several lists together with one message, and ignores an unknown list id', () => {
+      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7), savedList(8)])) });
+      h.c.handleSelectCustomer(A);
+
+      h.c.handleSaveSavedListMembership([{ listId: 7, add: true }, { listId: 8, add: true }, { listId: 99, add: true }]);
+
+      expect(h.api.updateSavedList).toHaveBeenCalledTimes(2);
+      expect(h.toast.success).toHaveBeenCalledWith('2 saved lists updated');
+      expect(h.app.savedLists().map(l => l.includedCustomerIds)).toEqual([[1], [1]]);
+    });
+
+    it('a manager can change a team list\'s membership; it is not written to the shared own-list cache', () => {
+      const h = setup({
+        isAdmin: true,
+        arrange: api => {
+          api.getSavedLists.mockReturnValue(of([savedList(7)]));
+          api.getTeamSavedLists.mockReturnValue(of([savedList(40, { createdBy: 'Someone Else' })]));
+        },
+      });
+      h.c.handleSelectCustomer(A);
+      h.app.setSavedLists.mockClear();
+
+      h.c.handleSaveSavedListMembership([{ listId: 40, add: true }]);
+
+      expect(h.c.teamSavedLists()[0].includedCustomerIds).toEqual([1]);
+      expect(h.api.updateSavedList).toHaveBeenCalledWith(40, expect.objectContaining({ includedCustomerIds: [1] }));
+      expect(h.app.setSavedLists).not.toHaveBeenCalled();
+    });
+
+    it('does nothing without a selected producer or without changes', () => {
+      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7)])) });
+      h.c.handleSaveSavedListMembership([{ listId: 7, add: true }]);
+      h.c.handleSelectCustomer(A);
+      h.c.handleSaveSavedListMembership([]);
+      expect(h.api.updateSavedList).not.toHaveBeenCalled();
+    });
+
+    it('backfills an old list\'s prompt category from the query library before refining', () => {
+      const h = setup({
+        arrange: (api, nlq) => {
+          api.getSavedLists.mockReturnValue(of([savedList(7, { query: 'Corn Growers ', filters: {} as SavedList['filters'] })]));
+          api.getQueryLibrary.mockReturnValue(of([
+            { id: 1, category: 'Contracts', name: 'x', queryText: 'corn growers', sortOrder: 0 },
+          ]));
+          matchFirstTwo(nlq);
+        },
+      });
+
+      expect(h.api.getQueryLibrary).toHaveBeenCalledTimes(1);
+      expect(h.app.setQueryLibrary).toHaveBeenCalled();
+      const filtersSeen = h.nlq.applyRefinementFilters.mock.calls.map(args => (args as unknown[])[1]);
+      expect(filtersSeen).toContainEqual(expect.objectContaining({ _promptCategory: 'Contracts' }));
+      expect(h.c.savedLists()[0].customerIds).toEqual([1, 2]);
+    });
+
+    it('re-resolves lists when the trade unit\'s contracts arrive after them, with the contracts in context', () => {
+      const contracts$ = new Subject<Contract[]>();
+      const h = setup({
+        arrange: (api, nlq) => {
+          api.getContracts.mockReturnValue(contracts$.asObservable());
+          api.getSavedLists.mockReturnValue(of([savedList(7)]));
+          matchFirstTwo(nlq);
+        },
+      });
+      const calls = h.nlq.parseAndFilter.mock.calls.length;
+
+      contracts$.next([contract(10, 'S-1')]);
+
+      expect(h.nlq.parseAndFilter.mock.calls.length).toBeGreaterThan(calls);
+      const ctx = h.nlq.parseAndFilter.mock.calls.at(-1)![1];
+      expect(ctx.contracts.map(c => c.id)).toEqual([10]);
+      expect(ctx.currentUserDisplayName).toBe('Caden Egr');
+    });
+  });
+
   // ── Notes (characterisation, written against the pre-extraction page) ────────
   describe('notes', () => {
     /** The note CRUD calls are not in the shared API stub; add them to the same object the page holds. */
