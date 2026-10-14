@@ -1002,7 +1002,7 @@ describe('BuildListComponent', () => {
         { customerId: 1, crop: 'YC', quantity: 6000, receivableAmount: 10 },
         { customerId: 1, crop: 'SB', quantity: 100, receivableAmount: 10 },
         { customerId: 3, crop: 'SB', quantity: 9000, receivableAmount: 900 },
-      ] as never));
+      ]) as never);
       const c = mount();
       c.selectLibraryQuery(LIB_ALL);
 
@@ -1024,7 +1024,7 @@ describe('BuildListComponent', () => {
         { id: 1, customerCode: 'C1', date: '2026-10-10', elevatorCity: 'Madrid, NE', productCode: 'YC' },
         { id: 2, customerCode: 'C2', date: '2026-01-01', elevatorCity: 'Pratt, KS', productCode: 'SB' },
         { id: 3, customerCode: 'C3', date: '2025-12-31', elevatorCity: 'Madrid, NE', productCode: 'YC' },
-      ] as never));
+      ]) as never);
       const c = mount();
       c.selectLibraryQuery(LIB_ALL);
       expect(c.availableDeliveryLocations()).toEqual(['Madrid, NE', 'Pratt, KS']);
@@ -1103,7 +1103,7 @@ describe('BuildListComponent', () => {
       api.getPlantingIntentions.mockReturnValue(of([
         { id: 1, customerId: 1, crop: 'YC', acres: 400, plantingYear: 2026, type: 'Irrigated' },
         { id: 2, customerId: 3, crop: 'SB', acres: 900, plantingYear: 2027, type: 'Dryland' },
-      ] as never));
+      ]) as never);
       appState.setDpContracts([
         { id: 'a', ticketKey: 't1', customerId: 2, crop: 'YC', quantity: 7000, bushels: 7000, storageDays: 120, receivableAmount: 300 },
         { id: 'b', ticketKey: 't2', customerId: 3, crop: 'SB', quantity: 100, bushels: 100, storageDays: 10, receivableAmount: 5 },
@@ -1133,7 +1133,7 @@ describe('BuildListComponent', () => {
           createdBy: 'Pat Merchant', createdAt: '2026-10-12T10:00:00' },
         { id: 2, customerId: 3, customerCode: 'C3', customerName: 'Charlie Farms', content: 'All good here', isPinned: true,
           createdBy: 'Someone Else', createdAt: '2026-10-11T10:00:00' },
-      ] as never));
+      ]) as never);
       const c = mount();
       c.selectLibraryQuery(LIB_ALL);
 
@@ -1172,7 +1172,7 @@ describe('BuildListComponent', () => {
           createdBy: 'Someone', createdAt: '2026-10-12T09:00:00' },
         { id: 3, customerId: 3, customerCode: 'C3', customerName: 'Charlie Farms', content: 'Old visit', isPinned: false,
           createdBy: 'Someone', createdAt: '2026-09-20T10:00:00' },
-      ] as never));
+      ]) as never);
       nlq.state.matchIds = [1, 3];
       const c = mount();
 
@@ -1271,7 +1271,7 @@ describe('BuildListComponent', () => {
         api.getPlantingIntentions.mockReturnValue(of([
           { id: 1, customerId: 1, crop: 'YC', acres: 100, plantingYear: 2026 },
           { id: 2, customerId: 2, crop: 'SB', acres: 50, plantingYear: 2026 },
-        ] as never));
+        ]) as never);
         const extra = {
           getContractsByCropYear: vi.fn(() => of([
             makeContract({ ctrmCustomerId: 'C1', commodityCode: 'YC', quantity: 10000, cropYear: 2026 }),
@@ -1331,7 +1331,7 @@ describe('BuildListComponent', () => {
           { id: 1, customerId: 1, crop: 'YC', acres: 100, plantingYear: 2026 },
           { id: 2, customerId: 2, crop: 'SB', acres: 50, plantingYear: 2026, type: 'Irrigated' },
           { id: 3, customerId: 2, crop: 'SB', acres: 400, plantingYear: 2026, type: 'Irrigated' },
-        ] as never));
+        ]) as never);
         const c = mount();
         c.selectLibraryQuery({ id: 9, category: 'Planting', name: 'Planting', queryText: 'Producers with planting intentions', sortOrder: 1 });
 
@@ -1366,9 +1366,9 @@ describe('BuildListComponent', () => {
         makeContract({ id: 2, ctrmCustomerId: 'C1', commodityCode: 'SB', closedDate: new Date(NOW.getTime() - DAY) }),
         makeContract({ id: 3, ctrmCustomerId: 'C2', commodityCode: 'HRW' }),
       ]));
-      api.getPlantingIntentions.mockReturnValue(of([{ id: 1, customerId: 1, crop: 'WHT', acres: 1, plantingYear: 2026 }] as never));
-      api.getTickets.mockReturnValue(of([{ id: 1, customerId: 1, customerCode: 'C1', productCode: 'MILO', date: '2026-10-01' }] as never));
-      api.getStoredGrain.mockReturnValue(of([{ customerId: 2, crop: 'OATS', quantity: 5 }] as never));
+      api.getPlantingIntentions.mockReturnValue(of([{ id: 1, customerId: 1, crop: 'WHT', acres: 1, plantingYear: 2026 }]) as never);
+      api.getTickets.mockReturnValue(of([{ id: 1, customerId: 1, customerCode: 'C1', productCode: 'MILO', date: '2026-10-01' }]) as never);
+      api.getStoredGrain.mockReturnValue(of([{ customerId: 2, crop: 'OATS', quantity: 5 }]) as never);
       const c = mount();
       c.selectLibraryQuery(LIB_ALL);
 
@@ -1392,7 +1392,7 @@ describe('BuildListComponent', () => {
         { customerId: 1, crop: 'SB', quantity: 100 },
         { customerId: 3, crop: 'SB', quantity: 9000 },
         { customerId: 3, crop: 'XX', quantity: 0 },
-      ] as never));
+      ]) as never);
       const c = mount();
       c.selectLibraryQuery({ id: 8, category: 'Storage', name: 'Storage', queryText: 'Producers with grain in storage', sortOrder: 1 });
 
@@ -1407,7 +1407,7 @@ describe('BuildListComponent', () => {
         { id: 'a1', ticketKey: 'a', customerId: 2, crop: 'YC', bushels: 7000, receivableAmount: 10 },
         { id: 'a2', ticketKey: 'a', customerId: 2, crop: 'YC', bushels: 7000, receivableAmount: 10 },
         { id: 'b1', ticketKey: 'b', customerId: 1, crop: 'SB', bushels: 500, receivableAmount: 10 },
-      ] as never));
+      ]) as never);
       const c = mount();
       c.selectLibraryQuery({ id: 10, category: 'DP Contracts', name: 'DP', queryText: 'Producers on DP', sortOrder: 1 });
       TestBed.tick();
@@ -1467,7 +1467,7 @@ describe('BuildListComponent', () => {
     const GOF: QueryLibraryItem = { id: 11, category: 'Grain on Farm & Bin Sites', name: 'GoF', queryText: 'Producers with grain on farm', sortOrder: 1 };
     const binNoteCalls = () => api.getNotes.mock.calls
       .map(call => (call as unknown[])[1] as { customerIds?: number[]; contentAny?: string[] } | undefined)
-      .filter(opts => !!opts?.customerIds);
+      .filter((opts): opts is { customerIds: number[]; contentAny?: string[] } => !!opts?.customerIds);
 
     it('fetches notes naming each producer\'s bin sites, shows them, and puts the latest mention first', () => {
       api.getCustomers.mockReturnValue(of([
@@ -1480,7 +1480,7 @@ describe('BuildListComponent', () => {
           createdBy: 'Someone', createdAt: '2026-10-12T10:00:00' },
         { id: 8, customerId: 1, customerCode: 'C1', customerName: 'Alpha Acres', content: 'Nothing about bins', isPinned: false,
           createdBy: 'Someone', createdAt: '2026-10-12T11:00:00' },
-      ] as never));
+      ]) as never);
       const c = mount();
       c.selectLibraryQuery(GOF);
       TestBed.tick();

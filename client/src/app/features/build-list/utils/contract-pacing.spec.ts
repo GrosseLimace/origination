@@ -10,7 +10,7 @@ function contract(over: Partial<Contract>): Contract {
     id: 1, customerId: 1, ctrmCustomerId: 'C1', sourceContractId: 'P1', farmId: 'F', contractNumber: '1', contractPrefixType: 'P',
     commodityCode: 'YC', commodityDescription: 'Corn', commodityGroup: 'Corn', quantity: 1000, unit: 'bushels', price: 0,
     status: 'Active', signed: true, ...over,
-  };
+  } as Contract;
 }
 const inOct = (year: number, quantity: number, over: Partial<Contract> = {}) =>
   contract({ deliveryStart: new Date(year, 9, 10), deliveryEnd: new Date(year, 9, 20), quantity, ...over });

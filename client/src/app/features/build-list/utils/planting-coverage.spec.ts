@@ -10,7 +10,7 @@ const contract = (over: Partial<Contract>): Contract => ({
   id: 1, customerId: 1, ctrmCustomerId: 'C1', sourceContractId: 'P1', farmId: 'F', contractNumber: '1', contractPrefixType: 'P',
   commodityCode: 'YC', commodityDescription: 'Corn', commodityGroup: 'Corn', quantity: 0, unit: 'bushels', price: 0,
   status: 'Active', signed: true, cropYear: 2026, ...over,
-});
+}) as Contract;
 const planting = (customerId: number, crop: string, acres: number, over: Partial<PlantingIntention> = {}) =>
   ({ id: customerId, customerId, crop, acres, plantingYear: 2026, ...over }) as PlantingIntention;
 const estimate = (crop: string, yieldEstimate: number, plantingYear = 2026): DashboardPlantingEstimate =>
