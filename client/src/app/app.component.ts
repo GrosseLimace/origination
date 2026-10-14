@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterOutlet } from '@angular/router';
 import { HeaderComponent } from '@shared/components/header/header.component';
@@ -18,7 +18,11 @@ import { filter } from 'rxjs';
   selector: 'app-root',
   standalone: true,
   imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent],
-  templateUrl: './app.component.html'
+  templateUrl: './app.component.html',
+  // The template reads signals only (isAuthenticated, showWhatsNew, whatsNew.unseenReleases), and
+  // the MSAL subscription and the release-notes promise write signals. As the root, this also stops
+  // re-checking routed Default pages on every tick; the only one, home, renders from signals only.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AppComponent {
   readonly isAuthenticated = signal(false);

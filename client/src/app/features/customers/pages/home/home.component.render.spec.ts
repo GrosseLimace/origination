@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Type, input, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -152,6 +152,14 @@ class StubCalculator {
   readonly producerName = input('');
 }
 
+/** Stands in for the app shell, which is OnPush too: home rendered inside an OnPush parent must still
+ *  refresh from its own signals, with nothing marking the parent. */
+@Component({
+  selector: 'app-onpush-shell', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HomeComponent], template: '<main><app-home /></main>',
+})
+class OnPushShell {}
+
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
 const customer = (id: number, over: Partial<Customer> = {}) =>
@@ -229,7 +237,7 @@ function makeAppState() {
 }
 
 describe('HomeComponent (rendered)', () => {
-  let fixture: ComponentFixture<HomeComponent>;
+  let fixture: ComponentFixture<unknown>;
   let api: ApiStub;
   let app: ReturnType<typeof makeAppState>;
   let queryParams: BehaviorSubject<Params>;
@@ -241,7 +249,9 @@ describe('HomeComponent (rendered)', () => {
   const profile = () => fixture.debugElement.query(By.directive(StubProfile))?.componentInstance as StubProfile;
   const settle = () => fixture.whenStable();
 
-  async function render(arrange?: (api: ApiStub, app: ReturnType<typeof makeAppState>) => void): Promise<void> {
+  async function render(
+    arrange?: (api: ApiStub, app: ReturnType<typeof makeAppState>) => void, root: Type<unknown> = HomeComponent,
+  ): Promise<void> {
     api = makeApi();
     app = makeAppState();
     arrange?.(api, app);
@@ -274,7 +284,7 @@ describe('HomeComponent (rendered)', () => {
           CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent],
       },
     });
-    fixture = TestBed.createComponent(HomeComponent);
+    fixture = TestBed.createComponent(root);
     await settle();
   }
 
@@ -509,5 +519,28 @@ describe('HomeComponent (rendered)', () => {
     profile().onContractsWideChange.emit(true);
     await settle();
     expect(grid().className).not.toContain('xl:grid');
+  });
+
+  it('inside an OnPush shell, a producer opened from the list fills in as its reads land', async () => {
+    const contracts = new Subject<Contract[]>();
+    await render(a => {
+      a.getCustomers.mockReturnValue(of([A, B]));
+      a.getContractsByCustomer.mockReturnValue(contracts);
+    }, OnPushShell);
+    expect(text('list')).toContain('roster:1,2');
+
+    list().selectCustomer.emit(B);
+    await settle();
+    expect(text('profile')).toContain('name:Producer 2');
+
+    contracts.next([contract(20, 'S-2')]);
+    await settle();
+    expect(text('profile')).toContain('contracts:20');
+
+    api.getCustomers.mockReturnValue(of([customer(50)]));
+    app.selectedTradeUnits.set(['TU2']);
+    await settle();
+    expect(text('profile')).toBeNull();
+    expect(text('list')).toContain('roster:50');
   });
 });
