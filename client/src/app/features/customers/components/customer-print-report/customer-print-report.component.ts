@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MsalService } from '@azure/msal-angular';
 import { ToastService } from '@core/services/toast.service';
@@ -42,12 +42,16 @@ interface TicketCommoditySummary {
     DialogFooterComponent,
     ButtonComponent
   ],
+  // The printed HTML formats pricing lines with the same pipes the preview template uses.
+  providers: [CurrencyPipe, DatePipe],
   templateUrl: './customer-print-report.component.html'
 })
 export class CustomerPrintReportComponent {
   private readonly msalService = inject(MsalService);
   private readonly toastService = inject(ToastService);
   private readonly appState = inject(AppStateService);
+  private readonly currencyPipe = inject(CurrencyPipe);
+  private readonly datePipe = inject(DatePipe);
 
   readonly noTradeUnit = computed(() => this.appState.selectedTradeUnits().length === 0);
 
@@ -743,15 +747,19 @@ export class CustomerPrintReportComponent {
         const lines = this.getPricingLinesForContract(ct);
         if (lines.length === 0) return '';
         const unit = this._esc(ct.unit || 'bu');
+        // Same columns, order and formats as the preview's pricing-line table (the same pipes and
+        // arguments), so the page matches what was previewed: up to 4 decimals, short date.
+        const linePrice = (v: number | null | undefined): string =>
+          v != null ? (this.currencyPipe.transform(v, 'USD', 'symbol', '1.2-4') ?? '—') : '—';
         return `<div style="padding:6px 8px 8px 8px;background:#f9fafb;border-top:1px solid #f3f4f6;">
           <table style="width:100%;border-collapse:collapse;font-size:10px;background:#ffffff;border:1px solid #e5e7eb;border-radius:4px;">
             <thead><tr style="background:#f3f4f6;">
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Seq</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Quantity</th>
-              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Basis</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Hedge</th>
-              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Flat Price</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Basis</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Freight Adj</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Flat Price</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Price Date</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Confirm</th>
             </tr></thead>
@@ -759,11 +767,11 @@ export class CustomerPrintReportComponent {
               ${lines.map(line => `<tr>
                 <td style="text-align:center;padding:4px 6px;color:#6b7280;">${line.priceSequence ?? ''}</td>
                 <td style="text-align:center;padding:4px 6px;">${(line.priceQuantity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${unit}</td>
-                <td style="text-align:center;padding:4px 6px;">${line.basisPrice != null ? this.formatCurrency(line.basisPrice) : '—'}</td>
-                <td style="text-align:center;padding:4px 6px;">${line.hedgePrice != null ? this.formatCurrency(line.hedgePrice) : '—'}</td>
-                <td style="text-align:center;padding:4px 6px;font-weight:600;">${line.flatPrice != null ? this.formatCurrency(line.flatPrice) : '—'}</td>
-                <td style="text-align:center;padding:4px 6px;">${line.freightAdjustment != null ? this.formatCurrency(line.freightAdjustment) : '—'}</td>
-                <td style="text-align:center;padding:4px 6px;">${line.priceDate ? this.formatDate(line.priceDate) : '—'}</td>
+                <td style="text-align:center;padding:4px 6px;">${this._esc(linePrice(line.hedgePrice))}</td>
+                <td style="text-align:center;padding:4px 6px;">${this._esc(linePrice(line.basisPrice))}</td>
+                <td style="text-align:center;padding:4px 6px;">${this._esc(linePrice(line.freightAdjustment))}</td>
+                <td style="text-align:center;padding:4px 6px;font-weight:600;">${this._esc(linePrice(line.flatPrice))}</td>
+                <td style="text-align:center;padding:4px 6px;">${line.priceDate ? this._esc(this.datePipe.transform(line.priceDate, 'M/d/yy')) : '—'}</td>
                 <td style="text-align:center;padding:4px 6px;">${this._esc(line.customerConfirmStatus || '—')}</td>
               </tr>`).join('')}
             </tbody>

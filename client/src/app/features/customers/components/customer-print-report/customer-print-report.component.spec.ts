@@ -143,6 +143,17 @@ describe('CustomerPrintReportComponent', () => {
     const linesTable = card.querySelector(':scope > div table');
     return linesTable ? Array.from(linesTable.querySelectorAll('tbody tr')).map(r => Array.from(r.querySelectorAll('td')).map(td => squash(td.textContent))) : [];
   };
+  /** A contract's pricing-lines table — header cells and body rows — in the preview or a printed page. */
+  const pricingLinesTable = (id: string, root: ParentNode = preview()): { head: string[]; rows: string[][] } => {
+    const tr = Array.from(root.querySelectorAll<HTMLTableRowElement>('tr')).find(r => squash(r.querySelector('td')?.textContent) === id);
+    if (!tr) throw new Error(`contract ${id} not rendered`);
+    const table = tr.closest('table')!.parentElement!.querySelector(':scope > div table');
+    if (!table) return { head: [], rows: [] };
+    return {
+      head: Array.from(table.querySelectorAll('th')).map(th => squash(th.textContent)),
+      rows: Array.from(table.querySelectorAll('tbody tr')).map(r => Array.from(r.querySelectorAll('td')).map(td => squash(td.textContent))),
+    };
+  };
   /** KPI tiles as [label, value]. */
   const kpiTiles = (): string[][] => {
     if (!sectionTitles().includes('Executive Summary')) return [];
@@ -401,6 +412,24 @@ describe('CustomerPrintReportComponent', () => {
       expect(previewText()).not.toContain('Seq');
       expect(contractRows()).toHaveLength(6);
       expect(contractCells('PCW500')[6]).toBe('Cancelled');
+    });
+
+    // Print used to order Basis before Hedge and Flat before Freight, round to cents and spell the
+    // date out, so the page disagreed with the preview the user had just checked.
+    it('prints pricing lines exactly as the preview shows them: column order, 4-decimal prices, short date', () => {
+      open({
+        contracts: contracts(),
+        pricingLines: [...lines(), makeLine({ contractId: 'PCW100', priceSequence: 1, priceQuantity: 2500, hedgePrice: 4.1275, basisPrice: -0.3525, freightAdjustment: -0.0125, flatPrice: 3.775, priceDate: '2026-10-01' })],
+      });
+      const doc = printed();
+
+      for (const id of ['PCW100', 'PCW500', 'PCW700']) {
+        expect(pricingLinesTable(id, doc), id).toEqual(pricingLinesTable(id));
+      }
+      expect(pricingLinesTable('PCW100', doc)).toEqual({
+        head: ['Seq', 'Quantity', 'Hedge', 'Basis', 'Freight Adj', 'Flat Price', 'Price Date', 'Confirm'],
+        rows: [['1', '2,500 bu', '$4.1275', '-$0.3525', '-$0.0125', '$3.775', '10/1/26', '—']],
+      });
     });
   });
 
