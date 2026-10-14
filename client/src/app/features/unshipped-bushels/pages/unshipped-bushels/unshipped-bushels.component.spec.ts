@@ -357,19 +357,58 @@ describe('UnshippedBushelsComponent', () => {
     expect(rowCells().map(c => c[0]).sort()).toEqual(['1', '2']);
   });
 
-  it('PINS CURRENT BEHAVIOUR: the alias is NOT applied when deciding which producers to show', () => {
-    // Suspected bug, reported rather than fixed: filteredGroups matches the raw term, while
-    // getFilteredContracts expands milo→sorghum / beans→soybeans. A producer whose only open
-    // contract is described "Sorghum" therefore disappears on a "milo" search. Update if fixed.
+  it('applies the alias when deciding which producers to show, not just to the expanded rows', () => {
+    // Was pinned as a bug: the producer filter matched the raw term while the rows expanded the
+    // alias, so a producer whose only open contract is "Sorghum" vanished on a "milo" search.
+    // Both filters now share one alias expansion.
     createPage({
-      customers: [SAMPLE],
-      contracts: [makeContract({ id: 1, commodityDescription: 'Sorghum', commodityCode: 'SOR' })],
+      customers: [SAMPLE, PRAIRIE],
+      contracts: [
+        makeContract({ id: 1, ctrmCustomerId: 'SAMPFRM', contractNumber: '1', commodityDescription: 'Sorghum', commodityCode: 'SOR', openBalanceQuantity: 3000 }),
+        makeContract({ id: 2, ctrmCustomerId: 'PRAIRIE', contractNumber: '2', commodityDescription: 'Soybeans', commodityCode: 'SB', openBalanceQuantity: 2000 }),
+      ],
     });
+    click(button('Expand all')!);
 
     type('Filter by commodity...', 'milo');
+    expect(groups().map(g => g.name)).toEqual(['Sample Farms']);
+    expect(rowCells().map(c => c[0])).toEqual(['1']);
+    expect(summaryCards()).toEqual(['3,000', '1', '1']);
+    expect(hasText('No results match your filters')).toBe(false);
 
-    expect(groups()).toEqual([]);
-    expect(hasText('No results match your filters')).toBe(true);
+    type('Filter by commodity...', 'beans');
+    expect(groups().map(g => g.name)).toEqual(['Prairie Acres']);
+    expect(rowCells().map(c => c[0])).toEqual(['2']);
+  });
+
+  it('shows a producer on a commodity search exactly when it has at least one matching row', () => {
+    createPage({
+      customers: [SAMPLE, PRAIRIE],
+      contracts: [
+        makeContract({ id: 1, ctrmCustomerId: 'SAMPFRM', contractNumber: '1', commodityDescription: 'Grain Sorghum', commodityCode: 'GS' }),
+        makeContract({ id: 2, ctrmCustomerId: 'SAMPFRM', contractNumber: '2', commodityDescription: 'Corn', commodityCode: 'YC' }),
+        makeContract({ id: 3, ctrmCustomerId: 'PRAIRIE', contractNumber: '3', commodityDescription: 'Soybeans', commodityCode: 'SB' }),
+        makeContract({ id: 4, ctrmCustomerId: 'PRAIRIE', contractNumber: '4', commodityDescription: 'Milo', commodityCode: 'MI' }),
+      ],
+    });
+    click(button('Expand all')!);
+
+    const rowsPerProducer = (): number[] => groupHeaders()
+      .map(h => h.closest('app-card')!.querySelectorAll('div.grid-cols-12[title="View producer"]').length);
+    const shown: Record<string, string[]> = {};
+    for (const term of ['milo', 'sorghum', 'beans', 'soybeans', 'corn', 'wheat']) {
+      type('Filter by commodity...', term);
+      expect(rowsPerProducer().every(n => n > 0), term).toBe(true);
+      shown[term] = groups().map(g => g.name).sort();
+    }
+    expect(shown).toEqual({
+      milo: ['Prairie Acres', 'Sample Farms'],
+      sorghum: ['Prairie Acres', 'Sample Farms'],
+      beans: ['Prairie Acres'],
+      soybeans: ['Prairie Acres'],
+      corn: ['Sample Farms'],
+      wheat: [],
+    });
   });
 
   // ── Navigation ────────────────────────────────────────────────────────────

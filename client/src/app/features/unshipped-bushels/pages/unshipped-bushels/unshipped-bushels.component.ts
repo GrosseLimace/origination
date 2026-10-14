@@ -22,6 +22,24 @@ export interface CustomerContractGroup {
   expanded: boolean;
 }
 
+const COMMODITY_ALIASES: Record<string, string[]> = {
+  'milo': ['milo', 'sorghum', 'sor'], 'sorghum': ['milo', 'sorghum', 'sor'],
+  'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'],
+};
+
+/** The search terms a (lowercased, trimmed) commodity filter stands for, e.g. "milo" → milo / sorghum / sor. */
+function commodityTerms(filter: string): string[] {
+  return COMMODITY_ALIASES[filter] ?? [filter];
+}
+
+/** True when the contract's commodity description or code contains any of the alias-expanded terms.
+ *  Shared by the producer filter and the row filter so both agree on what a "milo" search matches. */
+function matchesCommodity(c: Contract, terms: string[]): boolean {
+  const desc = c.commodityDescription?.toLowerCase() ?? '';
+  const code = c.commodityCode?.toLowerCase() ?? '';
+  return terms.some(t => desc.includes(t) || code.includes(t));
+}
+
 @Component({
   selector: 'app-unshipped-bushels',
   standalone: true,
@@ -50,6 +68,7 @@ export class UnshippedBushelsComponent implements OnInit {
     const custFilter = this.searchCustomer().trim().toLowerCase();
     const commFilter = this.searchCommodity().trim().toLowerCase();
     const contractFilter = this.searchContract().trim().toLowerCase();
+    const commTerms = commodityTerms(commFilter);
 
     return groups.filter(g => {
       // Customer ID / Name filter
@@ -60,13 +79,7 @@ export class UnshippedBushelsComponent implements OnInit {
       }
 
       // Commodity filter — group visible if any contract matches
-      if (commFilter) {
-        const hasMatch = g.contracts.some(c =>
-          (c.commodityDescription?.toLowerCase().includes(commFilter)) ||
-          (c.commodityCode?.toLowerCase().includes(commFilter))
-        );
-        if (!hasMatch) return false;
-      }
+      if (commFilter && !g.contracts.some(c => matchesCommodity(c, commTerms))) return false;
 
       // Contract# filter — group visible if any contract matches
       if (contractFilter) {
@@ -85,17 +98,9 @@ export class UnshippedBushelsComponent implements OnInit {
   getFilteredContracts(group: CustomerContractGroup): Contract[] {
     const commFilter = this.searchCommodity().trim().toLowerCase();
     const contractFilter = this.searchContract().trim().toLowerCase();
-    const commAliases: Record<string, string[]> = {
-      'milo': ['milo', 'sorghum', 'sor'], 'sorghum': ['milo', 'sorghum', 'sor'],
-      'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'],
-    };
-    const commTerms = commFilter ? (commAliases[commFilter] ?? [commFilter]) : [];
+    const commTerms = commodityTerms(commFilter);
     return group.contracts.filter(c => {
-      if (commFilter) {
-        const desc = c.commodityDescription?.toLowerCase() ?? '';
-        const code = c.commodityCode?.toLowerCase() ?? '';
-        if (!commTerms.some(t => desc.includes(t) || code.includes(t))) return false;
-      }
+      if (commFilter && !matchesCommodity(c, commTerms)) return false;
       if (contractFilter) {
         const match = (c.contractNumber?.toLowerCase().includes(contractFilter)) ||
                       (c.sourceContractId?.toLowerCase().includes(contractFilter));
