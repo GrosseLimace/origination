@@ -557,7 +557,7 @@
       "id": "angular.inconsistent-onpush-adoption",
       "audit": "angular",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Inconsistent OnPush adoption on fully signal-driven components",
       "description": "Only 20 of 49 components set ChangeDetectionStrategy.OnPush; most of the shared UI kit and several feature components are entirely input()/signal-driven yet omit it.",
       "files": [
@@ -570,7 +570,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-14",
-      "notes": "[2026-09-21] Confirmed and deliberately deferred: 29 components, and OnPush breaks silently wherever a parent mutates an array in place. The actual per-cycle cost the perf findings described was removed by converting the hot getter to a computed().\n[2026-09-28] Re-checked: 23 of 49 components now set OnPush (up from 20). Gap narrowed slightly but still open; deferral rationale unchanged.\n[2026-10-13] Re-checked: still 23 of 49 components set OnPush. No change since 2026-09-28. Still open.\n[2026-10-13] Partial, deliberate. Converted to OnPush, each with an existing behaviour spec and each checked for non-signal state the template reads: the whole shared kit (badge, button, card x6 parts, table x6 parts, dialog x6 parts, select, input, toast-container), the three calculators, contracts-table (separately), and activity-summary (its one plain field, summaryText, is written in an effect that now also marks the view). input and select are ControlValueAccessors, so writeValue and setDisabledState now call markForCheck: a programmatic form write is not a DOM event and would otherwise never reach the native control under OnPush. Left on Default ON PURPOSE: planting-intentions-table (14 plain fields read by the template, several set from subscription callbacks, so OnPush would stop those renders without a signal refactor first), edit-customer-dialog (its spec blanks the template, so a render regression would be invisible), tickets-table, producer-insights, customer-map, unshipped-bushels, contract-pacing-card, year-over-year-chart (no spec at all), and home (one of the untested god components). Rule applied throughout: no OnPush without a rendering spec, and no sweep.\n[2026-10-14] 11 more components OnPush (calculator widget/launcher, year-over-year, producer-insights, contract-pacing, unshipped-bushels, tickets-table, customer-map, planting-intentions-table, edit-customer-dialog), each behind rendering tests and mutation-checked; three of them (map, planting, edit-customer) were already showing stale values under zoneless Default (NG0100) and are fixed. Remaining: home (phase 2, with its decomposition) and the app root (switch held back until home is covered)."
+      "notes": "[2026-09-21] Confirmed and deliberately deferred: 29 components, and OnPush breaks silently wherever a parent mutates an array in place. The actual per-cycle cost the perf findings described was removed by converting the hot getter to a computed().\n[2026-09-28] Re-checked: 23 of 49 components now set OnPush (up from 20). Gap narrowed slightly but still open; deferral rationale unchanged.\n[2026-10-13] Re-checked: still 23 of 49 components set OnPush. No change since 2026-09-28. Still open.\n[2026-10-13] Partial, deliberate. Converted to OnPush, each with an existing behaviour spec and each checked for non-signal state the template reads: the whole shared kit (badge, button, card x6 parts, table x6 parts, dialog x6 parts, select, input, toast-container), the three calculators, contracts-table (separately), and activity-summary (its one plain field, summaryText, is written in an effect that now also marks the view). input and select are ControlValueAccessors, so writeValue and setDisabledState now call markForCheck: a programmatic form write is not a DOM event and would otherwise never reach the native control under OnPush. Left on Default ON PURPOSE: planting-intentions-table (14 plain fields read by the template, several set from subscription callbacks, so OnPush would stop those renders without a signal refactor first), edit-customer-dialog (its spec blanks the template, so a render regression would be invisible), tickets-table, producer-insights, customer-map, unshipped-bushels, contract-pacing-card, year-over-year-chart (no spec at all), and home (one of the untested god components). Rule applied throughout: no OnPush without a rendering spec, and no sweep.\n[2026-10-14] 11 more components OnPush (calculator widget/launcher, year-over-year, producer-insights, contract-pacing, unshipped-bushels, tickets-table, customer-map, planting-intentions-table, edit-customer-dialog), each behind rendering tests and mutation-checked; three of them (map, planting, edit-customer) were already showing stale values under zoneless Default (NG0100) and are fixed. Remaining: home (phase 2, with its decomposition) and the app root (switch held back until home is covered).",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Every component in the client is now OnPush (none left without it). Phase 1: 11 components, each behind rendering tests; customer-map, planting-intentions-table and edit-customer-dialog were already showing stale values under zoneless Default (NG0100) and are fixed. Phase 2: home (template reads only signals; 15 rendering tests pass on Default then OnPush, incl. timers, resize, deep-link polling, query params) and then the app root. Owner asked to fix everything 2026-10-14; characterisation tests first, verbatim moves, pre-existing page tests unchanged, every new unit mutation-checked."
     },
     {
       "id": "angular.function-calls-in-template-bindings",
@@ -1301,7 +1306,7 @@
       "id": "performance.angular-onpush-coverage-gap",
       "audit": "performance",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Roughly half of standalone components skip OnPush change detection, compounding into full-tree re-evaluation",
       "description": "Of 47 component.ts files, only 20 declare ChangeDetectionStrategy.OnPush; the rest (including activity-summary, producer-insights, edit-customer-dialog, planting-intentions-table, home.component.ts, and both customer-map variants) run Default strategy. activity-summary.component.ts and tickets-table.component.ts in particular do multiple filter/reduce/sort passes over customer/contract/ticket arrays in plain getters/methods rather than computed(). This is a systemic risk that compounds any signal update in AppStateService into full-tree re-evaluation.",
       "files": [
@@ -1319,7 +1324,12 @@
         "date": "2026-09-19"
       },
       "last_verified": "2026-10-14",
-      "notes": "[2026-09-21] Confirmed; duplicate of angular.inconsistent-onpush-adoption. [2026-09-28] Re-counted: 23 of 49 component.ts files now declare OnPush (up slightly from 20/47), but the ratio and the named offenders (activity-summary, tickets-table, edit-customer-dialog, planting-intentions-table, home) are unchanged. Still open.\n[2026-10-13] Re-verified: OnPush coverage now 23/49 (net one new component added, no new adopters). Named offenders unchanged.\n[2026-10-13] Partial, deliberate. Converted to OnPush, each with an existing behaviour spec and each checked for non-signal state the template reads: the whole shared kit (badge, button, card x6 parts, table x6 parts, dialog x6 parts, select, input, toast-container), the three calculators, contracts-table (separately), and activity-summary (its one plain field, summaryText, is written in an effect that now also marks the view). input and select are ControlValueAccessors, so writeValue and setDisabledState now call markForCheck: a programmatic form write is not a DOM event and would otherwise never reach the native control under OnPush. Left on Default ON PURPOSE: planting-intentions-table (14 plain fields read by the template, several set from subscription callbacks, so OnPush would stop those renders without a signal refactor first), edit-customer-dialog (its spec blanks the template, so a render regression would be invisible), tickets-table, producer-insights, customer-map, unshipped-bushels, contract-pacing-card, year-over-year-chart (no spec at all), and home (one of the untested god components). Rule applied throughout: no OnPush without a rendering spec, and no sweep.\n[2026-10-14] 11 more components OnPush (calculator widget/launcher, year-over-year, producer-insights, contract-pacing, unshipped-bushels, tickets-table, customer-map, planting-intentions-table, edit-customer-dialog), each behind rendering tests and mutation-checked; three of them (map, planting, edit-customer) were already showing stale values under zoneless Default (NG0100) and are fixed. Remaining: home (phase 2, with its decomposition) and the app root (switch held back until home is covered)."
+      "notes": "[2026-09-21] Confirmed; duplicate of angular.inconsistent-onpush-adoption. [2026-09-28] Re-counted: 23 of 49 component.ts files now declare OnPush (up slightly from 20/47), but the ratio and the named offenders (activity-summary, tickets-table, edit-customer-dialog, planting-intentions-table, home) are unchanged. Still open.\n[2026-10-13] Re-verified: OnPush coverage now 23/49 (net one new component added, no new adopters). Named offenders unchanged.\n[2026-10-13] Partial, deliberate. Converted to OnPush, each with an existing behaviour spec and each checked for non-signal state the template reads: the whole shared kit (badge, button, card x6 parts, table x6 parts, dialog x6 parts, select, input, toast-container), the three calculators, contracts-table (separately), and activity-summary (its one plain field, summaryText, is written in an effect that now also marks the view). input and select are ControlValueAccessors, so writeValue and setDisabledState now call markForCheck: a programmatic form write is not a DOM event and would otherwise never reach the native control under OnPush. Left on Default ON PURPOSE: planting-intentions-table (14 plain fields read by the template, several set from subscription callbacks, so OnPush would stop those renders without a signal refactor first), edit-customer-dialog (its spec blanks the template, so a render regression would be invisible), tickets-table, producer-insights, customer-map, unshipped-bushels, contract-pacing-card, year-over-year-chart (no spec at all), and home (one of the untested god components). Rule applied throughout: no OnPush without a rendering spec, and no sweep.\n[2026-10-14] 11 more components OnPush (calculator widget/launcher, year-over-year, producer-insights, contract-pacing, unshipped-bushels, tickets-table, customer-map, planting-intentions-table, edit-customer-dialog), each behind rendering tests and mutation-checked; three of them (map, planting, edit-customer) were already showing stale values under zoneless Default (NG0100) and are fixed. Remaining: home (phase 2, with its decomposition) and the app root (switch held back until home is covered).",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Every component in the client is now OnPush (none left without it). Phase 1: 11 components, each behind rendering tests; customer-map, planting-intentions-table and edit-customer-dialog were already showing stale values under zoneless Default (NG0100) and are fixed. Phase 2: home (template reads only signals; 15 rendering tests pass on Default then OnPush, incl. timers, resize, deep-link polling, query params) and then the app root. Owner asked to fix everything 2026-10-14; characterisation tests first, verbatim moves, pre-existing page tests unchanged, every new unit mutation-checked."
     },
     {
       "id": "performance.usage-dashboard-duplicate-scope-resolution-per-widget",
@@ -2823,7 +2833,7 @@
       "id": "angular.god-components-need-decomposition",
       "audit": "angular",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Four feature components violate 'keep components small and focused' by a wide margin",
       "description": "build-list.component.ts (4,244 lines), bid-sheet.component.ts (3,005 lines), home.component.ts (2,220 lines), and dashboard.component.ts (1,707 lines) each mix data-fetching orchestration, view-state, formatting/derivation logic, and template glue in a single class, contrary to the guide's 'delegate complex logic to services' and single-responsibility guidance. Their size is also very likely why none of them have tests (see angular.untested-god-components) — a class this large is hard to instantiate and assert against in isolation.",
       "files": [
@@ -2839,8 +2849,13 @@
       "opened_in": {
         "date": "2026-09-21"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] New — found during the angular-domain audit pass.\n[2026-09-21] Decision: sequence after angular.untested-god-components. Splitting 11k lines of untested page logic is the riskiest possible order; specs land first (this PR), then the decomposition is planned per component as normal feature work. Left open on purpose.\n[2026-10-13] Re-checked: none of the four components have been decomposed; each remains a single class mixing data-fetching, view-state, and formatting logic, and all four have grown in size rather than shrunk. Deferral rationale unchanged. Still open."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] New — found during the angular-domain audit pass.\n[2026-09-21] Decision: sequence after angular.untested-god-components. Splitting 11k lines of untested page logic is the riskiest possible order; specs land first (this PR), then the decomposition is planned per component as normal feature work. Left open on purpose.\n[2026-10-13] Re-checked: none of the four components have been decomposed; each remains a single class mixing data-fetching, view-state, and formatting logic, and all four have grown in size rather than shrunk. Deferral rationale unchanged. Still open.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Phased decomposition done for all four, behaviour-preserving: build-list 4,602->3,105 lines (10 pure utils), bid-sheet 3,008->2,137 (9 utils; every map marker byte-identical across 2,592 scenarios before/after), home 2,574->1,581 (derivations util + page-scoped stores for notes, reminders, saved lists, linked producers, planting, failure toasts), dashboard 1,789->1,076 (format, contracts, producers, planting utils). What remains in each page is stateful machinery tangled with effects/timers/Leaflet (per-producer loading and save flow in home; readiness effects and note fetching in build-list; Leaflet lifecycle and auto-save in bid-sheet; load/cache orchestration in dashboard), documented in each report and left deliberately as the higher-risk next step. Owner asked to fix everything 2026-10-14; characterisation tests first, verbatim moves, pre-existing page tests unchanged, every new unit mutation-checked."
     },
     {
       "id": "angular.home-component-silent-error-swallowing",
@@ -3524,6 +3539,76 @@
         "detected_by": "manual"
       },
       "resolution_notes": "contracts-table, activity-summary, print-report: computed() map over the conversions signal. Two of the three were genuinely stale on a same-length replacement (tests failed on the old code). Owner asked to fix everything 2026-10-14; verified, tested, mutation-checked."
+    },
+    {
+      "id": "angular.home-notes-spinner-flash",
+      "audit": "angular",
+      "severity": "low",
+      "status": "open",
+      "title": "Home: notes spinner can switch off while the first notes read is still in flight",
+      "description": "When the linked-producer walk runs during a selection, a second notes check in the same selection turns the notes spinner off while the first read is in flight, which can flash \"No notes yet\".",
+      "files": [
+        "client/src/app/features/customers/pages/home/home-notes.store.ts"
+      ],
+      "suggested_fix": "Track the in-flight read per selection and only clear the spinner when that read settles.",
+      "opened_in": {
+        "date": "2026-10-14"
+      },
+      "last_verified": "2026-10-14",
+      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked."
+    },
+    {
+      "id": "angular.build-list-refined-marker-ignores-dp",
+      "audit": "angular",
+      "severity": "low",
+      "status": "open",
+      "title": "Build a List: \"Refined\" marker ignores the DP refinements",
+      "description": "hasAnyRefinement ignores the four DP refinements, so a saved list filtered only on DP shows no \"Refined\" marker, unlike activeRefinementCount.",
+      "files": [
+        "client/src/app/features/build-list/utils/refine-panel.ts"
+      ],
+      "suggested_fix": "Include the DP refinements in hasAnyRefinement (the unit spec pins the current behaviour).",
+      "opened_in": {
+        "date": "2026-10-14"
+      },
+      "last_verified": "2026-10-14",
+      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked."
+    },
+    {
+      "id": "angular.build-list-producer-details-merge-diverges",
+      "audit": "angular",
+      "severity": "low",
+      "status": "open",
+      "title": "Build a List merges producer details differently from the shared helper",
+      "description": "Build a List's private _mergeProducerDetails does not carry contacts (the shared applyProducerDetails does) and does carry binSitesModifiedAt. If producer details are the only source of contact rows, the has-email / has-phone refinements could miss producers. Needs an owner decision.",
+      "files": [
+        "client/src/app/features/build-list/pages/build-list/build-list.component.ts",
+        "client/src/app/shared/utils/apply-producer-details.ts"
+      ],
+      "suggested_fix": "Confirm where contact rows come from; then use the shared helper or document the difference.",
+      "opened_in": {
+        "date": "2026-10-14"
+      },
+      "last_verified": "2026-10-14",
+      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked."
+    },
+    {
+      "id": "angular.dashboard-remaining-failure-misreports",
+      "audit": "angular",
+      "severity": "low",
+      "status": "open",
+      "title": "Dashboard: a few places still read a failed load as \"none\"",
+      "description": "Headline stat cards show 0 acres / \"No prior year data\" when planting failed; the without-intentions list lists everyone when planting failed; Contract Coverage silently undercounts when conversions failed; reloadPlantingIntentions catches its own fetch error into [] without setting the app-state flag.",
+      "files": [
+        "client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts",
+        "client/src/app/features/dashboard/pages/dashboard/dashboard.component.html"
+      ],
+      "suggested_fix": "Use the existing load-failed flags in these places, as the other dashboard panels now do.",
+      "opened_in": {
+        "date": "2026-10-14"
+      },
+      "last_verified": "2026-10-14",
+      "notes": "[2026-10-14] Spotted during the 2026-10-14 decomposition; behaviour preserved and pinned by tests rather than changed unasked."
     }
   ]
 }

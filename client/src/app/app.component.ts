@@ -20,8 +20,8 @@ import { filter } from 'rxjs';
   imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent],
   templateUrl: './app.component.html',
   // The template reads signals only (isAuthenticated, showWhatsNew, whatsNew.unseenReleases), and
-  // the MSAL subscription and the release-notes promise write signals. As the root, this also stops
-  // re-checking routed Default pages on every tick; the only one, home, renders from signals only.
+  // the MSAL subscription and the release-notes promise write signals. Every routed page is OnPush
+  // too (home was the last, 2026-10-14), so nothing below relies on the root re-checking it.
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AppComponent {
