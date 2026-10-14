@@ -2,7 +2,7 @@ import { Component, ElementRef, HostListener, inject, input, signal } from '@ang
 
 import { CALCULATOR_TYPES, CalculatorType } from '../models/calculator.model';
 import { CalculatorWidgetComponent } from './calculator-widget.component';
-import { HelpPanelService } from '@core/services/help-panel.service';
+import { HelpPanelStateService } from '@core/services/help-panel-state.service';
 
 /**
  * Floating launcher for the originator calculators. Renders a fixed FAB on the customer
@@ -21,7 +21,7 @@ export class CalculatorLauncherComponent {
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   /** Public: the template steps the launcher left while the Help panel is open. */
-  readonly helpPanel = inject(HelpPanelService);
+  readonly helpPanel = inject(HelpPanelStateService);
 
   readonly types = CALCULATOR_TYPES;
   readonly pickerOpen = signal(false);
