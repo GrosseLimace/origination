@@ -118,6 +118,7 @@ function makeApi() {
     bulkUpsertBidSheetBids: vi.fn((_bids: BulkBids): Observable<void> => of(undefined)),
     updateBidSheetLocation: vi.fn((id: number, loc: Partial<BidSheetLocation>): Observable<BidSheetLocation> => of({ ...alpha(), ...loc, id })),
     deleteBidSheetLocation: vi.fn((_id: number, _tu: string): Observable<void> => of(undefined)),
+    deleteBidSheetBids: vi.fn((_id: number, _crop: string, _tu: string): Observable<void> => of(undefined)),
   };
 }
 
@@ -1097,6 +1098,70 @@ describe('BidSheetComponent', () => {
   });
 
   // ── Location rename / Scoular toggle ──────────────────────────────────────
+
+  describe('location and crop deletes', () => {
+    it('deleting the open location removes it from both caches, clears the selection and reference, and tracks it', () => {
+      build(['2040']);
+      c.panelSelectedLocation.set('Bravo Grain');
+      c.panelSetReference();
+      c.showDeleteLocationConfirm.set(true);
+      c.deleteMode.set(true);
+      c.confirmDeleteLocation();
+
+      expect(api.deleteBidSheetLocation).toHaveBeenCalledWith(2, '2040');
+      expect(c.bidLocations().map(l => l.name)).toEqual(['Alpha Coop', 'Charlie Elevator']);
+      expect(c.allMapLocations().some(l => l.id === 2)).toBe(false);
+      expect([c.panelSelectedLocation(), c.selectedLocationName(), c.showDeleteLocationConfirm(), c.deleteMode()]).toEqual(['', '', false, false]);
+      expect(toast.success).toHaveBeenCalledWith('Deleted Bravo Grain');
+      expect(usage.postClickEvent).toHaveBeenCalledWith('interaction', 'bidsheet', 'location-deleted', 'Bravo Grain');
+      expect(panelNames()).not.toContain('Bravo Grain');
+    });
+
+    it('a failed location delete keeps everything and shows an error', () => {
+      api.deleteBidSheetLocation.mockImplementation(() => throwError(() => new Error('down')));
+      build(['2040']);
+      c.panelSelectedLocation.set('Bravo Grain');
+      c.showDeleteLocationConfirm.set(true);
+      c.confirmDeleteLocation();
+
+      expect(toast.error).toHaveBeenCalledWith('Failed to delete location');
+      expect(c.showDeleteLocationConfirm()).toBe(false);
+      expect(c.panelSelectedLocation()).toBe('Bravo Grain');
+      expect(c.bidLocations()).toHaveLength(3);
+    });
+
+    it('deleting a crop removes only that crop\'s bids from the open location in both caches', () => {
+      build(['2040']);
+      c.panelSelectedLocation.set('Alpha Coop');
+      c.requestDeleteCrop('YC');
+      expect([c.pendingDeleteCrop(), c.showDeleteCropConfirm()]).toEqual(['YC', true]);
+      c.confirmDeleteCrop();
+
+      expect(api.deleteBidSheetBids).toHaveBeenCalledWith(1, 'YC', '2040');
+      const alphaIn = (locs: BidSheetLocation[]) => locs.find(l => l.id === 1)!.bids.map(b => b.commodityCode);
+      expect(alphaIn(c.bidLocations())).toEqual(['SB']);
+      expect(alphaIn(c.allMapLocations())).toEqual(['SB']);
+      expect(c.bidLocations().find(l => l.id === 2)!.bids).toHaveLength(2);
+      expect([c.pendingDeleteCrop(), c.showDeleteCropConfirm()]).toEqual(['', false]);
+      expect(toast.success).toHaveBeenCalledWith('Deleted YC bids from Alpha Coop');
+      expect(c.panelLocationBids().map(r => r.crop)).toEqual(['SB']);
+    });
+
+    it('a failed crop delete clears the prompt and shows an error; cancel just clears it', () => {
+      api.deleteBidSheetBids.mockImplementation(() => throwError(() => new Error('down')));
+      build(['2040']);
+      c.panelSelectedLocation.set('Alpha Coop');
+      c.requestDeleteCrop('YC');
+      c.confirmDeleteCrop();
+      expect(toast.error).toHaveBeenCalledWith('Failed to delete crop bids');
+      expect([c.pendingDeleteCrop(), c.showDeleteCropConfirm()]).toEqual(['', false]);
+      expect(c.bidLocations().find(l => l.id === 1)!.bids).toHaveLength(3);
+
+      c.requestDeleteCrop('SB');
+      c.cancelDeleteCrop();
+      expect([c.pendingDeleteCrop(), c.showDeleteCropConfirm()]).toEqual(['', false]);
+    });
+  });
 
   describe('location rename and Scoular status', () => {
     it('saveLocationName sends the trimmed name with every other field unchanged, then reloads', () => {

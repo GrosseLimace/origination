@@ -20,6 +20,7 @@ import { addLocationPinIcon, hoverIcon } from '../../utils/map-markers';
 import { spreadOverlappingPins } from '../../utils/pin-spread';
 import { planMarkers } from '../../utils/marker-plan';
 import { CommoditySearchResult, searchCommodities } from '../../utils/commodity-search';
+import { locationUpdate, withoutCropBids, withoutLocation, withScoularFlag } from '../../utils/location-edits';
 import {
   BidSheetPanelItem, buildBidLookup, buildPanelItems, buildPanelLocationBids, deriveAllProducersFilters,
   flattenBidEntries, formatMonthYear, lookupBid
@@ -1717,8 +1718,8 @@ export class BidSheetComponent {
 
     this.apiService.deleteBidSheetLocation(loc.id, tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
-        this.bidLocations.update(locs => locs.filter(l => l.id !== loc.id));
-        this.allMapLocations.update(locs => locs.filter(l => l.id !== loc.id));
+        this.bidLocations.update(locs => withoutLocation(locs, loc.id));
+        this.allMapLocations.update(locs => withoutLocation(locs, loc.id));
         this.showDeleteLocationConfirm.set(false);
         this.deleteMode.set(false);
         this.panelSelectedLocation.set('');
@@ -1758,12 +1759,8 @@ export class BidSheetComponent {
     this.apiService.deleteBidSheetBids(loc.id, crop, tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         // Remove bids locally from both caches
-        this.bidLocations.update(locs => locs.map(l =>
-          l.id === loc.id ? { ...l, bids: (l.bids ?? []).filter(b => b.commodityCode !== crop) } : l
-        ));
-        this.allMapLocations.update(locs => locs.map(l =>
-          l.id === loc.id ? { ...l, bids: (l.bids ?? []).filter(b => b.commodityCode !== crop) } : l
-        ));
+        this.bidLocations.update(locs => withoutCropBids(locs, loc.id, crop));
+        this.allMapLocations.update(locs => withoutCropBids(locs, loc.id, crop));
         this.showDeleteCropConfirm.set(false);
         this.pendingDeleteCrop.set('');
         this.toastService.success(`Deleted ${crop} bids from ${name}`);
@@ -1799,18 +1796,8 @@ export class BidSheetComponent {
     const loc = this.allMapLocations().find(l => l.name === oldName);
     if (!loc) return;
 
-    this.apiService.updateBidSheetLocation(loc.id, {
-      name: newName,
-      address: loc.address,
-      city: loc.city,
-      state: loc.state,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      elevatorCode: loc.elevatorCode,
-      tradeUnitCode: loc.tradeUnitCode,
-      groupName: loc.groupName,
-      isScoularFacility: loc.isScoularFacility ?? false
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    const update = locationUpdate(loc, newName, loc.isScoularFacility ?? false);
+    this.apiService.updateBidSheetLocation(loc.id, update).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.editingLocationName.set(false);
         this.editLocationNameValue.set('');
@@ -1834,25 +1821,11 @@ export class BidSheetComponent {
     if (!loc) return;
     const newValue = !(loc.isScoularFacility ?? false);
 
-    this.apiService.updateBidSheetLocation(loc.id, {
-      name: loc.name,
-      address: loc.address,
-      city: loc.city,
-      state: loc.state,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      elevatorCode: loc.elevatorCode,
-      tradeUnitCode: loc.tradeUnitCode,
-      groupName: loc.groupName,
-      isScoularFacility: newValue
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    const update = locationUpdate(loc, loc.name, newValue);
+    this.apiService.updateBidSheetLocation(loc.id, update).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
-        this.allMapLocations.update(locs => locs.map(l =>
-          l.id === loc.id ? { ...l, isScoularFacility: newValue } : l
-        ));
-        this.bidLocations.update(locs => locs.map(l =>
-          l.id === loc.id ? { ...l, isScoularFacility: newValue } : l
-        ));
+        this.allMapLocations.update(locs => withScoularFlag(locs, loc.id, newValue));
+        this.bidLocations.update(locs => withScoularFlag(locs, loc.id, newValue));
         this.toastService.success(newValue ? `${name} marked as Scoular facility` : `${name} unmarked as Scoular facility`);
       },
       error: () => this.toastService.error('Failed to update Scoular status')
