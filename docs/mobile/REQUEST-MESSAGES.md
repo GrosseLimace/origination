@@ -28,11 +28,11 @@ Originator's phone (Entra ID, Conditional Access: compliant device)
   → Application Gateway + WAF                                      Spec Layer 1
   → Azure API Management  (validate-jwt, rate limit, quota)        Spec Layer 3
   → private endpoint → existing Origination App Service            Spec Layers 4–5
-      mobile surface: api/mobile/v1, 18 operations, scope + client-id + trade-unit checks
+      mobile surface: api/mobile/v1, 17 operations, scope + client-id + trade-unit checks
   → Azure SQL over private endpoint, managed identity              Spec Layer 6
 ```
 
-The App Service is never exposed to the internet. The only internet-reachable API component is APIM, and it exposes only the 18 operations in `openapi/mobile/specification.yaml`. Each message below explains what we need from your team and which Spec requirement it satisfies.
+The App Service is never exposed to the internet. The only internet-reachable API component is APIM, and it exposes only the 17 operations in `openapi/mobile/specification.yaml`. Each message below explains what we need from your team and which Spec requirement it satisfies.
 
 ---
 
@@ -45,7 +45,7 @@ Hi team,
 
 _(shared background)_
 
-**Why you are involved.** The Spec makes APIM mandatory for all external traffic (Core Invariant 4) and lists the gateway policies every external API must have (§3.3). The Guide says Data Integrations owns those APIM operations and imports them from the app team's OpenAPI spec via APIOps. Our contract is committed at the link above: 18 operations, OpenAPI 3.0.3, Redocly-valid, and a CI test fails the build if the API and the contract ever disagree.
+**Why you are involved.** The Spec makes APIM mandatory for all external traffic (Core Invariant 4) and lists the gateway policies every external API must have (§3.3). The Guide says Data Integrations owns those APIM operations and imports them from the app team's OpenAPI spec via APIOps. Our contract is committed at the link above: 17 operations, OpenAPI 3.0.3, Redocly-valid, and a CI test fails the build if the API and the contract ever disagree.
 
 **Please answer this first; it decides how we configure token validation.** The mobile backend is built and tested against our Dev environment; this answer sets its production audience and scope settings.
 
@@ -134,7 +134,7 @@ ADR-001 (link above) records how we meet each Core Invariant and names four Spec
 
 | Spec requirement we miss | What we do instead |
 |---|---|
-| Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and an APIM allow-list of 18 operations; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
+| Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and an APIM allow-list of 17 operations; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
 | Core Invariant 6 / §3.5: same managed identity for both tiers | As above; the mobile surface excludes ODS producer-master search, admin, reporting and bulk operations (§3.2 "what this layer must NOT contain"), and ODS is read-only regardless |
 | §4.3 device-bound tokens, certificate pinning | Conditional Access compliant device, Continuous Access Evaluation, client-id check on every request. A native wrapper (Capacitor) is kept as the fallback if you require pinning |
 | §4.2 token storage in Keychain/Keystore: browser storage is not app-encrypted | Intune device encryption via Conditional Access; contact phone/email never cached; short cache lifetimes; wipe on sign-out and on authentication failure |
@@ -165,7 +165,7 @@ Thanks for the scope session; Marc's eleven cards gave us everything we needed t
    - **(b)** Work for hours with no signal at all: every add and edit is stored on the phone and sent later, including on-farm and planting changes, with a conflict message if someone else changed the same record in the meantime.
    Option (a) is simpler and safer; (b) is more work and needs a security exception for how long the phone keeps a login. Which matches how originators actually work?
 
-2. **Which trade units offer storage?** Card #648 hides the Storage tab entirely for producers at trade units with no storage programme. Nothing in our systems records that today. Who can give us the list, and where should it live: a flag per trade unit that an admin maintains, or is it derivable from CTRM (for example, any trade unit with a storage programme code)?
+2. **Which trade units offer storage?** Card #648 hides the Storage tab for trade units with no storage programme. Nothing records that directly, so we plan to treat a trade unit as offering storage when any of its producers has a storage or DP contract. Does that match reality, or are there trade units that offer storage but have no contracts yet?
 
 3. **What phones will originators use?** Company-issued phones enrolled in Intune, personal phones with the company portal, or personal phones with nothing installed? IT Security's rules for an internet-facing app depend on this: an enrolled or portal-managed phone lets us use the browser app we are planning; unmanaged personal phones would push us to an app-store install and a longer timeline.
 

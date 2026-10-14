@@ -8,7 +8,7 @@ This directory is the contract for the Origination Workbench **mobile** surface,
 | Data Integrations | Imports `specification.yaml` into APIM via APIOps; configures policies (JWT validation, rate limiting, quotas, header handling) |
 | Origination app team | Builds the mobile Angular app against these endpoints; generates the TypeScript client from the spec; a CI drift test keeps the spec equal to the `api/mobile/v1/*` controllers |
 
-**Status: Phase 1 contract, draft for review.** Scope comes from GitHub cards #641–#648 (Phase 1) created 2026-09-23, plus the group → trade units → producers flow and saved-list read-back agreed in the 2026-09-23 preview. 18 operations. Two open decisions still affect the *Offline behaviour* column and are marked below.
+**Status: Phase 1 contract, draft for review.** Scope comes from GitHub cards #641–#648 (Phase 1) created 2026-09-23, plus the group → trade units → producers flow agreed in the 2026-09-23 preview. Saved lists were removed from mobile on 2026-10-14 (originators search instead). 17 operations. Two open decisions still affect the *Offline behaviour* column and are marked below.
 
 ## Routing
 
@@ -31,14 +31,13 @@ Entra ID, same tenant as the desktop app (`1521f999-f722-4a4f-9747-166f93e9b0d1`
 |---|---|---|---|---|
 | — | Sign in; pick a group, then trade units (flow agreed 2026-09-23) | `getSession` (trade units + groups) | Origination DB + entitlements | Served from cache after first load (1 day). Drives Storage tab visibility and the first screen |
 | #641 | Browse producers in the selected trade units, search to narrow, open detail | `searchCustomers` (q optional), `getCustomer` | Origination DB | Search requires connectivity. Recently opened producers are served from cache (1 hour) **excluding contact phone/email, which are never cached** |
-| — | Open a saved list for the selected trade units | `getSavedLists`, `getSavedListMembers` | Origination DB | **Limitation:** a saved list's query criteria are evaluated in the desktop browser; the phone shows only its manually added members. Running a list server-side is a scoped follow-up (see plan) |
 | #642 | Call or email a contact | `getCustomer` (contacts) | Origination DB | Native `tel:` / `mailto:` links; work offline if the detail is already on screen |
 | #643 | Edit on-farm details | `getProducerDetails`, `updateProducerDetails` | Origination DB | **Scope:** total acres, bin sites (name, capacity) and grain on farm per site are editable (decided 2026-10-14). Lists sent replace the stored set; lists omitted are kept. Every field read (site key, coordinates, last bid) is sent back, so a phone save never erases desktop data; `expectedModifiedAt` turns a concurrent desktop edit into a 409. **Offline: DECISION PENDING (meeting Q3).** Default: save fails gracefully with a retry prompt. If "hours offline" is required: queue in IndexedDB with `clientRequestId`, last-write-wins with `expectedModifiedAt` conflict surfaced to the user |
 | #644 | Add a note; see pinned + recent | `getRecentNotes`, `createNote` | Origination DB | Read served from cache (15 min). **Create is queued** in IndexedDB with `clientRequestId`; replay returns the same note. Capped to 10 notes so the payload stays small on poor signal |
 | #645 | Contract cards, expand for detail | `getContractCards`, `getContractDetail` | ODS view (read-only) | Served from cache (1 hour, 3 s network timeout). Cold ODS may take up to 60 s; client shows "refreshing" rather than blocking |
 | #646 | Ticket roll-up | `getTicketSummary` | ODS view (read-only) | Served from cache (1 hour). No line items |
 | #647 | Planting intentions: view, add, update | `getPlantingIntentions`, `createPlantingIntention`, `updatePlantingIntention`, `getPlantingCommodities` | Origination DB | Read from cache (1 hour). **DECISION PENDING (Q3)** for add/update; default is graceful failure, alternative is the same queue as notes |
-| #648 | Storage and DP cards | `getStorageCards`, `getDpContractCards` | ODS views (read-only) | Served from cache (1 hour). Storage tab hidden when the trade unit's `offersStorage` is false. DP data exists only in Prod; Dev/QA return empty by design |
+| #648 | Storage and DP cards | `getStorageCards`, `getDpContractCards` | ODS views (read-only) | Served from cache (1 hour). Storage & DP tab hidden entirely unless the producer's trade unit offers storage (`getTradeUnitStorage`: derived from DP and storage rows, decided 2026-10-14). Summary of count + bushels, cards expand for detail, no ticket-level detail. DP data exists only in Prod; Dev/QA return empty by design |
 
 Anything not listed here is **not** reachable from the mobile client: APIM only exposes the operations in `specification.yaml`, and the backend `MobileAccess` policy rejects mobile tokens on every other route.
 
@@ -53,7 +52,7 @@ Anything not listed here is **not** reachable from the mobile client: APIM only 
 ## Open items that block finalising this file
 
 1. **Offline depth (meeting Q3):** decides whether producer-detail and planting-intention writes queue or fail gracefully. Affects two rows above and the server-side idempotency work.
-2. **`offersStorage` per trade unit:** no such fact exists in the system today (storage is looked up per customer from an ODS view). Needs a data owner and a source (trade-unit table column or configuration).
+2. ~~**`offersStorage` per trade unit**~~ **Decided 2026-10-14:** derived from the data. A trade unit offers storage when any of its producers has a DP contract or a storage receipt; `Mobile:StorageTradeUnits` can force one on. Cached server-side (yes 12 h, no 1 h).
 3. **APIM token pass-through (meeting Q6):** the security scheme assumes the user's token reaches the backend unchanged.
 
 ## Change process

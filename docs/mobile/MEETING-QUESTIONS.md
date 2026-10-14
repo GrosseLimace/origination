@@ -23,7 +23,7 @@
 
 | # | Question | Why it matters | Answer |
 |---|---|---|---|
-| 13 | **Which trade units offer storage, and where is that recorded?** Card #648 hides the Storage tab entirely for trade units with no storage programme. | No per-trade-unit "offers storage" fact exists in the system; storage positions are read per customer from an ODS view. Needs a data owner and a source (trade-unit table column, configuration list, or derived from ODS). | |
+| 13 | **Which trade units offer storage, and where is that recorded?** Card #648 hides the Storage tab entirely for trade units with no storage programme. | No per-trade-unit "offers storage" fact exists in the system; storage positions are read per customer from an ODS view. Needs a data owner and a source (trade-unit table column, configuration list, or derived from ODS). | **DECIDED 2026-10-14: derived from the data** — a trade unit offers storage when any of its producers has a DP contract or a storage receipt. Hope and Travis to confirm. |
 
 ## Decisions to walk out with
 

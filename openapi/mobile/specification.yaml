@@ -45,8 +45,6 @@ security:
 tags:
   - name: session
     description: Caller identity and entitled trade units
-  - name: saved-lists
-    description: Saved Build-A-List lists visible for the selected trade units (metadata + manual members)
   - name: customers
     description: Producer search and detail (cards #641, #642)
   - name: producer-details
@@ -71,10 +69,9 @@ paths:
       operationId: getSession
       summary: Current user and entitled trade units
       description: >
-        Returns the caller's display name and the trade units they are entitled to. The
-        offersStorage flag drives whether the Storage tab is shown at all (card #648).
-        NOTE: no per-trade-unit "offers storage" fact exists in the system today; this flag
-        needs a data owner before Phase 2 backend work starts.
+        Returns the caller's display name, the trade units they are entitled to, and their Trade
+        Unit Preferences groups. Whether a trade unit offers storage is asked separately
+        (getTradeUnitStorage).
       responses:
         '200':
           description: Session
@@ -86,15 +83,17 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
-  /saved-lists:
+  /trade-units/storage:
     get:
-      tags: [saved-lists]
-      operationId: getSavedLists
-      summary: Saved lists visible for the selected trade units
+      tags: [session]
+      operationId: getTradeUnitStorage
+      summary: Whether each selected trade unit offers storage
       description: >
-        Own and team Build-A-List saved lists whose trade units overlap the selection (a list with no
-        trade units is never offered). A saved list's query criteria are evaluated on the desktop;
-        the phone exposes metadata and manually added members only.
+        Card #648. The Storage & DP tab exists only for producers at a trade unit that offers storage.
+        Derived from the data: a trade unit offers storage when any of its producers has a DP contract
+        or a storage receipt (an optional per-environment list can force it on). Asked separately from
+        the producer read because the first answer per trade unit can take a few seconds; answers are
+        then cached server-side (yes for 12 hours, no for 1 hour).
       parameters:
         - name: tradeUnits
           in: query
@@ -108,50 +107,15 @@ paths:
           explode: true
       responses:
         '200':
-          description: Saved lists
+          description: One entry per requested trade unit
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/SavedListSummary' }
+                items: { $ref: '#/components/schemas/TradeUnitStorage' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-
-  /saved-lists/{listId}/members:
-    parameters:
-      - name: listId
-        in: path
-        required: true
-        schema: { type: integer }
-    get:
-      tags: [saved-lists]
-      operationId: getSavedListMembers
-      summary: Manually added producers of a saved list, within the selected trade units
-      parameters:
-        - name: tradeUnits
-          in: query
-          required: true
-          schema:
-            type: array
-            items: { type: string, maxLength: 10 }
-            minItems: 1
-            maxItems: 20
-          style: form
-          explode: true
-      responses:
-        '200':
-          description: Producers
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/CustomerSummary' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /customers:
@@ -483,8 +447,8 @@ paths:
       operationId: getStorageCards
       summary: Storage (warehouse receipt) positions as cards
       description: >
-        Card #648. Hidden by the client when the producer's trade unit has offersStorage = false.
-        Read from the ODS view.
+        Card #648. Hidden by the client when the producer's trade unit does not offer storage
+        (getTradeUnitStorage). Read from the ODS view.
       responses:
         '200':
           description: Storage cards
@@ -595,31 +559,19 @@ components:
           type: array
           items: { type: string }
 
-    SavedListSummary:
-      type: object
-      required: [id, name, query, tradeUnits, manualMemberCount, hasQueryCriteria, createdBy, isTeamList]
-      properties:
-        id: { type: integer }
-        name: { type: string }
-        query: { type: string, description: "The natural-language query as saved; evaluated on the desktop only" }
-        tradeUnits:
-          type: array
-          items: { type: string }
-        manualMemberCount: { type: integer }
-        hasQueryCriteria: { type: boolean }
-        createdBy: { type: string }
-        assignedToName: { type: string, nullable: true }
-        isTeamList: { type: boolean }
-
     TradeUnit:
       type: object
-      required: [code, name, offersStorage]
+      required: [code, name]
       properties:
         code: { type: string }
         name: { type: string }
-        offersStorage:
-          type: boolean
-          description: "Drives Storage tab visibility (card #648). Data source TBD."
+
+    TradeUnitStorage:
+      type: object
+      required: [code, offersStorage]
+      properties:
+        code: { type: string }
+        offersStorage: { type: boolean, description: "Drives whether the Storage & DP tab exists (card #648)." }
 
     CustomerSummary:
       type: object
