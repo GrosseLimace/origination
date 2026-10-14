@@ -119,7 +119,6 @@ describe('ContractPacingCardComponent', () => {
       providers: [
         { provide: ThemeService, useValue: { isDarkMode } },
         { provide: ApiService, useValue: { getHistoricalContractsForPacing } },
-        { provide: AppStateService, useValue: {} },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(ContractPacingCardComponent);
@@ -248,6 +247,34 @@ describe('ContractPacingCardComponent', () => {
     expect(totalRow()).toEqual([]);
     expect(headerArrow()).toBeNull();
     expect(statCards().map(c => c.value)).toEqual(['—', '—']);
+  });
+
+  // ── Harvest windows failed to load ────────────────────────────────────────
+
+  const windowsNote = "Harvest windows couldn't be loaded, so pace cannot be shown. Refresh the page to try again.";
+  const cardText = (): string => (host().textContent ?? '').replace(/\s+/g, ' ');
+
+  it('says the harvest windows could not be loaded, rather than leaving em-dashes that read as nothing contracted', () => {
+    TestBed.inject(AppStateService).setHarvestWindowsLoadFailed(true);
+    setInputs({ harvestWindows: [], contracts: [makeContract()] });
+
+    expect(cardText()).toContain(windowsNote);
+  });
+
+  it('renders the plain empty state, with no note, when there are no windows and nothing failed', () => {
+    setInputs({ harvestWindows: [], contracts: [makeContract()] });
+
+    expect(cardText()).not.toContain("Harvest windows couldn't be loaded");
+    expect(rows()).toEqual([]);
+    expect(statCards().map(c => c.value)).toEqual(['—', '—']);
+  });
+
+  it('shows the pace as normal, with no note, once windows are present whatever the flag says', () => {
+    TestBed.inject(AppStateService).setHarvestWindowsLoadFailed(true);
+    setInputs({ harvestWindows: [CORN], contracts: [makeContract()] });
+
+    expect(cardText()).not.toContain("Harvest windows couldn't be loaded");
+    expect(statCards()[1].value).toBe('10,000');
   });
 
   // ── Historical contracts ──────────────────────────────────────────────────

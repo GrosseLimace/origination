@@ -56,6 +56,11 @@ export class ContractPacingCardComponent {
 
   /** Either source failing means the comparison is understated. */
   readonly historyUnavailable = computed(() => this.historyLoadFailed() || this.parentHistoryLoadFailed());
+
+  /** The harvest windows failed to load. Every figure here is measured inside them, so without them
+   *  both years read "—" — as if the producer had contracted nothing. */
+  readonly harvestWindowsUnavailable = computed(() =>
+    this.appState.harvestWindowsLoadFailed() && this.harvestWindows().length === 0);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Closed historical contracts — supplied by parent OR self-fetched if parent doesn't pass them. */
