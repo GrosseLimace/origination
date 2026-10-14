@@ -10,9 +10,9 @@ import { Contract } from '@models';
 // price) per year, bar heights as a percentage of the tallest year with a 5% floor, the single
 // zero column for the current year when there is no data, and the summary totals (bushels with
 // thousands separators, revenue abbreviated to K / M). The chart is plain divs — no canvas — so the
-// real template renders. The aggregation runs in an effect that writes plain fields, which is
-// exactly what an OnPush conversion can break; every test therefore asserts on the rendered DOM
-// after a setInput, including one that changes the input a second time.
+// real template renders. The component is OnPush and the aggregation is a chain of computed
+// signals off the contracts input; every test asserts on the rendered DOM after a setInput,
+// including one that changes the input a second time, so a stale view fails here.
 //
 // Revenue assertions match the WHOLE text. The template once wrote `\${{ … }}` (an escape carried
 // over from an inline backtick template), so the page rendered a literal backslash, "\$1K". Fixed
