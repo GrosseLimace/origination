@@ -959,4 +959,40 @@ describe('BuildListComponent', () => {
       expect(buttonByText('All producers with contracts')).toBeUndefined();
     });
   });
+
+  // ── Characterisation added before the 2026-10-14 decomposition ────────────
+  // Pins behaviour of logic that moved into features/build-list/utils, through the real template.
+
+  describe('characterisation', () => {
+    it('marks a saved list carrying refinements as "Refined" in the library, and not a plain one', () => {
+      const PLAIN: SavedList = { id: 12, name: 'Plain list', query: 'All producers', tradeUnits: '1000', createdAt: '2026-10-01T00:00:00' };
+      api.getSavedLists.mockReturnValue(of([SAVED_KS, PLAIN]));
+      mount();
+
+      const page = text();
+      expect(page).toContain('KS contract holders');
+      expect(page).toContain('Plain list');
+      expect(page.match(/Refined/g)).toHaveLength(1);
+    });
+
+    it('the summary counts every applied refinement', () => {
+      api.getContracts.mockReturnValue(of([makeContract({ ctrmCustomerId: 'C1', priceTypeCode: 'U' })]));
+      const c = mount();
+      c.selectLibraryQuery(LIB_CONTRACTS);
+
+      c.togglePendingState('KS');
+      c.updateRefinement(r => ({ ...r, hasUnpricedContracts: true, contractQuantityOver: 0 }));
+
+      expect(c.activeRefinementCount()).toBe(2);
+      expect(text()).toContain('(2 filters applied)');
+    });
+
+    it('hides the refine checkboxes a re-opened saved list\'s prompt already restates', () => {
+      const c = mount();
+      c.loadSavedList({ ...SAVED_KS, query: 'Producers with active contracts' });
+
+      expect(c.hiddenFilters().has('noActiveContracts')).toBe(true);
+      expect(c.hiddenFilters().has('hasUnpricedContracts')).toBe(false);
+    });
+  });
 });
