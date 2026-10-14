@@ -83,16 +83,15 @@ public class EntitlementsControllerCatalogTests
         var catalog = Body(await CreateSut(db).GetCatalog());
 
         Assert.False(catalog.Degraded);
-        // Everyone sharing a trade unit with the caller, the caller included, ordered by display name
-        // ignoring case. Each person's trade units are cut down to the ones the caller shares.
-        // lena is deactivated but still listed: this catalog has never checked the roster
-        // (the mention catalog does). Pinned as current behaviour, not endorsed.
+        // Everyone ACTIVE sharing a trade unit with the caller, the caller included, ordered by display
+        // name ignoring case. Each person's trade units are cut down to the ones the caller shares.
+        // lena shares 1084 but is deactivated: the recap Logic App would never send to her, so she
+        // is not offered.
         Assert.Equal(
             [
                 ("alice", "Alice Adams", "alice@scoular.com", "1084"),
                 ("bob", "bob Brown", "bob@scoular.com", "2001"),
                 ("CEgr", "Caden Egr", "CEgr@scoular.com", "1084,2001"),
-                ("lena", "Lena Left", "lena@scoular.com", "1084"),
             ],
             catalog.People.Select(p => (p.UserId, p.DisplayName, p.Email, string.Join(",", p.TradeUnitCodes))));
         Assert.Equal(

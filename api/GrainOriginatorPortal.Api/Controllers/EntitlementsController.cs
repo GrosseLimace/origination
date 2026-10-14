@@ -77,9 +77,11 @@ public class EntitlementsController : ControllerBase
 
             // Only the rows relevant to the caller: anyone sharing one of their trade units, and every
             // row in their groups. Both reads filter in SQL, so memory is bounded by the caller's
-            // overlap rather than by the size of the view. Not limited to active users: this catalog
-            // has never checked the roster (the mention catalog does).
-            var colleagueRows = await _directory.GetColleaguesAsync(callerTuCodes, activeOnly: false, ct);
+            // overlap rather than by the size of the view. Active users only, like the mention
+            // catalog: the daily-recap Logic App sends only to users active in dbo.Users, so a leaver
+            // picked here would be a recipient who silently never gets the recap. People already in a
+            // group are unaffected; they come from the group, not from this list.
+            var colleagueRows = await _directory.GetColleaguesAsync(callerTuCodes, activeOnly: true, ct);
             var groupRows = callerGroupIds.Count > 0
                 ? await _directory.GetGroupAssignmentsAsync(callerGroupIds, ct)
                 : [];
