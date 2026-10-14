@@ -61,6 +61,20 @@ export class DashboardComponent {
    *  reporting genuine zeros. Dashboard-scoped: the trade-unit-wide flag drives Build-a-List, and this
    *  read says nothing about that list. */
   readonly cropYearLoadFailed = signal(false);
+
+  // The trade-unit-wide reads below failed and nothing has replaced them, so an empty result is an
+  // outage, not "none". Read-only here: the loaders (DataPreloadService and others) record them.
+  /** Planting intentions failed to load: "No planting data" would be false. */
+  readonly plantingIntentionsUnavailable = computed(() =>
+    this.appStateService.plantingIntentionsLoadFailed() && this.plantingIntentions().length === 0);
+  /** Unit conversions failed to load: contracts dropped from bushel totals were dropped for that
+   *  reason, not because of their unit. */
+  readonly conversionsUnavailable = computed(() =>
+    this.appStateService.commodityConversionsLoadFailed() && this.appStateService.commodityConversions().length === 0);
+  /** The producer list failed to load: an empty Producers tab is an outage, not an empty trade unit. */
+  readonly customersUnavailable = computed(() =>
+    this.appStateService.customersLoadFailed() && this.customers().length === 0);
+
   private readonly _customerIdSet = computed(() => new Set(this.customers().map(c => c.id)));
   // Planting rows are tagged with the trade unit they were recorded for, and every acre figure on
   // this page counts a row only under that trade unit (see inPlantingScope). A producer on

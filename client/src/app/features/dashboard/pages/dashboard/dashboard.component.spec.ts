@@ -162,6 +162,9 @@ function makeAppState() {
     commodityConversions: signal<CommodityConversion[]>(CONVERSIONS),
     noteLastContacts: signal<NoteLastContact[]>([]),
     noteLastContactsLoadFailed: signal(false),
+    plantingIntentionsLoadFailed: signal(false),
+    commodityConversionsLoadFailed: signal(false),
+    customersLoadFailed: signal(false),
     producerDetails: signal<ProducerDetails[]>([]),
     customersLoading: signal(false),
     contractsLoading: signal(false),
@@ -710,6 +713,149 @@ describe('DashboardComponent', () => {
       expect(c.savedYieldEstimates()).toEqual([]);
       expect(c.yieldRows().every(r => r.yieldEstimate === null)).toBe(true);
       expect(c.actualHarvestRows()).toEqual([]);
+    });
+  });
+
+  // ── Recorded load failures ──────────────────────────────────────────────────
+  // A failed trade-unit read resolves to an empty list, so each empty state must say "could not be
+  // loaded" when the matching app-state flag is set, and read exactly as before when it is not.
+
+  describe('recorded load failures', () => {
+    const count = (s: string): number => text().split(s).length - 1;
+    const PLANTING_CHART_FAILED = 'Planting intentions for 2026 could not be loaded, so this chart is empty. Refresh the page to try again.';
+    const PLANTING_TARGETS_FAILED =
+      'Planting intentions for 2026 could not be loaded, so there are no crops to set targets for. Refresh the page to try again.';
+    const PRODUCERS_FAILED = 'Producers for the selected trade units could not be loaded. Refresh the page to try again.';
+
+    it('says the By Crop charts could not be loaded when planting intentions failed', async () => {
+      await build(() => {
+        appState.plantingIntentions.set([]);
+        appState.plantingIntentionsLoadFailed.set(true);
+      });
+
+      expect(count(PLANTING_CHART_FAILED)).toBe(2);
+      expect(text()).not.toContain('No planting data');
+    });
+
+    it('still reads "No planting data" for a season that genuinely has none', async () => {
+      await build(() => appState.plantingIntentions.set([]));
+
+      expect(count('No planting data for 2026')).toBe(2);
+      expect(text()).not.toContain('could not be loaded');
+    });
+
+    it('draws the charts, not the failure, once intentions are back despite a stale flag', async () => {
+      await build(() => appState.plantingIntentionsLoadFailed.set(true));
+
+      expect(text()).toContain('Crop Details');
+      expect(text()).not.toContain('could not be loaded');
+
+      // A filter that leaves the charts empty is a genuine "none", not the old failure.
+      c.selectedCropFilter.set('Wheat');
+      await settle();
+      expect(count('No planting data for 2026')).toBe(2);
+      expect(text()).not.toContain('could not be loaded');
+    });
+
+    it('says why Season Targets has no crops when planting intentions failed, and keeps the normal empty text otherwise', async () => {
+      await build(() => {
+        appState.plantingIntentions.set([]);
+        appState.plantingIntentionsLoadFailed.set(true);
+      });
+      c.goToSeasonTargets();
+      await settle();
+      expect(text()).toContain(PLANTING_TARGETS_FAILED);
+      expect(text()).not.toContain('No planting intentions for 2026');
+
+      appState.plantingIntentionsLoadFailed.set(false);
+      await settle();
+      expect(text()).toContain('No planting intentions for 2026');
+      expect(text()).not.toContain('could not be loaded');
+    });
+
+    it('blames the failed conversions, not the units, for contracts left out of Sales Opportunities', async () => {
+      await build(() => {
+        appState.commodityConversions.set([]);
+        appState.commodityConversionsLoadFailed.set(true);
+      });
+      c.selectDashboardTab('harvestContracts');
+      await settle();
+
+      // The 30 ST soybean contract has no conversion, so only Corn is listed.
+      expect(c.salesOpportunityExcluded()).toBe(1);
+      expect(text()).toContain("1 contract not shown: the bushel conversions couldn't be loaded. Refresh the page to try again.");
+      expect(text()).not.toContain("can't be converted to bushels");
+    });
+
+    it('still blames the unit when the conversions loaded but none fits', async () => {
+      await build(() => appState.commodityConversions.set([]));
+      c.selectDashboardTab('harvestContracts');
+      await settle();
+
+      expect(text()).toContain("1 contract not shown: its unit can't be converted to bushels.");
+      expect(text()).not.toContain('bushel conversions');
+    });
+
+    it('says the conversions failed, not "No contract data", when every contract was left out for that reason', async () => {
+      const tonnage = [
+        contract({ id: 700, sourceContractId: 'PSB700', commodityCode: 'SB', commodityDescription: 'Soybeans', commodityGroup: 'Soybeans', quantity: 30, unit: 'ST' }),
+        contract({ id: 701, sourceContractId: 'PSB701', commodityCode: 'SB', commodityDescription: 'Soybeans', commodityGroup: 'Soybeans', quantity: 60, unit: 'ST' }),
+      ];
+      await build(() => {
+        appState.commodityConversions.set([]);
+        appState.commodityConversionsLoadFailed.set(true);
+        api.getContractsByCropYear.mockReturnValue(of(tonnage));
+      });
+      c.selectDashboardTab('harvestContracts');
+      await settle();
+      expect(text()).toContain("2 contracts for 2026 not shown: the bushel conversions couldn't be loaded. Refresh the page to try again.");
+      expect(text()).not.toContain('No contract data for 2026');
+
+      appState.commodityConversionsLoadFailed.set(false);
+      await settle();
+      // Sales Opportunities reads as before; the Harvest Timeline still charts the raw quantity.
+      expect(count('No contract data for 2026')).toBe(1);
+      expect(text()).not.toContain('bushel conversions');
+    });
+
+    it('says the producers could not be loaded, on both views, when the producer read failed', async () => {
+      await build(() => {
+        appState.customers.set([]);
+        appState.customersLoadFailed.set(true);
+      });
+      c.selectDashboardTab('producers');
+      await settle();
+      expect(text()).toContain(PRODUCERS_FAILED);
+      expect(text()).not.toContain('No producers match your search');
+
+      c.producerView.set('without');
+      await settle();
+      expect(text()).toContain(PRODUCERS_FAILED);
+      expect(text()).not.toContain('Every producer in this trade unit');
+    });
+
+    it('keeps the normal empty producer text on both views when nothing failed', async () => {
+      await build(() => appState.customers.set([]));
+      c.selectDashboardTab('producers');
+      await settle();
+      expect(text()).toContain('No producers match your search for 2026.');
+
+      c.producerView.set('without');
+      await settle();
+      expect(text()).toContain('Every producer in this trade unit has planting intentions for 2026.');
+      expect(text()).not.toContain('could not be loaded');
+    });
+
+    it('says planting intentions could not be loaded on an empty "with intentions" view when they failed', async () => {
+      await build(() => {
+        appState.plantingIntentions.set([]);
+        appState.plantingIntentionsLoadFailed.set(true);
+      });
+      c.selectDashboardTab('producers');
+      await settle();
+
+      expect(text()).toContain('Planting intentions for 2026 could not be loaded. Refresh the page to try again.');
+      expect(text()).not.toContain('No producers match your search');
     });
   });
 
