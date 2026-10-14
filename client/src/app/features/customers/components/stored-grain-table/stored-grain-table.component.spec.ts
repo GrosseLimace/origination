@@ -177,8 +177,9 @@ describe('StoredGrainTableComponent', () => {
       });
 
       chooseGroupMode('Location');
-      // Sorted as a set: in Location mode the order follows each group's first crop, not the location.
-      expect([...groupTitles()].sort()).toEqual(['HAYS', 'No location', 'PRATT, KS']);
+      // Exact order now (was compared as a sorted set): Location groups sort by location, with
+      // "No location" in its alphabetical place as it is in Crop & Location mode.
+      expect(groupTitles()).toEqual(['HAYS', 'No location', 'PRATT, KS']);
       expect(subtitle(groupByTitle('PRATT, KS'))).toBe('2 tickets · Since 3/15/2026');
       expect(stat(groupByTitle('PRATT, KS'), 'Bushels')).toBe('2,000 bu');
 
@@ -187,6 +188,48 @@ describe('StoredGrainTableComponent', () => {
 
       chooseGroupMode('Crop');
       expect(groupTitles()).toEqual(['Corn', 'Soybeans']);
+    });
+
+    it('orders Location groups alphabetically by location, whatever crop each one holds', () => {
+      // Location mode used to sort by each group's first crop (the crop / both ordering), so a
+      // later-alphabet facility holding corn came before an earlier one holding wheat.
+      setInputs({
+        storedGrain: [
+          makeGrain({ receiptNumber: '1', crop: 'Corn', locationCity: 'PRATT', locationState: 'KS' }),
+          makeGrain({ receiptNumber: '2', crop: 'Soybeans', locationCity: 'HAYS', locationState: 'KS' }),
+          makeGrain({ receiptNumber: '3', crop: 'Wheat', locationCity: 'ABILENE', locationState: 'KS' }),
+        ],
+      });
+
+      chooseGroupMode('Location');
+      expect(groupTitles()).toEqual(['ABILENE, KS', 'HAYS, KS', 'PRATT, KS']);
+    });
+
+    it('keeps the typed search when the grouping changes, and re-applies auto-expand for the new groups', () => {
+      // A group-mode change used to wipe the search box: the reset effect tracked the grouped
+      // receipts, which regroup on a mode change, not just when a new producer's receipts arrive.
+      setInputs({
+        storedGrain: [
+          makeGrain({ receiptNumber: '1001', crop: 'Corn' }),
+          makeGrain({ receiptNumber: '1002', crop: 'Corn', locationCity: 'HAYS' }),
+          makeGrain({ receiptNumber: '2001', crop: 'Soybeans', locationCity: 'HAYS' }),
+        ],
+      });
+      typeSearch('hays');
+      expect(groupTitles()).toEqual(['Corn', 'Soybeans']);
+
+      chooseGroupMode('Location');
+
+      expect(host().querySelector<HTMLInputElement>('input[placeholder="Search storage..."]')!.value).toBe('hays');
+      expect(groupTitles()).toEqual(['HAYS, KS']);
+      expect(subtitle(groupByTitle('HAYS, KS'))).toContain('2 tickets ·');
+      expect(rows(groupByTitle('HAYS, KS'))).toHaveLength(0);   // two Location groups overall → collapsed
+
+      chooseGroupMode('Crop');
+      typeSearch('');
+      setInputs({ storedGrain: [makeGrain({ receiptNumber: '1001', crop: 'Corn' }), makeGrain({ receiptNumber: '1002', crop: 'Soybeans' })] });
+      chooseGroupMode('Location');
+      expect(receiptCol(groupByTitle('PRATT, KS'))).toEqual(['1001', '1002']);   // lone Location group → expanded
     });
   });
 
@@ -306,6 +349,11 @@ describe('StoredGrainTableComponent', () => {
       expect(stat(corn, 'Bushels')).toBe('500 bu');
       expect(stat(corn, 'Accumulated Cost')).toBe('$20.00');
       expect(stat(corn, 'Cents/Bu')).toBe('4.00¢');
+
+      typeSearch('pratt');
+      // "Since" follows the matching receipts like the count and totals do — it used to keep the
+      // whole group's earliest date (1/20, the HAYS receipt) while describing only the Pratt one.
+      expect(subtitle(groupByTitle('Corn'))).toBe('1 ticket · Since 3/15/2026');
 
       typeSearch('canola');
       expect(groups()).toHaveLength(0);
