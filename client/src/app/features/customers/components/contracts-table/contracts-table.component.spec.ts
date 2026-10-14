@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef, signal } from '@angular/core';
+import { ChangeDetectorRef, ComponentRef, signal } from '@angular/core';
 import { ContractsTableComponent } from './contracts-table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -650,6 +650,149 @@ describe('ContractsTableComponent', () => {
       expect(component.showExtraColumns()).toBe(false);
       expect(component.currentSortColumn()).toBeNull();
       expect(component.currentSortDirection()).toBe('none');
+    });
+  });
+
+  // ── Per-render cost of the expanded row ───────────────────────────────────
+  // The expanded row's pricing lines, ticket numbers and Net Bu are derived from the inputs and the
+  // commodity conversions. These pin what they show, that the derivations are not redone on every
+  // change-detection pass, and that they still follow the data they come from.
+
+  describe('expanded-row derivations', () => {
+    /** A change-detection pass that re-checks this OnPush view without changing any input. Marks the
+     *  component's OWN view: marking the fixture's host view leaves the OnPush view unchecked. */
+    function rerender(): void {
+      fixture.debugElement.injector.get(ChangeDetectorRef).markForCheck();
+      fixture.detectChanges();
+    }
+
+    /** Expands contract 1 with its Applied Tickets section open. */
+    function openTickets(tickets: Ticket[]): void {
+      setInputs({ contracts: [makeContract({ id: 1, sourceContractId: 'PCW1' })], tickets });
+      component.toggleRow(1);
+      component.toggleTicketSection(1);
+      render();
+    }
+
+    /** The value under a label ("Ticket Number", "Net Bu", …) on each applied-ticket card, in order. */
+    const ticketField = (label: string): string[] =>
+      Array.from(host().querySelectorAll('p'))
+        .filter(p => p.textContent?.trim() === label)
+        .map(p => (p.nextElementSibling?.textContent ?? '').replace(/\s+/g, ' ').trim());
+
+    it('shows the full shipment ticket number, falling back to the bare number', () => {
+      openTickets([
+        makeTicket({ id: 1, ctrmContractNumber: 'PCW1', date: '2026-04-01', ticketNumber: '500', shipmentTicketNumber: '  A-500-B  ' }),
+        makeTicket({ id: 2, ctrmContractNumber: 'PCW1', date: '2026-04-02', ticketNumber: '777', shipmentTicketNumber: undefined }),
+        makeTicket({ id: 3, ctrmContractNumber: 'PCW1', date: '2026-04-03', ticketNumber: '888', shipmentTicketNumber: '   ' }),
+      ]);
+
+      expect(ticketField('Ticket Number')).toEqual(['A-500-B', '777', '888']);
+    });
+
+    it('formats each ticket number once, not on every change-detection pass', () => {
+      let reads = 0;
+      const ticket = makeTicket({ id: 1, ctrmContractNumber: 'PCW1' });
+      Object.defineProperty(ticket, 'shipmentTicketNumber', { get: () => { reads++; return 'T-1'; } });
+      openTickets([ticket]);
+      const afterFirstRender = reads;
+
+      rerender();
+      rerender();
+      rerender();
+
+      expect(afterFirstRender).toBe(1);
+      expect(reads).toBe(1);
+      expect(ticketField('Ticket Number')).toEqual(['T-1']);
+    });
+
+    it('shows the new number when a ticket is replaced', () => {
+      openTickets([makeTicket({ id: 1, ctrmContractNumber: 'PCW1', shipmentTicketNumber: 'OLD-1' })]);
+      expect(ticketField('Ticket Number')).toEqual(['OLD-1']);
+
+      setInputs({ tickets: [makeTicket({ id: 1, ctrmContractNumber: 'PCW1', shipmentTicketNumber: 'NEW-1' })] });
+
+      expect(ticketField('Ticket Number')).toEqual(['NEW-1']);
+    });
+
+    it('converts applied dock pounds to bushels, with a dash when the product has no conversion', () => {
+      commodityConversions.set([{ commodityCode: ' yc ', lbsPerUnit: 56 }, { commodityCode: 'SB', lbsPerUnit: 0 }]);
+      openTickets([
+        makeTicket({ id: 1, ctrmContractNumber: 'PCW1', date: '2026-04-01', productCode: 'YC', appliedDockQuantity: 56000 }),
+        makeTicket({ id: 2, ctrmContractNumber: 'PCW1', date: '2026-04-02', productCode: 'HRW', appliedDockQuantity: 60000 }),  // not in the view
+        makeTicket({ id: 3, ctrmContractNumber: 'PCW1', date: '2026-04-03', productCode: 'SB', appliedDockQuantity: 60000 }),   // zero lbs/bu
+        makeTicket({ id: 4, ctrmContractNumber: 'PCW1', date: '2026-04-04', productCode: undefined, appliedDockQuantity: 60000 }),
+      ]);
+
+      expect(ticketField('Net Bu')).toEqual(['1,000.00', '—', '—', '—']);
+    });
+
+    it('shows a dash for every ticket while the conversions have not loaded', () => {
+      openTickets([makeTicket({ id: 1, ctrmContractNumber: 'PCW1', productCode: 'YC', appliedDockQuantity: 56000 })]);
+
+      expect(ticketField('Net Bu')).toEqual(['—']);
+    });
+
+    it('follows a replacement of the conversion list that keeps the same length', () => {
+      commodityConversions.set([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
+      openTickets([makeTicket({ id: 1, ctrmContractNumber: 'PCW1', productCode: 'YC', appliedDockQuantity: 56000 })]);
+      expect(ticketField('Net Bu')).toEqual(['1,000.00']);
+
+      commodityConversions.set([{ commodityCode: 'YC', lbsPerUnit: 50 }]);
+      fixture.detectChanges();
+
+      expect(ticketField('Net Bu')).toEqual(['1,120.00']);
+    });
+
+    it('builds the conversion lookup once, not once per ticket or per pass', () => {
+      let builds = 0;
+      const conversions: CommodityConversion[] = [{ commodityCode: 'YC', lbsPerUnit: 56 }];
+      Object.defineProperty(conversions, 'map', {
+        value: function (this: CommodityConversion[], ...args: Parameters<CommodityConversion[]['map']>) {
+          builds++;
+          return Array.prototype.map.apply(this, args);
+        },
+      });
+      commodityConversions.set(conversions);
+      openTickets([
+        makeTicket({ id: 1, ctrmContractNumber: 'PCW1', productCode: 'YC', appliedDockQuantity: 56000 }),
+        makeTicket({ id: 2, ctrmContractNumber: 'PCW1', productCode: 'YC', appliedDockQuantity: 112000 }),
+      ]);
+      rerender();
+      rerender();
+
+      expect(builds).toBe(1);
+      expect(ticketField('Net Bu')).toEqual(['1,000.00', '2,000.00']);
+    });
+
+    it('indexes the pricing lines once across passes, and again when they change', () => {
+      let iterations = 0;
+      const lines = [
+        makeLine({ contractId: 'PCW1', priceSequence: 1, priceQuantity: 2500, flatPrice: 4.1 }),
+        makeLine({ contractId: 'PCW1', priceSequence: 2, priceQuantity: 1500, flatPrice: 4.2 }),
+      ];
+      Object.defineProperty(lines, Symbol.iterator, {
+        value: function (this: ContractPricingLine[]) { iterations++; return Array.prototype[Symbol.iterator].call(this); },
+      });
+      setInputs({ contracts: [makeContract({ id: 1, sourceContractId: 'PCW1' })], pricingLines: lines });
+      component.toggleRow(1);
+      component.togglePricingSection(1);
+      render();
+      rerender();
+      rerender();
+
+      expect(iterations).toBe(1);
+      const lineRows = () => Array.from(host().querySelectorAll('tbody tbody tr')).map(r => (r.textContent ?? '').replace(/\s+/g, ' '));
+      expect(text().replace(/\s+/g, ' ')).toContain('Pricing Lines (2)');
+      expect(lineRows()).toHaveLength(2);
+      expect(lineRows()[0]).toContain('2,500.00 bushels');
+      expect(lineRows()[1]).toContain('$4.20');
+
+      setInputs({ pricingLines: [makeLine({ contractId: 'PCW1', priceSequence: 1, priceQuantity: 10000, flatPrice: 3.9 })] });
+
+      expect(text().replace(/\s+/g, ' ')).toContain('Pricing Lines (1)');
+      expect(lineRows()).toHaveLength(1);
+      expect(lineRows()[0]).toContain('$3.90');
     });
   });
 });
