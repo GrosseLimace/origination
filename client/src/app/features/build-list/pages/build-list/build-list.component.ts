@@ -1482,6 +1482,10 @@ export class BuildListComponent {
           binSitesModifiedAt: pd.binSitesModifiedAt ?? customer.binSitesModifiedAt,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
+          // User-entered contact rows exist only on producer details (the customer record never
+          // carries them), and the has-email / has-phone refinements read them. Same rule as the
+          // shared applyProducerDetails.
+          contacts: pd.contacts ?? customer.contacts,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
           // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.

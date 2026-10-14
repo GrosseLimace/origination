@@ -1074,6 +1074,25 @@ describe('BuildListComponent', () => {
       expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
     });
 
+    it('has-email / has-phone also find a producer whose only email or phone is a contact saved in producer details', () => {
+      // Contacts reach the page only through producer details; the customer record never has them.
+      api.getCustomers.mockReturnValue(of([
+        makeCustomer({ id: 1, name: 'Alpha Acres' }),
+        makeCustomer({ id: 2, name: 'Bravo Grain' }),
+        makeCustomer({ id: 3, name: 'Charlie Farms' }),
+      ]));
+      api.getAllProducerDetails.mockReturnValue(of([
+        { customerId: 1, contacts: [{ name: 'Office', email: 'office@alpha.test' }] },
+        { customerId: 2, contacts: [{ name: 'Son', phone: '(555) 555-5555' }] },
+      ] as never));
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      const only = (patch: RefinementFilters) => { c.clearRefinements(); c.updateRefinement(r => ({ ...r, ...patch })); return names(c.displayedCustomers()); };
+      expect(only({ hasEmail: true })).toEqual(['Alpha Acres']);
+      expect(only({ hasPhone: true })).toEqual(['Bravo Grain']);
+    });
+
     it('producer-level refinements: acres, contact details, linked producers, eSign and grain on farm', () => {
       api.getCustomers.mockReturnValue(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', totalAcres: 900, email: 'a@x.com', linkedProducerIds: ['C2'],
