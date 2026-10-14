@@ -157,6 +157,9 @@ export class CheckCalculatorComponent implements OnInit {
   }
 
   private loadFullCommodities(): void {
+    // Deliberately quiet on failure: the list only feeds the autocomplete. The Commodity field is
+    // free text, the check is computed from the numbers alone, and no "no matches" state is shown,
+    // so a missing list costs the user a suggestion, never a wrong figure.
     this.apiService.getCommodities()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: (list) => this.commodityOptions.set(list ?? []), error: () => {} });

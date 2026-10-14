@@ -498,10 +498,14 @@ export class BidSheetComponent {
     //    SEARCH so the picker offers the same clean set as the rest of the app.
     this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (commodities) => this.allCommodities.set(commodities),
-      error: () => {}
+      // Without it crops lose their names and print colours, and the crop search can come up empty
+      // — which reads as "no such crop" unless the user is told.
+      error: () => this.toastService.error('Failed to load the commodity list — crop names, colors and the crop search may be incomplete.')
     });
     this.apiService.getPlantingCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (commodities) => this.plantingCommodities.set(commodities),
+      // Deliberately quiet: filteredCommodities falls back to the full list when this one is empty,
+      // so the crop search still works, and a failure of that list is reported above.
       error: () => {}
     });
 

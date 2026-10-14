@@ -813,5 +813,23 @@ describe('BidSheetComponent', () => {
       expect(c.allMapLocations()).toEqual([]);
       expect(c.filteredBidItems()).toEqual([]);
     });
+
+    it('a failed commodity-list load tells the user rather than leaving the crop search empty', () => {
+      // The full list names crops, colours the print view and backs the crop search; losing it
+      // silently made "No crops found" look like a real answer.
+      api.getCommodities.mockImplementation(() => throwError(() => new Error('down')));
+      build(['2040']);
+
+      expect(c.filteredCommodities('corn')).toEqual([]);
+      expect(toast.error).toHaveBeenCalledWith('Failed to load the commodity list — crop names, colors and the crop search may be incomplete.');
+    });
+
+    it('a failed curated crop list stays quiet: the full commodity list covers the crop search', () => {
+      api.getPlantingCommodities.mockImplementation(() => throwError(() => new Error('down')));
+      build(['2040']);
+
+      expect(c.filteredCommodities('corn').map(x => x.code)).toEqual(['YC']);
+      expect(toast.error).not.toHaveBeenCalled();
+    });
   });
 });
