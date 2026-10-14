@@ -1,5 +1,5 @@
 // Angular core
-import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 
 // Angular router
@@ -13,6 +13,7 @@ import { HelpAction } from '@models';
 
 // Project services
 import { AppStateService } from './app-state.service';
+import { HelpPanelStateService } from './help-panel-state.service';
 import { HelpService } from './help.service';
 import { ToastService } from './toast.service';
 import { UsageTrackingService } from './usage-tracking.service';
@@ -41,9 +42,6 @@ const ANCHOR_HOME: Record<string, string> = {
   'producer-search': '/'
 };
 
-/** Below this width the panel is full-screen and navigating away closes it (matches Tailwind's lg). */
-const DESKTOP_QUERY = '(min-width: 1024px)';
-
 /**
  * State and behaviour of the Help panel: whether it's open, the conversation in it, the spotlight,
  * and what each answer's buttons do. Root-scoped so the conversation survives navigation — the panel
@@ -58,11 +56,14 @@ export class HelpPanelService {
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly toasts = inject(ToastService);
 
-  private readonly _open = signal(false);
+  // Open / spotlight / desktop live in the dependency-free HelpPanelStateService so the shell, header
+  // and Calculators button can read them without this service's dependencies. This is the only writer.
+  private readonly layout = inject(HelpPanelStateService);
+  private readonly _open = this.layout.open;
+  private readonly _spotlight = this.layout.spotlight;
+  private readonly _desktop = this.layout.desktop;
   private readonly _thread = signal<HelpThreadItem[]>([]);
-  private readonly _spotlight = signal<string | null>(null);
   private readonly _lastError = signal<{ message: string; at: Date } | null>(null);
-  private readonly _desktop = signal(desktopNow());
 
   readonly open = this._open.asReadonly();
   readonly thread = this._thread.asReadonly();
@@ -72,7 +73,7 @@ export class HelpPanelService {
   readonly lastError = this._lastError.asReadonly();
 
   /** The panel is laid out beside the page (desktop) and the page should make room for it. */
-  readonly pushesPage = computed(() => this._open() && this._spotlight() === null && this._desktop());
+  readonly pushesPage = this.layout.pushesPage;
 
   /** True at desktop widths, where the panel sits beside the page instead of covering it. */
   readonly desktop = this._desktop.asReadonly();
@@ -87,10 +88,6 @@ export class HelpPanelService {
   );
 
   constructor() {
-    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-      window.matchMedia(DESKTOP_QUERY).addEventListener?.('change', e => this._desktop.set(e.matches));
-    }
-
     // Remember the latest error toast. Toasts disappear after a few seconds, but "what was the last
     // error?" is exactly what support asks first.
     // Keyed on the toast id, so other toasts coming and going don't reset the time. The message
@@ -238,10 +235,6 @@ export class HelpPanelService {
   private isDesktop(): boolean {
     return this._desktop();
   }
-}
-
-function desktopNow(): boolean {
-  return typeof window === 'undefined' || typeof window.matchMedia !== 'function' || window.matchMedia(DESKTOP_QUERY).matches;
 }
 
 function routePath(url: string): string {

@@ -12,6 +12,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { AppInsightsService } from '@core/services/app-insights.service';
 import { HelpPanelService } from '@core/services/help-panel.service';
+import { HelpPanelStateService } from '@core/services/help-panel-state.service';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { filter } from 'rxjs';
@@ -33,7 +34,7 @@ export class AppComponent {
   readonly whatsNew = inject(WhatsNewService);
   readonly showWhatsNew = signal(false);
   /** Public: the template pads the page while the Help panel is open, and defers the panel until then. */
-  readonly helpPanel = inject(HelpPanelService);
+  readonly helpPanel = inject(HelpPanelStateService);
 
   private readonly msalService = inject(MsalService);
   private readonly broadcastService = inject(MsalBroadcastService);
