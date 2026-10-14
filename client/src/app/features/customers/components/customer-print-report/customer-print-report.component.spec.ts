@@ -481,20 +481,20 @@ describe('CustomerPrintReportComponent', () => {
   // ── Unapplied tickets ─────────────────────────────────────────────────────
 
   it('re-converts unapplied bushels when the conversion list is replaced by one of the same length', () => {
-    appState.commodityConversions.set([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
+    appState.setCommodityConversions([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
     open({ tickets: [makeTicket({ id: 1, productCode: 'YC', appliedDockQuantity: 168000, date: '2026-09-01' })] });
     expect(sectionRows('Unapplied Tickets')[0][2]).toBe('3,000 bu');
 
-    appState.commodityConversions.set([{ commodityCode: 'YC', lbsPerUnit: 50 }]);
+    appState.setCommodityConversions([{ commodityCode: 'YC', lbsPerUnit: 50 }]);
     fixture.detectChanges();
     expect(sectionRows('Unapplied Tickets')[0][2]).toBe('3,360 bu');
 
     // An empty list, and a list without this product, both fall back to pounds.
-    appState.commodityConversions.set([]);
+    appState.setCommodityConversions([]);
     fixture.detectChanges();
     expect(sectionRows('Unapplied Tickets')[0][2]).toBe('168,000 lbs');
 
-    appState.commodityConversions.set([{ commodityCode: 'HRW', lbsPerUnit: 60 }]);
+    appState.setCommodityConversions([{ commodityCode: 'HRW', lbsPerUnit: 60 }]);
     fixture.detectChanges();
     expect(sectionRows('Unapplied Tickets')[0][2]).toBe('168,000 lbs');
   });
@@ -508,7 +508,7 @@ describe('CustomerPrintReportComponent', () => {
         return Array.prototype.map.apply(this, args);
       },
     });
-    appState.commodityConversions.set(conversions);
+    appState.setCommodityConversions(conversions);
     open({
       tickets: [
         makeTicket({ id: 1, productCode: 'YC', appliedDockQuantity: 56000, date: '2026-09-01' }),
