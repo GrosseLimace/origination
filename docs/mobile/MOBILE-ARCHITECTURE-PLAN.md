@@ -74,7 +74,7 @@ Users are **originators only**. Phase 1 is eight producer-centric cards; Phase 2
 |---|---|---|---|---|
 | #641 | Producer search and detail | Origination DB | — | Search only; bulk list building and actionable insights are desktop-only |
 | #642 | Tap-to-call / tap-to-email | Origination DB | — | Native dialer, not Teams (cell reliability). Contact PII on the device, never cached |
-| #643 | Edit on-farm details | Origination DB | **Yes** | Acres editable, attributed and timestamped. Since the 2026-10-13 bin-sites release, capacity lives on each bin site and grain on farm is tied to a site; both are **read-only on mobile** and preserved on save (a site-aware mobile editor is a product decision) |
+| #643 | Edit on-farm details | Origination DB | **Yes** | Acres, bin sites (name, capacity) and grain on farm per site (on hand, sold, target, last bid, grade) are all **editable on mobile** (decided 2026-10-14). The phone sends the lists back whole with every field it read, so nothing the desktop entered is lost; a desktop edit made in between returns 409. Attributed and timestamped |
 | #644 | Add and view notes | Origination DB | **Yes** | Pinned note first, then 10 most recent; add is the primary action |
 | #645 | Contract cards | **ODS view** | — | Number, quantity, price, delivery, special type; no dollar value |
 | #646 | Ticket roll-up | **ODS view** | — | Count + bushels per group; no line items, weights, crop or location |

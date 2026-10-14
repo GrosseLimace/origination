@@ -241,9 +241,11 @@ paths:
       operationId: updateProducerDetails
       summary: Update on-farm details
       description: >
-        Card #643. Updates total acres. Contacts, linked producers, bin sites and grain on farm are
-        preserved, not re-sent; bin sites and grain on farm are read-only on mobile until a site-aware
-        mobile editor exists. Audited with before/after values.
+        Card #643. Updates total acres and, when sent, the bin sites and grain on farm. A list that is
+        present replaces the stored set (array order is the display order); a list that is absent is
+        preserved. Contacts and linked producers are never edited from mobile. Send expectedModifiedAt
+        so a desktop edit made in between returns 409 instead of being overwritten. Audited with
+        before/after values.
       requestBody:
         required: true
         content:
@@ -660,8 +662,9 @@ components:
     ProducerDetails:
       type: object
       description: >
-        Since the 2026-10-13 release storage capacity is recorded per bin site and grain on farm is tied
-        to a site. Bin sites and grain on farm are read-only on mobile for now.
+        Storage capacity is recorded per bin site and grain on farm is tied to a site. Every site and
+        grain field is returned, including ones the phone may not display (site key, coordinates, last
+        bid), so an update can send the lists back whole without losing anything.
       required: [customerId, binSites, grainOnFarm]
       properties:
         customerId: { type: integer, format: int64 }
@@ -678,30 +681,53 @@ components:
 
     BinSite:
       type: object
+      description: Only the name is required. Coordinates come as a pair or not at all.
+      required: [name]
       properties:
-        name: { type: string, nullable: true }
-        capacity: { type: number, nullable: true, description: Bushels }
+        siteKey:
+          type: string
+          format: uuid
+          nullable: true
+          description: Stable key; echo it back for an existing site, generate one for a new site. Grain rows link to it.
+        name: { type: string, minLength: 1, maxLength: 100 }
+        capacity: { type: number, nullable: true, minimum: 0, maximum: 100000000, description: Bushels }
+        latitude: { type: number, nullable: true, minimum: 7, maximum: 84 }
+        longitude: { type: number, nullable: true, minimum: -180, maximum: -52 }
 
     GrainOnFarmItem:
       type: object
       required: [commodityCode]
       properties:
-        commodityCode: { type: string }
-        binSiteName: { type: string, nullable: true }
-        bushelsOnHand: { type: number, nullable: true }
-        bushelsSold: { type: number, nullable: true }
-        targetBushels: { type: number, nullable: true }
-        grade: { type: string, nullable: true, maxLength: 20 }
+        binSiteKey:
+          type: string
+          format: uuid
+          nullable: true
+          description: The siteKey of the site this grain is stored at; null or unknown stores it without a site.
+        binSiteName: { type: string, nullable: true, maxLength: 100, description: For display; ignored on write. }
+        commodityCode: { type: string, minLength: 1, maxLength: 100 }
+        bushelsOnHand: { type: number, nullable: true, minimum: 0, maximum: 1000000000 }
+        bushelsSold: { type: number, nullable: true, minimum: 0, maximum: 1000000000 }
+        targetBushels: { type: number, nullable: true, minimum: -1000000000, maximum: 1000000000, description: "$/bu target price; may be negative (basis)." }
+        lastBid: { type: number, nullable: true, minimum: -1000000000, maximum: 1000000000, description: "May be negative (basis)." }
+        grade: { type: string, nullable: true, maxLength: 100 }
 
     ProducerDetailsUpdate:
       type: object
       description: >
-        Total acres only. Bin sites and grain on farm are preserved server-side, never overwritten from
-        the phone (the mobile shape cannot carry site links, bushels sold or last bid).
+        A list that is present replaces the stored set; a list that is absent is preserved. Send the
+        sites and grain rows exactly as read (keys, coordinates and last bid included) plus any edits.
       required: [clientRequestId]
       properties:
         clientRequestId: { type: string, format: uuid }
         totalAcres: { type: number, nullable: true, minimum: 0, maximum: 10000000 }
+        binSites:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/BinSite' }
+        grainOnFarm:
+          type: array
+          maxItems: 2000
+          items: { $ref: '#/components/schemas/GrainOnFarmItem' }
         expectedModifiedAt:
           type: string
           format: date-time
