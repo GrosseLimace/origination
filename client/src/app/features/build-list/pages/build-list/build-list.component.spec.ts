@@ -1462,6 +1462,57 @@ describe('BuildListComponent', () => {
       expect(c.matchedPatternLabels()).toEqual(['Unconfirmed contracts', 'State']);
     });
 
+    // ── Saved-list and assign payloads ──
+
+    it('saving carries the prompt category alone when there are no refinements, and nothing when there is neither', () => {
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+      c.addCustomerToList(DELTA);
+      c.newListName.set('Everyone');
+      c.saveList();
+      expect(api.createSavedList).toHaveBeenLastCalledWith({
+        name: 'Everyone', query: 'All producers', tradeUnits: '1000',
+        filters: { _promptCategory: 'Producers' }, includedCustomerIds: [4], excludedCustomerIds: undefined,
+      });
+
+      c.queryText.set('Some typed prompt');
+      c.processQuery();
+      c.newListName.set('Typed');
+      c.saveList();
+      expect(api.createSavedList).toHaveBeenLastCalledWith({
+        name: 'Typed', query: 'Some typed prompt', tradeUnits: '1000',
+        filters: undefined, includedCustomerIds: undefined, excludedCustomerIds: undefined,
+      });
+    });
+
+    it('a manager building a list for team members assigns it with the same payload', () => {
+      isAdmin = true;
+      api.getTeamMembers.mockReturnValue(of([{ userId: 'u1', displayName: 'Lee' }, { userId: 'u2', displayName: 'Sam' }]) as never);
+      api.assignSavedList.mockReturnValue(of([{ id: 1 }, { id: 2 }]) as never);
+      const c = mount();
+      c.openBuildForMembersPicker();
+      c.toggleAssignTarget('u1');
+      c.toggleAssignTarget('u2');
+      c.startBuildingForMembers();
+      expect(c.buildingForMembersLabel()).toBe('Lee, Sam');
+
+      c.selectLibraryQuery(LIB_CONTRACTS);
+      c.togglePendingState('KS');
+      c.excludeCustomerFromList(3);
+      c.openFinalizeAssign();
+      expect(c.assignListName()).toBe('All producers with contracts');
+      c.confirmAssign();
+
+      expect(api.assignSavedList).toHaveBeenCalledWith({
+        query: 'All producers with contracts', tradeUnits: '1000',
+        filters: { states: ['KS'], _promptCategory: 'Contracts' },
+        includedCustomerIds: undefined, excludedCustomerIds: [3],
+        name: 'All producers with contracts', targetUserIds: ['u1', 'u2'],
+      });
+      expect(toast.success).toHaveBeenCalledWith('Assigned "All producers with contracts" to 2 members');
+      expect(c.selectedCategory()).toBe('Team Lists');
+    });
+
     // ── Opening a producer: which profile tab ──
 
     it('opens the producer on the tab the prompt or refinement is about', () => {

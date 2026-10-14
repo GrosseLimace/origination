@@ -41,6 +41,7 @@ import {
   filterLibrary, groupLibrary, libraryCategories, libraryCategoryForQuery, matchedPatternLabels, searchSavedLists, searchTeamLists,
 } from '../../utils/query-library';
 import { detectFocusTab } from '../../utils/focus-tab';
+import { buildSavedListPayload, SavedListPayload } from '../../utils/saved-list-payload';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
@@ -670,7 +671,7 @@ export class BuildListComponent {
   assignTargetIds = signal<Set<string>>(new Set());
   assigning = signal(false);
   /** The list payload (without targets) being assigned: the current built list or an existing one. */
-  private _assignBase: { query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] } | null = null;
+  private _assignBase: SavedListPayload | null = null;
   isProcessing = signal(false);
   waitingForTickets = signal(false);
   /** True while a note-dependent query is parked waiting for the lazily-loaded full note set.
@@ -2588,31 +2589,24 @@ export class BuildListComponent {
     if (opening) this.usageTracking.postClickEvent('interaction', 'build-a-list', 'manage-members');
   }
 
+  /** The current list as a saved-list body (query, trade units, refinements + prompt category,
+   *  member overrides) — see buildSavedListPayload. */
+  private _listPayload(): SavedListPayload {
+    return buildSavedListPayload({
+      query: this.queryText(),
+      tradeUnits: this.effectiveTradeUnits(),
+      refinements: this.activeRefinementCount() > 0 ? this.appliedRefinements() : null,
+      category: this.effectiveLibraryCategory(),
+      includedIds: this._allIncludedCustomerIds(),
+      excludedIds: [...this.manuallyExcludedCustomerIds()],
+    });
+  }
+
   saveList(): void {
     if (!this.newListName().trim() || this.displayedCustomers().length === 0) return;
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'save-list');
 
-    const tradeUnits = this.effectiveTradeUnits();
-    const includedIds = this._allIncludedCustomerIds();
-    const excludedIds = [...this.manuallyExcludedCustomerIds()];
-    // Resolve the prompt's library category (Contracts / Tickets / etc.) and persist it as a
-    // private hint on the filters so home/customer-list can run the dimension-aware crops filter
-    // identically — they don't load the query library and can't recover the category from
-    // queryText otherwise. Build-list reads it back too, but its own UI uses effectiveLibraryCategory.
-    const category = this.effectiveLibraryCategory();
-    const baseFilters = this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : null;
-    const filtersWithCategory = baseFilters
-      ? (category ? { ...baseFilters, _promptCategory: category } : baseFilters)
-      : (category ? { _promptCategory: category } : undefined);
-
-    const payload = {
-      name: this.newListName(),
-      query: this.queryText(),
-      tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
-      filters: filtersWithCategory,
-      includedCustomerIds: includedIds.length > 0 ? includedIds : undefined,
-      excludedCustomerIds: excludedIds.length > 0 ? excludedIds : undefined,
-    };
+    const payload = { name: this.newListName(), ...this._listPayload() };
 
     const request$ = this.activeSavedList()
       ? this.apiService.updateSavedList(this.activeSavedList()!.id, payload)
@@ -2681,21 +2675,7 @@ export class BuildListComponent {
   /** Step 3: finalize — open the naming/confirm dialog with the locked-in members pre-selected. */
   openFinalizeAssign(): void {
     if (this.buildingForMembers().length === 0 || this.displayedCustomers().length === 0) return;
-    const tradeUnits = this.effectiveTradeUnits();
-    const includedIds = this._allIncludedCustomerIds();
-    const excludedIds = [...this.manuallyExcludedCustomerIds()];
-    const category = this.effectiveLibraryCategory();
-    const baseFilters = this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : null;
-    const filtersWithCategory = baseFilters
-      ? (category ? { ...baseFilters, _promptCategory: category } : baseFilters)
-      : (category ? { _promptCategory: category } : undefined);
-    this._assignBase = {
-      query: this.queryText(),
-      tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
-      filters: filtersWithCategory,
-      includedCustomerIds: includedIds.length > 0 ? includedIds : undefined,
-      excludedCustomerIds: excludedIds.length > 0 ? excludedIds : undefined,
-    };
+    this._assignBase = this._listPayload();
     // Members already chosen — show them in the dialog, all selected; manager just names + confirms.
     this.teamMembers.set(this.buildingForMembers());
     this.assignTargetIds.set(new Set(this.buildingForMembers().map(m => m.userId)));
