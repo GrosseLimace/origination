@@ -457,7 +457,7 @@
       "id": "angular.components-bypass-app-state-service",
       "audit": "angular",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "Components own state that AppStateService should own, and already reach into it directly",
       "description": "AppStateService exposes ~30 pieces of state as raw writable signal() fields (not .asReadonly()). Components call this.appState.queryLibrary.set(...) directly, bypassing any service-level update method, so multiple unrelated components can independently mutate shared app state.",
       "files": [
@@ -469,14 +469,19 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed but over-rated: 38 raw signals with no asReadonly() is accurate, but \"components already reach into it directly\" is 2 call sites across all features, not a pattern.\n[2026-09-28] Re-checked: app-state.service.ts now exposes 14 raw signal() fields, still with zero .asReadonly() wrappers (down from 38 — some state appears to have moved out of the service since the last pass, not been fixed). Still open.\n[2026-10-13] Re-checked: still 14 raw signal() fields, still zero .asReadonly() wrappers. No change since 2026-09-28. Still open."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed but over-rated: 38 raw signals with no asReadonly() is accurate, but \"components already reach into it directly\" is 2 call sites across all features, not a pattern.\n[2026-09-28] Re-checked: app-state.service.ts now exposes 14 raw signal() fields, still with zero .asReadonly() wrappers (down from 38 — some state appears to have moved out of the service since the last pass, not been fixed). Still open.\n[2026-10-13] Re-checked: still 14 raw signal() fields, still zero .asReadonly() wrappers. No change since 2026-09-28. Still open.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "All 43 AppStateService signals private, exposed via asReadonly(); writes through named setters (setCommodityConversions, setQueryLibrary, setCustomersLoading, clearLoadFailures, ...). Every writer switched; specs use setters; a runtime test and a @ts-expect-error write guard against regressions. Owner asked to fix everything 2026-10-14; verified, tested, mutation-checked."
     },
     {
       "id": "angular.no-typed-error-contract-silent-swallowing",
       "audit": "angular",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "No typed error contract; silent error swallowing across services and components",
       "description": "No typed error class exists anywhere in the app. DataPreloadService collapses every dataset failure to [] with no signal to the UI; roughly two dozen .subscribe({ error: () => {} }) blocks swallow failures with no toast, no error state, and no distinguishable empty-vs-failed outcome.",
       "files": [
@@ -492,8 +497,13 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed and outstanding — a design item. Undercounted, in fact: 34 `error: () => {}` sites plus 13 catchError(() => of([])) in the preload service. The traceId half was fixed (handleError now carries it) and 401 now surfaces a session-expired toast.\n[2026-09-28] Re-checked: no ApiError/AppError-style typed error class exists anywhere in src/app. Empty `error: () => {}` handlers are down to 10 (from 34) — home.component.ts's 17 were resolved separately (see angular.home-component-silent-error-swallowing) via a shared _reportBackgroundFailure pattern; the remaining 10 sites elsewhere have not adopted it. Still open.\n[2026-10-13] Re-checked: still no ApiError/AppError-style typed error class anywhere in src/app, still exactly 10 non-spec `error: () => {}` sites. No change since 2026-09-28. Still open."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed and outstanding — a design item. Undercounted, in fact: 34 `error: () => {}` sites plus 13 catchError(() => of([])) in the preload service. The traceId half was fixed (handleError now carries it) and 401 now surfaces a session-expired toast.\n[2026-09-28] Re-checked: no ApiError/AppError-style typed error class exists anywhere in src/app. Empty `error: () => {}` handlers are down to 10 (from 34) — home.component.ts's 17 were resolved separately (see angular.home-component-silent-error-swallowing) via a shared _reportBackgroundFailure pattern; the remaining 10 sites elsewhere have not adopted it. Still open.\n[2026-10-13] Re-checked: still no ApiError/AppError-style typed error class anywhere in src/app, still exactly 10 non-spec `error: () => {}` sites. No change since 2026-09-28. Still open.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Typed ApiError (see error-handling.angular-silent-swallowing). Silent error:()=>{} sites: usage-dashboard 7 panels now toast once (throttled 5s); bid-sheet full commodity list toasts; check-calculator left silent on purpose (autocomplete only, commented); commented deliberate swallows in build-list/edit-customer/home verified accurate. DataPreloadService records load-failed flags (customers, DP, last-contact, follow-ups, saved lists, planting, harvest windows, conversions) and producer list, Build-a-List, dashboard last-contact and growth-opportunity now say \"couldn't load\" instead of \"none\". Display on the remaining customer components is the 2026-10-14 phase-2 follow-up. Owner asked to fix everything 2026-10-14; verified, tested, mutation-checked."
     },
     {
       "id": "angular.any-type-widespread-usage",
@@ -559,14 +569,14 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed and deliberately deferred: 29 components, and OnPush breaks silently wherever a parent mutates an array in place. The actual per-cycle cost the perf findings described was removed by converting the hot getter to a computed().\n[2026-09-28] Re-checked: 23 of 49 components now set OnPush (up from 20). Gap narrowed slightly but still open; deferral rationale unchanged.\n[2026-10-13] Re-checked: still 23 of 49 components set OnPush. No change since 2026-09-28. Still open.\n[2026-10-13] Partial, deliberate. Converted to OnPush, each with an existing behaviour spec and each checked for non-signal state the template reads: the whole shared kit (badge, button, card x6 parts, table x6 parts, dialog x6 parts, select, input, toast-container), the three calculators, contracts-table (separately), and activity-summary (its one plain field, summaryText, is written in an effect that now also marks the view). input and select are ControlValueAccessors, so writeValue and setDisabledState now call markForCheck: a programmatic form write is not a DOM event and would otherwise never reach the native control under OnPush. Left on Default ON PURPOSE: planting-intentions-table (14 plain fields read by the template, several set from subscription callbacks, so OnPush would stop those renders without a signal refactor first), edit-customer-dialog (its spec blanks the template, so a render regression would be invisible), tickets-table, producer-insights, customer-map, unshipped-bushels, contract-pacing-card, year-over-year-chart (no spec at all), and home (one of the untested god components). Rule applied throughout: no OnPush without a rendering spec, and no sweep."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed and deliberately deferred: 29 components, and OnPush breaks silently wherever a parent mutates an array in place. The actual per-cycle cost the perf findings described was removed by converting the hot getter to a computed().\n[2026-09-28] Re-checked: 23 of 49 components now set OnPush (up from 20). Gap narrowed slightly but still open; deferral rationale unchanged.\n[2026-10-13] Re-checked: still 23 of 49 components set OnPush. No change since 2026-09-28. Still open.\n[2026-10-13] Partial, deliberate. Converted to OnPush, each with an existing behaviour spec and each checked for non-signal state the template reads: the whole shared kit (badge, button, card x6 parts, table x6 parts, dialog x6 parts, select, input, toast-container), the three calculators, contracts-table (separately), and activity-summary (its one plain field, summaryText, is written in an effect that now also marks the view). input and select are ControlValueAccessors, so writeValue and setDisabledState now call markForCheck: a programmatic form write is not a DOM event and would otherwise never reach the native control under OnPush. Left on Default ON PURPOSE: planting-intentions-table (14 plain fields read by the template, several set from subscription callbacks, so OnPush would stop those renders without a signal refactor first), edit-customer-dialog (its spec blanks the template, so a render regression would be invisible), tickets-table, producer-insights, customer-map, unshipped-bushels, contract-pacing-card, year-over-year-chart (no spec at all), and home (one of the untested god components). Rule applied throughout: no OnPush without a rendering spec, and no sweep.\n[2026-10-14] 11 more components OnPush (calculator widget/launcher, year-over-year, producer-insights, contract-pacing, unshipped-bushels, tickets-table, customer-map, planting-intentions-table, edit-customer-dialog), each behind rendering tests and mutation-checked; three of them (map, planting, edit-customer) were already showing stale values under zoneless Default (NG0100) and are fixed. Remaining: home (phase 2, with its decomposition) and the app root (switch held back until home is covered)."
     },
     {
       "id": "angular.function-calls-in-template-bindings",
       "audit": "angular",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Function calls used directly in template bindings instead of computed()/pipes",
       "description": "Recurring pattern (getContacts(), getPricingLinesForContract(contract), commodityChipClass(), ticketDisplayNumber()) re-sorts/re-filters/re-formats on every change-detection pass rather than being memoized.",
       "files": [
@@ -581,8 +591,13 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed; part of the deferred OnPush/memoisation work.\n[2026-10-13] Re-checked: customer-profile.component.html's `getContacts()` and contracts-table.component.html's `getPricingLinesForContract(contract)` calls in @for/@if bindings are both still present and unchanged. Could not reproduce the dashboard.component.ts `commodityChipClass()`/`ticketDisplayNumber()` example specifically — those identifiers no longer appear in that file, suggesting partial cleanup there, but the pattern itself persists in the two customer-area templates. Still open."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed; part of the deferred OnPush/memoisation work.\n[2026-10-13] Re-checked: customer-profile.component.html's `getContacts()` and contracts-table.component.html's `getPricingLinesForContract(contract)` calls in @for/@if bindings are both still present and unchanged. Could not reproduce the dashboard.component.ts `commodityChipClass()`/`ticketDisplayNumber()` example specifically — those identifiers no longer appear in that file, suggesting partial cleanup there, but the pattern itself persists in the two customer-area templates. Still open.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "customer-profile getContacts()/parseRecipients() -> computed; contracts-table ticketDisplayNumber -> pure pipe; dashboard commodityChipClass -> pure pipe; getPricingLinesForContract left (already a Map lookup on a computed). Memoisation proven by call-count tests. Owner asked to fix everything 2026-10-14; verified, tested, mutation-checked."
     },
     {
       "id": "angular.broad-unit-test-coverage-gap",
@@ -1259,7 +1274,7 @@
       "id": "performance.angular-template-function-calls",
       "audit": "performance",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Function calls used directly in template bindings re-run expensive work on every change-detection pass",
       "description": "Verified across customer-profile.component.html (getContacts() inside a @for, backed by a fresh array allocation + sort on every evaluation), contracts-table.component.html (getPricingLinesForContract(contract) called 4 times per expanded row, ticketDisplayNumber(ticket) per applied-ticket row), and dashboard.component.html (commodityChipClass(chip.colorKey) inside a @for over planting chips). None of these are memoized via computed()/pipes.",
       "files": [
@@ -1274,8 +1289,13 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed; duplicate of angular.function-calls-in-template-bindings. [2026-09-28] Re-verified; same three template files, no memoization added. Still open.\n[2026-10-13] Re-verified: same three template files, still no computed()/pipe conversion. No regression, no fix."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed; duplicate of angular.function-calls-in-template-bindings. [2026-09-28] Re-verified; same three template files, no memoization added. Still open.\n[2026-10-13] Re-verified: same three template files, still no computed()/pipe conversion. No regression, no fix.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Same work as angular.function-calls-in-template-bindings. Owner asked to fix everything 2026-10-14; verified, tested, mutation-checked."
     },
     {
       "id": "performance.angular-onpush-coverage-gap",
@@ -1298,8 +1318,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed; duplicate of angular.inconsistent-onpush-adoption. [2026-09-28] Re-counted: 23 of 49 component.ts files now declare OnPush (up slightly from 20/47), but the ratio and the named offenders (activity-summary, tickets-table, edit-customer-dialog, planting-intentions-table, home) are unchanged. Still open.\n[2026-10-13] Re-verified: OnPush coverage now 23/49 (net one new component added, no new adopters). Named offenders unchanged.\n[2026-10-13] Partial, deliberate. Converted to OnPush, each with an existing behaviour spec and each checked for non-signal state the template reads: the whole shared kit (badge, button, card x6 parts, table x6 parts, dialog x6 parts, select, input, toast-container), the three calculators, contracts-table (separately), and activity-summary (its one plain field, summaryText, is written in an effect that now also marks the view). input and select are ControlValueAccessors, so writeValue and setDisabledState now call markForCheck: a programmatic form write is not a DOM event and would otherwise never reach the native control under OnPush. Left on Default ON PURPOSE: planting-intentions-table (14 plain fields read by the template, several set from subscription callbacks, so OnPush would stop those renders without a signal refactor first), edit-customer-dialog (its spec blanks the template, so a render regression would be invisible), tickets-table, producer-insights, customer-map, unshipped-bushels, contract-pacing-card, year-over-year-chart (no spec at all), and home (one of the untested god components). Rule applied throughout: no OnPush without a rendering spec, and no sweep."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed; duplicate of angular.inconsistent-onpush-adoption. [2026-09-28] Re-counted: 23 of 49 component.ts files now declare OnPush (up slightly from 20/47), but the ratio and the named offenders (activity-summary, tickets-table, edit-customer-dialog, planting-intentions-table, home) are unchanged. Still open.\n[2026-10-13] Re-verified: OnPush coverage now 23/49 (net one new component added, no new adopters). Named offenders unchanged.\n[2026-10-13] Partial, deliberate. Converted to OnPush, each with an existing behaviour spec and each checked for non-signal state the template reads: the whole shared kit (badge, button, card x6 parts, table x6 parts, dialog x6 parts, select, input, toast-container), the three calculators, contracts-table (separately), and activity-summary (its one plain field, summaryText, is written in an effect that now also marks the view). input and select are ControlValueAccessors, so writeValue and setDisabledState now call markForCheck: a programmatic form write is not a DOM event and would otherwise never reach the native control under OnPush. Left on Default ON PURPOSE: planting-intentions-table (14 plain fields read by the template, several set from subscription callbacks, so OnPush would stop those renders without a signal refactor first), edit-customer-dialog (its spec blanks the template, so a render regression would be invisible), tickets-table, producer-insights, customer-map, unshipped-bushels, contract-pacing-card, year-over-year-chart (no spec at all), and home (one of the untested god components). Rule applied throughout: no OnPush without a rendering spec, and no sweep.\n[2026-10-14] 11 more components OnPush (calculator widget/launcher, year-over-year, producer-insights, contract-pacing, unshipped-bushels, tickets-table, customer-map, planting-intentions-table, edit-customer-dialog), each behind rendering tests and mutation-checked; three of them (map, planting, edit-customer) were already showing stale values under zoneless Default (NG0100) and are fixed. Remaining: home (phase 2, with its decomposition) and the app root (switch held back until home is covered)."
     },
     {
       "id": "performance.usage-dashboard-duplicate-scope-resolution-per-widget",
@@ -1645,7 +1665,7 @@
       "id": "error-handling.angular-silent-swallowing",
       "audit": "error-handling",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "No client-side type models the backend's standard error contract, enabling systemic silent swallowing",
       "description": "No ApiError class/interface exists anywhere in the Angular app corresponding to the backend's documented {error:{code,message,details,traceId,timestamp,instance}} envelope. ApiService.handleError() unwraps every HttpErrorResponse into a bare Error object with an unsafely-cast .status property bolted on, discarding error.code, error.details, and error.traceId outright. Because there is no shared, typed error surface for call sites to branch on, roughly two dozen .subscribe({error: () => {}}) blocks and DataPreloadService's uniform catchError(() => of([])) pattern (11 datasets) each independently improvise or skip error handling. This is the root CONTRACT gap; the angular-domain finding describes its component-level symptom.",
       "files": [
@@ -1659,8 +1679,13 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed; the contract-level root cause of angular.no-typed-error-contract-silent-swallowing. Note \"discards error.details outright\" is overstated — handleError does read details[].message; it discards code, traceId (now fixed) and the structured array. [2026-09-28] Re-verified against current api.service.ts handleError() (lines 88-124): still a bare Error with .status/.traceId bolted on, no ApiError type, error.code still never read. No regressions, no change since prior pass. [2026-10-13] Calibration re-run. Re-read handleError() on current HEAD (lines 88-124, after the 403/401 branches): unchanged — still builds a bare Error with .status/.traceId bolted on via unsafe casts, no ApiError type anywhere in client/src, error.code still never read. No regression, no fix."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed; the contract-level root cause of angular.no-typed-error-contract-silent-swallowing. Note \"discards error.details outright\" is overstated — handleError does read details[].message; it discards code, traceId (now fixed) and the structured array. [2026-09-28] Re-verified against current api.service.ts handleError() (lines 88-124): still a bare Error with .status/.traceId bolted on, no ApiError type, error.code still never read. No regressions, no change since prior pass. [2026-10-13] Calibration re-run. Re-read handleError() on current HEAD (lines 88-124, after the 403/401 branches): unchanged — still builds a bare Error with .status/.traceId bolted on via unsafe casts, no ApiError type anywhere in client/src, error.code still never read. No regression, no fix.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "ApiService throws only ApiError (core/errors/api-error.ts): status, code, message, details, traceId, category from status (network/unauthorized/forbidden/not-found/validation/conflict/server/unknown). Existing readers of .status/.message/.traceId unchanged; 401/403 toasts and message choice unchanged. Owner asked to fix everything 2026-10-14; verified, tested, mutation-checked."
     },
     {
       "id": "error-handling.controllers-return-adhoc-error-bodies-bypassing-envelope",
@@ -3480,7 +3505,7 @@
       "id": "angular.length-cached-conversion-maps",
       "audit": "angular",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "Three components cache the lbs-per-bushel map until the conversion list length changes",
       "description": "contracts-table.component.ts (~line 680), activity-summary.component.ts (~line 602) and customer-print-report.component.ts (~line 476) rebuild their conversion map only when commodityConversions().length changes, the pattern fixed in tickets-table on 2026-10-14. Latent: the list is loaded once per session today, so it cannot go stale in practice.",
       "files": [
@@ -3493,7 +3518,12 @@
         "date": "2026-10-14"
       },
       "last_verified": "2026-10-14",
-      "notes": "[2026-10-14] Spotted while fixing the tickets-table instance; not changed because it cannot happen with today's load-once behaviour."
+      "notes": "[2026-10-14] Spotted while fixing the tickets-table instance; not changed because it cannot happen with today's load-once behaviour.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "contracts-table, activity-summary, print-report: computed() map over the conversions signal. Two of the three were genuinely stale on a same-length replacement (tests failed on the old code). Owner asked to fix everything 2026-10-14; verified, tested, mutation-checked."
     }
   ]
 }
