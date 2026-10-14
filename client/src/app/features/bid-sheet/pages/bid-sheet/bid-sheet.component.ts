@@ -20,6 +20,7 @@ import {
 import {
   addLocationPinIcon, bidPillFill, bidPillsIcon, BidPillItem, dotIcon, EXPANDED_PIN_GREY, hoverIcon, nameLabelIcon, pinFill
 } from '../../utils/map-markers';
+import { spreadOverlappingPins } from '../../utils/pin-spread';
 
 interface EditBidsRow {
   name: string;
@@ -2739,7 +2740,7 @@ export class BidSheetComponent {
 
       // Default: name labels — match the pill color story used elsewhere
       // Keyed to locs[0] specifically, not "any name here": this bg also drives the hover icon,
-      // which shows locs[0]. Per-line fill for mixed groups is handled inside _buildStackedLabel.
+      // which shows locs[0]. Per-line fill for mixed groups is handled inside stackedLabelHtml.
       const labelIsScoular = scoularNames.has(locs[0].name);
       const { bg, border } = pinFill(isRef, compareStatus(locs[0].name), labelIsScoular);
       const nameIcon = L.divIcon(nameLabelIcon(names, bg, border, comparingToRef, scoularNames));
@@ -2751,64 +2752,15 @@ export class BidSheetComponent {
     });
   }
 
-  /**
-   * Spreads pins whose on-screen positions would overlap so none get hidden behind another. Members
-   * of an overlapping cluster are pushed out to a fixed pixel radius around the cluster centroid; the
-   * spread is computed in screen pixels at the current zoom, so as you zoom in and the true positions
-   * separate, the offset shrinks and each pin glides back to its real spot. Returns one [lat,lng] per
-   * input point (aligned by index); points that don't overlap anything are returned unchanged.
-   */
+  /** Spreads overlapping pins apart in screen space at the current zoom (see utils/pin-spread). */
   private _spreadOverlappingPins(points: [number, number][], zoom: number): [number, number][] {
     const L = this._L, map = this._map;
-    if (!L || !map || points.length < 2) return points;
-    const SPREAD_PX = 24;             // radius each overlapping pin is pushed from the cluster centroid
-    const OVERLAP_PX = SPREAD_PX * 2; // pins closer than this (screen px) are treated as overlapping
-    const pts = points.map(([la, ln]) => map.project(L.latLng(la, ln), zoom));
-
-    // Union-find: group pins that overlap (transitively) into clusters.
-    const parent = points.map((_, i) => i);
-    const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x])));
-    for (let i = 0; i < pts.length; i++) {
-      for (let j = i + 1; j < pts.length; j++) {
-        const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
-        if (dx * dx + dy * dy < OVERLAP_PX * OVERLAP_PX) parent[find(i)] = find(j);
-      }
-    }
-    const clusters = new Map<number, number[]>();
-    for (let i = 0; i < pts.length; i++) {
-      const r = find(i);
-      const arr = clusters.get(r) ?? [];
-      arr.push(i);
-      clusters.set(r, arr);
-    }
-
-    const out: [number, number][] = points.slice();
-    for (const members of clusters.values()) {
-      if (members.length < 2) continue;
-      let cx = 0, cy = 0;
-      for (const i of members) { cx += pts[i].x; cy += pts[i].y; }
-      cx /= members.length; cy /= members.length;
-      members.forEach((i, idx) => {
-        const vx = pts[i].x - cx, vy = pts[i].y - cy;
-        const d = Math.sqrt(vx * vx + vy * vy);
-        let nx: number, ny: number;
-        if (d < 0.001) {
-          // Coincident at this zoom — fan out evenly on a circle, ordered by index.
-          const ang = (2 * Math.PI * idx) / members.length;
-          nx = cx + SPREAD_PX * Math.cos(ang);
-          ny = cy + SPREAD_PX * Math.sin(ang);
-        } else if (d < SPREAD_PX) {
-          // Push outward to the spread radius (continuous: at d === SPREAD_PX this is a no-op).
-          const s = SPREAD_PX / d;
-          nx = cx + vx * s; ny = cy + vy * s;
-        } else {
-          return; // already far enough apart — keep the true position
-        }
-        const ll = map.unproject(L.point(nx, ny), zoom);
-        out[i] = [ll.lat, ll.lng];
-      });
-    }
-    return out;
+    if (!L || !map) return points;
+    return spreadOverlappingPins(
+      points,
+      (lat, lng) => map.project(L.latLng(lat, lng), zoom),
+      (x, y) => { const ll = map.unproject(L.point(x, y), zoom); return [ll.lat, ll.lng]; }
+    );
   }
 
   /** Binds hover expand behavior to a marker — swaps icon on mouseover/mouseout.
