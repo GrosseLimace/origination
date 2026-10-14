@@ -14,8 +14,8 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 import { commodityHex } from '@shared/utils/commodity-color';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import {
-  buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
-  PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
+  buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
+  PrintLayoutModel, PrintLayoutStyle, PrintLocation
 } from '../../utils/print-layout';
 import {
   addLocationPinIcon, bidPillFill, bidPillsIcon, BidPillItem, dotIcon, EXPANDED_PIN_GREY, hoverIcon, nameLabelIcon, pinFill
@@ -29,15 +29,11 @@ import {
   applyBidsToLocations, arrowKeyTarget, buildDirtyBids, buildEditGridColumns, buildEditGridRows, clearDirtyForSaved, defaultMonthOrder,
   DirtyBid, EditBidsRow, editBidsMonthsLabel, orderEditBidsCrops, reorderCropsByColumnDrop, savedBidKey, setRowBid, toggleMonth, withHiddenCropsLast
 } from '../../utils/edit-grid';
-
-/** One row in the Yearly print columns builder. The resolved crop year = editBidsYear() + offset
- *  (relative, so it rolls over). oldNew picks the header style: '' = just the year, 'old'/'new' = "Old/New Crop (YYYY)". */
-interface PrintYearRow {
-  id: string;
-  enabled: boolean;
-  offset: number;            // -2..+2 relative to the viewed year
-  oldNew: '' | 'old' | 'new';
-}
+import {
+  addYearlyRow, buildPrintCropGroups, buildPrintLocations, defaultPrintYearlyRows, formatPhoneInput, parsePrintLayoutPreference, PRINT_YEAR_OFFSETS,
+  printCellValue, printMonthName, printPreviewZoom as printPreviewZoomFor, PrintYearRow, removeYearlyRow, serializePrintLayout, setYearlyRowOffset,
+  setYearlyRowOldNew, tintHex, toggleYearlyRow
+} from '../../utils/print-columns';
 
 /** Width threshold (px) below which the filter bar wraps the search/clear group to a centered second row. */
 const FILTER_BAR_WRAP_WIDTH = 1050;
@@ -661,25 +657,13 @@ export class BidSheetComponent {
       // Apply saved print/export layout if available (per-key then global). Sanitize on read so
       // malformed/out-of-range persisted data can't break the year pickers.
       const printLayoutJson = perKey?.printLayout ?? global?.printLayout ?? null;
-      if (printLayoutJson) {
-        try {
-          const l = JSON.parse(printLayoutJson);
-          if (Array.isArray(l?.yearlyRows) && l.yearlyRows.length) {
-            this.printYearlyRows.set(
-              l.yearlyRows.slice(0, BidSheetComponent.MAX_PRINT_YEARLY_ROWS).map((r: { enabled?: unknown; offset?: unknown; oldNew?: unknown }) => ({
-                id: this._newRowId(),
-                enabled: r?.enabled !== false,
-                offset: Math.max(-2, Math.min(2, Math.trunc(Number(r?.offset)) || 0)),
-                oldNew: (r?.oldNew === 'old' || r?.oldNew === 'new') ? r.oldNew : '' as const
-              }))
-            );
-          }
-          if (typeof l?.address === 'string') this.printAddress.set(l.address);
-          if (typeof l?.phone === 'string') this.printPhone.set(l.phone);
-          if (typeof l?.highlightScoular === 'boolean') this.printHighlightScoularLocations.set(l.highlightScoular);
-          // Retired 'sideBySide' / 'stacked' values fall back to the default; the next save rewrites them.
-          this.printLayoutStyle.set(parsePrintLayoutStyle(l?.layoutStyle));
-        } catch { /* invalid JSON — keep defaults */ }
+      const layout = printLayoutJson ? parsePrintLayoutPreference(printLayoutJson, () => this._newRowId()) : null;
+      if (layout) {
+        if (layout.yearlyRows) this.printYearlyRows.set(layout.yearlyRows);
+        if (layout.address !== undefined) this.printAddress.set(layout.address);
+        if (layout.phone !== undefined) this.printPhone.set(layout.phone);
+        if (layout.highlightScoular !== undefined) this.printHighlightScoularLocations.set(layout.highlightScoular);
+        this.printLayoutStyle.set(layout.layoutStyle);
       }
 
       if (changed) {
@@ -1469,11 +1453,7 @@ export class BidSheetComponent {
   });
   /** Zoom that fits the sheet to the pane with a little margin, bounded so it never becomes unreadably
    *  small or blown up: 1.1× is as large as a print preview should read on a monitor. */
-  readonly printPreviewZoom = computed(() => {
-    const paneWidth = this.printPreviewPaneWidth();
-    if (paneWidth <= 0) return 1;
-    return Math.round(Math.min(1.1, Math.max(0.5, (paneWidth * 0.9) / this.printPreviewSheetPx)) * 100) / 100;
-  });
+  readonly printPreviewZoom = computed(() => printPreviewZoomFor(this.printPreviewPaneWidth(), this.printPreviewSheetPx));
   printSelectedCrops = signal<Set<string>>(new Set());
   printSelectedMonths = signal<Set<number>>(new Set());
   readonly todayFormatted = computed(() => new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
@@ -1519,10 +1499,7 @@ export class BidSheetComponent {
    * Tailwind 100-level of the same hue, which is about an 82% blend.
    */
   cropHeaderTint(crop: string, blend = 0.82): string {
-    const hex = this.cropHeaderColor(crop).replace('#', '');
-    const r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
-    const mix = (c: number) => Math.round(c + (255 - c) * blend);
-    return `#${[mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+    return tintHex(this.cropHeaderColor(crop), blend);
   }
 
   /** Absolute, because the print popup is `about:blank` — a relative asset path 404s there. */
@@ -1533,16 +1510,9 @@ export class BidSheetComponent {
    * The Highlight toggle is folded into `isScoular` here so the layout builder never has to know
    * about it. Locations with no bids are dropped by the builder, not here.
    */
-  readonly printLocations = computed<PrintLocation[]>(() => {
-    const columns = this.printCropGroups().flatMap(g => g.columns);
-    const highlight = this.printHighlightScoularLocations();
-    const scoularNames = this.scoularLocationNames();
-    return this.editBidsRows().map(row => ({
-      name: row.name,
-      isScoular: highlight && scoularNames.has(row.name),
-      values: Object.fromEntries(columns.map(col => [col.key, this.printCellValue(row, col)]))
-    }));
-  });
+  readonly printLocations = computed<PrintLocation[]>(() => buildPrintLocations(
+    this.editBidsRows(), this.printCropGroups(), this.printHighlightScoularLocations(), this.scoularLocationNames(),
+    this.editBidsYear(), this.bidLookup()));
 
   /** The ONE layout model both the dialog preview and the printed document render. */
   readonly printLayoutModel = computed<PrintLayoutModel>(() => buildPrintLayout({
@@ -1558,14 +1528,7 @@ export class BidSheetComponent {
   // Yearly export columns: a builder of rows the user adds (each = enable toggle + year + Old/New choice).
   // Year is an offset from the viewed year (rolls over). Header reads "Old Crop (2025)" / "New Crop (2025)"
   // or just "2025" when neither is picked. Persisted per trade unit.
-  printYearlyRows = signal<PrintYearRow[]>([
-    { id: 'yr-old', enabled: true, offset: -1, oldNew: 'old' },
-    { id: 'yr-new', enabled: true, offset: 0, oldNew: 'new' }
-  ]);
-  static readonly MAX_PRINT_YEARLY_ROWS = 5;
-  // Monthly columns have no separate config: each month picked in the Months list prints as "May (2026)"
-  // for the viewed year. Year offsets are only used by the Yearly columns' year dropdown.
-  static readonly PRINT_YEAR_OFFSETS: number[] = [-2, -1, 0, 1, 2];
+  printYearlyRows = signal<PrintYearRow[]>(defaultPrintYearlyRows());
 
   /** Stable id for a year row. Uses crypto.randomUUID where available (secure context), else a counter. */
   private _printRowSeq = 0;
@@ -1574,11 +1537,7 @@ export class BidSheetComponent {
   }
 
   onPrintPhoneInput(event: Event): void {
-    const raw = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 10);
-    let formatted = raw;
-    if (raw.length > 6) formatted = `(${raw.slice(0, 3)}) ${raw.slice(3, 6)}-${raw.slice(6)}`;
-    else if (raw.length > 3) formatted = `(${raw.slice(0, 3)}) ${raw.slice(3)}`;
-    else if (raw.length > 0) formatted = `(${raw}`;
+    const formatted = formatPhoneInput((event.target as HTMLInputElement).value);
     this.printPhone.set(formatted);
     (event.target as HTMLInputElement).value = formatted;
   }
@@ -1589,57 +1548,16 @@ export class BidSheetComponent {
    * specific month picked in the Months list renders one column for the viewed year, headed "May (2026)".
    * cropYear on each column resolves the right bid in printCellValue.
    */
-  readonly printCropGroups = computed(() => {
-    const selectedCrops = this.printSelectedCrops();
-    const selectedMonths = this.printSelectedMonths();
-    const viewedYear = this.editBidsYear();
-    const yearlyRows = this.printYearlyRows().filter(r => r.enabled);
-    // Preserve crop + month order from the grid (editBidsMonths is the canonical, user-orderable order).
-    const crops = this.editBidsCrops().filter(c => selectedCrops.has(c));
-    const months = this.editBidsMonths().filter(m => selectedMonths.has(m));
-
-    return crops.map<PrintCropGroup>(crop => {
-      const columns: PrintColumn[] = [];
-      for (const m of months) {
-        if (m === 0) {
-          // Yearly: one column per enabled row. Header = "Old Crop (2025)" / "New Crop (2025)" / "2025".
-          for (const row of yearlyRows) {
-            const resolved = viewedYear + row.offset;
-            const label = row.oldNew === 'old' ? `Old Crop (${resolved})`
-              : row.oldNew === 'new' ? `New Crop (${resolved})`
-              : String(resolved);
-            // compactLabel is for the side-by-side layout, where a column is only a few percent of
-            // the page and "Old Crop (2026)" overflows into its neighbour. It ABBREVIATES the same
-            // column the user configured — it never renames it — so old crop still reads as old
-            // crop, not as some other word.
-            const yy = String(resolved).slice(-2);
-            const compactLabel = row.oldNew === 'old' ? `O/C ${yy}`
-              : row.oldNew === 'new' ? `N/C ${yy}`
-              : String(resolved);
-            columns.push({ key: `${crop}#0#${row.id}`, crop, month: 0, year: resolved, label, compactLabel });
-          }
-        } else {
-          // Monthly: one column per selected month for the viewed year, headed "May (2026)".
-          columns.push({
-            key: `${crop}#${m}`, crop, month: m, year: viewedYear,
-            label: `${this.getMonthName(m)} (${viewedYear})`,
-            compactLabel: `${this.getMonthName(m)} ${String(viewedYear).slice(-2)}`
-          });
-        }
-      }
-      return { crop, columns };
-    });
-  });
+  readonly printCropGroups = computed(() => buildPrintCropGroups(
+    this.editBidsCrops(), this.editBidsMonths(), this.printSelectedCrops(), this.printSelectedMonths(),
+    this.editBidsYear(), this.printYearlyRows()));
 
   /**
    * Resolve a printed cell's bid value. For the viewed (New Crop) year we read the live edit-grid
    * value so unsaved edits print; for any other year (Old Crop) we read the saved bid from the lookup.
    */
   printCellValue(row: EditBidsRow, col: { crop: string; month: number; year: number }): string {
-    if (col.year === this.editBidsYear()) {
-      return (row.bids[`${col.crop}#${col.month}`] ?? '').trim();
-    }
-    return this._getLatestBid(row.name, col.year, col.crop, col.month).trim();
+    return printCellValue(row, col, this.editBidsYear(), this.bidLookup());
   }
 
   printEditBids(): void {
@@ -1655,7 +1573,7 @@ export class BidSheetComponent {
   /** Candidate crop years for the Yearly year picker (viewed year ±2) — shown as concrete years, stored as offsets. */
   readonly printYearChoices = computed(() => {
     const y = this.editBidsYear();
-    return BidSheetComponent.PRINT_YEAR_OFFSETS.map(offset => ({ offset, year: y + offset }));
+    return PRINT_YEAR_OFFSETS.map(offset => ({ offset, year: y + offset }));
   });
 
   // --- Yearly columns builder ---
@@ -1670,35 +1588,30 @@ export class BidSheetComponent {
   }
 
   addPrintYearlyRow(): void {
-    this.printYearlyRows.update(rows => {
-      if (rows.length >= BidSheetComponent.MAX_PRINT_YEARLY_ROWS) return rows;
-      return [...rows, { id: this._newRowId(), enabled: true, offset: 0, oldNew: '' as const }];
-    });
+    this.printYearlyRows.update(rows => addYearlyRow(rows, () => this._newRowId()));
     this._savePrintLayout();
   }
   removePrintYearlyRow(id: string): void {
-    this.printYearlyRows.update(rows => rows.length <= 1 ? rows : rows.filter(r => r.id !== id));
+    this.printYearlyRows.update(rows => removeYearlyRow(rows, id));
     this._savePrintLayout();
   }
   togglePrintYearlyRow(id: string): void {
-    this.printYearlyRows.update(rows => rows.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+    this.printYearlyRows.update(rows => toggleYearlyRow(rows, id));
     this._savePrintLayout();
   }
   setPrintYearlyRowOffset(id: string, offset: number): void {
-    const clamped = Math.max(-2, Math.min(2, offset));
-    this.printYearlyRows.update(rows => rows.map(r => r.id === id ? { ...r, offset: clamped } : r));
+    this.printYearlyRows.update(rows => setYearlyRowOffset(rows, id, offset));
     this._savePrintLayout();
   }
   setPrintYearlyRowOldNew(id: string, value: string): void {
-    const oldNew: '' | 'old' | 'new' = value === 'old' || value === 'new' ? value : '';
-    this.printYearlyRows.update(rows => rows.map(r => r.id === id ? { ...r, oldNew } : r));
+    this.printYearlyRows.update(rows => setYearlyRowOldNew(rows, id, value));
     this._savePrintLayout();
   }
 
   /** Persists the print layout (Yearly columns + contact info + highlight) per-TU and globally (fire-and-forget). */
   private _savePrintLayout(): void {
-    const layout = JSON.stringify({
-      yearlyRows: this.printYearlyRows().map(({ enabled, offset, oldNew }) => ({ enabled, offset, oldNew })),
+    const layout = serializePrintLayout({
+      yearlyRows: this.printYearlyRows(),
       address: this.printAddress(),
       phone: this.printPhone(),
       highlightScoular: this.printHighlightScoularLocations(),
@@ -1740,8 +1653,7 @@ export class BidSheetComponent {
   }
 
   getMonthName(month: number): string {
-    if (month === 0) return 'Year';
-    return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1] ?? '';
+    return printMonthName(month);
   }
 
   /** Prints the SAME model the preview shows — the popup document is rendered from it, not rebuilt. */

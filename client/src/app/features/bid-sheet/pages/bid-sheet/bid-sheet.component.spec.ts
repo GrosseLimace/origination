@@ -806,6 +806,245 @@ describe('BidSheetComponent', () => {
     });
   });
 
+  // ── Print dialog ──────────────────────────────────────────────────────────
+
+  describe('print dialog', () => {
+    /** The last print layout persisted for a key, parsed. */
+    const savedLayout = (key: string) => {
+      const call = api.setBidSheetPreference.mock.calls.filter(a => a[0] === key).at(-1)!;
+      return JSON.parse(call[7] as string);
+    };
+
+    it('opens with the grid\'s crops and periods selected and builds old/new crop columns per crop', () => {
+      build(['2040']);
+      c.editBidsMonths.set([0, 5]);
+      c.openEditBids();
+      c.printEditBids();
+
+      expect(c.showPrintDialog()).toBe(true);
+      expect([...c.printSelectedCrops()]).toEqual(['SB', 'YC']);
+      expect([...c.printSelectedMonths()]).toEqual([0, 5]);
+      expect(c.printHasYearly()).toBe(true);
+      expect(c.printCropGroups().map(g => [g.crop, g.columns.map(col => [col.key.replace(/#0#.*$/, '#0#<id>'), col.year, col.label, col.compactLabel])])).toEqual([
+        ['SB', [['SB#0#<id>', 2025, 'Old Crop (2025)', 'O/C 25'], ['SB#0#<id>', 2026, 'New Crop (2026)', 'N/C 26'], ['SB#5', 2026, 'May (2026)', 'May 26']]],
+        ['YC', [['YC#0#<id>', 2025, 'Old Crop (2025)', 'O/C 25'], ['YC#0#<id>', 2026, 'New Crop (2026)', 'N/C 26'], ['YC#5', 2026, 'May (2026)', 'May 26']]],
+      ]);
+      expect(c.printYearChoices()).toEqual([-2, -1, 0, 1, 2].map(offset => ({ offset, year: 2026 + offset })));
+      expect(c.getMonthName(0)).toBe('Year');
+      expect(c.getMonthName(12)).toBe('Dec');
+      expect(c.getMonthName(13)).toBe('');
+    });
+
+    it('prints live (unsaved) grid values for the viewed year and saved bids for other years; highlights Scoular rows', () => {
+      build(['2040']);
+      c.openEditBids();
+      c.updateBid(rowOf('Bravo Grain'), 'YC#0', '4.40'); // not saved yet
+      c.printEditBids();
+
+      const values = (name: string) => {
+        const loc = c.printLocations().find(l => l.name === name)!;
+        return c.printCropGroups().flatMap(g => g.columns).map(col => loc.values[col.key]);
+      };
+      // Columns: SB old, SB new, YC old, YC new
+      expect(values('Alpha Coop')).toEqual(['', '10.00', '3.90', '4.10']);
+      expect(values('Bravo Grain')).toEqual(['', '', '3.90', '4.40']);
+      expect(c.printLocations().map(l => [l.name, l.isScoular])).toEqual([['Alpha Coop', false], ['Bravo Grain', false], ['Charlie Elevator', true]]);
+
+      c.printHighlightScoularLocations.set(false);
+      expect(c.printLocations().find(l => l.name === 'Charlie Elevator')!.isScoular).toBe(false);
+
+      // Charlie has no bids, so the layout drops it; every table has a Location column + 4 bid columns.
+      const model = c.printLayoutModel();
+      expect(model.style).toBe('locationsDown');
+      expect(model.tables[0].bodyRows.map(r => r[0].text)).toEqual(['Alpha Coop', 'Bravo Grain']);
+      expect(model.tables[0].headerRows[0].slice(1).map(cell => [cell.text, cell.bg])).toEqual([['SB', c.cropHeaderTint('SB')], ['YC', c.cropHeaderTint('YC')]]);
+    });
+
+    it('crop colours come from the commodity category, tinted toward white for the band', () => {
+      build(['2040']);
+      expect(c.cropPaletteKey('YC')).toBe('Corn');
+      expect(c.cropPaletteKey('ZZ')).toBe('ZZ');
+      expect(c.cropHeaderColor('YC')).toMatch(/^#[0-9a-f]{6}$/i);
+      const hex = c.cropHeaderColor('YC').replace('#', '');
+      const ch = (i: number) => parseInt(hex.slice(i, i + 2), 16);
+      const mix = (v: number, blend: number) => Math.round(v + (255 - v) * blend).toString(16).padStart(2, '0');
+      expect(c.cropHeaderTint('YC')).toBe(`#${mix(ch(0), 0.82)}${mix(ch(2), 0.82)}${mix(ch(4), 0.82)}`);
+      expect(c.cropHeaderTint('YC', 0)).toBe(c.cropHeaderColor('YC').toLowerCase());
+    });
+
+    it('deselecting crops / periods narrows the columns; Yearly rows can be toggled, re-yeared and relabelled', () => {
+      build(['2040']);
+      c.openEditBids();
+      c.printEditBids();
+      c.togglePrintCrop('SB');
+      expect(c.printCropGroups().map(g => g.crop)).toEqual(['YC']);
+      c.togglePrintCrop('SB');
+      c.togglePrintMonth(0);
+      expect(c.printHasYearly()).toBe(false);
+      expect(c.printCropGroups().every(g => g.columns.length === 0)).toBe(true);
+      c.togglePrintMonth(0);
+
+      const [oldRow, newRow] = c.printYearlyRows();
+      c.togglePrintYearlyRow(oldRow.id);
+      expect(c.printCropGroups()[0].columns.map(col => col.label)).toEqual(['New Crop (2026)']);
+      c.setPrintYearlyRowOffset(newRow.id, 7); // clamped to +2
+      c.setPrintYearlyRowOldNew(newRow.id, 'bogus'); // → plain year
+      expect(c.printCropGroups()[0].columns.map(col => [col.label, col.compactLabel])).toEqual([['2028', '2028']]);
+      expect(savedLayout('2040').yearlyRows).toEqual([{ enabled: false, offset: -1, oldNew: 'old' }, { enabled: true, offset: 2, oldNew: '' }]);
+      expect(savedLayout('__global__').yearlyRows).toEqual(savedLayout('2040').yearlyRows);
+    });
+
+    it('Yearly rows: add up to five, never remove the last, and reorder by drag', () => {
+      build(['2040']);
+      for (let i = 0; i < 5; i++) c.addPrintYearlyRow();
+      expect(c.printYearlyRows()).toHaveLength(5);
+      const added = c.printYearlyRows()[2];
+      expect(added).toMatchObject({ enabled: true, offset: 0, oldNew: '' });
+      expect(added.id).toBeTruthy();
+      expect(new Set(c.printYearlyRows().map(r => r.id)).size).toBe(5);
+
+      c.onPrintYearlyRowDrop(drop(0, 4));
+      expect(c.printYearlyRows()[4].id).toBe('yr-old');
+      c.onPrintYearlyRowDrop(drop(1, 1)); // no-op
+
+      for (const r of c.printYearlyRows()) c.removePrintYearlyRow(r.id);
+      expect(c.printYearlyRows()).toHaveLength(1);
+      expect(c.printYearlyRows()[0].id).toBe('yr-old');
+    });
+
+    it('dragging months / crops in the dialog reorders the grid and persists the order', () => {
+      build(['2040']);
+      c.editBidsMonths.set([0, 3, 6]);
+      c.openEditBids();
+      api.setBidSheetPreference.mockClear();
+
+      c.onPrintMonthDrop(drop(0, 2));
+      expect(c.editBidsMonths()).toEqual([3, 6, 0]);
+      expect(api.setBidSheetPreference).toHaveBeenLastCalledWith('2040', 'SB', 0, 2026, undefined, undefined, '[3,6,0]');
+
+      c.hiddenCrops.set(new Set(['WHT']));
+      c.crops.set(['SB', 'WHT', 'YC']);
+      c.onPrintCropDrop(drop(0, 1));
+      expect(c.crops()).toEqual(['YC', 'SB', 'WHT']);
+      expect(c.editBidsCrops()).toEqual(['YC', 'SB']);
+      expect(api.setBidSheetPreference).toHaveBeenLastCalledWith('2040', 'SB', 0, 2026, '["YC","SB","WHT"]');
+    });
+
+    it('formats the phone number as it is typed', () => {
+      build(['2040']);
+      const typed = (raw: string) => {
+        const input = document.createElement('input');
+        input.value = raw;
+        c.onPrintPhoneInput({ target: input } as unknown as Event);
+        return [c.printPhone(), input.value];
+      };
+      expect(typed('4')).toEqual(['(4', '(4']);
+      expect(typed('4025')).toEqual(['(402) 5', '(402) 5']);
+      expect(typed('402555123499')).toEqual(['(402) 555-1234', '(402) 555-1234']);
+      expect(typed('abc')).toEqual(['', '']);
+    });
+
+    it('closing saves contact info, highlight and layout per trade unit and globally', () => {
+      build(['2040']);
+      c.printAddress.set('1 Grain Way');
+      c.printPhone.set('(402) 555-1234');
+      c.printHighlightScoularLocations.set(false);
+      c.printLayoutStyle.set('locationsAcross');
+      c.showPrintDialog.set(true);
+      c.closePrintDialog();
+
+      expect(c.showPrintDialog()).toBe(false);
+      const expected = {
+        yearlyRows: [{ enabled: true, offset: -1, oldNew: 'old' }, { enabled: true, offset: 0, oldNew: 'new' }],
+        address: '1 Grain Way', phone: '(402) 555-1234', highlightScoular: false, layoutStyle: 'locationsAcross',
+      };
+      expect(savedLayout('2040')).toEqual(expected);
+      expect(savedLayout('__global__')).toEqual(expected);
+      expect(api.setBidSheetPreference).toHaveBeenCalledWith('2040', 'SB', 0, 2026, undefined, undefined, undefined, JSON.stringify(expected));
+    });
+
+    it('a saved print layout is restored and sanitised on load (per trade unit over global)', () => {
+      const stored = {
+        yearlyRows: [
+          { enabled: false, offset: -9, oldNew: 'old' }, { offset: '1', oldNew: 'weird' }, { offset: 2.7, oldNew: 'new' },
+          {}, {}, { offset: 1 },
+        ],
+        address: 'A', phone: 'P', highlightScoular: false, layoutStyle: 'sideBySide',
+      };
+      api.getBidSheetPreference.mockImplementation((key: string) => of(
+        key === '2040' ? makePref({ printLayout: JSON.stringify(stored) }) : makePref({ printLayout: '{"address":"global"}' }),
+      ));
+      build(['2040']);
+
+      expect(c.printYearlyRows().map(({ enabled, offset, oldNew }) => ({ enabled, offset, oldNew }))).toEqual([
+        { enabled: false, offset: -2, oldNew: 'old' },
+        { enabled: true, offset: 1, oldNew: '' },
+        { enabled: true, offset: 2, oldNew: 'new' },
+        { enabled: true, offset: 0, oldNew: '' },
+        { enabled: true, offset: 0, oldNew: '' },
+      ]);
+      expect([c.printAddress(), c.printPhone(), c.printHighlightScoularLocations(), c.printLayoutStyle()]).toEqual(['A', 'P', false, 'locationsDown']);
+    });
+
+    it('falls back to the global print layout, and ignores corrupt JSON', () => {
+      api.getBidSheetPreference.mockImplementation((key: string) => of(
+        key === '2040' ? null : makePref({ printLayout: '{"address":"Global Rd","yearlyRows":[],"layoutStyle":"locationsAcross"}' }),
+      ));
+      build(['2040']);
+      expect(c.printAddress()).toBe('Global Rd');
+      expect(c.printYearlyRows().map(r => r.id)).toEqual(['yr-old', 'yr-new']); // empty list keeps the defaults
+      expect(c.printLayoutStyle()).toBe('locationsAcross');
+
+      appState.selectedTradeUnits.set([]);
+      flush();
+      api.getBidSheetPreference.mockImplementation(() => of(makePref({ printLayout: '{nope' })));
+      appState.selectedTradeUnits.set(['2040']);
+      flush();
+      expect(c.printAddress()).toBe('Global Rd');
+    });
+
+    it('Print renders the previewed model into a popup and prints it once loaded', () => {
+      build(['2040']);
+      c.openEditBids();
+      c.printEditBids();
+      c.printAddress.set('1 <Grain> Way');
+      const popup = { document: { write: vi.fn(), close: vi.fn() }, print: vi.fn(), onload: null as null | (() => void) };
+      const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+      try {
+        c.confirmPrint();
+
+        expect(open).toHaveBeenCalledWith('', '_blank');
+        const html = popup.document.write.mock.calls[0][0] as string;
+        expect(html).toContain('Alpha Coop');
+        expect(html).toContain('1 &lt;Grain&gt; Way');
+        expect(html).toContain(`${window.location.origin}/assets/images/scoular-logo-dark.webp`);
+        expect(html).toContain(c.todayFormatted());
+        expect(popup.document.close).toHaveBeenCalled();
+        popup.onload!();
+        expect(popup.print).toHaveBeenCalled();
+        expect(c.showPrintDialog()).toBe(false);
+        expect(savedLayout('2040').address).toBe('1 <Grain> Way');
+      } finally {
+        open.mockRestore();
+      }
+    });
+
+    it('Print does nothing when no selected cell has a bid', () => {
+      build(['2040']);
+      c.openEditBids();
+      c.printEditBids();
+      c.printSelectedMonths.set(new Set([7]));
+      const open = vi.spyOn(window, 'open');
+      try {
+        c.confirmPrint();
+        expect(open).not.toHaveBeenCalled();
+        expect(c.showPrintDialog()).toBe(true);
+      } finally {
+        open.mockRestore();
+      }
+    });
+  });
+
   // ── Location rename / Scoular toggle ──────────────────────────────────────
 
   describe('location rename and Scoular status', () => {
