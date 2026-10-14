@@ -4,12 +4,12 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
-import { catchError, map, takeUntil } from 'rxjs/operators';
+import { catchError, takeUntil } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, Reminder, StoredGrain, DpContract, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, Contract, Ticket, Note, Reminder, StoredGrain, DpContract, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
@@ -27,6 +27,7 @@ import { HomeRemindersStore } from './home-reminders.store';
 import { HomeNotesStore } from './home-notes.store';
 import { HomeSavedListsStore } from './home-saved-lists.store';
 import { HomeLinkedProducersStore } from './home-linked-producers.store';
+import { HomePlantingStore } from './home-planting.store';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -43,7 +44,7 @@ import { HomeLinkedProducersStore } from './home-linked-producers.store';
   ],
   templateUrl: './home.component.html',
   // Page-scoped state and behaviour, one instance per visit to the page.
-  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore],
+  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore, HomePlantingStore],
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
@@ -64,6 +65,8 @@ export class HomeComponent {
   private readonly lists = inject(HomeSavedListsStore);
   /** Cross-trade-unit linked producers and the walk that fetches them (see HomeLinkedProducersStore). */
   private readonly linked = inject(HomeLinkedProducersStore);
+  /** The selected producer's planting intentions and their handlers (see HomePlantingStore). */
+  private readonly planting = inject(HomePlantingStore);
 
   /** Manager = holds the "Admin" app role. Enables the "Team Lists" tab in the Add-to-List dropdown. */
   readonly isManager = this.lists.isManager;
@@ -77,7 +80,6 @@ export class HomeComponent {
   private readonly _resizeHandler = () => this._checkMobile();
   private _isLoading = false;
   private _customerRequestId = 0;
-  private _piRequestId = 0;
   /** Cancels the prior selection's in-flight requests (see HomePageState.cancelSelection$). */
   private readonly _cancelSelection$ = this.page.cancelSelection$;
   /** Customers whose contracts / tickets / pricing-lines / stored-grain have
@@ -120,10 +122,6 @@ export class HomeComponent {
    *  Keyed on the previous ids rather than on customerCode on purpose: an applied split-load row can carry
    *  another producer's code, so filtering by code would drop rows this producer legitimately owns. */
   private readonly _customerRowIds = new Map<number, { contracts: Set<number>; tickets: Set<number> }>();
-  /** Per-customer planting-intentions cache. Hydrated from the first visit's
-   *  fetch; kept in sync by the add/edit/delete handlers. Subsequent visits to
-   *  the same producer skip the network entirely. */
-  private readonly _customerPlantingCache = new Map<number, PlantingIntention[]>();
   /** Per-customer pricing-lines cache keyed by scoularId. Pricing lines are
    *  hydrated OUTSIDE the _customerLoadedAt short-circuit so that every click
    *  swaps to the right producer's lines (the contracts/tickets/grain short-
@@ -178,13 +176,14 @@ export class HomeComponent {
   readonly isSavingReminder = this.reminders.isSavingReminder;
   readonly reminderSaveSucceededCounter = this.reminders.reminderSaveSucceededCounter;
   readonly customerCodeMap = signal<Map<number, string>>(new Map());
-  readonly customerPlantingIntentions = signal<PlantingIntention[]>([]);
+  /** The selected producer's planting intentions (see HomePlantingStore). */
+  readonly customerPlantingIntentions = this.planting.customerPlantingIntentions;
   readonly customerStoredGrain = signal<StoredGrain[]>([]);
   readonly customerDpContracts = signal<DpContract[]>([]);
 
   readonly allCustomerContracts = signal<Contract[]>([]);
   readonly allCustomerTickets = signal<Ticket[]>([]);
-  readonly allCustomerPlantingIntentions = signal<PlantingIntention[]>([]);
+  readonly allCustomerPlantingIntentions = this.planting.allCustomerPlantingIntentions;
   readonly allCustomerStoredGrain = signal<StoredGrain[]>([]);
   readonly allCustomerDpContracts = signal<DpContract[]>([]);
 
@@ -351,19 +350,7 @@ export class HomeComponent {
         this._ensureCustomerNotes(stateSelectedCustomer);
         // Re-fetch per-customer planting intentions on navigation back —
         // these are not stored in appState so they must be reloaded.
-        this.allCustomerPlantingIntentions.set([]);
-        this.customerPlantingIntentions.set([]);
-        const piRequestId = ++this._piRequestId;
-        this.apiService.getPlantingIntentionsByCustomer(stateSelectedCustomer.id)
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe({
-            next: (intentions) => {
-              if (piRequestId !== this._piRequestId) return;
-              this.allCustomerPlantingIntentions.set(intentions);
-              this.customerPlantingIntentions.set(intentions);
-            },
-            error: (err) => this.backgroundFailures.report('load planting intentions', err)
-          });
+        this.planting.loadWithoutCache(stateSelectedCustomer.id);
       }
       // Reload yield estimates and commodities — not stored in appState so
       // they are lost on navigation away and must be re-fetched on return.
@@ -615,7 +602,7 @@ export class HomeComponent {
     this._customerRowIds.clear();
     this._customerPricingCache.clear();
     this._customerPricingLoadedAt.clear();
-    this._customerPlantingCache.clear();
+    this.planting.forgetAll();
     this.notes.forgetAll();
     this.linked.forgetWalks();
     // Cancel any in-flight per-customer requests (pricing lines, contracts, tickets,
@@ -736,34 +723,9 @@ export class HomeComponent {
     // Fetch planting intentions exactly once per customer selection.
     // _loadCustomerData is called multiple times (contracts, tickets, storedGrain callbacks),
     // so the fetch lives here instead to avoid triple API calls.
-    // Cached on _customerPlantingCache after the first visit; subsequent clicks
-    // hydrate from cache instead of re-fetching. add/edit/deletePlantingIntention
-    // updates the cache alongside the live signals so it stays in sync.
-    const cachedPi = this._customerPlantingCache.get(customer.id);
-    if (cachedPi) {
-      // Bump the counter on the cache-hit path too. The miss path below increments it so an
-      // older in-flight fetch recognises itself as stale; restoring from cache without bumping
-      // left a previous fetch's captured id still matching, so it could land afterwards and
-      // overwrite the freshly-restored data.
-      ++this._piRequestId;
-      this.allCustomerPlantingIntentions.set(cachedPi);
-      this.customerPlantingIntentions.set(cachedPi);
-    } else {
-      this.allCustomerPlantingIntentions.set([]);
-      this.customerPlantingIntentions.set([]);
-      const piRequestId = ++this._piRequestId;
-      this.apiService.getPlantingIntentionsByCustomer(customer.id)
-        .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (intentions) => {
-            if (piRequestId !== this._piRequestId) return;
-            this.allCustomerPlantingIntentions.set(intentions);
-            this.customerPlantingIntentions.set(intentions);
-            this._customerPlantingCache.set(customer.id, intentions);
-          },
-          error: (err) => this.backgroundFailures.report('load planting intentions', err)
-        });
-    }
+    // Cached after the first visit; subsequent clicks hydrate from cache instead of re-fetching
+    // (see HomePlantingStore.loadForSelection).
+    this.planting.loadForSelection(customer.id);
 
     // (No-TU special case removed: the selected producer's notes come from the per-customer
     // fetch above, and the badge aggregate spans all trade units — both are TU-independent.)
@@ -1329,57 +1291,14 @@ export class HomeComponent {
             this.selectedCustomer.set({ ...sel, isManual: true, isOnboardCandidate: false });
           }
           this._saveProducerDetailsAndLinks(data);
-          this._movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
+          this.planting.movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
         },
         error: () => this.toastService.error('Failed to update trade units')
       });
     } else {
       this._saveProducerDetailsAndLinks(data);
-      this._movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
+      this.planting.movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
     }
-  }
-
-  /**
-   * Re-homes planting intentions whose trade unit the user just removed, then reloads this
-   * producer's intentions so the profile and the dashboards show the new trade unit. Without the
-   * reload the move lands in the database while the cached rows still read the old trade unit.
-   */
-  private _movePlantingIntentions(customerId: number, moves: { from: string; to: string }[]): void {
-    if (moves.length === 0) return;
-    forkJoin(
-      moves.map(m => this.apiService.retagPlantingIntentions(customerId, m.from, m.to).pipe(
-        map(result => ({ ...m, moved: result.moved })),
-        catchError(() => {
-          this.toastService.error(`Couldn't move planting intentions from ${m.from} to ${m.to} — they're still recorded against ${m.from}.`);
-          return of({ ...m, moved: 0 });
-        })
-      ))
-    ).subscribe(results => {
-      const moved = results.reduce((sum, r) => sum + r.moved, 0);
-      if (moved > 0) {
-        const destinations = [...new Set(results.filter(r => r.moved > 0).map(r => r.to))].join(', ');
-        this.toastService.success(`Moved ${moved} planting intention${moved === 1 ? '' : 's'} to ${destinations}.`);
-        this._reloadCustomerPlantingIntentions(customerId);
-      }
-    });
-  }
-
-  /** Refetches one producer's planting intentions into every store that renders them. */
-  private _reloadCustomerPlantingIntentions(customerId: number): void {
-    this.apiService.getPlantingIntentionsByCustomer(customerId).subscribe({
-      next: (rows) => {
-        this._customerPlantingCache.set(customerId, rows);
-        if (this.selectedCustomer()?.id === customerId) {
-          this.allCustomerPlantingIntentions.set(rows);
-          this.customerPlantingIntentions.set(rows);
-        }
-        // Swap this producer's rows in the app-wide list the dashboard and Build-A-List read.
-        const merged = [...this.plantingIntentions().filter(p => p.customerId !== customerId), ...rows];
-        this.plantingIntentions.set(merged);
-        this.appState.setPlantingIntentions(merged);
-      },
-      error: () => this.toastService.error('Planting intentions moved, but the list couldn\'t be refreshed — reload the page to see them.')
-    });
   }
 
   private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
@@ -1594,19 +1513,7 @@ export class HomeComponent {
       this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
       this._loadCustomerData(customer.id);
       this._ensureCustomerNotes(customer);
-      this.allCustomerPlantingIntentions.set([]);
-      this.customerPlantingIntentions.set([]);
-      const piRequestId = ++this._piRequestId;
-      this.apiService.getPlantingIntentionsByCustomer(customer.id)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (intentions) => {
-            if (piRequestId !== this._piRequestId) return;
-            this.allCustomerPlantingIntentions.set(intentions);
-            this.customerPlantingIntentions.set(intentions);
-          },
-          error: (err) => this.backgroundFailures.report('load planting intentions', err)
-        });
+      this.planting.loadWithoutCache(customer.id);
     } else {
       // Linked customer is in a different trade unit — fetch them from the API
       this.apiService.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1623,19 +1530,7 @@ export class HomeComponent {
           this._loadCustomerContractsAndTickets(fetched.id, fetched.scoularId);
           this._loadCustomerData(fetched.id);
           this._ensureCustomerNotes(fetched);
-          this.allCustomerPlantingIntentions.set([]);
-          this.customerPlantingIntentions.set([]);
-          const piRequestId = ++this._piRequestId;
-          this.apiService.getPlantingIntentionsByCustomer(fetched.id)
-            .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe({
-              next: (intentions) => {
-                if (piRequestId !== this._piRequestId) return;
-                this.allCustomerPlantingIntentions.set(intentions);
-                this.customerPlantingIntentions.set(intentions);
-              },
-              error: (err) => this.backgroundFailures.report('load planting intentions', err)
-            });
+          this.planting.loadWithoutCache(fetched.id);
         },
         error: (err) => this.backgroundFailures.report('load the selected producer', err)
       });
@@ -1644,113 +1539,20 @@ export class HomeComponent {
     // customer's notes via the per-customer endpoint, which is TU-independent.)
   }
 
+  // ==========================================================================
+  // Planting intentions — delegated to HomePlantingStore
+  // ==========================================================================
+
   addPlantingIntention(data: {crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
-    const sel = this.selectedCustomer();
-    // Make a premature add (before a producer is selected/loaded) visible instead of a silent
-    // no-op that reads as "the save did nothing / took two clicks".
-    if (!sel) {
-      console.warn('[PlantingIntentions] Add attempted with no producer selected — ignoring.');
-      this.toastService.error('Select a producer before adding a planting intention.');
-      return;
-    }
-    this.apiService.createPlantingIntention({
-      customerId: sel.id, customerName: sel.name, customerCode: sel.scoularId || '',
-      tradeUnit: data.tradeUnit, crop: data.crop, category: data.category, type: data.type,
-      description: data.description, acres: data.acres, plantingYear: data.plantingYear
-    }).subscribe({
-      next: (intention) => {
-        this.plantingIntentions.update(arr => [...arr, intention]);
-        this.appState.setPlantingIntentions(this.plantingIntentions());
-        this.customerPlantingIntentions.update(arr => [...arr, intention]);
-        this.allCustomerPlantingIntentions.update(arr => [...arr, intention]);
-        const cached = this._customerPlantingCache.get(sel.id);
-        if (cached) this._customerPlantingCache.set(sel.id, [...cached, intention]);
-        this.toastService.success('Planting intention added');
-        this._ensureCommodityOnProducerDetails(sel, data.crop);
-      },
-      error: (e: Error) => this.toastService.error(e?.message || 'Failed to add planting intention')
-    });
+    this.planting.addPlantingIntention(data);
   }
 
   editPlantingIntention(data: {intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit?: string}): void {
-    const sel = this.selectedCustomer();
-    this.apiService.updatePlantingIntention(data.intentionId, {
-      crop: data.crop, category: data.category, type: data.type, description: data.description, acres: data.acres, plantingYear: data.plantingYear,
-      tradeUnit: data.tradeUnit
-    }).subscribe({
-      next: (updated) => {
-        const update = (arr: PlantingIntention[]) => arr.map(p => p.id === data.intentionId ? updated : p);
-        this.plantingIntentions.update(update);
-        this.appState.setPlantingIntentions(this.plantingIntentions());
-        this.customerPlantingIntentions.update(update);
-        this.allCustomerPlantingIntentions.update(update);
-        if (sel) {
-          const cached = this._customerPlantingCache.get(sel.id);
-          if (cached) this._customerPlantingCache.set(sel.id, update(cached));
-        }
-        this.toastService.success('Planting intention updated');
-        if (sel) this._ensureCommodityOnProducerDetails(sel, data.crop);
-      },
-      error: (e: Error) => this.toastService.error(e?.message || 'Failed to update planting intention')
-    });
-  }
-
-  /**
-   * If the just-saved planting intention's crop isn't already on the producer's
-   * details, persist it there so the producer's commodities list stays in sync.
-   * Silent: any failure here is logged but doesn't surface to the user — the
-   * intention itself was already saved successfully.
-   */
-  private _ensureCommodityOnProducerDetails(customer: Customer, cropCode: string): void {
-    if (!cropCode) return;
-    const existing = customer.commodities ?? [];
-    const codeUpper = cropCode.trim().toUpperCase();
-    const alreadyPresent = existing.some(c => c.trim().toUpperCase() === codeUpper);
-    if (alreadyPresent) return;
-
-    const updated = [...existing, cropCode.trim()];
-    this.apiService.saveProducerDetails(customer.id, {
-      scoularId: customer.scoularId ?? null,
-      customerName: customer.name,
-      totalAcres: customer.totalAcres ?? null,
-      primaryContact: customer.primaryContact ?? null,
-      primaryPhone: customer.primaryPhone ?? null,
-      commodities: updated.join(','),
-      linkedProducerIds: (customer.linkedProducerIds ?? []).join(','),
-      // grainOnFarm intentionally omitted — this save isn't editing grain on farm, and the server
-      // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
-    }).subscribe({
-      next: (savedDetails) => {
-        // Reflect the new commodity in local state so the UI updates without a refresh.
-        const updatedCustomer = { ...customer, commodities: updated };
-        this.selectedCustomer.set(updatedCustomer);
-        this.customers.update(arr => arr.map(c => c.id === customer.id ? updatedCustomer : c));
-        // Keep the producer-details map in sync — same pattern as handleSaveCustomer.
-        const map = new Map(this.producerDetailsMap());
-        map.set(savedDetails.customerId, savedDetails);
-        this.producerDetailsMap.set(map);
-      },
-      error: () => { /* non-blocking — intention saved successfully */ }
-    });
+    this.planting.editPlantingIntention(data);
   }
 
   deletePlantingIntention(intentionId: number): void {
-    this.apiService.deletePlantingIntention(intentionId).subscribe({
-      next: () => {
-        const remove = (arr: PlantingIntention[]) => arr.filter(p => p.id !== intentionId);
-        this.plantingIntentions.update(remove);
-        this.appState.setPlantingIntentions(this.plantingIntentions());
-        this.customerPlantingIntentions.update(remove);
-        this.allCustomerPlantingIntentions.update(remove);
-        const sel = this.selectedCustomer();
-        if (sel) {
-          const cached = this._customerPlantingCache.get(sel.id);
-          if (cached) this._customerPlantingCache.set(sel.id, remove(cached));
-        }
-        this.toastService.success('Planting intention deleted');
-      },
-      error: () => this.toastService.error('Failed to delete planting intention')
-    });
+    this.planting.deletePlantingIntention(intentionId);
   }
 
   // ==========================================================================
