@@ -119,6 +119,11 @@ export class UnshippedBushelsComponent implements OnInit {
   totalCustomers = computed(() => this.filteredGroups().length);
   totalContracts = computed(() => this.filteredGroups().reduce((sum, g) => sum + g.contracts.length, 0));
 
+  /** The producer list failed to load, so every group falls back to its customer code and has no
+   *  link to the producer — which otherwise reads as producers the app doesn't know. */
+  readonly customersUnavailable = computed(() =>
+    this.appState.customersLoadFailed() && this.appState.customers().length === 0 && this.filteredGroups().length > 0);
+
   constructor() {
     // Nothing on this page hits an API, so searching and expanding are invisible to the
     // request-logging middleware. Debounced so a typed word is one event, not one per keystroke.

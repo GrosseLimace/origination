@@ -123,7 +123,7 @@ describe('UnshippedBushelsComponent', () => {
       imports: [UnshippedBushelsComponent],
       providers: [
         provideRouter([]),
-        { provide: AppStateService, useValue: { contracts, customers, selectedTradeUnits, setContracts } },
+        { provide: AppStateService, useValue: { contracts, customers, selectedTradeUnits, setContracts, customersLoadFailed: signal(false) } },
         { provide: ApiService, useValue: { getContracts } },
         { provide: ToastService, useValue: { error: toastError } },
         { provide: UsageTrackingService, useValue: { postClickEvent } },
@@ -476,5 +476,77 @@ describe('UnshippedBushelsComponent', () => {
 
     expect(postClickEvent).toHaveBeenCalledTimes(2);
     expect(postClickEvent).toHaveBeenLastCalledWith('interaction', 'unshipped-bushels', 'search-commodity', 'corn');
+  });
+});
+
+// When the producer list fails to load, every group falls back to its customer code with no link to the
+// producer, and nothing says why. Real AppStateService, seeded and flagged through its setters.
+describe('UnshippedBushelsComponent — producers failed to load', () => {
+  let fixture: ComponentFixture<UnshippedBushelsComponent>;
+  let state: AppStateService;
+
+  const note = "Couldn't load producer names, so producers show by customer code and can't be opened from here. Refresh the page to try again.";
+  const text = (): string => ((fixture.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  function createPage(): void {
+    fixture = TestBed.createComponent(UnshippedBushelsComponent);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [UnshippedBushelsComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ApiService, useValue: { getContracts: vi.fn(() => of<Contract[]>([])) } },
+        { provide: ToastService, useValue: { error: vi.fn() } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: vi.fn() } },
+      ],
+    }).compileComponents();
+    state = TestBed.inject(AppStateService);
+  });
+
+  it('says the producer names could not be loaded when the groups fall back to customer codes', () => {
+    state.setCustomersLoadFailed(true);
+    state.setContracts([makeContract()]);
+    createPage();
+
+    expect(text()).toContain(note);
+    expect(text()).toContain('SAMPFRM');
+  });
+
+  it('adds nothing when the producers loaded', () => {
+    state.setCustomers([SAMPLE]);
+    state.setContracts([makeContract()]);
+    createPage();
+
+    expect(text()).not.toContain("Couldn't load producer names");
+    expect(text()).toContain('Sample Farms');
+  });
+
+  it('adds nothing when nothing failed, even with no producers in hand', () => {
+    state.setContracts([makeContract()]);
+    createPage();
+
+    expect(text()).not.toContain("Couldn't load producer names");
+  });
+
+  it('adds nothing once producers are present, whatever the flag says', () => {
+    state.setCustomersLoadFailed(true);
+    state.setCustomers([SAMPLE]);
+    state.setContracts([makeContract()]);
+    createPage();
+
+    expect(text()).not.toContain("Couldn't load producer names");
+    expect(text()).toContain('Sample Farms');
+  });
+
+  it('keeps "No unshipped bushels found" as it was when nothing is left to ship', () => {
+    state.setCustomersLoadFailed(true);
+    state.setContracts([makeContract({ openBalanceQuantity: 0 })]);
+    createPage();
+
+    expect(text()).toContain('No unshipped bushels found');
+    expect(text()).not.toContain("Couldn't load producer names");
   });
 });
