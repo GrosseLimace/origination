@@ -75,7 +75,7 @@
                   @if (customer().scoularViewRecipients) {
                     <p class="text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">ScoularView Recipients</p>
                     <div class="flex flex-wrap gap-2">
-                      @for (recipient of parseRecipients(customer().scoularViewRecipients!); track recipient) {
+                      @for (recipient of scoularViewRecipientList(); track recipient) {
                         @if (recipient.trim()) {
                           <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
                             {{ recipient.trim() }}
@@ -263,7 +263,7 @@
               <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contact and Locations</h3>
               <div class="space-y-2 text-sm @4xl/profile:text-base">
                 <!-- User-entered contacts, primary first (starred). The pulled-in ODS phone/email stay below. -->
-                @for (contact of getContacts(); track $index) {
+                @for (contact of sortedContacts(); track $index) {
                   <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400 flex-wrap">
                     <!-- Primary contact gets a star in place of the person icon; the rest get the person icon. -->
                     @if (contact.isPrimary) {

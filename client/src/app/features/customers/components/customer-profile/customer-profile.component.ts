@@ -681,6 +681,13 @@ export class CustomerProfileComponent {
     }
     return results;
   }
+
+  /** The current customer's ScoularView recipients, parsed once per customer for the eSign panel. */
+  readonly scoularViewRecipientList = computed(() => {
+    const raw = this.customer().scoularViewRecipients;
+    return raw ? this.parseRecipients(raw) : [];
+  });
+
   get bushelsAvailable(): number { return this.contractMetrics().bushelsAvailable; }
 
   /**
@@ -929,8 +936,9 @@ export class CustomerProfileComponent {
   }
 
   /** User-entered contacts, primary first then saved order. Older cached customers without a
-   *  contacts array fall back to a synthesized row from the legacy primary fields. */
-  getContacts(): ProducerContactItem[] {
+   *  contacts array fall back to a synthesized row from the legacy primary fields. A computed, so the
+   *  copy-and-sort runs once per customer rather than on every change-detection pass of the template. */
+  readonly sortedContacts = computed<ProducerContactItem[]>(() => {
     const c = this.customer();
     if (c.contacts && c.contacts.length > 0) {
       return [...c.contacts].sort((a, b) =>
@@ -940,7 +948,7 @@ export class CustomerProfileComponent {
       return [{ name: c.primaryContact || 'Primary Contact', phone: c.primaryPhone, isPrimary: true }];
     }
     return [];
-  }
+  });
 
   getFormattedLocation(): string {
     const c = this.customer();

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { TestBed } from '@angular/core/testing';
-import { ComponentRef } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ChangeDetectorRef, ComponentRef, NO_ERRORS_SCHEMA } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { of } from 'rxjs';
 import { CustomerProfileComponent } from './customer-profile.component';
 import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
@@ -458,5 +460,158 @@ describe('CustomerProfileComponent — organic producer badge', () => {
     ref.setInput('customer', makeCustomer({ eSignEnabled: false }));
     component.showESignRecipients.set(true);
     expect(component.anyHeaderPanelOpen()).toBe(false);
+  });
+});
+
+// The Contact column and the eSign recipients panel, rendered through the REAL template. The child
+// components are dropped (NO_ERRORS_SCHEMA) because only this component's own markup is under test.
+// Both lists are derived from the customer input; these pin what they show, that the derivation
+// runs once per customer rather than on every change-detection pass, and that it follows the input.
+describe('CustomerProfileComponent — contacts and ScoularView recipients (rendered)', () => {
+  let fixture: ComponentFixture<CustomerProfileComponent>;
+  let component: CustomerProfileComponent;
+  let ref: ComponentRef<CustomerProfileComponent>;
+
+  const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const squash = (s: string | null | undefined): string => (s ?? '').replace(/\s+/g, ' ').trim();
+
+  /** One entry per rendered contact row: its name, and whether it carries the primary star. */
+  const contactRows = (): { name: string; primary: boolean }[] => {
+    const heading = Array.from(host().querySelectorAll('h3')).find(h => h.textContent?.trim() === 'Contact and Locations');
+    const rows = Array.from(heading?.nextElementSibling?.querySelectorAll(':scope > div.flex-wrap') ?? []);
+    return rows.map(r => ({
+      name: squash(r.querySelector('span')?.textContent),
+      primary: r.querySelector('svg[aria-label="Primary contact"]') !== null,
+    }));
+  };
+
+  const recipientChips = (): string[] => {
+    const label = Array.from(host().querySelectorAll('p')).find(p => p.textContent?.trim() === 'ScoularView Recipients');
+    return Array.from(label?.nextElementSibling?.querySelectorAll('span') ?? []).map(s => squash(s.textContent));
+  };
+
+  /** A change-detection pass that re-checks this OnPush view without changing any input. Marks the
+   *  component's OWN view: marking the fixture's host view leaves an OnPush child unchecked. */
+  const rerender = (): void => {
+    fixture.debugElement.injector.get(ChangeDetectorRef).markForCheck();
+    fixture.detectChanges();
+  };
+
+  /** A copy of `items` that counts how many times it is iterated — the sort copies it with a spread. */
+  function countingIterations<T>(items: T[]): { list: T[]; count: () => number } {
+    let n = 0;
+    const list = [...items];
+    Object.defineProperty(list, Symbol.iterator, {
+      value: function (this: T[]) { n++; return Array.prototype[Symbol.iterator].call(this); },
+    });
+    return { list, count: () => n };
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: { getHistoricalContractsForPacing: () => of([]) } },
+        { provide: ThemeService, useValue: {} },
+        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerProfileComponent, {
+      set: { imports: [CommonModule], schemas: [NO_ERRORS_SCHEMA] },
+    });
+    fixture = TestBed.createComponent(CustomerProfileComponent);
+    component = fixture.componentInstance;
+    ref = fixture.componentRef;
+  });
+
+  it('lists contacts primary first, then in saved order', () => {
+    ref.setInput('customer', makeCustomer({
+      contacts: [
+        { name: 'Cara', sortOrder: 2 },
+        { name: 'Abe', sortOrder: 1 },
+        { name: 'Pat', sortOrder: 3, isPrimary: true },
+        { name: 'Dee' },                                   // no sortOrder sorts as 0
+      ],
+    }));
+    fixture.detectChanges();
+
+    expect(contactRows()).toEqual([
+      { name: 'Pat', primary: true },
+      { name: 'Dee', primary: false },
+      { name: 'Abe', primary: false },
+      { name: 'Cara', primary: false },
+    ]);
+  });
+
+  it('falls back to one starred row from the legacy primary fields, and to none', () => {
+    ref.setInput('customer', makeCustomer({ primaryContact: 'Old Pat', primaryPhone: '(402) 555-0100' }));
+    fixture.detectChanges();
+    expect(contactRows()).toEqual([{ name: 'Old Pat', primary: true }]);
+
+    ref.setInput('customer', makeCustomer({ primaryPhone: '(402) 555-0100' }));
+    fixture.detectChanges();
+    expect(contactRows()).toEqual([{ name: 'Primary Contact', primary: true }]);
+
+    ref.setInput('customer', makeCustomer());
+    fixture.detectChanges();
+    expect(contactRows()).toEqual([]);
+  });
+
+  it('sorts the contacts once per customer, not on every change-detection pass', () => {
+    const contacts = countingIterations([{ name: 'B', sortOrder: 2 }, { name: 'A', sortOrder: 1 }]);
+    ref.setInput('customer', makeCustomer({ contacts: contacts.list }));
+    fixture.detectChanges();
+    const afterFirstRender = contacts.count();
+
+    rerender();
+    rerender();
+    rerender();
+
+    expect(afterFirstRender).toBe(1);
+    expect(contacts.count()).toBe(1);
+    expect(contactRows().map(r => r.name)).toEqual(['A', 'B']);
+  });
+
+  it('re-sorts when the customer input changes', () => {
+    ref.setInput('customer', makeCustomer({ contacts: [{ name: 'B', sortOrder: 2 }, { name: 'A', sortOrder: 1 }] }));
+    fixture.detectChanges();
+    expect(contactRows().map(r => r.name)).toEqual(['A', 'B']);
+
+    ref.setInput('customer', makeCustomer({ contacts: [{ name: 'Y', sortOrder: 1 }, { name: 'Z', sortOrder: 0, isPrimary: true }] }));
+    fixture.detectChanges();
+    expect(contactRows()).toEqual([{ name: 'Z', primary: true }, { name: 'Y', primary: false }]);
+  });
+
+  it('splits the ScoularView recipients on the commas between complete entries', () => {
+    ref.setInput('customer', makeCustomer({
+      eSignEnabled: true,
+      scoularViewRecipients: 'Ade, Clay 785-555-1234, Bo Smith 402-555-9876,  , Trailing Note',
+    }));
+    fixture.detectChanges();
+    component.showESignRecipients.set(true);
+    fixture.detectChanges();
+
+    expect(recipientChips()).toEqual(['Ade, Clay 785-555-1234', 'Bo Smith 402-555-9876, Trailing Note']);
+  });
+
+  it('parses the recipients once per customer, and again when the customer changes', () => {
+    const parse = vi.spyOn(component, 'parseRecipients');
+    ref.setInput('customer', makeCustomer({ eSignEnabled: true, scoularViewRecipients: 'Al 402-555-0001' }));
+    fixture.detectChanges();
+    component.showESignRecipients.set(true);
+    fixture.detectChanges();
+    rerender();
+    rerender();
+
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(recipientChips()).toEqual(['Al 402-555-0001']);
+
+    ref.setInput('customer', makeCustomer({ eSignEnabled: true, scoularViewRecipients: 'Bea 402-555-0002, Cy 402-555-0003' }));
+    fixture.detectChanges();
+    component.showESignRecipients.set(true);   // switching customers closes the panel
+    fixture.detectChanges();
+
+    expect(recipientChips()).toEqual(['Bea 402-555-0002', 'Cy 402-555-0003']);
+    expect(parse).toHaveBeenCalledTimes(2);
   });
 });
