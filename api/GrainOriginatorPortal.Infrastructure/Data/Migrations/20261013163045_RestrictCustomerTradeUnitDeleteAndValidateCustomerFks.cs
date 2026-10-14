@@ -39,7 +39,21 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
             // Production was checked on 2026-10-13: zero orphan rows behind any of the three, so this
             // validates with nothing to clean up. WITH CHECK CHECK CONSTRAINT is the documented way
             // to turn an untrusted constraint into a trusted one; it is a no-op on a trusted one.
+            // Only Production was checked; Dev and QA were not. An orphan row there would stop the
+            // deploy with a bare error 547, so this guard names the cause first. Find the rows with
+            // scripts/CheckCustomerFkOrphans.sql. The migration runs in one transaction, so the FK
+            // swap above rolls back too and the migration can be re-run once the rows are resolved.
             migrationBuilder.Sql(@"
+                IF EXISTS (SELECT 1 FROM [dbo].[Notes] n
+                           WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Customer] c WHERE c.[CustomerId] = n.[CustomerId]))
+                   OR EXISTS (SELECT 1 FROM [dbo].[ProducerDetails] p
+                              WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Customer] c WHERE c.[CustomerId] = p.[CustomerId]))
+                   OR EXISTS (SELECT 1 FROM [dbo].[ProducerPlantingIntentions] i
+                              WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Customer] c WHERE c.[CustomerId] = i.[CustomerId]))
+                BEGIN
+                    THROW 50001, 'Orphan rows in Notes, ProducerDetails or ProducerPlantingIntentions reference a missing dbo.Customer. Run scripts/CheckCustomerFkOrphans.sql, resolve them, then re-run this migration.', 1;
+                END;
+
                 ALTER TABLE [dbo].[Notes] WITH CHECK CHECK CONSTRAINT [FK_Notes_Customer_CustomerId];
                 ALTER TABLE [dbo].[ProducerDetails] WITH CHECK CHECK CONSTRAINT [FK_ProducerDetails_Customer_CustomerId];
                 ALTER TABLE [dbo].[ProducerPlantingIntentions] WITH CHECK CHECK CONSTRAINT [FK_ProducerPlantingIntentions_Customer_CustomerId];
