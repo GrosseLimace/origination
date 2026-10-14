@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ComponentRef, signal } from '@angular/core';
 import { ActivitySummaryComponent } from './activity-summary.component';
 import { AppStateService } from '@core/services/app-state.service';
-import { CommodityConversion, Customer, Ticket } from '@models';
+import { CommodityConversion, Contract, Customer, Ticket } from '@models';
 
 /**
  * The summary is open by default, and collapsing it has to STICK — including when the user moves to
@@ -115,7 +115,10 @@ describe('ActivitySummaryComponent — unapplied ticket bushels', () => {
     conversions.set([]);
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      providers: [{ provide: AppStateService, useValue: { harvestWindows: signal([]), commodityConversions: conversions } }],
+      providers: [{ provide: AppStateService, useValue: {
+        harvestWindows: signal([]), commodityConversions: conversions,
+        harvestWindowsLoadFailed: signal(false), commodityConversionsLoadFailed: signal(false),
+      } }],
     });
   });
 
@@ -168,5 +171,99 @@ describe('ActivitySummaryComponent — unapplied ticket bushels', () => {
 
     expect(summary()).toContain('1 unapplied ticket (3,000 bushels)');
     expect(builds).toBe(1);
+  });
+});
+
+// A failed background load used to leave the summary reading as complete: the pace sentence simply
+// vanished, and contracts in other units dropped out of the bushel totals. Real AppStateService, real
+// template; state is set through its setters.
+describe('ActivitySummaryComponent — failed background loads', () => {
+  let fixture: ComponentFixture<ActivitySummaryComponent>;
+  let state: AppStateService;
+
+  const text = (): string => (fixture.nativeElement.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  const contract = (over: Partial<Contract>): Contract =>
+    ({ id: 1, customerId: 1, contractNumber: '100', commodityCode: 'YC', commodityGroup: 'Corn', quantity: 5000,
+      unit: 'BU', status: 'Active', deliveryStart: '2020-01-01', deliveryEnd: '2020-02-01', ...over }) as Contract;
+
+  function render(contracts: Contract[]): void {
+    fixture = TestBed.createComponent(ActivitySummaryComponent);
+    fixture.componentRef.setInput('customer', makeCustomer(1));
+    fixture.componentRef.setInput('contracts', contracts);
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    localStorage.removeItem(KEY);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({});
+    state = TestBed.inject(AppStateService);
+  });
+
+  describe('harvest windows', () => {
+    const note = "Harvest contract pace couldn't be shown — the harvest windows couldn't be loaded. Refresh the page to try again.";
+
+    it('says the pace could not be shown when the windows failed to load', () => {
+      state.setHarvestWindowsLoadFailed(true);
+      render([contract({})]);
+
+      expect(text()).toContain(note);
+    });
+
+    it('adds nothing when the windows loaded empty', () => {
+      render([contract({})]);
+
+      expect(text()).not.toContain("Harvest contract pace couldn't be shown");
+      expect(text()).toContain('On the contract side, they currently have 1 contract totaling 5,000 bushels.');
+    });
+
+    it('adds nothing for a producer with no contracts to pace', () => {
+      state.setHarvestWindowsLoadFailed(true);
+      render([]);
+
+      expect(text()).not.toContain("Harvest contract pace couldn't be shown");
+    });
+  });
+
+  describe('bushel conversions', () => {
+    const tons = contract({ id: 2, contractNumber: '200', commodityCode: 'SB', unit: 'ST', quantity: 100 });
+
+    it('counts the contracts left out of the bushel totals when the conversions failed to load', () => {
+      state.setCommodityConversionsLoadFailed(true);
+      render([contract({}), tons]);
+
+      expect(text()).toContain("1 contract left out of the bushel totals — the bushel conversions couldn't be loaded. Refresh the page to try again.");
+    });
+
+    it('adds nothing when the conversions loaded', () => {
+      state.setCommodityConversions([{ commodityCode: 'SB', lbsPerUnit: 60 }]);
+      render([contract({}), tons]);
+
+      expect(text()).not.toContain('left out of the bushel totals');
+      expect(text()).toContain('On the contract side, they currently have 2 contracts totaling 8,333.333 bushels.');
+    });
+
+    it('adds nothing once conversions are present, whatever the flag says', () => {
+      state.setCommodityConversionsLoadFailed(true);
+      state.setCommodityConversions([{ commodityCode: 'SB', lbsPerUnit: 60 }]);
+      render([contract({}), tons]);
+
+      expect(text()).not.toContain('left out of the bushel totals');
+    });
+
+    it('adds nothing when nothing failed, even with no conversions in hand', () => {
+      render([contract({}), tons]);
+
+      expect(text()).not.toContain('left out of the bushel totals');
+      expect(text()).toContain('On the contract side, they currently have 2 contracts totaling 5,000 bushels.');
+    });
+
+    it('adds nothing when every open contract is already in bushels', () => {
+      state.setCommodityConversionsLoadFailed(true);
+      render([contract({})]);
+
+      expect(text()).not.toContain('left out of the bushel totals');
+    });
   });
 });

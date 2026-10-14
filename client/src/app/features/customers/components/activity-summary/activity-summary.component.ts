@@ -41,6 +41,19 @@ export class ActivitySummaryComponent {
 
   summaryText = '';
 
+  /** The harvest windows failed to load, so the pace sentence is missing for that reason rather
+   *  than because there was nothing to compare. Only said when there are contracts to pace. */
+  readonly harvestPaceUnavailable = computed(() =>
+    this.appState.harvestWindowsLoadFailed() && this.appState.harvestWindows().length === 0
+    && ((this.contracts() || []).length > 0 || (this.historicalContracts() || []).length > 0));
+
+  /** Open contracts left out of the bushel figures because the conversions failed to load — not
+   *  because of their unit. Zero unless the load failed and something was actually left out. */
+  readonly contractsMissingConversions = computed(() => {
+    if (!this.appState.commodityConversionsLoadFailed() || this.appState.commodityConversions().length > 0) return 0;
+    return (this.contracts() || []).filter(c => c && !c.closedDate && quantityInBushels(c, c.quantity || 0, new Map()) == null).length;
+  });
+
   /** localStorage key for the open/closed preference. Persisted rather than held in the component
    *  so the choice survives selecting a different producer — this component is torn down whenever
    *  the profile unmounts between selections — and survives a reload, which is what someone who
