@@ -574,6 +574,26 @@ describe('CustomerListComponent', () => {
       expect(appState.selectedSavedListId()).toBe('all');
       expect(rowNames()).toEqual(['Alpha Ag', 'Bravo Bros', 'Charlie Co']);
     });
+
+    // PINS CURRENT BEHAVIOUR (deliberate, load-bearing): resolving a list writes customerIds onto
+    // the caller's OWN list object, not a copy. The home page hands the same objects to the
+    // producer profile's Add-to-List menu (isInList reads list.customerIds) and its own
+    // _enrichSavedLists skips lists that already carry ids. A component-local cache would change
+    // which membership those surfaces show and persist, so it is not a drop-in cleanup.
+    it('PINS CURRENT BEHAVIOUR: writes the resolved customerIds onto the caller\'s list object and clears them on re-pick', () => {
+      appState.setTradeUnits(['2190']);
+      const callerList = makeList({ id: 10, tradeUnits: '2190,2191' });   // still visible after the TU switch
+      create({ customers: roster(), savedLists: [callerList] });
+
+      pickSavedList('10');
+      expect(callerList.customerIds).toEqual([1, 3]);
+      expect(appState.savedLists()).toEqual([]);   // the appState write only patches lists it already holds
+
+      // The roster changes trade unit: the stale ids are dropped from the caller's object too.
+      appState.setTradeUnits(['2191']);
+      render();
+      expect(callerList.customerIds).toBeUndefined();
+    });
   });
 
   // ── Reset ─────────────────────────────────────────────────────────────────
