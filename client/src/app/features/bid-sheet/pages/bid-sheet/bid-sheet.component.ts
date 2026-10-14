@@ -17,13 +17,12 @@ import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintLayoutModel, PrintLayoutStyle, PrintLocation
 } from '../../utils/print-layout';
-import {
-  addLocationPinIcon, bidPillFill, bidPillsIcon, BidPillItem, dotIcon, EXPANDED_PIN_GREY, hoverIcon, nameLabelIcon, pinFill
-} from '../../utils/map-markers';
+import { addLocationPinIcon, hoverIcon } from '../../utils/map-markers';
 import { spreadOverlappingPins } from '../../utils/pin-spread';
+import { planMarkers } from '../../utils/marker-plan';
 import {
-  BidSheetPanelItem, BidStatus, buildBidLookup, buildPanelItems, buildPanelLocationBids, computeItemStatus, deriveAllProducersFilters,
-  flattenBidEntries, formatMonthYear, lookupBid, parseBid
+  BidSheetPanelItem, buildBidLookup, buildPanelItems, buildPanelLocationBids, deriveAllProducersFilters,
+  flattenBidEntries, formatMonthYear, lookupBid
 } from '../../utils/bid-math';
 import {
   applyBidsToLocations, arrowKeyTarget, buildDirtyBids, buildEditGridColumns, buildEditGridRows, clearDirtyForSaved, defaultMonthOrder,
@@ -2129,157 +2128,37 @@ export class BidSheetComponent {
     // Keep map clean during add-location mode
     if (this.addLocationMode()) return;
 
-    const activeTus = this.activeTradeUnits();
-    const hasTu = activeTus.length > 0;
     const zoom = this._map.getZoom();
-    const month = this.selectedMonth();
-
-    const locKey = (lat: number, lng: number) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
-    const activeTuSet = new Set(activeTus);
-    const crop = this.selectedCrop();
-    const year = this.selectedYear();
-
-    // Reference bid for status comparison — use selectedYear (same year used for bid pill lookups)
-    const refName = this.selectedLocationName();
-    const refBid = parseBid(refName ? this._getLatestBid(refName, year, crop, month) : '');
-
-    // Search query — only filter map pins, panel stays full
-    const searchQ = this.searchQuery().toLowerCase();
-
-    // Scoular pins switch presentation on ONE thing: whether a reference location is set.
-    //   no reference  → whole pin green (fill), no ring
-    //   reference set → status fill (blue/red/yellow) + green ring
-    // Keyed on refName, NOT on crop: picking a crop alone doesn't produce a comparison, and testing
-    // crop here is what previously made the ring appear with no reference selected.
-    const comparingToRef = !!refName;
-    const scoularNames = this.scoularLocationNames();
-
-    // Group all map locations by coordinates
-    const locsByPos = new Map<string, BidSheetLocation[]>();
-    for (const loc of this.allMapLocations()) {
-      if (!loc.latitude || !loc.longitude) continue;
-      const key = locKey(loc.latitude, loc.longitude);
-      const arr = locsByPos.get(key) || [];
-      arr.push(loc);
-      locsByPos.set(key, arr);
-    }
-
-    const selectedName = this.selectedLocationName();
-    const panelOpenName = this.panelSelectedLocation();
-
-    // Build set of location names visible in the panel (respects crop/TU/search filters)
-    const panelNames = new Set(this.filteredBidItems().map(i => i.name));
-
-    // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
-    const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
-
-    // A dot / label takes its bid's beating/matching/none colour vs the reference while a reference
-    // AND crop are being compared; null = no comparison running.
-    const compareStatus = (name: string): BidStatus | null => {
-      if (!(hasIndividualTu && refName && crop)) return null;
-      const bidVal = this._getLatestBid(name, year, crop, month);
-      return bidVal ? computeItemStatus(bidVal, false, refBid) : 'none';
-    };
-
-    // Pass 1: decide which coordinate groups actually render a marker (apply the skip filters once)
-    // and capture the per-group flags the draw pass needs.
-    const renderGroups: { locs: BidSheetLocation[]; names: string[]; isActiveTu: boolean; isRef: boolean; isPanelOpen: boolean; }[] = [];
-    for (const [, locs] of locsByPos) {
-      // If searching, skip this pin group unless at least one location name matches
-      if (searchQ && !locs.some(l => l.name.toLowerCase().includes(searchQ))) continue;
-      const names = locs.map(l => l.name);
-      // In All Producers (no TU filter) every location is "in scope"; with a TU, only its locations are.
-      const isActiveTu = activeTuSet.size === 0 || locs.some(l => activeTuSet.has(l.tradeUnitCode ?? ''));
-      const isRef = !!(hasIndividualTu && refName && names.includes(refName));
-      const isPanelOpen = !!(panelOpenName && names.includes(panelOpenName));
-      // When filters are active, only show locations that appear in the panel
-      if (hasTu && !names.some(n => panelNames.has(n))) continue;
-      // Skip locations with no bid for the selected crop/year/month
-      if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
-      renderGroups.push({ locs, names, isActiveTu, isRef, isPanelOpen });
-    }
+    // Which groups get a pin and what each looks like is decided in utils/marker-plan.
+    const planned = planMarkers({
+      locations: this.allMapLocations(),
+      activeTus: this.activeTradeUnits(),
+      crop: this.selectedCrop(),
+      year: this.selectedYear(),
+      month: this.selectedMonth(),
+      refName: this.selectedLocationName(),
+      panelOpenName: this.panelSelectedLocation(),
+      searchQuery: this.searchQuery(),
+      panelNames: new Set(this.filteredBidItems().map(i => i.name)),
+      // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
+      hasIndividualTu: this.hasIndividualTu() || this.cropYears().length > 0,
+      zoom,
+      scoularNames: this.scoularLocationNames(),
+      lookup: this.bidLookup()
+    });
 
     // Spread out groups whose pins would overlap on screen so none get hidden behind another. The
     // offset is measured in screen pixels at the current zoom, so as you zoom in and the true
     // positions separate, the spread shrinks and each pin glides back toward its real spot.
-    const displayPos = this._spreadOverlappingPins(
-      renderGroups.map(g => [g.locs[0].latitude!, g.locs[0].longitude!] as [number, number]),
-      zoom
-    );
+    const displayPos = this._spreadOverlappingPins(planned.map(p => p.position), zoom);
 
-    // Pass 2: draw each group at its (possibly offset) display position.
-    renderGroups.forEach((g, gi) => {
-      const { locs, names, isActiveTu, isRef, isPanelOpen } = g;
-      const [lat, lng] = displayPos[gi];
-      const showBidValues = isActiveTu && hasIndividualTu && crop;
-
-      // Panel-open location — render expanded with name + bid (uses status color if reference, otherwise gray)
-      if (isPanelOpen) {
-        const bidStr = crop ? this._getLatestBid(panelOpenName, year, crop, month) : '';
-        // This pin represents panelOpenName specifically, so key it to that name rather than to
-        // "any location at this coordinate".
-        const panelIsScoular = scoularNames.has(panelOpenName);
-        const status = hasIndividualTu && refName && bidStr ? computeItemStatus(bidStr, false, refBid) : null;
-        const { bg: pinBg, border: pinBorder } = pinFill(isRef, status, panelIsScoular, EXPANDED_PIN_GREY);
-        const expandedIcon = L.divIcon(hoverIcon(panelOpenName, bidStr, pinBg, pinBorder, scoularNames));
-        const marker = L.marker([lat, lng], { icon: expandedIcon, zIndexOffset: 1000 });
-        marker.on('click', () => this._selectMapLocation(locs[0]));
-        cluster.addLayer(marker);
-        return;
-      }
-
-      // Below the bid-pin zoom threshold: colored dot — but when searching, always show name labels.
-      // Lowered from 8 → 6 so the bid-value pins appear sooner (esp. in All Producers, which opens at
-      // the wider US overview). Zoom 5 = national overview keeps dots; 6+ shows the bid pins.
-      if (zoom < 6 && !searchQ) {
-        // Dot stands for the whole coordinate group, so it counts as ours if ANY location here is.
-        const dotIsScoular = names.some(n => scoularNames.has(n));
-        // Compute dot color from bid status (matches the pill colors used when zoomed in)
-        const { bg: color, border } = pinFill(isRef, compareStatus(locs[0].name), dotIsScoular);
-        const icon = L.divIcon(dotIcon(color, border, comparingToRef && dotIsScoular));
-        const m = L.marker([lat, lng], { icon });
-        m.on('click', () => this._selectMapLocation(locs[0]));
-        const hoverBid2 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
-        this._bindHoverExpand(m, icon, locs[0].name, hoverBid2, color, border);
-        cluster.addLayer(m);
-        return;
-      }
-
-      if (showBidValues) {
-        // Active TU with crop selected — show bid values with status colors
-        const bidItems = names
-          .map(n => {
-            const isNameRef = hasIndividualTu && n === refName;
-            const bidVal = this._getLatestBid(n, year, crop, month);
-            const nameIsScoular = scoularNames.has(n);
-            if (!isNameRef && !bidVal) return null;
-            const status = isNameRef ? 'reference' : computeItemStatus(bidVal, false, refBid);
-            const { bg, border } = bidPillFill(isNameRef, status, nameIsScoular, comparingToRef);
-            return { label: isNameRef ? bidVal || '--' : bidVal, bg, border, isScoular: nameIsScoular };
-          })
-          .filter((x): x is BidPillItem => x !== null);
-
-        if (bidItems.length > 0) {
-          const divIcon = L.divIcon(bidPillsIcon(bidItems, comparingToRef));
-          const marker = L.marker([lat, lng], { icon: divIcon });
-          marker.on('click', () => this._selectMapLocation(locs[0]));
-          const hoverBid3 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
-          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, bidItems[0].bg, bidItems[0].border);
-          cluster.addLayer(marker);
-          return;
-        }
-      }
-
-      // Default: name labels — match the pill color story used elsewhere
-      // Keyed to locs[0] specifically, not "any name here": this bg also drives the hover icon,
-      // which shows locs[0]. Per-line fill for mixed groups is handled inside stackedLabelHtml.
-      const labelIsScoular = scoularNames.has(locs[0].name);
-      const { bg, border } = pinFill(isRef, compareStatus(locs[0].name), labelIsScoular);
-      const nameIcon = L.divIcon(nameLabelIcon(names, bg, border, comparingToRef, scoularNames));
-      const marker = L.marker([lat, lng], { icon: nameIcon });
-      marker.on('click', () => this._selectMapLocation(locs[0]));
-      const hoverBid4 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
-      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border);
+    // Draw each planned pin at its (possibly offset) display position.
+    planned.forEach((p, i) => {
+      const [lat, lng] = displayPos[i];
+      const icon = L.divIcon(p.icon);
+      const marker = L.marker([lat, lng], p.zIndexOffset !== undefined ? { icon, zIndexOffset: p.zIndexOffset } : { icon });
+      marker.on('click', () => this._selectMapLocation(p.target));
+      if (p.hover) this._bindHoverExpand(marker, icon, p.hover.name, p.hover.bid, p.hover.bg, p.hover.border);
       cluster.addLayer(marker);
     });
   }
