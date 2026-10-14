@@ -332,6 +332,14 @@ export class CustomerPrintReportComponent {
     sumInBushels(this.openContracts(), buildLbsPerBushelMap(this.appState.commodityConversions())).contracted
   );
 
+  /** Open contracts left out of Total Contracted because the conversions failed to load — not
+   *  because of their unit. Zero unless the load failed; with no conversions in hand, everything
+   *  not already in bushels is left out. */
+  readonly contractsMissingConversions = computed(() => {
+    if (!this.appState.commodityConversionsLoadFailed() || this.appState.commodityConversions().length > 0) return 0;
+    return sumInBushels(this.openContracts(), new Map()).excludedContracts;
+  });
+
   readonly totalStored = computed(() =>
     this.storedGrain().reduce((sum, g) => sum + (g.quantity ?? 0), 0)
   );
@@ -360,7 +368,12 @@ export class CustomerPrintReportComponent {
     }
     if (this.showTotalContracted()) {
       const contracted = this.totalContracted();
-      items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub: '' });
+      // Rides in the tile's sub-line, so it reaches the preview and the printed page alike.
+      const missing = this.contractsMissingConversions();
+      const sub = missing > 0
+        ? `${missing} contract${missing === 1 ? '' : 's'} left out — bushel conversions couldn't be loaded`
+        : '';
+      items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub });
     }
     return items;
   });

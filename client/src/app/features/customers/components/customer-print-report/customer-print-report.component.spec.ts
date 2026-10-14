@@ -304,6 +304,52 @@ describe('CustomerPrintReportComponent', () => {
     expect(sectionTitles()).not.toContain('Executive Summary');
   });
 
+  // With the conversions missing, every contract not in bushels drops out of Total Contracted, and the
+  // printed figure reads low with nothing to say why.
+  describe('Total Contracted when the bushel conversions failed to load', () => {
+    const note = "1 contract left out — bushel conversions couldn't be loaded";
+    const contracts = (): Contract[] => [
+      makeContract({ id: 1, sourceContractId: 'PCW100', quantity: 25000, openBalanceQuantity: 25000 }),
+      makeContract({ id: 2, sourceContractId: 'PCW200', commodityCode: 'YSB', quantity: 600, unit: 'ST', openBalanceQuantity: 600 }),
+    ];
+    /** The printed Total Contracted tile's lines: label, value, and the sub-line when there is one. */
+    const printedTile = (doc: Document): string[] =>
+      Array.from(doc.querySelectorAll('.kpi-box'))
+        .map(box => Array.from(box.children).map(d => squash(d.textContent)))
+        .find(lines => lines[0] === 'Total Contracted') ?? [];
+
+    it('says how many contracts were left out, in the preview and on the printed page', () => {
+      appState.setCommodityConversionsLoadFailed(true);
+      open({ contracts: contracts() });
+
+      expect(kpiTiles()).toContainEqual(['Total Contracted', '25K bu', note]);
+      expect(printedTile(printed())).toEqual(['Total Contracted', '25K bu', note]);
+    });
+
+    it('adds nothing when the conversions loaded', () => {
+      appState.setCommodityConversions([{ commodityCode: 'YSB', lbsPerUnit: 60 }]);
+      open({ contracts: contracts() });
+
+      expect(kpiTiles()).toContainEqual(['Total Contracted', '45K bu']);   // 600 short tons at 60 lb/bu = 20,000 bu
+      expect(printedTile(printed())).toEqual(['Total Contracted', '45K bu']);
+    });
+
+    it('adds nothing when nothing failed, even with no conversions in hand', () => {
+      open({ contracts: contracts() });
+
+      expect(kpiTiles()).toContainEqual(['Total Contracted', '25K bu']);
+    });
+
+    it('adds nothing once conversions are present, whatever the flag says', () => {
+      appState.setCommodityConversionsLoadFailed(true);
+      appState.setCommodityConversions([{ commodityCode: 'YSB', lbsPerUnit: 60 }]);
+      // Gallons never convert: left out for its unit, not something to blame on the load.
+      open({ contracts: [...contracts(), makeContract({ id: 3, sourceContractId: 'PCW300', commodityCode: 'BOIL', quantity: 500, unit: 'GL', openBalanceQuantity: 500 })] });
+
+      expect(kpiTiles()).toContainEqual(['Total Contracted', '45K bu']);
+    });
+  });
+
   // ── Section defaults ──────────────────────────────────────────────────────
 
   it('defaults every section off when it has nothing to show', () => {
