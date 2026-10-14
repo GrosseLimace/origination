@@ -87,6 +87,10 @@ export class AppInsightsService {
           // volume for little new information.
           disableAjaxTracking: true,
           disableFetchTracking: true,
+          // By default the SDK fetches a config file from js.monitor.azure.com on load. Our CSP
+          // connect-src allows only the ingestion host, so that fetch would log a CSP violation in
+          // every session. blkCdnCfg is the SDK's switch for that fetch; the config above is complete.
+          extensionConfig: { AppInsightsCfgSyncPlugin: { blkCdnCfg: true } },
         },
       });
       ai.loadAppInsights();

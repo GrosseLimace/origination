@@ -67,6 +67,8 @@ describe('AppInsightsService', () => {
     // API calls are the server's to record; tracking them here would double the volume.
     expect(config['disableAjaxTracking']).toBe(true);
     expect(config['disableFetchTracking']).toBe(true);
+    // No config fetch from js.monitor.azure.com: the CSP would block it and log a violation.
+    expect(config['extensionConfig']).toEqual({ AppInsightsCfgSyncPlugin: { blkCdnCfg: true } });
     expect(sdk.instance.loadAppInsights).toHaveBeenCalled();
     expect(sdk.instance.setAuthenticatedUserContext).toHaveBeenCalledWith('CEgr', undefined, true);
   });
