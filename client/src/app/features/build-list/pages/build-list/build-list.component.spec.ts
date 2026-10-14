@@ -1462,6 +1462,35 @@ describe('BuildListComponent', () => {
       expect(c.matchedPatternLabels()).toEqual(['Unconfirmed contracts', 'State']);
     });
 
+    // ── Opening a producer: which profile tab ──
+
+    it('opens the producer on the tab the prompt or refinement is about', () => {
+      const c = mount();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const tabFor = (q: string, r: RefinementFilters = {}) => {
+        c.clearQuery();
+        c.queryText.set(q);
+        c.appliedRefinements.set(r);
+        c.selectCustomer(ALPHA);
+        return (navigate.mock.calls.at(-1)![1] as { queryParams: Record<string, unknown> }).queryParams['tab'];
+      };
+
+      expect(tabFor('Producers on DP with storage over 90 days')).toBe('dpContracts');
+      expect(tabFor('All producers', { dpChargesOver: 10 })).toBe('dpContracts');
+      expect(tabFor('Producers with grain in storage')).toBe('storage');
+      expect(tabFor('All producers', { storageDaysOver: 30 })).toBe('storage');
+      expect(tabFor('Producers with applied tickets')).toBe('contracts');
+      expect(tabFor('Producers with unapplied tickets')).toBe('tickets');
+      expect(tabFor('All producers', { avgMoistureOver: 15 })).toBe('tickets');
+      expect(tabFor('Producers with planting intentions')).toBe('planting');
+      expect(tabFor('All producers', { irrigatedOnly: true })).toBe('planting');
+      expect(tabFor('Producers with overdue bushels')).toBe('contracts');
+      expect(tabFor('All producers', { hasActiveContracts: true })).toBe('contracts');
+      expect(tabFor('All producers')).toBeUndefined();
+      // Notes are always visible on the profile, so a note prompt opens no particular tab.
+      expect(tabFor('Producers contacted this week about their contracts')).toBeUndefined();
+    });
+
     it('the linked-records prompt folds linked producers into one row with a linked panel', () => {
       api.getCustomers.mockReturnValue(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', linkedProducerIds: ['C2'] }),
