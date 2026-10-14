@@ -170,6 +170,7 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 | GET | `/diagnostics/ping` | Ping |
 | GET | `/whats-new` | Curated release notes, newest first — see [What's New](docs/application-context/Whats%20New.md) |
 | GET | `/version` | Running release number plus the CI-stamped commit and workflow run |
+| GET | `/help` | Self-help content: questions, categories and per-screen suggestions — see [Self Help](docs/application-context/Self%20Help.md) |
 
 ## Data Sources
 

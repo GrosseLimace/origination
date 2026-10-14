@@ -51,6 +51,35 @@ export class UsageTrackingService {
     this.postClickEvent('interaction', 'system', 'whats-new');
   }
 
+  // Help panel and Help page. App chrome like What's New, so they report under 'system'. Events carry
+  // FAQ ids, never what the user typed — except help-no-match, which has to carry the question for the
+  // FAQ to learn from it; the API redacts that one as free text (TelemetrySanitizer).
+
+  /** The panel was opened. `source` is where from: header, menu, drawer or page. */
+  trackHelpOpened(source: string): void {
+    this.postClickEvent('interaction', 'system', 'help-opened', source);
+  }
+
+  /** An answer was shown, whether typed, picked from a chip, or opened on the Help page. */
+  trackHelpAnswer(faqId: string): void {
+    this.postClickEvent('interaction', 'system', 'help-answer', faqId);
+  }
+
+  /** A typed question the content couldn't answer. Truncated here with headroom for the server's
+   *  redaction markers, which lengthen the text; the stored column is 200 characters. */
+  trackHelpNoMatch(question: string): void {
+    this.postClickEvent('interaction', 'system', 'help-no-match', question.slice(0, 150));
+  }
+
+  /** How a troubleshooter run ended, as an outcome code only — never the name that was searched. */
+  trackHelpTroubleshoot(outcome: string): void {
+    this.postClickEvent('interaction', 'system', 'help-troubleshoot', outcome);
+  }
+
+  trackHelpFeedback(faqId: string, helpful: boolean): void {
+    this.postClickEvent('interaction', 'system', helpful ? 'help-helpful' : 'help-not-helpful', faqId);
+  }
+
   // Customer Page interactions
   trackProfileOpened(customerId: string): void {
     this.postClickEvent('interaction', 'customers', 'profile-opened', customerId);

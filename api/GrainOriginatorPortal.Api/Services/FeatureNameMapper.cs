@@ -103,6 +103,9 @@ public static class FeatureNameMapper
             return ("system", "whats-new");
         if (p.StartsWith("/api/version"))
             return ("system", "version");
+        // Self-help content, loaded once when the Help panel or page first opens.
+        if (p.StartsWith("/api/help"))
+            return ("system", "help");
 
         return ("other", null);
     }

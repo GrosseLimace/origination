@@ -50,6 +50,9 @@ npm run e2e           # runs tests/e2e (reuses a running `ng serve`, else starts
   `SanitizeCsvTests`. Controller unit tests substitute `IDataService` and instantiate the controller directly
   (no HTTP pipeline).
 - **Frontend unit/component**: co-located `*.spec.ts` next to the code under `client/src/app/**`.
+- **Help content guards**: `client/src/app/features/help/help-faq.drift.spec.ts` (help vs. the app's routes,
+  labels and anchors) and `Controllers/HelpControllerTests.cs` (the content file's own consistency). Both
+  read the real `help-faq.json`; see [Self Help](../application-context/Self%20Help.md).
 - **E2E**: `client/tests/e2e/` with a Page Object Model under `tests/e2e/pages/`.
 
 ## Known gaps / backlog
