@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked, WritableSignal } from '@angular/core';
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MsalService } from '@azure/msal-angular';
@@ -14,6 +14,9 @@ import { binSiteGrainBreakdown, formatLastBid, grainOnFarmColorKey, indexCommodi
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
+
+/** The report's include toggles whose default depends on the data. */
+type SectionKey = 'totalAcres' | 'totalContracted' | 'contracts' | 'tickets' | 'planting' | 'storage' | 'binSites' | 'pricingLines';
 
 interface TicketCommoditySummary {
   productCode: string;
@@ -93,11 +96,45 @@ export class CustomerPrintReportComponent {
   readonly accentLight = computed(() => this.accentColor() + '18');
   private _defaultsApplied = false;
 
+  /** The toggles whose default depends on the data, by the key the sidebar reports a hand edit under. */
+  private readonly _sections: Record<SectionKey, WritableSignal<boolean>> = {
+    totalAcres: this.showTotalAcres,
+    totalContracted: this.showTotalContracted,
+    contracts: this.showContracts,
+    tickets: this.showTickets,
+    planting: this.showPlanting,
+    storage: this.showStorage,
+    binSites: this.showBinSites,
+    pricingLines: this.showPricingLines,
+  };
+  /** Toggles (and the crop-year picker) the user has set by hand since the dialog opened. Defaults
+   *  keep following the data until then, so a section whose data lands after the dialog opens (the
+   *  profile loads each on its own request, and Print is clickable meanwhile) still defaults on —
+   *  but a choice the user made is never overridden. Cleared on every open. */
+  private readonly _touched = new Set<SectionKey | 'plantingYears'>();
+
+  /** Each section's default: on when it has something to show. */
+  private readonly _sectionDefaults = computed<Record<SectionKey, boolean>>(() => ({
+    totalAcres: (this.customer().totalAcres ?? 0) > 0,
+    totalContracted: this.totalContracted() > 0,
+    contracts: this.contracts().filter(c => !c.closedDate).length > 0,
+    tickets: this.tickets().filter(t => !t.isApplied).length > 0,
+    planting: this.plantingIntentions().length > 0,
+    storage: this.storedGrain().length > 0,
+    binSites: this.binSiteGroups().length > 0,
+    pricingLines: this.visiblePricingLines().length > 0,
+  }));
+
   constructor() {
     effect(() => {
       const open = this.isOpen();
-      if (open && !this._defaultsApplied) {
+      if (!open) {
+        this._defaultsApplied = false;
+        return;
+      }
+      if (!this._defaultsApplied) {
         this._defaultsApplied = true;
+        this._touched.clear();
         const account = this.msalService.instance.getActiveAccount()
           ?? this.msalService.instance.getAllAccounts()[0];
         if (account) {
@@ -107,25 +144,27 @@ export class CustomerPrintReportComponent {
             username && !username.includes('@') ? `${username}@scoular.com` : username
           );
         }
-        // Default KPI toggles off when value is 0
-        untracked(() => {
-          this.showTotalAcres.set((this.customer().totalAcres ?? 0) > 0);
-          this.showTotalContracted.set(this.totalContracted() > 0);
-          this.showContracts.set(this.contracts().filter(c => !c.closedDate).length > 0);
-          this.showTickets.set(this.tickets().filter(t => !t.isApplied).length > 0);
-          this.showPlanting.set(this.plantingIntentions().length > 0);
-          // Every year on by default, so opening the dialog reports what it always has, with the
-          // picker collapsed until the user goes looking for it.
-          this.selectedPlantingYears.set(this.plantingYears());
-          this.plantingYearsExpanded.set(false);
-          this.showStorage.set(this.storedGrain().length > 0);
-          this.showBinSites.set(this.binSiteGroups().length > 0);
-          this.showPricingLines.set(this.visiblePricingLines().length > 0);
-        });
-      } else if (!open) {
-        this._defaultsApplied = false;
+        this.plantingYearsExpanded.set(false);
       }
+      // Tracked: re-runs whenever the data behind a default changes while the dialog is open.
+      const defaults = this._sectionDefaults();
+      const years = this.plantingYears();
+      // Default a toggle off when its section has nothing to show — unless the user set it by hand.
+      untracked(() => {
+        for (const key of Object.keys(this._sections) as SectionKey[]) {
+          if (!this._touched.has(key)) this._sections[key].set(defaults[key]);
+        }
+        // Every year on by default, so opening the dialog reports what it always has, with the
+        // picker collapsed until the user goes looking for it.
+        if (!this._touched.has('plantingYears')) this.selectedPlantingYears.set(years);
+      });
     });
+  }
+
+  /** A sidebar checkbox for a section: records the hand edit so late data won't undo it. */
+  setSection(key: SectionKey, value: boolean): void {
+    this._touched.add(key);
+    this._sections[key].set(value);
   }
 
   // Pricing lines indexed by sourceContractId
@@ -256,6 +295,7 @@ export class CustomerPrintReportComponent {
   }
 
   togglePlantingYear(year: number, include: boolean): void {
+    this._touched.add('plantingYears');
     this.selectedPlantingYears.update(years =>
       include ? [...new Set([...years, year])].sort((a, b) => b - a) : years.filter(y => y !== year));
   }

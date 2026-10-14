@@ -347,6 +347,51 @@ describe('CustomerPrintReportComponent', () => {
     expect(sectionTitles()).toContain('Grain in Storage');
   });
 
+  // The profile page loads contracts, tickets, pricing lines, planting and storage on their own
+  // requests, and Print is clickable while they are in flight. Defaults used to be taken once, at
+  // open, so anything that landed afterwards stayed switched off.
+  it('lets defaults the user has not touched follow data that arrives after the dialog opens', () => {
+    open({ customer: makeCustomer({ totalAcres: 0 }) });     // nothing loaded yet
+    expect(sectionTitles()).toEqual([]);
+
+    ref.setInput('contracts', [makeContract()]);
+    ref.setInput('pricingLines', [makeLine()]);
+    ref.setInput('tickets', [makeTicket()]);
+    ref.setInput('plantingIntentions', [makeIntention({ id: 1, plantingYear: 2026 }), makeIntention({ id: 2, plantingYear: 2025 })]);
+    ref.setInput('storedGrain', [makeStoredGrain()]);
+    ref.setInput('customer', makeCustomer({ totalAcres: 800, binSites: [{ siteKey: 's1', name: 'North bins' }] }));
+    fixture.detectChanges();
+
+    expect(sectionTitles()).toEqual(['Executive Summary', 'Contracts', 'Unapplied Tickets', 'Planting Intentions', 'Grain in Storage', 'Bin Sites & Grain on Farm']);
+    expect(kpiTiles().map(t => t[0])).toEqual(['Total Acres', 'Total Contracted']);
+    expect(checkbox(/^Pricing Lines \(/).checked).toBe(true);
+    expect(checkboxLabel(/^Planting Intentions \(/)).toBe('Planting Intentions (2)');   // every late year included
+  });
+
+  it('never overrides a section or crop-year choice the user made by hand when late data arrives', () => {
+    open({
+      contracts: [makeContract()],
+      plantingIntentions: [makeIntention({ id: 1, plantingYear: 2026 }), makeIntention({ id: 2, plantingYear: 2025 })],
+    });
+    setChecked(/^Contracts \(/, false);           // switched off while it had data
+    setChecked(/^Grain in Storage \(/, false);    // confirmed off before any storage loaded
+    click(sidebar().querySelector('button[aria-label="Choose crop years"]'));
+    setChecked(/^2025$/, false);                  // narrowed to one season
+
+    ref.setInput('contracts', [makeContract({ id: 1 }), makeContract({ id: 2, sourceContractId: 'PCW200' })]);
+    ref.setInput('storedGrain', [makeStoredGrain()]);
+    ref.setInput('tickets', [makeTicket()]);      // untouched: still follows the data
+    ref.setInput('plantingIntentions', [
+      makeIntention({ id: 1, plantingYear: 2026 }), makeIntention({ id: 2, plantingYear: 2025 }), makeIntention({ id: 3, plantingYear: 2024 }),
+    ]);
+    fixture.detectChanges();
+
+    expect(checkbox(/^Contracts \(/).checked).toBe(false);
+    expect(checkbox(/^Grain in Storage \(/).checked).toBe(false);
+    expect(sectionTitles()).toEqual(['Executive Summary', 'Unapplied Tickets', 'Planting Intentions']);
+    expect([checkbox(/^2026$/).checked, checkbox(/^2025$/).checked, checkbox(/^2024$/).checked]).toEqual([true, false, false]);
+  });
+
   // ── Contracts ─────────────────────────────────────────────────────────────
 
   describe('contracts', () => {
