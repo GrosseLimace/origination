@@ -1,0 +1,2639 @@
+{
+  "categories": [
+    {
+      "id": "getting-started",
+      "name": "Getting started",
+      "icon": "rocket",
+      "faqIds": [
+        "what-is-workbench",
+        "what-is-trade-unit",
+        "whats-new",
+        "find-version"
+      ]
+    },
+    {
+      "id": "trade-units",
+      "name": "Trade units",
+      "icon": "map-pin",
+      "faqIds": [
+        "setup-trade-units",
+        "trade-units-none-vs-unavailable",
+        "why-selection-matters",
+        "all-producers"
+      ]
+    },
+    {
+      "id": "missing-producers",
+      "name": "Missing producers",
+      "icon": "user-x",
+      "faqIds": [
+        "missing-producer",
+        "search-producers",
+        "new-producer",
+        "trade-unit-chips"
+      ]
+    },
+    {
+      "id": "producer-profile",
+      "name": "Producer profile",
+      "icon": "edit",
+      "faqIds": [
+        "edit-producer",
+        "add-contact",
+        "save-disabled",
+        "commodity-locked",
+        "profile-badges",
+        "producer-panels",
+        "add-to-list",
+        "never-contacted",
+        "print-producer-report",
+        "address-map"
+      ]
+    },
+    {
+      "id": "linked-producers",
+      "name": "Linked producers",
+      "icon": "link",
+      "faqIds": [
+        "link-producers",
+        "switch-linked",
+        "linked-activity"
+      ]
+    },
+    {
+      "id": "bin-sites",
+      "name": "Bin sites & grain on farm",
+      "icon": "map",
+      "faqIds": [
+        "view-bin-sites",
+        "add-bin-site",
+        "bin-site-outside-north-america",
+        "grain-on-farm",
+        "storage-vs-grain-on-farm"
+      ]
+    },
+    {
+      "id": "build-a-list",
+      "name": "Build a List",
+      "icon": "list",
+      "faqIds": [
+        "build-list",
+        "saved-list-missing",
+        "saved-list-changed",
+        "share-list",
+        "build-list-no-producers",
+        "still-loading",
+        "build-list-disabled",
+        "request-query",
+        "print-list"
+      ]
+    },
+    {
+      "id": "groups",
+      "name": "Groups & recaps",
+      "icon": "users",
+      "faqIds": [
+        "create-group",
+        "edit-group",
+        "recap-not-sent"
+      ]
+    },
+    {
+      "id": "notes",
+      "name": "Notes & follow-ups",
+      "icon": "sticky-note",
+      "faqIds": [
+        "add-note",
+        "pin-note",
+        "follow-up",
+        "mention-someone",
+        "mention-not-sent",
+        "teams-channel-missing"
+      ]
+    },
+    {
+      "id": "contracts",
+      "name": "Contracts & tickets",
+      "icon": "file-text",
+      "faqIds": [
+        "contracts-not-loaded",
+        "data-sources",
+        "unapplied-ticket",
+        "spot-load",
+        "storage-tab",
+        "dp-contracts",
+        "storage-vs-grain-on-farm",
+        "unconfirmed-contract"
+      ]
+    },
+    {
+      "id": "insights",
+      "name": "Actionable Insights",
+      "icon": "lightbulb",
+      "faqIds": [
+        "what-are-insights",
+        "insights-empty",
+        "unconfirmed-contract",
+        "unshipped-bushels",
+        "unshipped-wrong"
+      ]
+    },
+    {
+      "id": "planting",
+      "name": "Planting intentions",
+      "icon": "sprout",
+      "faqIds": [
+        "enter-planting",
+        "planting-wrong-trade-unit",
+        "planting-no-longer-assigned"
+      ]
+    },
+    {
+      "id": "dashboard",
+      "name": "Planting dashboard",
+      "icon": "bar-chart",
+      "faqIds": [
+        "dashboard-overview",
+        "dashboard-acres-lower",
+        "season-targets",
+        "growth-opportunity-dash",
+        "contract-coverage"
+      ]
+    },
+    {
+      "id": "bid-sheet",
+      "name": "Bid sheet",
+      "icon": "dollar-sign",
+      "faqIds": [
+        "what-is-bid-sheet"
+      ]
+    },
+    {
+      "id": "organics",
+      "name": "Organics",
+      "icon": "check-circle",
+      "faqIds": [
+        "organic-badge",
+        "nop-id"
+      ]
+    },
+    {
+      "id": "calculators",
+      "name": "Calculators",
+      "icon": "calculator",
+      "faqIds": [
+        "calculators",
+        "calculator-save",
+        "calculator-wrong"
+      ]
+    },
+    {
+      "id": "troubleshooting",
+      "name": "Troubleshooting",
+      "icon": "wrench",
+      "faqIds": [
+        "report-problem",
+        "slow-first-load",
+        "login-loop",
+        "contracts-not-loaded",
+        "still-loading"
+      ]
+    }
+  ],
+  "suggestions": {
+    "/": [
+      "missing-producer",
+      "trade-units-none-vs-unavailable",
+      "all-producers"
+    ],
+    "/build-list": [
+      "build-list",
+      "saved-list-missing",
+      "still-loading"
+    ],
+    "/dashboard": [
+      "dashboard-acres-lower",
+      "season-targets",
+      "growth-opportunity-dash"
+    ],
+    "/insights": [
+      "what-are-insights",
+      "unshipped-bushels",
+      "unconfirmed-contract"
+    ],
+    "/bid-sheet": [
+      "what-is-bid-sheet",
+      "missing-producer",
+      "report-problem"
+    ],
+    "/daily-digest": [
+      "create-group",
+      "edit-group",
+      "recap-not-sent"
+    ],
+    "*": [
+      "missing-producer",
+      "build-list",
+      "create-group"
+    ]
+  },
+  "faqs": [
+    {
+      "id": "what-is-workbench",
+      "question": "What is the Origination Workbench for?",
+      "chip": "What is the Workbench for?",
+      "keywords": [
+        "workbench",
+        "origination",
+        "app",
+        "purpose",
+        "overview",
+        "start",
+        "new"
+      ],
+      "routes": [],
+      "feature": "system",
+      "answer": "It brings your producer relationships into one place: look up producers and their contracts, tickets, storage and planting, keep notes and follow-ups, build call lists with **Build a List**, and work your daily **Actionable Insights**. Contracts, pricing and ticket settlement still happen in CTRM.",
+      "related": [
+        "what-is-trade-unit",
+        "setup-trade-units"
+      ],
+      "uiLabels": [
+        "Build a List",
+        "Actionable Insights"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "what-is-trade-unit",
+      "question": "What is a trade unit?",
+      "keywords": [
+        "trade",
+        "unit",
+        "tu",
+        "location",
+        "desk",
+        "selector"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "system",
+      "answer": "A Scoular location or desk, such as 2040. The trade-unit selector at the top of the page decides which producers, lists, insights and dashboard totals you see.",
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "trade-unit-selector"
+        }
+      ],
+      "related": [
+        "why-selection-matters",
+        "setup-trade-units"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "whats-new",
+      "question": "Where can I see what changed in a release?",
+      "chip": "Release notes",
+      "keywords": [
+        "release",
+        "notes",
+        "new",
+        "changes",
+        "changed",
+        "update",
+        "updates",
+        "feature"
+      ],
+      "routes": [],
+      "feature": "system",
+      "answer": "Open the profile menu (your picture, top right) and choose **What's New**. Release notes also appear once after each release.",
+      "related": [
+        "find-version"
+      ],
+      "uiLabels": [
+        "What's New"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "find-version",
+      "question": "How can I tell which version of the Workbench I'm using?",
+      "chip": "Which version am I on?",
+      "keywords": [
+        "version",
+        "build",
+        "release",
+        "number"
+      ],
+      "routes": [],
+      "feature": "system",
+      "answer": "Open the profile menu (your picture, top right). The release and build number is the small line at the bottom. Include it when you report a problem.",
+      "related": [
+        "report-problem",
+        "whats-new"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "setup-trade-units",
+      "question": "How do I set up or change my trade units?",
+      "chip": "Set up my trade units",
+      "keywords": [
+        "trade",
+        "unit",
+        "units",
+        "preferences",
+        "setup",
+        "set",
+        "assign",
+        "assigned",
+        "change",
+        "add",
+        "group"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "system",
+      "answer": "Your trade units are managed in the separate **Trade Unit Preferences** app. Open the profile menu and choose **Trade Unit Preferences**; it opens in its own window. When you close that window, the Workbench picks up your changes automatically.",
+      "actions": [
+        {
+          "kind": "tup",
+          "label": "Open Trade Unit Preferences"
+        }
+      ],
+      "related": [
+        "trade-units-none-vs-unavailable",
+        "why-selection-matters"
+      ],
+      "uiLabels": [
+        "Trade Unit Preferences"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "trade-units-none-vs-unavailable",
+      "question": "What's the difference between 'No trade units assigned' and 'Trade units unavailable'?",
+      "chip": "No trade units assigned vs. unavailable",
+      "keywords": [
+        "no",
+        "trade",
+        "units",
+        "assigned",
+        "unavailable",
+        "error",
+        "retry",
+        "difference",
+        "selector",
+        "empty"
+      ],
+      "routes": [
+        "/",
+        "/build-list",
+        "/dashboard",
+        "/insights"
+      ],
+      "feature": "system",
+      "answer": "**No trade units assigned** means you haven't been given any trade units yet; set them up in **Trade Unit Preferences**. **Trade units unavailable** means that system is temporarily down. Press **Retry**; nothing is wrong with your account.",
+      "actions": [
+        {
+          "kind": "tup",
+          "label": "Open Trade Unit Preferences"
+        }
+      ],
+      "escalate": true,
+      "related": [
+        "setup-trade-units",
+        "missing-producer"
+      ],
+      "uiLabels": [
+        "No trade units assigned",
+        "Trade units unavailable",
+        "Retry",
+        "Trade Unit Preferences"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "why-selection-matters",
+      "question": "Why does my trade-unit selection change what I see?",
+      "chip": "Why my selection matters",
+      "keywords": [
+        "selection",
+        "selected",
+        "trade",
+        "unit",
+        "see",
+        "different",
+        "missing",
+        "scope",
+        "remember"
+      ],
+      "routes": [
+        "/",
+        "/build-list",
+        "/dashboard",
+        "/insights"
+      ],
+      "feature": "system",
+      "answer": "The producer list, Build a List, Actionable Insights and the dashboard all show only the trade units you've selected. Your selection is remembered between sessions, so if something seems to be missing, check the selector first.",
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "trade-unit-selector"
+        }
+      ],
+      "related": [
+        "missing-producer",
+        "all-producers"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "all-producers",
+      "question": "How do I find a producer outside my trade units?",
+      "chip": "Using All Producers",
+      "keywords": [
+        "all",
+        "producers",
+        "outside",
+        "other",
+        "everyone",
+        "anywhere",
+        "search",
+        "not",
+        "added"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Choose **All Producers** in the selector, then search by name or Scoular ID (3 or more characters). This searches every producer, including ones not yet added to a trade unit. It searches names and IDs only, not phone or email, and switches back to your trade units when you reload.",
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "trade-unit-selector"
+        }
+      ],
+      "related": [
+        "missing-producer",
+        "new-producer"
+      ],
+      "uiLabels": [
+        "All Producers"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "missing-producer",
+      "question": "A producer isn't showing up in my list. What should I check?",
+      "chip": "A producer isn't showing up",
+      "keywords": [
+        "producer",
+        "customer",
+        "missing",
+        "showing",
+        "show",
+        "find",
+        "cant",
+        "list",
+        "where",
+        "gone",
+        "disappeared"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Check the trade-unit selector at the top. The list only shows the trade units selected there.",
+      "steps": [
+        "If the producer has never had a contract or ticket, they won't be listed yet. Choose **All Producers** in the selector, search by name (3 or more letters), open the result marked **Not added**, then **Edit** their trade units to add them.",
+        "If the selector says **No trade units assigned**, set yours up under profile menu, **Trade Unit Preferences**."
+      ],
+      "stepsOpen": true,
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "trade-unit-selector"
+        }
+      ],
+      "link": {
+        "kind": "tup",
+        "label": "Open Trade Unit Preferences"
+      },
+      "troubleshoot": [
+        {
+          "label": "Check where a producer is listed",
+          "tree": "missing-producer"
+        }
+      ],
+      "escalate": true,
+      "related": [
+        "trade-units-none-vs-unavailable",
+        "all-producers",
+        "search-producers"
+      ],
+      "uiLabels": [
+        "All Producers",
+        "Not added",
+        "Edit",
+        "No trade units assigned",
+        "Trade Unit Preferences"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "search-producers",
+      "question": "What can I search producers by?",
+      "chip": "Searching for a producer",
+      "keywords": [
+        "search",
+        "find",
+        "name",
+        "email",
+        "phone",
+        "city",
+        "state",
+        "scoular",
+        "id",
+        "look"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Type into **Search producers** using any part of a name, Scoular ID, city, state (like NE), phone number or email address. Every word you type has to match something. Search covers the trade units you've selected; use **All Producers** to search everywhere.",
+      "related": [
+        "missing-producer",
+        "all-producers"
+      ],
+      "uiLabels": [
+        "Search producers",
+        "All Producers"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "new-producer",
+      "question": "Can I add a brand-new producer?",
+      "chip": "Adding a new producer",
+      "keywords": [
+        "new",
+        "add",
+        "create",
+        "producer",
+        "customer",
+        "prospect",
+        "onboard",
+        "master"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Producers come from Scoular's customer master, so the Workbench can't create one from scratch. If the producer exists there but isn't in your list, use **All Producers** to find them and add them to a trade unit. If they don't exist at all, request a new customer through customer master data.",
+      "related": [
+        "all-producers",
+        "missing-producer"
+      ],
+      "uiLabels": [
+        "All Producers"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "trade-unit-chips",
+      "question": "Why can't I remove some of a producer's trade units?",
+      "chip": "Locked trade units on a producer",
+      "keywords": [
+        "remove",
+        "trade",
+        "unit",
+        "locked",
+        "grey",
+        "gray",
+        "amber",
+        "chip",
+        "edit",
+        "producer"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "When you edit a producer's trade units, grey ones are locked because the producer has open contracts or tickets there. Amber ones can be removed: they were added by hand or have no recent activity. If you remove a trade unit that has planting intentions, you'll be asked where those acres should go.",
+      "related": [
+        "planting-no-longer-assigned",
+        "missing-producer"
+      ],
+      "uiLabels": [
+        "Edit"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "build-list",
+      "question": "How do I build a list?",
+      "keywords": [
+        "build",
+        "list",
+        "query",
+        "library",
+        "refine",
+        "filters",
+        "members",
+        "save",
+        "call",
+        "make",
+        "create"
+      ],
+      "routes": [
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "answer": "Open **Build a List**, pick a query from the **Query Library**, narrow it with **Refine Filters**, add or exclude producers in **Manage Members**, then **Save List**. Saved lists re-run against live data each time; they aren't snapshots.",
+      "steps": [
+        "Open **Build a List**.",
+        "Pick a query from the **Query Library**.",
+        "Narrow it with **Refine Filters**.",
+        "Add or exclude producers in **Manage Members**.",
+        "Select **Save List**."
+      ],
+      "actions": [
+        {
+          "kind": "route",
+          "label": "Take me there",
+          "target": "/build-list"
+        },
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "query-library"
+        }
+      ],
+      "examples": [
+        "Producers with planting intentions",
+        "Producers with no planting intentions",
+        "Producers with corn planting intentions"
+      ],
+      "troubleshoot": [
+        {
+          "label": "My saved list isn't in the dropdown",
+          "faqId": "saved-list-missing"
+        },
+        {
+          "label": "\"Still loading contract and ticket data\"",
+          "faqId": "still-loading"
+        }
+      ],
+      "escalate": true,
+      "related": [
+        "saved-list-missing",
+        "share-list",
+        "request-query"
+      ],
+      "uiLabels": [
+        "Build a List",
+        "Query Library",
+        "Refine Filters",
+        "Manage Members",
+        "Save List"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "saved-list-missing",
+      "question": "Why isn't my saved list in the dropdown?",
+      "chip": "Saved list not in dropdown",
+      "keywords": [
+        "saved",
+        "list",
+        "dropdown",
+        "missing",
+        "gone",
+        "find",
+        "lists"
+      ],
+      "routes": [
+        "/",
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "answer": "A saved list only shows when at least one of the trade units it was saved under is selected. Select one of those trade units and it will appear.",
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "trade-unit-selector"
+        }
+      ],
+      "escalate": true,
+      "related": [
+        "build-list",
+        "saved-list-changed"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "saved-list-changed",
+      "question": "Why does my saved list show different producers than last time?",
+      "chip": "Saved list changed",
+      "keywords": [
+        "saved",
+        "list",
+        "different",
+        "changed",
+        "producers",
+        "snapshot",
+        "results"
+      ],
+      "routes": [
+        "/",
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "answer": "Saved lists re-run against current data every time you open them, so producers move in and out as their contracts, tickets and planting change. Producers you added or excluded by hand stay that way.",
+      "related": [
+        "build-list"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "share-list",
+      "question": "How do I share a list with my team?",
+      "chip": "Sharing a list",
+      "keywords": [
+        "share",
+        "team",
+        "list",
+        "lists",
+        "assign",
+        "manager",
+        "personal"
+      ],
+      "routes": [
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "answer": "Lists you save are personal to you. Managers — the people in the Super Users group, who can also see the Usage Dashboard — can share lists with the whole team under **Team Lists** and assign a list to a team member. If you'd like a list shared, ask your manager.",
+      "related": [
+        "build-list"
+      ],
+      "uiLabels": [
+        "Team Lists"
+      ],
+      "lastVerified": "2026-10-14"
+    },
+    {
+      "id": "build-list-no-producers",
+      "question": "Why did my list return no producers?",
+      "chip": "List returned no producers",
+      "keywords": [
+        "no",
+        "producers",
+        "found",
+        "empty",
+        "list",
+        "results",
+        "nothing",
+        "zero"
+      ],
+      "routes": [
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "answer": "If you see **Retry**, the data didn't finish loading; press it. Otherwise no producer in your selected trade units matches the query and filters. Try clearing some **Refine Filters** or selecting more trade units.",
+      "related": [
+        "still-loading",
+        "why-selection-matters"
+      ],
+      "uiLabels": [
+        "Retry",
+        "Refine Filters"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "still-loading",
+      "question": "What does 'Still loading contract and ticket data' mean?",
+      "chip": "\"Still loading contract and ticket data\"",
+      "keywords": [
+        "still",
+        "loading",
+        "contract",
+        "ticket",
+        "data",
+        "slow",
+        "wait",
+        "minute"
+      ],
+      "routes": [
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "answer": "Build a List is still pulling contract and ticket data from CTRM. The first load for a large trade unit can take a minute or two. Wait a moment and retry; it's much faster after that.",
+      "related": [
+        "slow-first-load",
+        "contracts-not-loaded"
+      ],
+      "uiLabels": [
+        "Still loading contract and ticket data"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "build-list-disabled",
+      "question": "Why can't I use Build a List?",
+      "chip": "Build a List is unavailable",
+      "keywords": [
+        "disabled",
+        "cant",
+        "unavailable",
+        "greyed",
+        "mode"
+      ],
+      "routes": [
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "answer": "Build a List works by trade unit. If you're in **All Producers** mode, pick a trade group or trade unit in the selector first.",
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "trade-unit-selector"
+        }
+      ],
+      "related": [
+        "all-producers",
+        "build-list"
+      ],
+      "uiLabels": [
+        "All Producers"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "request-query",
+      "question": "The query I need isn't in the library. Can I ask for one?",
+      "chip": "Request a new query",
+      "keywords": [
+        "request",
+        "query",
+        "new",
+        "library",
+        "missing",
+        "need",
+        "ask"
+      ],
+      "routes": [
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "answer": "Yes. In the **Query Library**, use **Request a Query** and describe the producers you're trying to find.",
+      "actions": [
+        {
+          "kind": "route",
+          "label": "Take me there",
+          "target": "/build-list"
+        }
+      ],
+      "related": [
+        "build-list"
+      ],
+      "uiLabels": [
+        "Query Library",
+        "Request a Query"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "create-group",
+      "question": "How do I create a group?",
+      "keywords": [
+        "group",
+        "groups",
+        "create",
+        "new",
+        "recap",
+        "daily",
+        "email",
+        "teams",
+        "members"
+      ],
+      "routes": [
+        "/daily-digest"
+      ],
+      "feature": "daily-recap",
+      "answer": "Open the profile menu and choose **Manage Groups**, then **New Group**. Name it, choose Email or **Microsoft Teams** delivery, add **Members**, and switch on **Send daily recap**. Any member can edit a group; only the person who created it can delete it.",
+      "link": {
+        "kind": "route",
+        "label": "Go to Manage Groups",
+        "target": "/daily-digest"
+      },
+      "escalate": true,
+      "related": [
+        "edit-group",
+        "recap-not-sent"
+      ],
+      "uiLabels": [
+        "Manage Groups",
+        "New Group",
+        "Microsoft Teams",
+        "Members",
+        "Send daily recap"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "edit-group",
+      "question": "How do I add or remove people from a group?",
+      "chip": "Change a group's members",
+      "keywords": [
+        "group",
+        "edit",
+        "add",
+        "remove",
+        "people",
+        "members",
+        "user",
+        "users",
+        "change",
+        "delete"
+      ],
+      "routes": [
+        "/daily-digest"
+      ],
+      "feature": "daily-recap",
+      "answer": "Open **Manage Groups**, open the group and change its **Members**. Any member can do this. If you remove yourself you'll be asked to confirm, because you lose access to the group; choose **Keep my access** to undo.",
+      "link": {
+        "kind": "route",
+        "label": "Go to Manage Groups",
+        "target": "/daily-digest"
+      },
+      "related": [
+        "create-group"
+      ],
+      "uiLabels": [
+        "Manage Groups",
+        "Members",
+        "Keep my access"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "recap-not-sent",
+      "question": "Why didn't my group get a daily recap?",
+      "chip": "Daily recap didn't arrive",
+      "keywords": [
+        "recap",
+        "daily",
+        "email",
+        "teams",
+        "sent",
+        "send",
+        "didnt",
+        "missing",
+        "arrive",
+        "channel"
+      ],
+      "routes": [
+        "/daily-digest"
+      ],
+      "feature": "daily-recap",
+      "answer": "Daily recaps go out at 6 PM Central and cover the group's notes from the last 24 hours, so no recap is sent on a day with no new notes. For Microsoft Teams delivery, the channel's email address also has to accept mail from scoular.com senders; a Teams owner can change that in the channel's email settings.",
+      "escalate": true,
+      "related": [
+        "create-group"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-14"
+    },
+    {
+      "id": "add-note",
+      "question": "How do I add a note to a producer?",
+      "chip": "Add a note",
+      "keywords": [
+        "note",
+        "notes",
+        "add",
+        "write",
+        "log",
+        "call",
+        "contact"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Select the producer, then use **Add Note** in the right-hand column. Notes can be up to 5,000 characters.",
+      "related": [
+        "pin-note",
+        "follow-up",
+        "mention-someone"
+      ],
+      "uiLabels": [
+        "Add Note"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "pin-note",
+      "question": "How do I pin an important note?",
+      "chip": "Pin a note",
+      "keywords": [
+        "pin",
+        "pinned",
+        "note",
+        "important",
+        "top",
+        "unpin"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Use **Pin** on the note to keep it at the top of the producer's notes. Use **Unpin** to release it.",
+      "related": [
+        "add-note"
+      ],
+      "uiLabels": [
+        "Pin",
+        "Unpin"
+      ],
+      "lastVerified": "2026-10-14"
+    },
+    {
+      "id": "follow-up",
+      "question": "How do I set a follow-up reminder?",
+      "chip": "Set a follow-up",
+      "keywords": [
+        "follow",
+        "followup",
+        "reminder",
+        "remind",
+        "calendar",
+        "outlook",
+        "schedule"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "On the producer's profile, select **Add Follow-Up**. Follow-ups are private to you and are added to your Outlook calendar. If the calendar event didn't appear, use **Add to Outlook** to try again.",
+      "related": [
+        "add-note"
+      ],
+      "uiLabels": [
+        "Add Follow-Up",
+        "Add to Outlook"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "contracts-not-loaded",
+      "question": "What does 'Contracts could not be loaded' mean?",
+      "chip": "\"Contracts could not be loaded\"",
+      "keywords": [
+        "contracts",
+        "tickets",
+        "could",
+        "not",
+        "loaded",
+        "load",
+        "ctrm",
+        "error",
+        "retry",
+        "failed"
+      ],
+      "routes": [
+        "/",
+        "/insights",
+        "/build-list"
+      ],
+      "feature": "customers",
+      "answer": "The contract system (CTRM) didn't respond, so the app shows nothing rather than a partial list. Press **Retry** in a moment. If it keeps happening, report it.",
+      "escalate": true,
+      "related": [
+        "data-sources",
+        "still-loading"
+      ],
+      "uiLabels": [
+        "Contracts could not be loaded",
+        "Retry"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "data-sources",
+      "question": "Where do contracts and tickets in the Workbench come from?",
+      "chip": "Where the data comes from",
+      "keywords": [
+        "where",
+        "data",
+        "come",
+        "source",
+        "ctrm",
+        "ods",
+        "current",
+        "fresh",
+        "accurate",
+        "wrong",
+        "incorrect"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Contracts, pricing and tickets are read live from CTRM, so they're current. Producer details, storage contracts and DP contracts come from Scoular's data store, which is refreshed on a schedule and can lag behind CTRM. Grain on farm, bin sites, notes and planting intentions are saved in the Workbench itself and are always current. If a contract or ticket looks wrong, check it in CTRM first; if CTRM is right and the Workbench isn't, report it.",
+      "escalate": true,
+      "related": [
+        "contracts-not-loaded"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-14"
+    },
+    {
+      "id": "unapplied-ticket",
+      "question": "What is an unapplied ticket?",
+      "keywords": [
+        "unapplied",
+        "ticket",
+        "tickets",
+        "delivery",
+        "applied"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "A delivery ticket that hasn't been applied to a purchase contract yet. That includes unload, loadout and customer-storage tickets. They're listed on the producer's **Unapplied Tickets** tab.",
+      "actions": [
+        {
+          "kind": "producer-tab",
+          "label": "Open Unapplied Tickets",
+          "target": "tickets"
+        }
+      ],
+      "related": [
+        "spot-load"
+      ],
+      "uiLabels": [
+        "Unapplied Tickets"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "spot-load",
+      "question": "What is a spot load?",
+      "keywords": [
+        "spot",
+        "load",
+        "loads",
+        "delivered",
+        "no",
+        "contract"
+      ],
+      "routes": [
+        "/insights"
+      ],
+      "feature": "insights",
+      "answer": "A delivery in the last 30 days that no open contract for the same crop covers. They're listed under **Spot Loads** in Actionable Insights.",
+      "actions": [
+        {
+          "kind": "route",
+          "label": "Go to Actionable Insights",
+          "target": "/insights"
+        }
+      ],
+      "related": [
+        "what-are-insights",
+        "unapplied-ticket"
+      ],
+      "uiLabels": [
+        "Spot Loads"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "what-are-insights",
+      "question": "What are Actionable Insights?",
+      "keywords": [
+        "actionable",
+        "insights",
+        "insight",
+        "daily",
+        "work",
+        "categories",
+        "attention"
+      ],
+      "routes": [
+        "/insights"
+      ],
+      "feature": "insights",
+      "answer": "A daily work list of producers who need attention, grouped into categories such as **Unconfirmed Contracts**, **Spot Loads** and **Unshipped Bushels**. Open a producer from any category to go straight to their profile.",
+      "actions": [
+        {
+          "kind": "route",
+          "label": "Go to Actionable Insights",
+          "target": "/insights"
+        }
+      ],
+      "related": [
+        "insights-empty",
+        "spot-load"
+      ],
+      "uiLabels": [
+        "Unconfirmed Contracts",
+        "Spot Loads",
+        "Unshipped Bushels"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "insights-empty",
+      "question": "Why is an Actionable Insights category empty?",
+      "chip": "Empty insights category",
+      "keywords": [
+        "insights",
+        "empty",
+        "category",
+        "nothing",
+        "zero",
+        "blank"
+      ],
+      "routes": [
+        "/insights"
+      ],
+      "feature": "insights",
+      "answer": "An empty category means nothing needs attention there right now; it isn't an error. Insights only cover the trade units you've selected, and if you see **No Trade Unit Selected**, pick one on the Producers page first.",
+      "related": [
+        "what-are-insights",
+        "why-selection-matters"
+      ],
+      "uiLabels": [
+        "No Trade Unit Selected"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "enter-planting",
+      "question": "Where do I enter planting intentions?",
+      "chip": "Enter planting intentions",
+      "keywords": [
+        "planting",
+        "intentions",
+        "enter",
+        "add",
+        "acres",
+        "crop",
+        "crops",
+        "plant"
+      ],
+      "routes": [
+        "/",
+        "/dashboard"
+      ],
+      "feature": "customers",
+      "answer": "Open the producer's profile and use the **Planting** tab. Add acres by crop, crop year and type (**Irrigated**, **Dryland** or **Double Crop**). Each row belongs to one trade unit.",
+      "actions": [
+        {
+          "kind": "producer-tab",
+          "label": "Open the Planting tab",
+          "target": "planting"
+        }
+      ],
+      "related": [
+        "planting-wrong-trade-unit",
+        "dashboard-acres-lower"
+      ],
+      "uiLabels": [
+        "Planting",
+        "Irrigated",
+        "Dryland",
+        "Double Crop"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "planting-wrong-trade-unit",
+      "question": "My planting acres are counted under the wrong trade unit. How do I fix that?",
+      "chip": "Acres under the wrong trade unit",
+      "keywords": [
+        "planting",
+        "acres",
+        "wrong",
+        "trade",
+        "unit",
+        "move",
+        "counted",
+        "dashboard"
+      ],
+      "routes": [
+        "/",
+        "/dashboard"
+      ],
+      "feature": "customers",
+      "answer": "On the producer's **Planting** tab, check the **Trade Unit** column, then **Edit** the row and choose the right trade unit. The dashboard counts each row only under its own trade unit.",
+      "actions": [
+        {
+          "kind": "producer-tab",
+          "label": "Open the Planting tab",
+          "target": "planting"
+        }
+      ],
+      "related": [
+        "planting-no-longer-assigned",
+        "dashboard-acres-lower"
+      ],
+      "uiLabels": [
+        "Planting",
+        "Trade Unit",
+        "Edit"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "planting-no-longer-assigned",
+      "question": "What does 'no longer assigned' mean on a planting row?",
+      "chip": "\"No longer assigned\" on planting",
+      "keywords": [
+        "no",
+        "longer",
+        "assigned",
+        "planting",
+        "row",
+        "trade",
+        "unit",
+        "removed"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "The row is tagged to a trade unit the producer has since left, so it doesn't count on any dashboard. **Edit** the row and move it to one of the producer's current trade units.",
+      "actions": [
+        {
+          "kind": "producer-tab",
+          "label": "Open the Planting tab",
+          "target": "planting"
+        }
+      ],
+      "related": [
+        "planting-wrong-trade-unit",
+        "trade-unit-chips"
+      ],
+      "uiLabels": [
+        "no longer assigned",
+        "Edit"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "dashboard-overview",
+      "question": "How do I use the Planting Intentions Dashboard?",
+      "chip": "Using the planting dashboard",
+      "keywords": [
+        "planting",
+        "intentions",
+        "dashboard",
+        "use",
+        "navigate",
+        "tabs",
+        "season",
+        "crop",
+        "filter"
+      ],
+      "routes": [
+        "/dashboard"
+      ],
+      "feature": "dashboard",
+      "answer": "It totals planting intentions for your selected trade units. Choose the **Growing Season** and use **Filter by Crop** at the top, then switch between the **By Crop**, **Producers & Planting Intentions** and **Harvest & Contracts** tabs. **Set Season Targets** holds your yield and market-share assumptions.",
+      "link": {
+        "kind": "route",
+        "label": "Go to the Planting Intentions Dashboard",
+        "target": "/dashboard"
+      },
+      "related": [
+        "dashboard-acres-lower",
+        "season-targets"
+      ],
+      "uiLabels": [
+        "Growing Season",
+        "Filter by Crop",
+        "By Crop",
+        "Producers & Planting Intentions",
+        "Harvest & Contracts",
+        "Set Season Targets"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "dashboard-acres-lower",
+      "question": "Why are acres on the dashboard lower than on the producer's profile?",
+      "chip": "Dashboard acres lower than profile",
+      "keywords": [
+        "acres",
+        "dashboard",
+        "lower",
+        "less",
+        "profile",
+        "different",
+        "planting",
+        "total",
+        "match"
+      ],
+      "routes": [
+        "/dashboard"
+      ],
+      "feature": "dashboard",
+      "answer": "The dashboard counts only planting rows tagged to the trade units you've selected. The profile shows the producer's whole farm.",
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "trade-unit-selector"
+        }
+      ],
+      "related": [
+        "planting-wrong-trade-unit",
+        "season-targets"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "season-targets",
+      "question": "How do I set season targets?",
+      "chip": "Set season targets",
+      "keywords": [
+        "season",
+        "targets",
+        "target",
+        "yield",
+        "market",
+        "share",
+        "goal",
+        "set"
+      ],
+      "routes": [
+        "/dashboard"
+      ],
+      "feature": "dashboard",
+      "answer": "On the **Planting Intentions Dashboard**, select **Set Season Targets** and enter the expected yield and market share for each crop. Targets are kept per trade unit, crop and year, and aren't carried over to the next year.",
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "set-season-targets"
+        }
+      ],
+      "link": {
+        "kind": "route",
+        "label": "Go to the Planting Intentions Dashboard",
+        "target": "/dashboard"
+      },
+      "related": [
+        "growth-opportunity-dash",
+        "dashboard-acres-lower",
+        "contract-coverage"
+      ],
+      "uiLabels": [
+        "Set Season Targets"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "growth-opportunity-dash",
+      "question": "Why does Growth Opportunity show a dash (—)?",
+      "chip": "Growth Opportunity shows \"—\"",
+      "keywords": [
+        "growth",
+        "opportunity",
+        "dash",
+        "blank",
+        "empty",
+        "missing",
+        "yield"
+      ],
+      "routes": [
+        "/",
+        "/dashboard"
+      ],
+      "feature": "customers",
+      "answer": "No yield estimate has been set for that crop and year, so there's nothing to project against. Add one under **Set Season Targets** on the Planting Intentions Dashboard; estimates are never carried over from another year.",
+      "link": {
+        "kind": "route",
+        "label": "Go to the Planting Intentions Dashboard",
+        "target": "/dashboard"
+      },
+      "related": [
+        "season-targets"
+      ],
+      "uiLabels": [
+        "Set Season Targets"
+      ],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "what-is-bid-sheet",
+      "question": "What is the Bid Sheet?",
+      "keywords": [
+        "bid",
+        "bids",
+        "sheet",
+        "price",
+        "prices",
+        "cash",
+        "basis",
+        "map"
+      ],
+      "routes": [
+        "/bid-sheet"
+      ],
+      "feature": "bidsheet",
+      "answer": "The **Bid Sheet** shows bids by location and crop, as a table and on a map, so you can compare Scoular's bids with the market around a producer.",
+      "link": {
+        "kind": "route",
+        "label": "Go to the Bid Sheet",
+        "target": "/bid-sheet"
+      },
+      "escalate": true,
+      "related": [
+        "report-problem"
+      ],
+      "uiLabels": [
+        "Bid Sheet"
+      ],
+      "lastVerified": "2026-10-14"
+    },
+    {
+      "id": "report-problem",
+      "question": "How do I report a problem?",
+      "chip": "Report a problem",
+      "keywords": [
+        "report",
+        "problem",
+        "bug",
+        "issue",
+        "support",
+        "help",
+        "ticket",
+        "servicenow",
+        "broken",
+        "error"
+      ],
+      "routes": [],
+      "feature": "system",
+      "answer": "Use **Still need help?** below to copy the details support needs, then send them to the Origination team. Include:",
+      "steps": [
+        "The release and build line from the bottom of the profile menu",
+        "The producer's Scoular ID, if it's about a producer",
+        "Your trade unit",
+        "The contract or ticket number, if there is one",
+        "A screenshot"
+      ],
+      "stepsOpen": true,
+      "escalate": true,
+      "related": [
+        "find-version"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "slow-first-load",
+      "question": "Why is the Workbench slow the first time I open something?",
+      "chip": "Slow first load",
+      "keywords": [
+        "slow",
+        "loading",
+        "load",
+        "first",
+        "time",
+        "wait",
+        "spinner",
+        "performance",
+        "faster"
+      ],
+      "routes": [],
+      "feature": "system",
+      "answer": "The first time you open a trade unit, the Workbench pulls its contracts and tickets from CTRM, which can take up to a minute for a large trade unit. After that the data is cached and screens open much faster.",
+      "related": [
+        "still-loading",
+        "contracts-not-loaded"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "id": "login-loop",
+      "question": "I keep getting sent back to sign in. What should I do?",
+      "chip": "Stuck signing in",
+      "keywords": [
+        "sign",
+        "login",
+        "log",
+        "loop",
+        "signed",
+        "out",
+        "session",
+        "expired",
+        "logout"
+      ],
+      "routes": [],
+      "feature": "system",
+      "answer": "Close every Origination Workbench tab and open it again. Your sign-in only lasts as long as the browser tab, and the Workbench also signs you out after 8 hours without activity.",
+      "escalate": true,
+      "related": [
+        "report-problem"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-13"
+    },
+    {
+      "keywords": [
+        "edit",
+        "change",
+        "update",
+        "producer",
+        "farm",
+        "details",
+        "acres",
+        "contact",
+        "contacts",
+        "commodities",
+        "correct"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "add-contact",
+        "save-disabled",
+        "link-producers"
+      ],
+      "uiLabels": [
+        "Edit",
+        "Edit Producer Details",
+        "Trade Units",
+        "Farm & Crops",
+        "Link Producers",
+        "Save Changes"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "edit-producer",
+      "question": "How do I edit a producer's details?",
+      "chip": "Edit a producer",
+      "answer": "Select the producer and use **Edit** at the top right of their profile. **Edit Producer Details** has three sections: **Trade Units**, **Farm & Crops** (contacts, bin sites, acres and commodities) and **Link Producers**. Make your changes, then **Save Changes**.",
+      "escalate": true
+    },
+    {
+      "keywords": [
+        "contact",
+        "contacts",
+        "add",
+        "phone",
+        "email",
+        "primary",
+        "person",
+        "decision",
+        "maker"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "edit-producer",
+        "link-producers"
+      ],
+      "uiLabels": [
+        "Edit",
+        "Farm & Crops",
+        "Add contact"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "add-contact",
+      "question": "How do I add a contact for a producer?",
+      "chip": "Add a contact",
+      "answer": "Open **Edit** on the producer, then under **Farm & Crops** use **Add contact**. Enter a name and, if you have them, a phone and email. The star marks the primary contact. Every contact needs a name."
+    },
+    {
+      "keywords": [
+        "save",
+        "changes",
+        "greyed",
+        "grayed",
+        "disabled",
+        "cant",
+        "button",
+        "edit"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "edit-producer",
+        "bin-site-outside-north-america"
+      ],
+      "uiLabels": [
+        "Save Changes"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "save-disabled",
+      "question": "Why can't I click Save Changes?",
+      "chip": "Save Changes is greyed out",
+      "answer": "**Save Changes** stays greyed out until something has changed, and while anything needs fixing: a contact without a name, a bin site with an error, or (for a producer not yet added) no trade unit chosen. Fix the item shown in red and it turns on."
+    },
+    {
+      "keywords": [
+        "commodity",
+        "commodities",
+        "remove",
+        "locked",
+        "grey",
+        "gray",
+        "amber",
+        "crop",
+        "chip"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "edit-producer",
+        "trade-unit-chips"
+      ],
+      "uiLabels": [
+        "From tickets"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "commodity-locked",
+      "question": "Why can't I remove a commodity from a producer?",
+      "chip": "Locked commodities",
+      "answer": "Grey commodities come from the producer's tickets (marked **From tickets**) and can't be removed. Amber ones were added by someone in the Workbench and can be removed with the ×."
+    },
+    {
+      "keywords": [
+        "badge",
+        "badges",
+        "esign",
+        "ach",
+        "check",
+        "payment",
+        "organic",
+        "enrolled",
+        "scoularview"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "organic-badge"
+      ],
+      "uiLabels": [
+        "eSign Enrolled",
+        "No eSign",
+        "ACH Payment",
+        "Check Payment",
+        "Organic Producer"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "profile-badges",
+      "question": "What do the badges next to a producer's name mean?",
+      "chip": "Profile badges",
+      "answer": "**eSign Enrolled** means the producer signs contracts electronically (click it to see their ScoularView recipients); **No eSign** means they don't. **ACH Payment** or **Check Payment** is how they're paid. **Organic Producer** appears for organic operations."
+    },
+    {
+      "keywords": [
+        "print",
+        "report",
+        "summary",
+        "pdf",
+        "producer",
+        "paper"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "print-list"
+      ],
+      "uiLabels": [
+        "Print",
+        "Producer Summary Report",
+        "Print Report"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "print-producer-report",
+      "question": "How do I print a producer report?",
+      "chip": "Print a producer report",
+      "answer": "Use **Print** at the top of the producer's profile. **Producer Summary Report** shows a preview: choose which sections to include (contracts, tickets, planting, storage, bin sites and so on), fill in your originator details, then **Print Report**."
+    },
+    {
+      "keywords": [
+        "print",
+        "export",
+        "excel",
+        "download",
+        "printout"
+      ],
+      "routes": [
+        "/build-list"
+      ],
+      "feature": "build-a-list",
+      "related": [
+        "build-list",
+        "print-producer-report"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-14",
+      "id": "print-list",
+      "question": "Can I print or export a list from Build a List?",
+      "chip": "Print or export a list",
+      "answer": "Not yet. Build a List can't be printed or exported today. If you need it, use **Still need help?** to request it so the team can prioritise it.",
+      "escalate": true
+    },
+    {
+      "keywords": [
+        "address",
+        "map",
+        "maps",
+        "google",
+        "directions",
+        "location",
+        "link"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "view-bin-sites"
+      ],
+      "uiLabels": [
+        "Contact and Locations",
+        "Open in Google Maps"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "address-map",
+      "question": "How do I open a producer's address in Google Maps?",
+      "chip": "Open an address in Maps",
+      "answer": "Click the address under **Contact and Locations** on the profile; it opens in Google Maps. If the record only has a state and no street or city, there's no link because there's nothing precise enough to map."
+    },
+    {
+      "keywords": [
+        "add",
+        "list",
+        "saved",
+        "producer",
+        "call",
+        "team"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "build-list",
+        "saved-list-changed"
+      ],
+      "uiLabels": [
+        "Add to List",
+        "Saved Lists"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "add-to-list",
+      "question": "How do I add a producer to a saved list?",
+      "chip": "Add a producer to a list",
+      "answer": "On the producer's profile use **Add to List** and pick one of your **Saved Lists**. Producers added this way stay on the list even if they wouldn't match its Build a List query."
+    },
+    {
+      "keywords": [
+        "never",
+        "contacted",
+        "contact",
+        "last",
+        "days",
+        "ago",
+        "red",
+        "note"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "add-note"
+      ],
+      "uiLabels": [
+        "Never contacted"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "never-contacted",
+      "question": "What do 'Never contacted' and the contact colours mean?",
+      "chip": "\"Never contacted\" and contact colours",
+      "answer": "**Never contacted** means no one has logged a note for that producer yet. Once there is one, lists show how long ago the last note was. In Build a List results and on the dashboard the text is colour-coded: green for the last week, yellow for under 30 days, and red for 30 days or more, or never contacted."
+    },
+    {
+      "keywords": [
+        "harvest",
+        "contract",
+        "pace",
+        "activity",
+        "summary",
+        "insights",
+        "panel",
+        "year"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "linked-activity"
+      ],
+      "uiLabels": [
+        "Harvest Contract Pace",
+        "Activity Summary",
+        "Producer Insights"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "producer-panels",
+      "question": "What do Harvest Contract Pace and the Activity Summary show?",
+      "chip": "Profile summary panels",
+      "answer": "**Harvest Contract Pace** compares how much this producer has contracted this year with the same point last year (the arrow shows up or down). The **Activity Summary** rolls up contracts, tickets, planting and storage — across all linked producers if there are any. **Producer Insights** opens more detail."
+    },
+    {
+      "keywords": [
+        "link",
+        "linked",
+        "producers",
+        "accounts",
+        "related",
+        "same",
+        "farm",
+        "connect",
+        "combine"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "switch-linked",
+        "linked-activity",
+        "add-contact"
+      ],
+      "uiLabels": [
+        "Edit",
+        "Link Producers",
+        "Search to Link Producer",
+        "A Primary Contact is required to link additional producers.",
+        "Farm & Crops",
+        "Save Changes"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "link-producers",
+      "question": "How do I link producer accounts together?",
+      "chip": "Link producers",
+      "answer": "Open **Edit** on the producer and go to **Link Producers**. Search with **Search to Link Producer**, pick the producer, then **Save Changes**. A primary contact is needed first — if you see **A Primary Contact is required to link additional producers.**, add one under **Farm & Crops** and star it.",
+      "steps": [
+        "Open **Edit** on the producer.",
+        "If there's no starred contact yet, add one under **Farm & Crops** and star it.",
+        "In **Link Producers**, search by name, ID or producer code and pick the producer.",
+        "Select **Save Changes**."
+      ]
+    },
+    {
+      "keywords": [
+        "switch",
+        "dropdown",
+        "between",
+        "other",
+        "change",
+        "toggle"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "link-producers"
+      ],
+      "uiLabels": [
+        "Producer Insights"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "switch-linked",
+      "question": "How do I switch between linked producers?",
+      "chip": "Switch between linked producers",
+      "answer": "When a producer has linked accounts, a dropdown appears next to **Producer Insights** on their profile. Pick a name to switch the profile to that producer."
+    },
+    {
+      "keywords": [
+        "activity",
+        "summary",
+        "combined",
+        "group",
+        "rolled",
+        "includes",
+        "other"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "link-producers",
+        "producer-panels"
+      ],
+      "uiLabels": [
+        "Activity Summary"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "linked-activity",
+      "question": "Why does the Activity Summary include other producers?",
+      "chip": "Linked data in Activity Summary",
+      "answer": "The **Activity Summary** covers the whole linked group, so contracts, tickets, planting and storage from linked producers are included, and \"last contact\" is the newest note across the group. Each producer's own tabs still show only their records."
+    },
+    {
+      "keywords": [
+        "bin",
+        "bins",
+        "site",
+        "sites",
+        "grain",
+        "farm",
+        "storage",
+        "view",
+        "see",
+        "where",
+        "capacity"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "add-bin-site",
+        "grain-on-farm"
+      ],
+      "uiLabels": [
+        "Contact and Locations",
+        "Bin Sites"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "view-bin-sites",
+      "question": "Where do I see a producer's bin sites and grain on farm?",
+      "chip": "View bin sites",
+      "answer": "Bin sites are at the bottom of **Contact and Locations** on the profile, with their capacity; the pin opens the site in Google Maps. Grain on farm shows as a bushel total under Farm Details — click it to see the breakdown by bin site and crop."
+    },
+    {
+      "keywords": [
+        "add",
+        "edit",
+        "bin",
+        "site",
+        "sites",
+        "location",
+        "capacity",
+        "coordinates",
+        "latitude",
+        "longitude"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "bin-site-outside-north-america",
+        "grain-on-farm"
+      ],
+      "uiLabels": [
+        "Edit",
+        "Farm & Crops",
+        "Add bin site"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "add-bin-site",
+      "question": "How do I add or edit a bin site?",
+      "chip": "Add a bin site",
+      "answer": "Open **Edit** on the producer and, under **Farm & Crops**, use **Add bin site**. Only the name is required; add capacity and location when you have them. For the location, right-click the spot in Google Maps, click the coordinates to copy them, and paste them in."
+    },
+    {
+      "keywords": [
+        "outside",
+        "north",
+        "america",
+        "rejected",
+        "coordinates",
+        "latitude",
+        "longitude",
+        "minus",
+        "error",
+        "bin",
+        "location",
+        "swapped"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "add-bin-site"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-14",
+      "id": "bin-site-outside-north-america",
+      "question": "Why was my bin site location rejected as outside North America?",
+      "chip": "Bin site location rejected",
+      "answer": "Usually one of two things: the longitude is missing its minus sign (North American longitudes are negative, e.g. -95.14), or latitude and longitude are swapped (latitude comes first, e.g. 39.11, -95.14). Copying the coordinates straight from Google Maps avoids both. The message under the field says which it is."
+    },
+    {
+      "keywords": [
+        "grain",
+        "farm",
+        "record",
+        "add",
+        "bushels",
+        "sold",
+        "target",
+        "price",
+        "grade",
+        "bid",
+        "bins"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "add-bin-site",
+        "view-bin-sites",
+        "storage-vs-grain-on-farm"
+      ],
+      "uiLabels": [
+        "Edit",
+        "Farm & Crops",
+        "Add grain on farm"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "grain-on-farm",
+      "question": "How do I record grain on farm?",
+      "chip": "Record grain on farm",
+      "answer": "Open **Edit**, find the bin site under **Farm & Crops**, use **Add grain on farm** and pick the commodity. Enter total and sold bushels, grade, target and last bid. Target and last bid can be negative when you're working in basis."
+    },
+    {
+      "keywords": [
+        "storage",
+        "tab",
+        "stored",
+        "grain",
+        "tickets",
+        "cost",
+        "bushels",
+        "charges"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "dp-contracts",
+        "storage-vs-grain-on-farm"
+      ],
+      "uiLabels": [
+        "Storage",
+        "Filter Storage"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "storage-tab",
+      "question": "What does the Storage tab show?",
+      "chip": "The Storage tab",
+      "answer": "The producer's storage contracts: grain they have in Scoular storage, grouped by crop and location, with bushels, accumulated storage cost and cents per bushel. Expand a group to see its tickets. **Filter Storage** changes the grouping."
+    },
+    {
+      "keywords": [
+        "dp",
+        "delayed",
+        "pricing",
+        "contracts",
+        "tab",
+        "unpriced",
+        "charges"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "storage-tab",
+        "storage-vs-grain-on-farm"
+      ],
+      "uiLabels": [
+        "DP Contracts"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "dp-contracts",
+      "question": "What does the DP Contracts tab show?",
+      "chip": "DP (Delayed Pricing) contracts",
+      "answer": "The producer's Delayed Pricing contracts: grain that has been delivered but not priced yet, building up storage-style charges until it is. The **DP Contracts** tab groups them by commodity, then contract, then ticket, with bushels and accumulated charges."
+    },
+    {
+      "keywords": [
+        "difference",
+        "between",
+        "versus",
+        "compare",
+        "vs"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "storage-tab",
+        "dp-contracts",
+        "grain-on-farm"
+      ],
+      "uiLabels": [
+        "DP Contracts"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "storage-vs-grain-on-farm",
+      "question": "What is the difference between storage, DP contracts and grain on farm?",
+      "chip": "Storage vs. DP vs. grain on farm",
+      "answer": "**Storage** shows storage contracts: grain held in Scoular facilities. **DP Contracts** shows Delayed Pricing contracts: grain delivered to Scoular but not yet priced. **Grain on farm** is grain in the producer's own bins, which you record yourself on their bin sites."
+    },
+    {
+      "keywords": [
+        "unconfirmed",
+        "contract",
+        "contracts",
+        "confirm",
+        "confirmed",
+        "sign"
+      ],
+      "routes": [
+        "/insights",
+        "/"
+      ],
+      "feature": "insights",
+      "related": [
+        "what-are-insights"
+      ],
+      "uiLabels": [
+        "Unconfirmed Contracts"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "unconfirmed-contract",
+      "question": "What is an unconfirmed contract?",
+      "chip": "Unconfirmed contracts",
+      "answer": "A contract the producer hasn't confirmed yet. Fulfilled and cancelled contracts are left out. They're listed under **Unconfirmed Contracts** in Actionable Insights so you can follow up with the producer.",
+      "actions": [
+        {
+          "kind": "route",
+          "label": "Go to Actionable Insights",
+          "target": "/insights"
+        }
+      ]
+    },
+    {
+      "keywords": [
+        "unshipped",
+        "bushels",
+        "past",
+        "delivery",
+        "date",
+        "overdue",
+        "open",
+        "remaining"
+      ],
+      "routes": [
+        "/insights"
+      ],
+      "feature": "insights",
+      "related": [
+        "unshipped-wrong",
+        "what-are-insights"
+      ],
+      "uiLabels": [
+        "Unshipped Bushels Past Delivery Date"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "unshipped-bushels",
+      "question": "What does 'Unshipped Bushels Past Delivery Date' mean?",
+      "chip": "Unshipped bushels",
+      "answer": "Purchase contracts whose delivery end date has passed but that still have bushels left to deliver. Each row shows how many days overdue the contract is and how much remains. Open it to go to the producer's contracts.",
+      "actions": [
+        {
+          "kind": "route",
+          "label": "Go to Actionable Insights",
+          "target": "/insights"
+        }
+      ]
+    },
+    {
+      "keywords": [
+        "unshipped",
+        "bushels",
+        "wrong",
+        "incorrect",
+        "missing",
+        "old",
+        "stale",
+        "not",
+        "updated"
+      ],
+      "routes": [
+        "/insights"
+      ],
+      "feature": "insights",
+      "related": [
+        "unshipped-bushels",
+        "data-sources"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-14",
+      "id": "unshipped-wrong",
+      "question": "Why don't the unshipped bushels look right?",
+      "chip": "Unshipped bushels look wrong",
+      "answer": "Contract balances come live from CTRM and are refreshed every 15 minutes, so a delivery applied in the last few minutes may not show yet. Wait a little and refresh. If CTRM shows the right balance and the Workbench still doesn't, report it.",
+      "escalate": true
+    },
+    {
+      "keywords": [
+        "organic",
+        "producer",
+        "badge",
+        "certified",
+        "nop",
+        "green"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "nop-id",
+        "profile-badges"
+      ],
+      "uiLabels": [
+        "Organic Producer",
+        "NOP ID"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "organic-badge",
+      "question": "What does the Organic Producer badge mean?",
+      "chip": "The Organic Producer badge",
+      "answer": "The producer is an organic operation: either CTRM marks them as organic or they have a NOP ID on file. Click the badge to see their NOP ID."
+    },
+    {
+      "keywords": [
+        "nop",
+        "id",
+        "national",
+        "organic",
+        "program",
+        "certification",
+        "usda",
+        "number",
+        "missing"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "organic-badge"
+      ],
+      "uiLabels": [
+        "No NOP ID on file for this producer."
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "nop-id",
+      "question": "What is a NOP ID?",
+      "chip": "What is a NOP ID?",
+      "answer": "The operation's ID in the USDA National Organic Program, which certifies organic producers. NOP certifications don't expire. If you see **No NOP ID on file for this producer.**, look the producer up in the USDA Organic Integrity Database. If they're listed there with a NOP ID but the Workbench doesn't show it, use **Still need help?** to report it.",
+      "escalate": true
+    },
+    {
+      "keywords": [
+        "mention",
+        "tag",
+        "notify",
+        "person",
+        "someone",
+        "group",
+        "teams",
+        "channel",
+        "note",
+        "share"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "mention-not-sent",
+        "teams-channel-missing",
+        "add-note"
+      ],
+      "uiLabels": [
+        "Add Note"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "mention-someone",
+      "question": "How do I mention someone in a note?",
+      "chip": "Mention someone in a note",
+      "answer": "In the note box, type **@** and the start of a name, then pick from the list. You can mention a person, a trade unit, a group or a Teams channel. People are emailed within a few minutes of the note being saved; mentioning a trade unit or group notifies its members, and a Teams channel gets the note posted to it."
+    },
+    {
+      "keywords": [
+        "mention",
+        "mentioned",
+        "notified",
+        "notification",
+        "email",
+        "not",
+        "sent",
+        "received",
+        "edit",
+        "edited"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "mention-someone"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-14",
+      "id": "mention-not-sent",
+      "question": "Why wasn't the person I mentioned notified?",
+      "chip": "Mention not received",
+      "answer": "Mentions are only sent when a note is first saved. A mention added later by editing the note isn't sent, so add a new note instead. Also check the name stayed highlighted: deleting part of the @name removes the mention.",
+      "escalate": true
+    },
+    {
+      "keywords": [
+        "teams",
+        "channel",
+        "missing",
+        "mention",
+        "list",
+        "email",
+        "address",
+        "not",
+        "showing"
+      ],
+      "routes": [
+        "/",
+        "/daily-digest"
+      ],
+      "feature": "customers",
+      "related": [
+        "mention-someone",
+        "recap-not-sent"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-14",
+      "id": "teams-channel-missing",
+      "question": "Why isn't my Teams channel in the @ list?",
+      "chip": "Teams channel missing from @",
+      "answer": "You'll only see channels in teams you belong to, and only channels that have an email address. In Teams, open the channel's menu (⋯) and choose Get email address, then wait up to 15 minutes for the list to refresh. If notes never arrive in the channel, its email settings must allow messages from scoular.com.",
+      "escalate": true
+    },
+    {
+      "keywords": [
+        "contract",
+        "coverage",
+        "sales",
+        "opportunities",
+        "contracted",
+        "production",
+        "estimated",
+        "dashboard"
+      ],
+      "routes": [
+        "/dashboard"
+      ],
+      "feature": "dashboard",
+      "related": [
+        "season-targets",
+        "dashboard-overview"
+      ],
+      "uiLabels": [
+        "Contract Coverage",
+        "Sales Opportunities",
+        "Set Season Targets"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "contract-coverage",
+      "question": "What do Contract Coverage and Sales Opportunities show?",
+      "chip": "Contract Coverage",
+      "answer": "**Contract Coverage** compares bushels already contracted with estimated production for the season, crop by crop. **Sales Opportunities** points to where there's production left to contract. Both depend on yield estimates set under **Set Season Targets**."
+    },
+    {
+      "keywords": [
+        "calculator",
+        "calculators",
+        "profitability",
+        "check",
+        "cancel",
+        "roll",
+        "settlement",
+        "breakeven"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "calculator-save",
+        "calculator-wrong"
+      ],
+      "uiLabels": [
+        "Calculators",
+        "Profitability",
+        "Cancel vs. Roll"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "calculators",
+      "question": "How do I use the calculators?",
+      "chip": "Using the calculators",
+      "answer": "Select a producer, then use the **Calculators** button at the bottom right. Choose **Profitability** (farm profitability by crop), **Check** (a producer settlement check) or **Cancel vs. Roll** (cancelling versus rolling a contract). The producer's name fills in for you."
+    },
+    {
+      "keywords": [
+        "calculator",
+        "save",
+        "share",
+        "send",
+        "pdf",
+        "download",
+        "keep",
+        "lost"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "calculators"
+      ],
+      "uiLabels": [
+        "Download PDF"
+      ],
+      "lastVerified": "2026-10-14",
+      "id": "calculator-save",
+      "question": "Can I save or share a calculation?",
+      "chip": "Save or share a calculation",
+      "answer": "Calculations aren't saved — closing the calculator clears it. Use **Download PDF** to keep a copy or share it with the producer or a colleague."
+    },
+    {
+      "keywords": [
+        "calculator",
+        "calculation",
+        "wrong",
+        "incorrect",
+        "result",
+        "number",
+        "missing"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "related": [
+        "calculators"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-14",
+      "id": "calculator-wrong",
+      "question": "A calculation looks wrong. What should I do?",
+      "chip": "Calculation looks wrong",
+      "answer": "Check the inputs first — units matter (some costs are per acre, freight is per bushel). If the inputs are right and the result still looks wrong, use **Still need help?** and include the numbers you entered.",
+      "escalate": true
+    }
+  ]
+}

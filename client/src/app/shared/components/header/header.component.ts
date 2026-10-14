@@ -26,6 +26,7 @@ import { UserRolesService } from '@core/services/user-roles.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { HelpPanelService } from '@core/services/help-panel.service';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -54,6 +55,8 @@ export class HeaderComponent {
   /** Public: the template reads hasUnseen() and version() straight off it. */
   readonly whatsNew = inject(WhatsNewService);
   private readonly usageTracking = inject(UsageTrackingService);
+  /** Public: the template reads open() for the Help button's pressed state. */
+  readonly helpPanel = inject(HelpPanelService);
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
@@ -162,6 +165,32 @@ export class HeaderComponent {
   openWhatsNew(): void {
     this.usageTracking.trackWhatsNewOpened();
     this.router.navigate(['/whats-new']);
+  }
+
+  /** The header "?" button: opens the Help panel, or closes it if it's open. */
+  toggleHelp(): void {
+    this.profileMenuOpen.set(false);
+    this.helpPanel.toggle('header');
+  }
+
+  /**
+   * The header "?" button. `compact` is the phone header, where space is tight. Measured with the
+   * 186px logo at 16px text: the phone bar needs 358px in production with a 36px button, which fits
+   * every common phone (360px+). Dev and QA also show the environment pill, which pushes it to ~404px,
+   * so there the button hides below 410px — Help stays reachable from the menu drawer.
+   */
+  helpButtonClass(compact: boolean): string {
+    const size = compact ? 'w-9 h-9' : 'w-10 h-10';
+    const narrowNonProd = compact && this.envName ? 'max-[409px]:hidden' : '';
+    const state = this.helpPanel.open()
+      ? 'border-scoular-blue bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC]'
+      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-scoular-blue/5 hover:text-scoular-blue-medium dark:hover:bg-scoular-blue/20 dark:hover:text-[#7CC4EC]';
+    return `flex items-center justify-center ${size} ${narrowNonProd} rounded-full border ${state} focus:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 transition-colors`;
+  }
+
+  /** Help from the profile menu or the mobile drawer. Opens the panel; never closes it. */
+  openHelp(source: 'menu' | 'drawer'): void {
+    this.helpPanel.openPanel(source);
   }
 
   /** The build line at the foot of the profile menu, or null before the version call lands. */

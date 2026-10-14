@@ -1,0 +1,129 @@
+<!-- Kept alive (hidden, not removed) while a spotlight is showing, so an in-progress troubleshooter
+     or a scrolled conversation is exactly as the user left it when they come back. -->
+@if (panel.open()) {
+  <!-- Desktop: a column below the header that the page makes room for (app.component pads <main>).
+       Phone: full-screen over the page, so it's a modal dialog and traps focus. -->
+  <div role="dialog" aria-labelledby="help-panel-title" [attr.aria-modal]="panel.desktop() ? null : 'true'" [style.display]="visible() ? null : 'none'"
+    [cdkTrapFocus]="!panel.desktop() && visible()"
+    class="fixed z-40 flex flex-col bg-gray-50 dark:bg-gray-900 inset-0 lg:inset-auto lg:right-0 lg:bottom-0 lg:top-[var(--app-header-h)] lg:w-[400px] lg:border-l border-gray-200 dark:border-gray-700 lg:shadow-[-8px_0_24px_-12px_rgba(0,0,0,0.18)] motion-safe:transition-transform">
+
+    <!-- Panel header -->
+    <div class="flex items-center gap-2 px-4 h-14 shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <span class="text-scoular-blue-medium dark:text-[#7CC4EC]"><app-help-icon name="help-circle" [size]="20" /></span>
+      <h2 id="help-panel-title" class="text-base font-semibold text-gray-900 dark:text-white">Help</h2>
+      <div class="ml-auto flex items-center gap-1">
+        @if (panel.thread().length > 0) {
+          <button type="button" (click)="panel.reset()" aria-label="Start a new question" title="New question"
+            class="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
+            <app-help-icon name="rotate-ccw" [size]="18" />
+          </button>
+        }
+        <button type="button" (click)="browseAll()" aria-label="Open all help topics" title="All help topics"
+          class="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
+          <app-help-icon name="book-open" [size]="18" />
+        </button>
+        <button type="button" (click)="panel.close()" aria-label="Close help"
+          class="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
+          <app-help-icon name="x" [size]="18" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Conversation -->
+    <div #threadBody class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4" aria-live="polite">
+      @if (help.failed()) {
+        <div class="rounded-lg border border-scoular-red/25 bg-scoular-red/5 dark:bg-scoular-red/15 p-4 text-sm text-gray-800 dark:text-gray-200" role="alert">
+          Help didn't load.
+          <button type="button" (click)="retryLoad()" class="ml-1 font-medium underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">Retry</button>
+        </div>
+      } @else if (!help.content()) {
+        <p class="text-sm text-gray-500 dark:text-gray-400">Loading help…</p>
+      } @else if (thread().length === 0) {
+        <div>
+          <p class="text-base font-semibold text-gray-900 dark:text-white">Hi! What can I help with?</p>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Ask about finding producers, lists, groups, planting, or anything that isn't showing up as expected.</p>
+        </div>
+        @if (suggestions().length) {
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Suggested{{ pageLabel() ? ' for ' + pageLabel() : '' }}
+            </p>
+            <ul class="mt-2 flex flex-col items-start gap-2">
+              @for (s of suggestions(); track s.id) {
+                <li>
+                  <button type="button" (click)="ask(s.id)"
+                    class="text-left px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-[13px] text-gray-800 dark:text-gray-200 hover:bg-scoular-blue/5 hover:border-scoular-blue/40 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
+                    {{ s.chip ?? s.question }}
+                  </button>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+        <button type="button" (click)="browseAll()" class="self-start text-sm font-medium text-scoular-blue-medium dark:text-[#7CC4EC] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">
+          Browse all help topics
+        </button>
+      } @else {
+        @for (t of thread(); track t.index) {
+          @switch (t.item.kind) {
+            @case ('user') {
+              @if (t.item.kind === 'user') {
+                <div data-help-user class="self-end max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 text-sm text-white bg-scoular-blue-medium dark:bg-[#006BA6]">{{ t.item.text }}</div>
+              }
+            }
+            @case ('answer') {
+              @if (t.item.kind === 'answer' && t.faq) {
+                <app-help-answer-card [faq]="t.faq" [index]="t.index" [feedback]="t.item.feedback" />
+              }
+            }
+            @case ('did-you-mean') {
+              <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">Did you mean…</p>
+                <ul class="mt-2 flex flex-col gap-1">
+                  @for (o of t.options; track o.id) {
+                    <li>
+                      <button type="button" (click)="ask(o.id)" class="w-full text-left px-3 py-2 rounded-md text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">{{ o.question }}</button>
+                    </li>
+                  }
+                </ul>
+                <button type="button" (click)="panel.escalate()" class="mt-2 text-sm text-gray-600 dark:text-gray-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">None of these</button>
+              </div>
+            }
+            @case ('no-match') {
+              <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 flex flex-col gap-2">
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">I couldn't find an answer to that.</p>
+                <p class="text-sm text-gray-600 dark:text-gray-400">Try different words, browse the help topics, or get help from the Origination team.</p>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" (click)="browseAll()" class="h-8 px-3 rounded-md text-sm font-medium text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">Browse all help topics</button>
+                  <button type="button" (click)="panel.escalate()" class="h-8 px-3 rounded-md text-sm font-medium border border-scoular-blue/40 text-scoular-blue-medium dark:text-[#7CC4EC] hover:bg-scoular-blue/5 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">Report a problem</button>
+                </div>
+              </div>
+            }
+            @case ('troubleshooter') {
+              @if (t.item.kind === 'troubleshooter') {
+                <app-help-troubleshooter [tree]="t.item.tree" [index]="t.index" />
+              }
+            }
+            @case ('escalation') {
+              <app-help-escalation />
+            }
+          }
+        }
+      }
+    </div>
+
+    <!-- Question box -->
+    <form (submit)="submit($event)" class="shrink-0 p-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex gap-2">
+      <label for="help-question" class="sr-only">Ask a question</label>
+      <input #questionInput id="help-question" type="text" autocomplete="off" maxlength="150" [value]="question()" (input)="onQuestion($event)"
+        placeholder="Ask a question…"
+        class="flex-1 min-w-0 h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-blue" />
+      <button type="submit" aria-label="Ask" [disabled]="!question().trim() || !help.content()"
+        class="h-10 w-10 inline-flex items-center justify-center rounded-md text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">
+        <app-help-icon name="send" [size]="18" />
+      </button>
+    </form>
+  </div>
+}
+
+<app-help-spotlight />
