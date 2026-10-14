@@ -53,6 +53,11 @@ export class ContractsTableComponent {
   private readonly _conversionMap = computed(() =>
     new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
+  /** The unit conversions failed to load, so applied tickets' Net Bu is missing for that reason
+   *  rather than because of the ticket's commodity. */
+  readonly conversionsUnavailable = computed(() =>
+    this.appState.commodityConversionsLoadFailed() && this.appState.commodityConversions().length === 0);
+
   public isLoading = input(false);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);

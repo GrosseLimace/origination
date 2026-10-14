@@ -125,7 +125,7 @@ describe('ContractsTableComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ContractsTableComponent],
       providers: [
-        { provide: AppStateService, useValue: { commodityConversions } },
+        { provide: AppStateService, useValue: { commodityConversions, commodityConversionsLoadFailed: signal(false) } },
         { provide: UsageTrackingService, useValue: { trackContractExpand } },
       ],
     }).compileComponents();
@@ -797,3 +797,76 @@ describe('ContractsTableComponent', () => {
   });
 });
 
+
+// When the conversions fail to load, every applied ticket's Net Bu reads "—", which looks like
+// nothing was delivered. Real AppStateService, set through its setters.
+describe('ContractsTableComponent — bushel conversions failed to load', () => {
+  let fixture: ComponentFixture<ContractsTableComponent>;
+  let component: ContractsTableComponent;
+  let state: AppStateService;
+
+  const note = "Net bushels can't be shown — the bushel conversions couldn't be loaded. Refresh the page to try again.";
+  const text = (): string => ((fixture.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  /** Expands contract 1 with its Applied Tickets section open. */
+  function openTickets(tickets: Ticket[]): void {
+    fixture = TestBed.createComponent(ContractsTableComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('customer', makeCustomer());
+    fixture.componentRef.setInput('contracts', [makeContract({ id: 1, sourceContractId: 'PCW1' })]);
+    fixture.componentRef.setInput('tickets', tickets);
+    fixture.detectChanges();
+    component.toggleRow(1);
+    component.toggleTicketSection(1);
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+  }
+
+  const applied = (): Ticket[] => [makeTicket({ id: 1, ctrmContractNumber: 'PCW1', productCode: 'YC', appliedDockQuantity: 56000 })];
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ContractsTableComponent],
+      providers: [{ provide: UsageTrackingService, useValue: { trackContractExpand: vi.fn() } }],
+    }).compileComponents();
+    state = TestBed.inject(AppStateService);
+  });
+
+  it('says the bushels could not be shown above the applied tickets when the conversions failed to load', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    openTickets(applied());
+
+    expect(text()).toContain('Applied Tickets (1)');
+    expect(text()).toContain(note);
+  });
+
+  it('adds nothing when the conversions loaded', () => {
+    state.setCommodityConversions([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
+    openTickets(applied());
+
+    expect(text()).not.toContain("Net bushels can't be shown");
+    expect(text()).toContain('1,000.00');
+  });
+
+  it('adds nothing when nothing failed, even with no conversions in hand', () => {
+    openTickets(applied());
+
+    expect(text()).not.toContain("Net bushels can't be shown");
+  });
+
+  it('adds nothing once conversions are present, whatever the flag says', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    state.setCommodityConversions([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
+    openTickets(applied());
+
+    expect(text()).not.toContain("Net bushels can't be shown");
+  });
+
+  it('keeps "No tickets applied to this contract yet." as it was when there are none', () => {
+    state.setCommodityConversionsLoadFailed(true);
+    openTickets([]);
+
+    expect(text()).toContain('No tickets applied to this contract yet.');
+    expect(text()).not.toContain("Net bushels can't be shown");
+  });
+});
