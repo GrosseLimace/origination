@@ -7,6 +7,9 @@
 | **Deciders** | Origination app team; IT Security; Solutions Architect (countersign) |
 | **Related** | [docs/mobile/MOBILE-ARCHITECTURE-PLAN.md](../mobile/MOBILE-ARCHITECTURE-PLAN.md) · [developer-docs/EXTERNAL-SPA-GUIDE.md](../mobile/reference/EXTERNAL-SPA-GUIDE.md) · [SEC-ARCH-BURDI-001 v1.0](../mobile/reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md) (repo copy) · [SECURITY-REVIEWS/ACCEPTED-RISKS.md](../../SECURITY-REVIEWS/ACCEPTED-RISKS.md) |
 
+
+> **Decided 2026-10-14: Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** Sign-in stays separate from the desktop (own app registration and `Origination.Mobile.{Env}` scope), so the server refuses phone sign-ins outside the mobile API even if the WAF list changes; sharing the desktop sign-in like Burdi was considered and deferred until Security confirms it. Sections below that describe a Static Web App or APIM are superseded by this note.
+
 ## Context
 
 The Origination Workbench is adding an internet-reachable mobile component. Scoular's security architecture specification (SEC-ARCH-BURDI-001) requires, among other things, that external and internal components be **separate deployments**, that all database access go through a **business-logic layer**, that all external traffic pass through **Azure API Management**, and that tiers **not share service accounts**.

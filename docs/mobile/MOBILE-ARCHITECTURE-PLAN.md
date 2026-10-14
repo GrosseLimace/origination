@@ -10,6 +10,8 @@
 
 > **Decided 2026-10-14 (application owner):** originators use their **own, unmanaged phones** (no company phones, no Intune/Company Portal), and the mobile piece stays a **website (PWA)**, with no app-store app. So the "compliant device" Conditional Access control and the Capacitor/native fallback below are **off the table**. The compensating controls are MFA, sign-in frequency, Continuous Access Evaluation, the client-id check, and keeping as little producer data on the phone as possible. IT Security decides whether the phone may hold producer data briefly (§5.4).
 
+> **Decided 2026-10-14: Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** Sign-in stays separate from the desktop (own app registration and `Origination.Mobile.{Env}` scope), so the server refuses phone sign-ins outside the mobile API even if the WAF list changes; sharing the desktop sign-in like Burdi was considered and deferred until Security confirms it. Sections below that describe a Static Web App or APIM are superseded by this note.
+
 ## 1. Purpose
 
 Add a mobile component to the Origination Workbench (Angular 21 + .NET 10, internal grain-originator app) that conforms to Scoular's mixed-trust-zone security architecture. Feature scope is decided at the Phase 0 stakeholder meeting; this document fixes the **architecture, the platform asks, and the delivery phases** so implementation can start as soon as scope is known.
@@ -97,13 +99,13 @@ What this changes versus the original assumptions:
 ## 4. Target topology (ADR-001, Option 3: hybrid, split-ready)
 
 ```
-Personal phone (Entra MFA)  ──MSAL──▶ Static Web App  swa-origination-{env}-eus  (origination-mobile PWA)
-        │  HTTPS bearer: aud = Origination API app reg, scp = Origination.Mobile.{Env}
+Personal phone (Entra MFA, own mobile registration)
+        │  https://origination{-qa,}.scoular.com/mobile        (the app)
+        │  https://origination{-qa,}.scoular.com/api/mobile/v1 (its API; bearer scp = Origination.Mobile.{Env})
         ▼
-FortiGate → App Gateway + WAF → APIM  api{qa}.scoular.com/external/origination/v1
-        │  validate-jwt · rate-limit-by-key · quota-by-key · X-Correlation-Id · header strip
-        ▼  private endpoint
-App Service app-origination-{env}-eus  (existing host, private-only)
+FortiGate → App Gateway + WAF   allow-list: /mobile/* and /api/mobile/v1/* only (Burdi's externalAllowedPaths)
+        ▼  private endpoint                      (company network reaches every path directly, as today)
+App Service app-origination-{env}-eus  (existing host; serves the desktop app at / and the mobile app at /mobile)
         ├─ GrainOriginatorPortal.Mobile          NEW assembly: api/mobile/v1/* controllers, MobileAccess policy,
         │                                        deny-not-filter trade-unit entitlement, audit filter, mobile rate limit
         ├─ GrainOriginatorPortal.Application     NEW: business logic extracted from Api (services, DTOs, mappers)
@@ -121,13 +123,13 @@ Options considered:
 
 | Spec invariant | Met by | Status |
 |---|---|---|
-| No direct DB from external clients | SWA has no DB path; APIM routes only to the private App Service | Met |
+| No direct DB from external clients | The phone reaches only the mobile API paths through the WAF; no DB path | Met |
 | All DB access via BLL | Mobile assembly may reference `Application` only, never `Infrastructure` (enforced by a test) | Met |
-| Separate deployments | Client: yes (SWA vs `wwwroot`). API: shared host behind APIM | **Partial — documented exception**; exit criterion is the host split |
-| All external traffic via APIM | QA/Prod yes; Dev calls App Service directly by the guide's own design | Met |
+| Separate deployments | Mobile app and API share the App Service with the desktop (Burdi's pattern) | **Not met — documented exception**, as for Burdi; exit criterion is the host split |
+| All external traffic via APIM | External traffic goes through FortiGate and the App Gateway WAF (path allow-list), not APIM — Burdi's pattern | **Not met — documented exception**; per-user rate limiting and auditing are app-side |
 | No credentials on devices | Bundle holds only client id and authority | Met |
 | No shared service accounts | Same process, same identity | **Not met — documented exception**; mitigated by a separate client app registration, scope, APIM subscription, and a surface that excludes ODS producer-master, PII and admin operations |
-| Versioned paths | `api/mobile/v1` backend, `/external/origination/v1` at APIM | Met |
+| Versioned paths | `api/mobile/v1` | Met |
 | SAST + dependency scanning in CI | New CI jobs | New work |
 | Bicep IaC with tags | Infrastructure team's repository | Met by platform |
 

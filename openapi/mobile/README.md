@@ -10,6 +10,9 @@ This directory is the contract for the Origination Workbench **mobile** surface,
 
 **Status: Phase 1 contract, draft for review.** Scope comes from GitHub cards #641–#648 (Phase 1) created 2026-09-23, plus the group → trade units → producers flow agreed in the 2026-09-23 preview. Saved lists were removed from mobile on 2026-10-14 (originators search instead). 17 operations. Two open decisions still affect the *Offline behaviour* column and are marked below.
 
+
+> **Decided 2026-10-14: Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** Sign-in stays separate from the desktop (own app registration and `Origination.Mobile.{Env}` scope), so the server refuses phone sign-ins outside the mobile API even if the WAF list changes; sharing the desktop sign-in like Burdi was considered and deferred until Security confirms it. Sections below that describe a Static Web App or APIM are superseded by this note.
+
 ## Routing
 
 | Environment | Base URL | Route |

@@ -27,19 +27,11 @@ servers:
   - url: http://localhost:5000/api/mobile/v1
     description: Local development (direct to the .NET API)
   - url: https://origination-dev.scoular.com/api/mobile/v1
-    description: Dev (direct to App Service; no APIM in dev)
-  - url: https://apiqa.scoular.com/{apimPathPrefix}
-    description: QA (through APIM)
-    variables:
-      apimPathPrefix:
-        default: external/origination/v1
-        description: Assigned by Data Integrations
-  - url: https://api.scoular.com/{apimPathPrefix}
-    description: Prod (through APIM)
-    variables:
-      apimPathPrefix:
-        default: external/origination/v1
-        description: Assigned by Data Integrations
+    description: Dev (company network only)
+  - url: https://origination-qa.scoular.com/api/mobile/v1
+    description: QA (internet access through the App Gateway WAF, mobile paths only)
+  - url: https://origination.scoular.com/api/mobile/v1
+    description: Production (internet access through the App Gateway WAF, mobile paths only)
 security:
   - entraId: []
 tags:

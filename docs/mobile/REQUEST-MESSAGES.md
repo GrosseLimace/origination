@@ -18,88 +18,36 @@ Links assume the branch `docs_MobileArchitecturePlan`; update them once merged t
 - Architecture plan: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/mobile/MOBILE-ARCHITECTURE-PLAN.md
 - ADR-001 (topology decision + exceptions): https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/adr/ADR-001-mobile-surface-topology.md
 
-## Shared background (paste at the top of each message)
+> **Decided 2026-10-14: Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** Sign-in stays separate from the desktop (own app registration and `Origination.Mobile.{Env}` scope), so the server refuses phone sign-ins outside the mobile API even if the WAF list changes; sharing the desktop sign-in like Burdi was considered and deferred until Security confirms it. Sections below that describe a Static Web App or APIM are superseded by this note.
 
-Origination is adding a mobile web app for Scoular originators, who work in the field and need producer information on their phones. It is the first Scoular app to implement **SEC-ARCH-BURDI-001** through the mechanics in **EXTERNAL-SPA-GUIDE.md**:
+## 1. Data Integrations — not needed
 
-```
-Originator's own phone (Entra ID sign-in with MFA)
-  → Azure Static Web App  (separate mobile Angular app)          Spec Layer 2 client
-  → Application Gateway + WAF                                      Spec Layer 1
-  → Azure API Management  (validate-jwt, rate limit, quota)        Spec Layer 3
-  → private endpoint → existing Origination App Service            Spec Layers 4–5
-      mobile surface: api/mobile/v1, 17 operations, scope + client-id + trade-unit checks
-  → Azure SQL over private endpoint, managed identity              Spec Layer 6
-```
-
-The App Service is never exposed to the internet. The only internet-reachable API component is APIM, and it exposes only the 17 operations in `openapi/mobile/specification.yaml`. Each message below explains what we need from your team and which Spec requirement it satisfies.
+There is no APIM in Burdi's hosting pattern, so nothing is asked of Data Integrations.
 
 ---
 
-## 1. Data Integrations (APIM) — requests E7 and E8
+## 2. Infrastructure — Burdi-style access, plus a separate mobile sign-in
 
-**To:** _Data Integrations / APIM owners_
-**Subject:** Origination mobile: APIM operations per SEC-ARCH-BURDI-001 §3.3, plus one token question that blocks our design
-
-Hi team,
-
-_(shared background)_
-
-**Why you are involved.** The Spec makes APIM mandatory for all external traffic (Core Invariant 4) and lists the gateway policies every external API must have (§3.3). The Guide says Data Integrations owns those APIM operations and imports them from the app team's OpenAPI spec via APIOps. Our contract is committed at the link above: 17 operations, OpenAPI 3.0.3, Redocly-valid, and a CI test fails the build if the API and the contract ever disagree.
-
-**Please answer this first; it decides how we configure token validation.** The mobile backend is built and tested against our Dev environment; this answer sets its production audience and scope settings.
-
-Will APIM validate the user's Entra token and **forward it to the backend unchanged**, with audience = the Origination API app registration and a scope we define (`Origination.Mobile.{Env}`)?
-
-Why it matters: the Spec requires the business layer to *re-validate caller permissions before every data operation* and to *log all data mutations with caller identity* (§3.5). Both need the real user in the token that reaches us. If APIM swaps in a service identity, we lose the user and cannot meet §3.5. If APIM expects an APIM-owned audience, we need to know so we can accept a second audience.
-
-**What we need configured (QA and Prod only; the Guide has Dev calling the App Service directly):**
-
-| Item | What to do | Why (Spec reference) |
-|---|---|---|
-| Import | Import `openapi/mobile/specification.yaml` via APIOps under a path prefix you assign (we assumed `/external/origination/v1`; tell us the real one and we update the spec's `servers`) | §3.3 API versioning: versioned endpoints are mandatory; the Guide's request process step 4 |
-| Backend URL | `https://app-origination-qa-eus.azurewebsites.net/api/mobile/v1` and `https://app-origination-eus.azurewebsites.net/api/mobile/v1`, including the `/api/mobile/v1` suffix so operation templates map 1:1 with no rewrite policy | §3.3 backend routing via private endpoint only; a 1:1 mapping lets our CI drift test prove the APIM allow-list equals the mobile surface |
-| `validate-jwt` | Issuer: tenant `1521f999-f722-4a4f-9747-166f93e9b0d1`; audience: the Origination API app registration for that environment (QA `f3fcab2b-98c8-4622-86bd-c874d281b22a`, Prod `e1458bcd-7212-4ea0-a836-7e08d03b5bbf`); required scope `Origination.Mobile.QA` / `Origination.Mobile.Prod` | §3.3 mandatory policy "validate-jwt on every inbound request"; §3.2 per-client identity and scoped claims |
-| `rate-limit-by-key` | Keyed on the token's `oid` claim; start at 120 calls/minute per user, we will tune | §3.3 mandatory policy; §3.2 rate limiting on the external surface |
-| `quota-by-key` | Daily quota per user at your standard | §3.3 mandatory policy "daily/monthly call limits per consumer" |
-| `set-header` | Pass through the client's `X-Correlation-Id` if present, otherwise inject one; forward it to the backend. Strip server and `X-Forwarded-*` headers from responses | §3.3 mandatory policy "inject correlation ID, strip server headers"; §7.1 every APIM call logged with correlation id |
-| `ip-filter` | Not applicable: callers are originators' phones on carrier networks, so there is no known IP range. Please note the exception in the API's policy comments | §3.3 "where client IP ranges are known" |
-| Subscription keys | **Question:** §3.3 requires a subscription key for every consumer, rotated quarterly. Our client is a public browser app and cannot hold a secret. Do you issue a non-secret product key for identification and analytics only, or do we document an exception with `validate-jwt` as the control? | §3.3 subscription keys; §4.2 token table |
-| CORS | Allow the Static Web App origin for that environment (Infrastructure will confirm: `origination-qa.scoular.com` / `origination.scoular.com` via split-horizon DNS) | §3.3 "CORS policy enforced at the gateway level"; §3.2 restrictive CORS |
-| Caching | No response caching on any operation; every response carries producer data | §8 data classification: producer contact data is Confidential/PII |
-| Diagnostics | APIM logs into the same Log Analytics workspace as `appi-origination-*`, with the correlation id | §3.3 logging; §7.3 alerts on sustained rate limiting and error spikes |
-
-The spec is a living document and will change once our remaining stakeholder decisions land (offline depth affects two write operations). We will notify you on each revision.
-
-Thanks,
-Caden
-
----
-
-## 2. Infrastructure — requests E1, E2, E3 (and a documentation conflict)
-
-**To:** _Infrastructure (Charles; Karl when back)_
-**Subject:** Origination: enable the external SPA (mobile) per EXTERNAL-SPA-GUIDE / SEC-ARCH-BURDI-001
+**To:** _Infrastructure (Charles)_
+**Subject:** Origination mobile – can we follow the Burdi setup?
 
 Hi Charles,
 
-_(shared background)_
+We're planning a mobile version of the Origination Workbench so originators can look up producers and add notes from their own phones in the field. It's a website, not an app-store app.
 
-**Why you are involved.** The Spec requires the edge WAF (Layer 1), separate deployments for the external and internal components (Core Invariant 3), and private networking end to end (§5). Your Guide already models exactly that for Origination: START-HERE.md lists `swa-origination-{dev,qa}-eus` and `swa-origination-eus` as provision-if-enabled, and the Guide's request process starts when the app team commits `openapi/`. That is now done.
+We'd like to follow the same setup as Burdi's driver app: the mobile app served from our existing App Service at /mobile, with Origination made "hybrid internet-accessible" like Burdi. Only the mobile paths would be reachable from outside:
+- /mobile/*
+- /api/mobile/v1/*
 
-| # | What to do | Why (Spec / Guide reference) |
-|---|---|---|
-| 1 | **Enable `externalApp` for Origination** in app-config.json and create the three Static Web Apps: `swa-origination-dev-eus`, `swa-origination-qa-eus`, `swa-origination-eus`. Custom domains per the Guide: dev `ext-origination-dev.scoular.com`; QA and Prod share the App Service custom domains via split-horizon DNS | Spec Core Invariant 3 (external and internal components are separate deployments): the mobile app is a separate deployable, not a folder in the App Service. Guide "Architecture" and "Request Process" steps 2–3 |
-| 2 | **WAF policy** on the Application Gateway for the APIM path prefix Data Integrations assigns (requested in parallel; we will forward the prefix) | Spec Layer 1 §3.1: OWASP Core Rule Set, TLS 1.2+, DDoS. Guide "Security Notes": WAF in front of APIM |
-| 3 | **Dedicated SPA app registration per environment, `Origination External - {Env}`**: SPA platform, redirect URIs = the SWA custom domain plus `http://localhost:4200`, pre-authorised for the delegated scope `Origination.Mobile.{Env}` on the existing Origination API registration (Identity is creating the scope; request sent separately) | Spec §3.2 "JWT auth **per client** identity" and §3.5 blast-radius containment. Our backend rejects mobile-scoped tokens on desktop routes and desktop tokens on mobile routes by checking the client id; that only works if the two clients are different registrations |
-| 4 | **Resolve a documentation conflict.** EXTERNAL-SPA-GUIDE.md v1.7 ("Building the External Angular SPA") says a dedicated `{App} External - {Env}` registration is used. APP-REGISTRATIONS.md ("External SPA (if external app enabled)") says the existing desktop SPA registration is reused and no separate registration is created. We need the dedicated model for the reason in row 3. Please confirm and correct APP-REGISTRATIONS.md | Same as row 3 |
-| 5 | **Dev CORS:** add `https://ext-origination-dev.scoular.com` to the `AllowedOrigins` app setting on `app-origination-dev-eus` (dev only; QA and Prod go through APIM) | Spec §3.2 restrictive CORS, explicitly allowed origins only. Guide "CORS for Dev Environment" |
-| 6 | **Deploy permission:** grant the existing GitHub Actions OIDC service principal Contributor on the three SWAs so the workflow can `swa deploy` | Spec §6: no secrets in CI/CD (OIDC, no deployment tokens). Guide "Deploying to Static Web App" |
-| 7 | Confirm the **inbound path APIM → App Service private endpoint** is allowed in QA and Prod, and that the App Service's access restrictions do not need a change for APIM's subnet | Spec §5.2 allowed flows "APIM → BLL layer"; §3.3 backend routing via private endpoints only |
-| 8 | Confirm the platform already satisfies the Spec's Layer 6 and IaC items for Origination so we can cite it in the review: `publicNetworkAccess: Disabled` on SQL, Entra-only SQL auth, TDE, Azure SQL auditing to Log Analytics, mandatory tags (§3.6, §9.1) | Spec §3.6, §9.1; Spec §12 architecture review needs evidence per checklist item |
-| 9 | **Was removing EXTERNAL-SPA-GUIDE.md intentional?** The October infra docs sync deleted `developer-docs/EXTERNAL-SPA-GUIDE.md` from our repo, while `developer-docs/START-HERE.md` and `developer-docs/CLAUDE.md` still point to it. We kept a verbatim copy of v1.7 (linked above) because this whole request follows it. Is there a newer version or a replacement we should follow instead? | The Guide is the source for every row above |
+Everything else would stay internal, as it is today.
 
-Nothing here touches production traffic until our QA wiring phase; the App Service stays private throughout (Guide "Security Notes": *the App Service is never exposed to the internet*).
+We also need:
+- A separate sign-in registration for the mobile app, with its own permission (scope) on our API, so the server can keep phone sign-ins limited to the mobile paths even if the firewall list ever changes. Redirect URI https://origination-{env}.scoular.com/mobile, the same subpath pattern Burdi uses for /driver.
+
+A few questions:
+1. Is that the right ask, and is there a request process you'd like us to use?
+2. Burdi's notes say external access is QA and Prod only. Is there a way to test from a phone in Dev, or do we start in QA?
+3. Anything Burdi learned that we should do differently?
 
 Thanks,
 Caden
@@ -134,7 +82,7 @@ ADR-001 (link above) records how we meet each Core Invariant and names four Spec
 
 | Spec requirement we miss | What we do instead |
 |---|---|
-| Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and an APIM allow-list of 17 operations; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
+| Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and a WAF allow-list that exposes only the mobile paths (17 operations), as for Burdi; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
 | Core Invariant 6 / §3.5: same managed identity for both tiers | As above; the mobile surface excludes ODS producer-master search, admin, reporting and bulk operations (§3.2 "what this layer must NOT contain"), and ODS is read-only regardless |
 | §4.3 device-bound tokens, certificate pinning | MFA, sign-in frequency, Continuous Access Evaluation, client-id check on every request. The business has decided against an app-store app, so pinning is not available |
 | §4.2 token storage in Keychain/Keystore: browser storage is not app-encrypted, and the phones are personal and unmanaged | Sign-in kept per browser tab (session storage); contact phone/email and search never cached; other producer reads cached at most 1 hour (notes 15 minutes) to ride out dropped signal; everything wiped on sign-out and on authentication failure. **If you prefer, we keep no producer data on the phone at all** (offline then covers only what is on screen) |
