@@ -137,16 +137,24 @@ export class ProducerInsightsComponent {
    *  meal in short tons and popcorn by the pound to it, under a label that says bushels, sitting
    *  directly above the Growth Opportunity panel that excludes them. */
   get totalContracted(): number {
+    return this.currentYearBushels.contracted;
+  }
+
+  /** Bushels per contract, over the contracts that made it into Total Volume. A contract whose unit
+   *  can't be shown in bushels (rail cars, gallons, no lb/bu factor) is left out of the divisor too —
+   *  counting it there but not in the total made the average read low. */
+  get averageContractSize(): number {
+    const { contracted, excludedContracts } = this.currentYearBushels;
+    const counted = this.currentYearContracts.length - excludedContracts;
+    if (counted <= 0) return 0;
+    return contracted / counted;
+  }
+
+  private get currentYearBushels(): { contracted: number; excludedContracts: number } {
     return sumInBushels(
       this.currentYearContracts,
       buildLbsPerBushelMap(this.appState.commodityConversions()),
-    ).contracted;
-  }
-
-  get averageContractSize(): number {
-    const list = this.currentYearContracts;
-    if (list.length === 0) return 0;
-    return this.totalContracted / list.length;
+    );
   }
 
   get totalInteractions(): number {

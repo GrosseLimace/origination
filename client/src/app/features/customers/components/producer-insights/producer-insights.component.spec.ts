@@ -208,9 +208,9 @@ describe('ProducerInsightsComponent', () => {
     expect(stat('Avg Contract')).toEqual({ value: '1,000', sublabel: 'bushels per contract' });
   });
 
-  it('PINS CURRENT BEHAVIOUR: an inconvertible contract is left out of the total but still counted in the average\'s denominator', () => {
-    // Suspected bug, reported rather than fixed: averageContractSize = totalContracted ÷ currentYearContracts.length,
-    // and the excluded contract is only dropped from the numerator. If this is ever corrected, update this test.
+  it('leaves an inconvertible contract out of both the total and the average\'s divisor', () => {
+    // It used to be dropped from the total but still counted as a contract, so this producer read
+    // 4,500 bu per contract with only one 9,000 bu contract that could be shown in bushels.
     setInputs({
       contracts: [
         makeContract({ id: 1, quantity: 9000 }),
@@ -219,7 +219,19 @@ describe('ProducerInsightsComponent', () => {
     });
 
     expect(stat('Total Volume').value).toBe('9,000');
-    expect(stat('Avg Contract').value).toBe('4,500');
+    expect(stat('Avg Contract').value).toBe('9,000');
+  });
+
+  it('shows a zero average, not NaN, when no current-year contract converts to bushels', () => {
+    setInputs({
+      contracts: [
+        makeContract({ id: 1, quantity: 3, unit: 'RC' }),
+        makeContract({ id: 2, quantity: 500, unit: 'GL' }),
+      ],
+    });
+
+    expect(stat('Total Volume').value).toBe('0');
+    expect(stat('Avg Contract').value).toBe('0');
   });
 
   // ── Engagement ────────────────────────────────────────────────────────────
