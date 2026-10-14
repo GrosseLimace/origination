@@ -1227,5 +1227,114 @@ describe('BuildListComponent', () => {
       expect(api.getNotes).toHaveBeenCalledWith();
       expect(appState.notesLoaded()).toBe(true);
     });
+
+    // ── Harvest-window pacing ──
+
+    it('pacing prompts and the down-pace refinement compare this year\'s harvest-window bushels with last year\'s', () => {
+      appState.setHarvestWindows([
+        { id: 1, commodity: 'Corn', deliveryStartMonth: 9, deliveryStartDay: 1, deliveryEndMonth: 11, deliveryEndDay: 30, isActive: true },
+        { id: 2, commodity: 'Wheat', deliveryStartMonth: 6, deliveryStartDay: 1, deliveryEndMonth: 7, deliveryEndDay: 31, isActive: false },
+      ]);
+      const oct = (y: number) => new Date(y, 9, 15);
+      api.getContracts.mockReturnValue(of([
+        makeContract({ id: 1, ctrmCustomerId: 'C1', quantity: 5000, deliveryStart: oct(2026), deliveryEnd: oct(2026) }),
+        // Closed prior-year contracts still count for pacing.
+        makeContract({ id: 2, ctrmCustomerId: 'C1', quantity: 9000, deliveryStart: oct(2025), deliveryEnd: oct(2025), closedDate: oct(2025) }),
+        makeContract({ id: 3, ctrmCustomerId: 'C2', quantity: 9000, commodityGroup: '', commodityDescription: 'YELLOW CORN', deliveryStart: oct(2026), deliveryEnd: oct(2026) }),
+        makeContract({ id: 4, ctrmCustomerId: 'C2', quantity: 1000, deliveryStart: oct(2025), deliveryEnd: oct(2025) }),
+        // Only the inactive wheat window covers July — no pacing data for Charlie.
+        makeContract({ id: 5, ctrmCustomerId: 'C3', quantity: 1000, deliveryStart: new Date(2026, 6, 1), deliveryEnd: new Date(2026, 6, 2) }),
+      ]));
+      const c = mount();
+
+      c.queryText.set('Producers behind on pacing');
+      c.processQuery();
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+
+      c.queryText.set('Producers ahead on pacing');
+      c.processQuery();
+      expect(names(c.displayedCustomers())).toEqual(['Bravo Grain']);
+
+      c.selectLibraryQuery(LIB_ALL);
+      c.updateRefinement(r => ({ ...r, downHarvestPace: true }));
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres']);
+    });
+
+    // ── Planting coverage prompts ──
+
+    describe('planting coverage', () => {
+      function setUp(estimates: unknown[]) {
+        appState.setCommodities([
+          { id: 1, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true },
+          { id: 2, code: 'SB', name: 'Soybeans', category: 'Soybeans', isActive: true },
+        ]);
+        api.getPlantingIntentions.mockReturnValue(of([
+          { id: 1, customerId: 1, crop: 'YC', acres: 100, plantingYear: 2026 },
+          { id: 2, customerId: 2, crop: 'SB', acres: 50, plantingYear: 2026 },
+        ] as never));
+        const extra = {
+          getContractsByCropYear: vi.fn(() => of([
+            makeContract({ ctrmCustomerId: 'C1', commodityCode: 'YC', quantity: 10000, cropYear: 2026 }),
+            // Different crop year — never covers 2026.
+            makeContract({ ctrmCustomerId: 'C2', commodityCode: 'SB', commodityGroup: 'Soybeans', quantity: 99999, cropYear: 2025 }),
+          ])),
+          getDashboardPlantingEstimates: vi.fn(() => of(estimates)),
+        };
+        Object.assign(api, extra);
+        return extra;
+      }
+      const run = (c: BuildListComponent, q: string) => { c.queryText.set(q); c.processQuery(); };
+
+      it('"planting with no contracts" keeps producers with an uncovered crop year', () => {
+        const extra = setUp([]);
+        const c = mount();
+        run(c, 'Producers with planting intentions and no contracts');
+
+        expect(extra.getContractsByCropYear).toHaveBeenCalledWith(2026, ['1000']);
+        expect(c.isProcessing()).toBe(false);
+        expect(names(c.filteredCustomers())).toEqual(['Bravo Grain']);
+        expect(c.queryReturnedNoMatches()).toBe(false);
+      });
+
+      it('"under N percent contracted" compares contracted bushels with acres x the season yield target', () => {
+        const extra = setUp([
+          { id: 1, tradeUnitKey: '1000', crop: 'Corn', plantingYear: 2026, yieldEstimate: 200 },
+          { id: 2, tradeUnitKey: '1000', crop: 'Soybeans', plantingYear: 2026, yieldEstimate: 50 },
+        ]);
+        const c = mount();
+
+        run(c, 'Producers under 50 percent contracted');
+        expect(extra.getDashboardPlantingEstimates).toHaveBeenCalledWith('1000', 2026);
+        expect(names(c.filteredCustomers())).toEqual(['Bravo Grain']);
+
+        run(c, 'Producers under 60 percent contracted');
+        expect(names(c.filteredCustomers())).toEqual(['Alpha Acres', 'Bravo Grain']);
+
+        run(c, 'Highest uncontracted bushels');
+        expect(names(c.filteredCustomers())).toEqual(['Alpha Acres', 'Bravo Grain']);
+      });
+
+      it('with no season yield targets saved, says so instead of "no producers matched"', () => {
+        setUp([]);
+        const c = mount();
+        run(c, 'Producers under 50 percent contracted');
+
+        expect(c.filteredCustomers()).toEqual([]);
+        expect(c.coverageNeedsYieldTargets()).toBe(true);
+        expect(c.queryReturnedNoMatches()).toBe(false);
+        expect(text()).toContain('This prompt needs a saved season yield target');
+      });
+
+      it('with no planting intentions, ends with an empty result and no spinner', () => {
+        setUp([]);
+        api.getPlantingIntentions.mockReturnValue(of([]));
+        const c = mount();
+        run(c, 'Highest uncontracted bushels');
+
+        expect(c.isProcessing()).toBe(false);
+        expect(c.filteredCustomers()).toEqual([]);
+        expect(c.queryReturnedNoMatches()).toBe(true);
+      });
+    });
   });
 });

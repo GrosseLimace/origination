@@ -33,6 +33,7 @@ import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NA
 import { countActiveRefinements, hasAnyRefinement, hiddenRefineFilters } from '../../utils/refine-panel';
 import { filterByRefinements, applyMemberOverrides, collapseLinkedComponents, RefinementFilterSources } from '../../utils/refinement-filters';
 import { aggregateMatchingNotes, buildNoteFilterPredicate, indexMatchingNotesByCode, isNoteFilterActive, lastContactBadges, lastContactTimeByCustomer, MatchedNote, noteScope, NoteScope, parseNoteTime } from '../../utils/note-filters';
+import { customerPacingDirection } from '../../utils/contract-pacing';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
@@ -2661,60 +2662,13 @@ export class BuildListComponent {
     });
   }
 
-  /**
-   * Harvest-window-based pacing direction for a customer.
-   * Returns 'down' if ANY commodity's bushels declined year-over-year,
-   * 'up' if at least one increased and none declined, 'flat' if no movement, null if no data.
-   * Mirrors the contract-pacing-card logic so the build-a-list result matches
-   * the arrow the user sees on the customer profile.
-   */
+  /** Harvest-window pacing direction for one producer — see customerPacingDirection (utils). */
   private _getCustomerPacingDirection(customer: Customer): 'up' | 'down' | 'flat' | null {
     const customerContracts = this._contractsByCustomer().get(customer.scoularId!) || [];
+    // Checked here as well as in customerPacingDirection so a producer with no contracts never
+    // reads the harvest windows (the same dependencies as before the logic moved out).
     if (customerContracts.length === 0) return null;
-    const windows = this.appState.harvestWindows().filter(hw => hw.isActive !== false);
-    if (windows.length === 0) return null;
-    const year = new Date().getFullYear();
-    let anyDown = false;
-    let anyData = false;
-    let anyMovement = false;
-    for (const hw of windows) {
-      let thisYear = 0;
-      let lastYear = 0;
-      for (const c of customerContracts) {
-        if (!this._contractMatchesPacingCommodity(c, hw.commodity)) continue;
-        if (this._contractOverlapsWindow(c, hw, year)) thisYear += c.quantity;
-        if (this._contractOverlapsWindow(c, hw, year - 1)) lastYear += c.quantity;
-      }
-      if (thisYear === 0 && lastYear === 0) continue;
-      anyData = true;
-      if (thisYear < lastYear) { anyDown = true; anyMovement = true; }
-      else if (thisYear > lastYear) { anyMovement = true; }
-    }
-    if (!anyData) return null;
-    if (anyDown) return 'down';
-    return anyMovement ? 'up' : 'flat';
-  }
-
-  private _contractOverlapsWindow(c: Contract, hw: { deliveryStartMonth: number; deliveryStartDay: number; deliveryEndMonth: number; deliveryEndDay: number }, cropYear: number): boolean {
-    if (!c.deliveryStart && !c.deliveryEnd) return false;
-    const wStart = new Date(cropYear, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
-    const wEnd = new Date(cropYear, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
-    wEnd.setHours(23, 59, 59, 999);
-    const dStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
-    const dEnd = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
-    return dStart <= wEnd && dEnd >= wStart;
-  }
-
-  private _contractMatchesPacingCommodity(c: Contract, hwCommodity: string): boolean {
-    const target = hwCommodity.trim().toUpperCase();
-    if (!target) return false;
-    const group = (c.commodityGroup || '').trim().toUpperCase();
-    if (group && group === target) return true;
-    const desc = (c.commodityDescription || '').trim().toUpperCase();
-    if (desc && desc.includes(target)) return true;
-    const code = (c.commodityCode || '').trim().toUpperCase();
-    if (code && code.includes(target)) return true;
-    return false;
+    return customerPacingDirection(customerContracts, this.appState.harvestWindows());
   }
 
   /**
