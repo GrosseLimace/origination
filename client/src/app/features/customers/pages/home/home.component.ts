@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, DestroyRef, effect, untracked, isDevMode } from '@angular/core';
+import { Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, Subject, timer } from 'rxjs';
@@ -26,6 +26,7 @@ import {
   commodityCodesFrom, describeLastContacted, lastContactFromNotes, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,
   producerContractsAndTickets, readFailureMessage, sortNotes, sortReminders, yieldEstimateYears
 } from './home-derivations';
+import { HomeBackgroundFailures } from './home-background-failures';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -41,6 +42,8 @@ import {
     CalculatorLauncherComponent
   ],
   templateUrl: './home.component.html',
+  // Page-scoped state and behaviour, one instance per visit to the page.
+  providers: [HomeBackgroundFailures],
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
@@ -52,33 +55,8 @@ export class HomeComponent {
   private readonly userRoles = inject(UserRolesService);
   private readonly destroyRef = inject(DestroyRef);
 
-  /** When a background load or save on this page fails, say so. These subscriptions used to
-   *  carry `error: () => {}`, so an API outage showed up only as panels that were quietly empty
-   *  or stale, with nothing in the console for support to go on (audit finding
-   *  angular.home-component-silent-error-swallowing).
-   *
-   *  Nothing here was asked for by the user: these are background loads and refreshes, so the
-   *  bar for interrupting is high and repetition buys nothing. Once someone has been told the
-   *  data is stale, telling them again does not help them. So a sustained outage is worth at
-   *  most one message a minute, and the same failing source stays quiet for five minutes after
-   *  it has spoken. The wording is deliberately vague about scope, because the toast that gets
-   *  through may be standing in for several failures that were suppressed behind it.
-   *
-   *  Dev builds still log every failure, unthrottled, so local debugging sees everything. */
-  private static readonly BackgroundFailureQuietMs = 60_000;
-  private static readonly BackgroundFailurePerSourceQuietMs = 5 * 60_000;
-  private readonly _backgroundFailureToastAt = new Map<string, number>();
-  private _lastBackgroundFailureToastAt = 0;
-  private _reportBackgroundFailure(what: string, err: unknown): void {
-    if (isDevMode()) console.error(`[Home] failed to ${what}`, err);
-    const now = Date.now();
-    const lastForSource = this._backgroundFailureToastAt.get(what) ?? 0;
-    if (now - lastForSource < HomeComponent.BackgroundFailurePerSourceQuietMs) return;
-    if (now - this._lastBackgroundFailureToastAt < HomeComponent.BackgroundFailureQuietMs) return;
-    this._backgroundFailureToastAt.set(what, now);
-    this._lastBackgroundFailureToastAt = now;
-    this.toastService.error(`Failed to ${what}. Some data may be missing or out of date.`);
-  }
+  /** Throttled toast + dev log for background loads that fail (see HomeBackgroundFailures). */
+  private readonly backgroundFailures = inject(HomeBackgroundFailures);
 
   /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Enables the
    *  "Team Lists" tab in the Add-to-List dropdown. */
@@ -375,7 +353,7 @@ export class HomeComponent {
             this.storedGrain.set(data);
             this.appState.setStoredGrain(data);
           },
-          error: (err) => this._reportBackgroundFailure('load stored grain', err)
+          error: (err) => this.backgroundFailures.report('load stored grain', err)
         });
       }
 
@@ -388,7 +366,7 @@ export class HomeComponent {
             this.dpContracts.set(data);
             this.appState.setDpContracts(data);
           },
-          error: (err) => this._reportBackgroundFailure('load DP contracts', err)
+          error: (err) => this.backgroundFailures.report('load DP contracts', err)
         });
       }
 
@@ -418,7 +396,7 @@ export class HomeComponent {
               this.allCustomerPlantingIntentions.set(intentions);
               this.customerPlantingIntentions.set(intentions);
             },
-            error: (err) => this._reportBackgroundFailure('load planting intentions', err)
+            error: (err) => this.backgroundFailures.report('load planting intentions', err)
           });
       }
       // Reload yield estimates and commodities — not stored in appState so
@@ -495,7 +473,7 @@ export class HomeComponent {
         // may have run before contracts arrived, producing wrong customerIds.
         this._enrichSavedLists(true);
       },
-      error: (err) => this._reportBackgroundFailure('load contracts', err)
+      error: (err) => this.backgroundFailures.report('load contracts', err)
     });
 
     // Tickets are no longer bulk-loaded here. They're fetched per-producer on select (applied +
@@ -525,7 +503,7 @@ export class HomeComponent {
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },
-      error: (err) => this._reportBackgroundFailure('load stored grain', err)
+      error: (err) => this.backgroundFailures.report('load stored grain', err)
     });
 
     // Merge (not replace) for the same reason storage does: the TU-wide fetch and the per-producer
@@ -539,7 +517,7 @@ export class HomeComponent {
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },
-      error: (err) => this._reportBackgroundFailure('load DP contracts', err)
+      error: (err) => this.backgroundFailures.report('load DP contracts', err)
     });
 
     this._loadYieldData();
@@ -568,7 +546,7 @@ export class HomeComponent {
       },
       error: (err) => {
         this.appState.setSavedListsLoadFailed(true);
-        this._reportBackgroundFailure('load saved lists', err);
+        this.backgroundFailures.report('load saved lists', err);
       }
     });
   }
@@ -587,7 +565,7 @@ export class HomeComponent {
           this._pendingProducerDetails = list;
         }
       },
-      error: (err) => this._reportBackgroundFailure('load producer details', err)
+      error: (err) => this.backgroundFailures.report('load producer details', err)
     });
   }
 
@@ -928,7 +906,7 @@ export class HomeComponent {
       error: (err) => {
         // The list then shows "Last contact unavailable" rather than "Never contacted" on every row.
         this.appState.setNoteLastContactsLoadFailed(true);
-        this._reportBackgroundFailure('load last-contacted dates', err);
+        this.backgroundFailures.report('load last-contacted dates', err);
       }
     });
   }
@@ -1185,7 +1163,7 @@ export class HomeComponent {
             this._ensureCustomerNotes(updated);
           }
         },
-        error: (err) => this._reportBackgroundFailure('refresh producer details', err)
+        error: (err) => this.backgroundFailures.report('refresh producer details', err)
       });
     }
 
@@ -1234,7 +1212,7 @@ export class HomeComponent {
             this.customerPlantingIntentions.set(intentions);
             this._customerPlantingCache.set(customer.id, intentions);
           },
-          error: (err) => this._reportBackgroundFailure('load planting intentions', err)
+          error: (err) => this.backgroundFailures.report('load planting intentions', err)
         });
     }
 
@@ -1272,7 +1250,7 @@ export class HomeComponent {
           }
         }
       },
-      error: (err) => this._reportBackgroundFailure('refresh producer details', err)
+      error: (err) => this.backgroundFailures.report('refresh producer details', err)
     });
   }
 
@@ -1394,7 +1372,7 @@ export class HomeComponent {
           this._crossTradeUnitCustomers.set(cache);
         }
       },
-      error: (err) => this._reportBackgroundFailure('update the linked producer contact', err)
+      error: (err) => this.backgroundFailures.report('update the linked producer contact', err)
     });
   }
 
@@ -2043,7 +2021,7 @@ export class HomeComponent {
             });
           }
         },
-        error: (err) => this._reportBackgroundFailure('update the linked producer', err)
+        error: (err) => this.backgroundFailures.report('update the linked producer', err)
       });
     }
 
@@ -2066,7 +2044,7 @@ export class HomeComponent {
               this._crossTradeUnitCustomers.set(cache);
               this._propagatePrimaryContact(fetched, primaryRow);
             },
-            error: (err) => this._reportBackgroundFailure('load a linked producer', err)
+            error: (err) => this.backgroundFailures.report('load a linked producer', err)
           });
         }
       }
@@ -2154,7 +2132,7 @@ export class HomeComponent {
             this.allCustomerPlantingIntentions.set(intentions);
             this.customerPlantingIntentions.set(intentions);
           },
-          error: (err) => this._reportBackgroundFailure('load planting intentions', err)
+          error: (err) => this.backgroundFailures.report('load planting intentions', err)
         });
     } else {
       // Linked customer is in a different trade unit — fetch them from the API
@@ -2183,10 +2161,10 @@ export class HomeComponent {
                 this.allCustomerPlantingIntentions.set(intentions);
                 this.customerPlantingIntentions.set(intentions);
               },
-              error: (err) => this._reportBackgroundFailure('load planting intentions', err)
+              error: (err) => this.backgroundFailures.report('load planting intentions', err)
             });
         },
-        error: (err) => this._reportBackgroundFailure('load the selected producer', err)
+        error: (err) => this.backgroundFailures.report('load the selected producer', err)
       });
     }
     // (No-TU special case removed: _ensureCustomerNotes above hydrates the linked
