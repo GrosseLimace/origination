@@ -42,6 +42,7 @@ import {
 } from '../../utils/query-library';
 import { detectFocusTab } from '../../utils/focus-tab';
 import { buildSavedListPayload, SavedListPayload } from '../../utils/saved-list-payload';
+import { binNoteContentAny, planBinSiteNoteChunks } from '../../utils/bin-site-notes';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
@@ -1047,32 +1048,13 @@ export class BuildListComponent {
    */
   private _loadBinSiteNotes(): void {
     if (!this.binNotesActive() || this._binNotesFetchInFlight) return;
-    type Chunk = { ids: number[]; keys: string[]; names: Set<string>; length: number };
-    const chunks: Chunk[] = [];
-    let chunk: Chunk = { ids: [], keys: [], names: new Set(), length: 0 };
-    for (const c of this.filteredCustomers()) {
-      const siteNames = binSiteNames(c.binSites);
-      if (siteNames.length === 0) continue;
-      const key = `${c.id}:${siteNames.join('|').toLowerCase()}`;
-      if (this._binNoteFetchedKeys.has(key)) continue;
-      const cost = (names: Set<string>) => String(c.id).length + 3
-        + siteNames.filter(n => !names.has(n)).reduce((sum, n) => sum + encodeURIComponent(n).length + 3, 0);
-      if (chunk.ids.length > 0 && chunk.length + cost(chunk.names) > BuildListComponent.BIN_NOTES_QUERY_BUDGET) {
-        chunks.push(chunk);
-        chunk = { ids: [], keys: [], names: new Set(), length: 0 };
-      }
-      chunk.length += cost(chunk.names);
-      chunk.ids.push(c.id);
-      chunk.keys.push(key);
-      siteNames.forEach(n => chunk.names.add(n));
-    }
-    if (chunk.ids.length > 0) chunks.push(chunk);
+    const chunks = planBinSiteNoteChunks(this.filteredCustomers(), this._binNoteFetchedKeys, BuildListComponent.BIN_NOTES_QUERY_BUDGET);
     if (chunks.length === 0) return;
 
     this._binNotesFetchInFlight = true;
     const requests = chunks.map(ch => this.apiService.getNotes(undefined, {
       customerIds: ch.ids,
-      contentAny: ch.length > BuildListComponent.BIN_NOTES_QUERY_BUDGET ? undefined : [...ch.names],
+      contentAny: binNoteContentAny(ch, BuildListComponent.BIN_NOTES_QUERY_BUDGET),
     }).pipe(catchError(() => of([] as Note[]))));
     // At most four requests in flight at once; order doesn't matter (results are flattened and deduped).
     from(requests).pipe(mergeMap(r => r, 4), toArray(), takeUntilDestroyed(this.destroyRef)).subscribe(results => {

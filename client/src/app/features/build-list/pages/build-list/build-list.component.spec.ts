@@ -1462,6 +1462,53 @@ describe('BuildListComponent', () => {
       expect(c.matchedPatternLabels()).toEqual(['Unconfirmed contracts', 'State']);
     });
 
+    // ── Bin-site mention notes (Grain on Farm & Bin Sites prompts) ──
+
+    const GOF: QueryLibraryItem = { id: 11, category: 'Grain on Farm & Bin Sites', name: 'GoF', queryText: 'Producers with grain on farm', sortOrder: 1 };
+    const binNoteCalls = () => api.getNotes.mock.calls
+      .map(call => (call as unknown[])[1] as { customerIds?: number[]; contentAny?: string[] } | undefined)
+      .filter(opts => !!opts?.customerIds);
+
+    it('fetches notes naming each producer\'s bin sites, shows them, and puts the latest mention first', () => {
+      api.getCustomers.mockReturnValue(of([
+        makeCustomer({ id: 1, name: 'Alpha Acres', binSites: [{ siteKey: 'n', name: 'North' }, { siteKey: 's', name: 'South' }] }),
+        makeCustomer({ id: 2, name: 'Bravo Grain', binSites: [{ siteKey: 'o', name: 'Only' }] }),
+        makeCustomer({ id: 3, name: 'Charlie Farms' }),
+      ]));
+      api.getNotes.mockReturnValue(of([
+        { id: 7, customerId: 2, customerCode: 'C2', customerName: 'Bravo Grain', content: 'Moved beans out of Only today', isPinned: false,
+          createdBy: 'Someone', createdAt: '2026-10-12T10:00:00' },
+        { id: 8, customerId: 1, customerCode: 'C1', customerName: 'Alpha Acres', content: 'Nothing about bins', isPinned: false,
+          createdBy: 'Someone', createdAt: '2026-10-12T11:00:00' },
+      ] as never));
+      const c = mount();
+      c.selectLibraryQuery(GOF);
+      TestBed.tick();
+
+      expect(binNoteCalls()).toEqual([{ customerIds: [1, 2], contentAny: ['North', 'South', 'Only'] }]);
+      expect(names(c.displayedCustomers())).toEqual(['Bravo Grain', 'Alpha Acres', 'Charlie Farms']);
+      expect(c.binSiteNotesByCustomer().get(2)!.sites).toEqual(['Only']);
+      expect(c.binSiteNotesByCustomer().has(1)).toBe(false);
+      expect(text()).toContain('Moved beans out of');
+    });
+
+    it('splits the bin-mention fetch to stay under the query-string budget, and drops names that alone exceed it', () => {
+      const long = (i: number) => `Site ${i} ${'x'.repeat(60)}`;
+      const many = Array.from({ length: 30 }, (_, i) => makeCustomer({ id: i + 1, name: `P${String(i + 1).padStart(2, '0')}`,
+        binSites: [{ siteKey: `k${i}`, name: long(i) }] }));
+      const huge = makeCustomer({ id: 99, name: 'Zed', binSites: Array.from({ length: 30 }, (_, i) => ({ siteKey: `h${i}`, name: long(100 + i) })) });
+      api.getCustomers.mockReturnValue(of([...many, huge]));
+      const c = mount();
+      c.selectLibraryQuery(GOF);
+      TestBed.tick();
+
+      const calls = binNoteCalls();
+      expect(calls.length).toBe(3);
+      expect(calls.flatMap(o => o.customerIds)).toEqual([...many.map(m => m.id), 99]);
+      expect(calls[0].contentAny).toEqual(calls[0].customerIds!.map(id => long(id - 1)));
+      expect(calls[2]).toEqual({ customerIds: [99], contentAny: undefined });
+    });
+
     // ── Saved-list and assign payloads ──
 
     it('saving carries the prompt category alone when there are no refinements, and nothing when there is neither', () => {
