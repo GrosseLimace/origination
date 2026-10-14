@@ -393,6 +393,32 @@ describe('DashboardComponent', () => {
       expect(c.availableHarvestCropCategories()).toEqual(['Soybeans']);
     });
 
+    it('offers planting categories and title-cased ODS contract groups as one de-duplicated crop list', async () => {
+      await build(() => appState.contracts.set([
+        ...APP_CONTRACTS,
+        contract({ id: 4, sourceContractId: 'PHRW4', commodityCode: 'HRW', commodityDescription: 'HARD RED WINTER WHEAT', commodityGroup: 'WHEAT' }),
+        contract({ id: 5, sourceContractId: 'PYC5', commodityGroup: 'CORN' }),
+      ]));
+
+      expect(c.availableCrops()).toEqual(['Corn', 'Soybeans', 'Wheat']);
+      const options = Array.from(host().querySelectorAll('select option')).map(o => o.textContent?.trim());
+      expect(options).toEqual(['All Crops', 'Corn', 'Soybeans', 'Wheat']);
+    });
+
+    it('renders the By Crop charts with compact acre labels and the crop details table', async () => {
+      await build(() => appState.plantingIntentions.set([
+        ...INTENTIONS,
+        pi({ id: 9, customerId: 2, customerName: 'Bravo Ag', customerCode: 'BRAVO', crop: 'SB', acres: 1800 }),
+      ]));
+
+      // Soybeans 2,000 ac → "2K"; Corn 150 ac stays as is.
+      expect(text()).toContain('2K');
+      expect(text()).toContain('150');
+      expect(text()).toContain('Crop Details');
+      expect(text()).toContain('100K bu'); // Soybeans 2,000 ac × 50 bu/ac
+      expect(text()).toContain('26K bu');
+    });
+
     it('narrows every rollup to the top crop filter and splits that crop by planting type', async () => {
       await build();
       c.producerCropFilter.set('dryland corn');
@@ -994,6 +1020,46 @@ describe('DashboardComponent', () => {
       await build(() => appState.noteLastContactsLoadFailed.set(true));
 
       expect(c.getLastContactInfo(2)).toEqual({ text: 'Last contact unavailable', colorClass: 'text-gray-400 dark:text-gray-500', daysAgo: Infinity });
+    });
+
+    it('narrows the without-intentions view and its chips to producers who grow the top-filter crop', async () => {
+      await build();
+      c.producerView.set('without');
+      // No top filter: every producer without a 2026 intention, chips from their merged crop codes.
+      expect(c.producersTabRows().map(r => r.customerName)).toEqual(['Charlie Grain']);
+      expect(c.producerCropChipOptions()).toEqual(['HRW', 'SB', 'YC']);
+
+      // Nobody has a Wheat intention, so everyone is a candidate, but only Charlie grows wheat (HRW).
+      c.selectedCropFilter.set('Wheat');
+      expect(c.producersTabRows().map(r => r.customerName)).toEqual(['Charlie Grain']);
+      expect(c.producerWithoutCount()).toBe(1);
+      expect(c.producerCropChipOptions()).toEqual(['HRW']);
+
+      // Corn: Alpha and Charlie grow it, but Alpha has a Corn intention this year.
+      c.selectedCropFilter.set('Corn');
+      expect(c.producersTabRows().map(r => r.customerName)).toEqual(['Charlie Grain']);
+      expect(c.producerCropChipOptions()).toEqual(['YC']);
+    });
+
+    it('renders producer initials and the best available location on each row', async () => {
+      await build(() => appState.customers.set([
+        { ...CUSTOMERS[0], extendedCity: 'Garden City', extendedStateProvince: 'KS', location: 'Ignored', stateProvince: 'NE' },
+        { ...CUSTOMERS[1], location: 'Pratt', stateProvince: 'KS' },
+        { ...CUSTOMERS[2], name: 'Zed', stateProvince: 'OK' },
+      ]));
+      c.selectDashboardTab('producers');
+      await settle();
+
+      expect(text()).toContain('AF');
+      expect(text()).toContain('BA');
+      expect(text()).toContain('Garden City, KS');
+      expect(text()).toContain('Pratt, KS');
+      expect(text()).not.toContain('Ignored');
+
+      c.producerView.set('without');
+      await settle();
+      expect(text()).toContain('ZE'); // a one-word name uses its first two letters
+      expect(text()).toContain('OK'); // only a state on file
     });
 
     it('tracks tab clicks and opens the producer on the planting tab for the selected year', async () => {

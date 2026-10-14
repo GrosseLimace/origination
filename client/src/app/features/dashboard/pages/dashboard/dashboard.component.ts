@@ -16,6 +16,7 @@ import { commodityColor, commodityRowClass } from '@shared/utils/commodity-color
 import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { inSelectedTradeUnits } from '@shared/utils/planting-trade-unit-filter';
+import { dashboardCropKey, formatAcres, formatK, getFormattedLocation, getInitials, toTitleCase } from '../../utils/dashboard-format';
 
 /** One producer card on the Producers tab. Both views build these; the fields only the "with
  *  intentions" view has (acres, production, trade unit, the per-crop breakdown) are optional, and
@@ -175,24 +176,6 @@ export class DashboardComponent {
         : { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity });
   }
 
-  getInitials(name: string): string {
-    const parts = name.split(' ').filter(p => p.length > 0);
-    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    if (parts.length === 1 && parts[0].length >= 2) return parts[0].substring(0, 2).toUpperCase();
-    return '??';
-  }
-
-  getFormattedLocation(customer: Customer | undefined): string {
-    if (!customer) return '';
-    if (customer.extendedCity && customer.extendedStateProvince) {
-      return `${customer.extendedCity}, ${customer.extendedStateProvince}`;
-    }
-    if (customer.location && customer.stateProvince) {
-      return `${customer.location}, ${customer.stateProvince}`;
-    }
-    return customer.extendedCity || customer.location || customer.stateProvince || '';
-  }
-
   selectedCropFilter = signal('');
 
   readonly tabs = [
@@ -243,7 +226,7 @@ export class DashboardComponent {
       const commodity = this._commodityByCode().get(p.crop);
       const category = plantingCategory(p, commodity);
       const key = this.selectedCropFilter()
-        ? this._dashboardCropKey(p.type, category)
+        ? dashboardCropKey(p.type, category)
         : category;
       const arr = map.get(key);
       if (arr) arr.push(p); else map.set(key, [p]);
@@ -372,7 +355,7 @@ export class DashboardComponent {
     return this.filteredIntentionsForYear().map(p => {
       const commodity = this._commodityByCode().get(p.crop);
       const category = plantingCategory(p, commodity);
-      const cropKey = this._dashboardCropKey(p.type, category);
+      const cropKey = dashboardCropKey(p.type, category);
       return { acres: p.acres, yieldEst: yieldMap.get(cropKey) ?? null };
     });
   });
@@ -404,7 +387,7 @@ export class DashboardComponent {
       if (!this._inScope(p, customerIdSet, tradeUnitSet)) continue;
       const commodity = this._commodityByCode().get(p.crop);
       const category = plantingCategory(p, commodity);
-      if (category) crops.add(this._toTitleCase(category));
+      if (category) crops.add(toTitleCase(category));
     }
 
     // Contracts come from ODS, where strings are stored ALL-CAPS ("WHEAT",
@@ -413,30 +396,11 @@ export class DashboardComponent {
     // instead of appearing as duplicate "WHEAT" / "Wheat" options.
     for (const c of this.contracts()) {
       const group = c.commodityGroup || c.commodityDescription;
-      if (group) crops.add(this._toTitleCase(group));
+      if (group) crops.add(toTitleCase(group));
     }
 
     return [...crops].sort();
   });
-
-  /**
-   * Convert any-case input to Title Case: "WHEAT" → "Wheat",
-   * "hard red winter wheat" → "Hard Red Winter Wheat", "Co-Product" → "Co-Product".
-   * Word boundaries are preserved so hyphenated and multi-word strings stay readable.
-   */
-  private _toTitleCase(s: string): string {
-    if (!s) return s;
-    return s.toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
-  }
-
-  /**
-   * Crop key/label for the dashboard from a planting intention: planting type + label
-   * (e.g. "Irrigated Corn", "Double Crop Corn"). Double Crop is just a type now, so it splits
-   * out like Irrigated / Dryland — including in Season Targets.
-   */
-  private _dashboardCropKey(type: string | undefined, label: string): string {
-    return [type, label].filter(Boolean).join(' ');
-  }
 
   readonly cropBreakdown = computed(() => {
     // Track the underlying crop CATEGORY per row so color is by crop, not sort position —
@@ -446,7 +410,7 @@ export class DashboardComponent {
       const commodity = this._commodityByCode().get(p.crop);
       const category = plantingCategory(p, commodity);
       const key = this.selectedCropFilter()
-        ? this._dashboardCropKey(p.type, category)
+        ? dashboardCropKey(p.type, category)
         : category;
       const entry = cropMap.get(key);
       if (entry) entry.acres += p.acres;
@@ -495,7 +459,7 @@ export class DashboardComponent {
       for (const p of matching) {
         const commodity = this._commodityByCode().get(p.crop);
         const category = plantingCategory(p, commodity);
-        const cropKey = this._dashboardCropKey(p.type, category);
+        const cropKey = dashboardCropKey(p.type, category);
         const yieldEst = yieldMap.get(cropKey);
         if (yieldEst != null) {
           totalProd += p.acres * yieldEst;
@@ -532,8 +496,8 @@ export class DashboardComponent {
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = commodityByCode.get(p.crop);
       const category = plantingCategory(p, commodity);
-      const categoryKey = this._dashboardCropKey(p.type, category);
-      const displayKey = this._dashboardCropKey(p.type, p.crop);
+      const categoryKey = dashboardCropKey(p.type, category);
+      const displayKey = dashboardCropKey(p.type, p.crop);
       const yieldEst = yieldMap.get(categoryKey);
       const production = yieldEst != null ? p.acres * yieldEst : 0;
       let entry = map.get(p.customerId);
@@ -1428,7 +1392,7 @@ export class DashboardComponent {
     for (const p of filtered) {
       const commodity = this._commodityByCode().get(p.crop);
       const category = plantingCategory(p, commodity);
-      const cropKey = this._dashboardCropKey(p.type, category);
+      const cropKey = dashboardCropKey(p.type, category);
       cropAcresMap.set(cropKey, (cropAcresMap.get(cropKey) || 0) + p.acres);
       cropCategoryMap.set(cropKey, category);
     }
@@ -1771,19 +1735,11 @@ export class DashboardComponent {
   }
 
   // =========================================================================
-  // Formatting helpers
+  // Formatting helpers (pure; see utils/dashboard-format)
   // =========================================================================
 
-  formatAcres(n: number): string {
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-    if (n >= 1_000) return Math.round(n / 1_000) + 'K';
-    return n.toString();
-  }
-
-  formatK(n: number): string {
-    if (n === 0) return '--';
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-    if (n >= 1_000) return Math.round(n / 1_000) + 'K';
-    return n.toString();
-  }
+  readonly formatAcres = formatAcres;
+  readonly formatK = formatK;
+  readonly getInitials = getInitials;
+  readonly getFormattedLocation = getFormattedLocation;
 }
