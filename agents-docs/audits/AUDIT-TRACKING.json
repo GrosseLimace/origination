@@ -874,7 +874,7 @@
       "id": "sql.fromsqlraw-interpolated-string",
       "audit": "sql",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "FromSqlRaw fed a C#-interpolated string instead of FromSqlInterpolated",
       "description": "SearchAsync/SearchOdsAsync build the WHERE clause via C# string interpolation before passing to FromSqlRaw/SqlQueryRaw with separate SqlParameters; values are parameterized correctly today, but the pattern is one accidental edit away from real injection.",
       "files": [
@@ -884,8 +884,13 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed — values are correctly parameterised today, so no live injection path; converting to FromSqlInterpolated is still worth doing.\n[2026-09-28] Re-verified: CustomerRepository.SearchAsync (line ~155) still builds the WHERE text via C# $\"...\" interpolation of parameter names only, then calls FromSqlRaw with a matching SqlParameter[]. Unchanged since last pass.\n[2026-10-13] Re-verified: CustomerRepository.cs:140-156 unchanged -- whereClauses/paramName fragments are still interpolated into the `sql` string, actual values only ever reach SqlParameter objects (@w{i}, @d{i}, @tradeUnits) built via the SqlSanitization.SanitizeCsv allow-list. Still no live injection path, still the same style-guide-letter violation."
+      "last_verified": "2026-10-14",
+      "notes": "[2026-09-21] Confirmed — values are correctly parameterised today, so no live injection path; converting to FromSqlInterpolated is still worth doing.\n[2026-09-28] Re-verified: CustomerRepository.SearchAsync (line ~155) still builds the WHERE text via C# $\"...\" interpolation of parameter names only, then calls FromSqlRaw with a matching SqlParameter[]. Unchanged since last pass.\n[2026-10-13] Re-verified: CustomerRepository.cs:140-156 unchanged -- whereClauses/paramName fragments are still interpolated into the `sql` string, actual values only ever reach SqlParameter objects (@w{i}, @d{i}, @tradeUnits) built via the SqlSanitization.SanitizeCsv allow-list. Still no live injection path, still the same style-guide-letter violation.",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Kept as raw SQL (the phone match strips punctuation in SQL, and FromSqlInterpolated cannot express a variable number of clauses), but the safety rule is now enforced. The query building for SearchAsync and SearchOdsAsync moved, text unchanged (verified line by line against the original), into public static CustomerRepository.BuildSearchSql / BuildOdsSearchSql. CustomerSearchSqlTests feeds hostile input (quote-terminators, DROP/EXEC, LIKE wildcards, a fake @w0) through both and fails if any of it reaches the SQL text, checks every typed value arrives as a SqlParameter, and that the parameter names in the text and the parameter list match exactly. Mutation-checked: interpolating the word into either builder fails a test."
     },
     {
       "id": "sql.nocheck-foreign-keys-never-revalidated",
@@ -3245,7 +3250,7 @@
       "resolution_notes": "AR-10 closing line rewritten. It no longer claims AR-01/02/07/08 were routed for countersignature; it points at the 2026-09-21 banner (AR-01/02/08 closed as declined, AR-07 open) and states plainly that whether AR-10 and AR-07 go to IT Security is the project owner's call and has not been done as of 2026-10-13. No decision was invented or changed; the contradiction introduced by commit 8d91ae7a is removed."
     },
     {
-      "status": "open",
+      "status": "resolved",
       "notes": "[2026-10-13] Found while writing specs for the coverage findings. The spec pins current behaviour (marked PINS CURRENT BEHAVIOUR), so the fix will show up as a deliberate test change.",
       "id": "code-review.dashboard-sales-opportunities-raw-quantity-as-bushels",
       "audit": "code-review",
@@ -3259,7 +3264,12 @@
       "opened_in": {
         "date": "2026-10-13"
       },
-      "last_verified": "2026-10-13"
+      "last_verified": "2026-10-14",
+      "resolved_in": {
+        "date": "2026-10-14",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Confirmed real with PROD data on 2026-10-14: of ~196k purchase contracts in base.vw_CurrentContracts, BU 160,289; ST 28,397; LB 2,802; RC 2,034; MT 1,606; GL 366; NULL 363 (treated as BU); KG 44; CW 11; EA 5. Sales Opportunities now converts total, open and priced quantity with quantityInBushels, the helper Contract Coverage uses, so the two cards agree; Avg Price is total value per bushel. Contracts that cannot be converted (RC, GL, EA, or no lb/bu factor) are left out and the card says how many. Spec updated (30 ST = 1,000 bu at $12/bu) plus an exclusion test; mutation-checked."
     },
     {
       "status": "open",

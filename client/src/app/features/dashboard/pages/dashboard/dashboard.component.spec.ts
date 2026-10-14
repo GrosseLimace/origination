@@ -439,15 +439,34 @@ describe('DashboardComponent', () => {
       expect(byCategory.get('Corn')).toBe(0);
     });
 
-    it('summarises sales opportunities per commodity, sorted by open bushels', async () => {
+    it('summarises sales opportunities per commodity in bushels, sorted by open bushels', async () => {
       await build();
 
       expect(c.salesOpportunityRows().map(r => ({
         commodity: r.commodity, contracts: r.contracts, totalBu: r.totalBu, openBu: r.openBu, unpricedBu: r.unpricedBu, avgPrice: r.avgPrice,
       }))).toEqual([
         { commodity: 'Corn', contracts: 1, totalBu: 13000, openBu: 10000, unpricedBu: 10000, avgPrice: 4 },
-        { commodity: 'Soybeans', contracts: 1, totalBu: 30, openBu: 30, unpricedBu: 30, avgPrice: 400 },
+        // 30 ST at $400/ST is 1,000 bu at $12/bu: the same figure Contract Coverage shows beside it.
+        // On raw quantity this row read 30 bu at $400.
+        { commodity: 'Soybeans', contracts: 1, totalBu: 1000, openBu: 1000, unpricedBu: 1000, avgPrice: 12 },
       ]);
+      expect(c.salesOpportunityExcluded()).toBe(0);
+    });
+
+    it('leaves out, and says it left out, contracts whose unit cannot be shown in bushels', async () => {
+      await build(() => {
+        api.getContractsByCropYear.mockReturnValue(of([
+          ...CROP_YEAR_CONTRACTS,
+          contract({ id: 600, sourceContractId: 'PYC600', quantity: 3, unit: 'RC', openBalanceQuantity: 3 }), // rail cars
+        ]));
+      });
+
+      expect(c.salesOpportunityExcluded()).toBe(1);
+      expect(c.salesOpportunityRows().find(r => r.commodity === 'Corn')?.contracts).toBe(1);
+
+      c.selectDashboardTab('harvestContracts');
+      await settle();
+      expect(text()).toContain("1 contract not shown: its unit can't be converted to bushels.");
     });
 
     it('buckets PURCHASE contract volume into the harvest timeline by delivery month', async () => {

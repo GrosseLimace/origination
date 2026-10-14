@@ -978,19 +978,33 @@ export class DashboardComponent {
     });
   });
 
-  readonly salesOpportunityRows = computed(() => {
+  // In BUSHELS, like Contract Coverage beside it. On raw quantity a 30-ton contract read as "30 bu"
+  // while Coverage counted it as 1,000, and in PROD 18% of purchase contracts are not in bushels
+  // (short tons, pounds, metric tons, ...). A contract whose unit cannot be expressed in bushels
+  // (rail cars, gallons, "each", or a commodity with no lb-per-bushel factor) is left out and
+  // counted, so the card can say so rather than dropping it silently. Avg Price is total value per
+  // bushel, so a $/ton price no longer averages in as if it were $/bu.
+  private readonly _salesOpportunities = computed(() => {
+    const lbsPerBushelByCode = buildLbsPerBushelMap(this.appStateService.commodityConversions());
     const map = new Map<string, { total: number; open: number; priced: number; value: number; count: number }>();
+    let excludedContracts = 0;
     for (const c of this.contractsForYear()) {
+      const total = quantityInBushels(c, c.quantity || 0, lbsPerBushelByCode);
+      if (total == null) {
+        excludedContracts++;
+        continue;
+      }
       const cat = c.commodityDescription || c.commodityGroup || c.commodityCode || 'Other';
       if (!map.has(cat)) map.set(cat, { total: 0, open: 0, priced: 0, value: 0, count: 0 });
       const m = map.get(cat)!;
-      m.total += c.quantity || 0;
-      m.open += c.openBalanceQuantity || 0;
-      m.priced += c.pricedQuantity || 0;
+      m.total += total;
+      // Same unit as the contract quantity, so the same conversion applies.
+      m.open += quantityInBushels(c, c.openBalanceQuantity || 0, lbsPerBushelByCode) ?? 0;
+      m.priced += quantityInBushels(c, c.pricedQuantity || 0, lbsPerBushelByCode) ?? 0;
       m.value += c.totalValue || ((c.quantity || 0) * (c.price || 0));
       m.count++;
     }
-    return [...map.entries()]
+    const rows = [...map.entries()]
       .map(([commodity, v], i) => ({
         commodity,
         contracts: v.count,
@@ -1002,7 +1016,12 @@ export class DashboardComponent {
       }))
       .filter(r => r.totalBu > 0)
       .sort((a, b) => b.openBu - a.openBu);
+    return { rows, excludedContracts };
   });
+
+  readonly salesOpportunityRows = computed(() => this._salesOpportunities().rows);
+  /** Contracts left out of Sales Opportunities because their unit cannot be shown in bushels. */
+  readonly salesOpportunityExcluded = computed(() => this._salesOpportunities().excludedContracts);
 
   constructor() {
     const savedState = localStorage.getItem('plantingIntentionsExpanded');
