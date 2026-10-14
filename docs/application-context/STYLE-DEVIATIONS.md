@@ -43,14 +43,16 @@ row, and every read is "what does this user have in this trade unit".
 **Revisit if:** either table gains child tables that would carry the string key as an FK, or the
 codes stop being stable.
 
-### `CustomerTradeUnit → Customer` uses `Cascade` while nine sibling FKs use `NoAction`
+### `CustomerTradeUnit → Customer` used `Cascade` while nine sibling FKs use `NoAction` — RESOLVED 2026-10-13
 `sql.customertradeunit-cascade-delete-breaks-pattern`
 
-⚠️ **This one is NOT settled — it's an open decision, listed here so it isn't mistaken for
-accepted.** It's inert today because every `CustomerTradeUnit` row comes from the ODS sync, so a
-cascade has nothing to destroy that wouldn't be rebuilt. `feature_NewCustomerTradeUnits` introduces
-**manually curated** rows, and at that point a `Customer` rebuild silently deletes hand-entered
-membership. Decide before that feature lands. Tracked in the audit fix tracker.
+No longer a deviation. The premise that the rows were sync-rebuilt stopped being true once
+`PUT /api/customers/{id}/trade-units` went live and started inserting hand-curated rows; production
+held 22,491 of them when checked on 2026-10-13, with this the only `CASCADE` among the ten FKs into
+`Customer`. Migration `RestrictCustomerTradeUnitDeleteAndValidateCustomerFks` changes it to
+`NoAction` to match its siblings. The same migration validates the three FKs that were added
+`WITH NOCHECK` in May 2026 (Notes, ProducerDetails, ProducerPlantingIntentions): production had zero
+orphan rows behind any of them, so validation turns on with nothing to clean up.
 
 ---
 

@@ -801,7 +801,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (95)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (96)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -900,7 +900,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009185518_MoveBinCapacityAndGrainOntoBinSites'),
 ('20261009185600_CombineGrainOnFarmAndBinSitePrompts'),
 ('20261009201625_AddBinSitesModifiedAt'),
-('20261009201700_DropProducerDetailsBinCapacity');
+('20261009201700_DropProducerDetailsBinCapacity'),
+('20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

@@ -1,8 +1,9 @@
-import { Component, input } from '@angular/core';
+import { Component, input, ChangeDetectionStrategy } from '@angular/core';
 
 @Component({
   selector: 'app-badge',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <span [class]="getClasses()">
       <ng-content />

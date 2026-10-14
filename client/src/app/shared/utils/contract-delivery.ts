@@ -43,8 +43,10 @@ export function getContractDeliveryStats(contract: Contract): ContractDeliverySt
   // choice — keeps the contract visible on past-due alerts instead of silently filing it
   // as complete).
   const rawRemaining = remainingIsUnknown ? qty : rawRemainingRaw!;
-  // Floor the threshold at 0.01 so a contract with quantity 0 (rare/edge) doesn't fall
-  // through to isEffectivelyComplete by accident.
+  // Floor the threshold at 0.01. Without it a contract with quantity 0 would get a threshold of 0,
+  // and `0 < 0` would leave it open forever at 0% with nothing to deliver, listed on Unshipped
+  // Bushels and flagged past due. With it, a quantity-0 contract with no open balance (0 or not
+  // populated) counts as complete; one with a positive open balance stays open.
   const threshold = Math.max(0.01, qty * 0.001);
   const isEffectivelyComplete = rawRemaining < threshold;
   const remaining = isEffectivelyComplete ? 0 : rawRemaining;

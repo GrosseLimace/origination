@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, input, output, effect, afterNextRender } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, input, output, effect, afterNextRender, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -32,7 +32,11 @@ interface StateInfo {
   selector: 'app-customer-map',
   standalone: true,
   imports: [CommonModule, BadgeComponent],
-  templateUrl: './customer-map.component.html'
+  templateUrl: './customer-map.component.html',
+  // The template reads two inputs and the isGeocoding signal. Leaflet draws the map and its popups
+  // outside Angular's view, so this strategy does not affect them; the popup's "View Customer" link
+  // only emits selectCustomer.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CustomerMapComponent {
   private readonly appState = inject(AppStateService);
@@ -47,10 +51,12 @@ export class CustomerMapComponent {
   public close = output<void>();
   public selectCustomer = output<Customer>();
 
-  isGeocoding = false;
+  /** A signal: it is written after the first render and after the geocode request settles, neither
+   *  of which is a template event. */
+  readonly isGeocoding = signal(false);
 
-  private _map: any = null;
-  private _markers: any[] = [];
+  private _map: L.Map | null = null;
+  private _markers: L.Marker[] = [];
   private _isMapInitialized = false;
 
   // Use shared cache from AppStateService so geocoded coords persist across navigation
@@ -279,7 +285,7 @@ export class CustomerMapComponent {
   }
 
   private async _initializeMarkersWithGeocoding(): Promise<void> {
-    const markerMap = new Map<number, any>(); // customerId → leaflet marker
+    const markerMap = new Map<number, L.Marker>(); // customerId → leaflet marker
     const customerCoords = new Map<number, { lat: number; lng: number }>(); // tracks latest coords per customer
 
     // ── Phase 1: Collect initial coords (cached or state-based fallback) ──
@@ -323,7 +329,7 @@ export class CustomerMapComponent {
 
     if (toGeocode.length === 0) return;
 
-    this.isGeocoding = true;
+    this.isGeocoding.set(true);
 
     // Batch geocode all uncached addresses in a single server request.
     // The server processes them sequentially (1/sec Nominatim rate limit) and returns once done.
@@ -371,7 +377,7 @@ export class CustomerMapComponent {
       // API unavailable — markers remain at approximate positions
     }
 
-    this.isGeocoding = false;
+    this.isGeocoding.set(false);
   }
 
   /**
@@ -415,7 +421,7 @@ export class CustomerMapComponent {
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
 
-  private _buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
+  private _buildMarker(customer: Customer, coords: { lat: number; lng: number }): L.Marker {
     const addr = resolveCustomerAddress(customer);
     const locationParts = this._escapeHtml([addr.city, addr.state].filter(Boolean).join(', '));
     const contactLine = this._escapeHtml(customer.phone
@@ -458,7 +464,7 @@ export class CustomerMapComponent {
     `;
 
     const marker = L.marker([coords.lat, coords.lng])
-      .addTo(this._map)
+      .addTo(this._map!) // callers return early once the map is gone
       .bindPopup(popupContent, { closeButton: false, offset: [0, -5] });
 
     // Track close timer so hover into popup can cancel it
@@ -494,7 +500,6 @@ export class CustomerMapComponent {
       }
     });
 
-    (marker as any).customerId = customer.id;
     return marker;
   }
 

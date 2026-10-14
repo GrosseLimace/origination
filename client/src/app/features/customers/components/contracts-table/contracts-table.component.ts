@@ -1,4 +1,4 @@
-import { Component, input, output, effect, signal, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, effect, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -8,11 +8,12 @@ import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { compareTicketsByDateThenNumber } from '@shared/utils/ticket-sort';
-import { ticketDisplayNumber } from '@shared/utils/ticket-display';
+import { TicketDisplayNumberPipe } from '@shared/pipes/ticket-display-number.pipe';
 
 type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'specialType' | 'price' | 'deliveryStart' | 'status'
   | 'remaining' | 'delivered' | 'unsettled';
 type SortDirection = 'none' | 'asc' | 'desc';
+type PricingInfo = { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING' | 'ERROR'; cashPrice?: number; basisPrice?: number };
 
 /** Optional fulfillment columns revealed by the "More columns" toolbar toggle. Adding a new
  *  one is a single entry here (+ a SortColumn key + a comparator case). Value returns null when
@@ -31,18 +32,31 @@ interface ExtraColumn { key: ExtraColumnKey; label: string; value: (c: Contract)
     TableBodyComponent,
     TableRowComponent,
     TableHeadComponent,
-    TableCellComponent
+    TableCellComponent,
+    TicketDisplayNumberPipe
   ],
-  templateUrl: './contracts-table.component.html'
+  templateUrl: './contracts-table.component.html',
+  // Every piece of state the template reads is a signal, an input, or one of the three expansion
+  // Sets mutated only from click handlers and the input-driven effect below, all of which mark the
+  // view for check. The Default strategy was re-checking this table, the busiest in the app, on
+  // every tick anywhere in the application.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ContractsTableComponent {
   private readonly appState = inject(AppStateService);
   private readonly usageTracking = inject(UsageTrackingService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
-  /** Exposed for the template — shows the full shipment ticket number (prefix + number + suffix). */
-  readonly ticketDisplayNumber = ticketDisplayNumber;
+  /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
+   *  list rebuilds it (it used to be cached until the list's length changed, and reset by hand in
+   *  the cache-invalidation effect below). */
+  private readonly _conversionMap = computed(() =>
+    new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
-  private _conversionMap: Map<string, number> | null = null;
+  /** The unit conversions failed to load, so applied tickets' Net Bu is missing for that reason
+   *  rather than because of the ticket's commodity. */
+  readonly conversionsUnavailable = computed(() =>
+    this.appState.commodityConversionsLoadFailed() && this.appState.commodityConversions().length === 0);
 
   public isLoading = input(false);
   public contracts = input<Contract[]>([]);
@@ -157,7 +171,6 @@ export class ContractsTableComponent {
       this.appState.commodityConversions();
       this._deliveryStatsCache.clear();
       this._statusCache.clear();
-      this._conversionMap = null;
     });
 
     // Reset expansion + search and apply any deep-link openContractId only when the
@@ -175,6 +188,10 @@ export class ContractsTableComponent {
         // Defer scroll so contracts render before we try to find the row.
         this._scrollToContract(openId);
       }
+      // The expansion Sets are plain objects, not signals. An input change already marks an OnPush
+      // view for check, so this is belt and braces; it costs nothing and removes the dependency on
+      // that detail.
+      this.cdr.markForCheck();
     });
   }
 
@@ -452,6 +469,9 @@ export class ContractsTableComponent {
       // Defer scroll so the expanded content renders first
       setTimeout(() => this._scrollToContract(contractId), 0);
     }
+    // The expansion Sets are not signals, so a mutation has to mark this OnPush view itself. A click
+    // in our own template already does that; this makes the three toggles correct for any caller.
+    this.cdr.markForCheck();
   }
 
   toggleTicketSection(contractId: number): void {
@@ -460,6 +480,7 @@ export class ContractsTableComponent {
     } else {
       this.expandedTicketSections.add(contractId);
     }
+    this.cdr.markForCheck();
   }
 
   togglePricingSection(contractId: number): void {
@@ -468,6 +489,7 @@ export class ContractsTableComponent {
     } else {
       this.expandedPricingSections.add(contractId);
     }
+    this.cdr.markForCheck();
   }
 
   getSingularUnit(unit: string): string {
@@ -487,7 +509,22 @@ export class ContractsTableComponent {
     return key ? (this.pricingLinesMap().get(key) ?? []) : [];
   }
 
-  getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING' | 'ERROR'; cashPrice?: number; basisPrice?: number } {
+  /** Pricing badge per contract, computed once per data change rather than on every render.
+   *  The template asks for it up to four times per row, and the table re-renders on every sort,
+   *  search keystroke and expansion click. Depends on contracts(), pricingLinesMap() and
+   *  pricingLinesLoaded() through _computePricingInfo, so it refreshes exactly when they do. */
+  private readonly pricingInfoByContract = computed(() => {
+    const map = new Map<number, PricingInfo>();
+    for (const contract of this.contracts()) map.set(contract.id, this._computePricingInfo(contract));
+    return map;
+  });
+
+  getPricingInfo(contract: Contract): PricingInfo {
+    // A contract not in the contracts() input (there is none today) still gets a correct answer.
+    return this.pricingInfoByContract().get(contract.id) ?? this._computePricingInfo(contract);
+  }
+
+  private _computePricingInfo(contract: Contract): PricingInfo {
     const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     const key = contract.sourceContractId;
     const lines = key ? this.pricingLinesMap().get(key) : undefined;
@@ -592,40 +629,6 @@ export class ContractsTableComponent {
     return Math.max(0, unpriced);
   }
 
-  // --- PREVIOUS logic (kept for reference) ---
-  // getPricingInfo_old(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'CASH' | 'LOADING'; cashPrice?: number } {
-  //   const key = contract.sourceContractId;
-  //   const lines = key ? this.pricingLinesMap().get(key) : undefined;
-  //
-  //   if (lines !== undefined) {
-  //     if (lines.length === 0) return { status: 'UNPRICED' };
-  //
-  //     // Single line — check PriceTypeCode: "U" means unpriced (will be priced later)
-  //     if (lines.length === 1 && lines[0].cashPrice != null) {
-  //       const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
-  //       if (ptc === 'U') return { status: 'UNPRICED' };
-  //       return { status: 'CASH', cashPrice: lines[0].cashPrice };
-  //     }
-  //
-  //     const totalPricedQty = lines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
-  //     const contractQty = contract.quantity ?? 0;
-  //
-  //     if (totalPricedQty === 0) return { status: 'UNPRICED' };
-  //     if (totalPricedQty < contractQty) return { status: 'PARTIAL' };
-  //     return { status: 'PRICED' };
-  //   }
-  //
-  //   // Fallback: use contract fields before lines are loaded
-  //   if (contract.price != null) return { status: 'CASH', cashPrice: contract.price };
-  //
-  //   const pricedQty = contract.pricedQuantity ?? 0;
-  //   const totalQty = contract.quantity ?? 0;
-  //
-  //   if (pricedQty === 0) return { status: 'UNPRICED' };
-  //   if (pricedQty < totalQty) return { status: 'PARTIAL' };
-  //   return { status: 'PRICED' };
-  // }
-
   /** Bushels that have been delivered/applied to this contract but not yet settled (paid).
    *  Math: (quantity − openBalanceQuantity) gives total delivered; subtracting settledQuantity
    *  leaves what's been delivered but not paid out yet. Pulled straight from base.Contract
@@ -677,13 +680,7 @@ export class ContractsTableComponent {
     const code = (productCode || '').trim().toUpperCase();
     if (!code) return null;
 
-    const conversions = this.appState.commodityConversions();
-    if (conversions.length === 0) return null;
-
-    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-    }
-    const lbs = this._conversionMap.get(code);
+    const lbs = this._conversionMap().get(code);
     return lbs && lbs > 0 ? lbs : null;
   }
 
@@ -693,24 +690,55 @@ export class ContractsTableComponent {
     return (lbs || 0) / lbsPerBushel;
   }
 
+  /** Applied tickets indexed once per tickets() change, so a contract's tickets are a lookup rather
+   *  than a filter over every ticket the producer has. The template asks for a contract's applied
+   *  tickets up to four times per row on every render; with a few hundred tickets that was the
+   *  single most expensive thing on the page.
+   *
+   *  The matching rule is unchanged from the per-ticket filter it replaces. Per ticket: if both it
+   *  and the contract carry a CTRM contract number, match on that and nothing else; otherwise fall
+   *  back to the contractId foreign key. So a contract WITH a sourceContractId collects tickets
+   *  by number plus tickets that have NO number but match by id, and a contract WITHOUT one
+   *  collects every ticket that matches by id. Only applied tickets are indexed at all. */
+  private readonly appliedTicketIndex = computed(() => {
+    const byNumber = new Map<string, Ticket[]>();
+    const byIdWithoutNumber = new Map<number, Ticket[]>();
+    const byIdAny = new Map<number, Ticket[]>();
+    const push = <K>(map: Map<K, Ticket[]>, key: K, t: Ticket) => {
+      const list = map.get(key);
+      if (list) list.push(t); else map.set(key, [t]);
+    };
+    for (const t of this.tickets()) {
+      if (!t.isApplied) continue;
+      if (t.ctrmContractNumber) push(byNumber, t.ctrmContractNumber.trim(), t);
+      if (t.contractId) {
+        push(byIdAny, t.contractId, t);
+        if (!t.ctrmContractNumber) push(byIdWithoutNumber, t.contractId, t);
+      }
+    }
+    return { byNumber, byIdWithoutNumber, byIdAny };
+  });
+
+  private readonly appliedTicketsByContract = computed(() => {
+    const map = new Map<number, Ticket[]>();
+    for (const contract of this.contracts()) map.set(contract.id, this._resolveAppliedTickets(contract));
+    return map;
+  });
+
   getAppliedTickets(contract: Contract): Ticket[] {
-    // Only consider tickets that are actually applied (isApplied = prefix is not U or L).
-    // The sourceContractId match below further narrows to tickets on this specific P/S contract.
-    return this.tickets().filter(t => {
-      if (!t.isApplied) return false;
+    return this.appliedTicketsByContract().get(contract.id) ?? this._resolveAppliedTickets(contract);
+  }
 
-      // Primary: Match Ticket.CtrmContractNumber to Contract.SourceContractId
-      if (t.ctrmContractNumber && contract.sourceContractId) {
-        return t.ctrmContractNumber.trim() === contract.sourceContractId.trim();
-      }
-
-      // Fallback: Match by contractId FK
-      if (t.contractId && contract.id) {
-        return t.contractId === contract.id;
-      }
-
-      return false;
-    }).sort(compareTicketsByDateThenNumber);
+  private _resolveAppliedTickets(contract: Contract): Ticket[] {
+    const { byNumber, byIdWithoutNumber, byIdAny } = this.appliedTicketIndex();
+    let matched: Ticket[];
+    if (contract.sourceContractId) {
+      matched = [...(byNumber.get(contract.sourceContractId.trim()) ?? [])];
+      if (contract.id) matched.push(...(byIdWithoutNumber.get(contract.id) ?? []));
+    } else {
+      matched = contract.id ? [...(byIdAny.get(contract.id) ?? [])] : [];
+    }
+    return matched.sort(compareTicketsByDateThenNumber);
   }
 
   hasWheatInAppliedTickets(contract: Contract): boolean {

@@ -140,6 +140,9 @@
 
     <!-- Customer groups -->
     @if (!loading()) {
+      @if (customersUnavailable()) {
+        <p class="mb-3 text-sm text-amber-700 dark:text-amber-300">Couldn't load producer names, so producers show by customer code and can't be opened from here. Refresh the page to try again.</p>
+      }
       <div class="space-y-2">
         @for (group of filteredGroups(); track group.customerCode) {
           <app-card>

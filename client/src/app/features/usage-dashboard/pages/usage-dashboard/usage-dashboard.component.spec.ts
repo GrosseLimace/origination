@@ -457,3 +457,63 @@ describe('UsageDashboardComponent — manager default', () => {
     expect(component.teamIsEmpty()).toBe(false);
   });
 });
+
+describe('UsageDashboardComponent — panel load failures', () => {
+  // These panels used to swallow their errors, so a dead endpoint drew an empty chart or a table of
+  // zeros that read as "nobody used it". The KPI row and the originator table already toast.
+  const PanelFailure = 'Some usage panels failed to load — they may be empty or out of date. Refresh to try again.';
+  const fail = () => throwError(() => new Error('boom'));
+
+  let toasts: string[];
+  beforeEach(() => { toasts = []; });
+
+  it.each([
+    ['daily active users', (a: ReturnType<typeof makeApiStub>) => { a.getUsageDailyActive = fail; }],
+    ['weekly trend', (a: ReturnType<typeof makeApiStub>) => { a.getUsageWeeklyTrend = fail; }],
+    ['feature sessions', (a: ReturnType<typeof makeApiStub>) => { a.getUsageFeatureSessions = fail; }],
+  ] as const)('tells the user when the %s panel fails to load', (_name, breakIt) => {
+    const api = makeApiStub([]);
+    breakIt(api);
+    configure(api, rolesStub(), toasts);
+    build();
+
+    expect(toasts).toEqual([PanelFailure]);
+  });
+
+  it.each([
+    ['activity breakdown', 'whats-doing', (a: ReturnType<typeof makeApiStub>) => { a.getUsageActivityBreakdown = fail; }],
+    ['query library usage', 'whats-doing', (a: ReturnType<typeof makeApiStub>) => { a.getUsageQueryLibraryUsage = fail; }],
+    ['query search gaps', 'whats-doing', (a: ReturnType<typeof makeApiStub>) => { a.getUsageQuerySearchGaps = fail; }],
+    ['underused features', 'whos-not', (a: ReturnType<typeof makeApiStub>) => { a.getUsageUnderusedFeatures = fail; }],
+  ] as const)('tells the user when the %s panel fails to load', (_name, tab, breakIt) => {
+    const api = makeApiStub([]);
+    breakIt(api);
+    configure(api, rolesStub(), toasts);
+    const fixture = TestBed.createComponent(UsageDashboardComponent);
+    fixture.detectChanges();
+    expect(toasts).toEqual([]);
+
+    fixture.componentInstance.onTabChange(tab);
+    fixture.detectChanges();
+
+    expect(toasts).toEqual([PanelFailure]);
+  });
+
+  it('says it once when several panels fail together, not once per panel', () => {
+    const api = makeApiStub([]);
+    api.getUsageDailyActive = fail;
+    api.getUsageWeeklyTrend = fail;
+    api.getUsageFeatureSessions = fail;
+    configure(api, rolesStub(), toasts);
+    build();
+
+    expect(toasts).toEqual([PanelFailure]);
+  });
+
+  it('stays quiet when every panel loads', () => {
+    configure(makeApiStub([]), rolesStub(), toasts);
+    build();
+
+    expect(toasts).toEqual([]);
+  });
+});

@@ -261,26 +261,26 @@ describe('InsightsComponent — organic certification status changes', () => {
    */
   describe('visibility by trade unit', () => {
     it('shows the category on the organics desk', () => {
-      appState.selectedTradeUnits.set(['2080']);
+      appState.setTradeUnits(['2080']);
 
       expect(component.visibleCategories()).toContain('OrganicStatusChanges');
     });
 
     it('hides it on any other desk', () => {
-      appState.selectedTradeUnits.set(['2347']);
+      appState.setTradeUnits(['2347']);
 
       expect(component.visibleCategories()).not.toContain('OrganicStatusChanges');
     });
 
     it('shows it when the organics desk is selected alongside another', () => {
       // "2080 is among the selection", not "2080 is the whole selection".
-      appState.selectedTradeUnits.set(['2347', '2080']);
+      appState.setTradeUnits(['2347', '2080']);
 
       expect(component.visibleCategories()).toContain('OrganicStatusChanges');
     });
 
     it('never hides the three categories traders use daily', () => {
-      appState.selectedTradeUnits.set(['2347']);
+      appState.setTradeUnits(['2347']);
 
       expect(component.visibleCategories())
         .toEqual(['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels']);
@@ -290,7 +290,7 @@ describe('InsightsComponent — organic certification status changes', () => {
       // customerGroupsByCategory indexes its map by insight category. If the gate were applied to
       // the grouping pass rather than only to rendering, an organic insight arriving while another
       // desk is selected would dereference an undefined map.
-      appState.selectedTradeUnits.set(['2347']);
+      appState.setTradeUnits(['2347']);
       appState.setCustomers([makeCustomer()]);
       appState.setContracts([makeContract({ tradeUnit: '2347' })]);
 

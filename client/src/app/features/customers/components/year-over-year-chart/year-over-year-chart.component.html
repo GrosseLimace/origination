@@ -15,16 +15,16 @@
       <!-- Chart -->
       <div class="p-6">
         <div class="flex items-end justify-center gap-8">
-          @for (data of chartData; track data.year) {
+          @for (data of chartData(); track data.year) {
             <div class="flex flex-col items-center gap-2">
               <div class="flex items-end gap-2 h-[min(220px,24dvh)]">
                 <!-- Volume bar (green) -->
                 <div class="w-12 rounded-t-md bg-gradient-to-t from-green-600 to-green-400 transition-all duration-300"
-                     [style.height.%]="getBarHeight(data.volume, maxVolume)">
+                     [style.height.%]="getBarHeight(data.volume, maxVolume())">
                 </div>
                 <!-- Revenue bar (blue) -->
                 <div class="w-12 rounded-t-md bg-gradient-to-t from-blue-600 to-blue-400 transition-all duration-300"
-                     [style.height.%]="getBarHeight(data.revenue, maxRevenue)">
+                     [style.height.%]="getBarHeight(data.revenue, maxRevenue())">
                 </div>
               </div>
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ data.year }}</span>
@@ -47,11 +47,11 @@
         <!-- Summary Stats -->
         <div class="grid grid-cols-2 gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
           <div class="text-center">
-            <div class="text-2xl font-bold text-scoular-green-accessible">{{ totalVolume | number }}</div>
+            <div class="text-2xl font-bold text-scoular-green-accessible">{{ totalVolume() | number }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">Total Bushels</div>
           </div>
           <div class="text-center">
-            <div class="text-2xl font-bold text-scoular-blue">\${{ formatRevenue(totalRevenue) }}</div>
+            <div class="text-2xl font-bold text-scoular-blue">${{ formatRevenue(totalRevenue()) }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">Total Revenue</div>
           </div>
         </div>

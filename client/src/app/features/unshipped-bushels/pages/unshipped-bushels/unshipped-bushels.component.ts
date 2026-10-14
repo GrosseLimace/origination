@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal, computed, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal, computed, OnInit } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
@@ -22,11 +22,33 @@ export interface CustomerContractGroup {
   expanded: boolean;
 }
 
+const COMMODITY_ALIASES: Record<string, string[]> = {
+  'milo': ['milo', 'sorghum', 'sor'], 'sorghum': ['milo', 'sorghum', 'sor'],
+  'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'],
+};
+
+/** The search terms a (lowercased, trimmed) commodity filter stands for, e.g. "milo" → milo / sorghum / sor. */
+function commodityTerms(filter: string): string[] {
+  return COMMODITY_ALIASES[filter] ?? [filter];
+}
+
+/** True when the contract's commodity description or code contains any of the alias-expanded terms.
+ *  Shared by the producer filter and the row filter so both agree on what a "milo" search matches. */
+function matchesCommodity(c: Contract, terms: string[]): boolean {
+  const desc = c.commodityDescription?.toLowerCase() ?? '';
+  const code = c.commodityCode?.toLowerCase() ?? '';
+  return terms.some(t => desc.includes(t) || code.includes(t));
+}
+
 @Component({
   selector: 'app-unshipped-bushels',
   standalone: true,
   imports: [CommonModule, FormsModule, CardComponent, BadgeComponent],
-  templateUrl: './unshipped-bushels.component.html'
+  templateUrl: './unshipped-bushels.component.html',
+  // The template reads signals, computeds and a getter over the search signals. The API fallback's
+  // callbacks write signals; group.expanded is mutated only from a click, which then replaces the
+  // _groups array.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class UnshippedBushelsComponent implements OnInit {
   private readonly appState = inject(AppStateService);
@@ -50,6 +72,7 @@ export class UnshippedBushelsComponent implements OnInit {
     const custFilter = this.searchCustomer().trim().toLowerCase();
     const commFilter = this.searchCommodity().trim().toLowerCase();
     const contractFilter = this.searchContract().trim().toLowerCase();
+    const commTerms = commodityTerms(commFilter);
 
     return groups.filter(g => {
       // Customer ID / Name filter
@@ -60,13 +83,7 @@ export class UnshippedBushelsComponent implements OnInit {
       }
 
       // Commodity filter — group visible if any contract matches
-      if (commFilter) {
-        const hasMatch = g.contracts.some(c =>
-          (c.commodityDescription?.toLowerCase().includes(commFilter)) ||
-          (c.commodityCode?.toLowerCase().includes(commFilter))
-        );
-        if (!hasMatch) return false;
-      }
+      if (commFilter && !g.contracts.some(c => matchesCommodity(c, commTerms))) return false;
 
       // Contract# filter — group visible if any contract matches
       if (contractFilter) {
@@ -85,17 +102,9 @@ export class UnshippedBushelsComponent implements OnInit {
   getFilteredContracts(group: CustomerContractGroup): Contract[] {
     const commFilter = this.searchCommodity().trim().toLowerCase();
     const contractFilter = this.searchContract().trim().toLowerCase();
-    const commAliases: Record<string, string[]> = {
-      'milo': ['milo', 'sorghum', 'sor'], 'sorghum': ['milo', 'sorghum', 'sor'],
-      'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'],
-    };
-    const commTerms = commFilter ? (commAliases[commFilter] ?? [commFilter]) : [];
+    const commTerms = commodityTerms(commFilter);
     return group.contracts.filter(c => {
-      if (commFilter) {
-        const desc = c.commodityDescription?.toLowerCase() ?? '';
-        const code = c.commodityCode?.toLowerCase() ?? '';
-        if (!commTerms.some(t => desc.includes(t) || code.includes(t))) return false;
-      }
+      if (commFilter && !matchesCommodity(c, commTerms)) return false;
       if (contractFilter) {
         const match = (c.contractNumber?.toLowerCase().includes(contractFilter)) ||
                       (c.sourceContractId?.toLowerCase().includes(contractFilter));
@@ -109,6 +118,11 @@ export class UnshippedBushelsComponent implements OnInit {
   totalBushels = computed(() => this.filteredGroups().reduce((sum, g) => sum + g.totalOpenBushels, 0));
   totalCustomers = computed(() => this.filteredGroups().length);
   totalContracts = computed(() => this.filteredGroups().reduce((sum, g) => sum + g.contracts.length, 0));
+
+  /** The producer list failed to load, so every group falls back to its customer code and has no
+   *  link to the producer — which otherwise reads as producers the app doesn't know. */
+  readonly customersUnavailable = computed(() =>
+    this.appState.customersLoadFailed() && this.appState.customers().length === 0 && this.filteredGroups().length > 0);
 
   constructor() {
     // Nothing on this page hits an API, so searching and expanding are invisible to the
